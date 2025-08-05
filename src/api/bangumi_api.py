@@ -203,7 +203,7 @@ async def get_bangumi_client(
 
     headers = {
         "Authorization": f"Bearer {auth_info['access_token']}",
-        "User-Agent": "l429609201/misaka_danmu_server(https://github.com/l429609201/misaka_danmu_server)",
+        "User-Agent": "l429609201/danmu_api_server(https://github.com/l429609201/danmu_api_server)",
     }
     return httpx.AsyncClient(headers=headers, timeout=20.0)
 

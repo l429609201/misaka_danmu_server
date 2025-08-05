@@ -78,7 +78,7 @@
     services:
       app:
         # 替换为您自己的Docker Hub用户名和镜像名，或使用本地构建
-        image: l429609201/misaka_danmu_server:latest
+        image: l429609201/danmu_api_server:latest
         # 如果您想从源代码构建，请取消注释下一行并注释掉上面的 'image' 行
         # build: .
         container_name: danmu-api

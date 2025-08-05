@@ -25,7 +25,7 @@ jobs:
       - name: Prepare Docker tags
         id: prep_tags
         run: |
-          DOCKER_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/misaka_danmu_server
+          DOCKER_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/danmu_api_server
           # 如果是标签推送 (e.g., v1.2.3)
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             # 从 ref 中提取标签名 (e.g., v1.2.3)
