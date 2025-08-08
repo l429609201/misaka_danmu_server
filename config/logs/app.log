@@ -1,0 +1,152 @@
+[2025-08-09 02:22:32] [root:104] [INFO] - 日志系统已初始化，日志将输出到控制台和 E:\自建工具\开源项目\misaka_danmu_server\config\logs\app.log
+[2025-08-09 02:22:34] [src.database:28] [ERROR] - ============================================================
+[2025-08-09 02:22:34] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-09 02:22:34] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-09 02:22:34] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '127.0.0.1'")
+[2025-08-09 02:22:34] [src.database:32] [ERROR] - ---
+[2025-08-09 02:22:34] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-09 02:22:34] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-09 02:22:34] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-09 02:22:34] [src.database:36] [ERROR] - ---    - 主机 (Host): 127.0.0.1
+[2025-08-09 02:22:34] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-09 02:22:34] [src.database:38] [ERROR] - ---    - 用户 (User): danmaku_user
+[2025-08-09 02:22:34] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmaku_db
+[2025-08-09 02:22:34] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-09 02:22:34] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-09 02:22:34] [src.database:42] [ERROR] - ============================================================
+[2025-08-09 02:23:03] [root:104] [INFO] - 日志系统已初始化，日志将输出到控制台和 E:\自建工具\开源项目\misaka_danmu_server\config\logs\app.log
+[2025-08-09 02:23:03] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-09 02:23:03] [src.database:117] [INFO] - 正在检查并创建数据表...
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'anime' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'episode' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'comment' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'users' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'scrapers' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'anime_sources' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'anime_metadata' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'config' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'cache_data' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'api_tokens' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'token_access_logs' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'ua_rules' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'bangumi_auth' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'oauth_states' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'anime_aliases' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'tmdb_episode_mapping' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'scheduled_tasks' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:148] [INFO] - 数据表 'task_history' 已存在，跳过创建。
+[2025-08-09 02:23:03] [src.database:155] [INFO] - 数据表检查完成。
+[2025-08-09 02:23:03] [src.database:158] [INFO] - 正在检查并修正表结构...
+[2025-08-09 02:23:03] [src.database:201] [INFO] - 正在检查并初始化默认配置...
+[2025-08-09 02:23:03] [src.database:268] [INFO] - 默认配置检查完成。
+[2025-08-09 02:23:06] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 1)。
+[2025-08-09 02:23:09] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 2)。
+[2025-08-09 02:23:12] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 3)。
+[2025-08-09 02:23:14] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-09 02:23:17] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-09 02:23:19] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 4)。
+[2025-08-09 02:23:22] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 5)。
+[2025-08-09 02:23:22] [src.webhook_manager:37] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-09 02:23:22] [src.webhook_manager:37] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-09 02:23:22] [src.task_manager:44] [INFO] - 任务管理器已启动。
+[2025-08-09 02:23:22] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-09 02:23:22] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-09 02:23:22] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-09 02:23:44] [src.api.ui:199] [INFO] - 用户 'admin' 正在搜索: '国际高中' (解析为: title='国际高中', season=None, episode=None)
+[2025-08-09 02:23:45] [httpx:1740] [INFO] - HTTP Request: GET https://api.themoviedb.org/3/search/movie?api_key=c0851c27463abc25193da5748cf55957&query=%E5%9B%BD%E9%99%85%E9%AB%98%E4%B8%AD&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-09 02:23:45] [httpx:1740] [INFO] - HTTP Request: GET https://api.themoviedb.org/3/search/tv?api_key=c0851c27463abc25193da5748cf55957&query=%E5%9B%BD%E9%99%85%E9%AB%98%E4%B8%AD&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-09 02:23:45] [httpx:1740] [INFO] - HTTP Request: GET https://api.themoviedb.org/3/tv/214994?api_key=c0851c27463abc25193da5748cf55957&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-09 02:23:45] [httpx:1740] [INFO] - HTTP Request: GET https://api.themoviedb.org/3/tv/214994?api_key=c0851c27463abc25193da5748cf55957&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-09 02:23:45] [src.api.ui:252] [INFO] - TMDB辅助搜索成功，找到别名: ['清潭国际高中', '청담국제고등학교', '清潭國際高等學校']
+[2025-08-09 02:23:45] [src.api.ui:264] [INFO] - 所有辅助搜索完成，最终别名集大小: 4
+[2025-08-09 02:23:45] [src.api.ui:267] [INFO] - 将使用解析后的标题 '国际高中' 进行全网搜索...
+[2025-08-09 02:23:45] [BilibiliScraper:322] [INFO] - Bilibili: 正在搜索 '国际高中'...
+[2025-08-09 02:23:45] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '国际高中'...
+[2025-08-09 02:23:45] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9B%BD%E9%99%85%E9%AB%98%E4%B8%AD&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-09 02:23:45] [MgtvScraper:236] [INFO] - MGTV: 搜索 '国际高中' 完成，找到 0 个结果。
+[2025-08-09 02:23:45] [IqiyiScraper:137] [INFO] - 爱奇艺: 正在搜索 '国际高中'...
+[2025-08-09 02:23:45] [TencentScraper:117] [INFO] - Tencent: 正在搜索 '国际高中'...
+[2025-08-09 02:23:45] [YoukuScraper:121] [INFO] - Youku: 正在搜索 '国际高中'...
+[2025-08-09 02:23:45] [GamerScraper:101] [INFO] - Gamer: 正在搜索 '国际高中' (繁体: '國際高中')...
+[2025-08-09 02:23:45] [httpx:1740] [INFO] - HTTP Request: GET https://www.bilibili.com/ "HTTP/1.1 200 OK"
+[2025-08-09 02:23:45] [BilibiliScraper:268] [INFO] - Bilibili: WBI mixin key expired or not found, fetching new one...
+[2025-08-09 02:23:45] [BilibiliScraper:268] [INFO] - Bilibili: WBI mixin key expired or not found, fetching new one...
+[2025-08-09 02:23:46] [httpx:1740] [INFO] - HTTP Request: GET https://search.video.iqiyi.com/o?if=html5&key=%E5%9B%BD%E9%99%85%E9%AB%98%E4%B8%AD&pageNum=1&pageSize=20 "HTTP/1.1 200 OK"
+[2025-08-09 02:23:46] [IqiyiScraper:189] [INFO] - 爱奇艺: 搜索 '国际高中' 完成，找到 0 个有效结果。
+[2025-08-09 02:23:46] [httpx:1740] [INFO] - HTTP Request: POST https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.HttpMobileRecall/MbSearchHttp "HTTP/1.1 200 OK"
+[2025-08-09 02:23:46] [TencentScraper:177] [INFO] - Tencent: 搜索 '国际高中' 完成，找到 0 个有效结果。
+[2025-08-09 02:23:46] [httpx:1740] [INFO] - HTTP Request: GET https://search.youku.com/api/search?keyword=%E5%9B%BD%E9%99%85%E9%AB%98%E4%B8%AD&userAgent=Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F91.0.4472.124+Safari%2F537.36&site=1&categories=0&ftype=0&ob=0&pg=1 "HTTP/1.1 200 OK"
+[2025-08-09 02:23:46] [YoukuScraper:170] [INFO] - Youku: 搜索 '国际高中' 完成，找到 0 个有效结果。
+[2025-08-09 02:23:46] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/nav "HTTP/1.1 200 OK"
+[2025-08-09 02:23:46] [BilibiliScraper:297] [INFO] - Bilibili: Successfully fetched new WBI mixin key.
+[2025-08-09 02:23:46] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%E5%9C%8B%E9%9A%9B%E9%AB%98%E4%B8%AD "HTTP/1.1 403 Forbidden"
+[2025-08-09 02:23:47] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/nav "HTTP/1.1 200 OK"
+[2025-08-09 02:23:47] [BilibiliScraper:297] [INFO] - Bilibili: Successfully fetched new WBI mixin key.
+[2025-08-09 02:23:47] [GamerScraper:89] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-09 02:23:47] [GamerScraper:59] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-09 02:23:47] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%E5%9B%BD%E9%99%85%E9%AB%98%E4%B8%AD&search_type=media_bangumi&wts=1754677426&w_rid=58488bd295061cb8bf9355b597c408c0 "HTTP/1.1 200 OK"
+[2025-08-09 02:23:47] [BilibiliScraper:430] [INFO] - Bilibili: API for type 'media_bangumi' returned no results. (Code: 0, Message: '0')
+[2025-08-09 02:23:48] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/search/drama?keywords=%E5%9B%BD%E9%99%85%E9%AB%98%E4%B8%AD&size=20&order=match&search_after=&isExecuteVipActivity=true "HTTP/1.1 200 OK"
+[2025-08-09 02:23:48] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-09 02:23:48] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%E5%9B%BD%E9%99%85%E9%AB%98%E4%B8%AD&search_type=media_ft&wts=1754677427&w_rid=32996375b65a5da4c73830ad229655e2 "HTTP/1.1 200 OK"
+[2025-08-09 02:23:48] [BilibiliScraper:430] [INFO] - Bilibili: API for type 'media_ft' returned no results. (Code: 0, Message: '0')
+[2025-08-09 02:23:48] [BilibiliScraper:356] [INFO] - Bilibili: 搜索 '国际高中' 完成，找到 0 个有效结果。
+[2025-08-09 02:23:48] [GamerScraper:79] [ERROR] - Gamer: 刷新 Cookie 失败: Client error '403 Forbidden' for url 'https://ani.gamer.com.tw/ajax/token.php'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+Traceback (most recent call last):
+  File "E:\自建工具\开源项目\misaka_danmu_server\src\scrapers\gamer.py", line 64, in _refresh_cookie
+    response.raise_for_status()
+  File "E:\自建工具\开源项目\misaka_danmu_server\.venv\Lib\site-packages\httpx\_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '403 Forbidden' for url 'https://ani.gamer.com.tw/ajax/token.php'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+[2025-08-09 02:23:48] [GamerScraper:172] [ERROR] - Gamer: 搜索 '国际高中' 失败: Client error '403 Forbidden' for url 'https://ani.gamer.com.tw/search.php?keyword=%E5%9C%8B%E9%9A%9B%E9%AB%98%E4%B8%AD'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+Traceback (most recent call last):
+  File "E:\自建工具\开源项目\misaka_danmu_server\src\scrapers\gamer.py", line 108, in search
+    response.raise_for_status()
+  File "E:\自建工具\开源项目\misaka_danmu_server\.venv\Lib\site-packages\httpx\_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '403 Forbidden' for url 'https://ani.gamer.com.tw/search.php?keyword=%E5%9C%8B%E9%9A%9B%E9%AB%98%E4%B8%AD'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+[2025-08-09 02:23:48] [src.api.ui:282] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 2 个相关结果。
+[2025-08-09 02:23:52] [src.api.ui:1197] [INFO] - 用户 'admin' 正在从 'renren' 导入 '清潭国际高中 第二季' (media_id=53596)
+[2025-08-09 02:23:53] [src.task_manager:109] [INFO] - 任务 '导入: 清潭国际高中 第二季' 已提交，ID: 83ce42bf-5e46-4ec1-88ed-3d0e00e131f5
+[2025-08-09 02:23:53] [src.task_manager:63] [INFO] - 开始执行任务 '导入: 清潭国际高中 第二季' (ID: 83ce42bf-5e46-4ec1-88ed-3d0e00e131f5)
+[2025-08-09 02:23:53] [src.api.ui:1005] [INFO] - 媒体 '清潭国际高中 第二季' (ID: 12, 类型: tv_series) 已准备就绪。
+[2025-08-09 02:23:55] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=53596&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-09 02:23:55] [src.api.ui:1028] [INFO] - --- 开始处理分集 1/10: '清潭国际高中 第二季' (ID: 365140) ---
+[2025-08-09 02:23:58] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/365140 "HTTP/1.1 200 OK"
+[2025-08-09 02:23:59] [src.api.ui:1055] [INFO] - 分集 '清潭国际高中 第二季' (DB ID: 293) 新增 4652 条弹幕。
+[2025-08-09 02:23:59] [src.api.ui:1028] [INFO] - --- 开始处理分集 2/10: '清潭国际高中 第二季' (ID: 365210) ---
+[2025-08-09 02:23:59] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/365210 "HTTP/1.1 200 OK"
+[2025-08-09 02:24:00] [src.api.ui:1055] [INFO] - 分集 '清潭国际高中 第二季' (DB ID: 294) 新增 3701 条弹幕。
+[2025-08-09 02:24:00] [src.api.ui:1028] [INFO] - --- 开始处理分集 3/10: '清潭国际高中 第二季' (ID: 365608) ---
+[2025-08-09 02:24:00] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/365608 "HTTP/1.1 200 OK"
+[2025-08-09 02:24:01] [src.api.ui:1055] [INFO] - 分集 '清潭国际高中 第二季' (DB ID: 295) 新增 5122 条弹幕。
+[2025-08-09 02:24:01] [src.api.ui:1028] [INFO] - --- 开始处理分集 4/10: '清潭国际高中 第二季' (ID: 365691) ---
+[2025-08-09 02:24:02] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/365691 "HTTP/1.1 200 OK"
+[2025-08-09 02:24:02] [src.api.ui:1055] [INFO] - 分集 '清潭国际高中 第二季' (DB ID: 296) 新增 4658 条弹幕。
+[2025-08-09 02:24:02] [src.api.ui:1028] [INFO] - --- 开始处理分集 5/10: '清潭国际高中 第二季' (ID: 366050) ---
+[2025-08-09 02:24:03] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/366050 "HTTP/1.1 200 OK"
+[2025-08-09 02:24:03] [src.api.ui:1055] [INFO] - 分集 '清潭国际高中 第二季' (DB ID: 297) 新增 4302 条弹幕。
+[2025-08-09 02:24:03] [src.api.ui:1028] [INFO] - --- 开始处理分集 6/10: '清潭国际高中 第二季' (ID: 366253) ---
+[2025-08-09 02:24:04] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/366253 "HTTP/1.1 200 OK"
+[2025-08-09 02:24:04] [src.api.ui:1055] [INFO] - 分集 '清潭国际高中 第二季' (DB ID: 298) 新增 3668 条弹幕。
+[2025-08-09 02:24:04] [src.api.ui:1028] [INFO] - --- 开始处理分集 7/10: '清潭国际高中 第二季' (ID: 366563) ---
+[2025-08-09 02:24:05] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/366563 "HTTP/1.1 200 OK"
+[2025-08-09 02:24:05] [src.api.ui:1055] [INFO] - 分集 '清潭国际高中 第二季' (DB ID: 299) 新增 3722 条弹幕。
+[2025-08-09 02:24:05] [src.api.ui:1028] [INFO] - --- 开始处理分集 8/10: '清潭国际高中 第二季' (ID: 366610) ---
+[2025-08-09 02:24:06] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/366610 "HTTP/1.1 200 OK"
+[2025-08-09 02:24:07] [src.api.ui:1055] [INFO] - 分集 '清潭国际高中 第二季' (DB ID: 300) 新增 4496 条弹幕。
+[2025-08-09 02:24:07] [src.api.ui:1028] [INFO] - --- 开始处理分集 9/10: '清潭国际高中 第二季' (ID: 366967) ---
+[2025-08-09 02:24:07] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/366967 "HTTP/1.1 200 OK"
+[2025-08-09 02:24:08] [src.api.ui:1055] [INFO] - 分集 '清潭国际高中 第二季' (DB ID: 301) 新增 3959 条弹幕。
+[2025-08-09 02:24:08] [src.api.ui:1028] [INFO] - --- 开始处理分集 10/10: '清潭国际高中 第二季' (ID: 367045) ---
+[2025-08-09 02:24:08] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/367045 "HTTP/1.1 200 OK"
+[2025-08-09 02:24:09] [src.api.ui:1055] [INFO] - 分集 '清潭国际高中 第二季' (DB ID: 302) 新增 3834 条弹幕。
+[2025-08-09 02:24:09] [src.api.ui:1061] [INFO] - --- renren 导入任务完成 (media_id=53596)。总共新增 42114 条弹幕。 ---
+[2025-08-09 02:24:09] [src.task_manager:81] [INFO] - 任务 '导入: 清潭国际高中 第二季' (ID: 83ce42bf-5e46-4ec1-88ed-3d0e00e131f5) 已成功完成。
+[2025-08-09 02:24:21] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-09 02:24:21] [src.task_manager:55] [INFO] - 任务管理器已停止。
+[2025-08-09 02:24:21] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
