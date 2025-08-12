@@ -902,7 +902,7 @@ function createPosterImage(src, altText) {
   const normalized = normalizeImageUrl(src);
   img.src = normalized || '/static/placeholder.png';
   img.alt = altText || '';
-  img.referrerPolicy = 'no-referrer';
+  img.referrerPolicy = 'strict-origin-when-cross-origin';
   img.loading = 'lazy';
   img.decoding = 'async';
   img.crossOrigin = 'anonymous';

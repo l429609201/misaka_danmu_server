@@ -61,6 +61,9 @@
         - ./mysql-data:/var/lib/mysql
         - ./mysql-conf:/etc/mysql/conf.d
         - ./mysql-logs:/logs
+      ports:
+      # 这里将内部使用的mysql映射到3310端口，不与其他的mysql抢端口
+        - "3310:3306"   
       command:
         --character-set-server=utf8mb4
         --collation-server=utf8mb4_general_ci
@@ -83,8 +86,9 @@
         - PUID=1000
         - PGID=1000
         - UMASK=0022
-       #  连接MySql数据库相关配置
+        #  连接MySql数据库相关配置
         - DANMUAPI_DATABASE__HOST=mysql
+        #  danmuserver网络内部访问不考虑容器的端口映射，可直接使用3306
         - DANMUAPI_DATABASE__PORT=3306
         - DANMUAPI_DATABASE__NAME=danmuapi
         # !!! 重要：请使用上面mysql容器相同的用户名和密码 !!!
@@ -99,8 +103,6 @@
         - mysql
       ports:
         - "7768:7768"
-       # 这里将内部使用的mysql映射到3310端口，不与其他的mysql抢端口
-        - "3310:3306"   
       networks:
         - danmuserver
 
@@ -114,7 +116,7 @@
 ```bash
   docker compose up -d
 ```
-
+PS：首次创建的时候mysql初始化启动需要一点时间，弹幕库可能会出现连接不上服务器的情况，请耐心等待mysql完成初始化
 ### 步骤 3: 访问和配置
 
 - **访问Web UI**: 打开浏览器，访问 `http://<您的服务器IP>:7768`。
@@ -151,9 +153,9 @@
   在自定义弹幕接口中填写：
   `http://192.168.1.100:7768/api/Q2KHYcveM0SaRKvxomQm`
 - **对于 小幻影视:**
-  小幻影视可能需要一个包含 `/api/v2` 的路径，您可以填写：
-  `http://192.168.1.100:7768/api/Q2KHYcveM0SaRKvxomQm/api/v2`
-
+  小幻影视您可以添加含有 `/api/v2` 的路径，可以直接填写复制得到的url：
+  `http://192.168.1.100:7768/api/Q2KHYcveM0SaRKvxomQm/api/v2   #可加可不加/api/v2 ` 
+  
 > **兼容性说明**: 本服务已对路由进行特殊处理，无论您使用 `.../api/<Token>` 还是 `.../api/<Token>/api/v2` 格式，服务都能正确响应，以最大程度兼容不同客户端。
 
 ## Webhook 配置

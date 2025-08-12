@@ -46,7 +46,7 @@ function renderLibrary(animes) {
         row.dataset.title = anime.title.toLowerCase();
         
         row.innerHTML = `
-            <td class="poster-cell"><img src="${anime.imageUrl || '/static/placeholder.png'}" referrerpolicy="no-referrer" alt="${anime.title}"></td>
+            <td class="poster-cell"><img src="${anime.imageUrl || '/static/placeholder.png'}" referrerpolicy="strict-origin-when-cross-origin" alt="${anime.title}"></td>
             <td>${anime.title}</td>
             <td>${{ 'tv_series': '电视节目', 'movie': '电影/剧场版', 'ova': 'OVA', 'other': '其他' }[anime.type] || anime.type}</td>
             <td>${anime.season}</td>
@@ -101,6 +101,21 @@ async function handleLibraryAction(e) {
     }
 }
 
+function updateSelectAllButtonState() {
+    const selectAllBtn = document.getElementById('select-all-sources-btn');
+    if (!selectAllBtn) return;
+
+    const allCheckboxes = sourceDetailTableBody.querySelectorAll('.source-checkbox');
+    if (allCheckboxes.length === 0) {
+        selectAllBtn.textContent = '全选';
+        selectAllBtn.disabled = true;
+        return;
+    }
+    const allChecked = Array.from(allCheckboxes).every(cb => cb.checked);
+    selectAllBtn.textContent = allChecked ? '取消全选' : '全选';
+    selectAllBtn.disabled = false;
+}
+
 async function showAnimeDetailView(animeId) {
     switchView('anime-detail-view');
     detailViewTitle.textContent = '加载中...';
@@ -125,6 +140,7 @@ async function showAnimeDetailView(animeId) {
         animeDetailView.dataset.animeId = anime.animeId; // Store for back button
 
         renderSourceDetailTable(sources, anime);
+        updateSelectAllButtonState(); // Initial state update
     } catch (error) {
         detailViewTitle.textContent = '加载详情失败';
         detailViewMeta.textContent = error.message || error;
@@ -136,6 +152,13 @@ function renderSourceDetailTable(sources, anime) {
     if (sources.length > 0) {
         sources.forEach(source => {
             const row = sourceDetailTableBody.insertRow();
+            row.style.cursor = 'pointer';
+            row.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
+                    const checkbox = row.querySelector('.source-checkbox');
+                    if (checkbox) checkbox.click();
+                }
+            });
             row.innerHTML = `
                 <td><input type="checkbox" class="source-checkbox" value="${source.source_id}"></td>
                 <td>${source.provider_name}</td>
@@ -155,6 +178,10 @@ function renderSourceDetailTable(sources, anime) {
     } else {
         sourceDetailTableBody.innerHTML = `<tr><td colspan="6">未关联任何数据源。</td></tr>`;
     }
+    // Add event listener for individual checkboxes to update the "Select All" button state
+    sourceDetailTableBody.querySelectorAll('.source-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateSelectAllButtonState);
+    });
 }
 
 async function handleSourceAction(e) {
@@ -203,6 +230,21 @@ async function handleSourceAction(e) {
     }
 }
 
+function updateEpisodeSelectAllButtonState() {
+    const selectAllBtn = document.getElementById('select-all-episodes-btn');
+    if (!selectAllBtn) return;
+
+    const allCheckboxes = episodeListView.querySelectorAll('.episode-checkbox');
+    if (allCheckboxes.length === 0) {
+        selectAllBtn.textContent = '全选';
+        selectAllBtn.disabled = true;
+        return;
+    }
+    const allChecked = Array.from(allCheckboxes).every(cb => cb.checked);
+    selectAllBtn.textContent = allChecked ? '取消全选' : '全选';
+    selectAllBtn.disabled = false;
+}
+
 async function showEpisodeListView(sourceId, animeTitle, animeId) {
     switchView('episode-list-view');
     episodeListView.innerHTML = '<div>加载中...</div>';
@@ -221,12 +263,14 @@ function renderEpisodeListView(sourceId, animeTitle, episodes, animeId) {
         <div class="episode-list-header">
             <h3>分集列表: ${animeTitle}</h3>
             <div class="header-actions">
+                <button id="select-all-episodes-btn" class="secondary-btn">全选</button>
+                <button id="delete-selected-episodes-btn" class="secondary-btn danger">批量删除选中</button>
                 <button id="reorder-episodes-btn" class="secondary-btn">重整集数</button>
                 <button id="back-to-detail-view-btn">&lt; 返回作品详情</button>
             </div>
         </div>
         <table id="episode-list-table">
-            <thead><tr><th>ID</th><th>剧集名</th><th>集数</th><th>弹幕数</th><th>采集时间</th><th>官方链接</th><th>剧集操作</th></tr></thead>
+            <thead><tr><th><input type="checkbox" class="hidden"></th><th>ID</th><th>剧集名</th><th>集数</th><th>弹幕数</th><th>采集时间</th><th>官方链接</th><th>剧集操作</th></tr></thead>
             <tbody></tbody>
         </table>
     `;
@@ -238,7 +282,15 @@ function renderEpisodeListView(sourceId, animeTitle, episodes, animeId) {
     if (episodes.length > 0) {
         episodes.forEach(ep => {
             const row = tableBody.insertRow();
+            row.style.cursor = 'pointer';
+            row.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A' && e.target.tagName !== 'INPUT') {
+                    const checkbox = row.querySelector('.episode-checkbox');
+                    if (checkbox) checkbox.click();
+                }
+            });
             row.innerHTML = `
+                <td><input type="checkbox" class="episode-checkbox" value="${ep.id}"></td>
                 <td>${ep.id}</td><td>${ep.title}</td><td>${ep.episode_index}</td><td>${ep.comment_count}</td>
                 <td>${ep.fetched_at ? new Date(ep.fetched_at).toLocaleString() : 'N/A'}</td>
                 <td>${ep.source_url ? `<a href="${ep.source_url}" target="_blank">跳转</a>` : '无'}</td>
@@ -253,12 +305,43 @@ function renderEpisodeListView(sourceId, animeTitle, episodes, animeId) {
             `;
         });
     } else {
-        tableBody.innerHTML = `<tr><td colspan="7">未找到任何分集数据。</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="8">未找到任何分集数据。</td></tr>`;
     }
 
+    updateEpisodeSelectAllButtonState();
+    tableBody.querySelectorAll('.episode-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateEpisodeSelectAllButtonState);
+    });
+    document.getElementById('select-all-episodes-btn').addEventListener('click', handleSelectAllEpisodes);
+    document.getElementById('delete-selected-episodes-btn').addEventListener('click', handleDeleteSelectedEpisodes);
     document.getElementById('reorder-episodes-btn').addEventListener('click', () => handleReorderEpisodes(sourceId, animeTitle));
     document.getElementById('back-to-detail-view-btn').addEventListener('click', () => showAnimeDetailView(animeId));
     tableBody.addEventListener('click', handleEpisodeAction);
+}
+
+function handleSelectAllEpisodes() {
+    const allCheckboxes = episodeListView.querySelectorAll('.episode-checkbox');
+    const shouldSelectAll = Array.from(allCheckboxes).some(cb => !cb.checked);
+    allCheckboxes.forEach(cb => {
+        cb.checked = shouldSelectAll;
+    });
+    updateEpisodeSelectAllButtonState();
+}
+
+async function handleDeleteSelectedEpisodes() {
+    const selectedCheckboxes = episodeListView.querySelectorAll('.episode-checkbox:checked');
+    if (selectedCheckboxes.length === 0) {
+        alert('请先选择要删除的分集。');
+        return;
+    }
+    if (!confirm(`您确定要删除选中的 ${selectedCheckboxes.length} 个分集吗？\n此操作将在后台提交一个批量删除任务。`)) return;
+
+    const episodeIds = Array.from(selectedCheckboxes).map(cb => parseInt(cb.value, 10));
+    try {
+        await apiFetch('/api/ui/library/episodes/delete-bulk', { method: 'POST', body: JSON.stringify({ episode_ids: episodeIds }) });
+        alert('批量删除任务已提交。');
+        document.querySelector('.nav-link[data-view="task-manager-view"]').click();
+    } catch (error) { alert(`提交批量删除任务失败: ${error.message}`); }
 }
 
 async function handleReorderEpisodes(sourceId, animeTitle) {
@@ -368,11 +451,13 @@ export function setupLibraryEventListeners() {
         }
     });
 
-    document.getElementById('select-all-sources-checkbox').addEventListener('click', (e) => {
-        const isChecked = e.target.checked;
+    document.getElementById('select-all-sources-btn').addEventListener('click', () => {
+        const allCheckboxes = sourceDetailTableBody.querySelectorAll('.source-checkbox');
+        const shouldSelectAll = Array.from(allCheckboxes).some(cb => !cb.checked);
         sourceDetailTableBody.querySelectorAll('.source-checkbox').forEach(cb => {
-            cb.checked = isChecked;
+            cb.checked = shouldSelectAll;
         });
+        updateSelectAllButtonState();
     });
 
     document.getElementById('delete-selected-sources-btn').addEventListener('click', async () => {

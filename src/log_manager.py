@@ -116,9 +116,9 @@ def setup_logging():
             # 使用 'w' 模式打开文件会直接截断它
             with open(scraper_log_file, 'w', encoding='utf-8') as f:
                 f.truncate(0)
-            logging.info(f"已清空旧的原始响应日志: {scraper_log_file}")
+            logging.info(f"已清空旧的搜索源响应日志: {scraper_log_file}")
         except IOError as e:
-            logging.error(f"清空原始响应日志失败: {e}")
+            logging.error(f"清空搜索源响应日志失败: {e}")
 
     scraper_logger = logging.getLogger("scraper_responses")
     scraper_logger.setLevel(logging.DEBUG) # 始终记录DEBUG级别的响应
@@ -133,7 +133,7 @@ def setup_logging():
         datefmt='%Y-%m-%d %H:%M:%S'
     ))
     scraper_logger.addHandler(scraper_handler)
-    logging.info("专用的爬虫响应日志已初始化，将输出到 %s", scraper_log_file)
+    logging.info("专用的搜索源响应日志已初始化，将输出到 %s", scraper_log_file)
 
 def get_logs() -> List[str]:
     """返回为API存储的所有日志条目列表。"""

@@ -30,6 +30,7 @@
 .episode-list-header .header-actions {
     display: flex;
     gap: 10px;
+    justify-content: flex-end; /* 右对齐 */
 }
 
 
@@ -49,7 +50,9 @@
 
 .bulk-actions-bar {
     display: flex;
-    justify-content: flex-end; /* 将按钮推到右边 */
+    justify-content: flex-start; /* 将按钮组推到左边 */
+    align-items: center;
+    gap: 10px; /* 按钮之间的间距 */
     margin-bottom: 10px;
 }
 
@@ -75,4 +78,9 @@
 
 .egid-detail-list .episode-item {
     padding: 5px 0;
+}
+
+#episode-list-table th:first-child,
+#episode-list-table td:first-child {
+    width: 1%;
 }

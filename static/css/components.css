@@ -116,6 +116,10 @@ button {
     color: white;
     font-size: 16px;
     cursor: pointer;
+    /* 增加浏览器前缀以提高兼容性，并防止意外的文本选择 */
+    -webkit-user-select: none; /* Safari */
+    -moz-user-select: none;    /* Firefox */
+    user-select: none;
     transition: background-color 0.3s;
 }
 
@@ -279,4 +283,89 @@ th {
 
 .modal-help-text a:hover {
     text-decoration: underline;
+}
+
+/* Bilibili Login Modal Styles */
+#bili-login-section {
+    margin-top: 20px;
+    padding-top: 15px;
+    padding-bottom: 15px; /* 增加底部间距，与顶部对称 */
+    text-align: center; /* 确保内部文本居中 */
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+#bili-user-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 5px;
+}
+
+#bili-user-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 2px solid var(--border-color);
+}
+
+#bili-user-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+#bili-user-vip-status.vip {
+    font-size: 0.8em;
+    font-weight: bold;
+    color: #fb7299; /* Bilibili Pink */
+    background-color: rgba(251, 114, 153, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-top: 4px;
+}
+
+#bili-login-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+#bili-qrcode-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px; /* 二维码和刷新按钮之间的间距 */
+}
+
+#bili-qrcode-container img,
+#bili-qrcode-container canvas {
+    width: 180px;
+    height: 180px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+#bili-login-status {
+    font-size: 0.9em;
+    color: #606266;
+    min-height: 1.2em;
+}
+
+#bili-login-status.success {
+    color: var(--success-color);
+    font-weight: bold;
+}
+
+#bili-login-status.error {
+    color: var(--error-color);
+}
+
+#bili-qrcode-container img.expired {
+    opacity: 0.3;
+    filter: grayscale(100%);
 }

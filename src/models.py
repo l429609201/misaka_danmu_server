@@ -135,6 +135,12 @@ class ScraperSetting(BaseModel):
     is_enabled: bool
     display_order: int
 
+class MetadataSourceSettingUpdate(BaseModel):
+    provider_name: str
+    is_enabled: bool
+    is_aux_search_enabled: bool
+    display_order: int
+
 
 # --- 媒体库（弹幕情况）模型 ---
 class LibraryAnimeInfo(BaseModel):

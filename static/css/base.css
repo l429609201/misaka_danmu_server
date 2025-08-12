@@ -16,6 +16,8 @@ body {
     padding: 20px;
     background-color: var(--secondary-color);
     color: var(--text-color);
+    /* 优化触摸屏交互，并解决浏览器兼容性警告 */
+    touch-action: manipulation;
     line-height: 1.6;
 }
 

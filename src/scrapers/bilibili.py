@@ -6,11 +6,12 @@ import hashlib
 import html
 import json
 from urllib.parse import urlencode
-from typing import Any, Callable, Dict, List, Optional, Union, ClassVar
+from typing import Any, Callable, Dict, List, Optional, Union
 from datetime import datetime
 from collections import defaultdict
 
 import aiomysql
+from .. import crud
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
@@ -18,6 +19,8 @@ from pydantic import BaseModel, Field, ValidationError
 # This block dynamically generates the Protobuf message classes required for Bilibili's danmaku API.
 # It's placed here to encapsulate the logic within the only scraper that uses it,
 # simplifying the project structure by removing the need for a separate dm_dynamic.py file.
+
+scraper_responses_logger = logging.getLogger("scraper_responses")
 from google.protobuf.descriptor_pb2 import FileDescriptorProto
 from google.protobuf.descriptor_pool import DescriptorPool
 from google.protobuf.message_factory import MessageFactory
@@ -112,6 +115,7 @@ class BiliEpisode(BaseModel):
     bvid: str
     title: str
     long_title: str
+    show_title: Optional[str] = None
 
 class BiliSeasonData(BaseModel):
     episodes: List[BiliEpisode]
@@ -150,21 +154,23 @@ class BuvidResponse(BaseModel):
 class BilibiliScraper(BaseScraper):
     provider_name = "bilibili"
 
-    # Regex to filter out non-main content like specials, trailers, etc.
-    # Based on user-provided rules.
-    _JUNK_TITLE_PATTERN: ClassVar[re.Pattern] = re.compile(
-        r'(\[|\【|\b)(NC)?(OP|ED|SP|OVA|OAD|CM|PV|MV|BDMenu|Menu|Bonus|Recap|Teaser|Trailer|Preview|特典|预告|广告|菜单|花絮|特辑|速看|资讯|彩蛋|直拍|直播回顾|片头|片尾|幕后|映像|CD|Disc|Scan|Sample|Logo|Info|EDPV|SongSpot|BDSpot)(\d{1,2})?(\s|_ALL)?(\]|\】|\b)',
+    # English keywords that often appear as standalone acronyms or words
+    _ENG_JUNK = r'NC|OP|ED|SP|OVA|OAD|CM|PV|MV|BDMenu|Menu|Bonus|Recap|Teaser|Trailer|Preview|CD|Disc|Scan|Sample|Logo|Info|EDPV|SongSpot|BDSpot'
+    # Chinese keywords that are often embedded in titles. Added '番外篇' from user feedback.
+    _CN_JUNK = r'特典|预告|广告|菜单|花絮|特辑|速看|资讯|彩蛋|直拍|直播回顾|片头|片尾|幕后|映像|番外篇'
+
+    # Regex to filter out non-main content.
+    # It's split into two parts:
+    # 1. English keywords that require word boundaries or brackets to avoid incorrect matches (e.g., 'SP' in 'speed').
+    # 2. Chinese keywords that can be embedded within other text.
+    _JUNK_TITLE_PATTERN = re.compile(
+        r'(\[|\【|\b)(' + _ENG_JUNK + r')(\d{1,2})?(\s|_ALL)?(\]|\】|\b)|(' + _CN_JUNK + r')',
         re.IGNORECASE
     )
 
     # For WBI signing
-    _WBI_MIXIN_KEY_CACHE: Dict[str, Any] = {
-        "key": None,
-        "timestamp": 0,
-    }
+    _WBI_MIXIN_KEY_CACHE: Dict[str, Any] = {"key": None, "timestamp": 0}
     _WBI_MIXIN_KEY_CACHE_TTL = 3600  # Cache for 1 hour
-
-    # From https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/misc/wbi.md
     _WBI_MIXIN_KEY_TABLE = [
         46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
         33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40,
@@ -182,10 +188,8 @@ class BilibiliScraper(BaseScraper):
             timeout=20.0,
             follow_redirects=True,
         )
-        # 为避免B站风控，增加速率限制
         self._api_lock = asyncio.Lock()
         self._last_request_time = 0
-        # B站API请求之间的最小间隔（秒）
         self._min_interval = 0.5
 
     async def _request_with_rate_limit(self, method: str, url: str, **kwargs) -> httpx.Response:
@@ -197,7 +201,7 @@ class BilibiliScraper(BaseScraper):
                 sleep_duration = self._min_interval - time_since_last
                 self.logger.debug(f"Bilibili: 速率限制，等待 {sleep_duration:.2f} 秒...")
                 await asyncio.sleep(sleep_duration)
-            
+
             response = await self.client.request(method, url, **kwargs)
             self._last_request_time = time.time()
             return response
@@ -205,62 +209,128 @@ class BilibiliScraper(BaseScraper):
     async def close(self):
         await self.client.aclose()
 
-    async def _ensure_session_cookie(self, force_refresh: bool = False):
+    async def _ensure_config_and_cookie(self, force_refresh: bool = False):
         """
-        确保客户端拥有有效的 buvid3 cookie，采用更健壮的两步获取策略。
-        :param force_refresh: 如果为 True，则无论 cookie 是否存在都强制刷新。
+        确保客户端的Cookie已从数据库加载，实现双模操作。
+        - 如果数据库中有Cookie（用户已登录），则加载并使用认证会话。
+        - 如果数据库中没有Cookie（用户未登录），则自动获取一个临时的、非认证的Cookie（buvid3）以执行公共API操作。
+        这确保了即使用户不登录，也能保留原有的基本功能。
         """
-        if not force_refresh and "buvid3" in self.client.cookies:
-            self.logger.debug("Bilibili: buvid3 cookie 已存在，跳过获取。")
-            return
-
-        if force_refresh:
-            self.logger.info("Bilibili: 强制刷新会话Cookie (buvid3)...")
-        else:
-            self.logger.debug("Bilibili: buvid3 cookie未找到，开始获取...")
-
-        # 步骤 1: 优先尝试访问首页，模拟真实浏览器行为以获取完整的会话cookie
-        try:
-            self.logger.debug("Bilibili: 正在尝试从首页 (www.bilibili.com) 获取 cookie...")
-            # 模仿C#代码，为首页请求构造更真实的浏览器头，以模拟直接导航
-            homepage_headers = {
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                "Sec-CH-UA": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-                "Sec-CH-UA-Mobile": "?0",
-                "Sec-CH-UA-Platform": '"Windows"',
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
-                "Upgrade-Insecure-Requests": "1",
-                "Referer": "" # 覆盖客户端默认的Referer，因为直接访问首页时不应有Referer
-            }
-            await self._request_with_rate_limit("GET", "https://www.bilibili.com/", headers=homepage_headers)
-            if "buvid3" in self.client.cookies:
-                self.logger.debug("Bilibili: 已成功从首页获取 buvid3 cookie。")
-                return
-        except Exception as e:
-            self.logger.warning(f"Bilibili: 从首页获取 cookie 失败，将使用 API 后备方案。错误: {e}")
-
-        # 步骤 2: 如果首页获取失败，则使用 /getbuvid API 作为后备，手动解析并设置 buvid3
-        try:
-            self.logger.info("Bilibili: 首页方法失败，正在使用 API 后备方案 (/getbuvid)...")
-            response = await self._request_with_rate_limit("GET", "https://api.bilibili.com/x/web-frontend/getbuvid")
-            response.raise_for_status()
+        if not hasattr(self, '_config_loaded') or self._config_loaded is False or force_refresh:
+            self.logger.debug("Bilibili: 正在从数据库加载Cookie...")
+            cookie_str = await crud.get_config_value(self.pool, "bilibili_cookie", "")
             
-            buvid_data = BuvidResponse.model_validate(response.json())
-            if buvid_data.code == 0 and buvid_data.data and buvid_data.data.buvid:
-                buvid_value = buvid_data.data.buvid
-                self.client.cookies.set("buvid3", buvid_value, domain=".bilibili.com")
-                self.logger.info(f"Bilibili: 已成功通过 API 后备方案获取并设置 buvid3: {buvid_value[:10]}...")
-            else:
-                self.logger.warning(f"Bilibili: API /getbuvid 返回异常或数据缺失: Code={buvid_data.code}")
-        except Exception as e:
-            self.logger.error(f"Bilibili: API 后备方案获取 cookie 同样失败: {e}", exc_info=True)
+            self.client.cookies.clear()
 
-    # --- WBI Signing Methods ---
+            if cookie_str:
+                # 模式1: 用户已登录。解析并设置从数据库加载的完整Cookie。
+                cookie_parts = [c.strip().split('=', 1) for c in cookie_str.split(';')]
+                for parts in cookie_parts:
+                    if len(parts) == 2:
+                        self.client.cookies.set(parts[0], parts[1], domain=".bilibili.com")
+                self.logger.info("Bilibili: 已成功从数据库加载Cookie。")
+            else:
+                self.logger.info("Bilibili: 数据库中未找到Cookie。")
+           
+            # 如果加载后仍然没有buvid3（例如，数据库为空或cookie不完整），则获取一个临时的
+            # 这是非登录模式的核心。
+            if "buvid3" not in self.client.cookies:
+                await self._get_temp_buvid3()
+
+            self._config_loaded = True
+
+    async def _get_temp_buvid3(self):
+        """
+        为未登录的操作获取一个临时的buvid3。
+        这是保留原有非登录模式功能的关键。
+        """
+        if "buvid3" in self.client.cookies:
+            return
+        try:
+            self.logger.debug("Bilibili: 正在尝试获取一个临时的buvid3...")
+            await self._request_with_rate_limit("GET", "https://www.bilibili.com/")
+            if "buvid3" in self.client.cookies:
+                self.logger.debug("Bilibili: 已成功获取临时的buvid3。")
+        except Exception as e:
+            self.logger.warning(f"Bilibili: 获取临时的buvid3失败: {e}")
+
+    async def get_login_info(self) -> Dict[str, Any]:
+        """获取当前登录状态。"""
+        await self._ensure_config_and_cookie()
+        nav_resp = await self._request_with_rate_limit("GET", "https://api.bilibili.com/x/web-interface/nav")
+        nav_resp.raise_for_status()
+        data = nav_resp.json().get("data", {})
+        if data.get("isLogin"):
+            vip_info = data.get("vip", {})
+            return {
+                "isLogin": True,
+                "uname": data.get("uname"),
+                "face": data.get("face"),
+                "level": data.get("level_info", {}).get("current_level"),
+                "vipStatus": vip_info.get("status"), # 0: 非会员, 1: 会员
+                "vipType": vip_info.get("type"), # 0:无, 1:月度, 2:年度
+                "vipDueDate": vip_info.get("due_date") # 毫秒时间戳
+            }
+        return {"isLogin": False}
+
+    async def generate_login_qrcode(self) -> Dict[str, str]:
+        """生成用于扫码登录的二维码信息。"""
+        url = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate"
+        response = await self._request_with_rate_limit("GET", url)
+        response.raise_for_status()
+        data = response.json().get("data", {})
+        if not data.get("qrcode_key") or not data.get("url"):
+            raise ValueError("未能从B站API获取有效的二维码信息。")
+        return {"qrcode_key": data["qrcode_key"], "url": data["url"]}
+
+    async def poll_login_status(self, qrcode_key: str) -> Dict[str, Any]:
+        """轮询扫码登录状态。"""
+        url = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll"
+        response = await self._request_with_rate_limit("GET", url, params={"qrcode_key": qrcode_key})
+        response.raise_for_status()
+        poll_data = response.json().get("data", {})
+
+        if poll_data.get("code") == 0:
+            self.logger.info("Bilibili: 扫码登录成功！")
+            required_cookies = ["SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "sid"]
+            all_cookies = []
+            for name, value in self.client.cookies.items():
+                if name in required_cookies or name.startswith("buvid"):
+                    all_cookies.append(f"{name}={value}")
+            
+            if "SESSDATA" in self.client.cookies:
+                cookie_string = "; ".join(all_cookies)
+                await crud.update_config_value(self.pool, "bilibili_cookie", cookie_string)
+                self.logger.info("Bilibili: 新的登录Cookie已保存到数据库。")
+                self._config_loaded = False
+            else:
+                self.logger.error("Bilibili: 登录轮询成功，但响应中未找到SESSDATA。")
+
+        return poll_data
+
+    async def execute_action(self, action_name: str, payload: Dict[str, Any]) -> Any:
+        """
+        执行Bilibili源的特定操作，如登录流程。
+        """
+        if action_name == "get_login_info":
+            return await self.get_login_info()
+        elif action_name == "generate_qrcode":
+            return await self.generate_login_qrcode()
+        elif action_name == "poll_login":
+            qrcode_key = payload.get("qrcode_key")
+            if not qrcode_key:
+                raise ValueError("轮询登录状态需要 'qrcode_key'。")
+            return await self.poll_login_status(qrcode_key)
+        elif action_name == "logout":
+            # 从数据库中清除cookie
+            await crud.update_config_value(self.pool, "bilibili_cookie", "")
+            self._config_loaded = False  # 强制下次请求时重新加载配置
+            return {"message": "注销成功"}
+        else:
+            return await super().execute_action(action_name, payload)
+
     async def _get_wbi_mixin_key(self) -> str:
+        """获取用于WBI签名的mixinKey，带缓存。"""
         now = int(time.time())
         if self._WBI_MIXIN_KEY_CACHE.get("key") and (now - self._WBI_MIXIN_KEY_CACHE.get("timestamp", 0) < self._WBI_MIXIN_KEY_CACHE_TTL):
             return self._WBI_MIXIN_KEY_CACHE["key"]
@@ -268,20 +338,18 @@ class BilibiliScraper(BaseScraper):
         self.logger.info("Bilibili: WBI mixin key expired or not found, fetching new one...")
 
         async def _fetch_key_data():
+            await self._ensure_config_and_cookie()
             nav_resp = await self._request_with_rate_limit("GET", "https://api.bilibili.com/x/web-interface/nav")
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Bilibili WBI Key Response: {nav_resp.text}")
             nav_resp.raise_for_status()
             return nav_resp.json().get("data", {})
 
         try:
             nav_data = await _fetch_key_data()
         except Exception as e:
-            self.logger.warning(f"Bilibili: 第一次获取WBI密钥失败，可能由于cookie无效。正在刷新cookie后重试。错误: {e}")
-            await self._ensure_session_cookie(force_refresh=True)
-            try:
-                nav_data = await _fetch_key_data()
-            except Exception as e2:
-                self.logger.error(f"Bilibili: 刷新cookie后获取WBI密钥仍然失败: {e2}", exc_info=True)
-                return "dba4a5925b345b4598b7452c75070bca" # Fallback
+            self.logger.error(f"Bilibili: 获取WBI密钥失败: {e}", exc_info=True)
+            return "dba4a5925b345b4598b7452c75070bca" # Fallback
 
         try:
             img_url = nav_data.get("wbi_img", {}).get("img_url", "")
@@ -298,29 +366,20 @@ class BilibiliScraper(BaseScraper):
             return mixin_key
         except Exception as e:
             self.logger.error(f"Bilibili: Failed to get WBI mixin key: {e}", exc_info=True)
-            # Fallback to a known old key if fetching fails, might work for a while
             return "dba4a5925b345b4598b7452c75070bca"
 
     def _get_wbi_signed_params(self, params: Dict[str, Any], mixin_key: str) -> Dict[str, Any]:
-        # Add timestamp
+        """对参数进行WBI签名。"""
         params['wts'] = int(time.time())
-        
-        # Sort params
         sorted_params = sorted(params.items())
-        
-        # Create query string
         query = urlencode(sorted_params, safe="!()*'")
-        
-        # Calculate signature
         signed_query = query + mixin_key
         w_rid = hashlib.md5(signed_query.encode('utf-8')).hexdigest()
-        
         params['w_rid'] = w_rid
         return params
 
     async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
         self.logger.info(f"Bilibili: 正在搜索 '{keyword}'...")
-        # 修正：缓存键必须包含分集信息，以区分对同一标题的不同分集搜索
         cache_key_suffix = f"_s{episode_info['season']}e{episode_info['episode']}" if episode_info else ""
         cache_key = f"search_{self.provider_name}_{keyword}{cache_key_suffix}"
         cached_results = await self._get_from_cache(cache_key)
@@ -329,13 +388,10 @@ class BilibiliScraper(BaseScraper):
             return [models.ProviderSearchInfo.model_validate(r) for r in cached_results]
 
         self.logger.debug(f"Bilibili: 缓存未命中，正在从网络获取...")
-        await self._ensure_session_cookie()
+        await self._ensure_config_and_cookie()
 
-        # We will search for both 'media_bangumi' (番剧) and 'media_ft' (影视) types
         search_types = ["media_bangumi", "media_ft"]
         tasks = [self._search_by_type(keyword, search_type, episode_info) for search_type in search_types]
-        
-        # asyncio.gather will run the searches concurrently
         results_from_all_types = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_results = []
@@ -345,13 +401,7 @@ class BilibiliScraper(BaseScraper):
             elif res:
                 all_results.extend(res)
         
-        # Deduplicate results based on mediaId
-        final_results = []
-        seen_media_ids = set()
-        for item in all_results:
-            if item.mediaId not in seen_media_ids:
-                final_results.append(item)
-                seen_media_ids.add(item.mediaId)
+        final_results = list({item.mediaId: item for item in all_results}.values())
 
         self.logger.info(f"Bilibili: 搜索 '{keyword}' 完成，找到 {len(final_results)} 个有效结果。")
         if final_results:
@@ -373,63 +423,42 @@ class BilibiliScraper(BaseScraper):
         results = []
         try:
             response = await self._request_with_rate_limit("GET", url)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Bilibili Search Response (type='{search_type}', keyword='{keyword}'): {response.text}")
             response.raise_for_status()
             
-            response_json = response.json()
-            api_result = BiliApiResult.model_validate(response_json)
+            api_result = BiliApiResult.model_validate(response.json())
 
             if api_result.code == 0 and api_result.data and api_result.data.result:
                 self.logger.info(f"Bilibili: API call for type '{search_type}' successful, found {len(api_result.data.result)} items.")
                 for item in api_result.data.result:
-                    # Filter out junk results based on title
                     if self._JUNK_TITLE_PATTERN.search(item.title):
                         self.logger.debug(f"Bilibili: Filtering out junk title: '{item.title}'")
                         continue
 
-                    media_id = ""
-                    media_type = "tv_series"
-                    
-                    if item.season_id:
-                        media_id = f"ss{item.season_id}"
-                        if item.season_type_name == "电影":
-                            media_type = "movie"
-                    elif item.bvid:
-                        media_id = f"bv{item.bvid}"
-                    
+                    media_id = f"ss{item.season_id}" if item.season_id else f"bv{item.bvid}" if item.bvid else ""
                     if not media_id: continue
 
+                    media_type = "movie" if item.season_type_name == "电影" else "tv_series"
+                    
                     year = None
                     try:
                         if item.pubdate:
-                            if isinstance(item.pubdate, int):
-                                year = datetime.fromtimestamp(item.pubdate).year
-                            elif isinstance(item.pubdate, str) and len(item.pubdate) >= 4:
-                                year = int(item.pubdate[:4])
-                        elif item.pubtime:
-                            year = datetime.fromtimestamp(item.pubtime).year
-                    except (ValueError, TypeError, OSError):
-                        pass
+                            if isinstance(item.pubdate, int): year = datetime.fromtimestamp(item.pubdate).year
+                            elif isinstance(item.pubdate, str) and len(item.pubdate) >= 4: year = int(item.pubdate[:4])
+                        elif item.pubtime: year = datetime.fromtimestamp(item.pubtime).year
+                    except (ValueError, TypeError, OSError): pass
 
-                    # 修正：先进行HTML解码，以处理 &lt;em&gt; 这样的实体编码
                     unescaped_title = html.unescape(item.title)
                     cleaned_title = re.sub(r'<[^>]+>', '', unescaped_title).replace(":", "：")
                     
-                    provider_search_info = models.ProviderSearchInfo(
-                        provider=self.provider_name,
-                        mediaId=media_id,
-                        title=cleaned_title,
-                        type=media_type,
-                        season=get_season_from_title(cleaned_title),
-                        year=year,
-                        imageUrl=item.cover,
-                        episodeCount=item.ep_size,
+                    results.append(models.ProviderSearchInfo(
+                        provider=self.provider_name, mediaId=media_id, title=cleaned_title,
+                        type=media_type, season=get_season_from_title(cleaned_title),
+                        year=year, imageUrl=item.cover, episodeCount=item.ep_size,
                         currentEpisodeIndex=episode_info.get("episode") if episode_info else None
-                    )
-                    self.logger.debug(f"Bilibili: 创建的 ProviderSearchInfo: {provider_search_info.model_dump_json(indent=2)}")
-                    results.append(provider_search_info)
+                    ))
             else:
-                # 修正：将日志级别从 WARNING 改为 INFO，因为这不是一个真正的错误，
-                # 只是B站API表示“无结果”的一种方式。
                 self.logger.info(f"Bilibili: API for type '{search_type}' returned no results. (Code: {api_result.code}, Message: '{api_result.message}')")
         except Exception as e:
             self.logger.error(f"Bilibili: Search for type '{search_type}' failed: {e}", exc_info=True)
@@ -447,23 +476,31 @@ class BilibiliScraper(BaseScraper):
         season_id = media_id[2:]
         url = f"https://api.bilibili.com/pgc/view/web/ep/list?season_id={season_id}"
         try:
-            await self._ensure_session_cookie()
+            await self._ensure_config_and_cookie()
             response = await self._request_with_rate_limit("GET", url)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Bilibili PGC Episodes Response (media_id={media_id}): {response.text}")
             response.raise_for_status()
             data = BiliSeasonResult.model_validate(response.json())
             if data.code == 0 and data.result and data.result.episodes:
+                # 新增：过滤掉非正片内容，如PV、SP、预告等
+                filtered_episodes = []
+                for ep in data.result.episodes:
+                    # 优先检查更具体的 show_title，然后检查 long_title
+                    title_to_check = ep.show_title or ep.long_title
+                    if self._JUNK_TITLE_PATTERN.search(title_to_check):
+                        self.logger.debug(f"Bilibili: 过滤掉PGC分集: '{title_to_check}'")
+                        continue
+                    filtered_episodes.append(ep)
+
                 episodes = [
                     models.ProviderEpisodeInfo(
-                        provider=self.provider_name,
-                        episodeId=f"{ep.aid},{ep.cid}",
-                        title=ep.long_title or ep.title,
-                        episodeIndex=i + 1,
+                        provider=self.provider_name, episodeId=f"{ep.aid},{ep.cid}",
+                        title=ep.long_title or ep.title, episodeIndex=i + 1,
                         url=f"https://www.bilibili.com/bangumi/play/ep{ep.id}"
-                    ) for i, ep in enumerate(data.result.episodes)
+                    ) for i, ep in enumerate(filtered_episodes)
                 ]
-                if target_episode_index:
-                    return [ep for ep in episodes if ep.episodeIndex == target_episode_index]
-                return episodes
+                return [ep for ep in episodes if ep.episodeIndex == target_episode_index] if target_episode_index else episodes
         except Exception as e:
             self.logger.error(f"Bilibili: 获取PGC分集列表失败 (media_id={media_id}): {e}", exc_info=True)
         return []
@@ -472,82 +509,62 @@ class BilibiliScraper(BaseScraper):
         bvid = media_id[2:]
         url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
         try:
-            await self._ensure_session_cookie()
+            await self._ensure_config_and_cookie()
             response = await self._request_with_rate_limit("GET", url)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Bilibili UGC Episodes Response (media_id={media_id}): {response.text}")
             response.raise_for_status()
             data = BiliVideoViewResult.model_validate(response.json())
             if data.code == 0 and data.data and data.data.pages:
-                aid = data.data.aid
                 episodes = [
                     models.ProviderEpisodeInfo(
-                        provider=self.provider_name,
-                        episodeId=f"{aid},{p.cid}",
-                        title=p.part,
-                        episodeIndex=p.page,
+                        provider=self.provider_name, episodeId=f"{data.data.aid},{p.cid}",
+                        title=p.part, episodeIndex=p.page,
                         url=f"https://www.bilibili.com/video/{bvid}?p={p.page}"
                     ) for p in data.data.pages
                 ]
-                if target_episode_index:
-                    return [ep for ep in episodes if ep.episodeIndex == target_episode_index]
-                return episodes
+                return [ep for ep in episodes if ep.episodeIndex == target_episode_index] if target_episode_index else episodes
         except Exception as e:
             self.logger.error(f"Bilibili: 获取UGC分集列表失败 (media_id={media_id}): {e}", exc_info=True)
         return []
 
     async def _get_danmaku_pools(self, aid: int, cid: int) -> List[int]:
         """获取一个视频的所有弹幕池ID (CID)，包括主弹幕和字幕弹幕。"""
-        all_cids = [cid]  # Start with the main CID
+        all_cids = {cid}
         try:
-            # The /x/player/v2 endpoint provides subtitle information
             url = f"https://api.bilibili.com/x/player/v2?aid={aid}&cid={cid}"
             response = await self._request_with_rate_limit("GET", url)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Bilibili Danmaku Pools Response (aid={aid}, cid={cid}): {response.text}")
             response.raise_for_status()
             data = response.json()
-
             if data.get("code") == 0 and data.get("data"):
-                subtitles = data.get("data", {}).get("subtitle", {}).get("list", [])
-                for sub in subtitles:
-                    if sub.get("id"):  # 'id' here is the CID for the subtitle track
-                        all_cids.append(sub['id'])
-                self.logger.info(f"Bilibili: 为 aid={aid}, cid={cid} 找到 {len(all_cids)} 个弹幕池 (包括字幕)。")
+                for sub in data.get("data", {}).get("subtitle", {}).get("list", []):
+                    if sub.get("id"): all_cids.add(sub['id'])
+            self.logger.info(f"Bilibili: 为 aid={aid}, cid={cid} 找到 {len(all_cids)} 个弹幕池 (包括字幕)。")
         except Exception as e:
             self.logger.warning(f"Bilibili: 获取额外弹幕池失败 (aid={aid}, cid={cid}): {e}", exc_info=False)
-
-        return list(dict.fromkeys(all_cids))  # Return unique CIDs
+        return list(all_cids)
 
     async def _fetch_comments_for_cid(self, aid: int, cid: int, progress_callback: Optional[Callable] = None) -> List[DanmakuElem]:
         """为单个CID获取所有弹幕分段。"""
         all_comments = []
-        segment_index = 1
-        while True:
+        for segment_index in range(1, 100): # Limit to 100 segments to prevent infinite loops
             try:
                 if progress_callback:
                     await progress_callback(min(95, segment_index * 10), f"获取弹幕池 {cid} 的分段 {segment_index}")
 
                 url = f"https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid={cid}&pid={aid}&segment_index={segment_index}"
                 response = await self._request_with_rate_limit("GET", url)
-
-                if response.status_code == 304:
-                    break
+                if response.status_code == 304 or not response.content: break
                 response.raise_for_status()
-                if not response.content:
-                    break
 
                 danmu_reply = DmSegMobileReply()
-                # 修正：使用 asyncio.to_thread 在单独的线程中运行可能阻塞的CPU密集型操作，
-                # 避免 Protobuf 解析大数据时阻塞事件循环。
-                # 这是解决任务卡在“运行中”状态的关键。
                 await asyncio.to_thread(danmu_reply.ParseFromString, response.content)
-
-                if not danmu_reply.elems:
-                    break
-
+                if not danmu_reply.elems: break
                 all_comments.extend(danmu_reply.elems)
-                segment_index += 1
-
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 404:
-                    break
+                if e.response.status_code == 404: break
                 self.logger.error(f"Bilibili: 获取弹幕分段失败 (cid={cid}, segment={segment_index}): {e}", exc_info=True)
                 break
             except Exception as e:
@@ -563,7 +580,7 @@ class BilibiliScraper(BaseScraper):
             self.logger.error(f"Bilibili: 无效的 episode_id 格式: '{episode_id}'")
             return []
 
-        await self._ensure_session_cookie()
+        await self._ensure_config_and_cookie()
 
         if progress_callback: await progress_callback(0, "正在获取弹幕池列表...")
         all_cids = await self._get_danmaku_pools(aid, main_cid)
@@ -578,51 +595,37 @@ class BilibiliScraper(BaseScraper):
                     base_progress = (i / total_cids) * 100
                     progress_range = (1 / total_cids) * 100
                     current_total_progress = base_progress + (danmaku_progress / 100) * progress_range
-                    # 修正：使用位置参数调用，以匹配 generic_import_task 中回调的签名
                     await progress_callback(current_total_progress, f"池 {i + 1}/{total_cids}: {danmaku_description}")
 
             comments_for_cid = await self._fetch_comments_for_cid(aid, cid, sub_progress_callback)
             all_comments.extend(comments_for_cid)
 
-        if progress_callback:
-            await progress_callback(100, "弹幕整合完成")
+        if progress_callback: await progress_callback(100, "弹幕整合完成")
 
-        unique_comments = {c.id: c for c in all_comments}.values()
+        unique_comments = list({c.id: c for c in all_comments}.values())
         self.logger.info(f"Bilibili: 为 episode_id='{episode_id}' 获取了 {len(unique_comments)} 条唯一弹幕。")
-        return self._format_comments(list(unique_comments))
+        return self._format_comments(unique_comments)
 
     def _format_comments(self, comments: List[DanmakuElem]) -> List[dict]:
-        if not comments:
-            return []
+        """格式化弹幕，并处理重复内容。"""
+        if not comments: return []
 
-        # 1. 按内容对弹幕进行分组，以识别重复弹幕
         grouped_by_content: Dict[str, List[DanmakuElem]] = defaultdict(list)
         for c in comments:
             grouped_by_content[c.content].append(c)
 
-        # 2. 处理重复项
         processed_comments: List[DanmakuElem] = []
         for content, group in grouped_by_content.items():
             if len(group) == 1:
-                # 如果弹幕不重复，直接添加
                 processed_comments.append(group[0])
             else:
-                # 如果有重复，找到时间最早的那条
                 first_comment = min(group, key=lambda x: x.progress)
-                # 在其内容后附加重复次数
                 first_comment.content = f"{first_comment.content} X{len(group)}"
-                # 只将这条修改后的弹幕添加到最终列表
                 processed_comments.append(first_comment)
 
-        # 3. 格式化处理后的弹幕列表
         formatted = []
         for c in processed_comments:
             timestamp = c.progress / 1000.0
             p_string = f"{timestamp:.3f},{c.mode},{c.color},[{self.provider_name}]"
-            formatted.append({
-                "cid": str(c.id),
-                "p": p_string,
-                "m": c.content,
-                "t": round(timestamp, 2)
-            })
+            formatted.append({"cid": str(c.id), "p": p_string, "m": c.content, "t": round(timestamp, 2)})
         return formatted

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 from .. import models
 from .base import BaseScraper, get_season_from_title
 
-# --- Pydantic Models for iQiyi API ---
+# --- Pydantic Models for iQiyi API (部分模型现在仅用于旧缓存兼容或作为新API响应的子集) ---
 
 class IqiyiVideoLibMeta(BaseModel):
     douban_id: Optional[int] = Field(None, alias="douban_id")
@@ -66,15 +66,18 @@ class IqiyiSearchResult(BaseModel):
 class IqiyiHtmlAlbumInfo(BaseModel):
     video_count: Optional[int] = Field(None, alias="videoCount")
 
+# 修正：此模型现在用于解析新的 baseinfo API 响应
 class IqiyiHtmlVideoInfo(BaseModel):
-    album_id: int = Field(alias="albumQipuId")
+    album_id: int = Field(alias="albumId")
     tv_id: Optional[int] = Field(None, alias="tvId")
     video_id: Optional[int] = Field(None, alias="videoId")
-    video_name: str = Field(alias="videoName")
-    video_url: str = Field(alias="videoUrl")
-    channel_name: str = Field(alias="channelName")
-    duration: int
-    video_count: int = 0
+    # 修正：新API返回的字段名不同
+    video_name: str = Field(alias="name")
+    video_url: str = Field(alias="playUrl")
+    channel_name: Optional[str] = Field(None, alias="channelName")
+    duration: int = Field(alias="durationSec")
+    # video_count 不再从此模型获取，但保留字段以兼容旧缓存
+    video_count: int = 0 
 
     @model_validator(mode='after')
     def merge_ids(self) -> 'IqiyiHtmlVideoInfo':
@@ -177,11 +180,11 @@ class IqiyiScraper(BaseScraper):
                 if not link_id:
                     continue
 
-                channel_name = album.channel.split(',')[0]
+                channel_name = album.channel.split(',')[0] if album.channel else ""
                 media_type = "movie" if channel_name == "电影" else "tv_series"
 
                 current_episode = episode_info.get("episode") if episode_info else None
-                cleaned_title = re.sub(r'<[^>]+>', '', album.album_title).replace(":", "：")
+                cleaned_title = re.sub(r'<[^>]+>', '', album.album_title).replace(":", "：") if album.album_title else "未知标题"
                 provider_search_info = models.ProviderSearchInfo(
                     provider=self.provider_name,
                     mediaId=link_id,
@@ -208,7 +211,27 @@ class IqiyiScraper(BaseScraper):
         await self._set_to_cache(cache_key, results_to_cache, 'search_ttl_seconds', 300)
         return results
 
+    async def _get_tvid_from_link_id(self, link_id: str) -> Optional[str]:
+        """
+        新增：使用官方API将视频链接ID解码为tvid。
+        这比解析HTML更可靠。
+        """
+        api_url = f"https://pcw-api.iq.com/api/decode/{link_id}?platformId=3&modeCode=intl&langCode=sg"
+        try:
+            response = await self.client.get(api_url)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("code") in ["A00000", "0"] and data.get("data"):
+                return str(data["data"])
+            else:
+                self.logger.warning(f"爱奇艺: decode API 未成功返回 tvid (link_id: {link_id})。响应: {data}")
+                return None
+        except Exception as e:
+            self.logger.error(f"爱奇艺: 调用 decode API 失败 (link_id: {link_id}): {e}", exc_info=True)
+            return None
+
     async def _get_video_base_info(self, link_id: str) -> Optional[IqiyiHtmlVideoInfo]:
+        # 修正：缓存键必须包含分集信息，以区分对同一标题的不同分集搜索
         cache_key = f"base_info_{link_id}"
         cached_info = await self._get_from_cache(cache_key)
         if cached_info is not None:
@@ -219,60 +242,32 @@ class IqiyiScraper(BaseScraper):
                 self.logger.error(f"爱奇艺: 缓存的基础信息 (link_id={link_id}) 验证失败。这可能是一个陈旧或损坏的缓存。")
                 self.logger.error(f"导致验证失败的数据: {cached_info}")
                 self.logger.error(f"Pydantic 验证错误: {e}")
-                # 返回None，让上层调用者知道信息获取失败，而不是让任务崩溃
                 return None
 
-        url = f"https://m.iqiyi.com/v_{link_id}.html"
-        # 模仿 C# 代码中的 LimitRequestFrequently
-        await asyncio.sleep(1)
+        # 重构：使用新的API调用方式
+        tvid = await self._get_tvid_from_link_id(link_id)
+        if not tvid:
+            return None
+
+        url = f"https://pcw-api.iqiyi.com/video/video/baseinfo/{tvid}"
         try:
-            response = await self.client.get(url, headers={"User-Agent": self.mobile_user_agent})
+            response = await self.client.get(url)
             response.raise_for_status()
-            html = response.text
-
-            video_match = self.reg_video_info.search(html)
-
-            if not video_match:
-                self.logger.warning(f"爱奇艺: 在 link_id {link_id} 的HTML中找不到 videoInfo JSON")
+            data = response.json()
+            if data.get("code") != "A00000" or not data.get("data"):
+                self.logger.warning(f"爱奇艺: baseinfo API 未成功返回数据 (tvid: {tvid})。响应: {data}")
                 return None
-
-            video_info = IqiyiHtmlVideoInfo.model_validate(json.loads(video_match.group(1)))
             
-            # 使用更健壮的方法解析 albumInfo，而不是依赖于脆弱的正则表达式
-            album_info_start_str = '"albumInfo":'
-            album_info_start_index = html.find(album_info_start_str)
-            if album_info_start_index != -1:
-                json_str = None
-                try:
-                    # 找到 "albumInfo": 后面的第一个 '{'
-                    brace_start_index = html.find('{', album_info_start_index + len(album_info_start_str))
-                    if brace_start_index != -1:
-                        brace_count = 1
-                        i = brace_start_index + 1
-                        # 通过计算括号对来找到完整的JSON对象
-                        while i < len(html) and brace_count > 0:
-                            if html[i] == '{': brace_count += 1
-                            elif html[i] == '}': brace_count -= 1
-                            i += 1
-                        
-                        if brace_count == 0:
-                            json_str = html[brace_start_index:i]
-                            album_info_data = json.loads(json_str)
-                            album_info = IqiyiHtmlAlbumInfo.model_validate(album_info_data) # 即使是 {} 也能验证通过
-                            if album_info.video_count is not None:
-                                video_info.video_count = album_info.video_count
-                except (json.JSONDecodeError, ValidationError) as e:
-                    log_str = json_str[:200] if json_str else "N/A"
-                    self.logger.error(f"爱奇艺: 解析或验证 albumInfo 失败: {e}. 提取的字符串(前200字符): {log_str}")
+            video_info = IqiyiHtmlVideoInfo.model_validate(data["data"])
 
             info_to_cache = video_info.model_dump()
             await self._set_to_cache(cache_key, info_to_cache, 'base_info_ttl_seconds', 1800)
             return video_info
         except Exception as e:
-            self.logger.error(f"爱奇艺: 获取 link_id {link_id} 的基础信息失败: {e}", exc_info=True)
+            self.logger.error(f"爱奇艺: 获取或解析 baseinfo 失败 (tvid: {tvid}): {e}", exc_info=True)
             return None
 
-    async def _get_tv_episodes(self, album_id: int, size: int) -> List[IqiyiEpisodeInfo]:
+    async def _get_tv_episodes(self, album_id: int, size: int = 500) -> List[IqiyiEpisodeInfo]:
         # 这个函数被 get_episodes 调用，缓存应该在 get_episodes 层面处理
         url = f"https://pcw-api.iqiyi.com/albums/album/avlistinfo?aid={album_id}&page=1&size={size}"
         try:
@@ -308,10 +303,8 @@ class IqiyiScraper(BaseScraper):
             is_movie_mode = False
             self.logger.info(f"爱奇艺: 根据数据库类型 'tv_series'，强制使用剧集模式 (media_id={media_id})")
         else:  # db_media_type is None, fall back to scraping logic
-            is_movie_mode = (
-                base_info.video_count == 1 or
-                (base_info.channel_name is not None and base_info.channel_name.strip() == "电影")
-            )
+            # 修正：新API不一定有video_count，主要依赖channelName
+            is_movie_mode = base_info.channel_name is not None and base_info.channel_name.strip() == "电影"
 
         if is_movie_mode:
             # 单集（电影）处理逻辑
@@ -324,7 +317,7 @@ class IqiyiScraper(BaseScraper):
             episodes.append(IqiyiEpisodeInfo.model_validate(episode_data))
         else:
             # 多集（电视剧/动漫）处理逻辑
-            episodes = await self._get_tv_episodes(base_info.album_id, base_info.video_count)
+            episodes = await self._get_tv_episodes(base_info.album_id)
 
             if target_episode_index:
                 target_episode_from_list = next((ep for ep in episodes if ep.order == target_episode_index), None)

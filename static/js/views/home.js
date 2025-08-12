@@ -2,7 +2,7 @@ import { apiFetch } from '../api.js';
 import { toggleLoader, switchView } from '../ui.js';
 
 let logRefreshInterval = null;
-let originalSearchResults = [];
+let currentSearchData = { results: [], searchSeason: null, keyword: '' };
 let itemsForBulkImport = [];
 
 const typeMap = {
@@ -10,6 +10,36 @@ const typeMap = {
     'movie': '电影/剧场版'
 };
 
+/**
+ * A lightweight keyword parser for frontend caching logic.
+ * It's not as robust as the backend's but covers common cases.
+ * @param {string} keyword The search keyword.
+ * @returns {{title: string, season: number|null, episode: number|null}}
+ */
+function parseSearchKeyword(keyword) {
+    keyword = keyword.trim();
+
+    // Pattern for SXXEXX
+    let match = keyword.match(/^(.*?)\s*S(\d{1,2})E(\d{1,4})$/i);
+    if (match) {
+        return { title: match[1].trim(), season: parseInt(match[2], 10), episode: parseInt(match[3], 10) };
+    }
+
+    // Pattern for Season XX or SXX
+    match = keyword.match(/^(.*?)\s*(?:S|Season)\s*(\d{1,2})$/i);
+    if (match) {
+        return { title: match[1].trim(), season: parseInt(match[2], 10), episode: null };
+    }
+    
+    const chineseNumMap = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10};
+    match = keyword.match(/^(.*?)\s*第\s*([一二三四五六七八九十\d]+)\s*[季部]$/i);
+    if (match) {
+        const numStr = match[2];
+        const season = chineseNumMap[numStr] || parseInt(numStr, 10);
+        if (!isNaN(season)) return { title: match[1].trim(), season: season, episode: null };
+    }
+    return { title: keyword, season: null, episode: null };
+}
 function setupEventListeners() {
     // Home View
     document.getElementById('search-form').addEventListener('submit', handleSearch);
@@ -80,6 +110,23 @@ function setupEventListeners() {
         document.getElementById('final-import-tmdb-id').value = e.detail.id || '';
         switchView('bulk-import-view'); // Switch back to the bulk import view
     });
+
+    // 新增：监听视图切换事件，以便在返回主页时恢复上一次的搜索结果
+    document.addEventListener('viewchange', (e) => {
+        if (e.detail.viewId === 'home-view') {
+            const lastResultsJSON = sessionStorage.getItem('lastSearchResults');
+            if (lastResultsJSON) {
+                try {
+                    const lastData = JSON.parse(lastResultsJSON);
+                    // 恢复上次的搜索结果和关键词
+                    displayResults(lastData.results || [], lastData.search_season, lastData.keyword || '');
+                } catch (err) {
+                    console.error("从 sessionStorage 解析上次搜索结果失败", err);
+                    sessionStorage.removeItem('lastSearchResults');
+                }
+            }
+        }
+    });
 }
 
 function handleBulkImportModeChange(e) {
@@ -127,18 +174,41 @@ async function handleSearch(e) {
         return;
     }
 
-    // 修正：移除了根据复选框状态自动拼接搜索关键词的逻辑。
-    // 现在，搜索将严格按照搜索框中的文本执行。
-    // “电视节目精确搜索”复选框和输入框现在仅作为“插入”按钮的辅助工具，让用户可以显式地构建搜索字符串。
+    // --- 新增：前端缓存逻辑 ---
+    const { title: newTitle, season: newSeason, episode: newEpisode } = parseSearchKeyword(keyword);
+    const { title: lastTitle, season: lastSeason, episode: lastEpisode } = parseSearchKeyword(currentSearchData.keyword);
+
+    // 如果上次是通用搜索，而这次是针对同一标题的特定分集搜索，则使用缓存
+    if (currentSearchData.results.length > 0 && newTitle === lastTitle && newEpisode !== null && lastEpisode === null) {
+        console.log("前端缓存命中：正在使用上次的搜索结果。");
+        toggleLoader(true);
+
+        const updatedResults = JSON.parse(JSON.stringify(currentSearchData.results));
+        updatedResults.forEach(item => {
+            item.currentEpisodeIndex = newEpisode;
+        });
+
+        const seasonForDisplay = newSeason || lastSeason || 1;
+        
+        // 更新 sessionStorage 和当前状态
+        sessionStorage.setItem('lastSearchResults', JSON.stringify({ results: updatedResults, search_season: seasonForDisplay, keyword: keyword }));
+        displayResults(updatedResults, seasonForDisplay, keyword);
+        
+        toggleLoader(false);
+        return; // 避免网络请求
+    }
+    // --- 缓存逻辑结束 ---
 
     document.getElementById('results-list').innerHTML = '';
     toggleLoader(true);
 
     try {
         const data = await apiFetch(`/api/ui/search/provider?keyword=${encodeURIComponent(keyword)}`);
+        // 新增：将搜索结果和关键词一同存入 sessionStorage
+        sessionStorage.setItem('lastSearchResults', JSON.stringify({ ...data, keyword }));
         const processedResults = data.results || [];
         const searchSeason = data.search_season;
-        displayResults(processedResults, searchSeason);
+        displayResults(processedResults, searchSeason, keyword);
     } catch (error) {
         alert(`搜索失败: ${(error.message || error)}`);
     } finally {
@@ -172,7 +242,7 @@ function romanToInt(s) {
     return result;
 }
 
-function displayResults(results, searchSeason) {
+function displayResults(results, searchSeason, keyword) {
     // 智能排序：首先按基础标题分组，然后在组内按季度升序排列
     results.sort((a, b) => {
         const baseTitleA = getBaseTitle(a.title);
@@ -184,7 +254,8 @@ function displayResults(results, searchSeason) {
         return a.season - b.season;
     });
 
-    originalSearchResults = { results, searchSeason };
+    // 更新当前搜索状态
+    currentSearchData = { results, searchSeason, keyword };
 
     const resultsFilterControls = document.getElementById('results-filter-controls');
     resultsFilterControls.classList.toggle('hidden', results.length === 0);
@@ -202,12 +273,12 @@ function displayResults(results, searchSeason) {
 }
 
 function applyFiltersAndRender() {
-    if (!originalSearchResults || !originalSearchResults.results) return;
-    const searchSeason = originalSearchResults.searchSeason;
+    if (!currentSearchData || !currentSearchData.results) return;
+    const searchSeason = currentSearchData.searchSeason;
     const activeTypes = new Set();
     if (document.getElementById('filter-btn-movie').classList.contains('active')) activeTypes.add('movie');
     if (document.getElementById('filter-btn-tv_series').classList.contains('active')) activeTypes.add('tv_series');
-    let filteredResults = originalSearchResults.results.filter(item => activeTypes.has(item.type));
+    let filteredResults = currentSearchData.results.filter(item => activeTypes.has(item.type));
     const filterText = document.getElementById('results-filter-input').value.toLowerCase();
     if (filterText) {
         filteredResults = filteredResults.filter(item => item.title.toLowerCase().includes(filterText));
@@ -356,7 +427,7 @@ async function handleBulkImport() {
     }
 
     const selectedMediaIds = new Set(Array.from(selectedCheckboxes).map(cb => cb.value));
-    itemsForBulkImport = originalSearchResults.results.filter(item => selectedMediaIds.has(item.mediaId));
+    itemsForBulkImport = currentSearchData.results.filter(item => selectedMediaIds.has(item.mediaId));
 
     // Always show the bulk import view
     _showBulkImportView(itemsForBulkImport);

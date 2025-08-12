@@ -82,11 +82,17 @@ async def create_initial_admin_user(app: FastAPI):
     user_to_create = models.UserCreate(username=admin_user, password=admin_pass)
     await crud.create_user(pool, user_to_create)
 
-    # 打印凭据信息，方便用户查看日志
+    # 打印凭据信息。
+    # 注意：，
+    # 以确保敏感的初始密码只输出到控制台，而不会被写入到持久化的日志文件中，从而提高安全性。     
     logger.info("\n" + "="*60)
     logger.info(f"=== 初始管理员账户已创建 (用户: {admin_user}) ".ljust(56) + "===")
     logger.info(f"=== 请使用以下随机生成的密码登录: {admin_pass} ".ljust(56) + "===")
     logger.info("="*60 + "\n")
+    print("\n" + "="*60)
+    print(f"=== 初始管理员账户已创建 (用户: {admin_user}) ".ljust(56) + "===")
+    print(f"=== 请使用以下随机生成的密码登录: {admin_pass} ".ljust(56) + "===")
+    print("="*60 + "\n")
 
 async def init_db_tables(app: FastAPI):
     """初始化数据库和表"""
@@ -136,6 +142,7 @@ async def init_db_tables(app: FastAPI):
                 "tmdb_episode_mapping": """CREATE TABLE `tmdb_episode_mapping` (`id` BIGINT NOT NULL AUTO_INCREMENT, `tmdb_tv_id` INT NOT NULL, `tmdb_episode_group_id` VARCHAR(50) NOT NULL, `tmdb_episode_id` INT NOT NULL, `tmdb_season_number` INT NOT NULL, `tmdb_episode_number` INT NOT NULL, `custom_season_number` INT NOT NULL, `custom_episode_number` INT NOT NULL, `absolute_episode_number` INT NOT NULL, PRIMARY KEY (`id`), UNIQUE KEY `idx_group_episode_unique` (`tmdb_episode_group_id`, `tmdb_episode_id`), INDEX `idx_custom_season_episode` (`tmdb_tv_id`, `tmdb_episode_group_id`, `custom_season_number`, `custom_episode_number`), INDEX `idx_absolute_episode` (`tmdb_tv_id`, `tmdb_episode_group_id`, `absolute_episode_number`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
                 "scheduled_tasks": """CREATE TABLE `scheduled_tasks` (`id` VARCHAR(100) NOT NULL, `name` VARCHAR(255) NOT NULL, `job_type` VARCHAR(50) NOT NULL, `cron_expression` VARCHAR(100) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `last_run_at` TIMESTAMP NULL, `next_run_at` TIMESTAMP NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
                 "task_history": """CREATE TABLE `task_history` (`id` VARCHAR(100) NOT NULL, `title` VARCHAR(255) NOT NULL, `status` VARCHAR(50) NOT NULL, `progress` INT NOT NULL DEFAULT 0, `description` TEXT NULL, `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, `finished_at` TIMESTAMP NULL, PRIMARY KEY (`id`), INDEX `idx_created_at` (`created_at` DESC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
+                "metadata_sources": """CREATE TABLE `metadata_sources` (`provider_name` VARCHAR(50) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `is_aux_search_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `display_order` INT NOT NULL DEFAULT 0, PRIMARY KEY (`provider_name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
             }
 
             # 先获取数据库中所有已存在的表
@@ -154,7 +161,7 @@ async def init_db_tables(app: FastAPI):
             
             logger.info("数据表检查完成。")
 
-            # --- 步骤 3.2: 检查并修正旧的表结构 ---
+            # --- 步骤 3.2: 检查并修正旧的表结构 (静默迁移) ---
             logger.info("正在检查并修正表结构...")
             try:
                 # 检查 token_access_logs.status
@@ -179,7 +186,7 @@ async def init_db_tables(app: FastAPI):
                     await cursor.execute("ALTER TABLE task_history MODIFY COLUMN status VARCHAR(50) NOT NULL;")
                     logger.info("列 'task_history.status' 更新成功。")
 
-                # 新增：检查 config.config_value 的类型
+                # 检查 config.config_value 的类型
                 await cursor.execute("""
                     SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
                     WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'config' AND COLUMN_NAME = 'config_value'
@@ -193,7 +200,7 @@ async def init_db_tables(app: FastAPI):
                 # 仅记录错误，不中断启动流程
                 logger.warning(f"检查或更新表结构时发生非致命错误: {e}")
 
-            # --- 步骤 3.2: 初始化默认配置 ---
+            # --- 步骤 3.3: 初始化默认配置 ---
             await _init_default_config(cursor)
 
 async def _init_default_config(cursor: aiomysql.Cursor):
@@ -218,7 +225,8 @@ async def _init_default_config(cursor: aiomysql.Cursor):
         ('webhook_custom_domain', '', '用于拼接Webhook URL的自定义域名。'),
         ('tvdb_api_key', '', '用于访问 TheTVDB API 的密钥。'),
         ('bangumi_client_id', '', '用于Bangumi OAuth的App ID。'),
-        ('bangumi_client_secret', '', '用于Bangumi OAuth的App Secret。')
+        ('bangumi_client_secret', '', '用于Bangumi OAuth的App Secret。'),
+        ('bilibili_cookie', '', '用于访问B站API的Cookie，特别是buvid3。')
     ]
 
     # 1. 获取所有已存在的配置

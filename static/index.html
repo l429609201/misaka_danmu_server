@@ -40,7 +40,7 @@
             <header>
                 <div class="header-title-group">
                     <img src="/static/logo.png" alt="Logo" id="header-logo">
-                    <h1>御坂网络弹幕服务 v1.0.8</h1>
+                    <h1>御坂网络弹幕服务 v1.0.9</h1>
                 </div>
                 <div class="header-user-info">
                     <span id="current-user"></span>
@@ -382,7 +382,7 @@
                     <div id="anime-detail-view" class="content-view hidden">
                         <div class="view-header-flexible">
                             <div class="anime-detail-header-main">
-                                <img src="/static/placeholder.png" alt="Poster" id="detail-view-img" referrerpolicy="no-referrer">
+                                <img src="/static/placeholder.png" alt="Poster" id="detail-view-img" referrerpolicy="strict-origin-when-cross-origin">
                                 <div>
                                     <h2 id="detail-view-title">作品标题</h2>
                                     <p id="detail-view-meta">元数据</p>
@@ -395,14 +395,12 @@
                             <button id="reassociate-sources-from-detail-btn">调整关联数据源</button>
                         </div>
                         <div class="bulk-actions-bar">
+                            <button id="select-all-sources-btn">全选</button>
                             <button id="delete-selected-sources-btn">删除选中</button>
                         </div>
                         <table id="source-detail-table">
                             <thead>
-                                <tr>
-                                    <th><input type="checkbox" id="select-all-sources-checkbox" title="全选"></th>
-                                    <th>源提供方</th><th>源媒体ID</th><th>状态</th><th>收录时间</th><th>操作</th>
-                                </tr>
+                                <tr><th><input type="checkbox" class="hidden"></th><th>源提供方</th><th>源媒体ID</th><th>状态</th><th>收录时间</th><th>操作</th></tr>
                             </thead>
                             <tbody id="source-detail-table-body"></tbody>
                         </table>
@@ -598,11 +596,15 @@
                             <div class="source-controls">
                                 <h2>元信息搜索源</h2>
                                 <div class="source-actions">
-                                    <button id="save-metadata-sources-btn">保存排序</button>
+                                    <button id="save-metadata-sources-btn">保存设置</button>
                                     <button id="move-metadata-source-up-btn">上移</button>
                                     <button id="move-metadata-source-down-btn">下移</button>
                                 </div>
                             </div>
+                            <p class="view-description">
+                                <strong>辅助搜索:</strong> 勾选后，在主页搜索时会使用此源获取别名，以提高结果准确性。<br>
+                                <strong>启用状态:</strong> 点击最右侧的 ✅/❌ 图标可切换该源是否可用。
+                            </p>
                             <ul id="metadata-sources-list"></ul>
                         </div>
                     </div>
@@ -732,7 +734,7 @@
                                     <p>用户ID: <span id="bangumi-user-id"></span></p>
                                     <p>授权时间: <span id="bangumi-authorized-at"></span></p>
                                     <p>过期时间: <span id="bangumi-expires-at"></span></p>
-                                    <img id="bangumi-user-avatar" src="/static/placeholder.png" alt="avatar" style="width: 40px; height: 40px; border-radius: 50%; margin-top: 10px;">
+                                    <img id="bangumi-user-avatar" src="/static/placeholder.png" alt="avatar" style="width: 40px; height: 40px; border-radius: 50%; margin-top: 10px;" referrerpolicy="no-referrer">
                                 </div>
                                 <div id="bangumi-auth-actions">
                                     <div class="form-actions">
