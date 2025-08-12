@@ -1,0 +1,247 @@
+import { getSearchResult, clearSearchCache } from '../../../apis'
+import { useState } from 'react'
+import {
+  Button,
+  Card,
+  Checkbox,
+  Col,
+  Form,
+  Input,
+  InputNumber,
+  message,
+  Modal,
+  Row,
+} from 'antd'
+import { parseSearchKeyword } from '../../../utils'
+import { useAtom, useAtomValue } from 'jotai'
+import { isMobileAtom, lastSearchResultAtom } from '../../../../store'
+
+export const SearchBar = () => {
+  const [loading, setLoading] = useState(false)
+  const [cacheLoading, setCacheLoading] = useState(false)
+  const [form] = Form.useForm()
+  const season = Form.useWatch('season', form)
+  const episode = Form.useWatch('episode', form)
+  const keyword = Form.useWatch('keyword', form)
+
+  const isMobile = useAtomValue(isMobileAtom)
+
+  //开启精确搜索
+  const [exactSearch, setExactSearch] = useState(false)
+
+  const [lastSearchResultData, setLastSearchResultData] =
+    useAtom(lastSearchResultAtom)
+
+  const onInsert = () => {
+    if (!season) {
+      message.destroy()
+      message.error('请输入季数')
+      return
+    }
+    let formatted = ` S${String(season).padStart(2, '0')}`
+    if (episode) {
+      formatted += `E${String(episode).padStart(2, '0')}`
+    }
+    form.setFieldValue('keyword', `${keyword}${formatted}`)
+  }
+
+  const onSearch = async values => {
+    try {
+      setLoading(true)
+      const {
+        title: newTitle,
+        season: newSeason,
+        episode: newEpisode,
+      } = parseSearchKeyword(values.keyword)
+
+      const {
+        title: lastTitle,
+        season: lastSeason,
+        episode: lastEpisode,
+      } = parseSearchKeyword(lastSearchResultData.keyword)
+
+      console.log(
+        lastSearchResultData.results,
+        newTitle,
+        lastTitle,
+        newEpisode,
+        lastEpisode
+      )
+
+      if (
+        lastSearchResultData.results.length > 0 &&
+        newTitle === lastTitle &&
+        newEpisode !== null &&
+        lastEpisode === null
+      ) {
+        console.log('前端缓存命中：正在使用上次的搜索结果。')
+        const updatedResults = JSON.parse(
+          JSON.stringify(lastSearchResultData.results)
+        )
+        updatedResults.forEach(item => {
+          item.currentEpisodeIndex = newEpisode
+        })
+
+        const seasonForDisplay = newSeason || lastSeason || 1
+
+        setLastSearchResultData({
+          results: updatedResults,
+          searchSeason: seasonForDisplay,
+          keyword: values.keyword,
+        })
+        return // 避免网络请求
+      }
+
+      const res = await getSearchResult({
+        keyword: encodeURIComponent(values.keyword),
+      })
+
+      setLastSearchResultData({
+        ...(res?.data || {}),
+        keyword: values.keyword,
+      })
+    } catch (error) {
+      console.error(`搜索失败: ${error.message || error}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const onClearCache = () => {
+    Modal.confirm({
+      title: '清除缓存',
+      zIndex: 1002,
+      content: (
+        <div>
+          您确定要清除所有缓存吗？
+          <br />
+          这将清除所有搜索结果和分集列表的临时缓存，下次访问时需要重新从网络获取。
+        </div>
+      ),
+      okText: '确认',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          setCacheLoading(true)
+          const res = await clearSearchCache()
+          message.destroy()
+          message.success(res.data.message || '缓存已成功清除！')
+        } catch (err) {
+          message.destroy()
+          message.error(`清除缓存失败: ${error.message || error}`)
+        } finally {
+          setCacheLoading(false)
+        }
+      },
+    })
+  }
+
+  return (
+    <div className="my-4">
+      <Card
+        title="搜索"
+        extra={
+          <Button type="primary" loading={cacheLoading} onClick={onClearCache}>
+            清除缓存
+          </Button>
+        }
+      >
+        <Form
+          form={form}
+          layout="horizontal"
+          onFinish={onSearch}
+          className="px-6 pb-6"
+        >
+          <Row gutter={12}>
+            <Col md={18} xs={24}>
+              {/* 名称输入 */}
+              <Form.Item
+                name="keyword"
+                label="输入番剧名称"
+                rules={[{ required: true, message: '请输入番剧名称' }]}
+              >
+                <Input
+                  placeholder="请输入番剧名称"
+                  className="rounded-lg border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                />
+              </Form.Item>
+            </Col>
+            <Col md={6} xs={24}>
+              <Form.Item>
+                <Button
+                  block
+                  type="primary"
+                  htmlType="submit"
+                  loading={loading}
+                >
+                  搜索
+                </Button>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={12}>
+            <Col md={6} xs={24}>
+              <Form.Item>
+                <Checkbox
+                  checked={exactSearch}
+                  onChange={e => setExactSearch(e.target.checked)}
+                >
+                  电视节目精确搜索
+                </Checkbox>
+              </Form.Item>
+            </Col>
+            {exactSearch && (
+              <Col md={18} xs={24}>
+                <div className="flex items-center justify-start gap-3">
+                  <Form.Item name="season" label="季度：">
+                    <InputNumber
+                      min={0}
+                      placeholder="季数"
+                      className="rounded-lg border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                    />
+                  </Form.Item>
+                  <Form.Item name="episode" label="集数：">
+                    <InputNumber
+                      min={1}
+                      placeholder="集数"
+                      className="rounded-lg border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                      disabled={!season}
+                    />
+                  </Form.Item>
+
+                  {!isMobile && (
+                    <>
+                      <Form.Item>
+                        <Button type="primary" onClick={onInsert}>
+                          插入
+                        </Button>
+                      </Form.Item>
+                      <Form.Item>
+                        <div className="text-xs">
+                          需要填写季、集后可插入，其中季可单独插入
+                        </div>
+                      </Form.Item>
+                    </>
+                  )}
+                </div>
+                {isMobile && (
+                  <>
+                    <div>
+                      <Button block type="primary" onClick={onInsert}>
+                        插入
+                      </Button>
+                    </div>
+                    <div className="text-xs mt-3">
+                      需要填写季、集后可插入，其中季可单独插入
+                    </div>
+                  </>
+                )}
+              </Col>
+            )}
+          </Row>
+        </Form>
+      </Card>
+    </div>
+  )
+}

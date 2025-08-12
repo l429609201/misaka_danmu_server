@@ -7,14 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "check": "eslint src --ext jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sync:icon": "node src/scripts/genIconFont.cjs"
   },
   "pre-commit": "check",
   "dependencies": {
     "@ant-design/cssinjs": "^1.24.0",
+    "@ant-design/icons": "5.x",
     "@tailwindcss/vite": "^4.0.0",
     "antd": "^5.26.7",
     "axios": "^1.11.0",
+    "classnames": "^2.5.1",
     "jotai": "^2.13.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

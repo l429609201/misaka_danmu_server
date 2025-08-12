@@ -5,3 +5,37 @@ export const login = data =>
   api.post('/api/ui/auth/token', data, {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   })
+
+/** 退出登录 */
+export const logout = () => api.post('/api/ui/auth/logout')
+
+/** 获取用户信息 */
+export const getUserInfo = (options = {}) =>
+  api.get('/api/ui/auth/users/me', null, {
+    ...options,
+  })
+
+/** 获取日志 */
+export const getLogs = (options = {}) =>
+  api.get('/api/ui/logs', null, {
+    ...options,
+  })
+
+/** 匹配测试 */
+export const getMatchTest = data =>
+  api.post(
+    `/api/${data.apiToken}/match`,
+    JSON.stringify({ fileName: data.fileName })
+  )
+
+/** 清除搜索缓存 */
+export const clearSearchCache = () => api.post('/api/ui/cache/clear')
+
+/** 搜索结果 */
+export const getSearchResult = data =>
+  api.get('/api/ui/search/provider', {
+    keyword: data.keyword,
+  })
+
+/** 导入弹幕  */
+export const importDanmu = data => api.post('/api/ui/import', data)
