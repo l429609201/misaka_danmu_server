@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request, Depends
 import logging
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware  # 新增：处理跨域
 import json
 from .database import create_db_pool, close_db_pool, init_db_tables, create_initial_admin_user
 from .api.ui import router as ui_router, auth_router
@@ -22,6 +23,8 @@ from .scheduler import SchedulerManager
 from .config import settings
 from . import crud, security
 from .log_manager import setup_logging
+
+print(f"当前环境: {settings.environment}") 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -65,6 +68,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Danmaku API", description="一个基于dandanplay API风格的弹幕服务", version="1.0.0", lifespan=lifespan)
+
+# 新增：配置CORS，允许前端开发服务器访问API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        f"http://{settings.client.host}:{settings.client.port}",  # 前端开发服务器
+        "http://localhost:5173",  # 默认Vite开发端口
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.middleware("http")
 async def log_not_found_requests(request: Request, call_next):
@@ -110,9 +126,15 @@ async def cleanup_task(app: FastAPI):
         except Exception as e:
             logging.getLogger(__name__).error(f"缓存清理任务出错: {e}")
 
-# 挂载静态文件目录
-# 注意：这应该在项目根目录运行，以便能找到 'static' 文件夹
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# 挂载静态文件目录（适配Vite构建产物）
+if settings.environment == "development":
+    # 开发环境：不挂载静态文件（由 Vite 开发服务器提供）
+    print("开发环境：跳过静态文件挂载")
+else:
+    # 生产环境：挂载构建后的静态文件
+    app.mount("/static", StaticFiles(directory="dist/static"), name="static")
+    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+    print("生产环境：已挂载静态文件")
 
 # 包含 v2 版本的 API 路由
 app.include_router(ui_router, prefix="/api/ui", tags=["Web UI API"])
@@ -125,39 +147,23 @@ app.include_router(imdb_router, prefix="/api/imdb", tags=["IMDb"])
 app.include_router(tvdb_router, prefix="/api/tvdb", tags=["TVDB"])
 app.include_router(webhook_router, prefix="/api/webhook", tags=["Webhook"])
 
-# 根路径返回前端页面
-@app.get("/", include_in_schema=False)
-async def read_index(request: Request):
-    # 支持通过查询参数关闭移动端跳转：/?desktop=1
-    if request.query_params.get("desktop") == "1":
-        return FileResponse("static/index.html")
-
-    ua = request.headers.get("user-agent", "").lower()
-    is_mobile = any(
-        kw in ua for kw in [
-            "iphone",
-            "android",
-            "ipad",
-            "windows phone",
-            "mobile",
-            "opera mini",
-            "mobile safari",
-        ]
-    )
-    if is_mobile:
-        return RedirectResponse(url="/m", status_code=307)
-    return FileResponse("static/index.html")
-
-# 移动端页面
-@app.get("/m", response_class=FileResponse, include_in_schema=False)
-async def read_mobile():
-    return "static/mobile.html"
+# 前端入口路由（适配Vite+React SPA）
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_react_app(request: Request, full_path: str):
+    # 开发环境重定向到Vite服务器
+    if settings.environment == "development":
+        base_url = f"http://{settings.client.host}:{settings.client.port}"
+        return RedirectResponse(url=f"{base_url}/{full_path}" if full_path else base_url)
+    
+    # 生产环境返回构建好的index.html
+    return FileResponse("dist/index.html")
 
 # 添加一个运行入口，以便直接从配置启动
 # 这样就可以通过 `python -m src.main` 来运行，并自动使用 config.yml 中的端口和主机
 if __name__ == "__main__":
     uvicorn.run(
-        app,
+        "src.main:app",
         host=settings.server.host,
-        port=settings.server.port
+        port=settings.server.port,
+        reload=settings.environment == "development"  # 开发环境启用自动重载
     )

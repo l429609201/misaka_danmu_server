@@ -1,0 +1,64 @@
+/* 导入Tailwind核心（v4.0必需） */
+@import 'tailwindcss';
+
+/* 配置主题变量（替代原tailwind.config.js） */
+@theme {
+  /* 颜色配置 - 映射CSS变量 */
+  --color-base-bg: var(--color-bg);
+  --color-base-text: var(--color-text);
+  --color-base-card: var(--color-card);
+  --color-base-header: var(--color-header);
+  --color-base-hover: var(--color-hover);
+  --color-primary: var(--color-primary);
+  --color-primary-dark: var(--color-primary-dark);
+}
+
+/* 定义基础变量（浅色模式） */
+:root {
+  --color-bg: #f3f4f6; /* gray-100 */
+  --color-text: #111827; /* gray-900 */
+  --color-card: #ffffff; /* white */
+  --color-header: #ffffff; /* white */
+  --color-hover: #e5e7eb; /* gray-200 */
+  --color-primary: #3b82f6; /* blue-500 */
+  --color-primary-dark: #2563eb; /* blue-600 */
+}
+
+/* 暗黑模式变量 */
+.dark {
+  --color-bg: #111827; /* gray-900 */
+  --color-text: #f3f4f6; /* gray-100 */
+  --color-card: #1f2937; /* gray-800 */
+  --color-header: #1f2937; /* gray-800 */
+  --color-hover: #374151; /* gray-700 */
+  --color-primary: #60a5fa; /* blue-400 */
+  --color-primary-dark: #3b82f6; /* blue-500 */
+}
+
+/* 动画配置 */
+@keyframes opacity-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes opacity-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@layer utilities {
+  .animate-opacity-in {
+    animation: opacity-in 0.2s;
+  }
+  .animate-opacity-out {
+    animation: opacity-out 0.2s;
+  }
+}

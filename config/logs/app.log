@@ -1,0 +1,519 @@
+[2025-08-11 09:35:09] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 09:35:09] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 09:35:09] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 09:35:09] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 09:35:09] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 09:35:09] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '127.0.0.1'")
+[2025-08-11 09:35:09] [src.database:32] [ERROR] - ---
+[2025-08-11 09:35:09] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 09:35:09] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 09:35:09] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 09:35:09] [src.database:36] [ERROR] - ---    - 主机 (Host): 127.0.0.1
+[2025-08-11 09:35:09] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 09:35:09] [src.database:38] [ERROR] - ---    - 用户 (User): danmaku_user
+[2025-08-11 09:35:09] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmaku_db
+[2025-08-11 09:35:09] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 09:35:09] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 09:35:09] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 10:39:36] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 10:39:36] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 10:39:36] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 10:39:36] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 10:39:36] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 10:39:36] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 10:39:36] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '127.0.0.1'")
+[2025-08-11 10:39:36] [src.database:32] [ERROR] - ---
+[2025-08-11 10:39:36] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 10:39:36] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 10:39:36] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 10:39:36] [src.database:36] [ERROR] - ---    - 主机 (Host): 127.0.0.1
+[2025-08-11 10:39:36] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 10:39:36] [src.database:38] [ERROR] - ---    - 用户 (User): danmaku_user
+[2025-08-11 10:39:36] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmaku_db
+[2025-08-11 10:39:36] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 10:39:36] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 10:39:36] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 10:41:04] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 10:41:04] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 10:41:04] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 10:41:04] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 10:41:04] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 10:41:04] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 10:41:04] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '127.0.0.1'")
+[2025-08-11 10:41:04] [src.database:32] [ERROR] - ---
+[2025-08-11 10:41:04] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 10:41:04] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 10:41:04] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 10:41:04] [src.database:36] [ERROR] - ---    - 主机 (Host): 127.0.0.1
+[2025-08-11 10:41:04] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 10:41:04] [src.database:38] [ERROR] - ---    - 用户 (User): danmaku_user
+[2025-08-11 10:41:04] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmaku_db
+[2025-08-11 10:41:04] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 10:41:04] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 10:41:04] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 10:41:49] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 10:41:49] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 10:41:49] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 10:41:49] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 10:41:49] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 10:41:49] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 10:41:49] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '127.0.0.1'")
+[2025-08-11 10:41:49] [src.database:32] [ERROR] - ---
+[2025-08-11 10:41:49] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 10:41:49] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 10:41:49] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 10:41:49] [src.database:36] [ERROR] - ---    - 主机 (Host): 127.0.0.1
+[2025-08-11 10:41:49] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 10:41:49] [src.database:38] [ERROR] - ---    - 用户 (User): danmaku_user
+[2025-08-11 10:41:49] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmaku_db
+[2025-08-11 10:41:49] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 10:41:49] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 10:41:49] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 10:44:48] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 10:44:48] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 10:44:48] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 10:44:48] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 10:44:48] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 10:44:48] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 10:44:48] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '127.0.0.1'")
+[2025-08-11 10:44:48] [src.database:32] [ERROR] - ---
+[2025-08-11 10:44:48] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 10:44:48] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 10:44:48] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 10:44:48] [src.database:36] [ERROR] - ---    - 主机 (Host): 127.0.0.1
+[2025-08-11 10:44:48] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 10:44:48] [src.database:38] [ERROR] - ---    - 用户 (User): danmaku_user
+[2025-08-11 10:44:48] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmaku_db
+[2025-08-11 10:44:48] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 10:44:48] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 10:44:48] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 10:46:00] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 10:46:00] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 10:46:00] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 10:46:01] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-11 10:46:02] [src.database:117] [INFO] - 正在检查并创建数据表...
+[2025-08-11 10:46:03] [src.database:155] [INFO] - 数据表检查完成。
+[2025-08-11 10:46:03] [src.database:158] [INFO] - 正在检查并修正表结构...
+[2025-08-11 10:46:03] [src.database:201] [INFO] - 正在检查并初始化默认配置...
+[2025-08-11 10:46:03] [src.database:249] [INFO] - 配置项 'search_ttl_seconds' 的值 (300s) 低于最低要求 (10800s)，将自动更新。
+[2025-08-11 10:46:03] [src.database:249] [INFO] - 配置项 'episodes_ttl_seconds' 的值 (1800s) 低于最低要求 (10800s)，将自动更新。
+[2025-08-11 10:46:03] [src.database:249] [INFO] - 配置项 'base_info_ttl_seconds' 的值 (1800s) 低于最低要求 (10800s)，将自动更新。
+[2025-08-11 10:46:03] [src.database:249] [INFO] - 配置项 'metadata_search_ttl_seconds' 的值 (1800s) 低于最低要求 (10800s)，将自动更新。
+[2025-08-11 10:46:03] [src.database:242] [INFO] - 正在初始化配置项 'webhook_custom_domain'...
+[2025-08-11 10:46:03] [src.database:242] [INFO] - 正在初始化配置项 'bangumi_client_id'...
+[2025-08-11 10:46:03] [src.database:242] [INFO] - 正在初始化配置项 'bangumi_client_secret'...
+[2025-08-11 10:46:04] [src.database:260] [INFO] - 成功初始化 3 个新配置项。
+[2025-08-11 10:46:04] [src.database:266] [INFO] - 成功更新了 4 个不符合最低缓存时间的配置项。
+[2025-08-11 10:46:04] [src.database:268] [INFO] - 默认配置检查完成。
+[2025-08-11 10:46:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-11 10:46:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 2)。
+[2025-08-11 10:46:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-11 10:46:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 4)。
+[2025-08-11 10:46:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 1)。
+[2025-08-11 10:46:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 3)。
+[2025-08-11 10:46:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-11 10:46:07] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-11 10:46:07] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-11 10:46:07] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-11 10:46:07] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-11 10:46:07] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-11 10:46:07] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-11 10:57:10] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-11 10:57:10] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-11 10:57:10] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-11 11:15:03] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 11:15:03] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 11:15:03] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 11:15:04] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-11 11:15:05] [src.database:117] [INFO] - 正在检查并创建数据表...
+[2025-08-11 11:15:05] [src.database:155] [INFO] - 数据表检查完成。
+[2025-08-11 11:15:05] [src.database:158] [INFO] - 正在检查并修正表结构...
+[2025-08-11 11:15:05] [src.database:201] [INFO] - 正在检查并初始化默认配置...
+[2025-08-11 11:15:05] [src.database:268] [INFO] - 默认配置检查完成。
+[2025-08-11 11:15:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-11 11:15:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 2)。
+[2025-08-11 11:15:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-11 11:15:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 4)。
+[2025-08-11 11:15:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 1)。
+[2025-08-11 11:15:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 3)。
+[2025-08-11 11:15:07] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-11 11:15:07] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-11 11:15:07] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-11 11:15:07] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-11 11:15:07] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-11 11:15:07] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-11 11:15:08] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-11 11:16:30] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-11 11:16:30] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-11 11:16:30] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-11 11:16:30] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 11:16:30] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 11:16:30] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 11:16:31] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-11 11:16:32] [src.database:117] [INFO] - 正在检查并创建数据表...
+[2025-08-11 11:16:32] [src.database:155] [INFO] - 数据表检查完成。
+[2025-08-11 11:16:32] [src.database:158] [INFO] - 正在检查并修正表结构...
+[2025-08-11 11:16:33] [src.database:201] [INFO] - 正在检查并初始化默认配置...
+[2025-08-11 11:16:33] [src.database:268] [INFO] - 默认配置检查完成。
+[2025-08-11 11:16:33] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-11 11:16:33] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 2)。
+[2025-08-11 11:16:33] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-11 11:16:33] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 4)。
+[2025-08-11 11:16:33] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 1)。
+[2025-08-11 11:16:33] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 3)。
+[2025-08-11 11:16:33] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-11 11:16:33] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-11 11:16:33] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-11 11:16:33] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-11 11:16:33] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-11 11:16:33] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-11 11:16:33] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-11 11:16:34] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 11:16:34] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 11:16:34] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 11:16:35] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-11 11:16:36] [src.database:117] [INFO] - 正在检查并创建数据表...
+[2025-08-11 11:16:36] [src.database:155] [INFO] - 数据表检查完成。
+[2025-08-11 11:16:36] [src.database:158] [INFO] - 正在检查并修正表结构...
+[2025-08-11 11:16:36] [src.database:201] [INFO] - 正在检查并初始化默认配置...
+[2025-08-11 11:16:36] [src.database:268] [INFO] - 默认配置检查完成。
+[2025-08-11 11:16:37] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-11 11:16:37] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 2)。
+[2025-08-11 11:16:37] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-11 11:16:37] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 4)。
+[2025-08-11 11:16:37] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 1)。
+[2025-08-11 11:16:37] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 3)。
+[2025-08-11 11:16:37] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-11 11:16:37] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-11 11:16:37] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-11 11:16:37] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-11 11:16:37] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-11 11:16:37] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-11 11:16:37] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-11 11:17:26] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 11:17:26] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 11:17:26] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 11:17:27] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-11 11:17:30] [src.database:117] [INFO] - 正在检查并创建数据表...
+[2025-08-11 11:17:31] [src.database:155] [INFO] - 数据表检查完成。
+[2025-08-11 11:17:31] [src.database:158] [INFO] - 正在检查并修正表结构...
+[2025-08-11 11:17:33] [src.database:201] [INFO] - 正在检查并初始化默认配置...
+[2025-08-11 11:17:33] [src.database:268] [INFO] - 默认配置检查完成。
+[2025-08-11 11:17:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-11 11:17:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 2)。
+[2025-08-11 11:17:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-11 11:17:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 4)。
+[2025-08-11 11:17:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 1)。
+[2025-08-11 11:17:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 3)。
+[2025-08-11 11:17:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-11 11:17:34] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-11 11:17:34] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-11 11:17:34] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-11 11:17:34] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-11 11:17:34] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-11 11:17:34] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-11 12:32:08] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-11 12:32:08] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-11 12:32:08] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-11 12:32:10] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 12:32:10] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 12:32:10] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 12:32:11] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-11 12:32:12] [src.database:117] [INFO] - 正在检查并创建数据表...
+[2025-08-11 12:32:12] [src.database:155] [INFO] - 数据表检查完成。
+[2025-08-11 12:32:12] [src.database:158] [INFO] - 正在检查并修正表结构...
+[2025-08-11 12:32:13] [src.database:201] [INFO] - 正在检查并初始化默认配置...
+[2025-08-11 12:32:13] [src.database:268] [INFO] - 默认配置检查完成。
+[2025-08-11 12:32:14] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-11 12:32:14] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 2)。
+[2025-08-11 12:32:14] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-11 12:32:14] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 4)。
+[2025-08-11 12:32:14] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 1)。
+[2025-08-11 12:32:14] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 3)。
+[2025-08-11 12:32:14] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-11 12:32:14] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-11 12:32:14] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-11 12:32:14] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-11 12:32:14] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-11 12:32:14] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-11 12:32:14] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-11 12:50:38] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-11 12:50:38] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-11 12:50:38] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-11 12:50:39] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 12:50:39] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 12:50:39] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 12:51:10] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 12:51:10] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 12:51:10] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 12:51:10] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-11 12:51:10] [src.database:32] [ERROR] - ---
+[2025-08-11 12:51:10] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 12:51:10] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 12:51:10] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 12:51:10] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-11 12:51:10] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 12:51:10] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 12:51:10] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 12:51:10] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 12:51:10] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 12:51:10] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 13:36:53] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 13:36:53] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 13:36:53] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 13:38:10] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-11 13:45:11] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 13:45:11] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 13:45:11] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 13:45:12] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-11 13:45:13] [src.database:117] [INFO] - 正在检查并创建数据表...
+[2025-08-11 13:45:13] [src.database:155] [INFO] - 数据表检查完成。
+[2025-08-11 13:45:13] [src.database:158] [INFO] - 正在检查并修正表结构...
+[2025-08-11 13:45:14] [src.database:201] [INFO] - 正在检查并初始化默认配置...
+[2025-08-11 13:45:14] [src.database:268] [INFO] - 默认配置检查完成。
+[2025-08-11 13:45:15] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-11 13:45:15] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 2)。
+[2025-08-11 13:45:15] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-11 13:45:15] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 4)。
+[2025-08-11 13:45:15] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 1)。
+[2025-08-11 13:45:15] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 3)。
+[2025-08-11 13:45:15] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-11 13:45:15] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-11 13:45:15] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-11 13:45:15] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-11 13:45:15] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-11 13:45:15] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-11 13:45:15] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-11 14:45:13] [src.main:127] [ERROR] - 缓存清理任务出错: (1130, "Host '183.134.198.138' is not allowed to connect to this MySQL server")
+[2025-08-11 15:45:15] [src.main:127] [ERROR] - 缓存清理任务出错: (2003, "Can't connect to MySQL server on '45.136.12.194'")
+[2025-08-11 16:30:57] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-11 16:30:57] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-11 16:30:57] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-11 16:30:58] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 16:30:58] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:30:58] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:30:58] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 16:30:58] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 16:30:58] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 16:30:58] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '127.0.0.1'")
+[2025-08-11 16:30:58] [src.database:32] [ERROR] - ---
+[2025-08-11 16:30:58] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 16:30:58] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 16:30:58] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 16:30:58] [src.database:36] [ERROR] - ---    - 主机 (Host): 127.0.0.1
+[2025-08-11 16:30:58] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 16:30:58] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 16:30:58] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 16:30:58] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 16:30:58] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 16:30:58] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 16:31:07] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 16:31:07] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:31:07] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:31:07] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 16:31:07] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 16:31:07] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 16:31:07] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '127.0.0.1'")
+[2025-08-11 16:31:07] [src.database:32] [ERROR] - ---
+[2025-08-11 16:31:07] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 16:31:07] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 16:31:07] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 16:31:07] [src.database:36] [ERROR] - ---    - 主机 (Host): 127.0.0.1
+[2025-08-11 16:31:07] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 16:31:07] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 16:31:07] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 16:31:07] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 16:31:07] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 16:31:07] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 16:31:39] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 16:31:39] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:31:39] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:31:39] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 16:31:39] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 16:31:39] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 16:31:39] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '127.0.0.1'")
+[2025-08-11 16:31:39] [src.database:32] [ERROR] - ---
+[2025-08-11 16:31:39] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 16:31:39] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 16:31:39] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 16:31:39] [src.database:36] [ERROR] - ---    - 主机 (Host): 127.0.0.1
+[2025-08-11 16:31:39] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 16:31:39] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 16:31:39] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 16:31:39] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 16:31:39] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 16:31:39] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 16:34:15] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 16:34:15] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:34:15] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:34:15] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 16:34:15] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 16:34:15] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 16:34:15] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '192.168.64.1'")
+[2025-08-11 16:34:15] [src.database:32] [ERROR] - ---
+[2025-08-11 16:34:15] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 16:34:15] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 16:34:15] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 16:34:15] [src.database:36] [ERROR] - ---    - 主机 (Host): 192.168.64.1
+[2025-08-11 16:34:15] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 16:34:15] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 16:34:15] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 16:34:15] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 16:34:15] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 16:34:15] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 16:40:23] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 16:40:23] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:40:23] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:40:23] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 16:40:23] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 16:40:23] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 16:40:23] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '192.168.64.1'")
+[2025-08-11 16:40:23] [src.database:32] [ERROR] - ---
+[2025-08-11 16:40:23] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 16:40:23] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 16:40:23] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 16:40:23] [src.database:36] [ERROR] - ---    - 主机 (Host): 192.168.64.1
+[2025-08-11 16:40:23] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 16:40:23] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 16:40:23] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 16:40:23] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 16:40:23] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 16:40:23] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 16:47:45] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 16:47:45] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:47:45] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:47:45] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 16:47:45] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 16:47:45] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 16:47:45] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '192.168.64.1'")
+[2025-08-11 16:47:45] [src.database:32] [ERROR] - ---
+[2025-08-11 16:47:45] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 16:47:45] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 16:47:45] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 16:47:45] [src.database:36] [ERROR] - ---    - 主机 (Host): 192.168.64.1
+[2025-08-11 16:47:45] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 16:47:45] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 16:47:45] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 16:47:45] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 16:47:45] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 16:47:45] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 16:59:41] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 16:59:41] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:59:41] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 16:59:41] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 16:59:41] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 16:59:41] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 16:59:41] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '192.168.64.1'")
+[2025-08-11 16:59:41] [src.database:32] [ERROR] - ---
+[2025-08-11 16:59:41] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 16:59:41] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 16:59:41] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 16:59:41] [src.database:36] [ERROR] - ---    - 主机 (Host): 192.168.64.1
+[2025-08-11 16:59:41] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 16:59:41] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 16:59:41] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 16:59:41] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 16:59:41] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 16:59:41] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 17:02:37] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 17:02:37] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:02:37] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:02:37] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 17:02:37] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 17:02:37] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 17:02:37] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '192.168.64.1'")
+[2025-08-11 17:02:37] [src.database:32] [ERROR] - ---
+[2025-08-11 17:02:37] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 17:02:37] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 17:02:37] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 17:02:37] [src.database:36] [ERROR] - ---    - 主机 (Host): 192.168.64.1
+[2025-08-11 17:02:37] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 17:02:37] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 17:02:37] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 17:02:37] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 17:02:37] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 17:02:37] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 17:02:53] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 17:02:53] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:02:53] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:02:53] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 17:02:53] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 17:02:53] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 17:02:53] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '127.0.0.1'")
+[2025-08-11 17:02:53] [src.database:32] [ERROR] - ---
+[2025-08-11 17:02:53] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 17:02:53] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 17:02:53] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 17:02:53] [src.database:36] [ERROR] - ---    - 主机 (Host): 127.0.0.1
+[2025-08-11 17:02:53] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 17:02:53] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 17:02:53] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 17:02:53] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 17:02:53] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 17:02:53] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 17:13:45] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 17:13:45] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:13:45] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:15:03] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 17:15:03] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:15:03] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:15:03] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-11 17:15:13] [src.database:117] [INFO] - 正在检查并创建数据表...
+[2025-08-11 17:19:29] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 17:19:29] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:19:29] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:19:29] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 17:19:29] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 17:19:29] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 17:19:29] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-11 17:19:29] [src.database:32] [ERROR] - ---
+[2025-08-11 17:19:29] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 17:19:29] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 17:19:29] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 17:19:29] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-11 17:19:29] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 17:19:29] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 17:19:29] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 17:19:29] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 17:19:29] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 17:19:29] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 17:24:33] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 17:24:33] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:24:33] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:25:13] [src.database:28] [ERROR] - ============================================================
+[2025-08-11 17:25:13] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-11 17:25:13] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-11 17:25:13] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-11 17:25:13] [src.database:32] [ERROR] - ---
+[2025-08-11 17:25:13] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-11 17:25:13] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-11 17:25:13] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-11 17:25:13] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-11 17:25:13] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-11 17:25:13] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-11 17:25:13] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-11 17:25:13] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-11 17:25:13] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-11 17:25:13] [src.database:42] [ERROR] - ============================================================
+[2025-08-11 17:28:47] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-11 17:28:47] [root:119] [INFO] - 已清空旧的原始响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:28:47] [root:136] [INFO] - 专用的爬虫响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-11 17:28:47] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-11 17:28:48] [src.database:117] [INFO] - 正在检查并创建数据表...
+[2025-08-11 17:28:48] [src.database:155] [INFO] - 数据表检查完成。
+[2025-08-11 17:28:48] [src.database:158] [INFO] - 正在检查并修正表结构...
+[2025-08-11 17:28:48] [src.database:201] [INFO] - 正在检查并初始化默认配置...
+[2025-08-11 17:28:48] [src.database:268] [INFO] - 默认配置检查完成。
+[2025-08-11 17:28:49] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 2)。
+[2025-08-11 17:28:49] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 4)。
+[2025-08-11 17:28:49] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 1)。
+[2025-08-11 17:28:49] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 7)。
+[2025-08-11 17:28:49] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 3)。
+[2025-08-11 17:28:49] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 6)。
+[2025-08-11 17:28:49] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 5)。
+[2025-08-11 17:28:49] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-11 17:28:49] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-11 17:28:49] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-11 17:28:49] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-11 17:28:49] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-11 17:28:50] [src.scheduler:94] [INFO] - 定时任务调度器已启动。

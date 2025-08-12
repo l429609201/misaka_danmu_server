@@ -10,12 +10,17 @@ class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 7768
 
+# 新增：前端客户端配置模型
+class ClientConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 5173
+
 class DatabaseConfig(BaseModel):
-    host: str = "127.0.0.1"
+    host: str = "45.136.12.194"
     port: int = 3306
-    user: str = "root"
-    password: str = "password"
-    name: str = "danmaku_db"
+    user: str = "danmuapi"
+    password: str = "jisi9Lnfr&CyJ4"
+    name: str = "danmuapi"
 
 class JWTConfig(BaseModel):
     secret_key: str = "a_very_secret_key_that_should_be_changed"
@@ -66,6 +71,10 @@ class Settings(BaseSettings):
     bangumi: BangumiConfig = BangumiConfig()
     log: LogConfig = LogConfig()
     douban: DoubanConfig = DoubanConfig()
+    # 新增：环境标识和客户端配置
+    environment: str = "development"
+    client: ClientConfig = ClientConfig()
+
     class Config:
         # 为环境变量设置前缀，避免与系统变量冲突
         # 例如，在容器中设置环境变量 DANMUAPI_SERVER__PORT=8080

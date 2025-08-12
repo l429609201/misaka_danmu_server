@@ -1,0 +1,31 @@
+#name: Deploy
+#on:
+#  push:
+#    branches: ['main']
+#jobs:
+#  deploy:
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: Install Node.js
+#        uses: actions/setup-node@v4
+#        with:
+#          node-version: '20.x'
+#
+#      - name: Install Dependencies
+#        run: |
+#          npm i
+#
+#      - name: Run Check
+#        run: |
+#          npm run build
+#
+#      - uses: actions/checkout@v4
+#      - name: Deploy
+#        uses: zcloud-ws/zcloud-deploy-action@main
+#        with:
+#          # Add your ZCLOUD_USER_TOKEN to your repository secrets
+#          user-token: ${{ secrets.ZCLOUD_USER_TOKEN }}
+#          env: "your-app-env-name"
