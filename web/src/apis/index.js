@@ -1,5 +1,6 @@
 import api from './fetch'
 
+/** ----------------------------用户相关开始------------------------- */
 /** 登录 */
 export const login = data =>
   api.post('/api/ui/auth/token', data, {
@@ -15,6 +16,7 @@ export const getUserInfo = (options = {}) =>
     ...options,
   })
 
+/** ----------------------------首页接口------------------------- */
 /** 获取日志 */
 export const getLogs = (options = {}) =>
   api.get('/api/ui/logs', null, {
@@ -46,6 +48,7 @@ export const getTmdbSearch = data =>
     keyword: data.keyword,
   })
 
+/** ----------------------------任务相关开始------------------------- */
 /** 任务列表 */
 export const getTaskList = data => api.get('/api/ui/tasks', data)
 /** 暂停任务 */
@@ -54,3 +57,32 @@ export const pauseTask = data => api.post('/api/ui/tasks/pause', data)
 export const resumeTask = data => api.post('/api/ui/tasks/resume', data)
 /** 删除任务 */
 export const deleteTask = data => api.delete(`/api/ui/tasks/${data.taskId}`)
+
+/** ----------------------------token相关开始------------------------- */
+/** 获取token列表 */
+export const getTokenList = () => api.get('/api/ui/tokens')
+/** 增加token */
+export const addToken = data => api.post('/api/ui/tokens', data)
+/** 获取ua配置 */
+export const getUaMode = () => api.get('/api/ui/config/ua_filter_mode')
+/** 获取ua配置 */
+export const setUaMode = data => api.put('/api/ui/config/ua_filter_mode', data)
+/** 获取自定义域名 */
+export const getCustomDomain = () => api.get('/api/ui/config/custom_api_domain')
+/** 设置自定义域名 */
+export const setCustomDomain = data =>
+  api.put('/api/ui/config/custom_api_domain', data)
+/** token请求日志 */
+export const getTokenLog = data =>
+  api.get(`/api/ui/tokens/${data.tokenId}/logs`)
+/** 切换token可用状态 */
+export const toggleTokenStatus = data =>
+  api.put(`api/ui/tokens/${data.tokenId}/toggle`)
+/** 删除token */
+export const deleteToken = data => api.delete(`/api/ui/tokens/${data.tokenId}`)
+/** 获取ua规则 */
+export const getUaRules = () => api.get('/api/ui/ua-rules')
+/** 添加ua规则 */
+export const addUaRule = data => api.post('/api/ui/ua-rules', data)
+/** 删除ua规则 */
+export const deleteUaRule = data => api.delete(`/api/ui/ua-rules/${data.id}`)

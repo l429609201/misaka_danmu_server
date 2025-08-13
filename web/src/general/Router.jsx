@@ -8,10 +8,10 @@ import { LayoutLogin } from './LayoutLogin.jsx'
 import { Home } from '@/pages/home'
 import { Login } from '@/pages/login'
 import { Task } from '@/pages/task'
-import { Token } from '../pages/token/index.jsx'
 import { Library } from '../pages/library/index.jsx'
 import { Setting } from '../pages/setting/index.jsx'
 import { Source } from '../pages/source/index.jsx'
+import { Tokens } from '../pages/tokens/index.jsx'
 
 export const router = createBrowserRouter([
   {
@@ -28,7 +28,7 @@ export const router = createBrowserRouter([
       },
       {
         path: RoutePaths.TOKEN,
-        element: <Token />,
+        element: <Tokens />,
       },
       {
         path: RoutePaths.LIBRARY,

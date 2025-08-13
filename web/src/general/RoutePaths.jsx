@@ -3,7 +3,7 @@ export const RoutePaths = {
   LOGIN: '/login',
   LIBRARY: '/library',
   TASK: '/task',
-  TOKEN: '/token',
+  TOKEN: '/tokens',
   SOURCE: '/source',
   SETTING: '/setting',
 }
