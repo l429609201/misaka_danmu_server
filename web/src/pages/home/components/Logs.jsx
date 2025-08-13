@@ -22,10 +22,10 @@ export const Logs = () => {
 
   useEffect(() => {
     refreshLogs()
-    // timer.current = setInterval(refreshLogs, 3000)
-    // return () => {
-    //   clearInterval(timer.current)
-    // }
+    timer.current = setInterval(refreshLogs, 3000)
+    return () => {
+      clearInterval(timer.current)
+    }
   }, [])
 
   return (

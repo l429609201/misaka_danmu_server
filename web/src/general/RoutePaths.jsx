@@ -6,4 +6,4 @@ export const RoutePaths = {
   TOKEN: '/token',
   SOURCE: '/source',
   SETTING: '/setting',
-};
+}

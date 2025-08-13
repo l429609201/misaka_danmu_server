@@ -72,7 +72,10 @@ html {
 }
 
 /* reset */
-.ant-list-item.ant-list-item-no-flex {
+.ant-list-item.ant-list-item {
   padding-left: 0;
   padding-right: 0;
+}
+.ant-list-item-extra.ant-list-item-extra {
+  margin: 0 !important;
 }

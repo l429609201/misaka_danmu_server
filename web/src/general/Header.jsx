@@ -21,17 +21,18 @@ const navItems = [
 ]
 
 export const Header = () => {
-  const navigate = useNavigate()
   const [isMobile, setIsMobile] = useAtom(isMobileAtom)
   const location = useLocation()
   console.log(location)
 
   const activeKey = useMemo(() => {
+    if (location.pathname === '/') return RoutePaths.HOME
     return (
-      navItems.find(item => location.pathname?.includes(item.key))?.key ||
-      RoutePaths.HOME
+      navItems.filter(item => {
+        return location.pathname?.includes(item.key) && item.key !== '/'
+      })?.[0]?.key || RoutePaths.HOME
     )
-  }, [Location])
+  }, [location, navItems])
 
   useEffect(() => {
     const checkScreenSize = () => {
@@ -107,7 +108,7 @@ const MobileHeader = ({ activeKey }) => {
                           key={o.key}
                           className="flex items-center justify-start text-nowrap gap-2 py-2"
                           onClick={() => {
-                            navigate(it.key)
+                            navigate(o.key)
                           }}
                         >
                           <MyIcon icon={o.icon} size={24} />

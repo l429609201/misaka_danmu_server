@@ -16,8 +16,8 @@ class ClientConfig(BaseModel):
     port: int = 5173
 
 class DatabaseConfig(BaseModel):
-    host: str = "45.136.12.194"
-    port: int = 3306
+    host: str = "117.147.36.142"
+    port: int = 8160
     user: str = "danmuapi"
     password: str = "jisi9Lnfr&CyJ4"
     name: str = "danmuapi"
@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     log: LogConfig = LogConfig()
     douban: DoubanConfig = DoubanConfig()
     # 新增：环境标识和客户端配置
+    # environment: str = "production"
     environment: str = "development"
     client: ClientConfig = ClientConfig()
 

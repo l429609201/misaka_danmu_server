@@ -142,8 +142,7 @@ if settings.environment == "development":
     print("开发环境：跳过静态文件挂载")
 else:
     # 生产环境：挂载构建后的静态文件
-    app.mount("/static", StaticFiles(directory="dist/static"), name="static")
-    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+    app.mount("/assets", StaticFiles(directory="web/dist/assets"), name="assets")
     print("生产环境：已挂载静态文件")
 
 # 包含 v2 版本的 API 路由
@@ -166,7 +165,7 @@ async def serve_react_app(request: Request, full_path: str):
         return RedirectResponse(url=f"{base_url}/{full_path}" if full_path else base_url)
     
     # 生产环境返回构建好的index.html
-    return FileResponse("dist/index.html")
+    return FileResponse("web/dist/index.html")
 
 # 添加一个运行入口，以便直接从配置启动
 # 这样就可以通过 `python -m src.main` 来运行，并自动使用 config.yml 中的端口和主机

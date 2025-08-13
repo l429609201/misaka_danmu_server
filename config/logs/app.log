@@ -517,3 +517,1316 @@
 [2025-08-11 17:28:49] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
 [2025-08-11 17:28:49] [apscheduler.scheduler:214] [INFO] - Scheduler started
 [2025-08-11 17:28:50] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-12 10:04:52] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 10:04:52] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 10:04:52] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 10:04:53] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 10:04:53] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 10:04:53] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 10:04:53] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 10:04:53] [src.database:32] [ERROR] - ---
+[2025-08-12 10:04:53] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 10:04:53] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 10:04:53] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 10:04:53] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 10:04:53] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 10:04:53] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 10:04:53] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 10:04:53] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 10:04:53] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 10:04:53] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 10:05:36] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 10:05:36] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 10:05:36] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 10:05:40] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 10:05:40] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 10:05:40] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 10:05:40] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 10:05:40] [src.database:32] [ERROR] - ---
+[2025-08-12 10:05:40] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 10:05:40] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 10:05:40] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 10:05:40] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 10:05:40] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 10:05:40] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 10:05:40] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 10:05:40] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 10:05:40] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 10:05:40] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 10:08:27] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 10:08:27] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 10:08:27] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 10:08:27] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 10:08:27] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 10:08:27] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 10:08:27] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 10:08:27] [src.database:32] [ERROR] - ---
+[2025-08-12 10:08:27] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 10:08:27] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 10:08:27] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 10:08:27] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 10:08:27] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 10:08:27] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 10:08:27] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 10:08:27] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 10:08:27] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 10:08:27] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 10:08:33] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 10:08:33] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 10:08:33] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 10:08:34] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 10:08:34] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 10:08:34] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 10:08:34] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 10:08:34] [src.database:32] [ERROR] - ---
+[2025-08-12 10:08:34] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 10:08:34] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 10:08:34] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 10:08:34] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 10:08:34] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 10:08:34] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 10:08:34] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 10:08:34] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 10:08:34] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 10:08:34] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 10:10:16] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 10:10:16] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 10:10:16] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 10:10:16] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-12 10:10:17] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-12 10:10:17] [src.database:157] [INFO] - 正在创建数据表 'metadata_sources'...
+[2025-08-12 10:10:17] [src.database:160] [INFO] - 数据表 'metadata_sources' 创建成功。
+[2025-08-12 10:10:17] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-12 10:10:17] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-12 10:10:17] [src.database:208] [INFO] - 正在检查并初始化默认配置...
+[2025-08-12 10:10:17] [src.database:276] [INFO] - 默认配置检查完成。
+[2025-08-12 10:10:18] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 2)。
+[2025-08-12 10:10:18] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 4)。
+[2025-08-12 10:10:18] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 1)。
+[2025-08-12 10:10:18] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 7)。
+[2025-08-12 10:10:18] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 3)。
+[2025-08-12 10:10:18] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 6)。
+[2025-08-12 10:10:18] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 5)。
+[2025-08-12 10:10:19] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-12 10:10:19] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 202 Accepted"
+[2025-08-12 10:10:19] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-12 10:10:19] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-12 10:10:19] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-12 10:10:19] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-12 10:10:19] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-12 10:10:19] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-12 10:10:19] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-12 10:10:20] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-12 11:02:15] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-12 11:02:15] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-12 11:02:15] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-12 11:02:20] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 11:02:20] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 11:02:20] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 11:02:20] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-12 11:02:20] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-12 11:02:21] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-12 11:02:21] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-12 11:02:21] [src.database:208] [INFO] - 正在检查并初始化默认配置...
+[2025-08-12 11:02:21] [src.database:276] [INFO] - 默认配置检查完成。
+[2025-08-12 11:02:21] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 2)。
+[2025-08-12 11:02:21] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 4)。
+[2025-08-12 11:02:21] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 1)。
+[2025-08-12 11:02:21] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 7)。
+[2025-08-12 11:02:21] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 3)。
+[2025-08-12 11:02:21] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 6)。
+[2025-08-12 11:02:21] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 5)。
+[2025-08-12 11:02:22] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-12 11:02:24] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 202 Accepted"
+[2025-08-12 11:02:24] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-12 11:02:24] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-12 11:02:24] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-12 11:02:24] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-12 11:02:24] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-12 11:02:24] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-12 11:02:24] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-12 11:02:24] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-12 12:02:24] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query ([Errno 54] Connection reset by peer)')
+[2025-08-12 14:06:36] [src.dandan_api:673] [INFO] - 收到 /match 请求, 文件名: '111111'
+[2025-08-12 14:06:36] [src.dandan_api:675] [INFO] - 文件名解析结果: {'title': '111111', 'season': 1, 'episode': 1}
+[2025-08-12 14:06:37] [src.dandan_api:683] [INFO] - 为标题 '111111' 找到 0 个可能的库内作品进行TMDB匹配。
+[2025-08-12 14:06:37] [src.dandan_api:710] [INFO] - TMDB 映射匹配失败或无可用映射，回退到标题模糊搜索。
+[2025-08-12 14:06:37] [root:103] [INFO] - FULLTEXT search for '111111' yielded no results, falling back to LIKE search including aliases.
+[2025-08-12 14:06:37] [src.dandan_api:714] [INFO] - 模糊搜索为 '111111' (季:1 集:1) 找到 0 条记录
+[2025-08-12 14:06:37] [src.dandan_api:729] [INFO] - 发送 /match 响应 (无精确匹配): {
+  "success": true,
+  "errorCode": 0,
+  "errorMessage": "",
+  "isMatched": false,
+  "matches": []
+}
+[2025-08-12 14:34:38] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-12 14:34:38] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-12 14:34:38] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-12 14:42:35] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 14:42:35] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 14:42:35] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 14:43:50] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 14:43:50] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 14:43:50] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 14:43:50] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '45.136.12.194'")
+[2025-08-12 14:43:50] [src.database:32] [ERROR] - ---
+[2025-08-12 14:43:50] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 14:43:50] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 14:43:50] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 14:43:50] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 14:43:50] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 14:43:50] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 14:43:50] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 14:43:50] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 14:43:50] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 14:43:50] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 14:44:22] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 14:44:22] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 14:44:22] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 14:44:33] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 14:44:33] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 14:44:33] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 14:44:33] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '45.136.12.194'")
+[2025-08-12 14:44:33] [src.database:32] [ERROR] - ---
+[2025-08-12 14:44:33] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 14:44:33] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 14:44:33] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 14:44:33] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 14:44:33] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 14:44:33] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 14:44:33] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 14:44:33] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 14:44:33] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 14:44:33] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 14:44:40] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 14:44:40] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 14:44:40] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 14:44:40] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 14:44:40] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 14:44:40] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 14:44:40] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '45.136.12.194'")
+[2025-08-12 14:44:40] [src.database:32] [ERROR] - ---
+[2025-08-12 14:44:40] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 14:44:40] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 14:44:40] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 14:44:40] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 14:44:40] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 14:44:40] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 14:44:40] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 14:44:40] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 14:44:40] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 14:44:40] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 14:44:43] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 14:44:43] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 14:44:43] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 14:44:44] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 14:44:44] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 14:44:44] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 14:44:44] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '45.136.12.194'")
+[2025-08-12 14:44:44] [src.database:32] [ERROR] - ---
+[2025-08-12 14:44:44] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 14:44:44] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 14:44:44] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 14:44:44] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 14:44:44] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 14:44:44] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 14:44:44] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 14:44:44] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 14:44:44] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 14:44:44] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 14:44:56] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 14:44:56] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 14:44:56] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 14:44:57] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-12 14:44:58] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-12 14:44:58] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-12 14:44:58] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-12 14:44:58] [src.database:208] [INFO] - 正在检查并初始化默认配置...
+[2025-08-12 14:44:59] [src.database:276] [INFO] - 默认配置检查完成。
+[2025-08-12 14:44:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 2)。
+[2025-08-12 14:44:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 4)。
+[2025-08-12 14:44:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 1)。
+[2025-08-12 14:44:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 7)。
+[2025-08-12 14:44:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 3)。
+[2025-08-12 14:44:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 6)。
+[2025-08-12 14:44:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 5)。
+[2025-08-12 14:45:01] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-12 14:45:02] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 202 Accepted"
+[2025-08-12 14:45:02] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-12 14:45:02] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-12 14:45:02] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-12 14:45:02] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-12 14:45:02] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-12 14:45:02] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-12 14:45:02] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-12 14:45:02] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-12 14:45:33] [src.dandan_api:673] [INFO] - 收到 /match 请求, 文件名: '1111111'
+[2025-08-12 14:45:33] [src.dandan_api:675] [INFO] - 文件名解析结果: {'title': '1111111', 'season': 1, 'episode': 1}
+[2025-08-12 14:45:34] [src.dandan_api:683] [INFO] - 为标题 '1111111' 找到 0 个可能的库内作品进行TMDB匹配。
+[2025-08-12 14:45:34] [src.dandan_api:710] [INFO] - TMDB 映射匹配失败或无可用映射，回退到标题模糊搜索。
+[2025-08-12 14:45:34] [root:103] [INFO] - FULLTEXT search for '1111111' yielded no results, falling back to LIKE search including aliases.
+[2025-08-12 14:45:34] [src.dandan_api:714] [INFO] - 模糊搜索为 '1111111' (季:1 集:1) 找到 0 条记录
+[2025-08-12 14:45:34] [src.dandan_api:729] [INFO] - 发送 /match 响应 (无精确匹配): {
+  "success": true,
+  "errorCode": 0,
+  "errorMessage": "",
+  "isMatched": false,
+  "matches": []
+}
+[2025-08-12 14:49:25] [src.dandan_api:673] [INFO] - 收到 /match 请求, 文件名: '222'
+[2025-08-12 14:49:25] [src.dandan_api:675] [INFO] - 文件名解析结果: {'title': '222', 'season': 1, 'episode': 1}
+[2025-08-12 14:49:25] [src.dandan_api:683] [INFO] - 为标题 '222' 找到 0 个可能的库内作品进行TMDB匹配。
+[2025-08-12 14:49:25] [src.dandan_api:710] [INFO] - TMDB 映射匹配失败或无可用映射，回退到标题模糊搜索。
+[2025-08-12 14:49:26] [root:103] [INFO] - FULLTEXT search for '222' yielded no results, falling back to LIKE search including aliases.
+[2025-08-12 14:49:26] [src.dandan_api:714] [INFO] - 模糊搜索为 '222' (季:1 集:1) 找到 0 条记录
+[2025-08-12 14:49:26] [src.dandan_api:729] [INFO] - 发送 /match 响应 (无精确匹配): {
+  "success": true,
+  "errorCode": 0,
+  "errorMessage": "",
+  "isMatched": false,
+  "matches": []
+}
+[2025-08-12 14:52:52] [src.dandan_api:673] [INFO] - 收到 /match 请求, 文件名: '22233333'
+[2025-08-12 14:52:52] [src.dandan_api:675] [INFO] - 文件名解析结果: {'title': '22233333', 'season': 1, 'episode': 1}
+[2025-08-12 14:52:52] [src.dandan_api:683] [INFO] - 为标题 '22233333' 找到 0 个可能的库内作品进行TMDB匹配。
+[2025-08-12 14:52:52] [src.dandan_api:710] [INFO] - TMDB 映射匹配失败或无可用映射，回退到标题模糊搜索。
+[2025-08-12 14:52:52] [root:103] [INFO] - FULLTEXT search for '22233333' yielded no results, falling back to LIKE search including aliases.
+[2025-08-12 14:52:52] [src.dandan_api:714] [INFO] - 模糊搜索为 '22233333' (季:1 集:1) 找到 0 条记录
+[2025-08-12 14:52:52] [src.dandan_api:729] [INFO] - 发送 /match 响应 (无精确匹配): {
+  "success": true,
+  "errorCode": 0,
+  "errorMessage": "",
+  "isMatched": false,
+  "matches": []
+}
+[2025-08-12 14:52:59] [src.dandan_api:673] [INFO] - 收到 /match 请求, 文件名: '一饭封神'
+[2025-08-12 14:52:59] [src.dandan_api:675] [INFO] - 文件名解析结果: {'title': '一饭封神', 'season': 1, 'episode': 1}
+[2025-08-12 14:52:59] [src.dandan_api:683] [INFO] - 为标题 '一饭封神' 找到 0 个可能的库内作品进行TMDB匹配。
+[2025-08-12 14:52:59] [src.dandan_api:710] [INFO] - TMDB 映射匹配失败或无可用映射，回退到标题模糊搜索。
+[2025-08-12 14:52:59] [root:103] [INFO] - FULLTEXT search for '一饭封神' yielded no results, falling back to LIKE search including aliases.
+[2025-08-12 14:53:00] [src.dandan_api:714] [INFO] - 模糊搜索为 '一饭封神' (季:1 集:1) 找到 0 条记录
+[2025-08-12 14:53:00] [src.dandan_api:729] [INFO] - 发送 /match 响应 (无精确匹配): {
+  "success": true,
+  "errorCode": 0,
+  "errorMessage": "",
+  "isMatched": false,
+  "matches": []
+}
+[2025-08-12 15:17:48] [src.api.ui:824] [INFO] - 用户 'admin' 清除了所有缓存，共 0 条。
+[2025-08-12 15:18:55] [src.api.ui:824] [INFO] - 用户 'admin' 清除了所有缓存，共 0 条。
+[2025-08-12 15:19:13] [src.api.ui:824] [INFO] - 用户 'admin' 清除了所有缓存，共 0 条。
+[2025-08-12 15:40:58] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-12 15:40:58] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 15:40:58] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-12 15:40:58] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-12 15:40:58] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 15:40:58] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-12 15:41:28] [TencentScraper:121] [INFO] - Tencent: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-12 15:41:28] [IqiyiScraper:147] [INFO] - 爱奇艺: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-12 15:41:28] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-12 15:41:28] [BilibiliScraper:233] [INFO] - Bilibili: 数据库中未找到Cookie。
+[2025-08-12 15:41:29] [httpx:1740] [INFO] - HTTP Request: GET https://search.video.iqiyi.com/o?if=html5&key=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pageNum=1&pageSize=20 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:29] [httpx:1740] [INFO] - HTTP Request: GET https://www.bilibili.com/ "HTTP/1.1 200 OK"
+[2025-08-12 15:41:29] [BilibiliScraper:338] [INFO] - Bilibili: WBI mixin key expired or not found, fetching new one...
+[2025-08-12 15:41:29] [BilibiliScraper:338] [INFO] - Bilibili: WBI mixin key expired or not found, fetching new one...
+[2025-08-12 15:41:29] [IqiyiScraper:206] [INFO] - 爱奇艺: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-12 15:41:29] [httpx:1740] [INFO] - HTTP Request: POST https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.HttpMobileRecall/MbSearchHttp "HTTP/1.1 200 OK"
+[2025-08-12 15:41:29] [TencentScraper:181] [INFO] - Tencent: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-12 15:41:29] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-12 15:41:29] [GamerScraper:97] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-12 15:41:29] [GamerScraper:61] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-12 15:41:29] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/nav "HTTP/1.1 200 OK"
+[2025-08-12 15:41:29] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-12 15:41:29] [BilibiliScraper:365] [INFO] - Bilibili: Successfully fetched new WBI mixin key.
+[2025-08-12 15:41:29] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/search/drama?keywords=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&size=20&order=match&search_after=&isExecuteVipActivity=true "HTTP/1.1 200 OK"
+[2025-08-12 15:41:30] [GamerScraper:82] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-12 15:41:30] [GamerScraper:184] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-12 15:41:30] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/nav "HTTP/1.1 200 OK"
+[2025-08-12 15:41:30] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=50236&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:30] [BilibiliScraper:365] [INFO] - Bilibili: Successfully fetched new WBI mixin key.
+[2025-08-12 15:41:31] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&search_type=media_bangumi&wts=1754984489&w_rid=af6e11d88bce66a3e1a47f18d87e52c7 "HTTP/1.1 412 Precondition Failed"
+[2025-08-12 15:41:31] [BilibiliScraper:464] [ERROR] - Bilibili: Search for type 'media_bangumi' failed: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&search_type=media_bangumi&wts=1754984489&w_rid=af6e11d88bce66a3e1a47f18d87e52c7'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/bilibili.py", line 428, in _search_by_type
+    response.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&search_type=media_bangumi&wts=1754984489&w_rid=af6e11d88bce66a3e1a47f18d87e52c7'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+[2025-08-12 15:41:31] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=13880&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:31] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&search_type=media_ft&wts=1754984490&w_rid=cb18a4c1529ec390def7223ce19347da "HTTP/1.1 412 Precondition Failed"
+[2025-08-12 15:41:32] [BilibiliScraper:464] [ERROR] - Bilibili: Search for type 'media_ft' failed: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&search_type=media_ft&wts=1754984490&w_rid=cb18a4c1529ec390def7223ce19347da'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/bilibili.py", line 428, in _search_by_type
+    response.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&search_type=media_ft&wts=1754984490&w_rid=cb18a4c1529ec390def7223ce19347da'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+[2025-08-12 15:41:32] [BilibiliScraper:406] [INFO] - Bilibili: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-12 15:41:32] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=12948&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:32] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=51763&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:33] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=34356&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:33] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=47469&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:34] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52723&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:34] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=34113&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:35] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=49311&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:36] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=42282&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:36] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=12779&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:37] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=53679&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:37] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=3392&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:38] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=16937&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:38] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=47932&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:39] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=50918&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:40] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=12669&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:40] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=30836&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:41] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=4221&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:42] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=48643&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:42] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=17417&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:41:42] [RenrenScraper:278] [INFO] - renren: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 21 个结果。
+[2025-08-12 15:41:42] [RenrenScraper:281] [INFO] - renren: 搜索结果列表:
+  - 面露一人饭 第二季 (ID: 50236, 类型: tv_series, 年份: 2024)
+  - 请给一顿饭Show 第二季 (ID: 13880, 类型: tv_series, 年份: 2019)
+  - 请给一顿饭Show 第一季 (ID: 12948, 类型: tv_series, 年份: 2016)
+  - 豆豆饭饭 (ID: 51763, 类型: tv_series, 年份: 2025)
+  - 饭饭之交 (ID: 34356, 类型: tv_series, 年份: 2020)
+  - 亚历山大大帝：封神之路 (ID: 47469, 类型: tv_series, 年份: 2024)
+  - 雪场饭 (ID: 52723, 类型: tv_series, 年份: 2025)
+  - Meal Kid (ID: 34113, 类型: tv_series, 年份: 2020)
+  - 饭后一席谈 (ID: 49311, 类型: tv_series, 年份: 2024)
+  - 全果饭 (ID: 42282, 类型: tv_series, 年份: 2023)
+  - 极道美食王 (ID: 12779, 类型: tv_series, 年份: 2018)
+  - 菲尔来蹭饭 第八季 (ID: 53679, 类型: tv_series, 年份: 2025)
+  - 始饭 (ID: 3392, 类型: tv_series, 年份: 2015)
+  - 请给一顿饭Show 第三季 (ID: 16937, 类型: tv_series, 年份: 2020)
+  - 菲尔来蹭饭 第七季 (ID: 47932, 类型: tv_series, 年份: 2024)
+  - 下山饭 (ID: 50918, 类型: tv_series, 年份: 2024)
+  - 一封关于父亲的信 (ID: 12669, 类型: tv_series, 年份: 2008)
+  - 与神同行：罪与罚 (ID: 30836, 类型: tv_series, 年份: 2017)
+  - 约饭 第一季 (ID: 4221, 类型: tv_series, 年份: 2015)
+  - 神之一手 (ID: 48643, 类型: tv_series, 年份: 2014)
+  - 破产投靠 (ID: 17417, 类型: tv_series, 年份: 2020)
+[2025-08-12 15:41:43] [src.scraper_manager:129] [ERROR] - 搜索任务中出现错误: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 15:41:43] [src.api.ui:217] [INFO] - 直接搜索完成，找到 21 个原始结果。
+[2025-08-12 15:43:09] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-12 15:43:09] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 15:43:09] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-12 15:43:09] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-12 15:43:09] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-12 15:43:09] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 15:43:09] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-12 15:43:10] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-12 15:43:10] [GamerScraper:97] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-12 15:43:10] [GamerScraper:61] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-12 15:43:10] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-12 15:43:10] [GamerScraper:82] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-12 15:43:10] [GamerScraper:184] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-12 15:43:40] [IqiyiScraper:144] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-12 15:43:40] [BilibiliScraper:387] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-12 15:43:40] [TencentScraper:113] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-12 15:43:40] [YoukuScraper:122] [INFO] - Youku: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-12 15:43:40] [httpx:1740] [INFO] - HTTP Request: GET https://search.youku.com/api/search?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&userAgent=Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F91.0.4472.124+Safari%2F537.36&site=1&categories=0&ftype=0&ob=0&pg=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:43:40] [YoukuScraper:171] [INFO] - Youku: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-12 15:43:40] [src.scraper_manager:129] [ERROR] - 搜索任务中出现错误: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 15:43:40] [src.api.ui:217] [INFO] - 直接搜索完成，找到 0 个原始结果。
+[2025-08-12 15:44:51] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-12 15:44:51] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 15:44:51] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-12 15:44:51] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-12 15:44:51] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-12 15:44:52] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 15:44:52] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-12 15:44:52] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-12 15:44:52] [GamerScraper:97] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-12 15:44:52] [GamerScraper:61] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-12 15:44:53] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-12 15:44:53] [GamerScraper:82] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-12 15:44:53] [GamerScraper:184] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-12 15:45:22] [TencentScraper:113] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-12 15:45:22] [YoukuScraper:119] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-12 15:45:22] [BilibiliScraper:387] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-12 15:45:22] [IqiyiScraper:144] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-12 15:45:22] [src.scraper_manager:129] [ERROR] - 搜索任务中出现错误: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 15:45:22] [src.api.ui:217] [INFO] - 直接搜索完成，找到 0 个原始结果。
+[2025-08-12 15:47:55] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (解析为: title='%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C', season=None, episode=None)
+[2025-08-12 15:47:55] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 15:47:55] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (繁体: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C')...
+[2025-08-12 15:47:55] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 15:47:55] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 15:47:55] [TencentScraper:121] [INFO] - Tencent: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 15:47:55] [IqiyiScraper:147] [INFO] - 爱奇艺: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 15:47:55] [YoukuScraper:122] [INFO] - Youku: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 15:47:56] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E8%25B6%2585%25E6%2596%25B0%25E9%25B2%259C&search_type=media_bangumi&wts=1754984875&w_rid=1d2ae15811756b132715bb30de473fde "HTTP/1.1 412 Precondition Failed"
+[2025-08-12 15:47:56] [BilibiliScraper:464] [ERROR] - Bilibili: Search for type 'media_bangumi' failed: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E8%25B6%2585%25E6%2596%25B0%25E9%25B2%259C&search_type=media_bangumi&wts=1754984875&w_rid=1d2ae15811756b132715bb30de473fde'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/bilibili.py", line 428, in _search_by_type
+    response.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E8%25B6%2585%25E6%2596%25B0%25E9%25B2%259C&search_type=media_bangumi&wts=1754984875&w_rid=1d2ae15811756b132715bb30de473fde'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+[2025-08-12 15:47:56] [httpx:1740] [INFO] - HTTP Request: GET https://search.video.iqiyi.com/o?if=html5&key=%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C&pageNum=1&pageSize=20 "HTTP/1.1 200 OK"
+[2025-08-12 15:47:56] [IqiyiScraper:206] [INFO] - 爱奇艺: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个有效结果。
+[2025-08-12 15:47:56] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E5%259C%25B0%25E7%2590%2583%25E8%25B6%2585%25E6%2596%25B0%25E9%25B2%259C "HTTP/1.1 403 Forbidden"
+[2025-08-12 15:47:56] [httpx:1740] [INFO] - HTTP Request: POST https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.HttpMobileRecall/MbSearchHttp "HTTP/1.1 200 OK"
+[2025-08-12 15:47:56] [TencentScraper:181] [INFO] - Tencent: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个有效结果。
+[2025-08-12 15:47:56] [httpx:1740] [INFO] - HTTP Request: GET https://search.youku.com/api/search?keyword=%25E5%259C%25B0%25E7%2590%2583%25E8%25B6%2585%25E6%2596%25B0%25E9%25B2%259C&userAgent=Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F91.0.4472.124+Safari%2F537.36&site=1&categories=0&ftype=0&ob=0&pg=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:47:56] [YoukuScraper:171] [INFO] - Youku: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个有效结果。
+[2025-08-12 15:47:56] [GamerScraper:97] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-12 15:47:56] [GamerScraper:61] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-12 15:47:56] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E8%25B6%2585%25E6%2596%25B0%25E9%25B2%259C&search_type=media_ft&wts=1754984875&w_rid=287d179aef0b0feb7067d71d822d9f36 "HTTP/1.1 412 Precondition Failed"
+[2025-08-12 15:47:56] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-12 15:47:56] [BilibiliScraper:464] [ERROR] - Bilibili: Search for type 'media_ft' failed: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E8%25B6%2585%25E6%2596%25B0%25E9%25B2%259C&search_type=media_ft&wts=1754984875&w_rid=287d179aef0b0feb7067d71d822d9f36'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/bilibili.py", line 428, in _search_by_type
+    response.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E8%25B6%2585%25E6%2596%25B0%25E9%25B2%259C&search_type=media_ft&wts=1754984875&w_rid=287d179aef0b0feb7067d71d822d9f36'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+[2025-08-12 15:47:56] [BilibiliScraper:406] [INFO] - Bilibili: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个有效结果。
+[2025-08-12 15:47:56] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 15:47:56] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个结果。
+[2025-08-12 15:47:56] [GamerScraper:82] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-12 15:47:56] [GamerScraper:184] [ERROR] - Gamer: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-12 15:47:57] [src.scraper_manager:129] [ERROR] - 搜索任务中出现错误: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 15:47:57] [src.api.ui:217] [INFO] - 直接搜索完成，找到 0 个原始结果。
+[2025-08-12 15:48:13] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-12 15:48:13] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-12 15:48:13] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-12 15:48:28] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 15:48:28] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:48:28] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:48:29] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 15:48:29] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 15:48:29] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 15:48:29] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 15:48:29] [src.database:32] [ERROR] - ---
+[2025-08-12 15:48:29] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 15:48:29] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 15:48:29] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 15:48:29] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 15:48:29] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 15:48:29] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 15:48:29] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 15:48:29] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 15:48:29] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 15:48:29] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 15:48:43] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 15:48:43] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:48:43] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:48:44] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 15:48:44] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 15:48:44] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 15:48:44] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 15:48:44] [src.database:32] [ERROR] - ---
+[2025-08-12 15:48:44] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 15:48:44] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 15:48:44] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 15:48:44] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 15:48:44] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 15:48:44] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 15:48:44] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 15:48:44] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 15:48:44] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 15:48:44] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 15:50:11] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 15:50:11] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:50:11] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:50:12] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 15:50:12] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 15:50:12] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 15:50:12] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 15:50:12] [src.database:32] [ERROR] - ---
+[2025-08-12 15:50:12] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 15:50:12] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 15:50:12] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 15:50:12] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 15:50:12] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 15:50:12] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 15:50:12] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 15:50:12] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 15:50:12] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 15:50:12] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 15:51:32] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 15:51:32] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:51:32] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:51:32] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 15:51:32] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 15:51:32] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 15:51:32] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-12 15:51:32] [src.database:32] [ERROR] - ---
+[2025-08-12 15:51:32] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 15:51:32] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 15:51:32] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 15:51:32] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 15:51:32] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 15:51:32] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 15:51:32] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 15:51:32] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 15:51:32] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 15:51:32] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 15:52:52] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 15:52:52] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:52:52] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:52:52] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 15:52:52] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 15:52:52] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 15:52:52] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '45.136.12.194'")
+[2025-08-12 15:52:52] [src.database:32] [ERROR] - ---
+[2025-08-12 15:52:52] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 15:52:52] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 15:52:52] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 15:52:52] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 15:52:52] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 15:52:52] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 15:52:52] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 15:52:52] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 15:52:52] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 15:52:52] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 15:52:55] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 15:52:55] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:52:55] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:52:55] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 15:52:55] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 15:52:55] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 15:52:55] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '45.136.12.194'")
+[2025-08-12 15:52:55] [src.database:32] [ERROR] - ---
+[2025-08-12 15:52:55] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 15:52:55] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 15:52:55] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 15:52:55] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 15:52:55] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 15:52:55] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 15:52:55] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 15:52:55] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 15:52:55] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 15:52:55] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 15:52:58] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 15:52:58] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:52:58] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:52:59] [src.database:28] [ERROR] - ============================================================
+[2025-08-12 15:52:59] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-12 15:52:59] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-12 15:52:59] [src.database:31] [ERROR] - === 错误详情: (2003, "Can't connect to MySQL server on '45.136.12.194'")
+[2025-08-12 15:52:59] [src.database:32] [ERROR] - ---
+[2025-08-12 15:52:59] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-12 15:52:59] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-12 15:52:59] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-12 15:52:59] [src.database:36] [ERROR] - ---    - 主机 (Host): 45.136.12.194
+[2025-08-12 15:52:59] [src.database:37] [ERROR] - ---    - 端口 (Port): 3306
+[2025-08-12 15:52:59] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-12 15:52:59] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-12 15:52:59] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-12 15:52:59] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-12 15:52:59] [src.database:42] [ERROR] - ============================================================
+[2025-08-12 15:53:02] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 15:53:02] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:53:02] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 15:53:03] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-12 15:53:04] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-12 15:53:04] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-12 15:53:04] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-12 15:53:05] [src.database:208] [INFO] - 正在检查并初始化默认配置...
+[2025-08-12 15:53:05] [src.database:276] [INFO] - 默认配置检查完成。
+[2025-08-12 15:53:06] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 2)。
+[2025-08-12 15:53:06] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 4)。
+[2025-08-12 15:53:06] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 1)。
+[2025-08-12 15:53:06] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 7)。
+[2025-08-12 15:53:06] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 3)。
+[2025-08-12 15:53:06] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 6)。
+[2025-08-12 15:53:06] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 5)。
+[2025-08-12 15:53:07] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-12 15:53:10] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 202 Accepted"
+[2025-08-12 15:53:10] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-12 15:53:10] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-12 15:53:10] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-12 15:53:10] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-12 15:53:10] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-12 15:53:10] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-12 15:53:10] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-12 15:53:10] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-12 15:53:30] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (解析为: title='%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C', season=None, episode=None)
+[2025-08-12 15:53:30] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 15:53:30] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 15:53:30] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 15:53:31] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:31] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个结果。
+[2025-08-12 15:53:31] [IqiyiScraper:144] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 15:53:31] [BilibiliScraper:387] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 15:53:31] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (繁体: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C')...
+[2025-08-12 15:53:31] [TencentScraper:113] [INFO] - Tencent: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 15:53:31] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/search/drama?keywords=%25E5%259C%25B0%25E7%2590%2583%25E8%25B6%2585%25E6%2596%25B0%25E9%25B2%259C&size=20&order=match&search_after=&isExecuteVipActivity=true "HTTP/1.1 200 OK"
+[2025-08-12 15:53:31] [YoukuScraper:119] [INFO] - Youku: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 15:53:31] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=39107&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:32] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=15656&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:33] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=14966&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:33] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=16650&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:34] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52772&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:34] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=43536&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:35] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=12738&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:35] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=17575&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:36] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=14694&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:36] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=11972&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:37] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=4635&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:37] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=34448&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:38] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=1113&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:38] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=30304&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:39] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=47318&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:39] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=15139&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:40] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=41588&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:40] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=425&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:41] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=46159&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:41] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=362&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:42] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=1553&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 15:53:42] [RenrenScraper:278] [INFO] - renren: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 21 个结果。
+[2025-08-12 15:53:42] [RenrenScraper:281] [INFO] - renren: 搜索结果列表:
+  - 新鲜 (ID: 39107, 类型: tv_series, 年份: 2022)
+  - 茶煲表哥 第一季 (ID: 15656, 类型: tv_series, 年份: 1990)
+  - 亚当·桑德勒：100%新鲜 (ID: 14966, 类型: tv_series, 年份: 2018)
+  - 解释一切 第一季 (ID: 16650, 类型: tv_series, 年份: 2018)
+  - 新地球总统 第二季 (ID: 52772, 类型: tv_series, 年份: 2024)
+  - 新地球总统 第一季 (ID: 43536, 类型: tv_series, 年份: 2023)
+  - 地球 (ID: 12738, 类型: tv_series, 年份: 2007)
+  - 地球百子 第七季 (ID: 17575, 类型: tv_series, 年份: 2020)
+  - 地球百子 第六季 (ID: 14694, 类型: tv_series, 年份: 2019)
+  - 地球百子 第五季 (ID: 11972, 类型: tv_series, 年份: 2018)
+  - 地球百子 第四季 (ID: 4635, 类型: tv_series, 年份: 2017)
+  - 超新约全书 (ID: 34448, 类型: tv_series, 年份: 2015)
+  - 地球百子 第三季 (ID: 1113, 类型: tv_series, 年份: 2016)
+  - 新创新天地 第三季 (ID: 30304, 类型: tv_series, 年份: 2020)
+  - 地球漫步的方式 (ID: 47318, 类型: tv_series, 年份: 2024)
+  - 新创新天地 第一季 (ID: 15139, 类型: tv_series, 年份: 2019)
+  - 灰飞烟灭 第一季 (ID: 41588, 类型: tv_series, 年份: 2008)
+  - 地球百子 第二季 (ID: 425, 类型: tv_series, 年份: 2014)
+  - 地球脉动 第三季 (ID: 46159, 类型: tv_series, 年份: 2023)
+  - 地球百子 第一季 (ID: 362, 类型: tv_series, 年份: 2014)
+  - 地球脉动 第一季 (ID: 1553, 类型: tv_series, 年份: 2006)
+[2025-08-12 15:53:51] [GamerScraper:180] [WARNING] - Gamer: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 时连接超时或网络错误: 
+[2025-08-12 15:53:51] [src.api.ui:217] [INFO] - 直接搜索完成，找到 21 个原始结果。
+[2025-08-12 15:55:16] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (解析为: title='%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C', season=None, episode=None)
+[2025-08-12 15:55:16] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 15:55:16] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (繁体: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C')...
+[2025-08-12 15:55:16] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 15:55:16] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 15:55:17] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 15:55:17] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个结果。
+[2025-08-12 15:55:17] [TencentScraper:113] [INFO] - Tencent: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 15:55:17] [IqiyiScraper:144] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 15:55:17] [YoukuScraper:119] [INFO] - Youku: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 15:55:17] [BilibiliScraper:387] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 15:55:36] [GamerScraper:180] [WARNING] - Gamer: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 时连接超时或网络错误: 
+[2025-08-12 15:55:36] [src.api.ui:217] [INFO] - 直接搜索完成，找到 21 个原始结果。
+[2025-08-12 16:03:05] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (解析为: title='%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C', season=None, episode=None)
+[2025-08-12 16:03:05] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 16:03:05] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (繁体: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C')...
+[2025-08-12 16:03:05] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:03:05] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:03:05] [GamerScraper:180] [WARNING] - Gamer: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 时连接超时或网络错误: All connection attempts failed
+[2025-08-12 16:03:05] [BilibiliScraper:387] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:03:05] [IqiyiScraper:144] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:03:05] [YoukuScraper:119] [INFO] - Youku: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:03:05] [TencentScraper:113] [INFO] - Tencent: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:03:06] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 16:03:06] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个结果。
+[2025-08-12 16:03:06] [src.api.ui:217] [INFO] - 直接搜索完成，找到 21 个原始结果。
+[2025-08-12 16:09:26] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (解析为: title='%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C', season=None, episode=None)
+[2025-08-12 16:09:26] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 16:09:26] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (繁体: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C')...
+[2025-08-12 16:09:26] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:09:26] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:09:26] [TencentScraper:113] [INFO] - Tencent: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:09:26] [IqiyiScraper:144] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:09:26] [BilibiliScraper:387] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:09:26] [GamerScraper:180] [WARNING] - Gamer: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 时连接超时或网络错误: 
+[2025-08-12 16:09:26] [YoukuScraper:119] [INFO] - Youku: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:09:26] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 16:09:26] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个结果。
+[2025-08-12 16:09:26] [src.api.ui:217] [INFO] - 直接搜索完成，找到 21 个原始结果。
+[2025-08-12 16:11:06] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (解析为: title='%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C', season=None, episode=None)
+[2025-08-12 16:11:06] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 16:11:06] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (繁体: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C')...
+[2025-08-12 16:11:06] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:11:06] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:11:06] [BilibiliScraper:387] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:11:06] [YoukuScraper:119] [INFO] - Youku: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:11:06] [IqiyiScraper:144] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:11:06] [TencentScraper:113] [INFO] - Tencent: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:11:06] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 16:11:06] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个结果。
+[2025-08-12 16:11:26] [GamerScraper:180] [WARNING] - Gamer: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 时连接超时或网络错误: 
+[2025-08-12 16:11:26] [src.api.ui:217] [INFO] - 直接搜索完成，找到 21 个原始结果。
+[2025-08-12 16:12:38] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (解析为: title='%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C', season=None, episode=None)
+[2025-08-12 16:12:38] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 16:12:38] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (繁体: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C')...
+[2025-08-12 16:12:38] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:12:38] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:12:38] [IqiyiScraper:144] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:12:38] [YoukuScraper:119] [INFO] - Youku: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:12:38] [TencentScraper:113] [INFO] - Tencent: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:12:38] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 16:12:38] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个结果。
+[2025-08-12 16:12:39] [BilibiliScraper:387] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:12:58] [GamerScraper:180] [WARNING] - Gamer: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 时连接超时或网络错误: 
+[2025-08-12 16:12:58] [src.api.ui:217] [INFO] - 直接搜索完成，找到 21 个原始结果。
+[2025-08-12 16:13:22] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C' (解析为: title='%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C', season=None, episode=None)
+[2025-08-12 16:13:22] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 16:13:22] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C' (繁体: '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C')...
+[2025-08-12 16:13:22] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:13:22] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:13:22] [IqiyiScraper:147] [INFO] - 爱奇艺: 正在搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:13:22] [YoukuScraper:122] [INFO] - Youku: 正在搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:13:22] [BilibiliScraper:233] [INFO] - Bilibili: 数据库中未找到Cookie。
+[2025-08-12 16:13:23] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:23] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C' 完成，找到 0 个结果。
+[2025-08-12 16:13:23] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/search/drama?keywords=%25E5%259C%25B0%25E7%2590%2583%25E6%258B%2586%25E6%2596%25B0%25E9%25B2%259C&size=20&order=match&search_after=&isExecuteVipActivity=true "HTTP/1.1 200 OK"
+[2025-08-12 16:13:23] [httpx:1740] [INFO] - HTTP Request: GET https://search.video.iqiyi.com/o?if=html5&key=%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C&pageNum=1&pageSize=20 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:23] [IqiyiScraper:206] [INFO] - 爱奇艺: 搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C' 完成，找到 0 个有效结果。
+[2025-08-12 16:13:23] [httpx:1740] [INFO] - HTTP Request: GET https://www.bilibili.com/ "HTTP/1.1 200 OK"
+[2025-08-12 16:13:23] [BilibiliScraper:338] [INFO] - Bilibili: WBI mixin key expired or not found, fetching new one...
+[2025-08-12 16:13:23] [BilibiliScraper:338] [INFO] - Bilibili: WBI mixin key expired or not found, fetching new one...
+[2025-08-12 16:13:23] [httpx:1740] [INFO] - HTTP Request: GET https://search.youku.com/api/search?keyword=%25E5%259C%25B0%25E7%2590%2583%25E6%258B%2586%25E6%2596%25B0%25E9%25B2%259C&userAgent=Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F91.0.4472.124+Safari%2F537.36&site=1&categories=0&ftype=0&ob=0&pg=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:23] [YoukuScraper:171] [INFO] - Youku: 搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C' 完成，找到 0 个有效结果。
+[2025-08-12 16:13:23] [TencentScraper:121] [INFO] - Tencent: 正在搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:13:23] [httpx:1740] [INFO] - HTTP Request: POST https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.HttpMobileRecall/MbSearchHttp "HTTP/1.1 200 OK"
+[2025-08-12 16:13:23] [TencentScraper:181] [INFO] - Tencent: 搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C' 完成，找到 0 个有效结果。
+[2025-08-12 16:13:23] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=39107&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:23] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/nav "HTTP/1.1 200 OK"
+[2025-08-12 16:13:23] [BilibiliScraper:365] [INFO] - Bilibili: Successfully fetched new WBI mixin key.
+[2025-08-12 16:13:24] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=15656&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:24] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/nav "HTTP/1.1 200 OK"
+[2025-08-12 16:13:24] [BilibiliScraper:365] [INFO] - Bilibili: Successfully fetched new WBI mixin key.
+[2025-08-12 16:13:24] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=14966&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:24] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E6%258B%2586%25E6%2596%25B0%25E9%25B2%259C&search_type=media_bangumi&wts=1754986403&w_rid=c26eb1a40658b4c7dad70e04420bbcdb "HTTP/1.1 412 Precondition Failed"
+[2025-08-12 16:13:24] [BilibiliScraper:464] [ERROR] - Bilibili: Search for type 'media_bangumi' failed: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E6%258B%2586%25E6%2596%25B0%25E9%25B2%259C&search_type=media_bangumi&wts=1754986403&w_rid=c26eb1a40658b4c7dad70e04420bbcdb'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/bilibili.py", line 428, in _search_by_type
+    response.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E6%258B%2586%25E6%2596%25B0%25E9%25B2%259C&search_type=media_bangumi&wts=1754986403&w_rid=c26eb1a40658b4c7dad70e04420bbcdb'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+[2025-08-12 16:13:25] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=16650&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:25] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E6%258B%2586%25E6%2596%25B0%25E9%25B2%259C&search_type=media_ft&wts=1754986404&w_rid=5f234a9bdc6930140de3ea2e419f4159 "HTTP/1.1 412 Precondition Failed"
+[2025-08-12 16:13:25] [BilibiliScraper:464] [ERROR] - Bilibili: Search for type 'media_ft' failed: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E6%258B%2586%25E6%2596%25B0%25E9%25B2%259C&search_type=media_ft&wts=1754986404&w_rid=5f234a9bdc6930140de3ea2e419f4159'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/bilibili.py", line 428, in _search_by_type
+    response.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '412 Precondition Failed' for url 'https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E5%259C%25B0%25E7%2590%2583%25E6%258B%2586%25E6%2596%25B0%25E9%25B2%259C&search_type=media_ft&wts=1754986404&w_rid=5f234a9bdc6930140de3ea2e419f4159'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/412
+[2025-08-12 16:13:25] [BilibiliScraper:406] [INFO] - Bilibili: 搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C' 完成，找到 0 个有效结果。
+[2025-08-12 16:13:25] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52772&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:26] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=43536&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:26] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=12738&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:27] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=45342&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:27] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=17575&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:28] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=14694&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:28] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=11972&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:29] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=4635&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:29] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=36884&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:30] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=34552&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:30] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=1113&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:31] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=30304&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:31] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=15139&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:32] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=47318&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:33] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=31013&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:33] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=425&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:34] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=46159&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:34] [RenrenScraper:278] [INFO] - renren: 搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C' 完成，找到 21 个结果。
+[2025-08-12 16:13:34] [RenrenScraper:281] [INFO] - renren: 搜索结果列表:
+  - 新鲜 (ID: 39107, 类型: tv_series, 年份: 2022)
+  - 茶煲表哥 第一季 (ID: 15656, 类型: tv_series, 年份: 1990)
+  - 亚当·桑德勒：100%新鲜 (ID: 14966, 类型: tv_series, 年份: 2018)
+  - 解释一切 第一季 (ID: 16650, 类型: tv_series, 年份: 2018)
+  - 新地球总统 第二季 (ID: 52772, 类型: tv_series, 年份: 2024)
+  - 新地球总统 第一季 (ID: 43536, 类型: tv_series, 年份: 2023)
+  - 地球 (ID: 12738, 类型: tv_series, 年份: 2007)
+  - 平民拆弹英雄 (ID: 45342, 类型: tv_series, 年份: 2017)
+  - 地球百子 第七季 (ID: 17575, 类型: tv_series, 年份: 2020)
+  - 地球百子 第六季 (ID: 14694, 类型: tv_series, 年份: 2019)
+  - 地球百子 第五季 (ID: 11972, 类型: tv_series, 年份: 2018)
+  - 地球百子 第四季 (ID: 4635, 类型: tv_series, 年份: 2017)
+  - 地雷区 (ID: 36884, 类型: tv_series, 年份: 2015)
+  - 两小无拆 (ID: 34552, 类型: tv_series, 年份: 2021)
+  - 地球百子 第三季 (ID: 1113, 类型: tv_series, 年份: 2016)
+  - 新创新天地 第三季 (ID: 30304, 类型: tv_series, 年份: 2020)
+  - 新创新天地 第一季 (ID: 15139, 类型: tv_series, 年份: 2019)
+  - 地球漫步的方式 (ID: 47318, 类型: tv_series, 年份: 2024)
+  - 人艰不拆 (ID: 31013, 类型: tv_series, 年份: 2014)
+  - 地球百子 第二季 (ID: 425, 类型: tv_series, 年份: 2014)
+  - 地球脉动 第三季 (ID: 46159, 类型: tv_series, 年份: 2023)
+[2025-08-12 16:13:38] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (解析为: title='%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C', season=None, episode=None)
+[2025-08-12 16:13:38] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 16:13:38] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (繁体: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C')...
+[2025-08-12 16:13:38] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:13:38] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:13:38] [TencentScraper:113] [INFO] - Tencent: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:13:38] [BilibiliScraper:387] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:13:38] [IqiyiScraper:144] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:13:38] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 16:13:38] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个结果。
+[2025-08-12 16:13:39] [YoukuScraper:119] [INFO] - Youku: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:13:42] [GamerScraper:180] [WARNING] - Gamer: 搜索 '%E5%9C%B0%E7%90%83%E6%8B%86%E6%96%B0%E9%B2%9C' 时连接超时或网络错误: 
+[2025-08-12 16:13:42] [src.api.ui:217] [INFO] - 直接搜索完成，找到 21 个原始结果。
+[2025-08-12 16:13:58] [GamerScraper:180] [WARNING] - Gamer: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 时连接超时或网络错误: 
+[2025-08-12 16:13:58] [src.api.ui:217] [INFO] - 直接搜索完成，找到 21 个原始结果。
+[2025-08-12 16:14:22] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (解析为: title='%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C', season=None, episode=None)
+[2025-08-12 16:14:22] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 16:14:22] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (繁体: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C')...
+[2025-08-12 16:14:22] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:14:22] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:14:22] [YoukuScraper:119] [INFO] - Youku: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:14:22] [TencentScraper:113] [INFO] - Tencent: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:14:22] [BilibiliScraper:387] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:14:22] [IqiyiScraper:144] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:14:22] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 16:14:22] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个结果。
+[2025-08-12 16:14:42] [GamerScraper:180] [WARNING] - Gamer: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 时连接超时或网络错误: 
+[2025-08-12 16:14:42] [src.api.ui:217] [INFO] - 直接搜索完成，找到 21 个原始结果。
+[2025-08-12 16:16:03] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (解析为: title='%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C', season=None, episode=None)
+[2025-08-12 16:16:03] [src.api.ui:215] [INFO] - TMDB API Key 未配置，跳过辅助搜索，直接进行全网搜索。
+[2025-08-12 16:16:03] [GamerScraper:109] [INFO] - Gamer: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' (繁体: '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C')...
+[2025-08-12 16:16:03] [MgtvScraper:187] [INFO] - MGTV: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:16:03] [BilibiliScraper:382] [INFO] - Bilibili: 正在搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'...
+[2025-08-12 16:16:03] [IqiyiScraper:144] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:16:03] [BilibiliScraper:387] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:16:03] [YoukuScraper:119] [INFO] - Youku: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:16:03] [TencentScraper:113] [INFO] - Tencent: 从缓存中命中搜索结果 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C'
+[2025-08-12 16:16:03] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-12 16:16:03] [MgtvScraper:237] [INFO] - MGTV: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 完成，找到 0 个结果。
+[2025-08-12 16:16:23] [GamerScraper:180] [WARNING] - Gamer: 搜索 '%E5%9C%B0%E7%90%83%E8%B6%85%E6%96%B0%E9%B2%9C' 时连接超时或网络错误: 
+[2025-08-12 16:16:23] [src.api.ui:217] [INFO] - 直接搜索完成，找到 21 个原始结果。
+[2025-08-12 17:36:19] [src.api.ui:1402] [INFO] - 用户 'admin' 正在从 'renren' 导入 '新鲜' (media_id=39107)
+[2025-08-12 17:36:19] [src.task_manager:116] [INFO] - 任务 '导入: 新鲜' 已提交，ID: 98626827-4f53-4c8e-8fd8-7a87a34cf22e
+[2025-08-12 17:36:19] [src.task_manager:64] [INFO] - 开始执行任务 '导入: 新鲜' (ID: 98626827-4f53-4c8e-8fd8-7a87a34cf22e)
+[2025-08-12 17:36:21] [src.api.ui:1189] [INFO] - 媒体 '新鲜' (ID: 1, 类型: tv_series) 已准备就绪。
+[2025-08-12 17:36:21] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=39107&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-12 17:36:21] [src.api.ui:1215] [INFO] - --- 开始处理分集 1/1: '新鲜' (ID: 272098) ---
+[2025-08-12 17:36:21] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/272098 "HTTP/1.1 200 OK"
+[2025-08-12 17:36:22] [src.api.ui:1242] [INFO] - 分集 '新鲜' (DB ID: 1) 新增 677 条弹幕。
+[2025-08-12 17:36:22] [src.api.ui:1248] [INFO] - --- renren 导入任务完成 (media_id=39107)。总共新增 677 条弹幕。 ---
+[2025-08-12 17:36:22] [src.task_manager:82] [INFO] - 任务 '导入: 新鲜' (ID: 98626827-4f53-4c8e-8fd8-7a87a34cf22e) 已成功完成。
+[2025-08-12 17:50:56] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-12 17:50:56] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-12 17:50:56] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-12 17:50:57] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-12 17:50:57] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 17:50:57] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-12 17:50:57] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-12 17:50:58] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-12 17:50:58] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-12 17:50:58] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-12 17:50:58] [src.database:208] [INFO] - 正在检查并初始化默认配置...
+[2025-08-12 17:50:58] [src.database:276] [INFO] - 默认配置检查完成。
+[2025-08-12 17:50:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 2)。
+[2025-08-12 17:50:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 4)。
+[2025-08-12 17:50:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 1)。
+[2025-08-12 17:50:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 7)。
+[2025-08-12 17:50:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 3)。
+[2025-08-12 17:50:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 6)。
+[2025-08-12 17:50:59] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 5)。
+[2025-08-12 17:51:00] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-12 17:51:02] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 202 Accepted"
+[2025-08-12 17:51:02] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-12 17:51:02] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-12 17:51:02] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-12 17:51:02] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-12 17:51:02] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-12 17:51:02] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-12 17:51:02] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-12 17:51:02] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-12 18:59:36] [src.crud:1011] [INFO] - 清除了 1 条过期的数据库缓存。
+[2025-08-12 20:09:07] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query ([Errno 54] Connection reset by peer)')
+[2025-08-12 21:17:14] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query ([Errno 54] Connection reset by peer)')
+[2025-08-12 22:32:13] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query ([Errno 54] Connection reset by peer)')
+[2025-08-12 23:36:37] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query ([Errno 54] Connection reset by peer)')
+[2025-08-13 01:21:51] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query')
+[2025-08-13 02:42:43] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query')
+[2025-08-13 03:50:52] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query ([Errno 54] Connection reset by peer)')
+[2025-08-13 04:51:53] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query ([Errno 54] Connection reset by peer)')
+[2025-08-13 06:24:45] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query')
+[2025-08-13 07:26:07] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query ([Errno 54] Connection reset by peer)')
+[2025-08-13 08:55:56] [src.main:137] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query')
+[2025-08-13 09:21:35] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-13 09:21:35] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-13 09:21:35] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-13 09:21:42] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-13 09:21:42] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 09:21:42] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 09:21:46] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-13 09:21:51] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-13 09:21:51] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-13 09:21:51] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-13 09:21:52] [src.database:208] [INFO] - 正在检查并初始化默认配置...
+[2025-08-13 09:21:52] [src.database:276] [INFO] - 默认配置检查完成。
+[2025-08-13 09:21:53] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 2)。
+[2025-08-13 09:21:53] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 4)。
+[2025-08-13 09:21:53] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 1)。
+[2025-08-13 09:21:53] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 7)。
+[2025-08-13 09:21:53] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 3)。
+[2025-08-13 09:21:53] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 6)。
+[2025-08-13 09:21:53] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 5)。
+[2025-08-13 09:21:53] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-13 09:22:02] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 200 OK"
+[2025-08-13 09:22:03] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-13 09:22:03] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-13 09:22:03] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-13 09:22:03] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-13 09:22:03] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-13 09:22:03] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-13 09:22:03] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-13 09:22:03] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-13 09:56:03] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-13 09:56:03] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-13 09:56:03] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-13 09:56:55] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-13 09:56:55] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 09:56:55] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 09:56:55] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-13 09:56:55] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-13 09:56:55] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-13 09:56:55] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-13 09:56:56] [src.database:208] [INFO] - 正在检查并初始化默认配置...
+[2025-08-13 09:56:56] [src.database:276] [INFO] - 默认配置检查完成。
+[2025-08-13 09:56:56] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-13 09:56:56] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 1)。
+[2025-08-13 09:56:56] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-13 09:56:56] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 3)。
+[2025-08-13 09:56:56] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 4)。
+[2025-08-13 09:56:56] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 2)。
+[2025-08-13 09:56:56] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-13 09:56:57] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-13 09:57:01] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 200 OK"
+[2025-08-13 09:57:01] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-13 09:57:01] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-13 09:57:01] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-13 09:57:01] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-13 09:57:01] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-13 09:57:01] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-13 09:57:01] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-13 09:57:01] [apscheduler.scheduler:1090] [INFO] - Added job "每日更新" to job store "default"
+[2025-08-13 09:57:01] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-13 10:18:37] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%E6%96%B0%E9%B2%9C&include_adult=false&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-13 10:20:00] [src.api.tmdb_api:171] [INFO] - TMDB 电视剧搜索 '新鲜' 命中缓存。
+[2025-08-13 10:27:49] [src.api.tmdb_api:171] [INFO] - TMDB 电视剧搜索 '新鲜' 命中缓存。
+[2025-08-13 10:34:46] [src.api.tmdb_api:171] [INFO] - TMDB 电视剧搜索 '新鲜' 命中缓存。
+[2025-08-13 10:47:14] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-13 10:47:14] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-13 10:47:14] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-13 10:50:33] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-13 10:50:33] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 10:50:33] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 10:50:34] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-13 10:50:34] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-13 10:50:34] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-13 10:50:34] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-13 10:50:34] [src.database:208] [INFO] - 正在检查并初始化默认配置...
+[2025-08-13 10:50:34] [src.database:276] [INFO] - 默认配置检查完成。
+[2025-08-13 10:50:35] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-13 10:50:35] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 1)。
+[2025-08-13 10:50:35] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-13 10:50:35] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 3)。
+[2025-08-13 10:50:35] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 4)。
+[2025-08-13 10:50:35] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 2)。
+[2025-08-13 10:50:35] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-13 10:50:35] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-13 10:50:37] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 200 OK"
+[2025-08-13 10:50:38] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-13 10:50:38] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-13 10:50:38] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-13 10:50:38] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-13 10:50:38] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-13 10:50:38] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-13 10:50:38] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-13 10:50:38] [apscheduler.scheduler:1090] [INFO] - Added job "每日更新" to job store "default"
+[2025-08-13 10:50:38] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-13 10:51:14] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-13 10:51:14] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-13 10:51:14] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-13 10:51:57] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-13 10:51:57] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 10:51:57] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 10:51:57] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-13 10:51:57] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-13 10:51:57] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-13 10:51:57] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-13 10:51:58] [src.database:208] [INFO] - 正在检查并初始化默认配置...
+[2025-08-13 10:51:58] [src.database:276] [INFO] - 默认配置检查完成。
+[2025-08-13 10:51:58] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-13 10:51:58] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 1)。
+[2025-08-13 10:51:58] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-13 10:51:58] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 3)。
+[2025-08-13 10:51:58] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 4)。
+[2025-08-13 10:51:58] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 2)。
+[2025-08-13 10:51:58] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-13 10:51:58] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-13 10:52:00] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 200 OK"
+[2025-08-13 10:52:01] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-13 10:52:01] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-13 10:52:01] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-13 10:52:01] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-13 10:52:01] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-13 10:52:01] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-13 10:52:01] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-13 10:52:01] [apscheduler.scheduler:1090] [INFO] - Added job "每日更新" to job store "default"
+[2025-08-13 10:52:01] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-13 10:52:30] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-13 10:52:30] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-13 10:52:30] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-13 10:52:32] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-13 10:52:32] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 10:52:32] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 10:52:33] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-13 10:52:33] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-13 10:52:33] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-13 10:52:33] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-13 10:52:33] [src.database:208] [INFO] - 正在检查并初始化默认配置...
+[2025-08-13 10:52:33] [src.database:276] [INFO] - 默认配置检查完成。
+[2025-08-13 10:52:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-13 10:52:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 1)。
+[2025-08-13 10:52:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-13 10:52:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 3)。
+[2025-08-13 10:52:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 4)。
+[2025-08-13 10:52:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 2)。
+[2025-08-13 10:52:34] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-13 10:52:34] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-13 10:52:35] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 200 OK"
+[2025-08-13 10:52:36] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-13 10:52:36] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-13 10:52:36] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-13 10:52:36] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-13 10:52:36] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-13 10:52:36] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-13 10:52:36] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-13 10:52:36] [apscheduler.scheduler:1090] [INFO] - Added job "每日更新" to job store "default"
+[2025-08-13 10:52:36] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-13 10:59:30] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%E6%96%B0%E5%9C%B0%E7%90%83%E6%80%BB%E7%BB%9F+%E7%AC%AC%E4%B8%80%E5%AD%A3&include_adult=false&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-13 10:59:40] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%E6%96%B0%E5%9C%B0%E7%90%83%E6%80%BB%E7%BB%9F&include_adult=false&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-13 11:01:38] [src.api.tmdb_api:171] [INFO] - TMDB 电视剧搜索 '新地球总统' 命中缓存。
+[2025-08-13 11:01:43] [src.api.ui:1402] [INFO] - 用户 'admin' 正在从 'renren' 导入 '新地球总统' (media_id=43536)
+[2025-08-13 11:01:43] [src.api.ui:1402] [INFO] - 用户 'admin' 正在从 'renren' 导入 '新地球总统' (media_id=52772)
+[2025-08-13 11:01:43] [src.task_manager:116] [INFO] - 任务 '导入: 新地球总统' 已提交，ID: 2472c66d-b0b1-41d0-b78d-23dd40d2b4e3
+[2025-08-13 11:01:43] [src.task_manager:116] [INFO] - 任务 '导入: 新地球总统' 已提交，ID: 4c72f9d3-1191-434b-9c4d-4e456b8eebdd
+[2025-08-13 11:01:43] [src.task_manager:64] [INFO] - 开始执行任务 '导入: 新地球总统' (ID: 2472c66d-b0b1-41d0-b78d-23dd40d2b4e3)
+[2025-08-13 11:01:44] [root:946] [INFO] - 为作品 ID 85 更新了 1 个元数据ID。
+[2025-08-13 11:01:44] [src.api.ui:1189] [INFO] - 媒体 '新地球总统' (ID: 85, 类型: tv_series) 已准备就绪。
+[2025-08-13 11:01:45] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52772&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-13 11:01:45] [src.api.ui:1215] [INFO] - --- 开始处理分集 1/10: '新地球总统 第二季' (ID: 354062) ---
+[2025-08-13 11:01:45] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354062 "HTTP/1.1 404 Not Found"
+[2025-08-13 11:01:45] [RenrenScraper:374] [ERROR] - renren: 获取弹幕失败 sid=354062: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354062'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/renren.py", line 367, in _fetch_episode_danmu
+    resp.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354062'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+[2025-08-13 11:01:45] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第二季' 未找到弹幕，跳过。
+[2025-08-13 11:01:45] [src.api.ui:1215] [INFO] - --- 开始处理分集 2/10: '新地球总统 第二季' (ID: 354063) ---
+[2025-08-13 11:01:46] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354063 "HTTP/1.1 404 Not Found"
+[2025-08-13 11:01:46] [RenrenScraper:374] [ERROR] - renren: 获取弹幕失败 sid=354063: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354063'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/renren.py", line 367, in _fetch_episode_danmu
+    resp.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354063'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+[2025-08-13 11:01:46] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第二季' 未找到弹幕，跳过。
+[2025-08-13 11:01:46] [src.api.ui:1215] [INFO] - --- 开始处理分集 3/10: '新地球总统 第二季' (ID: 354064) ---
+[2025-08-13 11:01:46] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354064 "HTTP/1.1 404 Not Found"
+[2025-08-13 11:01:46] [RenrenScraper:374] [ERROR] - renren: 获取弹幕失败 sid=354064: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354064'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/renren.py", line 367, in _fetch_episode_danmu
+    resp.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354064'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+[2025-08-13 11:01:46] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第二季' 未找到弹幕，跳过。
+[2025-08-13 11:01:46] [src.api.ui:1215] [INFO] - --- 开始处理分集 4/10: '新地球总统 第二季' (ID: 354065) ---
+[2025-08-13 11:01:46] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354065 "HTTP/1.1 404 Not Found"
+[2025-08-13 11:01:46] [RenrenScraper:374] [ERROR] - renren: 获取弹幕失败 sid=354065: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354065'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/renren.py", line 367, in _fetch_episode_danmu
+    resp.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354065'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+[2025-08-13 11:01:46] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第二季' 未找到弹幕，跳过。
+[2025-08-13 11:01:46] [src.api.ui:1215] [INFO] - --- 开始处理分集 5/10: '新地球总统 第二季' (ID: 354066) ---
+[2025-08-13 11:01:46] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354066 "HTTP/1.1 404 Not Found"
+[2025-08-13 11:01:46] [RenrenScraper:374] [ERROR] - renren: 获取弹幕失败 sid=354066: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354066'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/renren.py", line 367, in _fetch_episode_danmu
+    resp.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354066'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+[2025-08-13 11:01:46] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第二季' 未找到弹幕，跳过。
+[2025-08-13 11:01:46] [src.api.ui:1215] [INFO] - --- 开始处理分集 6/10: '新地球总统 第二季' (ID: 354067) ---
+[2025-08-13 11:01:46] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354067 "HTTP/1.1 404 Not Found"
+[2025-08-13 11:01:46] [RenrenScraper:374] [ERROR] - renren: 获取弹幕失败 sid=354067: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354067'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/renren.py", line 367, in _fetch_episode_danmu
+    resp.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354067'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+[2025-08-13 11:01:46] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第二季' 未找到弹幕，跳过。
+[2025-08-13 11:01:46] [src.api.ui:1215] [INFO] - --- 开始处理分集 7/10: '新地球总统 第二季' (ID: 354068) ---
+[2025-08-13 11:01:47] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354068 "HTTP/1.1 404 Not Found"
+[2025-08-13 11:01:47] [RenrenScraper:374] [ERROR] - renren: 获取弹幕失败 sid=354068: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354068'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/renren.py", line 367, in _fetch_episode_danmu
+    resp.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354068'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+[2025-08-13 11:01:47] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第二季' 未找到弹幕，跳过。
+[2025-08-13 11:01:47] [src.api.ui:1215] [INFO] - --- 开始处理分集 8/10: '新地球总统 第二季' (ID: 354069) ---
+[2025-08-13 11:01:47] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354069 "HTTP/1.1 404 Not Found"
+[2025-08-13 11:01:47] [RenrenScraper:374] [ERROR] - renren: 获取弹幕失败 sid=354069: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354069'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/renren.py", line 367, in _fetch_episode_danmu
+    resp.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354069'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+[2025-08-13 11:01:47] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第二季' 未找到弹幕，跳过。
+[2025-08-13 11:01:47] [src.api.ui:1215] [INFO] - --- 开始处理分集 9/10: '新地球总统 第二季' (ID: 354070) ---
+[2025-08-13 11:01:47] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354070 "HTTP/1.1 404 Not Found"
+[2025-08-13 11:01:47] [RenrenScraper:374] [ERROR] - renren: 获取弹幕失败 sid=354070: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354070'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/renren.py", line 367, in _fetch_episode_danmu
+    resp.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354070'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+[2025-08-13 11:01:47] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第二季' 未找到弹幕，跳过。
+[2025-08-13 11:01:47] [src.api.ui:1215] [INFO] - --- 开始处理分集 10/10: '新地球总统 第二季' (ID: 354071) ---
+[2025-08-13 11:01:48] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354071 "HTTP/1.1 404 Not Found"
+[2025-08-13 11:01:48] [RenrenScraper:374] [ERROR] - renren: 获取弹幕失败 sid=354071: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354071'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/renren.py", line 367, in _fetch_episode_danmu
+    resp.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/354071'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+[2025-08-13 11:01:48] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第二季' 未找到弹幕，跳过。
+[2025-08-13 11:01:48] [src.api.ui:1248] [INFO] - --- renren 导入任务完成 (media_id=52772)。总共新增 0 条弹幕。 ---
+[2025-08-13 11:01:48] [src.task_manager:82] [INFO] - 任务 '导入: 新地球总统' (ID: 2472c66d-b0b1-41d0-b78d-23dd40d2b4e3) 已成功完成。
+[2025-08-13 11:01:48] [src.task_manager:64] [INFO] - 开始执行任务 '导入: 新地球总统' (ID: 4c72f9d3-1191-434b-9c4d-4e456b8eebdd)
+[2025-08-13 11:01:48] [root:946] [INFO] - 为作品 ID 86 更新了 1 个元数据ID。
+[2025-08-13 11:01:48] [src.api.ui:1189] [INFO] - 媒体 '新地球总统' (ID: 86, 类型: tv_series) 已准备就绪。
+[2025-08-13 11:01:48] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=43536&quality=AI4K&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-13 11:01:48] [src.api.ui:1215] [INFO] - --- 开始处理分集 1/10: '新地球总统 第一季' (ID: 302869) ---
+[2025-08-13 11:01:48] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302869 "HTTP/1.1 200 OK"
+[2025-08-13 11:01:48] [src.api.ui:1242] [INFO] - 分集 '新地球总统 第一季' (DB ID: 2778) 新增 7 条弹幕。
+[2025-08-13 11:01:48] [src.api.ui:1215] [INFO] - --- 开始处理分集 2/10: '新地球总统 第一季' (ID: 302870) ---
+[2025-08-13 11:01:49] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302870 "HTTP/1.1 200 OK"
+[2025-08-13 11:01:49] [src.api.ui:1242] [INFO] - 分集 '新地球总统 第一季' (DB ID: 2779) 新增 1 条弹幕。
+[2025-08-13 11:01:49] [src.api.ui:1215] [INFO] - --- 开始处理分集 3/10: '新地球总统 第一季' (ID: 302871) ---
+[2025-08-13 11:01:49] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302871 "HTTP/1.1 200 OK"
+[2025-08-13 11:01:49] [src.api.ui:1242] [INFO] - 分集 '新地球总统 第一季' (DB ID: 2780) 新增 1 条弹幕。
+[2025-08-13 11:01:49] [src.api.ui:1215] [INFO] - --- 开始处理分集 4/10: '新地球总统 第一季' (ID: 302872) ---
+[2025-08-13 11:01:49] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302872 "HTTP/1.1 200 OK"
+[2025-08-13 11:01:50] [src.api.ui:1242] [INFO] - 分集 '新地球总统 第一季' (DB ID: 2781) 新增 2 条弹幕。
+[2025-08-13 11:01:50] [src.api.ui:1215] [INFO] - --- 开始处理分集 5/10: '新地球总统 第一季' (ID: 302873) ---
+[2025-08-13 11:01:50] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302873 "HTTP/1.1 200 OK"
+[2025-08-13 11:01:50] [src.api.ui:1242] [INFO] - 分集 '新地球总统 第一季' (DB ID: 2782) 新增 1 条弹幕。
+[2025-08-13 11:01:50] [src.api.ui:1215] [INFO] - --- 开始处理分集 6/10: '新地球总统 第一季' (ID: 302874) ---
+[2025-08-13 11:01:50] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302874 "HTTP/1.1 200 OK"
+[2025-08-13 11:01:50] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第一季' 未找到弹幕，跳过。
+[2025-08-13 11:01:50] [src.api.ui:1215] [INFO] - --- 开始处理分集 7/10: '新地球总统 第一季' (ID: 302876) ---
+[2025-08-13 11:01:50] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302876 "HTTP/1.1 200 OK"
+[2025-08-13 11:01:50] [src.api.ui:1242] [INFO] - 分集 '新地球总统 第一季' (DB ID: 2784) 新增 1 条弹幕。
+[2025-08-13 11:01:50] [src.api.ui:1215] [INFO] - --- 开始处理分集 8/10: '新地球总统 第一季' (ID: 302877) ---
+[2025-08-13 11:01:50] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302877 "HTTP/1.1 200 OK"
+[2025-08-13 11:01:51] [src.api.ui:1242] [INFO] - 分集 '新地球总统 第一季' (DB ID: 2785) 新增 2 条弹幕。
+[2025-08-13 11:01:51] [src.api.ui:1215] [INFO] - --- 开始处理分集 9/10: '新地球总统 第一季' (ID: 302878) ---
+[2025-08-13 11:01:51] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302878 "HTTP/1.1 200 OK"
+[2025-08-13 11:01:51] [src.api.ui:1242] [INFO] - 分集 '新地球总统 第一季' (DB ID: 2786) 新增 1 条弹幕。
+[2025-08-13 11:01:51] [src.api.ui:1215] [INFO] - --- 开始处理分集 10/10: '新地球总统 第一季' (ID: 302884) ---
+[2025-08-13 11:01:51] [httpx:1740] [INFO] - HTTP Request: GET https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302884 "HTTP/1.1 404 Not Found"
+[2025-08-13 11:01:51] [RenrenScraper:374] [ERROR] - renren: 获取弹幕失败 sid=302884: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302884'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+Traceback (most recent call last):
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/src/scrapers/renren.py", line 367, in _fetch_episode_danmu
+    resp.raise_for_status()
+  File "/Users/8btc_wucb/Workspace/misaka_danmu_server/venv/lib/python3.9/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://static-dm.rrmj.plus/v1/produce/danmu/EPISODE/302884'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+[2025-08-13 11:01:51] [src.api.ui:1235] [INFO] - 分集 '新地球总统 第一季' 未找到弹幕，跳过。
+[2025-08-13 11:01:51] [src.api.ui:1248] [INFO] - --- renren 导入任务完成 (media_id=43536)。总共新增 16 条弹幕。 ---
+[2025-08-13 11:01:51] [src.task_manager:82] [INFO] - 任务 '导入: 新地球总统' (ID: 4c72f9d3-1191-434b-9c4d-4e456b8eebdd) 已成功完成。
+[2025-08-13 11:07:28] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-13 11:07:28] [src.task_manager:56] [INFO] - 任务管理器已停止。
+[2025-08-13 11:07:28] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-13 11:09:40] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/app.log
+[2025-08-13 11:09:40] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 11:09:40] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/8btc_wucb/Workspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-13 11:09:40] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-13 11:09:40] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-13 11:09:40] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-13 11:09:40] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-13 11:09:40] [src.database:208] [INFO] - 正在检查并初始化默认配置...
+[2025-08-13 11:09:40] [src.database:276] [INFO] - 默认配置检查完成。
+[2025-08-13 11:09:41] [src.main:46] [INFO] - 已将 1 个中断的任务标记为失败。
+[2025-08-13 11:09:41] [src.scraper_manager:96] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-13 11:09:41] [src.scraper_manager:96] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 1)。
+[2025-08-13 11:09:41] [src.scraper_manager:96] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-13 11:09:41] [src.scraper_manager:96] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 3)。
+[2025-08-13 11:09:41] [src.scraper_manager:96] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 4)。
+[2025-08-13 11:09:41] [src.scraper_manager:96] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 2)。
+[2025-08-13 11:09:41] [src.scraper_manager:96] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-13 11:09:42] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-13 11:09:44] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 200 OK"
+[2025-08-13 11:09:44] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-13 11:09:44] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-13 11:09:44] [src.webhook_manager:39] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-13 11:09:44] [src.webhook_manager:39] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-13 11:09:44] [src.task_manager:45] [INFO] - 任务管理器已启动。
+[2025-08-13 11:09:44] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-13 11:09:44] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-13 11:09:44] [apscheduler.scheduler:1090] [INFO] - Added job "每日更新" to job store "default"
+[2025-08-13 11:09:44] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-13 13:09:45] [src.crud:1011] [INFO] - 清除了 6 条过期的数据库缓存。
+[2025-08-13 14:09:46] [src.crud:1011] [INFO] - 清除了 1 条过期的数据库缓存。
+[2025-08-13 15:05:08] [src.api.ui:871] [INFO] - 用户 'admin' 删除了任务 ID: 4c72f9d3-1191-434b-9c4d-4e456b8eebdd (原状态: 失败)。
+[2025-08-13 15:05:08] [src.api.ui:871] [INFO] - 用户 'admin' 删除了任务 ID: d4e7604a-7b75-4277-b7b0-f0bfec25f131 (原状态: 已完成)。
+[2025-08-13 15:05:47] [src.api.ui:871] [INFO] - 用户 'admin' 删除了任务 ID: 92023a58-05fc-4110-9be0-5403578de638 (原状态: 已完成)。
+[2025-08-13 15:05:47] [src.api.ui:871] [INFO] - 用户 'admin' 删除了任务 ID: 5188edac-54e5-4e4a-84e6-5025678c95b2 (原状态: 已完成)。
+[2025-08-13 15:06:30] [src.api.ui:871] [INFO] - 用户 'admin' 删除了任务 ID: 2a621059-bb94-4a04-b535-039b756b8d0d (原状态: 已完成)。
+[2025-08-13 15:06:36] [src.api.ui:871] [INFO] - 用户 'admin' 删除了任务 ID: 2472c66d-b0b1-41d0-b78d-23dd40d2b4e3 (原状态: 已完成)。
+[2025-08-13 15:06:36] [src.api.ui:871] [INFO] - 用户 'admin' 删除了任务 ID: abf290b9-8a27-42aa-88c5-ba0a49b7d54d (原状态: 已完成)。
+[2025-08-13 15:09:46] [src.crud:1011] [INFO] - 清除了 6 条过期的数据库缓存。
+[2025-08-13 15:36:30] [src.crud:1028] [INFO] - 清除了所有 (79 条) 数据库缓存。
+[2025-08-13 15:36:30] [src.api.ui:824] [INFO] - 用户 'admin' 清除了所有缓存，共 79 条。
