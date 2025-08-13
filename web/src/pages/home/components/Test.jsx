@@ -44,10 +44,7 @@ export const Test = () => {
                 label="输入弹幕token"
                 rules={[{ required: true, message: '请输入弹幕token' }]}
               >
-                <Input
-                  placeholder="请输入弹幕token"
-                  className="rounded-lg border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                />
+                <Input placeholder="请输入弹幕token" />
               </Form.Item>
 
               {/* 文件名输入 */}
@@ -58,10 +55,7 @@ export const Test = () => {
                   { required: true, message: '请输入要测试匹配的文件名' },
                 ]}
               >
-                <Input
-                  placeholder="请输入要测试匹配的文件名"
-                  className="rounded-lg border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                />
+                <Input placeholder="请输入要测试匹配的文件名" />
               </Form.Item>
 
               {/* 测试按钮 */}

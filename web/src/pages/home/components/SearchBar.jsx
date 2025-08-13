@@ -162,7 +162,6 @@ export const SearchBar = () => {
               >
                 <Input
                   placeholder="请输入番剧名称"
-                  className="rounded-lg border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                 />
               </Form.Item>
             </Col>
@@ -198,14 +197,12 @@ export const SearchBar = () => {
                     <InputNumber
                       min={0}
                       placeholder="季数"
-                      className="rounded-lg border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                     />
                   </Form.Item>
                   <Form.Item name="episode" label="集数：">
                     <InputNumber
                       min={1}
                       placeholder="集数"
-                      className="rounded-lg border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                       disabled={!season}
                     />
                   </Form.Item>

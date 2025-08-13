@@ -1,5 +1,5 @@
-import { importDanmu } from '../../../apis'
-import { useEffect, useState } from 'react'
+import { getTmdbSearch, importDanmu } from '../../../apis'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Button,
   Card,
@@ -12,11 +12,13 @@ import {
   Input,
   Modal,
   Radio,
+  Form,
 } from 'antd'
 import { useAtom } from 'jotai'
 import { lastSearchResultAtom } from '../../../../store'
 import { CheckOutlined } from '@ant-design/icons'
 import { DANDAN_TYPE_DESC_MAPPING, DANDAN_TYPE_MAPPING } from '../../../configs'
+import { useWatch } from 'antd/es/form/Form'
 
 const IMPORT_MODE = [
   {
@@ -30,6 +32,13 @@ const IMPORT_MODE = [
 ]
 
 export const SearchResult = () => {
+  const [form] = Form.useForm()
+  const title = useWatch('title', form)
+  const tmdbid = useWatch('tmdbid', form)
+  const [tmdbList, setTmdbResult] = useState([])
+  const [searchTmdbLoading, setSearchTmdbLoading] = useState(false)
+  const [tmdbOpen, setTmdbOpen] = useState(false)
+
   const [lastSearchResultData] = useAtom(lastSearchResultAtom)
 
   const [selectList, setSelectList] = useState([])
@@ -39,7 +48,6 @@ export const SearchResult = () => {
   const searchSeason = lastSearchResultData?.season
 
   const [loading, setLoading] = useState(false)
-  const [batchLoading, setBatchLoading] = useState(false)
 
   const [batchOpen, setBatchOpen] = useState(false)
   const [confirmLoading, setConfirmLoading] = useState(false)
@@ -59,6 +67,24 @@ export const SearchResult = () => {
   const [renderData, setRenderData] = useState(
     lastSearchResultData.results || []
   )
+
+  const importModeText = useMemo(() => {
+    const uniqueTitles = new Set(selectList.map(item => item.title))
+    if (uniqueTitles.size === 1) {
+      setImportMode('merge')
+      return `您选择了 ${selectList.length} 个标题相同的条目。请确认导入模式。`
+    } else {
+      setImportMode('separate')
+      return `检测到您选择的媒体标题不一致。请指定导入模式。`
+    }
+  }, [selectList])
+
+  useEffect(() => {
+    form.setFieldsValue({
+      title: selectList?.[0]?.title?.split?.(' ')?.[0],
+      tmdbid: null,
+    })
+  }, [selectList])
 
   useEffect(() => {
     const list = lastSearchResultData.results
@@ -109,6 +135,84 @@ export const SearchResult = () => {
     }
   }
 
+  const handleBatchImport = () => {
+    let tmdbparams = {}
+    if (importMode === 'merge') {
+      if (!title) {
+        message.error('最终导入名称不能为空。')
+        return
+      }
+      tmdbparams = {
+        tmdb_id: `${tmdbid}`,
+        anime_title: title,
+      }
+    }
+    Modal.confirm({
+      title: '批量导入',
+      zIndex: 1002,
+      content: (
+        <div>
+          确定要将 {selectList.length} 个条目
+          {importMode === 'merge' ? '合并' : '分开'}导入吗？
+        </div>
+      ),
+      okText: '确认',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          setConfirmLoading(true)
+          await Promise.all(
+            selectList.map(item => {
+              return importDanmu(
+                JSON.stringify({
+                  provider: item.provider,
+                  media_id: item.mediaId,
+                  type: item.type,
+                  season: item.season,
+                  image_url: item.imageUrl,
+                  douban_id: item.douban_id,
+                  current_episode_index: item.currentEpisodeIndex,
+                  ...tmdbparams,
+                })
+              )
+            })
+          )
+          message.success('批量导入任务已提交，请在任务管理器中查看进度。')
+          setSelectList([])
+          setConfirmLoading(false)
+          setBatchOpen(false)
+        } catch (err) {
+        } finally {
+          setConfirmLoading(false)
+        }
+      },
+    })
+  }
+
+  const onTmdbSearch = async () => {
+    try {
+      if (searchTmdbLoading) return
+      setSearchTmdbLoading(true)
+      const res = await getTmdbSearch({
+        keyword: title,
+        mediaType:
+          selectList?.[0]?.type === DANDAN_TYPE_MAPPING.tvseries
+            ? 'tv'
+            : 'movie',
+      })
+      if (!!res?.data?.length) {
+        setTmdbResult(res?.data || [])
+        setTmdbOpen(true)
+      } else {
+        message.error('没有找到相关内容')
+      }
+    } catch (error) {
+      message.error('TMDB搜索失败')
+    } finally {
+      setSearchTmdbLoading(false)
+    }
+  }
+
   return (
     <div className="my-4">
       <Card title="搜索结果">
@@ -147,14 +251,24 @@ export const SearchResult = () => {
                 <div className="w-40">
                   <Input
                     placeholder="在结果中过滤标题"
-                    className="rounded-lg border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                     onChange={e => setKeyword(e.target.value)}
                   />
                 </div>
               </div>
             </Col>
             <Col md={4} xs={24}>
-              <Button block type="primary" onClick={() => setBatchOpen(true)}>
+              <Button
+                block
+                type="primary"
+                onClick={() => {
+                  if (selectList.length === 0) {
+                    message.error('请选择要导入的媒体')
+                    return
+                  }
+
+                  setBatchOpen(true)
+                }}
+              >
                 批量导入
               </Button>
             </Col>
@@ -229,17 +343,15 @@ export const SearchResult = () => {
       <Modal
         title="批量导入确认"
         open={batchOpen}
-        onOk={() => {}}
+        onOk={handleBatchImport}
         confirmLoading={confirmLoading}
         cancelText="取消"
         okText="确认"
         onCancel={() => setBatchOpen(false)}
       >
         <div>
-          <div className="mb-2">
-            检测到您选择的媒体标题不一致。请指定一个统一的名称用于导入，或从TMDB搜索。
-          </div>
-          <div className="text-base font-bold">已选择的条目</div>
+          <div className="mb-2">{importModeText}</div>
+          <div className="text-base mb-2 font-bold">已选择的条目</div>
           <div className="max-h-[300px] overflow-y-auto">
             {selectList.map((item, index) => {
               return (
@@ -261,15 +373,77 @@ export const SearchResult = () => {
               )
             })}
           </div>
+          <div className="text-base my-3 font-bold">导入模式</div>
           <Radio.Group
-            onChange={e => {
-              console.log(e.target.value)
-              setImportMode(e.target.value)
-            }}
-            options={IMPORT_MODE}
-            defaultValue={importMode}
-          ></Radio.Group>
+            value={importMode}
+            onChange={e => setImportMode(e.target.value)}
+            className="!mb-4"
+          >
+            {IMPORT_MODE.map(item => (
+              <Radio key={item.key} value={item.key}>
+                {item.label}
+              </Radio>
+            ))}
+          </Radio.Group>
+          {importMode === 'merge' && (
+            <Form form={form} layout="horizontal">
+              <Form.Item
+                name="title"
+                label="最终导入名称"
+                rules={[{ required: true, message: '请输入最终导入名称' }]}
+              >
+                <Input.Search
+                  placeholder="请输入最终导入名称"
+                  allowClear
+                  enterButton="Search"
+                  loading={searchTmdbLoading}
+                  onSearch={onTmdbSearch}
+                />
+              </Form.Item>
+              <Form.Item name="tmdbid" label="最终TMDB ID">
+                <Input disabled placeholder="从TMDB搜索选择后自动填充" />
+              </Form.Item>
+            </Form>
+          )}
         </div>
+      </Modal>
+      <Modal title="批量导入搜索 TMDB ID" open={tmdbOpen} footer={null}>
+        <List
+          itemLayout="vertical"
+          size="large"
+          dataSource={tmdbList}
+          pagination={{
+            pageSize: 4,
+          }}
+          renderItem={(item, index) => {
+            return (
+              <List.Item key={index}>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center justify-start">
+                    <img width={60} alt="logo" src={item.image_url} />
+                    <div className="ml-4">
+                      <div className="text-xl font-bold mb-3">{item.name}</div>
+                      <div>ID: {item.id}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <Button
+                      type="primary"
+                      onClick={() => {
+                        form.setFieldsValue({
+                          tmdbid: item.id,
+                        })
+                        setTmdbOpen(false)
+                      }}
+                    >
+                      选择
+                    </Button>
+                  </div>
+                </div>
+              </List.Item>
+            )
+          }}
+        />
       </Modal>
     </div>
   )

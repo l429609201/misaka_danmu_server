@@ -39,3 +39,9 @@ export const getSearchResult = data =>
 
 /** 导入弹幕  */
 export const importDanmu = data => api.post('/api/ui/import', data)
+
+/** 搜索tmdb */
+export const getTmdbSearch = data =>
+  api.get(`/api/tmdb/search/${data.mediaType}`, {
+    keyword: data.keyword,
+  })
