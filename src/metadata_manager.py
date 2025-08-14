@@ -60,7 +60,7 @@ class MetadataSourceManager:
         full_status_list = []
         for s in settings:
             provider = s['provider_name']
-            status_text = "未知"
+            status_text = "可访问" # 默认状态
             if provider == 'tmdb':
                 status_text = "已配置" if tmdb_key else "未配置"
             elif provider == 'bangumi':
@@ -70,7 +70,12 @@ class MetadataSourceManager:
             elif provider in self.connectivity_status:
                 status_text = self.connectivity_status[provider]
             
-            s['status'] = status_text
-            full_status_list.append(s)
+            # 移除 is_enabled 字段，因为现在所有源都默认启用
+            full_status_list.append({
+                "provider_name": provider,
+                "is_aux_search_enabled": s['is_aux_search_enabled'],
+                "display_order": s['display_order'],
+                "status": status_text
+            })
             
         return full_status_list

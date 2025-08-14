@@ -30,9 +30,28 @@
 .episode-list-header .header-actions {
     display: flex;
     gap: 10px;
-    justify-content: flex-end; /* 右对齐 */
 }
 
+
+.episode-list-actions {
+    display: flex;
+    justify-content: space-between; /* 保持左右对齐 */
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.episode-list-actions .header-actions {
+    display: flex;
+    gap: 10px;
+}
+
+/* 确保“全选”按钮在切换文本时保持宽度一致 */
+#select-all-episodes-btn {
+    min-width: 80px;
+    text-align: center;
+}
 
 .episode-list-header h3 {
     margin: 0;

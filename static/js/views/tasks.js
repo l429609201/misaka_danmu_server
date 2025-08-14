@@ -2,7 +2,7 @@ import { apiFetch } from '../api.js';
 import { switchView } from '../ui.js';
 
 let taskListUl, taskManagerSubNav, runningTasksSearchInput, runningTasksFilterButtons, taskManagerSubViews;
-let deleteRunningTaskBtn, pauseResumeTaskBtn;
+let deleteRunningTaskBtn, pauseResumeTaskBtn, abortRunningTaskBtn;
 let scheduledTasksTableBody, addScheduledTaskBtn, editScheduledTaskView, editScheduledTaskForm, backToTasksFromEditBtn, editScheduledTaskTitle;
 let taskLoadInterval = null;
 let taskLoadTimeout;
@@ -14,6 +14,7 @@ function initializeElements() {
     runningTasksFilterButtons = document.getElementById('running-tasks-filter-buttons');
     deleteRunningTaskBtn = document.getElementById('delete-running-task-btn');
     pauseResumeTaskBtn = document.getElementById('pause-resume-task-btn');
+    abortRunningTaskBtn = document.getElementById('abort-running-task-btn');
     taskManagerSubViews = document.querySelectorAll('#task-manager-view .settings-subview');
     scheduledTasksTableBody = document.querySelector('#scheduled-tasks-table tbody');
     addScheduledTaskBtn = document.getElementById('add-scheduled-task-btn');
@@ -163,6 +164,7 @@ function updateTaskActionButtons() {
     if (!selectedTask) {
         deleteRunningTaskBtn.disabled = true;
         pauseResumeTaskBtn.disabled = true;
+        abortRunningTaskBtn.disabled = true;
         pauseResumeTaskBtn.textContent = '暂停/恢复';
         return;
     }
@@ -171,9 +173,11 @@ function updateTaskActionButtons() {
     const isDeletable = status === '已完成' || status === '失败' || status === '已暂停' || status === '排队中';
     const isPausable = status === '运行中';
     const isResumable = status === '已暂停';
+    const isAbortable = status === '运行中';
 
     deleteRunningTaskBtn.disabled = !isDeletable;
     pauseResumeTaskBtn.disabled = !(isPausable || isResumable);
+    abortRunningTaskBtn.disabled = !isAbortable;
 
     if (isPausable) pauseResumeTaskBtn.textContent = '暂停';
     else if (isResumable) pauseResumeTaskBtn.textContent = '恢复';
@@ -317,11 +321,12 @@ async function handlePauseResumeTask() {
         alert('请先选择一个任务。');
         return;
     }
-
+    
+    const taskId = selectedTask.dataset.taskId;
     const status = selectedTask.dataset.status;
     let endpoint = '';
-    if (status === '运行中') endpoint = '/api/ui/tasks/pause';
-    else if (status === '已暂停') endpoint = '/api/ui/tasks/resume';
+    if (status === '运行中') endpoint = `/api/ui/tasks/${taskId}/pause`;
+    else if (status === '已暂停') endpoint = `/api/ui/tasks/${taskId}/resume`;
     else return; // Not pausable or resumable
 
     try {
@@ -329,6 +334,26 @@ async function handlePauseResumeTask() {
         // The task list will auto-refresh and show the new status
     } catch (error) {
         alert(`操作失败: ${error.message}`);
+    }
+}
+
+async function handleAbortRunningTask() {
+    const selectedTask = taskListUl.querySelector('.task-item.selected');
+    if (!selectedTask) {
+        alert('请先选择一个任务。');
+        return;
+    }
+    const taskId = selectedTask.dataset.taskId;
+    const taskTitle = selectedTask.querySelector('.task-title').textContent;
+
+    if (confirm(`您确定要中止任务 "${taskTitle}" 吗？\n此操作会尝试停止任务，如果无法停止，则会将其强制标记为“失败”状态。`)) {
+        try {
+            await apiFetch(`/api/ui/tasks/${taskId}/abort`, { method: 'POST' });
+            // The task list will auto-refresh and show the new status, but we can trigger one manually for faster feedback.
+            loadAndRenderTasks();
+        } catch (error) {
+            alert(`中止任务失败: ${error.message}`);
+        }
     }
 }
 
@@ -340,6 +365,7 @@ export function setupTasksEventListeners() {
     addScheduledTaskBtn.addEventListener('click', () => showEditScheduledTaskView());
     deleteRunningTaskBtn.addEventListener('click', handleDeleteRunningTask);
     pauseResumeTaskBtn.addEventListener('click', handlePauseResumeTask);
+    abortRunningTaskBtn.addEventListener('click', handleAbortRunningTask);
     editScheduledTaskForm.addEventListener('submit', handleScheduledTaskFormSubmit);
     backToTasksFromEditBtn.addEventListener('click', () => {
         switchView('task-manager-view');

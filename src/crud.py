@@ -379,6 +379,14 @@ async def fetch_comments(pool: aiomysql.Pool, episode_id: int) -> List[Dict[str,
             await cursor.execute(query, (episode_id,))
             return await cursor.fetchall()
 
+async def get_existing_comment_cids(pool: aiomysql.Pool, episode_id: int) -> set:
+    """获取指定分集已存在的所有弹幕 cid。"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            # cid 在数据库中是 VARCHAR，所以这里获取的是字符串集合
+            await cursor.execute("SELECT cid FROM comment WHERE episode_id = %s", (episode_id,))
+            return {row[0] for row in await cursor.fetchall()}
+
 async def get_or_create_anime(pool: aiomysql.Pool, title: str, media_type: str, season: int, image_url: Optional[str]) -> int:
     """通过标题查找番剧，如果不存在则创建。如果存在但缺少海报，则更新海报。返回其ID。"""
     async with pool.acquire() as conn:
@@ -642,8 +650,7 @@ async def update_anime_details(pool: aiomysql.Pool, anime_id: int, update_data: 
                 # 3. 更新 anime_aliases 表 (使用新的 AS alias 语法)
                 await cursor.execute("""
                     INSERT INTO anime_aliases (anime_id, name_en, name_jp, name_romaji, alias_cn_1, alias_cn_2, alias_cn_3)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    AS new_values ON DUPLICATE KEY UPDATE
+                    VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE
                         name_en = VALUES(name_en), name_jp = VALUES(name_jp),
                         name_romaji = VALUES(name_romaji), alias_cn_1 = VALUES(alias_cn_1),
                         alias_cn_2 = VALUES(alias_cn_2), alias_cn_3 = VALUES(alias_cn_3)
@@ -799,30 +806,51 @@ async def reassociate_anime_sources(pool: aiomysql.Pool, source_anime_id: int, t
                 logging.error(f"重新关联源从 {source_anime_id} 到 {target_anime_id} 时出错: {e}", exc_info=True)
                 return False
 
-async def update_episode_info(pool: aiomysql.Pool, episode_id: int, title: str, episode_index: int, source_url: Optional[str]) -> bool:
-    """更新分集信息"""
+async def update_episode_info(pool: aiomysql.Pool, episode_id: int, update_data: models.EpisodeInfoUpdate) -> bool:
+    """
+    更新分集信息。
+    此函数具有弹性：如果原始 episode_id 不再存在（可能由于刷新任务），
+    它会尝试使用 source_id 和 original_episode_index 找到新的 episode_id 并更新它。
+    """
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
-            # 1. 获取当前分集的 source_id
-            await cursor.execute("SELECT source_id FROM episode WHERE id = %s", (episode_id,))
-            result = await cursor.fetchone()
-            if not result:
-                return False # Episode not found
-            source_id = result[0]
+            await conn.begin()
+            try:
+                # 步骤 1: 确定要更新的实际 episode_id
+                actual_episode_id = None
+                
+                # 1a: 尝试通过原始 ID 查找
+                await cursor.execute("SELECT id FROM episode WHERE id = %s", (episode_id,))
+                result = await cursor.fetchone()
+                if result:
+                    actual_episode_id = result[0]
+                else:
+                    # 1b: 如果找不到，尝试通过 source_id 和 original_index 查找
+                    logging.warning(f"Episode ID {episode_id} not found for update. Attempting to find replacement via source_id={update_data.source_id} and original_index={update_data.original_episode_index}.")
+                    await cursor.execute(
+                        "SELECT id FROM episode WHERE source_id = %s AND episode_index = %s",
+                        (update_data.source_id, update_data.original_episode_index)
+                    )
+                    result = await cursor.fetchone()
+                    if result:
+                        actual_episode_id = result[0]
+                        logging.info(f"Found replacement episode with ID {actual_episode_id}. Proceeding with update.")
+                
+                if actual_episode_id is None:
+                    await conn.rollback()
+                    return False
 
-            # 2. 检查新的 episode_index 是否已在该 source_id 下被其他分集使用
-            await cursor.execute(
-                "SELECT id FROM episode WHERE source_id = %s AND episode_index = %s AND id != %s",
-                (source_id, episode_index, episode_id)
-            )
-            if await cursor.fetchone():
-                # 如果找到了，说明集数重复，抛出特定错误
-                raise ValueError("该集数已存在，请使用其他集数。")
+                await cursor.execute("SELECT id FROM episode WHERE source_id = %s AND episode_index = %s AND id != %s", (update_data.source_id, update_data.episode_index, actual_episode_id))
+                if await cursor.fetchone(): raise ValueError("该集数已存在，请使用其他集数。")
 
-            # 3. 如果没有重复，则执行更新
-            query = "UPDATE episode SET title = %s, episode_index = %s, source_url = %s WHERE id = %s"
-            affected_rows = await cursor.execute(query, (title, episode_index, source_url, episode_id))
-            return affected_rows > 0
+                await cursor.execute("UPDATE episode SET title = %s, episode_index = %s, source_url = %s WHERE id = %s", (update_data.title, update_data.episode_index, update_data.source_url, actual_episode_id))
+                await conn.commit()
+                return True
+            except Exception as e:
+                await conn.rollback()
+                if isinstance(e, ValueError): raise
+                logging.error(f"更新分集信息时发生数据库错误: {e}", exc_info=True)
+                return False
 
 async def sync_scrapers_to_db(pool: aiomysql.Pool, provider_names: List[str]):
     """将发现的搜索源同步到数据库，新的搜索源会被添加进去。"""
@@ -899,13 +927,32 @@ async def update_metadata_sources_settings(pool: aiomysql.Pool, settings: List['
     """批量更新元数据源的设置。"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
-            query = "UPDATE metadata_sources SET is_enabled = %s, is_aux_search_enabled = %s, display_order = %s WHERE provider_name = %s"
-            data_to_update = []
-            for s in settings:
-                # Enforce TMDB as always-on for auxiliary search
-                is_aux = True if s.provider_name == 'tmdb' else s.is_aux_search_enabled
-                data_to_update.append((s.is_enabled, is_aux, s.display_order, s.provider_name))
-            await cursor.executemany(query, data_to_update)
+            await conn.begin()
+            try:
+                # 为了彻底解决状态互相干扰的Bug，我们将TMDB的更新和其他源的更新分开处理。
+                # 这种方式隔离了具有特殊逻辑的条目，增加了操作的原子性和可预测性。
+                
+                # 1. 单独处理 TMDB
+                tmdb_setting = next((s for s in settings if s.provider_name == 'tmdb'), None)
+                if tmdb_setting:
+                    await cursor.execute(
+                        "UPDATE metadata_sources SET is_aux_search_enabled = %s, display_order = %s WHERE provider_name = %s",
+                        (True, tmdb_setting.display_order, 'tmdb') # is_aux_search_enabled is always True for TMDB
+                    )
+
+                # 2. 批量处理所有其他源
+                other_settings = [s for s in settings if s.provider_name != 'tmdb']
+                for s in other_settings:
+                    await cursor.execute(
+                        "UPDATE metadata_sources SET is_aux_search_enabled = %s, display_order = %s WHERE provider_name = %s",
+                        (s.is_aux_search_enabled, s.display_order, s.provider_name)
+                    )
+
+                await conn.commit()
+            except Exception as e:
+                await conn.rollback()
+                logging.error(f"更新元数据源设置时发生错误: {e}", exc_info=True)
+                raise
 
 async def update_episode_fetch_time(pool: aiomysql.Pool, episode_id: int):
     """更新分集的采集时间"""
@@ -982,9 +1029,9 @@ async def set_cache(pool: aiomysql.Pool, key: str, value: Any, ttl_seconds: int,
         async with conn.cursor() as cursor:
             json_value = json.dumps(value, ensure_ascii=False)
             query = """
-                INSERT INTO cache_data (cache_provider, cache_key, cache_value, expires_at) 
-                VALUES (%s, %s, %s, NOW() + INTERVAL %s SECOND) 
-                AS new_values ON DUPLICATE KEY UPDATE
+                INSERT INTO cache_data (cache_provider, cache_key, cache_value, expires_at)
+                VALUES (%s, %s, %s, NOW() + INTERVAL %s SECOND)
+                ON DUPLICATE KEY UPDATE
                     cache_provider = VALUES(cache_provider),
                     cache_value = VALUES(cache_value),
                     expires_at = VALUES(expires_at)
@@ -995,11 +1042,7 @@ async def update_config_value(pool: aiomysql.Pool, key: str, value: str):
     """更新或插入一个配置项。"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
-            query = """
-                INSERT INTO config (config_key, config_value)
-                VALUES (%s, %s) AS new_values
-                ON DUPLICATE KEY UPDATE config_value = new_values.config_value
-            """
+            query = "INSERT INTO config (config_key, config_value) VALUES (%s, %s) ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)"
             await cursor.execute(query, (key, value))
 
 async def clear_expired_cache(pool: aiomysql.Pool):
@@ -1216,7 +1259,7 @@ async def save_bangumi_auth(pool: aiomysql.Pool, user_id: int, auth_data: Dict[s
             # 当记录已存在时（ON DUPLICATE KEY UPDATE），authorized_at 不会被更新，保留首次授权时间。
             query = """
                 INSERT INTO bangumi_auth (user_id, bangumi_user_id, nickname, avatar_url, access_token, refresh_token, expires_at, authorized_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s) AS new_values
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
                     bangumi_user_id = VALUES(bangumi_user_id),
                     nickname = VALUES(nickname),
@@ -1224,7 +1267,7 @@ async def save_bangumi_auth(pool: aiomysql.Pool, user_id: int, auth_data: Dict[s
                     access_token = VALUES(access_token),
                     refresh_token = VALUES(refresh_token),
                     expires_at = VALUES(expires_at),
-                    authorized_at = IF(bangumi_auth.authorized_at IS NULL, new_values.authorized_at, bangumi_auth.authorized_at)
+                    authorized_at = IF(bangumi_auth.authorized_at IS NULL, VALUES(authorized_at), bangumi_auth.authorized_at)
             """
             await cursor.execute(query, (
                 user_id, auth_data.get('bangumi_user_id'), auth_data.get('nickname'),
@@ -1410,3 +1453,31 @@ async def mark_interrupted_tasks_as_failed(pool: aiomysql.Pool) -> int:
             query = "UPDATE task_history SET status = %s, description = %s, finished_at = NOW() WHERE status IN (%s, %s)"
             affected_rows = await cursor.execute(query, ("失败", "因程序重启而中断", "运行中", "已暂停"))
             return affected_rows
+
+async def initialize_configs(pool: aiomysql.Pool, defaults: Dict[str, tuple[Any, str]]):
+    """
+    初始化配置表的默认值。如果配置项不存在，则创建它。
+    """
+    if not defaults:
+        return
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            # 1. 获取所有已存在的配置
+            await cursor.execute("SELECT config_key FROM config")
+            existing_keys = {row[0] for row in await cursor.fetchall()}
+
+            # 2. 准备插入新配置
+            configs_to_insert = []
+            for key, (value, description) in defaults.items():
+                if key not in existing_keys:
+                    logging.getLogger(__name__).info(f"正在初始化配置项 '{key}'...")
+                    configs_to_insert.append((key, str(value), description))
+
+            # 3. 批量插入新配置
+            if configs_to_insert:
+                query_insert = "INSERT INTO config (config_key, config_value, description) VALUES (%s, %s, %s)"
+                await cursor.executemany(query_insert, configs_to_insert)
+                logging.getLogger(__name__).info(f"成功初始化 {len(configs_to_insert)} 个新配置项。")
+
+    logging.getLogger(__name__).info("默认配置检查完成。")

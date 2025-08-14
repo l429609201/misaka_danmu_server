@@ -326,8 +326,14 @@ async def search_anime_provider(
     for item in results:
         item.currentEpisodeIndex = current_episode_index_for_this_request
 
+    # 新增：根据搜索源的显示顺序对结果进行排序
+    source_settings = await crud.get_all_scraper_settings(pool)
+    source_order_map = {s['provider_name']: s['display_order'] for s in source_settings}
+    # 使用 sorted 创建一个新的排序列表，而不是原地排序
+    sorted_results = sorted(results, key=lambda x: source_order_map.get(x.provider, 999))
+
     return UIProviderSearchResponse(
-        results=results,
+        results=sorted_results,
         search_season=season_to_filter,
         search_episode=episode_to_filter
     )
@@ -384,6 +390,18 @@ async def edit_anime_info(
             # 仅记录错误，不中断主流程，因为核心信息已保存
             logger.error(f"更新TMDB映射失败: {e}", exc_info=True)
     return
+
+@router.get("/library/source/{source_id}/details", summary="获取单个数据源的详情")
+async def get_source_details(
+    source_id: int,
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool)
+):
+    """获取指定数据源的详细信息，包括其提供方名称。"""
+    source_info = await crud.get_anime_source_info(pool, source_id)
+    if not source_info:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+    return source_info
 
 class ReassociationRequest(models.BaseModel):
     target_anime_id: int
@@ -488,14 +506,9 @@ async def edit_episode_info(
 ):
     """更新指定分集的标题、集数和链接。"""
     try:
-        updated = await crud.update_episode_info(
-            pool,
-            episode_id,
-            update_data.title,
-            update_data.episode_index,
-            update_data.source_url
-        )
+        updated = await crud.update_episode_info(pool, episode_id, update_data)
         if not updated:
+            logger.warning(f"尝试更新一个不存在的分集 (ID: {episode_id})，操作被拒绝。")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
         logger.info(f"用户 '{current_user.username}' 更新了分集 ID: {episode_id} 的信息。")
         return
@@ -640,8 +653,14 @@ async def get_scraper_settings(
         scraper_class = manager.get_scraper_class(s['provider_name'])
         s_with_config = ScraperSettingWithConfig.model_validate(s)
         if scraper_class:
-            s_with_config.is_loggable = getattr(scraper_class, 'is_loggable', False)
-            s_with_config.configurable_fields = getattr(scraper_class, 'configurable_fields', None)
+            s_with_config.is_loggable = getattr(scraper_class, "is_loggable", False)
+            # 关键修复：复制类属性以避免修改共享的可变字典
+            base_fields = getattr(scraper_class, "configurable_fields", None)
+            s_with_config.configurable_fields = base_fields.copy() if base_fields is not None else {}
+
+            # 为当前源动态添加其专属的黑名单配置字段
+            blacklist_key = f"{s['provider_name']}_episode_blacklist_regex"
+            s_with_config.configurable_fields[blacklist_key] = "分集标题黑名单 (正则)"
         full_settings.append(s_with_config)
             
     return full_settings
@@ -661,6 +680,8 @@ async def update_metadata_source_settings(
     pool: aiomysql.Pool = Depends(get_db_pool)
 ):
     """批量更新元数据源的启用状态、辅助搜索状态和显示顺序。"""
+    # 修正：恢复使用专用的 `metadata_sources` 表来存储设置，
+    # 这将调用 `crud.py` 中正确的函数，并解决之前遇到的状态保存问题。
     await crud.update_metadata_sources_settings(pool, settings)
     logger.info(f"用户 '{current_user.username}' 更新了元数据源设置。")
 
@@ -698,6 +719,10 @@ async def get_scraper_config(
     # 如果源是可记录日志的，也获取其日志配置
     if is_loggable:
         config_keys.append(f"scraper_{provider_name}_log_responses")
+    
+    # 新增：总是获取该源的自定义黑名单配置
+    blacklist_key = f"{provider_name}_episode_blacklist_regex"
+    config_keys.append(blacklist_key)
 
     if not config_keys: return {}
     tasks = [crud.get_config_value(pool, key, "") for key in config_keys]
@@ -726,6 +751,8 @@ async def update_scraper_config(
     # 如果源是可记录日志的，也允许更新其日志配置
     if is_loggable:
         allowed_keys.append(f"scraper_{provider_name}_log_responses")
+    # 允许更新通用的黑名单配置
+    allowed_keys.append(f"{provider_name}_episode_blacklist_regex")
 
     tasks = [crud.update_config_value(pool, key, value or "") for key, value in payload.items() if key in allowed_keys]
     
@@ -1173,35 +1200,21 @@ async def generic_import_task(
     """
     后台任务：执行从指定数据源导入弹幕的完整流程。
     """
-    total_comments_added = 0
     try:
         scraper = manager.get_scraper(provider)
 
         # 统一将标题中的英文冒号替换为中文冒号，作为写入数据库前的最后保障
         normalized_title = anime_title.replace(":", "：")
 
-        # 1. 在数据库中创建或获取番剧ID，并链接数据源
-        anime_id = await crud.get_or_create_anime(pool, normalized_title, media_type, season, image_url)
-        # 智能更新所有从Webhook获取的元数据ID
-        await crud.update_metadata_if_empty(pool, anime_id, tmdb_id, imdb_id, tvdb_id, douban_id)
-        source_id = await crud.link_source_to_anime(pool, anime_id, provider, media_id)
-
-        logger.info(f"媒体 '{normalized_title}' (ID: {anime_id}, 类型: {media_type}) 已准备就绪。")
-
-        # 2. 获取所有分集信息
-        # 将目标集数信息传递给 scraper，让其可以优化获取过程
+        # 步骤 1: 获取所有分集信息
+        await progress_callback(10, "正在获取分集列表...")
         episodes = await scraper.get_episodes(
             media_id,
             target_episode_index=current_episode_index,
             db_media_type=media_type
         )
         if not episodes:
-            # 修正：当找不到分集时，抛出 TaskSuccess 异常，以便任务管理器能以一个有意义的消息结束任务，
-            # 而不是简单地返回并显示通用的“成功”消息。
-            if current_episode_index:
-                msg = f"未能找到第 {current_episode_index} 集。"
-            else:
-                msg = "未能获取到任何分集。"
+            msg = f"未能找到第 {current_episode_index} 集。" if current_episode_index else "未能获取到任何分集。"
             logger.warning(f"任务终止: {msg} (provider='{provider}', media_id='{media_id}')")
             raise TaskSuccess(msg)
 
@@ -1209,43 +1222,45 @@ async def generic_import_task(
         if media_type == "movie" and episodes:
             logger.info(f"检测到媒体类型为电影，将只处理第一个分集 '{episodes[0].title}'。")
             episodes = episodes[:1]
-        
-        # 3. 为每个分集获取并存储弹幕
+
+        # 步骤 2: 为每个分集获取弹幕，并存储在内存中
+        episode_comment_data = []
+        total_episodes = len(episodes)
         for i, episode in enumerate(episodes):
-            logger.info(f"--- 开始处理分集 {i+1}/{len(episodes)}: '{episode.title}' (ID: {episode.episodeId}) ---")
-            await progress_callback(progress=(i / len(episodes)) * 100, description=f"正在处理: {episode.title} ({i+1}/{len(episodes)})")
-
-            # 3.1 在数据库中创建或获取分集ID
-            episode_db_id = await crud.get_or_create_episode(pool, source_id, episode.episodeIndex, episode.title, episode.url, episode.episodeId)
-
-            # 为弹幕获取创建一个子进度回调
-            base_progress = (i / len(episodes)) * 100
-            progress_range = (1 / len(episodes)) * 100
+            logger.info(f"--- 开始处理分集 {i+1}/{total_episodes}: '{episode.title}' (ID: {episode.episodeId}) ---")
+            base_progress = 10 + int((i / total_episodes) * 80)
+            await progress_callback(base_progress, f"正在处理: {episode.title} ({i+1}/{total_episodes})")
 
             async def sub_progress_callback(danmaku_progress: int, danmaku_description: str):
-                # danmaku_progress is 0-100
-                # Map it to the current episode's progress slice
-                current_total_progress = base_progress + (danmaku_progress / 100) * progress_range
-                # 使用位置参数调用，以保持与其他任务回调的一致性
+                current_total_progress = base_progress + (danmaku_progress / 100) * (80 / total_episodes)
                 await progress_callback(current_total_progress, f"处理: {episode.title} - {danmaku_description}")
 
-            # 3.2 获取弹幕
             comments = await scraper.get_comments(episode.episodeId, progress_callback=sub_progress_callback)
-            if not comments:
-                logger.info(f"分集 '{episode.title}' 未找到弹幕，跳过。")
-                continue
+            episode_comment_data.append({"episode_info": episode, "comments": comments})
 
-            # 3.3 批量插入弹幕 (get_comments 已按要求格式化)
-            await progress_callback(base_progress + progress_range * 0.98, f"处理: {episode.title} - 正在写入数据库")
+        # 步骤 3: 所有数据获取成功，现在开始写入数据库
+        await progress_callback(95, "数据获取完成，正在写入数据库...")
+        anime_id = await crud.get_or_create_anime(pool, normalized_title, media_type, season, image_url)
+        await crud.update_metadata_if_empty(pool, anime_id, tmdb_id, imdb_id, tvdb_id, douban_id)
+        source_id = await crud.link_source_to_anime(pool, anime_id, provider, media_id)
+
+        # 步骤 4: 循环写入分集和弹幕
+        total_comments_added = 0
+        for data in episode_comment_data:
+            episode_info = data["episode_info"]
+            comments = data["comments"]
+            episode_db_id = await crud.get_or_create_episode(pool, source_id, episode_info.episodeIndex, episode_info.title, episode_info.url, episode_info.episodeId)
+            if not comments: continue
             added_count = await crud.bulk_insert_comments(pool, episode_db_id, comments)
             total_comments_added += added_count
-            logger.info(f"分集 '{episode.title}' (DB ID: {episode_db_id}) 新增 {added_count} 条弹幕。")
+            logger.info(f"分集 '{episode_info.title}' (DB ID: {episode_db_id}) 新增 {added_count} 条弹幕。")
+
+        raise TaskSuccess(f"导入完成，共新增 {total_comments_added} 条弹幕。")
     except TaskSuccess:
         raise # 重新抛出以被 TaskManager 正确处理
     except Exception as e:
         logger.error(f"导入任务发生严重错误: {e}", exc_info=True)
         raise  # 重新抛出异常，以便任务管理器能捕获并标记任务为“失败”
-    logger.info(f"--- {provider} 导入任务完成 (media_id={media_id})。总共新增 {total_comments_added} 条弹幕。 ---")
 
 async def full_refresh_task(source_id: int, pool: aiomysql.Pool, manager: ScraperManager, task_manager: TaskManager, progress_callback: Callable):
     """
@@ -1328,11 +1343,6 @@ async def refresh_episode_task(episode_id: int, pool: aiomysql.Pool, manager: Sc
         provider_episode_id = info["provider_episode_id"]
         scraper = manager.get_scraper(provider_name)
 
-        # 2. 清空旧弹幕
-        await progress_callback(25, "正在清空旧弹幕...")
-        await crud.clear_episode_comments(pool, episode_id)
-        logger.info(f"已清空分集 ID: {episode_id} 的旧弹幕。")
-
         # 3. 获取新弹幕并插入
         await progress_callback(30, "正在从源获取新弹幕...")
         
@@ -1341,17 +1351,32 @@ async def refresh_episode_task(episode_id: int, pool: aiomysql.Pool, manager: Sc
             current_total_progress = 30 + (danmaku_progress / 100) * 65
             await progress_callback(current_total_progress, danmaku_description)
 
-        comments = await scraper.get_comments(provider_episode_id, progress_callback=sub_progress_callback)
+        all_comments_from_source = await scraper.get_comments(provider_episode_id, progress_callback=sub_progress_callback)
 
-        await progress_callback(96, f"正在写入 {len(comments)} 条新弹幕...")
-        added_count = await crud.bulk_insert_comments(pool, episode_id, comments)
+        if not all_comments_from_source:
+            await crud.update_episode_fetch_time(pool, episode_id)
+            raise TaskSuccess("未找到任何弹幕。")
+
+        # 新增：在插入前，先筛选出数据库中不存在的新弹幕，以避免产生大量的“重复条目”警告。
+        await progress_callback(95, "正在比对新旧弹幕...")
+        existing_cids = await crud.get_existing_comment_cids(pool, episode_id)
+        new_comments = [c for c in all_comments_from_source if str(c.get('cid')) not in existing_cids]
+
+        if not new_comments:
+            await crud.update_episode_fetch_time(pool, episode_id)
+            raise TaskSuccess("刷新完成，没有新增弹幕。")
+
+        await progress_callback(96, f"正在写入 {len(new_comments)} 条新弹幕...")
+        added_count = await crud.bulk_insert_comments(pool, episode_id, new_comments)
         await crud.update_episode_fetch_time(pool, episode_id)
         logger.info(f"分集 ID: {episode_id} 刷新完成，新增 {added_count} 条弹幕。")
         raise TaskSuccess(f"刷新完成，新增 {added_count} 条弹幕。")
-
+    except TaskSuccess:
+        # 任务成功完成，直接重新抛出，由 TaskManager 处理
+        raise
     except Exception as e:
         logger.error(f"刷新分集 ID: {episode_id} 时发生严重错误: {e}", exc_info=True)
-        raise e # Re-raise so the task manager catches it and marks as FAILED
+        raise # Re-raise so the task manager catches it and marks as FAILED
 
 async def reorder_episodes_task(source_id: int, pool: aiomysql.Pool, progress_callback: Callable):
     """后台任务：重新编号一个源的所有分集。"""
@@ -1386,6 +1411,89 @@ async def reorder_episodes_task(source_id: int, pool: aiomysql.Pool, progress_ca
         raise TaskSuccess(f"重整完成，共更新了 {updated_count} 个分集的集数。")
     except Exception as e:
         logger.error(f"重整分集任务 (源ID: {source_id}) 失败: {e}", exc_info=True)
+        raise
+
+class ManualImportRequest(models.BaseModel):
+    title: str
+    episode_index: int
+    url: str
+
+@router.post("/library/source/{source_id}/manual-import", status_code=status.HTTP_202_ACCEPTED, summary="手动导入单个分集弹幕")
+async def manual_import_episode(
+    source_id: int,
+    request_data: ManualImportRequest,
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool),
+    scraper_manager: ScraperManager = Depends(get_scraper_manager),
+    task_manager: TaskManager = Depends(get_task_manager)
+):
+    """提交一个后台任务，从给定的URL手动导入弹幕。"""
+    source_info = await crud.get_anime_source_info(pool, source_id)
+    if not source_info:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+
+    provider_name = source_info['provider_name']
+    
+    url_prefixes = {
+        'bilibili': 'bilibili.com', 'tencent': 'v.qq.com', 'iqiyi': 'iqiyi.com',
+        'youku': 'youku.com', 'mgtv': 'mgtv.com', 'acfun': 'acfun.cn', 'renren': 'rrsp.com.cn'
+    }
+    expected_prefix = url_prefixes.get(provider_name)
+    if not expected_prefix or expected_prefix not in request_data.url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"提供的URL与当前源 '{provider_name}' 不匹配。")
+
+    task_title = f"手动导入: {request_data.title}"
+    task_coro = lambda callback: manual_import_task(
+        source_id=source_id, title=request_data.title, episode_index=request_data.episode_index,
+        url=request_data.url, provider_name=provider_name,
+        progress_callback=callback, pool=pool, manager=scraper_manager
+    )
+    task_id, _ = await task_manager.submit_task(task_coro, task_title)
+    return {"message": f"手动导入任务 '{task_title}' 已提交。", "task_id": task_id}
+
+async def manual_import_task(
+    source_id: int, title: str, episode_index: int, url: str, provider_name: str,
+    progress_callback: Callable, pool: aiomysql.Pool, manager: ScraperManager
+):
+    """后台任务：从URL手动导入弹幕。"""
+    logger.info(f"开始手动导入任务: source_id={source_id}, title='{title}', url='{url}'")
+    await progress_callback(10, "正在准备导入...")
+    
+    try:
+        scraper = manager.get_scraper(provider_name)
+        
+        provider_episode_id = None
+        if hasattr(scraper, 'get_ids_from_url'): provider_episode_id = await scraper.get_ids_from_url(url)
+        elif hasattr(scraper, 'get_danmaku_id_from_url'): provider_episode_id = await scraper.get_danmaku_id_from_url(url)
+        elif hasattr(scraper, 'get_tvid_from_url'): provider_episode_id = await scraper.get_tvid_from_url(url)
+        elif hasattr(scraper, 'get_vid_from_url'): provider_episode_id = await scraper.get_vid_from_url(url)
+        
+        if not provider_episode_id: raise ValueError(f"无法从URL '{url}' 中解析出有效的视频ID。")
+
+        # 修正：处理 Bilibili 和 MGTV 返回的字典ID，并将其格式化为 get_comments 期望的字符串格式。
+        episode_id_for_comments = provider_episode_id
+        if isinstance(provider_episode_id, dict):
+            if provider_name == 'bilibili':
+                episode_id_for_comments = f"{provider_episode_id.get('aid')},{provider_episode_id.get('cid')}"
+            elif provider_name == 'mgtv':
+                # MGTV 的 get_comments 期望 "cid,vid"
+                episode_id_for_comments = f"{provider_episode_id.get('cid')},{provider_episode_id.get('vid')}"
+            else:
+                # 对于其他可能的字典返回，将其字符串化
+                episode_id_for_comments = str(provider_episode_id)
+
+        await progress_callback(20, f"已解析视频ID: {episode_id_for_comments}")
+        comments = await scraper.get_comments(episode_id_for_comments, progress_callback=progress_callback)
+        if not comments: raise TaskSuccess("未找到任何弹幕。")
+
+        await progress_callback(90, "正在写入数据库...")
+        episode_db_id = await crud.get_or_create_episode(pool, source_id, episode_index, title, url, episode_id_for_comments)
+        added_count = await crud.bulk_insert_comments(pool, episode_db_id, comments)
+        raise TaskSuccess(f"手动导入完成，新增 {added_count} 条弹幕。")
+    except TaskSuccess:
+        raise
+    except Exception as e:
+        logger.error(f"手动导入任务失败: {e}", exc_info=True)
         raise
 
 @router.post("/import", status_code=status.HTTP_202_ACCEPTED, summary="从指定数据源导入弹幕")
@@ -1441,23 +1549,58 @@ async def import_from_provider(
 
     return {"message": f"'{request_data.anime_title}' 的导入任务已提交。请在任务管理器中查看进度。", "task_id": task_id}
 
-@router.post("/tasks/pause", status_code=status.HTTP_202_ACCEPTED, summary="暂停当前正在运行的任务")
-async def pause_current_task(
+@router.post("/tasks/{task_id}/pause", status_code=status.HTTP_202_ACCEPTED, summary="暂停一个正在运行的任务")
+async def pause_task(
+    task_id: str,
     current_user: models.User = Depends(security.get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
-    """暂停当前正在运行的任务。注意：此操作只对当前队列中正在执行的单个任务有效。"""
-    await task_manager.pause_current_task()
+    """暂停一个指定的、当前正在运行的任务。"""
+    success = await task_manager.pause_task(task_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="无法暂停任务，因为它不是当前正在运行的任务。")
     return {"message": "暂停请求已发送。"}
 
-@router.post("/tasks/resume", status_code=status.HTTP_202_ACCEPTED, summary="恢复当前已暂停的任务")
-async def resume_current_task(
+@router.post("/tasks/{task_id}/resume", status_code=status.HTTP_202_ACCEPTED, summary="恢复一个已暂停的任务")
+async def resume_task(
+    task_id: str,
     current_user: models.User = Depends(security.get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
-    """恢复当前已暂停的任务。"""
-    await task_manager.resume_current_task()
+    """恢复一个指定的、已暂停的任务。"""
+    success = await task_manager.resume_task(task_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="无法恢复任务，因为它不是当前已暂停的任务。")
     return {"message": "恢复请求已发送。"}
+
+@router.post("/tasks/{task_id}/abort", status_code=status.HTTP_202_ACCEPTED, summary="中止一个正在运行的任务")
+async def abort_running_task(
+    task_id: str,
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool),
+    task_manager: TaskManager = Depends(get_task_manager)
+):
+    """
+    尝试中止一个任务。
+    如果任务是当前正在运行的任务，会尝试取消它。
+    如果任务不是当前任务（例如，卡在“运行中”状态），则会强制将其状态更新为“失败”。
+    """
+    task = await crud.get_task_from_history_by_id(pool, task_id)
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    if task['status'] != TaskStatus.RUNNING:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"无法中止一个状态为 '{task['status']}' 的任务。")
+
+    logger.info(f"用户 '{current_user.username}' 请求中止任务 ID: {task_id} ({task['title']})。")
+    
+    aborted = await task_manager.abort_current_task(task_id)
+    if aborted:
+        return {"message": "任务中止请求已发送。"}
+    else:
+        logger.warning(f"无法优雅地中止任务 {task_id}，将强制标记为失败。")
+        await crud.finalize_task_in_history(pool, task_id, TaskStatus.FAILED, "被用户手动中止")
+        return {"message": "任务已被强制标记为失败。"}
 
 @auth_router.post("/token", response_model=models.Token, summary="用户登录获取令牌")
 async def login_for_access_token(

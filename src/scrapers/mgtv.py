@@ -8,8 +8,11 @@ import aiomysql
 import httpx
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from ..config_manager import ConfigManager
 from .. import models, crud
 from .base import BaseScraper, get_season_from_title
+
+scraper_responses_logger = logging.getLogger("scraper_responses")
 
 # --- Pydantic Models for Mgtv API ---
 
@@ -142,19 +145,19 @@ class MgtvCommentSegmentResult(BaseModel):
 class MgtvScraper(BaseScraper):
     provider_name = "mgtv"
 
-    # 修正：优化标题过滤器，将需要单词边界的英文缩写与不需要边界的中文关键词分开处理，
-    # 以正确过滤如“幕后纪录片”等标题。
+    # English keywords that often appear as standalone acronyms or words
+    _ENG_JUNK = r'NC|OP|ED|SP|OVA|OAD|CM|PV|MV|BDMenu|Menu|Bonus|Recap|Teaser|Trailer|Preview|CD|Disc|Scan|Sample|Logo|Info|EDPV|SongSpot|BDSpot'
+    # Chinese keywords that are often embedded in titles.
+    _CN_JUNK = r'特典|预告|广告|菜单|花絮|特辑|速看|资讯|彩蛋|直拍|直播回顾|片头|片尾|幕后|映像|番外篇|纪录片|访谈|番外|短片|加更|走心|解忧|纯享'
+
     _JUNK_TITLE_PATTERN = re.compile(
-        # 英文缩写/单词，需要单词边界或括号
-        r'(\[|\【|\b)(OP|ED|SP|OVA|OAD|CM|PV|MV|BDMenu|Menu|Bonus|Recap|Teaser|Trailer|Preview|OST|BGM)(\d{1,2})?(\s|_ALL)?(\]|\】|\b)'
-        # 中文关键词，直接匹配 (已合并新规则)
-        r'|(特典|预告|广告|菜单|花絮|特辑|速看|资讯|彩蛋|直拍|直播回顾|片头|片尾|映像|纪录片|访谈|番外|短片|加更|走心|解忧|纯享)',
+        r'(\[|\【|\b)(' + _ENG_JUNK + r')(\d{1,2})?(\s|_ALL)?(\]|\】|\b)|(' + _CN_JUNK + r')',
         re.IGNORECASE
     )
 
 
-    def __init__(self, pool: aiomysql.Pool):
-        super().__init__(pool)
+    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
+        super().__init__(pool, config_manager)
         self.client = httpx.AsyncClient(
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -189,6 +192,8 @@ class MgtvScraper(BaseScraper):
         
         try:
             response = await self._request_with_rate_limit("GET", url)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"MGTV Search Response (keyword='{keyword}'): {response.text}")
             response.raise_for_status()
             search_result = MgtvSearchResult.model_validate(response.json())
 
@@ -258,6 +263,8 @@ class MgtvScraper(BaseScraper):
             while page_index < total_pages:
                 url = f"https://pcweb.api.mgtv.com/variety/showlist?allowedRC=1&collection_id={media_id}&month={month}&page=1&_support=10000000"
                 response = await self._request_with_rate_limit("GET", url)
+                if await self._should_log_responses():
+                    scraper_responses_logger.debug(f"MGTV Episodes Response (media_id={media_id}, month={month}): {response.text}")
                 response.raise_for_status()
                 result = MgtvEpisodeListResult.model_validate(response.json())
 
@@ -300,18 +307,14 @@ class MgtvScraper(BaseScraper):
                 ) for i, ep in enumerate(sorted_episodes)
             ]
 
-            # 新增：根据黑名单过滤分集
-            blacklist_regex_str = await crud.get_config_value(self.pool, "mgtv_episode_blacklist_regex", "")
-            if blacklist_regex_str:
-                try:
-                    blacklist_pattern = re.compile(blacklist_regex_str, re.IGNORECASE)
-                    original_count = len(provider_episodes)
-                    provider_episodes = [ep for ep in provider_episodes if not blacklist_pattern.search(ep.title)]
-                    filtered_count = original_count - len(provider_episodes)
-                    if filtered_count > 0:
-                        self.logger.info(f"Mgtv: 根据黑名单规则过滤掉了 {filtered_count} 个分集。")
-                except re.error as e:
-                    self.logger.error(f"Mgtv: 分集标题黑名单正则表达式无效: '{blacklist_regex_str}', 错误: {e}")
+            # Apply custom blacklist from config
+            blacklist_pattern = await self.get_episode_blacklist_pattern()
+            if blacklist_pattern:
+                original_count = len(provider_episodes)
+                provider_episodes = [ep for ep in provider_episodes if not blacklist_pattern.search(ep.title)]
+                filtered_count = original_count - len(provider_episodes)
+                if filtered_count > 0:
+                    self.logger.info(f"Mgtv: 根据自定义黑名单规则过滤掉了 {filtered_count} 个分集。")
 
             if target_episode_index:
                 return [ep for ep in provider_episodes if ep.episodeIndex == target_episode_index]
@@ -338,6 +341,8 @@ class MgtvScraper(BaseScraper):
         try:
             ctl_url = f"https://galaxy.bz.mgtv.com/getctlbarrage?version=8.1.39&abroad=0&uuid=&os=10.15.7&platform=0&mac=&vid={vid}&pid=&cid={cid}&ticket="
             ctl_response = await self._request_with_rate_limit("GET", ctl_url)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"MGTV Control Barrage Response (cid={cid}, vid={vid}): {ctl_response.text}")
             ctl_response.raise_for_status()
             ctl_result = MgtvControlBarrageResult.model_validate(ctl_response.json())
 
@@ -345,6 +350,8 @@ class MgtvScraper(BaseScraper):
                 self.logger.info("MGTV: 使用主策略 (getctlbarrage) 获取弹幕。")
                 video_info_url = f"https://pcweb.api.mgtv.com/video/info?allowedRC=1&cid={cid}&vid={vid}&change=3&datatype=1&type=1&_support=10000000"
                 video_info_response = await self._request_with_rate_limit("GET", video_info_url)
+                if await self._should_log_responses():
+                    scraper_responses_logger.debug(f"MGTV Video Info Response (cid={cid}, vid={vid}): {video_info_response.text}")
                 video_info_response.raise_for_status()
                 video_info_result = MgtvVideoInfoResult.model_validate(video_info_response.json())
 
@@ -359,6 +366,8 @@ class MgtvScraper(BaseScraper):
                         segment_url = f"https://{ctl_result.data.cdn_host}/{ctl_result.data.cdn_version}/{minute}.json"
                         try:
                             segment_response = await self._request_with_rate_limit("GET", segment_url)
+                            if await self._should_log_responses():
+                                scraper_responses_logger.debug(f"MGTV Danmaku Segment Response (vid={vid}, minute={minute}): status={segment_response.status_code}")
                             segment_response.raise_for_status()
                             segment_data = MgtvCommentSegmentResult.model_validate(segment_response.json())
                             if segment_data.data and segment_data.data.items:
@@ -383,6 +392,8 @@ class MgtvScraper(BaseScraper):
 
                 fallback_url = f"https://galaxy.bz.mgtv.com/cdn/opbarrage?vid={vid}&pid=&cid={cid}&ticket=&time={time_offset}&allowedRC=1"
                 fallback_response = await self._request_with_rate_limit("GET", fallback_url)
+                if await self._should_log_responses():
+                    scraper_responses_logger.debug(f"MGTV Fallback Danmaku Response (vid={vid}, time={time_offset}): {fallback_response.text}")
                 fallback_response.raise_for_status()
                 fallback_result = MgtvCommentSegmentResult.model_validate(fallback_response.json())
 
@@ -429,3 +440,13 @@ class MgtvScraper(BaseScraper):
                 "t": round(timestamp, 2)
             })
         return formatted_comments
+
+    async def get_ids_from_url(self, url: str) -> Optional[Dict[str, str]]:
+        """从芒果TV URL中提取 collection_id 和 video_id。"""
+        match = re.search(r'/b/(\d+)/(\d+)\.html', url)
+        if match:
+            cid, vid = match.groups()
+            self.logger.info(f"MGTV: 从URL {url} 解析到 cid={cid}, vid={vid}")
+            return {"cid": cid, "vid": vid}
+        self.logger.warning(f"MGTV: 无法从URL中解析出 cid 和 vid: {url}")
+        return None

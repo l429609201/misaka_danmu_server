@@ -227,6 +227,7 @@ th {
     box-shadow: 0 5px 15px rgba(0,0,0,0.3);
     width: 90%;
     max-width: 600px;
+    max-height: 85vh; /* 限制弹窗高度，避免超出视口 */
     display: flex;
     flex-direction: column;
 }
@@ -258,6 +259,13 @@ th {
     margin-bottom: 15px;
 }
 
+/* 让模态内容可滚动，头部/底部固定 */
+.modal-body {
+    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0; /* 防止在flex容器中溢出 */
+}
+
 .modal-footer {
     display: flex;
     justify-content: flex-end;
@@ -283,6 +291,12 @@ th {
 
 .modal-help-text a:hover {
     text-decoration: underline;
+}
+
+/* 紧凑表格：用于模态中的预览表格 */
+.compact-table th,
+.compact-table td {
+    padding: 8px 12px;
 }
 
 /* Bilibili Login Modal Styles */

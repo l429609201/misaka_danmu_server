@@ -80,6 +80,7 @@ DanmakuElem = factory.GetPrototype(danmaku_elem_descriptor)
 Flag = factory.GetPrototype(flag_descriptor)
 DmSegMobileReply = factory.GetPrototype(dm_seg_reply_descriptor)
 # --- End of merged dm_dynamic.py content ---
+from ..config_manager import ConfigManager
 
 from .. import models
 from .base import BaseScraper, get_season_from_title
@@ -178,8 +179,8 @@ class BilibiliScraper(BaseScraper):
         36, 20, 34, 44, 52
     ]
 
-    def __init__(self, pool: aiomysql.Pool):
-        super().__init__(pool)
+    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
+        super().__init__(pool, config_manager)
         self.client = httpx.AsyncClient(
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -328,6 +329,68 @@ class BilibiliScraper(BaseScraper):
             return {"message": "注销成功"}
         else:
             return await super().execute_action(action_name, payload)
+
+    async def get_ids_from_url(self, url: str) -> Optional[Dict[str, int]]:
+        """
+        从一个Bilibili视频URL中获取aid和cid。
+        """
+        self.logger.info(f"Bilibili: 正在从URL解析ID: {url!r}")
+        try:
+            await self._ensure_config_and_cookie()
+            response = await self._request_with_rate_limit("GET", url)
+            response.raise_for_status()
+            html = response.text
+
+            # 步骤 1: 优先尝试从 __INITIAL_STATE__ JSON块中查找
+            match = re.search(r'__INITIAL_STATE__=({.*?});', html)
+            if match:
+                initial_state = json.loads(match.group(1))
+                video_data = initial_state.get('videoData', {})
+                aid = video_data.get('aid')
+                
+                # 步骤 2: 智能确定目标 cid
+                target_cid = None
+                # 2a: 检查番剧的 ep_id
+                ep_match = re.search(r'/play/ep(\d+)', url)
+                if ep_match and 'epList' in initial_state:
+                    target_ep_id = int(ep_match.group(1))
+                    for ep in initial_state['epList']:
+                        if ep.get('id') == target_ep_id:
+                            target_cid = ep.get('cid')
+                            self.logger.info(f"Bilibili: 通过 ep_id ({target_ep_id}) 精确匹配到 cid: {target_cid}")
+                            break
+                
+                # 2b: 检查普通视频的 p 参数
+                p_match = re.search(r'[?&]p=(\d+)', url)
+                if not target_cid and p_match and 'pages' in video_data:
+                    target_p_num = int(p_match.group(1))
+                    for page in video_data['pages']:
+                        if page.get('page') == target_p_num:
+                            target_cid = page.get('cid')
+                            self.logger.info(f"Bilibili: 通过 p={target_p_num} 精确匹配到 cid: {target_cid}")
+                            break
+                
+                # 2c: 如果没有特定分集，则使用默认的 cid
+                if not target_cid:
+                    target_cid = video_data.get('cid')
+
+                if aid and target_cid:
+                    self.logger.info(f"Bilibili: 从INITIAL_STATE解析成功: aid={aid}, cid={target_cid}")
+                    return {"aid": aid, "cid": target_cid}
+
+            # 步骤 3: 如果找不到，则回退到正则表达式
+            aid_match = re.search(r'"aid"\s*:\s*(\d+)', html)
+            cid_match = re.search(r'"cid"\s*:\s*(\d+)', html)
+            if aid_match and cid_match:
+                aid, cid = int(aid_match.group(1)), int(cid_match.group(1))
+                self.logger.info(f"Bilibili: 通过正则表达式解析成功: aid={aid}, cid={cid}")
+                return {"aid": aid, "cid": cid}
+
+            self.logger.warning(f"Bilibili: 无法从URL中解析aid和cid: {url}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Bilibili: 从URL {url} 获取或解析页面ID失败: {e}", exc_info=True)
+            return None
 
     async def _get_wbi_mixin_key(self) -> str:
         """获取用于WBI签名的mixinKey，带缓存。"""
@@ -500,6 +563,16 @@ class BilibiliScraper(BaseScraper):
                         url=f"https://www.bilibili.com/bangumi/play/ep{ep.id}"
                     ) for i, ep in enumerate(filtered_episodes)
                 ]
+
+                # Apply custom blacklist from config
+                blacklist_pattern = await self.get_episode_blacklist_pattern()
+                if blacklist_pattern:
+                    original_count = len(episodes)
+                    episodes = [ep for ep in episodes if not blacklist_pattern.search(ep.title)]
+                    filtered_count = original_count - len(episodes)
+                    if filtered_count > 0:
+                        self.logger.info(f"Bilibili: 根据自定义黑名单规则过滤掉了 {filtered_count} 个分集。")
+
                 return [ep for ep in episodes if ep.episodeIndex == target_episode_index] if target_episode_index else episodes
         except Exception as e:
             self.logger.error(f"Bilibili: 获取PGC分集列表失败 (media_id={media_id}): {e}", exc_info=True)
@@ -523,6 +596,16 @@ class BilibiliScraper(BaseScraper):
                         url=f"https://www.bilibili.com/video/{bvid}?p={p.page}"
                     ) for p in data.data.pages
                 ]
+
+                # Apply custom blacklist from config
+                blacklist_pattern = await self.get_episode_blacklist_pattern()
+                if blacklist_pattern:
+                    original_count = len(episodes)
+                    episodes = [ep for ep in episodes if not blacklist_pattern.search(ep.title)]
+                    filtered_count = original_count - len(episodes)
+                    if filtered_count > 0:
+                        self.logger.info(f"Bilibili: 根据自定义黑名单规则过滤掉了 {filtered_count} 个分集。")
+
                 return [ep for ep in episodes if ep.episodeIndex == target_episode_index] if target_episode_index else episodes
         except Exception as e:
             self.logger.error(f"Bilibili: 获取UGC分集列表失败 (media_id={media_id}): {e}", exc_info=True)

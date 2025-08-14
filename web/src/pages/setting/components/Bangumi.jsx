@@ -6,7 +6,7 @@ import {
   logoutBangumiAuth,
   setBangumiConfig,
 } from '../../../apis'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, message } from 'react'
 import {
   EyeInvisibleOutlined,
   EyeOutlined,

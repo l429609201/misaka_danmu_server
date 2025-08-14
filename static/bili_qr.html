@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/bili_icon.ico" type="image/x-icon">
     <title>Bilibili 扫码登录</title>
     <style>
         body { 
@@ -13,18 +14,22 @@
             justify-content: center; 
             height: 100vh; 
             margin: 0; 
-            background-color: #f4f4f4; 
+            background-color: transparent; /* 使背景透明，弹窗效果更佳 */
             text-align: center; 
         }
         #container { 
             background-color: white; 
-            padding: 25px; 
+            padding: 20px; /* 调整内边距 */
             border-radius: 12px; 
             box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
             width: 300px; 
         }
+        h2 {
+            margin-top: 0;
+            font-size: 1.2em;
+        }
         #qrcode { 
-            margin-top: 10px; 
+            margin-top: 10px;
             line-height: 0; /* prevent extra space under canvas */
             display: flex; /* Use flex to center the QR code */
             justify-content: center; /* Center horizontally */
@@ -53,7 +58,7 @@
     </div>
 
     <!-- The library is loaded at the end of the body -->
-    <script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js"></script>
+    <script src="/static/js/libs/qrcode.min.js"></script>
     <script>
         window.addEventListener('message', function(event) {
             // 安全性检查：确保消息来自预期的源 (同源)

@@ -15,6 +15,13 @@ from ..database import get_db_pool
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+def _is_cjk(s: str) -> bool:
+    """检查字符串是否包含中日韩字符。"""
+    if not s:
+        return False
+    # CJK Unified Ideographs, Hiragana, Katakana
+    return any('\u4e00' <= char <= '\u9fff' or '\u3040' <= char <= '\u309f' or '\u30a0' <= char <= '\u30ff' for char in s)
+
 
 def _clean_movie_title(title: Optional[str]) -> Optional[str]:
     """
@@ -331,25 +338,40 @@ async def get_tmdb_details(
         if details.alternative_titles:
             found_titles = {}
             for alt_title in details.alternative_titles.titles:
+                title_text = alt_title.title
+                if not title_text: continue
+
                 # Chinese Aliases
                 if alt_title.iso_3166_1 in ["CN", "HK", "TW"]:
-                    aliases_cn.append(alt_title.title)
+                    # 新增：确保标题确实包含中文字符
+                    if _is_cjk(title_text):
+                        aliases_cn.append(title_text)
                 # Japanese Title
                 elif alt_title.iso_3166_1 == "JP":
                     if alt_title.type == "Romaji":
-                        if 'romaji' not in found_titles: found_titles['romaji'] = alt_title.title
-                    # Only consider titles with an empty type as the primary Japanese title
+                        # 新增：确保罗马音标题不包含中文字符
+                        if 'romaji' not in found_titles and not _is_cjk(title_text):
+                            found_titles['romaji'] = title_text
+                    # 
                     elif not alt_title.type:
-                        if 'jp' not in found_titles: found_titles['jp'] = alt_title.title
+                        # 新增：确保日文标题包含中文字符
+                        if 'jp' not in found_titles and _is_cjk(title_text):
+                            found_titles['jp'] = title_text
                 # English Title (prefer US, then GB)
-                elif alt_title.iso_3166_1 == "US":
-                    if 'en' not in found_titles: found_titles['en'] = alt_title.title
-                elif alt_title.iso_3166_1 == "GB" and 'en' not in found_titles:
-                    found_titles['en'] = alt_title.title
+                elif alt_title.iso_3166_1 in ["US", "GB"]:
+                    # 新增：确保英文标题不包含中文字符
+                    if 'en' not in found_titles and not _is_cjk(title_text):
+                        found_titles['en'] = title_text
             
             name_en, name_jp, name_romaji = found_titles.get('en'), found_titles.get('jp'), found_titles.get('romaji')
 
-        if not name_en and original_language == 'en': name_en = original_title
+        # 修正：更健壮的英文名获取逻辑
+        if not name_en:
+            # 如果主标题不是中日韩文字，则很有可能就是英文名
+            if not _is_cjk(main_title_cn):
+                name_en = main_title_cn
+            elif original_language == 'en':
+                name_en = original_title
         if not name_jp and original_language == 'ja': name_jp = original_title
         if main_title_cn: aliases_cn.append(main_title_cn)
         

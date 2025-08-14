@@ -11,7 +11,10 @@ from bs4 import BeautifulSoup
 from opencc import OpenCC
 
 from .. import crud, models
+from ..config_manager import ConfigManager
 from .base import BaseScraper, get_season_from_title
+
+scraper_responses_logger = logging.getLogger("scraper_responses")
 
 
 class GamerScraper(BaseScraper):
@@ -26,8 +29,8 @@ class GamerScraper(BaseScraper):
     }
     _EPISODE_BLACKLIST_PATTERN = re.compile(r"加更|走心|解忧|纯享", re.IGNORECASE)
 
-    def __init__(self, pool: aiomysql.Pool):
-        super().__init__(pool)
+    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
+        super().__init__(pool, config_manager)
         self.cc_s2t = OpenCC('s2twp')  # Simplified to Traditional Chinese with phrases
         self.cc_t2s = OpenCC('t2s') # Traditional to Simplified
         self.client = httpx.AsyncClient(
@@ -91,6 +94,9 @@ class GamerScraper(BaseScraper):
         """一个可以进行请求的包装器，在 cookie 刷新后可以重试一次。"""
         await self._ensure_config()
         response = await self.client.request(method, url, **kwargs)
+        if await self._should_log_responses():
+            # 截断HTML以避免日志过长
+            scraper_responses_logger.debug(f"Gamer Response ({method} {url}): status={response.status_code}, text={response.text[:500]}")
         is_login_required = "登入" in response.text and "animeVideo" in url
         if response.status_code == 200 and not is_login_required:
             return response
@@ -98,6 +104,8 @@ class GamerScraper(BaseScraper):
         if await self._refresh_cookie():
             self.logger.info(f"Gamer: Cookie 刷新后，正在重试请求 {url}...")
             response = await self.client.request(method, url, **kwargs)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Gamer Retry Response ({method} {url}): status={response.status_code}, text={response.text[:500]}")
         return response
 
     async def close(self):
@@ -237,6 +245,15 @@ class GamerScraper(BaseScraper):
                 if filtered_count > 0:
                     self.logger.info(f"Gamer: 根据黑名单规则过滤掉了 {filtered_count} 个分集。")
             
+            # Apply custom blacklist from config
+            blacklist_pattern = await self.get_episode_blacklist_pattern()
+            if blacklist_pattern:
+                original_count = len(episodes)
+                episodes = [ep for ep in episodes if not blacklist_pattern.search(ep.title)]
+                filtered_count = original_count - len(episodes)
+                if filtered_count > 0:
+                    self.logger.info(f"Gamer: 根据自定义黑名单规则过滤掉了 {filtered_count} 个分集。")
+
             if target_episode_index:
                 return [ep for ep in episodes if ep.episodeIndex == target_episode_index]
             
@@ -261,6 +278,8 @@ class GamerScraper(BaseScraper):
             
             await self._ensure_config()
             response = await self.client.post(url, data=data)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Gamer Danmaku Response (episode_id={episode_id}): {response.text}")
             try:
                 danmu_data = response.json()
             except json.JSONDecodeError:
@@ -270,6 +289,8 @@ class GamerScraper(BaseScraper):
                 self.logger.warning(f"Gamer: 弹幕API未返回列表或有效JSON，尝试刷新Cookie后重试。响应: {response.text[:100]}")
                 if await self._refresh_cookie():
                     response = await self.client.post(url, data=data)
+                    if await self._should_log_responses():
+                        scraper_responses_logger.debug(f"Gamer Danmaku Retry Response (episode_id={episode_id}): {response.text}")
                 danmu_data = response.json()
 
             if not isinstance(danmu_data, list):

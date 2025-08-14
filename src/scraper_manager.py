@@ -7,16 +7,18 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Type
 
 from .scrapers.base import BaseScraper
+from .config_manager import ConfigManager
 from .models import ProviderSearchInfo
 from . import crud
 
 
 class ScraperManager:
-    def __init__(self, pool: aiomysql.Pool):
+    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
         self.scrapers: Dict[str, BaseScraper] = {}
         self._scraper_classes: Dict[str, Type[BaseScraper]] = {}
         self.scraper_settings: Dict[str, Dict[str, Any]] = {}
         self.pool = pool
+        self.config_manager = config_manager
         # 注意：加载逻辑现在是异步的，将在应用启动时调用
 
     def _load_scrapers(self):
@@ -88,7 +90,7 @@ class ScraperManager:
 
         # Instantiate all discovered scrapers
         for provider_name, scraper_class in self._scraper_classes.items():
-            self.scrapers[provider_name] = scraper_class(self.pool)
+            self.scrapers[provider_name] = scraper_class(self.pool, self.config_manager)
             setting = self.scraper_settings.get(provider_name)
             if setting:
                 status = "已启用" if setting.get('is_enabled') else "已禁用"

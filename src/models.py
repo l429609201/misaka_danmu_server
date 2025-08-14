@@ -107,6 +107,9 @@ class EpisodeInfoUpdate(BaseModel):
     title: str = Field(..., min_length=1, description="新的分集标题")
     episode_index: int = Field(..., ge=1, description="新的集数")
     source_url: Optional[str] = Field(None, description="新的官方链接")
+    # Add these for resilient update
+    source_id: int
+    original_episode_index: int
 
 class AnimeFullDetails(BaseModel):
     """用于返回番剧完整信息的模型"""
@@ -137,7 +140,6 @@ class ScraperSetting(BaseModel):
 
 class MetadataSourceSettingUpdate(BaseModel):
     provider_name: str
-    is_enabled: bool
     is_aux_search_enabled: bool
     display_order: int
 

@@ -2,6 +2,7 @@
 
 [![GitHub](https://img.shields.io/badge/-GitHub-181717?logo=github)](https://github.com/l429609201/misaka_danmu_server)
 ![GitHub License](https://img.shields.io/github/license/l429609201/misaka_danmu_server)
+![Docker Pulls](https://img.shields.io/docker/pulls/l429609201/misaka_danmu_server)
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/l429609201/misaka_danmu_server?color=blue&label=download&sort=semver)](https://github.com/l429609201/misaka_danmu_server/releases/latest)
 [![telegram](https://img.shields.io/static/v1?label=telegram&message=misaka_danmu_server&color=blue)](https://t.me/misaka_danmu_server)
 
@@ -31,18 +32,18 @@
 
 ## 🚀 快速开始 (使用 Docker Compose)
 
-推荐使用 Docker 和 Docker Compose 进行部署。
+推荐使用 Docker 和 Docker Compose 进行部署。以下将引导您分步部署数据库和应用服务。
 
-### 步骤 1: 启动服务
+### 步骤 1: 部署数据库 (MySQL)
 
-1. 在一个合适的目录（例如 `./danmu-api`）下，
+1. 在一个合适的目录（例如 `./danmuku`）下，创建 `docker-compose.mysql.yaml` 文件，内容如下：
 
 ```shell
-  mkdir danmu-api
-  cd danmu-api
+  mkdir danmuku
+  cd danmuku
 ```
 
-2. 目录内创建一个名为 `docker-compose.yaml` 的文件，内容如下
+2. 目录内创建一个名为 `docker-compose.mysql.yaml` 的文件，内容如下
 
 ```yaml
   services:
@@ -62,8 +63,7 @@
         - ./mysql-conf:/etc/mysql/conf.d
         - ./mysql-logs:/logs
       ports:
-      # 这里将内部使用的mysql映射到3310端口，不与其他的mysql抢端口
-        - "3310:3306"   
+        - "3306:3306"   
       command:
         --character-set-server=utf8mb4
         --collation-server=utf8mb4_general_ci
@@ -75,8 +75,20 @@
         retries: 2
         start_period: 0s
       networks:
-        - danmuserver
+        - bridge
 
+```
+3.  **重要**: 修改文件中的 `MYSQL_ROOT_PASSWORD` 和 `MYSQL_PASSWORD` 为您自己的安全密码。
+
+4.  在 `docker-compose.mysql.yml` 所在目录运行命令启动数据库：
+    ```bash
+    docker-compose -f docker-compose.mysql.yml up -d
+    ```
+
+### 步骤 2: 部署弹幕库
+1. 创建 `docker-compose.app.yaml` 文件
+
+```yaml
     danmu-app:
       image: l429609201/misaka_danmu_server:latest
       container_name: misaka-danmu-server
@@ -87,8 +99,7 @@
         - PGID=1000
         - UMASK=0022
         #  连接MySql数据库相关配置
-        - DANMUAPI_DATABASE__HOST=mysql
-        #  danmuserver网络内部访问不考虑容器的端口映射，可直接使用3306
+        - DANMUAPI_DATABASE__HOST=127.0.0.1
         - DANMUAPI_DATABASE__PORT=3306
         - DANMUAPI_DATABASE__NAME=danmuapi
         # !!! 重要：请使用上面mysql容器相同的用户名和密码 !!!
@@ -99,24 +110,20 @@
         - DANMUAPI_ADMIN__INITIAL_USER=admin
       volumes:
         - ./config:/app/config
-      depends_on:
-        - mysql
       ports:
         - "7768:7768"
-      networks:
-        - danmuserver
+      networks: host
 
-  networks:
-    danmuserver:
-      driver: bridge
 ```
+2.  **重要**:
+    -   确保 `DANMUAPI_DATABASE__PASSWORD` 与您在 `docker-compose.mysql.yml` 中设置的 `MYSQL_PASSWORD` 一致。
 
-3. 在 `docker-compose.yml` 所在目录运行命令启动应用：
+3.  在同一目录运行命令启动应用：
+    ```bash
+    docker-compose -f docker-compose.app.yml up -d
+    ```
 
-```bash
-  docker compose up -d
-```
-PS：首次创建的时候mysql初始化启动需要一点时间，弹幕库可能会出现连接不上服务器的情况，请耐心等待mysql完成初始化
+
 ### 步骤 3: 访问和配置
 
 - **访问Web UI**: 打开浏览器，访问 `http://<您的服务器IP>:7768`。
@@ -208,8 +215,15 @@ PS：首次创建的时候mysql初始化启动需要一点时间，弹幕库可�
 
 现在，当有新的电影或剧集添加到您的 Emby/Jellyfin 媒体库时，本服务将自动收到通知，并创建一个后台任务来为其搜索和导入弹幕。
 
+
 ### 贡献者
 
 <a href="https://github.com/l429609201/misaka_danmu_server/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=l429609201/misaka_danmu_server" alt="contributors" />
 </a>
+
+## 参考项目
+
+ - [danmuku](https://github.com/lyz05/danmaku)
+ - [emby-toolkit](https://github.com/hbq0405/emby-toolkit)
+ - [imdbsource](https://github.com/wumode/MoviePilot-Plugins/tree/main/plugins.v2/imdbsource)

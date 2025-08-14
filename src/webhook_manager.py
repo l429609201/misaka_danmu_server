@@ -6,6 +6,7 @@ from typing import Dict, Type, List
 
 import aiomysql
 
+from .config_manager import ConfigManager
 from .task_manager import TaskManager
 from .scraper_manager import ScraperManager
 from .webhook.base import BaseWebhook
@@ -13,10 +14,11 @@ from .webhook.base import BaseWebhook
 logger = logging.getLogger(__name__)
 
 class WebhookManager:
-    def __init__(self, pool: aiomysql.Pool, task_manager: TaskManager, scraper_manager: ScraperManager):
+    def __init__(self, pool: aiomysql.Pool, task_manager: TaskManager, scraper_manager: ScraperManager, config_manager: ConfigManager):
         self.pool = pool
         self.task_manager = task_manager
         self.scraper_manager = scraper_manager
+        self.config_manager = config_manager
         self._handlers: Dict[str, Type[BaseWebhook]] = {}
         self._load_handlers()
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import asyncio
 import base64
 import hmac
@@ -18,9 +19,11 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 from pydantic import BaseModel, Field, field_validator
 
+from ..config_manager import ConfigManager
 from .. import models
 from .base import BaseScraper, get_season_from_title
 
+scraper_responses_logger = logging.getLogger("scraper_responses")
 
 # =====================
 #  Common utils (ported from the previous standalone script and adapted)
@@ -199,8 +202,8 @@ class RrspDanmuItem(BaseModel):
 class RenrenScraper(BaseScraper):
     provider_name = "renren"
 
-    def __init__(self, pool: aiomysql.Pool):
-        super().__init__(pool)
+    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
+        super().__init__(pool, config_manager)
         self.client = httpx.AsyncClient(timeout=20.0, follow_redirects=True)
         self._api_lock = asyncio.Lock()
         self._last_request_time = 0.0
@@ -227,6 +230,8 @@ class RenrenScraper(BaseScraper):
             device_id = self._generate_device_id()
             headers = build_signed_headers(method=method, url=url, params=params or {}, device_id=device_id)
             resp = await self.client.request(method, url, params=params, headers=headers)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Renren Response ({method} {url}): status={resp.status_code}, text={resp.text}")
             self._last_request_time = time.time()
             return resp
 
@@ -289,7 +294,7 @@ class RenrenScraper(BaseScraper):
             "hsdrOpen": 0,
             "isAgeLimit": 0,
             "dramaId": str(drama_id),
-            "quality": "AI4K",
+#            "quality": "AI4K",   #会影响获取，@didi佬
             "hevcOpen": 1,
         }
         try:
@@ -348,6 +353,15 @@ class RenrenScraper(BaseScraper):
             for e in episodes
         ]
 
+        # Apply custom blacklist from config
+        blacklist_pattern = await self.get_episode_blacklist_pattern()
+        if blacklist_pattern:
+            original_count = len(provider_eps)
+            provider_eps = [ep for ep in provider_eps if not blacklist_pattern.search(ep.title)]
+            filtered_count = original_count - len(provider_eps)
+            if filtered_count > 0:
+                self.logger.info(f"Renren: 根据自定义黑名单规则过滤掉了 {filtered_count} 个分集。")
+
         if target_episode_index is None and db_media_type is None and provider_eps:
             await self._set_to_cache(cache_key, [e.model_dump() for e in provider_eps], 'episodes_ttl_seconds', 1800)
         return provider_eps
@@ -364,6 +378,8 @@ class RenrenScraper(BaseScraper):
                 "Referer": prof.referer,
             }
             resp = await self.client.get(url, timeout=20.0, headers=headers)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Renren Danmaku Response (sid={sid}): status={resp.status_code}, text={resp.text}") 
             resp.raise_for_status()
             data = auto_decode(resp.text)
             if isinstance(data, list):

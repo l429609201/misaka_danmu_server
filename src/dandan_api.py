@@ -10,11 +10,17 @@ from opencc import OpenCC
 import aiomysql
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status, Response
-from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 
 from . import crud, models
 from .database import get_db_pool
+from .scraper_manager import ScraperManager
+from .scrapers.acfun import AcfunScraper
+from .scrapers.bilibili import BilibiliScraper
+from .scrapers.iqiyi import IqiyiScraper
+from .scrapers.tencent import TencentScraper
+from .scrapers.youku import YoukuScraper
+from .scrapers.mgtv import MgtvScraper
 
 logger = logging.getLogger(__name__)
 
@@ -454,6 +460,10 @@ async def get_token_from_path(
 
     return token
 
+async def get_scraper_manager(request: Request) -> ScraperManager:
+    """依赖项：从应用状态获取 Scraper 管理器"""
+    return request.app.state.scraper_manager
+
 @implementation_router.get(
     "/search/episodes",
     response_model=DandanSearchEpisodesResponse,
@@ -809,6 +819,87 @@ async def match_batch_files(
     tasks = [_process_single_batch_match(item, pool) for item in request.requests]
     results = await asyncio.gather(*tasks)
     return results
+
+@implementation_router.get(
+    "/extcomment",
+    response_model=models.CommentResponse,
+    summary="[dandanplay兼容] 获取外部弹幕"
+)
+async def get_external_comments_from_url(
+    url: str = Query(..., description="外部视频链接 (支持 AcFun, Bilibili, 腾讯, 爱奇艺, 优酷, 芒果TV)"),
+    chConvert: int = Query(0, description="中文简繁转换。0-不转换，1-转换为简体，2-转换为繁体。"),
+    token: str = Depends(get_token_from_path),
+    pool: aiomysql.Pool = Depends(get_db_pool),
+    manager: ScraperManager = Depends(get_scraper_manager)
+):
+    """
+    从外部URL获取弹幕，并转换为dandanplay格式。
+    结果会被缓存5小时。
+    """
+    cache_key = f"ext_danmaku_v2_{url}"
+    cached_comments = await crud.get_cache(pool, cache_key)
+    if cached_comments is not None:
+        logger.info(f"外部弹幕缓存命中: {url}")
+        comments_data = cached_comments
+    else:
+        logger.info(f"外部弹幕缓存未命中，正在从网络获取: {url}")
+        comments_data = []
+        
+        provider_map = {
+            "acfun.cn": ("acfun", AcfunScraper),
+            "bilibili.com": ("bilibili", BilibiliScraper),
+            "iqiyi.com": ("iqiyi", IqiyiScraper),
+            "v.qq.com": ("tencent", TencentScraper),
+            "youku.com": ("youku", YoukuScraper),
+            "mgtv.com": ("mgtv", MgtvScraper),
+        }
+        
+        provider, scraper_class = next(((p, sc) for domain, (p, sc) in provider_map.items() if domain in url), (None, None))
+
+        if not provider:
+            raise HTTPException(status_code=400, detail="不支持的URL或视频源。")
+
+        try:
+            scraper = manager.get_scraper(provider)
+            if not isinstance(scraper, scraper_class):
+                raise ValueError(f"{provider} scraper not found or has wrong type.")
+
+            if provider == "acfun":
+                if danmaku_id := await scraper.get_danmaku_id_from_url(url): comments_data = await scraper.get_comments(danmaku_id)
+            elif provider == "bilibili":
+                if ids := await scraper.get_ids_from_url(url): comments_data = await scraper.get_comments(f"{ids['aid']},{ids['cid']}")
+            elif provider == "iqiyi":
+                if tvid := await scraper.get_tvid_from_url(url): comments_data = await scraper.get_comments(tvid)
+            elif provider == "tencent":
+                if vid := await scraper.get_vid_from_url(url): comments_data = await scraper.get_comments(vid)
+            elif provider == "youku":
+                if vid := await scraper.get_vid_from_url(url): comments_data = await scraper.get_comments(vid)
+            elif provider == "mgtv":
+                if ids := await scraper.get_ids_from_url(url): comments_data = await scraper.get_comments(f"{ids['cid']},{ids['vid']}")
+
+            if not comments_data: logger.warning(f"未能从 {provider} URL 获取任何弹幕: {url}")
+
+        except Exception as e:
+            logger.error(f"处理 {provider} 外部弹幕时出错: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"获取 {provider} 弹幕失败。")
+
+        # 缓存结果5小时 (18000秒)
+        await crud.set_cache(pool, cache_key, comments_data, 18000)
+
+    # 处理简繁转换
+    if chConvert in [1, 2]:
+        converter = None
+        if chConvert == 1:
+            converter = OpenCC('t2s')  # 繁转简
+        elif chConvert == 2:
+            converter = OpenCC('s2t')  # 简转繁
+        
+        if converter:
+            for comment in comments_data:
+                comment['m'] = converter.convert(comment['m'])
+
+    comments = [models.Comment.model_validate(c) for c in comments_data]
+    return models.CommentResponse(count=len(comments), comments=comments)
 
 @implementation_router.get(
     "/comment/{episode_id}",

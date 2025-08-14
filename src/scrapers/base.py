@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional, Type
 import aiomysql
 from .. import crud
 from .. import models
+from ..config_manager import ConfigManager
 
 
 def _roman_to_int(s: str) -> int:
@@ -69,17 +70,10 @@ class BaseScraper(ABC):
     定义了搜索媒体、获取分集和获取弹幕的通用接口。
     """
 
-    def __init__(self, pool: aiomysql.Pool):
+    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
         self.pool = pool
+        self.config_manager = config_manager
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.ttl_config: Dict[str, int] = {} # 用于缓存从数据库读取的TTL值
-
-    async def _get_ttl(self, key: str, default: int) -> int:
-        """获取并缓存TTL配置值。"""
-        if key not in self.ttl_config:
-            ttl_str = await crud.get_config_value(self.pool, key, str(default))
-            self.ttl_config[key] = int(ttl_str)
-        return self.ttl_config[key]
 
     async def _get_from_cache(self, key: str) -> Optional[Any]:
         """从数据库缓存中获取数据。"""
@@ -87,7 +81,8 @@ class BaseScraper(ABC):
 
     async def _set_to_cache(self, key: str, value: Any, config_key: str, default_ttl: int):
         """将数据存入数据库缓存，TTL从配置中读取。"""
-        ttl = await self._get_ttl(config_key, default_ttl)
+        ttl_str = await self.config_manager.get(config_key, str(default_ttl))
+        ttl = int(ttl_str)
         if ttl > 0:
             await crud.set_cache(self.pool, key, value, ttl, provider=self.provider_name)
 
@@ -104,11 +99,29 @@ class BaseScraper(ABC):
         """检查数据库以确定是否应为此爬虫记录原始响应。"""
         if not self.is_loggable:
             return False
-        
+
         config_key = f"scraper_{self.provider_name}_log_responses"
-        # 如果未设置，则默认为 'false'
-        is_enabled_str = await crud.get_config_value(self.pool, config_key, "false")
+        is_enabled_str = await self.config_manager.get(config_key, "false")
         return is_enabled_str.lower() == 'true'
+
+    async def get_episode_blacklist_pattern(self) -> Optional[re.Pattern]:
+        """
+        获取并编译此源的自定义分集黑名单正则表达式。
+        结果会被缓存以提高性能。
+        """
+        if hasattr(self, '_blacklist_pattern_cache'):
+            return self._blacklist_pattern_cache
+
+        key = f"{self.provider_name}_episode_blacklist_regex"
+        regex_str = await self.config_manager.get(key, "")
+        if regex_str:
+            try:
+                self._blacklist_pattern_cache = re.compile(regex_str, re.IGNORECASE)
+                return self._blacklist_pattern_cache
+            except re.error as e:
+                self.logger.error(f"无效的黑名单正则表达式: {e}")
+        self._blacklist_pattern_cache = None
+        return None
 
     async def execute_action(self, action_name: str, payload: Dict[str, Any]) -> Any:
         """

@@ -72,6 +72,7 @@ function populateEditForm(details) {
     document.getElementById('edit-anime-id').value = details.anime_id;
     document.getElementById('edit-anime-title').value = details.title;
     editAnimeTypeSelect.value = details.type;
+    document.getElementById('edit-episode-original-index').value = details.episode_index;
     document.getElementById('edit-anime-season').value = details.season;
     document.getElementById('edit-anime-episode-count').value = details.episode_count || '';
     editAnimeTmdbIdInput.value = details.tmdb_id || '';
@@ -93,12 +94,16 @@ function populateEditForm(details) {
 async function handleEditAnimeSave(e) {
     e.preventDefault();
     const animeId = document.getElementById('edit-anime-id').value;
+    const sourceId = document.getElementById('edit-episode-source-id').value;
+    const originalIndex = document.getElementById('edit-episode-original-index').value;
     const payload = {
         title: document.getElementById('edit-anime-title').value,
         type: document.getElementById('edit-anime-type').value,
         season: parseInt(document.getElementById('edit-anime-season').value, 10),
         episode_count: document.getElementById('edit-anime-episode-count').value ? parseInt(document.getElementById('edit-anime-episode-count').value, 10) : null,
         tmdb_id: document.getElementById('edit-anime-tmdbid').value || null,
+        source_id: parseInt(sourceId, 10),
+        original_episode_index: parseInt(originalIndex, 10),
         tmdb_episode_group_id: document.getElementById('edit-anime-egid').value || null,
         bangumi_id: document.getElementById('edit-anime-bgmid').value || null,
         tvdb_id: document.getElementById('edit-anime-tvdbid').value || null,
@@ -772,6 +777,7 @@ function showEditEpisodeView({ episode, sourceId, animeTitle, animeId }) {
     switchView('edit-episode-view');
     document.getElementById('edit-episode-id').value = episode.id;
     document.getElementById('edit-episode-title').value = episode.title;
+    document.getElementById('edit-episode-original-index').value = episode.episode_index;
     document.getElementById('edit-episode-index').value = episode.episode_index;
     document.getElementById('edit-episode-url').value = episode.source_url || '';
     document.getElementById('edit-episode-source-id').value = sourceId;
@@ -782,10 +788,14 @@ function showEditEpisodeView({ episode, sourceId, animeTitle, animeId }) {
 async function handleEditEpisodeSave(e) {
     e.preventDefault();
     const episodeId = document.getElementById('edit-episode-id').value;
+    const sourceId = document.getElementById('edit-episode-source-id').value;
+    const originalIndex = document.getElementById('edit-episode-original-index').value;
     const payload = {
         title: document.getElementById('edit-episode-title').value,
         episode_index: parseInt(document.getElementById('edit-episode-index').value, 10),
-        source_url: document.getElementById('edit-episode-url').value
+        source_url: document.getElementById('edit-episode-url').value,
+        source_id: parseInt(sourceId, 10),
+        original_episode_index: parseInt(originalIndex, 10)
     };
     const saveButton = e.target.querySelector('button[type="submit"]');
     saveButton.disabled = true;

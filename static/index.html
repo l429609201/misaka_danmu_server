@@ -40,7 +40,7 @@
             <header>
                 <div class="header-title-group">
                     <img src="/static/logo.png" alt="Logo" id="header-logo">
-                    <h1>御坂网络弹幕服务 v1.0.9</h1>
+                    <h1>御坂网络弹幕服务 v1.0.10</h1>
                 </div>
                 <div class="header-user-info">
                     <span id="current-user"></span>
@@ -414,6 +414,7 @@
                             <form id="edit-episode-form">
                                 <input type="hidden" id="edit-episode-id">
                                 <input type="hidden" id="edit-episode-source-id">
+                                <input type="hidden" id="edit-episode-original-index">
                                 <input type="hidden" id="edit-episode-anime-title">
                                 <input type="hidden" id="edit-episode-anime-id">
                                 <div class="form-row">
@@ -449,7 +450,8 @@
                                 <h2>运行中任务</h2>
                                 <div class="view-controls">
                                     <div class="task-actions">
-                                        <button id="pause-resume-task-btn" class="control-btn" disabled>暂停/恢复</button>
+                                        <button id="pause-resume-task-btn" class="control-btn" disabled>暂停/恢复</button> 
+                                        <button id="abort-running-task-btn" class="control-btn danger" disabled>中止任务</button>
                                         <button id="delete-running-task-btn" class="control-btn danger">删除任务</button>
                                     </div>
                                     <input type="text" id="running-tasks-search-input" placeholder="按任务标题搜索...">
@@ -602,8 +604,7 @@
                                 </div>
                             </div>
                             <p class="view-description">
-                                <strong>辅助搜索:</strong> 勾选后，在主页搜索时会使用此源获取别名，以提高结果准确性。<br>
-                                <strong>启用状态:</strong> 点击最右侧的 ✅/❌ 图标可切换该源是否可用。
+                                <strong>辅助搜索:</strong> 勾选后，在主页搜索时会使用此源获取别名，以提高结果准确性。所有元信息源默认全部启用。
                             </p>
                             <ul id="metadata-sources-list"></ul>
                         </div>

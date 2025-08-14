@@ -13,8 +13,11 @@ from urllib.parse import urlencode
 import httpx
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from ..config_manager import ConfigManager
 from .. import models
 from .base import BaseScraper, get_season_from_title
+
+scraper_responses_logger = logging.getLogger("scraper_responses")
 
 # --- Pydantic Models for Youku API ---
 
@@ -91,8 +94,8 @@ class YoukuScraper(BaseScraper):
     provider_name = "youku"
     _EPISODE_BLACKLIST_KEYWORDS = ["彩蛋", "加更", "走心", "解忧", "纯享"]
 
-    def __init__(self, pool: aiomysql.Pool):
-        super().__init__(pool)
+    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
+        super().__init__(pool, config_manager)
         # Regexes from C#
         self.year_reg = re.compile(r"[12][890][0-9][0-9]")
         self.unused_words_reg = re.compile(r"<[^>]+>|【.+?】")
@@ -128,6 +131,8 @@ class YoukuScraper(BaseScraper):
         results = []
         try:
             response = await self.client.get(url)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Youku Search Response (keyword='{keyword}'): {response.text}")
             response.raise_for_status()
             data = YoukuSearchResult.model_validate(response.json())
 
@@ -230,6 +235,15 @@ class YoukuScraper(BaseScraper):
             ) for i, ep in enumerate(all_episodes)
         ]
 
+        # Apply custom blacklist from config
+        blacklist_pattern = await self.get_episode_blacklist_pattern()
+        if blacklist_pattern:
+            original_count = len(provider_episodes)
+            provider_episodes = [ep for ep in provider_episodes if not blacklist_pattern.search(ep.title)]
+            filtered_count = original_count - len(provider_episodes)
+            if filtered_count > 0:
+                self.logger.info(f"Youku: 根据自定义黑名单规则过滤掉了 {filtered_count} 个分集。")
+
         if target_episode_index is None:
             episodes_to_cache = [e.model_dump() for e in provider_episodes]
             await self._set_to_cache(cache_key, episodes_to_cache, 'episodes_ttl_seconds', 1800)
@@ -243,6 +257,8 @@ class YoukuScraper(BaseScraper):
     async def _get_episodes_page(self, show_id: str, page: int, page_size: int) -> Optional[YoukuVideoResult]:
         url = f"https://openapi.youku.com/v2/shows/videos.json?client_id=53e6cc67237fc59a&package=com.huawei.hwvplayer.youku&ext=show&show_id={show_id}&page={page}&count={page_size}"
         response = await self.client.get(url)
+        if await self._should_log_responses():
+            scraper_responses_logger.debug(f"Youku Episodes Page Response (show_id={show_id}, page={page}): {response.text}")
         response.raise_for_status()
         return YoukuVideoResult.model_validate(response.json())
 
@@ -254,6 +270,8 @@ class YoukuScraper(BaseScraper):
             
             episode_info_url = f"https://openapi.youku.com/v2/videos/show_basic.json?client_id=53e6cc67237fc59a&package=com.huawei.hwvplayer.youku&video_id={vid}"
             episode_info_resp = await self.client.get(episode_info_url)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Youku Episode Info Response (vid={vid}): {episode_info_resp.text}")
             episode_info_resp.raise_for_status()
             episode_info = YoukuEpisodeInfo.model_validate(episode_info_resp.json())
             total_mat = episode_info.total_mat
@@ -363,6 +381,8 @@ class YoukuScraper(BaseScraper):
             data={"data": data_payload},
             headers={"Referer": "https://v.youku.com"}
         )
+        if await self._should_log_responses():
+            scraper_responses_logger.debug(f"Youku Danmaku Segment Response (vid={vid}, mat={mat}): {response.text}")
         response.raise_for_status()
 
         # 修正：优酷API现在直接返回JSON，而不是JSONP。
@@ -423,3 +443,15 @@ class YoukuScraper(BaseScraper):
             p_string = f"{timestamp:.2f},{mode},{color},[{self.provider_name}]"
             formatted.append({"cid": str(c.id), "p": p_string, "m": c.content, "t": round(timestamp, 2)})
         return formatted
+
+    async def get_vid_from_url(self, url: str) -> Optional[str]:
+        """从优酷视频URL中提取 vid。"""
+        # 优酷的URL格式通常是 v.youku.com/v_show/id_XXXXXXXX.html
+        # 修正：移除对 .html 后缀的强制要求，以兼容新版URL
+        match = re.search(r'id_([a-zA-Z0-9=]+)', url)
+        if match:
+            vid = match.group(1)
+            self.logger.info(f"Youku: 从URL {url} 解析到 vid: {vid}")
+            return vid
+        self.logger.warning(f"Youku: 无法从URL中解析出 vid: {url}")
+        return None
