@@ -141,3 +141,19 @@ export const getBangumiAuth = () => api.get('/api/bgm/auth/state')
 export const getBangumiAuthUrl = () => api.get('/api/bgm/auth/url')
 /** 注销授权 */
 export const logoutBangumiAuth = () => api.delete('/api/bgm/auth')
+
+/** ---------------------------------------------- 豆瓣、tmdb、tvdb配置----------------------------------------------  */
+/** 获取tmdb配置 */
+export const getTmdbConfig = () => api.get('/api/ui/config/tmdb')
+/** 设置tmdb配置 */
+export const setTmdbConfig = data => api.put('/api/ui/config/tmdb', data)
+/** 获取豆瓣配置 */
+export const getDoubanConfig = () => api.get('/api/ui/config/douban_cookie')
+/** 设置豆瓣配置 */
+export const setDoubanConfig = data =>
+  api.put('/api/ui/config/douban_cookie', data)
+/** 获取tvdb配置 */
+export const getTvdbConfig = () => api.get('/api/ui/config/tvdb_api_key')
+/** 设置tvdb配置 */
+export const setTvdbConfig = data =>
+  api.put('/api/ui/config/tvdb_api_key', data)

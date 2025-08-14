@@ -1,23 +1,27 @@
-import { Button, Card, Form, Input, message } from 'antd'
+import { Button, Card, Form, Input, message, Modal } from 'antd'
 import {
   getBangumiAuth,
+  getBangumiAuthUrl,
   getBangumiConfig,
+  logoutBangumiAuth,
   setBangumiConfig,
 } from '../../../apis'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   EyeInvisibleOutlined,
   EyeOutlined,
   LockOutlined,
 } from '@ant-design/icons'
+import dayjs from 'dayjs'
 
 export const Bangumi = () => {
   const [form] = Form.useForm()
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [isSaveLoading, setIsSaveLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [configInfo, setConfigInfo] = useState({})
   const [authInfo, setAuthInfo] = useState({})
+  const oauthPopup = useRef()
 
   const getConfig = async () => {
     const res = await getBangumiConfig()
@@ -35,12 +39,6 @@ export const Bangumi = () => {
       setConfigInfo(config)
       setAuthInfo(auth)
       setLoading(false)
-      setTimeout(() => {
-        form.setFieldsValue({
-          bangumi_client_id: config?.bangumi_client_id,
-          bangumi_client_secret: config?.bangumi_client_secret,
-        })
-      }, 50)
     } catch (error) {
       setLoading(false)
     }
@@ -58,8 +56,61 @@ export const Bangumi = () => {
     }
   }
 
+  const handleLogout = () => {
+    Modal.confirm({
+      title: '注销',
+      zIndex: 1002,
+      content: <div>确定要注销Bangumi授权吗？</div>,
+      okText: '确认',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await logoutBangumiAuth()
+          getInfo()
+        } catch (error) {
+          alert(`注销失败: ${error.message}`)
+        }
+      },
+    })
+  }
+
+  const handleLogin = async () => {
+    try {
+      if (oauthPopup.current && !oauthPopup.current?.closed) {
+        oauthPopup.current?.focus?.()
+      } else {
+        const res = await getBangumiAuthUrl()
+        const width = 600,
+          height = 700
+        const left = window.screen.width / 2 - width / 2
+        const top = window.screen.height / 2 - height / 2
+        oauthPopup.current = window.open(
+          res.data.url,
+          'BangumiAuth',
+          `width=${width},height=${height},top=${top},left=${left}`
+        )
+      }
+    } catch (error) {
+      alert(`获取授权链接失败: ${error.message}`)
+    }
+  }
+
   useEffect(() => {
     getInfo()
+    window.addEventListener('message', event => {
+      if (event.data === 'BANGUMI-OAUTH-COMPLETE') {
+        if (oauthPopup.current) oauthPopup.current?.close?.()
+        getInfo()
+      }
+    })
+    return () => {
+      window.removeEventListener('message', event => {
+        if (event.data === 'BANGUMI-OAUTH-COMPLETE') {
+          if (oauthPopup.current) oauthPopup.current?.close?.()
+          getInfo()
+        }
+      })
+    }
   }, [])
 
   return (
@@ -116,13 +167,53 @@ export const Bangumi = () => {
           </Form.Item>
 
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={isSaveLoading}>
-              保存修改
-            </Button>
+            <div className="flex justify-end">
+              <Button type="primary" htmlType="submit" loading={isSaveLoading}>
+                保存修改
+              </Button>
+            </div>
           </Form.Item>
         </Form>
       </Card>
-      <Card loading={loading} title="Bangumi 授权"></Card>
+      <Card loading={loading} title="Bangumi 授权">
+        {authInfo.is_authenticated ? (
+          <div>
+            <p className="my-2">
+              状态: 已作为 <strong>{authInfo.nickname}</strong> 授权
+            </p>
+            <p className="my-2">
+              用户ID: <span>{authInfo.bangumi_user_id}</span>
+            </p>
+            <p className="my-2">
+              授权时间:{' '}
+              <span>
+                {dayjs(authInfo.authorized_at).format('YYYY-MM-DD HH:mm:ss')}
+              </span>
+            </p>
+            <p className="my-2">
+              过期时间:{' '}
+              <span>
+                {dayjs(authInfo.expires_at).format('YYYY-MM-DD HH:mm:ss')}
+              </span>
+            </p>
+            <div className="flex justify-end mt-4">
+              <Button type="primary" danger onClick={handleLogout}>
+                注销
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="mb-4">当前未授权。授权后可使用更多功能。</div>
+            <div className="flex justify-end">
+              <Button type="primary" onClick={handleLogin}>
+                通过 Bangumi 登录
+              </Button>
+            </div>
+          </div>
+        )}
+        <div></div>
+      </Card>
     </div>
   )
 }

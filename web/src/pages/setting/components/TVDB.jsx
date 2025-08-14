@@ -1,9 +1,85 @@
-import { Card } from 'antd'
+import { Button, Card, Form, Input } from 'antd'
+import { useEffect, useState } from 'react'
+import { getTvdbConfig, setTvdbConfig } from '../../../apis'
+import {
+  EyeInvisibleOutlined,
+  EyeOutlined,
+  LockOutlined,
+} from '@ant-design/icons'
 
 export const TVDB = () => {
+  const [loading, setLoading] = useState(true)
+  const [apikey, setApikey] = useState('')
+  const [form] = Form.useForm()
+  const [showPassword, setShowPassword] = useState(false)
+  const [isSaveLoading, setIsSaveLoading] = useState(false)
+
+  useEffect(() => {
+    getTvdbConfig()
+      .then(res => {
+        setApikey(res.data?.value ?? '')
+      })
+      .finally(() => {
+        setLoading(false)
+      })
+  }, [])
+
+  const handleSave = async () => {
+    try {
+      setIsSaveLoading(true)
+      const values = await form.validateFields()
+      await setTvdbConfig({
+        value: values.tvdb_api_key,
+      })
+      setIsSaveLoading(false)
+      message.success('保存成功')
+    } catch (error) {
+      message.error('保存失败')
+    }
+  }
+
   return (
     <div className="my-6">
-      <Card title="账户安全"></Card>
+      <Card loading={loading} title="TVDB API 配置">
+        <div className="mb-4">
+          此项目需要 TheTVDB V4 API Key。您可以从{' '}
+          <a href="https://thetvdb.com/subscribe" target="_blank">
+            TheTVDB官网
+          </a>{' '}
+          获取您自己的 Key。
+        </div>
+        <Form
+          form={form}
+          layout="horizontal"
+          onFinish={handleSave}
+          className="px-6 pb-6"
+          initialValues={{
+            tvdb_api_key: apikey,
+          }}
+        >
+          <Form.Item name="tvdb_api_key" label="API Key" className="mb-6">
+            <Input.Password
+              prefix={<LockOutlined className="text-gray-400" />}
+              placeholder="请输入API Key (v3)"
+              visibilityToggle={{
+                visible: showPassword,
+                onVisibleChange: setShowPassword,
+              }}
+              iconRender={visible =>
+                visible ? <EyeOutlined /> : <EyeInvisibleOutlined />
+              }
+            />
+          </Form.Item>
+
+          <Form.Item>
+            <div className="flex justify-end">
+              <Button type="primary" htmlType="submit" loading={isSaveLoading}>
+                保存修改
+              </Button>
+            </div>
+          </Form.Item>
+        </Form>
+      </Card>
     </div>
   )
 }

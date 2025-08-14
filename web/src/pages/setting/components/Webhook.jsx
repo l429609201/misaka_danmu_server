@@ -11,7 +11,7 @@ import { CopyOutlined, ReloadOutlined } from '@ant-design/icons'
 import copy from 'copy-to-clipboard'
 
 export const Webhook = () => {
-  const [isLoading, setLoading] = useState(false)
+  const [isLoading, setLoading] = useState(true)
   const [apiKey, setApiKey] = useState('')
   const [domain, setDomain] = useState('')
   const [services, setServices] = useState([])

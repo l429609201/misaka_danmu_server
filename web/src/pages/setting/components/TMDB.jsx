@@ -1,9 +1,101 @@
-import { Card } from 'antd'
+import { Button, Card, Form, Input } from 'antd'
+import { useEffect, useState } from 'react'
+import { getTmdbConfig, setTmdbConfig } from '../../../apis'
+import {
+  EyeInvisibleOutlined,
+  EyeOutlined,
+  LockOutlined,
+} from '@ant-design/icons'
 
 export const TMDB = () => {
+  const [loading, setLoading] = useState(true)
+  const [info, setInfo] = useState({})
+  const [form] = Form.useForm()
+  const [showPassword, setShowPassword] = useState(false)
+  const [isSaveLoading, setIsSaveLoading] = useState(false)
+
+  useEffect(() => {
+    getTmdbConfig()
+      .then(res => {
+        setInfo(res.data)
+      })
+      .finally(() => {
+        setLoading(false)
+      })
+  }, [])
+
+  const handleSave = async () => {
+    try {
+      setIsSaveLoading(true)
+      const values = await form.validateFields()
+      await setTmdbConfig(values)
+      setIsSaveLoading(false)
+      message.success('保存成功')
+    } catch (error) {
+      message.error('保存失败')
+    }
+  }
+
   return (
     <div className="my-6">
-      <Card title="账户安全"></Card>
+      <Card loading={loading} title="TMDB API 配置">
+        <div className="mb-4">
+          请从{' '}
+          <a href="https://www.themoviedb.org/settings/api" target="_blank">
+            TMDB官网
+          </a>{' '}
+          获取您的 API Key (v3 auth)。
+        </div>
+        <Form
+          form={form}
+          layout="horizontal"
+          onFinish={handleSave}
+          className="px-6 pb-6"
+          initialValues={{
+            tmdb_api_base_url: info?.tmdb_api_base_url,
+            tmdb_image_base_url: info?.tmdb_image_base_url,
+            tmdb_api_key: info?.tmdb_api_key,
+          }}
+        >
+          <Form.Item
+            name="tmdb_api_key"
+            label="API Key (v3)"
+            rules={[{ required: true, message: 'API Key (v3)' }]}
+            className="mb-6"
+          >
+            <Input.Password
+              prefix={<LockOutlined className="text-gray-400" />}
+              placeholder="请输入API Key (v3)"
+              visibilityToggle={{
+                visible: showPassword,
+                onVisibleChange: setShowPassword,
+              }}
+              iconRender={visible =>
+                visible ? <EyeOutlined /> : <EyeInvisibleOutlined />
+              }
+            />
+          </Form.Item>
+          <Form.Item name="tmdb_api_base_url" label="API 域名" className="mb-4">
+            <Input placeholder="请输入API 域名" />
+          </Form.Item>
+
+          <Form.Item
+            name="tmdb_image_base_url"
+            label="图片域名"
+            className="mb-4"
+          >
+            <Input placeholder="请输入图片域名" />
+          </Form.Item>
+
+          <Form.Item>
+            <div className="flex justify-end">
+              <Button type="primary" htmlType="submit" loading={isSaveLoading}>
+                保存修改
+              </Button>
+            </div>
+          </Form.Item>
+        </Form>
+      </Card>
     </div>
   )
 }

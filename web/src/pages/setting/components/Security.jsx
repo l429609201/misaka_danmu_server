@@ -108,9 +108,11 @@ export const Security = () => {
           </Form.Item>
 
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={isLoading}>
-              确认修改
-            </Button>
+            <div className="flex justify-end">
+              <Button type="primary" htmlType="submit" loading={isLoading}>
+                确认修改
+              </Button>
+            </div>
           </Form.Item>
         </Form>
       </Card>

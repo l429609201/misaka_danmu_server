@@ -8,7 +8,7 @@ import { Douban } from './components/Douban'
 import { TVDB } from './components/TVDB'
 
 export const Setting = () => {
-  const [activeKey, setActiveKey] = useState('bangumi')
+  const [activeKey, setActiveKey] = useState('security')
   return (
     <Tabs
       defaultActiveKey={activeKey}
