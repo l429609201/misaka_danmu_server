@@ -8,6 +8,7 @@ import {
   Select,
   Space,
   Table,
+  Tag,
 } from 'antd'
 import { useEffect, useState } from 'react'
 import {
@@ -139,7 +140,15 @@ export const Token = () => {
       dataIndex: 'is_enabled',
       key: 'is_enabled',
       render: (_, record) => {
-        return <div>{record.is_enabled ? '已启用' : '已禁用'}</div>
+        return (
+          <div>
+            {record.is_enabled ? (
+              <Tag color="green">启用</Tag>
+            ) : (
+              <Tag color="red">禁用</Tag>
+            )}
+          </div>
+        )
       },
     },
     {

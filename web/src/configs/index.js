@@ -12,3 +12,7 @@ export const DANDAN_TYPE_DESC_MAPPING = {
   ova: 'OVA',
   other: '其他',
 }
+
+export const SCHEDULED_TYPE_MAPPING = {
+  tmdb_auto_map: 'TMDB自动映射',
+}

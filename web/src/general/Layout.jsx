@@ -37,7 +37,7 @@ export const Layout = () => {
       <Header />
       <div
         className={classNames({
-          'w-full px-4 pb-20 pt-8': isMobile,
+          'w-full px-4 pb-20 pt-10': isMobile,
           'max-w-[1200px] mx-auto pt-20 px-8': !isMobile,
         })}
       >

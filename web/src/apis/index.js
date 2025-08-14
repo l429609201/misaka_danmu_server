@@ -57,6 +57,34 @@ export const pauseTask = data => api.post('/api/ui/tasks/pause', data)
 export const resumeTask = data => api.post('/api/ui/tasks/resume', data)
 /** 删除任务 */
 export const deleteTask = data => api.delete(`/api/ui/tasks/${data.taskId}`)
+/** 定时任务列表 */
+export const getScheduledTaskList = data =>
+  api.get('/api/ui/scheduled-tasks', data)
+/** 添加定时任务 */
+export const addScheduledTask = data =>
+  api.post('/api/ui/scheduled-tasks', data)
+/** 编辑定时任务 */
+export const editScheduledTask = data =>
+  api.put(`/api/ui/scheduled-tasks/${data.id}`, data)
+/** 删除定时任务 */
+export const deleteScheduledTask = data =>
+  api.delete(`/api/ui/scheduled-tasks/${data.id}`)
+/** 运行任务 */
+export const runTask = data =>
+  api.post(`/api/ui/scheduled-tasks/${data.id}/run`)
+
+// cron_expression
+// :
+// "0 2 * * *"
+// is_enabled
+// :
+// true
+// job_type
+// :
+// "tmdb_auto_map"
+// name
+// :
+// "22222222222"
 
 /** ----------------------------token相关开始------------------------- */
 /** 获取token列表 */
