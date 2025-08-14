@@ -129,7 +129,7 @@ export const SearchResult = () => {
       )
       message.success(res.data.message || '导入成功')
     } catch (error) {
-      message.error(`提交导入任务失败: ${error.message || error}`)
+      message.error(`提交导入任务失败: ${error.detail || error}`)
     } finally {
       setLoading(false)
     }
@@ -144,7 +144,6 @@ export const SearchResult = () => {
       }
       tmdbparams = {
         tmdb_id: `${tmdbid}`,
-        anime_title: title,
       }
     }
     Modal.confirm({
@@ -163,6 +162,7 @@ export const SearchResult = () => {
           setConfirmLoading(true)
           await Promise.all(
             selectList.map(item => {
+              console.log(item, '1')
               return importDanmu(
                 JSON.stringify({
                   provider: item.provider,
@@ -172,6 +172,7 @@ export const SearchResult = () => {
                   image_url: item.imageUrl,
                   douban_id: item.douban_id,
                   current_episode_index: item.currentEpisodeIndex,
+                  anime_title: title ?? item.title,
                   ...tmdbparams,
                 })
               )
@@ -184,6 +185,7 @@ export const SearchResult = () => {
         } catch (err) {
         } finally {
           setConfirmLoading(false)
+          setBatchOpen(false)
         }
       },
     })

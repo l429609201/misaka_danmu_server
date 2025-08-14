@@ -33,7 +33,11 @@ export const Logs = () => {
       <Card loading={loading} title="日志/状态">
         <div className="max-h-[400px] overflow-y-auto">
           {logs?.map((it, index) => (
-            <div key={index}>{it}</div>
+            <div key={index}>
+              <div className="my-1">
+                <pre>{it}</pre>
+              </div>
+            </div>
           ))}
         </div>
       </Card>
