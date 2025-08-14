@@ -4,7 +4,7 @@ import { ScheduleTask } from './components/scheduleTask'
 import { Tabs } from 'antd'
 
 export const Task = () => {
-  const [activeKey, setActiveKey] = useState('schedule')
+  const [activeKey, setActiveKey] = useState('task')
   return (
     <Tabs
       defaultActiveKey={activeKey}

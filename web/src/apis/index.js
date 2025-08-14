@@ -1,6 +1,6 @@
 import api from './fetch'
 
-/** ----------------------------用户相关开始------------------------- */
+/** -------------------------------------------------用户相关开始------------------------------------------------- */
 /** 登录 */
 export const login = data =>
   api.post('/api/ui/auth/token', data, {
@@ -16,7 +16,17 @@ export const getUserInfo = (options = {}) =>
     ...options,
   })
 
-/** ----------------------------首页接口------------------------- */
+/** 修改密码 */
+export const changePassword = data =>
+  api.put(
+    '/api/ui/auth/users/me/password',
+    JSON.stringify({
+      old_password: data.oldPassword,
+      new_password: data.newPassword,
+    })
+  )
+
+/** ---------------------------------------------------首页接口------------------------------------------------ */
 /** 获取日志 */
 export const getLogs = (options = {}) =>
   api.get('/api/ui/logs', null, {
@@ -48,7 +58,7 @@ export const getTmdbSearch = data =>
     keyword: data.keyword,
   })
 
-/** ----------------------------任务相关开始------------------------- */
+/** ---------------------------------------------------任务相关开始------------------------------------------------ */
 /** 任务列表 */
 export const getTaskList = data => api.get('/api/ui/tasks', data)
 /** 暂停任务 */
@@ -73,20 +83,7 @@ export const deleteScheduledTask = data =>
 export const runTask = data =>
   api.post(`/api/ui/scheduled-tasks/${data.id}/run`)
 
-// cron_expression
-// :
-// "0 2 * * *"
-// is_enabled
-// :
-// true
-// job_type
-// :
-// "tmdb_auto_map"
-// name
-// :
-// "22222222222"
-
-/** ----------------------------token相关开始------------------------- */
+/** ---------------------------------------------------token相关开始------------------------------------------------ */
 /** 获取token列表 */
 export const getTokenList = () => api.get('/api/ui/tokens')
 /** 增加token */
@@ -114,3 +111,33 @@ export const getUaRules = () => api.get('/api/ui/ua-rules')
 export const addUaRule = data => api.post('/api/ui/ua-rules', data)
 /** 删除ua规则 */
 export const deleteUaRule = data => api.delete(`/api/ui/ua-rules/${data.id}`)
+
+/** ---------------------------------------------- webhook ----------------------------------------------*/
+/** 获取webhook apikey */
+export const getWebhookApikey = () => api.get('/api/ui/config/webhook_api_key')
+/** 刷新webhookapi key */
+export const refreshWebhookApikey = () =>
+  api.post('/api/ui/config/webhook_api_key/regenerate')
+/** 获取webhook 域名 */
+export const getWebhookDomain = () =>
+  api.get('/api/ui/config/webhook_custom_domain')
+/** 设置webhook自定义域名 value */
+export const setWebhookApikey = data =>
+  api.put('/api/ui/config/webhook_custom_domain', data)
+/** webhook可用服务 */
+export const getWebhookServices = () => api.get('/api/ui/webhooks/available')
+
+/** ---------------------------------------------- Bangumi  ----------------------------------------------*/
+/** 获取bangumi api配置 */
+export const getBangumiConfig = () => api.get('/api/ui/config/bangumi')
+/** 设置bangumi api配置
+ * bangumi_client_id
+ * bangumi_client_secret
+ */
+export const setBangumiConfig = data => api.put('/api/ui/config/bangumi', data)
+/** 获取授权信息 */
+export const getBangumiAuth = () => api.get('/api/bgm/auth/state')
+/** 获取授权链接 */
+export const getBangumiAuthUrl = () => api.get('/api/bgm/auth/url')
+/** 注销授权 */
+export const logoutBangumiAuth = () => api.delete('/api/bgm/auth')
