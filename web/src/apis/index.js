@@ -157,3 +157,24 @@ export const getTvdbConfig = () => api.get('/api/ui/config/tvdb_api_key')
 /** 设置tvdb配置 */
 export const setTvdbConfig = data =>
   api.put('/api/ui/config/tvdb_api_key', data)
+
+/** ---------------------------------------------- 搜索源配置----------------------------------------------  */
+/** 获取刮削器配置 */
+export const getScrapers = () => api.get('/api/ui/scrapers')
+/** 保存刮削器状态（排序/开启状态） */
+export const setScrapers = data => api.put('/api/ui/scrapers', data)
+/** 设置单个刮削器配置 */
+export const setSingleScraper = data =>
+  api.put(`/api/ui/scrapers/${data.name}/config`, data)
+/** 获取单个刮削器配置 */
+export const getSingleScraper = data =>
+  api.get(`/api/ui/scrapers/${data.name}/config`)
+
+/** 获取元信息搜索 配置 */
+export const getMetaData = () => api.get('/api/ui/metadata-sources')
+/** 设置元数据 配置 */
+export const setMetaData = data => api.put('/api/ui/metadata-sources', data)
+
+/** 获取bi站登录信息 */
+export const getbiliUserinfo = () =>
+  api.post('/api/ui/scrapers/bilibili/actions/get_login_info')
