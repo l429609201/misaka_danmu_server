@@ -14,6 +14,7 @@ import {
 } from 'antd'
 import {
   deleteAnime,
+  getAllEpisode,
   getAnimeDetail,
   getAnimeLibrary,
   getEgidSearch,
@@ -256,6 +257,10 @@ export const Library = () => {
   const [egidResult, setEgidResult] = useState([])
   const [egidOpen, setEgidOpen] = useState(false)
   const [searchEgidLoading, setSearchEgidLoading] = useState(false)
+  const [searchAllEpisodeLoading, setSearchAllEpisodeLoading] = useState(false)
+  const [allEpisode, setAllEpisode] = useState({})
+  const [episodeOpen, setEpisodeOpen] = useState([])
+
   const onEgidSearch = async () => {
     try {
       if (searchEgidLoading) return
@@ -274,6 +279,27 @@ export const Library = () => {
       message.error('剧集组搜索失败')
     } finally {
       setSearchEgidLoading(false)
+    }
+  }
+
+  const handleAllEpisode = async item => {
+    try {
+      if (searchAllEpisodeLoading) return
+      setSearchAllEpisodeLoading(true)
+      const res = await getAllEpisode({
+        tmdbId: tmdbId,
+        egid: item.id,
+      })
+      if (!!res?.data?.id) {
+        setAllEpisode(res?.data || {})
+        setEpisodeOpen(true)
+      } else {
+        message.error('没有找到相关分集')
+      }
+    } catch (error) {
+      message.error('没有找到相关分集')
+    } finally {
+      setSearchAllEpisodeLoading(false)
     }
   }
 
@@ -525,11 +551,64 @@ export const Library = () => {
                       <div>{item.description || '无描述'}</div>
                     </div>
                   </div>
-                  <div className="flex item-center justify-center">
-                    <Button type="primary">应用此组</Button>
-                    <Button type="primary">查看分集</Button>
+                  <div className="flex item-center justify-center gap-2">
+                    <Button
+                      type="primary"
+                      size="small"
+                      onClick={() => {
+                        form.setFieldsValue({
+                          tmdb_episode_group_id: item.id,
+                        })
+                        setEgidOpen(false)
+                      }}
+                    >
+                      应用此组
+                    </Button>
+                    <Button
+                      type="default"
+                      size="small"
+                      loading={searchAllEpisodeLoading}
+                      onClick={() => handleAllEpisode(item)}
+                    >
+                      查看分集
+                    </Button>
                   </div>
                 </div>
+              </List.Item>
+            )
+          }}
+        />
+      </Modal>
+      <Modal
+        title={`分集详情 ${allEpisode.name}`}
+        open={episodeOpen}
+        footer={null}
+        zIndex={120}
+        onCancel={() => setEpisodeOpen(false)}
+      >
+        <List
+          itemLayout="vertical"
+          size="large"
+          dataSource={allEpisode?.groups || []}
+          pagination={{
+            pageSize: 4,
+          }}
+          renderItem={(item, index) => {
+            return (
+              <List.Item key={index}>
+                <div className="text-base font-bold">
+                  {item.name} (Order: {item.order})
+                </div>
+                {item.episodes?.map((ep, i) => {
+                  return (
+                    <div key={i}>
+                      第{ep.order + 1}集（绝对：S
+                      {ep.season_number.toString().padStart(2, '0')}E
+                      {ep.episode_number.toString().padStart(2, '0')}）|
+                      {ep.name || '无标题'}`
+                    </div>
+                  )
+                })}
               </List.Item>
             )
           }}

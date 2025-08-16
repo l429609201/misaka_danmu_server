@@ -70,6 +70,10 @@ export const getTvdbSearch = data =>
 export const getEgidSearch = data =>
   api.get(`/api/tmdb/tv/${data.tmdbId}/episode_groups`)
 
+/** 查看所有分集 */
+export const getAllEpisode = data =>
+  api.get(`/api/tmdb/episode_group/${data.egid}?tv_id=${data.tmdbId}`)
+
 /** 搜索BGM */
 export const getBgmSearch = data =>
   api.get(`/api/bgm/search`, {

@@ -6740,3 +6740,62 @@ src.task_manager.TaskSuccess: 删除成功。
 [2025-08-16 20:34:41] [src.database:55] [INFO] - 数据库连接池已关闭。
 [2025-08-16 20:34:41] [TaskManager:57] [INFO] - 任务管理器已停止。
 [2025-08-16 20:34:41] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-16 21:56:15] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/app.log
+[2025-08-16 21:56:15] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-16 21:56:15] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-16 21:56:15] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-16 21:56:16] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-16 21:56:16] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-16 21:56:16] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-16 21:56:16] [src.crud:1483] [INFO] - 默认配置检查完成。
+[2025-08-16 21:56:18] [src.scraper_manager:98] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-16 21:56:18] [src.scraper_manager:98] [INFO] - 已加载搜索源 'acfun' (状态: 已启用, 顺序: 8)。
+[2025-08-16 21:56:18] [src.scraper_manager:98] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 4)。
+[2025-08-16 21:56:18] [src.scraper_manager:98] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-16 21:56:18] [src.scraper_manager:98] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 2)。
+[2025-08-16 21:56:18] [src.scraper_manager:98] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 1)。
+[2025-08-16 21:56:18] [src.scraper_manager:98] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 3)。
+[2025-08-16 21:56:18] [src.scraper_manager:98] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-16 21:56:19] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-16 21:56:25] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 200 OK"
+[2025-08-16 21:56:25] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-16 21:56:25] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-16 21:56:25] [src.webhook_manager:41] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-16 21:56:25] [src.webhook_manager:41] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-16 21:56:25] [TaskManager:46] [INFO] - 任务管理器已启动。
+[2025-08-16 21:56:25] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-16 21:56:25] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-16 21:56:25] [apscheduler.scheduler:1090] [INFO] - Added job "每日更新" to job store "default"
+[2025-08-16 21:56:25] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-16 21:56:49] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/243224/episode_groups?api_key=a6ad08aae6dd56d58b9978d5d01c6af7 "HTTP/1.1 200 OK"
+[2025-08-16 21:56:53] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '凡人修仙传' 命中缓存。
+[2025-08-16 21:56:56] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/106449?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 21:56:58] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 106449)的剧集组列表命中缓存。
+[2025-08-16 22:05:48] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=Re%EF%BC%9A%E4%BB%8E%E9%9B%B6%E5%BC%80%E5%A7%8B%E7%9A%84%E5%BC%82%E4%B8%96%E7%95%8C%E7%94%9F%E6%B4%BB+%E7%AC%AC2%E5%AD%A3&include_adult=false&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 22:06:06] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '凡人修仙传' 命中缓存。
+[2025-08-16 22:06:08] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/106449?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 22:06:09] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 106449)的剧集组列表命中缓存。
+[2025-08-16 22:06:48] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 106449)的剧集组列表命中缓存。
+[2025-08-16 22:08:05] [src.api.tmdb_api:427] [INFO] - TMDB 剧集组详情(ID: 6638eafd5ed8e90129156c9b)命中缓存。
+[2025-08-16 22:08:12] [src.api.tmdb_api:427] [INFO] - TMDB 剧集组详情(ID: 6638eafd5ed8e90129156c9b)命中缓存。
+[2025-08-16 22:18:30] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '凡人修仙传' 命中缓存。
+[2025-08-16 22:18:34] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/106449?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 22:18:36] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 106449)的剧集组列表命中缓存。
+[2025-08-16 22:18:39] [src.api.tmdb_api:427] [INFO] - TMDB 剧集组详情(ID: 6638eafd5ed8e90129156c9b)命中缓存。
+[2025-08-16 22:18:52] [src.api.tmdb_api:427] [INFO] - TMDB 剧集组详情(ID: 6638eafd5ed8e90129156c9b)命中缓存。
+[2025-08-16 22:19:25] [src.api.tmdb_api:427] [INFO] - TMDB 剧集组详情(ID: 6638eafd5ed8e90129156c9b)命中缓存。
+[2025-08-16 22:20:01] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/episode_group/61b3b8871d019100420d5efe?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 22:20:01] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/episode_group/61b3b8871d019100420d5efe?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=ja-JP "HTTP/1.1 200 OK"
+[2025-08-16 22:20:02] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/106449/season/1?api_key=a6ad08aae6dd56d58b9978d5d01c6af7 "HTTP/1.1 200 OK"
+[2025-08-16 22:22:18] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 106449)的剧集组列表命中缓存。
+[2025-08-16 22:22:55] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 106449)的剧集组列表命中缓存。
+[2025-08-16 22:22:59] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 106449)的剧集组列表命中缓存。
+[2025-08-16 22:23:03] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 106449)的剧集组列表命中缓存。
+[2025-08-16 22:23:09] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 106449)的剧集组列表命中缓存。
+[2025-08-16 22:23:23] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '凡人修仙传' 命中缓存。
+[2025-08-16 22:23:26] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/282348?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 22:23:28] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/282348/episode_groups?api_key=a6ad08aae6dd56d58b9978d5d01c6af7 "HTTP/1.1 200 OK"
+[2025-08-16 22:23:30] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 282348)的剧集组列表命中缓存。
+[2025-08-16 22:23:33] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 282348)的剧集组列表命中缓存。
+[2025-08-16 22:23:34] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '凡人修仙传' 命中缓存。
+[2025-08-16 22:23:38] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '凡人修仙传' 命中缓存。
