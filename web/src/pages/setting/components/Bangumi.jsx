@@ -53,6 +53,8 @@ export const Bangumi = () => {
       message.success('保存成功')
     } catch (error) {
       message.error('保存失败')
+    } finally {
+      setIsSaveLoading(false)
     }
   }
 

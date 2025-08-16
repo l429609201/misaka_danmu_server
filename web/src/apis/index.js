@@ -178,3 +178,12 @@ export const setMetaData = data => api.put('/api/ui/metadata-sources', data)
 /** 获取bi站登录信息 */
 export const getbiliUserinfo = () =>
   api.post('/api/ui/scrapers/bilibili/actions/get_login_info')
+/** bilibili 登录二维码 */
+export const getbiliLoginQrcode = () =>
+  api.post('/api/ui/scrapers/bilibili/actions/generate_qrcode')
+/** 轮训bili登录 */
+export const pollBiliLogin = data =>
+  api.post('/api/ui/scrapers/bilibili/actions/poll_login', data)
+/** 注销bili登录 */
+export const biliLogout = () =>
+  api.post('/api/ui/scrapers/bilibili/actions/logout')

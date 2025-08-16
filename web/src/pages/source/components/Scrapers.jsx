@@ -1,12 +1,40 @@
-import { Button, Card, Form, Input, List, message, Modal, Tag } from 'antd'
+import {
+  Button,
+  Card,
+  Checkbox,
+  Form,
+  Input,
+  List,
+  message,
+  Modal,
+  Switch,
+  Tag,
+} from 'antd'
 import { useEffect, useState, useRef } from 'react'
-import { getbiliUserinfo, getScrapers, setScrapers } from '../../../apis'
+import {
+  biliLogout,
+  getbiliLoginQrcode,
+  getbiliUserinfo,
+  getScrapers,
+  getSingleScraper,
+  pollBiliLogin,
+  setScrapers,
+  setSingleScraper,
+} from '../../../apis'
 import { MyIcon } from '@/components/MyIcon'
 import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-const SortableItem = ({ item, index, handleChangeStatus, handleConfig }) => {
+import { QRCodeCanvas } from 'qrcode.react'
+
+const SortableItem = ({
+  item,
+  biliUserinfo,
+  index,
+  handleChangeStatus,
+  handleConfig,
+}) => {
   const {
     attributes,
     listeners,
@@ -43,6 +71,21 @@ const SortableItem = ({ item, index, handleChangeStatus, handleConfig }) => {
           <div>{item.provider_name}</div>
         </div>
         <div className="flex items-center justify-around gap-4">
+          {item.provider_name === 'bilibili' && (
+            <div>
+              {biliUserinfo.isLogin ? (
+                <div className="flex items-center justify-start gap-2">
+                  <img
+                    className="w-6 h-6 rounded-full"
+                    src={biliUserinfo.face}
+                  />
+                  <span>{biliUserinfo.uname}</span>
+                </div>
+              ) : (
+                <span className="opacity-50">未登录</span>
+              )}
+            </div>
+          )}
           <div onClick={handleConfig} className="cursor-pointer">
             <MyIcon icon="setting" size={24} />
           </div>
@@ -65,7 +108,6 @@ export const Scrapers = () => {
   const [list, setList] = useState([])
   const [activeItem, setActiveItem] = useState(null)
   const dragOverlayRef = useRef(null)
-  const [biliUserinfo, setBiliUserinfo] = useState({})
   // 设置窗口
   const [open, setOpen] = useState(false)
   // 设置类型
@@ -73,36 +115,31 @@ export const Scrapers = () => {
   const [confirmLoading, setConfirmLoading] = useState(false)
   const [form] = Form.useForm()
 
-  // if (info.isLogin) {
-  //           let vipText = '';
-  //           if (info.vipStatus === 1) {
-  //               vipText = info.vipType === 2 ? '<span class="bili-list-vip annual">年度大会员</span>' : '<span class="bili-list-vip">大会员</span>';
-  //           }
-  //           statusDiv.innerHTML = `
-  //               <img src="${normalizeImageUrl(info.face)}" alt="avatar" class="bili-list-avatar" referrerpolicy="no-referrer">
-  //               <span class="bili-list-uname">${info.uname}</span>
-  //               ${vipText}
-  //           `;
-  //       } else {
-  //           statusDiv.textContent = '未登录';
-  //       }
+  // bili 相关
+  const [biliQrcode, setBiliQrcode] = useState({})
+  const [biliQrcodeStatus, setBiliQrcodeStatus] = useState('')
+  const [biliQrcodeLoading, setBiliQrcodeLoading] = useState(false)
+  const [biliUserinfo, setBiliUserinfo] = useState({})
+  console.log(biliUserinfo, 'biliUserinfo')
+  const [biliLoginOpen, setBiliLoginOpen] = useState(false)
+  /** 扫码登录轮训 */
+  const timer = useRef(0)
 
   useEffect(() => {
-    Promise.all([
-      getScrapers()
-        .then(res => {
-          setList(res.data ?? [])
-        })
-        .catch(() => {}),
-      getbiliUserinfo()
-        .then(res => {
-          setBiliUserinfo(res.data)
-        })
-        .catch(() => {}),
-    ]).finally(() => {
-      setLoading(false)
-    })
+    getInfo()
   }, [])
+
+  const getInfo = async () => {
+    try {
+      setLoading(true)
+      const [res1, res2] = await Promise.all([getScrapers(), getbiliUserinfo()])
+      setList(res1.data ?? [])
+      setBiliUserinfo(res2.data)
+    } catch (error) {
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleDragEnd = event => {
     const { active, over } = event
@@ -170,9 +207,119 @@ export const Scrapers = () => {
     setScrapers(newList)
   }
 
-  const handleConfig = item => {
+  const handleConfig = async item => {
+    const res = await getSingleScraper({
+      name: item.provider_name,
+    })
     setOpen(true)
     setSetname(item.provider_name)
+    form.setFieldsValue({
+      [`scraper_${item.provider_name}_log_responses`]:
+        res.data?.[`scraper_${item.provider_name}_log_responses`] === 'true'
+          ? true
+          : false,
+      [`${item.provider_name}_episode_blacklist_regex`]:
+        res.data?.[`${item.provider_name}_episode_blacklist_regex`] || '',
+      [`${item.provider_name}_cookie`]:
+        res.data?.[`${item.provider_name}_cookie`] ?? undefined,
+      [`${item.provider_name}_user_agent`]:
+        res.data?.[`${item.provider_name}_user_agent`] ?? undefined,
+    })
+  }
+
+  const handleSaveSingleScraper = async () => {
+    try {
+      setConfirmLoading(true)
+      const values = await form.validateFields()
+      console.log(values[`scraper_${setname}_log_responses`], '111111')
+      const status =
+        values[`scraper_${setname}_log_responses`] === 'on'
+          ? 'true'
+          : values[`scraper_${setname}_log_responses`]?.toString()
+      await setSingleScraper({
+        ...values,
+        [`scraper_${setname}_log_responses`]: status,
+        name: setname,
+      })
+      message.success('保存成功')
+    } catch (error) {
+      console.error(error)
+      message.error('保存失败')
+    } finally {
+      setConfirmLoading(false)
+      setOpen(false)
+      form.resetFields()
+    }
+  }
+
+  const startBiliLoginPoll = data => {
+    timer.current = window.setInterval(() => {
+      pollBiliLogin({
+        qrcode_key: data.qrcode_key,
+      })
+        .then(res => {
+          if (res.data.code === 86038) {
+            clearInterval(timer.current)
+            setBiliQrcodeStatus('expire')
+          } else if (res.data.code === 86090) {
+            setBiliQrcodeStatus('mobileConfirm')
+          } else if (res.data.code === 0) {
+            // 登录成功
+            clearInterval(timer.current)
+            setBiliLoginOpen(false)
+            setOpen(false)
+            getInfo()
+          }
+        })
+        .catch(error => {
+          setBiliQrcodeStatus('error')
+          clearInterval(timer.current)
+        })
+    }, 1000)
+  }
+
+  useEffect(() => {
+    return () => {
+      clearInterval(timer.current)
+    }
+  }, [])
+
+  const handleBiliQrcode = async () => {
+    try {
+      const res = await getbiliLoginQrcode()
+      setBiliQrcode(res.data)
+      setBiliQrcodeLoading(true)
+      setBiliLoginOpen(true)
+      startBiliLoginPoll(res.data)
+      setBiliQrcodeStatus('')
+    } catch (error) {
+      message.error('获取二维码失败')
+    } finally {
+      setBiliQrcodeLoading(false)
+    }
+  }
+
+  const cancelBiliLogin = () => {
+    setBiliLoginOpen(false)
+    clearInterval(timer.current)
+    setBiliQrcodeStatus('')
+  }
+
+  const handleBiliLogout = () => {
+    Modal.confirm({
+      title: '清除缓存',
+      zIndex: 1002,
+      content: <div>确定要注销当前的Bilibili登录吗？</div>,
+      okText: '确认',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await biliLogout()
+          getInfo()
+          setBiliQrcodeStatus('')
+        } catch (err) {}
+      },
+    })
   }
 
   const renderDragOverlay = () => {
@@ -221,6 +368,7 @@ export const Scrapers = () => {
                   key={item.id || index}
                   item={item}
                   index={index}
+                  biliUserinfo={biliUserinfo}
                   handleChangeStatus={() => handleChangeStatus(item)}
                   handleConfig={() => handleConfig(item)}
                 />
@@ -235,15 +383,141 @@ export const Scrapers = () => {
       <Modal
         title={`配置: ${setname}`}
         open={open}
-        onOk={() => {}}
+        onOk={handleSaveSingleScraper}
         confirmLoading={confirmLoading}
         cancelText="取消"
         okText="确认"
         onCancel={() => setOpen(false)}
       >
         <Form form={form} layout="vertical">
-          <div>请为 {setname} 源填写以下配置信息。</div>
+          <div className="mb-4">请为 {setname} 源填写以下配置信息。</div>
+          {/* gamer ua cookie */}
+          {setname === 'gamer' && (
+            <>
+              <Form.Item
+                name={`${setname}_cookie`}
+                label="Cookie"
+                className="mb-4"
+              >
+                <Input.TextArea />
+              </Form.Item>
+              <Form.Item
+                name={`${setname}_user_agent`}
+                label="User-Agent"
+                className="mb-4"
+              >
+                <Input />
+              </Form.Item>
+            </>
+          )}
+          {/* 通用部分 分集标题黑名单 记录原始响应 */}
+          <Form.Item
+            name={`${setname}_episode_blacklist_regex`}
+            label="分集标题黑名单 (正则)"
+            className="mb-4"
+          >
+            <Input />
+          </Form.Item>
+          <div className="flex items-center justify-start gap-4 mb-4">
+            <Form.Item
+              name={`scraper_${setname}_log_responses`}
+              label="记录原始响应"
+              valuePropName="checked"
+              className="min-w-[100px] shrink-0"
+            >
+              <Switch />
+            </Form.Item>
+            <div className="w-full">
+              启用后，此源的所有API请求的原始响应将被记录到
+              config/logs/scraper_responses.log 文件中，用于调试。
+            </div>
+          </div>
+          {/* bilibili登录信息 */}
+          {setname === 'bilibili' && (
+            <div>
+              {biliUserinfo.isLogin ? (
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-2 mb-4">
+                    <img
+                      className="w-10 h-10 rounded-full"
+                      src={biliUserinfo.face}
+                    />
+                    <span>{biliUserinfo.uname}</span>
+                    {biliUserinfo.vipStatus === 1 && (
+                      <Tag
+                        color={biliUserinfo.vipType === 2 ? '#f50' : '#2db7f5'}
+                      >
+                        {biliUserinfo.vipType === 2 ? '年度大会员' : '大会员'}
+                      </Tag>
+                    )}
+                  </div>
+                  <Button type="primary" danger onClick={handleBiliLogout}>
+                    注销登录
+                  </Button>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <div className="mb-4">当前未登录。</div>
+                  <Button
+                    type="primary"
+                    loading={biliQrcodeLoading}
+                    onClick={handleBiliQrcode}
+                  >
+                    扫码登录
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </Form>
+      </Modal>
+      <Modal
+        title="bilibili扫码登录"
+        open={biliLoginOpen}
+        footer={null}
+        onCancel={() => setBiliLoginOpen(false)}
+      >
+        <div className="text-center">
+          <div className="relative w-[200px] h-[200px] mx-auto mb-3">
+            <QRCodeCanvas
+              value={biliQrcode.url}
+              size={200}
+              fgColor="#000"
+              level="M"
+            />
+            {biliQrcodeStatus === 'expire' && (
+              <div
+                className="absolute left-0 top-0 w-full h-full p-3 flex items-center justify-center bg-black/80 cursor-pointer"
+                onClick={handleBiliQrcode}
+              >
+                二维码已失效
+                <br />
+                点击重新获取
+              </div>
+            )}
+            {biliQrcodeStatus === 'mobileConfirm' && (
+              <div className="absolute left-0 top-0 w-full h-full p-3 flex items-center justify-center bg-black/80">
+                已扫描，请在
+                <br />
+                手机上确认登录
+              </div>
+            )}
+            {biliQrcodeStatus === 'error' && (
+              <div
+                className="absolute left-0 top-0 w-full h-full p-3 flex items-center justify-center bg-black/80 cursor-pointer"
+                onClick={handleBiliQrcode}
+              >
+                轮询失败
+                <br />
+                点击重新获取
+              </div>
+            )}
+          </div>
+          <div className="mb-3">请使用Bilibili手机客户端扫描二维码</div>
+          <Button type="primary" danger onClick={cancelBiliLogin}>
+            取消登录
+          </Button>
+        </div>
       </Modal>
     </div>
   )
