@@ -12,6 +12,7 @@ import { Library } from '../pages/library/index.jsx'
 import { Setting } from '../pages/setting/index.jsx'
 import { Source } from '../pages/source/index.jsx'
 import { Tokens } from '../pages/tokens/index.jsx'
+import { AnimeDetail } from '../pages/anime/[id].jsx'
 
 export const router = createBrowserRouter([
   {
@@ -41,6 +42,10 @@ export const router = createBrowserRouter([
       {
         path: RoutePaths.SOURCE,
         element: <Source />,
+      },
+      {
+        path: 'anime/:id',
+        element: <AnimeDetail />,
       },
     ],
   },

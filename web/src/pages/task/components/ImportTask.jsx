@@ -74,13 +74,17 @@ export const ImportTask = () => {
   const handlePause = async () => {
     if (isPause) {
       try {
-        await resumeTask()
+        await Promise.all(
+          selectList.map(it => resumeTask({ taskId: it.task_id }))
+        )
       } catch (error) {
         message.error(`操作失败: ${error.message}`)
       }
     } else {
       try {
-        await pauseTask()
+        await Promise.all(
+          selectList.map(it => pauseTask({ taskId: it.task_id }))
+        )
       } catch (error) {
         message.error(`操作失败: ${error.message}`)
       }

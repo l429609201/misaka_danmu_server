@@ -100,10 +100,6 @@ export const SearchResult = () => {
     setRenderData(list)
   }, [keyword, checkedList, lastSearchResultData])
 
-  useEffect(() => {
-    setRenderData(lastSearchResultData.results || [])
-  }, [lastSearchResultData])
-
   const onTypeChange = values => {
     console.log(values, 'values')
     setCheckedList(values)
@@ -409,7 +405,12 @@ export const SearchResult = () => {
           )}
         </div>
       </Modal>
-      <Modal title="批量导入搜索 TMDB ID" open={tmdbOpen} footer={null}>
+      <Modal
+        title="批量导入搜索 TMDB ID"
+        open={tmdbOpen}
+        footer={null}
+        onCancel={() => setTmdbOpen(false)}
+      >
         <List
           itemLayout="vertical"
           size="large"

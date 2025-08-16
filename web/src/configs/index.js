@@ -7,7 +7,7 @@ export const DANDAN_TYPE_MAPPING = {
   other: 'other',
 }
 export const DANDAN_TYPE_DESC_MAPPING = {
-  tv_series: 'TV动画',
+  tv_series: '电视节目',
   movie: '电影/剧场版',
   ova: 'OVA',
   other: '其他',

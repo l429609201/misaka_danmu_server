@@ -6543,3 +6543,200 @@ httpx.RemoteProtocolError: Server disconnected without sending a response.
 [2025-08-16 16:35:10] [src.database:55] [INFO] - 数据库连接池已关闭。
 [2025-08-16 16:35:10] [TaskManager:57] [INFO] - 任务管理器已停止。
 [2025-08-16 16:35:10] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down
+[2025-08-16 16:36:04] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/app.log
+[2025-08-16 16:36:04] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-16 16:36:04] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-16 16:36:05] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-16 16:36:05] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-16 16:36:05] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-16 16:36:05] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-16 16:36:05] [src.main:47] [INFO] - 已将 1 个中断的任务标记为失败。
+[2025-08-16 16:36:05] [src.crud:1483] [INFO] - 默认配置检查完成。
+[2025-08-16 16:36:06] [src.scraper_manager:98] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-16 16:36:06] [src.scraper_manager:98] [INFO] - 已加载搜索源 'acfun' (状态: 已启用, 顺序: 8)。
+[2025-08-16 16:36:06] [src.scraper_manager:98] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 4)。
+[2025-08-16 16:36:06] [src.scraper_manager:98] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-16 16:36:06] [src.scraper_manager:98] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 2)。
+[2025-08-16 16:36:06] [src.scraper_manager:98] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 1)。
+[2025-08-16 16:36:06] [src.scraper_manager:98] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 3)。
+[2025-08-16 16:36:06] [src.scraper_manager:98] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-16 16:36:07] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-16 16:36:13] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 200 OK"
+[2025-08-16 16:36:13] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-16 16:36:13] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-16 16:36:13] [src.webhook_manager:41] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-16 16:36:13] [src.webhook_manager:41] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-16 16:36:13] [TaskManager:46] [INFO] - 任务管理器已启动。
+[2025-08-16 16:36:13] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-16 16:36:13] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-16 16:36:13] [apscheduler.scheduler:1090] [INFO] - Added job "每日更新" to job store "default"
+[2025-08-16 16:36:13] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-16 17:29:47] [TaskManager:117] [INFO] - 任务 '删除作品: 假期中的她们' 已提交，ID: 73d4ca69-b629-4dc2-811d-7e0208b732f4
+[2025-08-16 17:29:47] [src.api.ui:614] [INFO] - 用户 'admin' 提交了删除作品 ID: 95 的任务 (Task ID: 73d4ca69-b629-4dc2-811d-7e0208b732f4)。
+[2025-08-16 17:29:47] [TaskManager:65] [INFO] - 开始执行任务 '删除作品: 假期中的她们' (ID: 73d4ca69-b629-4dc2-811d-7e0208b732f4)
+[2025-08-16 17:29:49] [src.api.ui:1109] [ERROR] - 删除作品任务 (ID: 95) 失败: 删除成功。
+Traceback (most recent call last):
+  File "/Users/mac/Documents/bytomWorkspace/misaka_danmu_server/src/api/ui.py", line 1104, in delete_anime_task
+    raise TaskSuccess("删除成功。")
+src.task_manager.TaskSuccess: 删除成功。
+[2025-08-16 17:29:49] [TaskManager:90] [INFO] - 任务 '删除作品: 假期中的她们' (ID: 73d4ca69-b629-4dc2-811d-7e0208b732f4) 已成功完成，消息: 删除成功。
+[2025-08-16 17:36:13] [src.crud:1054] [INFO] - 清除了 15 条过期的数据库缓存。
+[2025-08-16 18:15:32] [src.main:157] [WARNING] - 未处理的请求详情 (原始请求范围):
+{
+  "message": "HTTP 404 Not Found - 未找到匹配的API路由",
+  "url": "http://0.0.0.0:7768/api/ui/library/anime/1",
+  "raw_request_scope": {
+    "type": "http",
+    "http_version": "1.1",
+    "server": [
+      "127.0.0.1",
+      7768
+    ],
+    "client": [
+      "127.0.0.1",
+      61534
+    ],
+    "scheme": "http",
+    "method": "PUT",
+    "root_path": "",
+    "path": "/api/ui/library/anime/1",
+    "raw_path": "/api/ui/library/anime/1",
+    "query_string": "",
+    "headers": {
+      "host": "0.0.0.0:7768",
+      "connection": "keep-alive",
+      "content-length": "272",
+      "pragma": "no-cache",
+      "cache-control": "no-cache",
+      "authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImlhdCI6MTc1NTMzNzA2OCwianRpIjoiODYxZDdiZWMtMTg0Mi00MmIyLWE4ODgtNWMyYjE4YjI2NTZjIiwiZXhwIjoxNzU1NDIzNDY4fQ.9gM2IAIq14qnRGH2ReNL_mYzsCSzELzRNS2fUvsRQi0",
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+      "accept": "application/json, text/plain, */*",
+      "content-type": "application/json",
+      "origin": "http://localhost:5173",
+      "referer": "http://localhost:5173/",
+      "accept-encoding": "gzip, deflate",
+      "accept-language": "zh-CN,zh;q=0.9,zh-TW;q=0.8"
+    }
+  }
+}
+[2025-08-16 18:15:39] [src.main:157] [WARNING] - 未处理的请求详情 (原始请求范围):
+{
+  "message": "HTTP 404 Not Found - 未找到匹配的API路由",
+  "url": "http://0.0.0.0:7768/api/ui/library/anime/1",
+  "raw_request_scope": {
+    "type": "http",
+    "http_version": "1.1",
+    "server": [
+      "127.0.0.1",
+      7768
+    ],
+    "client": [
+      "127.0.0.1",
+      61623
+    ],
+    "scheme": "http",
+    "method": "PUT",
+    "root_path": "",
+    "path": "/api/ui/library/anime/1",
+    "raw_path": "/api/ui/library/anime/1",
+    "query_string": "",
+    "headers": {
+      "host": "0.0.0.0:7768",
+      "connection": "keep-alive",
+      "content-length": "272",
+      "pragma": "no-cache",
+      "cache-control": "no-cache",
+      "authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImlhdCI6MTc1NTMzNzA2OCwianRpIjoiODYxZDdiZWMtMTg0Mi00MmIyLWE4ODgtNWMyYjE4YjI2NTZjIiwiZXhwIjoxNzU1NDIzNDY4fQ.9gM2IAIq14qnRGH2ReNL_mYzsCSzELzRNS2fUvsRQi0",
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+      "accept": "application/json, text/plain, */*",
+      "content-type": "application/json",
+      "origin": "http://localhost:5173",
+      "referer": "http://localhost:5173/",
+      "accept-encoding": "gzip, deflate",
+      "accept-language": "zh-CN,zh;q=0.9,zh-TW;q=0.8"
+    }
+  }
+}
+[2025-08-16 18:16:14] [src.main:157] [WARNING] - 未处理的请求详情 (原始请求范围):
+{
+  "message": "HTTP 404 Not Found - 未找到匹配的API路由",
+  "url": "http://0.0.0.0:7768/api/ui/library/anime/1",
+  "raw_request_scope": {
+    "type": "http",
+    "http_version": "1.1",
+    "server": [
+      "127.0.0.1",
+      7768
+    ],
+    "client": [
+      "127.0.0.1",
+      61762
+    ],
+    "scheme": "http",
+    "method": "PUT",
+    "root_path": "",
+    "path": "/api/ui/library/anime/1",
+    "raw_path": "/api/ui/library/anime/1",
+    "query_string": "",
+    "headers": {
+      "host": "0.0.0.0:7768",
+      "connection": "keep-alive",
+      "content-length": "272",
+      "pragma": "no-cache",
+      "cache-control": "no-cache",
+      "authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImlhdCI6MTc1NTMzNzA2OCwianRpIjoiODYxZDdiZWMtMTg0Mi00MmIyLWE4ODgtNWMyYjE4YjI2NTZjIiwiZXhwIjoxNzU1NDIzNDY4fQ.9gM2IAIq14qnRGH2ReNL_mYzsCSzELzRNS2fUvsRQi0",
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+      "accept": "application/json, text/plain, */*",
+      "content-type": "application/json",
+      "origin": "http://localhost:5173",
+      "referer": "http://localhost:5173/",
+      "accept-encoding": "gzip, deflate",
+      "accept-language": "zh-CN,zh;q=0.9,zh-TW;q=0.8"
+    }
+  }
+}
+[2025-08-16 18:16:36] [src.api.ui:376] [INFO] - 用户 'admin' 更新了番剧 ID: 100 的详细信息。
+[2025-08-16 18:17:16] [src.api.ui:376] [INFO] - 用户 'admin' 更新了番剧 ID: 100 的详细信息。
+[2025-08-16 18:17:52] [src.api.ui:376] [INFO] - 用户 'admin' 更新了番剧 ID: 100 的详细信息。
+[2025-08-16 19:45:19] [src.main:171] [ERROR] - 缓存清理任务出错: (2013, 'Lost connection to MySQL server during query')
+[2025-08-16 20:10:43] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%5Bobject+HTMLInputElement%5D&include_adult=false&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:11:58] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:12:23] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:13:34] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/254476?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:14:20] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:14:26] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/254476?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:15:21] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%E9%AD%94%E5%A2%83%E4%BB%99%E8%B8%AA&include_adult=false&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:15:24] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/movie/68728?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:16:31] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:16:33] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/254476?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:18:08] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:18:13] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:18:26] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:18:28] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/254476?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:18:32] [src.api.ui:376] [INFO] - 用户 'admin' 更新了番剧 ID: 100 的详细信息。
+[2025-08-16 20:19:29] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:19:33] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:19:48] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:19:50] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/254476?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:19:53] [src.api.ui:376] [INFO] - 用户 'admin' 更新了番剧 ID: 100 的详细信息。
+[2025-08-16 20:20:04] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:21:05] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:21:21] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:30:47] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '献鱼' 命中缓存。
+[2025-08-16 20:30:50] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/254476?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:31:35] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/254476/episode_groups?api_key=a6ad08aae6dd56d58b9978d5d01c6af7 "HTTP/1.1 200 OK"
+[2025-08-16 20:31:43] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 254476)的剧集组列表命中缓存。
+[2025-08-16 20:31:44] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 254476)的剧集组列表命中缓存。
+[2025-08-16 20:31:46] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 254476)的剧集组列表命中缓存。
+[2025-08-16 20:33:25] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&include_adult=false&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:33:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:33:33] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217/episode_groups?api_key=a6ad08aae6dd56d58b9978d5d01c6af7 "HTTP/1.1 200 OK"
+[2025-08-16 20:34:00] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%E5%AE%9A%E9%A3%8E%E6%B3%A2&include_adult=false&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:34:03] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/253955?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:34:06] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/253955/episode_groups?api_key=a6ad08aae6dd56d58b9978d5d01c6af7 "HTTP/1.1 200 OK"
+[2025-08-16 20:34:15] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%E6%B5%B4%E8%A1%80%E8%8D%A3%E5%85%89&include_adult=false&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:34:17] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/282589?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-16 20:34:19] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/282589/episode_groups?api_key=a6ad08aae6dd56d58b9978d5d01c6af7 "HTTP/1.1 200 OK"
+[2025-08-16 20:34:41] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-16 20:34:41] [TaskManager:57] [INFO] - 任务管理器已停止。
+[2025-08-16 20:34:41] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down

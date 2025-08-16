@@ -49,6 +49,10 @@ export const getSearchResult = data =>
     keyword: data.keyword,
   })
 
+/** 获取tmdb详情的id */
+export const getTMdbDetail = data =>
+  api.get(`/api/tmdb/details/${data.mediaType}/${data.tmdbId}`)
+
 /** 导入弹幕  */
 export const importDanmu = data => api.post('/api/ui/import', data)
 
@@ -57,14 +61,41 @@ export const getTmdbSearch = data =>
   api.get(`/api/tmdb/search/${data.mediaType}`, {
     keyword: data.keyword,
   })
+/** 搜索tvdb */
+export const getTvdbSearch = data =>
+  api.get(`/api/tvdb/search`, {
+    keyword: data.keyword,
+  })
+/** 搜索tmdb剧集组 */
+export const getEgidSearch = data =>
+  api.get(`/api/tmdb/tv/${data.tmdbId}/episode_groups`)
+
+/** 搜索BGM */
+export const getBgmSearch = data =>
+  api.get(`/api/bgm/search`, {
+    keyword: data.keyword,
+  })
+
+/** 豆瓣搜索 */
+export const getDoubanSearch = data =>
+  api.get(`/api/douban/search`, {
+    keyword: data.keyword,
+  })
+/** imdb搜索 */
+export const getImdbSearch = data =>
+  api.get(`/api/imdb/search`, {
+    keyword: data.keyword,
+  })
 
 /** ---------------------------------------------------任务相关开始------------------------------------------------ */
 /** 任务列表 */
 export const getTaskList = data => api.get('/api/ui/tasks', data)
 /** 暂停任务 */
-export const pauseTask = data => api.post('/api/ui/tasks/pause', data)
+export const pauseTask = data =>
+  api.post(`/api/ui/tasks/${data.taskId}/pause`, data)
 /** 继续任务 */
-export const resumeTask = data => api.post('/api/ui/tasks/resume', data)
+export const resumeTask = data =>
+  api.post(`/api/ui/tasks/${data.taskId}/resume`, data)
 /** 删除任务 */
 export const deleteTask = data => api.delete(`/api/ui/tasks/${data.taskId}`)
 /** 定时任务列表 */
@@ -187,3 +218,21 @@ export const pollBiliLogin = data =>
 /** 注销bili登录 */
 export const biliLogout = () =>
   api.post('/api/ui/scrapers/bilibili/actions/logout')
+
+/** ----------------------------------------------弹幕库----------------------------------------------  */
+/** 弹幕库列表 */
+export const getAnimeLibrary = () => api.get('/api/ui/library')
+/** 删除单个资源 */
+export const deleteAnime = data =>
+  api.delete(`/api/ui/library/anime/${data.animeId}`)
+/** 获取影视信息 */
+export const getAnimeDetail = data =>
+  api.get(`/api/ui/library/anime/${data.animeId}/details`)
+
+/** 保存影视信息 */
+export const setAnimeDetail = data =>
+  api.put(`/api/ui/library/anime/${data.animeId}`, data)
+
+/** 获取影视的资源 */
+export const getAnimeSource = data =>
+  api.get(`/api/ui/library/anime/${data.animeId}/sources`)

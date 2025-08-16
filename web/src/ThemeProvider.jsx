@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { ConfigProvider } from 'antd'
 import { theme } from 'antd'
 
+import zhCN from 'antd/locale/zh_CN'
+
 // 创建上下文
 const ThemeContext = createContext()
 
@@ -47,7 +49,9 @@ export function ThemeProvider({ children }) {
 
   return (
     <ThemeContext.Provider value={{ isDark, toggleDarkMode }}>
-      <ConfigProvider theme={antdConfig}>{children}</ConfigProvider>
+      <ConfigProvider locale={zhCN} theme={antdConfig}>
+        {children}
+      </ConfigProvider>
     </ThemeContext.Provider>
   )
 }
