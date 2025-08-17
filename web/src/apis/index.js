@@ -56,9 +56,17 @@ export const getSearchResult = (data, onProgress) => {
   )
 }
 
-/** 获取tmdb详情的id */
+/** 获取tmdb详情 */
 export const getTMdbDetail = data =>
   api.get(`/api/tmdb/details/${data.mediaType}/${data.tmdbId}`)
+
+/** 获取tvdb详情 */
+export const getTvdbDetail = data => api.get(`/api/tvdb/details/${data.tvdbId}`)
+/** 获取imdb详情 */
+export const getImdbDetail = data => api.get(`/api/imdb/details/${data.imdbId}`)
+/** 获取douban详情 */
+export const getDoubanDetail = data =>
+  api.get(`/api/douban/details/${data.doubanId}`)
 
 /** 导入弹幕  */
 export const importDanmu = data => api.post('/api/ui/import', data)

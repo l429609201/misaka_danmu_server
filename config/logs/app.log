@@ -8093,3 +8093,70 @@ src.task_manager.TaskSuccess: 删除成功。
 [2025-08-17 10:39:09] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
 [2025-08-17 10:39:09] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
 [2025-08-17 10:39:09] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 18:12:44] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/app.log
+[2025-08-17 18:12:44] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 18:12:44] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 18:12:45] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-17 18:12:45] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-17 18:12:45] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-17 18:12:45] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-17 18:12:45] [src.main:47] [INFO] - 已将 1 个中断的任务标记为失败。
+[2025-08-17 18:12:45] [src.crud:1483] [INFO] - 默认配置检查完成。
+[2025-08-17 18:12:46] [src.scraper_manager:98] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-17 18:12:46] [src.scraper_manager:98] [INFO] - 已加载搜索源 'acfun' (状态: 已启用, 顺序: 8)。
+[2025-08-17 18:12:46] [src.scraper_manager:98] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 4)。
+[2025-08-17 18:12:46] [src.scraper_manager:98] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-17 18:12:46] [src.scraper_manager:98] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 2)。
+[2025-08-17 18:12:46] [src.scraper_manager:98] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 1)。
+[2025-08-17 18:12:46] [src.scraper_manager:98] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 3)。
+[2025-08-17 18:12:46] [src.scraper_manager:98] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-17 18:12:47] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-17 18:12:52] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 200 OK"
+[2025-08-17 18:12:53] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-17 18:12:53] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-17 18:12:53] [src.webhook_manager:41] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-17 18:12:53] [src.webhook_manager:41] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-17 18:12:53] [TaskManager:46] [INFO] - 任务管理器已启动。
+[2025-08-17 18:12:53] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-17 18:12:53] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-17 18:12:53] [apscheduler.scheduler:1090] [INFO] - Added job "每日更新" to job store "default"
+[2025-08-17 18:12:53] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-17 18:12:59] [BilibiliScraper:232] [INFO] - Bilibili: 已成功从数据库加载Cookie。
+[2025-08-17 18:12:59] [BilibiliScraper:232] [INFO] - Bilibili: 已成功从数据库加载Cookie。
+[2025-08-17 18:12:59] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/nav "HTTP/1.1 200 OK"
+[2025-08-17 18:13:00] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/nav "HTTP/1.1 200 OK"
+[2025-08-17 18:22:04] [src.api.ui:974] [INFO] - 用户 'admin' 更新了配置项 'tvdb_api_key'。
+[2025-08-17 18:40:54] [src.api.tvdb_api:28] [INFO] - TVDB token 已过期或未找到，正在请求新的令牌。
+[2025-08-17 18:41:00] [httpx:1740] [INFO] - HTTP Request: POST https://api4.thetvdb.com/v4/login "HTTP/1.1 200 OK"
+[2025-08-17 18:41:00] [src.api.tvdb_api:45] [INFO] - 成功获取新的TVDB令牌。
+[2025-08-17 18:41:01] [httpx:1740] [INFO] - HTTP Request: GET https://api4.thetvdb.com/v4/search?query=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD "HTTP/1.1 200 OK"
+[2025-08-17 18:41:42] [httpx:1740] [INFO] - HTTP Request: GET https://api4.thetvdb.com/v4/search?query=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD "HTTP/1.1 200 OK"
+[2025-08-17 18:41:52] [httpx:1740] [INFO] - HTTP Request: GET https://api4.thetvdb.com/v4/series/414788/extended "HTTP/1.1 200 OK"
+[2025-08-17 18:42:29] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD&include_adult=false&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 18:42:35] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/154770?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 19:06:32] [httpx:1740] [INFO] - HTTP Request: GET https://www.douban.com/search?cat=1002&q=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD "HTTP/1.1 200 OK"
+[2025-08-17 19:06:37] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/subject/35698677/ "HTTP/1.1 200 OK"
+[2025-08-17 19:08:04] [httpx:1740] [INFO] - HTTP Request: GET https://www.douban.com/search?cat=1002&q=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD "HTTP/1.1 200 OK"
+[2025-08-17 19:08:09] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/subject/35698677/ "HTTP/1.1 200 OK"
+[2025-08-17 19:08:36] [httpx:1740] [INFO] - HTTP Request: GET https://www.douban.com/search?cat=1002&q=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD "HTTP/1.1 200 OK"
+[2025-08-17 19:08:39] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/subject/35698677/ "HTTP/1.1 200 OK"
+[2025-08-17 19:09:11] [httpx:1740] [INFO] - HTTP Request: GET https://www.douban.com/search?cat=1002&q=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD "HTTP/1.1 200 OK"
+[2025-08-17 19:09:14] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/subject/35698677/ "HTTP/1.1 200 OK"
+[2025-08-17 19:09:28] [httpx:1740] [INFO] - HTTP Request: GET https://www.douban.com/search?cat=1002&q=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD "HTTP/1.1 200 OK"
+[2025-08-17 19:09:31] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/subject/35698677/ "HTTP/1.1 200 OK"
+[2025-08-17 19:11:05] [httpx:1740] [INFO] - HTTP Request: GET https://www.douban.com/search?cat=1002&q=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD "HTTP/1.1 200 OK"
+[2025-08-17 19:11:08] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/subject/35698677/ "HTTP/1.1 200 OK"
+[2025-08-17 19:12:53] [src.crud:1054] [INFO] - 清除了 28 条过期的数据库缓存。
+[2025-08-17 19:17:43] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/find/?q=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD&s=tt&ttype=ft "HTTP/1.1 200 OK"
+[2025-08-17 19:18:09] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/title/tt0081070/ "HTTP/1.1 200 OK"
+[2025-08-17 19:18:39] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/find/?q=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD&s=tt&ttype=ft "HTTP/1.1 200 OK"
+[2025-08-17 19:18:45] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/title/tt26903104/ "HTTP/1.1 200 OK"
+[2025-08-17 19:18:56] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '你好，星期六' 命中缓存。
+[2025-08-17 19:18:59] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/154770?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 19:19:08] [src.api.ui:376] [INFO] - 用户 'admin' 更新了番剧 ID: 109 的详细信息。
+[2025-08-17 19:19:16] [httpx:1740] [INFO] - HTTP Request: GET https://www.douban.com/search?cat=1002&q=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E6%98%9F%E6%9C%9F%E5%85%AD "HTTP/1.1 200 OK"
+[2025-08-17 19:19:19] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/subject/35698677/ "HTTP/1.1 200 OK"
+[2025-08-17 19:19:22] [src.api.ui:376] [INFO] - 用户 'admin' 更新了番剧 ID: 109 的详细信息。
+[2025-08-17 19:24:11] [src.database:55] [INFO] - 数据库连接池已关闭。
+[2025-08-17 19:24:11] [TaskManager:57] [INFO] - 任务管理器已停止。
+[2025-08-17 19:24:11] [apscheduler.scheduler:245] [INFO] - Scheduler has been shut down

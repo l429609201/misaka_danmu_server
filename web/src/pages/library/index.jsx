@@ -18,9 +18,15 @@ import {
   getAnimeDetail,
   getAnimeLibrary,
   getBgmSearch,
+  getDoubanDetail,
+  getDoubanSearch,
   getEgidSearch,
+  getImdbDetail,
+  getImdbSearch,
   getTMdbDetail,
   getTmdbSearch,
+  getTvdbDetail,
+  getTvdbSearch,
   setAnimeDetail,
 } from '../../apis'
 import { useEffect, useState } from 'react'
@@ -230,6 +236,12 @@ export const Library = () => {
     }
   }
 
+  const containsJapanese = str => {
+    if (!str) return false
+    // 此正则表达式匹配日文假名和常见的CJK统一表意文字
+    return /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(str)
+  }
+
   /** 搜索相关 */
   const [tmdbResult, setTmdbResult] = useState([])
   const [tmdbOpen, setTmdbOpen] = useState(false)
@@ -249,9 +261,78 @@ export const Library = () => {
         message.error('没有找到相关内容')
       }
     } catch (error) {
-      message.error('TMDB搜索失败')
+      message.error(`TMDB搜索失败:${error.message}`)
     } finally {
       setSearchTmdbLoading(false)
+    }
+  }
+
+  const [tvdbResult, setTvdbResult] = useState([])
+  const [tvdbOpen, setTvdbOpen] = useState(false)
+  const [searchTvdbLoading, setSearchTvdbLoading] = useState(false)
+  const onTvdbSearch = async () => {
+    try {
+      if (searchTmdbLoading) return
+      setSearchTvdbLoading(true)
+      const res = await getTvdbSearch({
+        keyword: title,
+      })
+      if (!!res?.data?.length) {
+        setTvdbResult(res?.data || [])
+        setTvdbOpen(true)
+      } else {
+        message.error('没有找到相关内容')
+      }
+    } catch (error) {
+      message.error(`TVDB搜索失败:${error.message}`)
+    } finally {
+      setSearchTvdbLoading(false)
+    }
+  }
+
+  const [doubanResult, setDoubanResult] = useState([])
+  const [doubanOpen, setDoubanOpen] = useState(false)
+  const [searchDoubanLoading, setSearchDoubanLoading] = useState(false)
+  const onDoubanSearch = async () => {
+    try {
+      if (searchTmdbLoading) return
+      setSearchDoubanLoading(true)
+      const res = await getDoubanSearch({
+        keyword: title,
+      })
+      if (!!res?.data?.length) {
+        setDoubanResult(res?.data || [])
+        setDoubanOpen(true)
+      } else {
+        message.error('没有找到相关内容')
+      }
+    } catch (error) {
+      message.error(`豆瓣搜索失败:${error.message}`)
+    } finally {
+      setSearchDoubanLoading(false)
+    }
+  }
+
+  const [imdbResult, setImdbResult] = useState([])
+  const [imdbOpen, setImdbOpen] = useState(false)
+  const [searchImdbLoading, setSearchImdbLoading] = useState(false)
+  const onImdbSearch = async () => {
+    try {
+      if (searchImdbLoading) return
+      setSearchImdbLoading(true)
+      const res = await getImdbSearch({
+        keyword: title,
+      })
+      if (!!res?.data?.length) {
+        setImdbResult(res?.data || [])
+        setImdbOpen(true)
+      } else {
+        message.error('没有找到相关内容')
+      }
+    } catch (error) {
+      message.error(`IMDB搜索失败:${error.message}`)
+    } finally {
+      setSearchImdbLoading(false)
     }
   }
 
@@ -277,7 +358,7 @@ export const Library = () => {
         message.error('没有找到相关内容')
       }
     } catch (error) {
-      message.error('剧集组搜索失败')
+      message.error(`剧集组搜索失败:${error.message}`)
     } finally {
       setSearchEgidLoading(false)
     }
@@ -321,7 +402,7 @@ export const Library = () => {
         message.error('没有找到相关内容')
       }
     } catch (error) {
-      message.error('BGM 搜索失败')
+      message.error(`BGM搜索失败:${error.message}`)
     } finally {
       setSearchBgmLoading(false)
     }
@@ -448,8 +529,10 @@ export const Library = () => {
               placeholder="例如：364093"
               allowClear
               enterButton="Search"
-              //   loading={searchTmdbLoading}
-              onSearch={() => {}}
+              loading={searchTvdbLoading}
+              onSearch={() => {
+                onTvdbSearch()
+              }}
             />
           </Form.Item>
           <Form.Item name="douban_id" label="豆瓣ID">
@@ -457,8 +540,10 @@ export const Library = () => {
               placeholder="例如：35297708"
               allowClear
               enterButton="Search"
-              //   loading={searchTmdbLoading}
-              onSearch={() => {}}
+              loading={searchDoubanLoading}
+              onSearch={() => {
+                onDoubanSearch()
+              }}
             />
           </Form.Item>
           <Form.Item name="imdb_id" label="IMDB ID">
@@ -466,8 +551,10 @@ export const Library = () => {
               placeholder="例如：tt9140554"
               allowClear
               enterButton="Search"
-              //   loading={searchTmdbLoading}
-              onSearch={() => {}}
+              loading={searchImdbLoading}
+              onSearch={() => {
+                onImdbSearch()
+              }}
             />
           </Form.Item>
           <Form.Item name="name_en" label="英文名">
@@ -531,13 +618,126 @@ export const Library = () => {
                           tvdb_id: res.data.tvdb_id,
                           imdb_id: res.data.imdb_id,
                           name_en: res.data.name_en,
-                          name_jp: res.data.name_jp,
+                          name_jp: containsJapanese(res.data.name_jp)
+                            ? res.data.name_jp
+                            : null,
                           name_romaji: res.data.name_romaji,
-                          aliases_cn1: res.data.aliases_cn?.[1] ?? null,
-                          aliases_cn2: res.data.aliases_cn?.[2] ?? null,
-                          aliases_cn3: res.data.aliases_cn?.[3] ?? null,
+                          alias_cn_1: res.data.aliases_cn?.[1] ?? null,
+                          aliases_cn_2: res.data.aliases_cn?.[2] ?? null,
+                          alias_cn_3: res.data.aliases_cn?.[3] ?? null,
                         })
                         setTmdbOpen(false)
+                      }}
+                    >
+                      选择
+                    </Button>
+                  </div>
+                </div>
+              </List.Item>
+            )
+          }}
+        />
+      </Modal>
+      <Modal
+        title={`为 "${title}" 搜索 IMDB ID`}
+        open={imdbOpen}
+        footer={null}
+        zIndex={110}
+        onCancel={() => setImdbOpen(false)}
+      >
+        <List
+          itemLayout="vertical"
+          size="large"
+          dataSource={imdbResult}
+          pagination={{
+            pageSize: 4,
+          }}
+          renderItem={(item, index) => {
+            return (
+              <List.Item key={index}>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center justify-start">
+                    <img width={60} alt="logo" src={item.image_url} />
+                    <div className="ml-4">
+                      <div className="text-xl font-bold mb-3">{item.title}</div>
+                      <div>ID: {item.id}</div>
+                      <div className="mt-2 text-sm">{item.details}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <Button
+                      type="primary"
+                      onClick={async () => {
+                        const res = await getImdbDetail({
+                          imdbId: item.id,
+                        })
+                        form.setFieldsValue({
+                          imdb_id: res.data.id,
+                          name_jp: containsJapanese(res.data.name_jp)
+                            ? res.data.name_jp
+                            : null,
+                          alias_cn_1: res.data.aliases_cn?.[1] ?? null,
+                          aliases_cn_2: res.data.aliases_cn?.[2] ?? null,
+                          alias_cn_3: res.data.aliases_cn?.[3] ?? null,
+                        })
+                        setImdbOpen(false)
+                      }}
+                    >
+                      选择
+                    </Button>
+                  </div>
+                </div>
+              </List.Item>
+            )
+          }}
+        />
+      </Modal>
+      <Modal
+        title={`为 "${title}" 搜索 TVDB ID`}
+        open={tvdbOpen}
+        footer={null}
+        zIndex={110}
+        onCancel={() => setTvdbOpen(false)}
+      >
+        <List
+          itemLayout="vertical"
+          size="large"
+          dataSource={tvdbResult}
+          pagination={{
+            pageSize: 4,
+          }}
+          renderItem={(item, index) => {
+            return (
+              <List.Item key={index}>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center justify-start">
+                    <img width={60} alt="logo" src={item.image_url} />
+                    <div className="ml-4">
+                      <div className="text-xl font-bold mb-3">{item.title}</div>
+                      <div>ID: {item.id}</div>
+                      <div className="mt-2 text-sm">{item.details}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <Button
+                      type="primary"
+                      onClick={async () => {
+                        const res = await getTvdbDetail({
+                          tvdbId: item.id,
+                        })
+                        form.setFieldsValue({
+                          tvdb_id: res.data.id,
+                          imdb_id: res.data.imdb_id,
+                          name_en: res.data.name_en,
+                          name_jp: containsJapanese(res.data?.name_jp)
+                            ? res.data?.name_jp
+                            : null,
+                          name_romaji: res.data?.name_romaji ?? null,
+                          alias_cn_1: res.data?.aliases_cn?.[1] ?? null,
+                          alias_cn_2: res.data?.aliases_cn?.[2] ?? null,
+                          alias_cn_3: res.data?.aliases_cn?.[3] ?? null,
+                        })
+                        setTvdbOpen(false)
                       }}
                     >
                       选择
@@ -672,13 +872,77 @@ export const Library = () => {
                         form.setFieldsValue({
                           bangumi_id: item.id,
                           name_en: item.name_en,
-                          name_jp: item.name_jp,
+                          name_jp: containsJapanese(item.name_jp)
+                            ? item.name_jp
+                            : null,
                           name_romaji: item.name_romaji,
-                          aliases_cn1: item.aliases_cn?.[1] ?? null,
-                          aliases_cn2: item.aliases_cn?.[2] ?? null,
-                          aliases_cn3: item.aliases_cn?.[3] ?? null,
+                          alias_cn_1: item.aliases_cn?.[1] ?? null,
+                          alias_cn_2: item.aliases_cn?.[2] ?? null,
+                          alias_cn_3: item.aliases_cn?.[3] ?? null,
                         })
                         setBgmOpen(false)
+                      }}
+                    >
+                      选择
+                    </Button>
+                  </div>
+                </div>
+              </List.Item>
+            )
+          }}
+        />
+      </Modal>
+      <Modal
+        title={`为 "${title}" 搜索 豆瓣 ID`}
+        open={doubanOpen}
+        footer={null}
+        zIndex={110}
+        onCancel={() => setDoubanOpen(false)}
+      >
+        <List
+          itemLayout="vertical"
+          size="large"
+          dataSource={doubanResult}
+          pagination={{
+            pageSize: 4,
+          }}
+          renderItem={(item, index) => {
+            return (
+              <List.Item key={index}>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center justify-start">
+                    <img width={60} alt="logo" src={item.image_url} />
+                    <div className="ml-4">
+                      <div className="text-xl font-bold mb-3">{item.title}</div>
+                      <div>ID: {item.id}</div>
+                      <div className="mt-2 text-sm">{item.details}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <Button
+                      type="primary"
+                      onClick={async () => {
+                        const res = await getDoubanDetail({
+                          doubanId: item.id,
+                        })
+                        console.log(
+                          res.data.aliases_cn,
+                          res.data.aliases_cn?.[1] ?? null,
+                          ' res.data.aliases_cn'
+                        )
+                        form.setFieldsValue({
+                          douban_id: res.data.id,
+                          imdb_id: res.data.imdb_id,
+                          name_en: res.data.name_en,
+                          name_jp: containsJapanese(res.data.name_jp)
+                            ? res.data.name_jp
+                            : null,
+                          name_romaji: res.data.name_romaji,
+                          alias_cn_1: res.data.aliases_cn?.[1] ?? null,
+                          alias_cn_2: res.data.aliases_cn?.[2] ?? null,
+                          alias_cn_3: res.data.aliases_cn?.[3] ?? null,
+                        })
+                        setDoubanOpen(false)
                       }}
                     >
                       选择

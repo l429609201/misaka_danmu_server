@@ -1,3 +1,7 @@
+import { useParams } from 'react-router-dom'
+
 export const AnimeDetail = () => {
-  return <div className="my-6"></div>
+  const { id } = useParams()
+
+  return <div className="my-6">{id}</div>
 }
