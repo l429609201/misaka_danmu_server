@@ -16,8 +16,8 @@ class ClientConfig(BaseModel):
     port: int = 5173
 
 class DatabaseConfig(BaseModel):
-    host: str = "117.147.36.142"
-    port: int = 8160
+    host: str = "117.147.37.7"
+    port: int = 3631
     user: str = "danmuapi"
     password: str = "jisi9Lnfr&CyJ4"
     name: str = "danmuapi"

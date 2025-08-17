@@ -12,7 +12,7 @@ client:
   port: 5173
 # 数据库配置
 database:
-  host: "117.147.36.142"
+  host: "117.147.37.7"
   user: "danmuapi"
   password: "jisi9Lnfr&CyJ4" # 请修改为您的数据库密码, 建议通过环境变量覆盖
   name: "danmuapi"

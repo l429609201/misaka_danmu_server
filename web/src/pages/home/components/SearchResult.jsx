@@ -13,9 +13,10 @@ import {
   Modal,
   Radio,
   Form,
+  Empty,
 } from 'antd'
 import { useAtom } from 'jotai'
-import { lastSearchResultAtom } from '../../../../store'
+import { lastSearchResultAtom, searchLoadingAtom } from '../../../../store'
 import { CheckOutlined } from '@ant-design/icons'
 import { DANDAN_TYPE_DESC_MAPPING, DANDAN_TYPE_MAPPING } from '../../../configs'
 import { useWatch } from 'antd/es/form/Form'
@@ -39,6 +40,7 @@ export const SearchResult = () => {
   const [searchTmdbLoading, setSearchTmdbLoading] = useState(false)
   const [tmdbOpen, setTmdbOpen] = useState(false)
 
+  const [searchLoading] = useAtom(searchLoadingAtom)
   const [lastSearchResultData] = useAtom(lastSearchResultAtom)
 
   const [selectList, setSelectList] = useState([])
@@ -213,7 +215,7 @@ export const SearchResult = () => {
 
   return (
     <div className="my-4">
-      <Card title="搜索结果">
+      <Card title="搜索结果" loading={searchLoading}>
         <div>
           <Row gutter={[12, 12]} className="mb-6">
             <Col md={20} xs={24}>
@@ -334,7 +336,7 @@ export const SearchResult = () => {
               }}
             />
           ) : (
-            '暂无搜索结果'
+            <Empty description="暂无搜索结果" />
           )}
         </div>
       </Card>

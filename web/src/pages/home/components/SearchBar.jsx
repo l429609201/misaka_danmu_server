@@ -1,5 +1,5 @@
 import { getSearchResult, clearSearchCache } from '../../../apis'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Card,
@@ -10,21 +10,31 @@ import {
   InputNumber,
   message,
   Modal,
+  Progress,
   Row,
+  Tag,
 } from 'antd'
 import { parseSearchKeyword } from '../../../utils'
 import { useAtom, useAtomValue } from 'jotai'
-import { isMobileAtom, lastSearchResultAtom } from '../../../../store'
+import {
+  isMobileAtom,
+  lastSearchResultAtom,
+  searchHistoryAtom,
+  searchLoadingAtom,
+} from '../../../../store'
 
 export const SearchBar = () => {
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useAtom(searchLoadingAtom)
   const [cacheLoading, setCacheLoading] = useState(false)
   const [form] = Form.useForm()
   const season = Form.useWatch('season', form)
   const episode = Form.useWatch('episode', form)
   const keyword = Form.useWatch('keyword', form)
+  const [percent, setPercent] = useState(0)
+  const timer = useRef(0)
 
   const isMobile = useAtomValue(isMobileAtom)
+  const [searchHistory, setSearchHistory] = useAtom(searchHistoryAtom)
 
   //开启精确搜索
   const [exactSearch, setExactSearch] = useState(false)
@@ -47,7 +57,12 @@ export const SearchBar = () => {
 
   const onSearch = async values => {
     try {
+      if (loading) return
       setLoading(true)
+      setSearchHistory(history => {
+        if (history.includes(values.keyword)) return history
+        return [...history, values.keyword]
+      })
       const {
         title: newTitle,
         season: newSeason,
@@ -92,9 +107,16 @@ export const SearchBar = () => {
         return // 避免网络请求
       }
 
-      const res = await getSearchResult({
-        keyword: encodeURIComponent(values.keyword),
-      })
+      timer.current = window.setInterval(() => {
+        setPercent(p => (p <= 90 ? p + Math.ceil(Math.random() * 5) : 95))
+      }, 200)
+
+      const res = await getSearchResult(
+        {
+          keyword: encodeURIComponent(values.keyword),
+        },
+        onProgress
+      )
 
       setLastSearchResultData({
         ...(res?.data || {}),
@@ -104,6 +126,18 @@ export const SearchBar = () => {
       console.error(`搜索失败: ${error.message || error}`)
     } finally {
       setLoading(false)
+      setPercent(0)
+      clearInterval(timer.current)
+    }
+  }
+
+  const onProgress = progressEvent => {
+    clearInterval(timer.current)
+    if (progressEvent.lengthComputable) {
+      const percent = Math.round(
+        (progressEvent.loaded / progressEvent.total) * 100
+      )
+      setPercent(percent)
     }
   }
 
@@ -136,6 +170,12 @@ export const SearchBar = () => {
     })
   }
 
+  useEffect(() => {
+    return () => {
+      clearInterval(timer.current)
+    }
+  }, [])
+
   return (
     <div className="my-4">
       <Card
@@ -160,9 +200,7 @@ export const SearchBar = () => {
                 label="输入番剧名称"
                 rules={[{ required: true, message: '请输入番剧名称' }]}
               >
-                <Input
-                  placeholder="请输入番剧名称"
-                />
+                <Input placeholder="请输入番剧名称" />
               </Form.Item>
             </Col>
             <Col md={6} xs={24}>
@@ -178,7 +216,11 @@ export const SearchBar = () => {
               </Form.Item>
             </Col>
           </Row>
-
+          {loading && (
+            <div className="-mt-4 mb-4">
+              <Progress percent={percent} />
+            </div>
+          )}
           <Row gutter={12}>
             <Col md={6} xs={24}>
               <Form.Item>
@@ -194,10 +236,7 @@ export const SearchBar = () => {
               <Col md={18} xs={24}>
                 <div className="flex items-center justify-start gap-3">
                   <Form.Item name="season" label="季度：">
-                    <InputNumber
-                      min={0}
-                      placeholder="季数"
-                    />
+                    <InputNumber min={0} placeholder="季数" />
                   </Form.Item>
                   <Form.Item name="episode" label="集数：">
                     <InputNumber
@@ -238,6 +277,36 @@ export const SearchBar = () => {
             )}
           </Row>
         </Form>
+        {!!searchHistory.length && (
+          <div>
+            {searchHistory.map((it, index) => {
+              return (
+                <span
+                  key={index}
+                  className="cursor-pointer"
+                  onClick={() => {
+                    form.setFieldsValue({
+                      keyword: it,
+                    })
+                    onSearch({
+                      keyword: it,
+                    })
+                  }}
+                >
+                  <Tag
+                    closable
+                    onClose={e => {
+                      e.preventDefault()
+                      setSearchHistory(history => history.filter(o => o !== it))
+                    }}
+                  >
+                    {it}
+                  </Tag>
+                </span>
+              )
+            })}
+          </div>
+        )}
       </Card>
     </div>
   )

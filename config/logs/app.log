@@ -6799,3 +6799,1297 @@ src.task_manager.TaskSuccess: 删除成功。
 [2025-08-16 22:23:33] [src.api.tmdb_api:399] [INFO] - TMDB 电视剧(ID: 282348)的剧集组列表命中缓存。
 [2025-08-16 22:23:34] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '凡人修仙传' 命中缓存。
 [2025-08-16 22:23:38] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '凡人修仙传' 命中缓存。
+[2025-08-17 09:01:26] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/app.log
+[2025-08-17 09:01:26] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 09:01:26] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 09:01:32] [src.database:28] [ERROR] - ============================================================
+[2025-08-17 09:01:32] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-17 09:01:32] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-17 09:01:32] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-17 09:01:32] [src.database:32] [ERROR] - ---
+[2025-08-17 09:01:32] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-17 09:01:32] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-17 09:01:32] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-17 09:01:32] [src.database:36] [ERROR] - ---    - 主机 (Host): 117.147.36.142
+[2025-08-17 09:01:32] [src.database:37] [ERROR] - ---    - 端口 (Port): 8160
+[2025-08-17 09:01:32] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-17 09:01:32] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-17 09:01:32] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-17 09:01:32] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-17 09:01:32] [src.database:42] [ERROR] - ============================================================
+[2025-08-17 09:02:09] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/app.log
+[2025-08-17 09:02:09] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 09:02:09] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 09:02:14] [src.database:28] [ERROR] - ============================================================
+[2025-08-17 09:02:14] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-17 09:02:14] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-17 09:02:14] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-17 09:02:14] [src.database:32] [ERROR] - ---
+[2025-08-17 09:02:14] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-17 09:02:14] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-17 09:02:14] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-17 09:02:14] [src.database:36] [ERROR] - ---    - 主机 (Host): 117.147.36.142
+[2025-08-17 09:02:14] [src.database:37] [ERROR] - ---    - 端口 (Port): 3631
+[2025-08-17 09:02:14] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-17 09:02:14] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-17 09:02:14] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-17 09:02:14] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-17 09:02:14] [src.database:42] [ERROR] - ============================================================
+[2025-08-17 09:02:19] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/app.log
+[2025-08-17 09:02:19] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 09:02:19] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 09:02:25] [src.database:28] [ERROR] - ============================================================
+[2025-08-17 09:02:25] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-17 09:02:25] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-17 09:02:25] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-17 09:02:25] [src.database:32] [ERROR] - ---
+[2025-08-17 09:02:25] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-17 09:02:25] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-17 09:02:25] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-17 09:02:25] [src.database:36] [ERROR] - ---    - 主机 (Host): 117.147.36.142
+[2025-08-17 09:02:25] [src.database:37] [ERROR] - ---    - 端口 (Port): 3631
+[2025-08-17 09:02:25] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-17 09:02:25] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-17 09:02:25] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-17 09:02:25] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-17 09:02:25] [src.database:42] [ERROR] - ============================================================
+[2025-08-17 09:03:29] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/app.log
+[2025-08-17 09:03:29] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 09:03:29] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 09:03:34] [src.database:28] [ERROR] - ============================================================
+[2025-08-17 09:03:34] [src.database:29] [ERROR] - === 无法创建数据库连接池，应用无法启动。 ===
+[2025-08-17 09:03:34] [src.database:30] [ERROR] - === 错误类型: OperationalError
+[2025-08-17 09:03:34] [src.database:31] [ERROR] - === 错误详情: (2013, 'Lost connection to MySQL server during query')
+[2025-08-17 09:03:34] [src.database:32] [ERROR] - ---
+[2025-08-17 09:03:34] [src.database:33] [ERROR] - --- 可能的原因与排查建议: ---
+[2025-08-17 09:03:34] [src.database:34] [ERROR] - --- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。
+[2025-08-17 09:03:34] [src.database:35] [ERROR] - --- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。
+[2025-08-17 09:03:34] [src.database:36] [ERROR] - ---    - 主机 (Host): 117.147.36.142
+[2025-08-17 09:03:34] [src.database:37] [ERROR] - ---    - 端口 (Port): 3631
+[2025-08-17 09:03:34] [src.database:38] [ERROR] - ---    - 用户 (User): danmuapi
+[2025-08-17 09:03:34] [src.database:39] [ERROR] - ---    - 数据库 (DB Name): danmuapi
+[2025-08-17 09:03:34] [src.database:40] [ERROR] - --- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。
+[2025-08-17 09:03:34] [src.database:41] [ERROR] - --- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。
+[2025-08-17 09:03:34] [src.database:42] [ERROR] - ============================================================
+[2025-08-17 09:04:47] [root:108] [INFO] - 日志系统已初始化，日志将输出到控制台和 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/app.log
+[2025-08-17 09:04:47] [root:119] [INFO] - 已清空旧的搜索源响应日志: /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 09:04:47] [root:136] [INFO] - 专用的搜索源响应日志已初始化，将输出到 /Users/mac/Documents/bytomWorkspace/misaka_danmu_server/config/logs/scraper_responses.log
+[2025-08-17 09:04:47] [src.database:24] [INFO] - 数据库连接池创建成功。
+[2025-08-17 09:04:48] [src.database:123] [INFO] - 正在检查并创建数据表...
+[2025-08-17 09:04:48] [src.database:162] [INFO] - 数据表检查完成。
+[2025-08-17 09:04:48] [src.database:165] [INFO] - 正在检查并修正表结构...
+[2025-08-17 09:04:48] [src.crud:1483] [INFO] - 默认配置检查完成。
+[2025-08-17 09:04:49] [src.scraper_manager:98] [INFO] - 已加载搜索源 'gamer' (状态: 已启用, 顺序: 5)。
+[2025-08-17 09:04:49] [src.scraper_manager:98] [INFO] - 已加载搜索源 'acfun' (状态: 已启用, 顺序: 8)。
+[2025-08-17 09:04:49] [src.scraper_manager:98] [INFO] - 已加载搜索源 'iqiyi' (状态: 已启用, 顺序: 4)。
+[2025-08-17 09:04:49] [src.scraper_manager:98] [INFO] - 已加载搜索源 'mgtv' (状态: 已启用, 顺序: 6)。
+[2025-08-17 09:04:49] [src.scraper_manager:98] [INFO] - 已加载搜索源 'bilibili' (状态: 已启用, 顺序: 2)。
+[2025-08-17 09:04:49] [src.scraper_manager:98] [INFO] - 已加载搜索源 'tencent' (状态: 已启用, 顺序: 1)。
+[2025-08-17 09:04:49] [src.scraper_manager:98] [INFO] - 已加载搜索源 'youku' (状态: 已启用, 顺序: 3)。
+[2025-08-17 09:04:49] [src.scraper_manager:98] [INFO] - 已加载搜索源 'renren' (状态: 已启用, 顺序: 7)。
+[2025-08-17 09:04:50] [httpx:1740] [INFO] - HTTP Request: GET https://movie.douban.com/ "HTTP/1.1 200 OK"
+[2025-08-17 09:04:52] [httpx:1740] [INFO] - HTTP Request: GET https://www.imdb.com/ "HTTP/1.1 200 OK"
+[2025-08-17 09:04:53] [src.metadata_manager:49] [INFO] - 元数据源连接状态检查完成: {'douban': '可访问', 'imdb': '可访问'}
+[2025-08-17 09:04:53] [src.metadata_manager:26] [INFO] - 元数据源管理器已初始化。
+[2025-08-17 09:04:53] [src.webhook_manager:41] [INFO] - Webhook 处理器 'emby' (来自 emby.py) 已加载。
+[2025-08-17 09:04:53] [src.webhook_manager:41] [INFO] - Webhook 处理器 'jellyfin' (来自 jellyfin.py) 已加载。
+[2025-08-17 09:04:53] [TaskManager:46] [INFO] - 任务管理器已启动。
+[2025-08-17 09:04:53] [src.scheduler:47] [INFO] - 定时任务 'TMDB自动映射与更新' (类型: tmdb_auto_map) 已加载。
+[2025-08-17 09:04:53] [apscheduler.scheduler:214] [INFO] - Scheduler started
+[2025-08-17 09:04:53] [apscheduler.scheduler:1090] [INFO] - Added job "每日更新" to job store "default"
+[2025-08-17 09:04:53] [src.scheduler:94] [INFO] - 定时任务调度器已启动。
+[2025-08-17 09:13:23] [src.api.bangumi_api:339] [INFO] - Bangumi 搜索 '凡人修仙传' 命中缓存。
+[2025-08-17 09:13:51] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%E5%87%A1%E4%BA%BA%E4%BF%AE%E4%BB%99%E4%BC%A0&include_adult=false&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:14:01] [src.api.tmdb_api:178] [INFO] - TMDB 电视剧搜索 '凡人修仙传' 命中缓存。
+[2025-08-17 09:14:03] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/243224?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles%2Cexternal_ids&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:22:19] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 09:22:19] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 09:22:20] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:22:20] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:22:20] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 09:22:20] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:22:20] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 09:22:20] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 09:22:20] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 09:22:20] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:22:20] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:22:20] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:20] [IqiyiScraper:186] [INFO] - 爱奇艺: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:22:20] [TencentScraper:128] [INFO] - Tencent: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:22:20] [YoukuScraper:125] [INFO] - Youku: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:22:20] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 09:22:20] [BilibiliScraper:232] [INFO] - Bilibili: 已成功从数据库加载Cookie。
+[2025-08-17 09:22:20] [BilibiliScraper:401] [INFO] - Bilibili: WBI mixin key expired or not found, fetching new one...
+[2025-08-17 09:22:20] [BilibiliScraper:401] [INFO] - Bilibili: WBI mixin key expired or not found, fetching new one...
+[2025-08-17 09:22:20] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 09:22:20] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 09:22:20] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/nav "HTTP/1.1 200 OK"
+[2025-08-17 09:22:20] [BilibiliScraper:428] [INFO] - Bilibili: Successfully fetched new WBI mixin key.
+[2025-08-17 09:22:21] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/search/drama?keywords=%25E6%25AF%2592%25E6%25B6%25B2&size=20&order=match&search_after=&isExecuteVipActivity=true "HTTP/1.1 200 OK"
+[2025-08-17 09:22:21] [httpx:1740] [INFO] - HTTP Request: GET https://search.video.iqiyi.com/o?if=html5&key=%E6%AF%92%E6%B6%B2&pageNum=1&pageSize=20 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:21] [httpx:1740] [INFO] - HTTP Request: POST https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.HttpMobileRecall/MbSearchHttp "HTTP/1.1 200 OK"
+[2025-08-17 09:22:21] [IqiyiScraper:247] [INFO] - 爱奇艺: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 0 个有效结果。
+[2025-08-17 09:22:21] [TencentScraper:191] [INFO] - Tencent: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 0 个有效结果。
+[2025-08-17 09:22:21] [httpx:1740] [INFO] - HTTP Request: GET https://search.youku.com/api/search?keyword=%25E6%25AF%2592%25E6%25B6%25B2&userAgent=Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F91.0.4472.124+Safari%2F537.36&site=1&categories=0&ftype=0&ob=0&pg=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:21] [YoukuScraper:176] [INFO] - Youku: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 3 个有效结果。
+[2025-08-17 09:22:21] [YoukuScraper:179] [INFO] - Youku: 搜索结果列表:
+  - 毒液：最后一舞 (ID: cdad5972979d424b8b0f, 类型: movie, 年份: 2024)
+  - 毒液：致命守护者 (ID: 1f1b995a017c11df97c0, 类型: movie, 年份: 2018)
+  - 毒液2 (ID: aa42671d63ca49d38dd0, 类型: movie, 年份: 2021)
+[2025-08-17 09:22:21] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/nav "HTTP/1.1 200 OK"
+[2025-08-17 09:22:21] [BilibiliScraper:428] [INFO] - Bilibili: Successfully fetched new WBI mixin key.
+[2025-08-17 09:22:21] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=44219&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:22] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E6%25AF%2592%25E6%25B6%25B2&search_type=media_bangumi&wts=1755393740&w_rid=2bb4301e72ede37976ea1952c4f2b639 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:22] [BilibiliScraper:525] [INFO] - Bilibili: API for type 'media_bangumi' returned no results. (Code: 0, Message: '0')
+[2025-08-17 09:22:22] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=45650&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:22] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E6%25AF%2592%25E6%25B6%25B2&search_type=media_ft&wts=1755393741&w_rid=e36f4b79779b14f4c64d765c24dbe934 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:22] [BilibiliScraper:525] [INFO] - Bilibili: API for type 'media_ft' returned no results. (Code: 0, Message: '0')
+[2025-08-17 09:22:22] [BilibiliScraper:469] [INFO] - Bilibili: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 0 个有效结果。
+[2025-08-17 09:22:23] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=5255&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:23] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52343&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:24] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=1813&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:24] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=499&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:24] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:22:24] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 09:22:24] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 09:22:25] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=32833&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:25] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=4893&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:26] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=53313&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:26] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=35076&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:27] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=11278&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:30] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:22:30] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 09:22:30] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 09:22:30] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=36196&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:31] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52151&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:31] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=246&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:32] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=33558&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:33] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=182&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:33] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=154&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:33] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 09:22:33] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 09:22:34] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=40973&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:34] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:22:34] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:22:34] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:22:34] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=35159&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:34] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 09:22:34] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 09:22:34] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 09:22:34] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 09:22:34] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 09:22:34] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:22:34] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:22:34] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:22:34] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:22:34] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:22:34] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:22:35] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:35] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 09:22:35] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 09:22:35] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=16693&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:35] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/search/drama?keywords=%25E6%25AF%2592%25E6%25B6%25B2&size=20&order=match&search_after=&isExecuteVipActivity=true "HTTP/1.1 200 OK"
+[2025-08-17 09:22:36] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=11802&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:36] [RenrenScraper:283] [INFO] - renren: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 21 个结果。
+[2025-08-17 09:22:36] [RenrenScraper:286] [INFO] - renren: 搜索结果列表:
+  - 传奇 (ID: 44219, 类型: tv_series, 年份: 2015)
+  - 毒 (ID: 45650, 类型: tv_series, 年份: 2023)
+  - 毒枭 第三季 (ID: 5255, 类型: tv_series, 年份: 2017)
+  - 毒劫 (ID: 52343, 类型: tv_series, 年份: 2025)
+  - 毒枭 第二季 (ID: 1813, 类型: tv_series, 年份: 2016)
+  - 毒枭 第一季 (ID: 499, 类型: tv_series, 年份: 2015)
+  - 毒战 (ID: 32833, 类型: tv_series, 年份: 2018)
+  - 毒爱 (ID: 4893, 类型: tv_series, 年份: 2016)
+  - 病毒 (ID: 53313, 类型: tv_series, 年份: 2025)
+  - 毒药 (ID: 35076, 类型: tv_series, 年份: 2020)
+  - 病毒 (ID: 11278, 类型: tv_series, 年份: 2013)
+  - 毒树 (ID: 36196, 类型: tv_series, 年份: 2012)
+  - 毒镇 (ID: 52151, 类型: tv_series, 年份: 2025)
+  - 绝命毒师 第五季 (ID: 246, 类型: tv_series, 年份: 2012)
+  - 奇奇怪怪：整容液 (ID: 33558, 类型: tv_series, 年份: 2020)
+  - 绝命毒师 第四季 (ID: 182, 类型: tv_series, 年份: 2011)
+  - 绝命毒师 第三季 (ID: 154, 类型: tv_series, 年份: 2010)
+  - 毒战2 (ID: 40973, 类型: tv_series, 年份: 2023)
+  - 女毒枭 第二季 (ID: 35159, 类型: tv_series, 年份: 2021)
+  - 女毒枭 第一季 (ID: 16693, 类型: tv_series, 年份: 2019)
+  - 五毒屋 (ID: 11802, 类型: tv_series, 年份: 2018)
+[2025-08-17 09:22:36] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 09:22:36] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=44219&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:37] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=45650&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:37] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=5255&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:38] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52343&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:38] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=1813&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:39] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=499&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:39] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=32833&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:40] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:22:40] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 09:22:40] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 09:22:40] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=4893&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:40] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=53313&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:41] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=35076&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:41] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=11278&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:42] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=36196&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:43] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52151&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:43] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=246&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:44] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=182&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:44] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=33558&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:45] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=154&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:45] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:22:45] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 09:22:45] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 09:22:45] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=40973&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:46] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=35159&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:46] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=16693&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:47] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=11802&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:22:47] [RenrenScraper:283] [INFO] - renren: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 21 个结果。
+[2025-08-17 09:22:47] [RenrenScraper:286] [INFO] - renren: 搜索结果列表:
+  - 传奇 (ID: 44219, 类型: tv_series, 年份: 2015)
+  - 毒 (ID: 45650, 类型: tv_series, 年份: 2023)
+  - 毒枭 第三季 (ID: 5255, 类型: tv_series, 年份: 2017)
+  - 毒劫 (ID: 52343, 类型: tv_series, 年份: 2025)
+  - 毒枭 第二季 (ID: 1813, 类型: tv_series, 年份: 2016)
+  - 毒枭 第一季 (ID: 499, 类型: tv_series, 年份: 2015)
+  - 毒战 (ID: 32833, 类型: tv_series, 年份: 2018)
+  - 毒爱 (ID: 4893, 类型: tv_series, 年份: 2016)
+  - 病毒 (ID: 53313, 类型: tv_series, 年份: 2025)
+  - 毒药 (ID: 35076, 类型: tv_series, 年份: 2020)
+  - 病毒 (ID: 11278, 类型: tv_series, 年份: 2013)
+  - 毒树 (ID: 36196, 类型: tv_series, 年份: 2012)
+  - 毒镇 (ID: 52151, 类型: tv_series, 年份: 2025)
+  - 绝命毒师 第五季 (ID: 246, 类型: tv_series, 年份: 2012)
+  - 绝命毒师 第四季 (ID: 182, 类型: tv_series, 年份: 2011)
+  - 奇奇怪怪：整容液 (ID: 33558, 类型: tv_series, 年份: 2020)
+  - 绝命毒师 第三季 (ID: 154, 类型: tv_series, 年份: 2010)
+  - 毒战2 (ID: 40973, 类型: tv_series, 年份: 2023)
+  - 女毒枭 第二季 (ID: 35159, 类型: tv_series, 年份: 2021)
+  - 女毒枭 第一季 (ID: 16693, 类型: tv_series, 年份: 2019)
+  - 五毒屋 (ID: 11802, 类型: tv_series, 年份: 2018)
+[2025-08-17 09:22:47] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 09:25:22] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 09:25:22] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 09:25:22] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:25:23] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:25:23] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:25:23] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 09:25:23] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 09:25:23] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 09:25:23] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 09:25:23] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 09:25:23] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:25:23] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:25:23] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:25:23] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:25:23] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:25:23] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:25:27] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 09:25:27] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 09:25:27] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 09:25:28] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:25:28] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 09:25:28] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 09:25:33] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:25:34] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 09:25:34] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 09:25:34] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 09:26:02] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 09:26:02] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 09:26:02] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:26:03] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:26:03] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:26:03] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 09:26:03] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 09:26:03] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 09:26:03] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 09:26:03] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 09:26:03] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 09:26:03] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 09:26:03] [TencentScraper:128] [INFO] - Tencent: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 09:26:03] [IqiyiScraper:186] [INFO] - 爱奇艺: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 09:26:03] [YoukuScraper:125] [INFO] - Youku: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 09:26:03] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&search_type=media_bangumi&wts=1755393963&w_rid=29cb6e667e54c8b6f79e66f1b4640596 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:03] [BilibiliScraper:525] [INFO] - Bilibili: API for type 'media_bangumi' returned no results. (Code: 0, Message: '0')
+[2025-08-17 09:26:03] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/search/drama?keywords=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&size=20&order=match&search_after=&isExecuteVipActivity=true "HTTP/1.1 200 OK"
+[2025-08-17 09:26:03] [httpx:1740] [INFO] - HTTP Request: GET https://search.video.iqiyi.com/o?if=html5&key=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pageNum=1&pageSize=20 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:03] [IqiyiScraper:247] [INFO] - 爱奇艺: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-17 09:26:03] [httpx:1740] [INFO] - HTTP Request: GET https://search.youku.com/api/search?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&userAgent=Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F91.0.4472.124+Safari%2F537.36&site=1&categories=0&ftype=0&ob=0&pg=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:03] [YoukuScraper:176] [INFO] - Youku: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-17 09:26:03] [httpx:1740] [INFO] - HTTP Request: POST https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.HttpMobileRecall/MbSearchHttp "HTTP/1.1 200 OK"
+[2025-08-17 09:26:03] [TencentScraper:191] [INFO] - Tencent: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-17 09:26:03] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:03] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 09:26:04] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=50236&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:04] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&search_type=media_ft&wts=1755393963&w_rid=9abd1312fc25c1e4d18f45bda8c6d7f6 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:04] [BilibiliScraper:525] [INFO] - Bilibili: API for type 'media_ft' returned no results. (Code: 0, Message: '0')
+[2025-08-17 09:26:04] [BilibiliScraper:469] [INFO] - Bilibili: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-17 09:26:04] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=13880&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:05] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:26:05] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=12948&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:05] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 09:26:05] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 09:26:05] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=51763&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:06] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=34356&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:06] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=47469&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:07] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52723&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:07] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=34113&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:08] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=49311&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:08] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=42282&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:09] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=3392&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:09] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=12779&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:10] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=53679&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:10] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:26:10] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 09:26:10] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 09:26:10] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=16937&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:11] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=47932&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:11] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=50918&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:12] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=12669&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:12] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=30836&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:13] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=48643&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:13] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=4221&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:14] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=17417&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:14] [RenrenScraper:283] [INFO] - renren: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 21 个结果。
+[2025-08-17 09:26:14] [RenrenScraper:286] [INFO] - renren: 搜索结果列表:
+  - 面露一人饭 第二季 (ID: 50236, 类型: tv_series, 年份: 2024)
+  - 请给一顿饭Show 第二季 (ID: 13880, 类型: tv_series, 年份: 2019)
+  - 请给一顿饭Show 第一季 (ID: 12948, 类型: tv_series, 年份: 2016)
+  - 豆豆饭饭 (ID: 51763, 类型: tv_series, 年份: 2025)
+  - 饭饭之交 (ID: 34356, 类型: tv_series, 年份: 2020)
+  - 亚历山大大帝：封神之路 (ID: 47469, 类型: tv_series, 年份: 2024)
+  - 雪场饭 (ID: 52723, 类型: tv_series, 年份: 2025)
+  - Meal Kid (ID: 34113, 类型: tv_series, 年份: 2020)
+  - 饭后一席谈 (ID: 49311, 类型: tv_series, 年份: 2024)
+  - 全果饭 (ID: 42282, 类型: tv_series, 年份: 2023)
+  - 始饭 (ID: 3392, 类型: tv_series, 年份: 2015)
+  - 极道美食王 (ID: 12779, 类型: tv_series, 年份: 2018)
+  - 菲尔来蹭饭 第八季 (ID: 53679, 类型: tv_series, 年份: 2025)
+  - 请给一顿饭Show 第三季 (ID: 16937, 类型: tv_series, 年份: 2020)
+  - 菲尔来蹭饭 第七季 (ID: 47932, 类型: tv_series, 年份: 2024)
+  - 下山饭 (ID: 50918, 类型: tv_series, 年份: 2024)
+  - 一封关于父亲的信 (ID: 12669, 类型: tv_series, 年份: 2008)
+  - 与神同行：罪与罚 (ID: 30836, 类型: tv_series, 年份: 2017)
+  - 神之一手 (ID: 48643, 类型: tv_series, 年份: 2014)
+  - 约饭 第一季 (ID: 4221, 类型: tv_series, 年份: 2015)
+  - 破产投靠 (ID: 17417, 类型: tv_series, 年份: 2020)
+[2025-08-17 09:26:14] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 09:26:31] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 09:26:31] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 09:26:31] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:26:31] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:26:32] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:26:32] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 09:26:32] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 09:26:32] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 09:26:32] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 09:26:32] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 09:26:32] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:26:32] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:26:32] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:26:32] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:26:32] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:26:32] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:26:32] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 09:26:32] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 09:26:32] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 09:26:36] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:26:36] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 09:26:36] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 09:26:41] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:26:41] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 09:26:41] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 09:26:41] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 09:27:27] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 09:27:27] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 09:27:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:27:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:27:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:27:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 09:27:27] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 09:27:27] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 09:27:27] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 09:27:27] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 09:27:27] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 09:27:27] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 09:27:27] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 09:27:27] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 09:27:28] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 09:27:28] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 09:27:28] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:27:28] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 09:27:28] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 09:27:29] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 09:27:29] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 09:27:33] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:27:33] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 09:27:33] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 09:27:33] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 09:27:54] [src.crud:1071] [INFO] - 清除了所有 (125 条) 数据库缓存。
+[2025-08-17 09:27:54] [src.api.ui:851] [INFO] - 用户 'admin' 清除了所有缓存，共 125 条。
+[2025-08-17 09:51:56] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 09:51:56] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 09:51:56] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:51:56] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:51:57] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 09:51:57] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:51:57] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 09:51:57] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 09:51:57] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 09:51:57] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 09:51:57] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:51:57] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:51:57] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 09:51:57] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 09:51:57] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 09:51:58] [IqiyiScraper:186] [INFO] - 爱奇艺: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:51:58] [TencentScraper:128] [INFO] - Tencent: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:51:58] [YoukuScraper:125] [INFO] - Youku: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:51:58] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E6%25AF%2592%25E6%25B6%25B2&search_type=media_bangumi&wts=1755395518&w_rid=0256c5b7c6777c715f61700d8c6ba3a2 "HTTP/1.1 200 OK"
+[2025-08-17 09:51:58] [BilibiliScraper:525] [INFO] - Bilibili: API for type 'media_bangumi' returned no results. (Code: 0, Message: '0')
+[2025-08-17 09:51:58] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/search/drama?keywords=%25E6%25AF%2592%25E6%25B6%25B2&size=20&order=match&search_after=&isExecuteVipActivity=true "HTTP/1.1 200 OK"
+[2025-08-17 09:51:58] [httpx:1740] [INFO] - HTTP Request: GET https://search.video.iqiyi.com/o?if=html5&key=%E6%AF%92%E6%B6%B2&pageNum=1&pageSize=20 "HTTP/1.1 200 OK"
+[2025-08-17 09:51:58] [IqiyiScraper:247] [INFO] - 爱奇艺: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 0 个有效结果。
+[2025-08-17 09:51:58] [httpx:1740] [INFO] - HTTP Request: POST https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.HttpMobileRecall/MbSearchHttp "HTTP/1.1 200 OK"
+[2025-08-17 09:51:59] [TencentScraper:191] [INFO] - Tencent: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 0 个有效结果。
+[2025-08-17 09:51:59] [httpx:1740] [INFO] - HTTP Request: GET https://search.youku.com/api/search?keyword=%25E6%25AF%2592%25E6%25B6%25B2&userAgent=Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F91.0.4472.124+Safari%2F537.36&site=1&categories=0&ftype=0&ob=0&pg=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:51:59] [YoukuScraper:176] [INFO] - Youku: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 3 个有效结果。
+[2025-08-17 09:51:59] [YoukuScraper:179] [INFO] - Youku: 搜索结果列表:
+  - 毒液：最后一舞 (ID: cdad5972979d424b8b0f, 类型: movie, 年份: 2024)
+  - 毒液：致命守护者 (ID: 1f1b995a017c11df97c0, 类型: movie, 年份: 2018)
+  - 毒液2 (ID: aa42671d63ca49d38dd0, 类型: movie, 年份: 2021)
+[2025-08-17 09:51:59] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=44219&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:51:59] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E6%25AF%2592%25E6%25B6%25B2&search_type=media_ft&wts=1755395518&w_rid=d571b836dd030bb4e5f728020aade9b4 "HTTP/1.1 200 OK"
+[2025-08-17 09:51:59] [BilibiliScraper:525] [INFO] - Bilibili: API for type 'media_ft' returned no results. (Code: 0, Message: '0')
+[2025-08-17 09:51:59] [BilibiliScraper:469] [INFO] - Bilibili: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 0 个有效结果。
+[2025-08-17 09:51:59] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=45650&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:00] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=5255&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:00] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52343&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:01] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=1813&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:01] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=499&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:02] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:52:02] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=32833&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:02] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 09:52:02] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 09:52:03] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=4893&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:03] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=53313&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:04] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=35076&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:04] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=11278&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:05] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=36196&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:05] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52151&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:06] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=246&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:06] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=33558&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:07] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=182&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:07] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=154&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:07] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 09:52:08] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 09:52:08] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 09:52:08] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=40973&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:08] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=35159&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:09] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=16693&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:09] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=50015&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 09:52:09] [RenrenScraper:283] [INFO] - renren: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 21 个结果。
+[2025-08-17 09:52:09] [RenrenScraper:286] [INFO] - renren: 搜索结果列表:
+  - 传奇 (ID: 44219, 类型: tv_series, 年份: 2015)
+  - 毒 (ID: 45650, 类型: tv_series, 年份: 2023)
+  - 毒枭 第三季 (ID: 5255, 类型: tv_series, 年份: 2017)
+  - 毒劫 (ID: 52343, 类型: tv_series, 年份: 2025)
+  - 毒枭 第二季 (ID: 1813, 类型: tv_series, 年份: 2016)
+  - 毒枭 第一季 (ID: 499, 类型: tv_series, 年份: 2015)
+  - 毒战 (ID: 32833, 类型: tv_series, 年份: 2018)
+  - 毒爱 (ID: 4893, 类型: tv_series, 年份: 2016)
+  - 病毒 (ID: 53313, 类型: tv_series, 年份: 2025)
+  - 毒药 (ID: 35076, 类型: tv_series, 年份: 2020)
+  - 病毒 (ID: 11278, 类型: tv_series, 年份: 2013)
+  - 毒树 (ID: 36196, 类型: tv_series, 年份: 2012)
+  - 毒镇 (ID: 52151, 类型: tv_series, 年份: 2025)
+  - 绝命毒师 第五季 (ID: 246, 类型: tv_series, 年份: 2012)
+  - 奇奇怪怪：整容液 (ID: 33558, 类型: tv_series, 年份: 2020)
+  - 绝命毒师 第四季 (ID: 182, 类型: tv_series, 年份: 2011)
+  - 绝命毒师 第三季 (ID: 154, 类型: tv_series, 年份: 2010)
+  - 毒战2 (ID: 40973, 类型: tv_series, 年份: 2023)
+  - 女毒枭 第二季 (ID: 35159, 类型: tv_series, 年份: 2021)
+  - 女毒枭 第一季 (ID: 16693, 类型: tv_series, 年份: 2019)
+  - 毒恋～毒过了头就会变成恋爱～ (ID: 50015, 类型: tv_series, 年份: 2024)
+[2025-08-17 09:52:09] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 09:59:56] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 09:59:56] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 09:59:56] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:59:56] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:59:57] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 09:59:57] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 09:59:57] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 09:59:57] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 09:59:57] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 09:59:57] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 09:59:57] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:59:57] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 09:59:57] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 09:59:57] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 09:59:57] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 09:59:57] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:59:57] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:59:57] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 09:59:57] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:00:01] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:00:01] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:00:01] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:00:07] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:00:07] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:00:07] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:00:07] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:00:48] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:00:48] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:00:48] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:00:48] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:00:49] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:00:49] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:00:49] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:00:49] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:00:49] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:00:49] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:00:49] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:00:49] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:00:49] [IqiyiScraper:186] [INFO] - 爱奇艺: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:00:49] [YoukuScraper:125] [INFO] - Youku: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:00:49] [TencentScraper:128] [INFO] - Tencent: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:00:49] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/search/drama?keywords=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&size=20&order=match&search_after=&isExecuteVipActivity=true "HTTP/1.1 200 OK"
+[2025-08-17 10:00:49] [httpx:1740] [INFO] - HTTP Request: GET https://search.video.iqiyi.com/o?if=html5&key=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pageNum=1&pageSize=20 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:49] [IqiyiScraper:247] [INFO] - 爱奇艺: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-17 10:00:49] [httpx:1740] [INFO] - HTTP Request: GET https://search.youku.com/api/search?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&userAgent=Mozilla%2F5.0+%28Windows+NT+10.0%3B+Win64%3B+x64%29+AppleWebKit%2F537.36+%28KHTML%2C+like+Gecko%29+Chrome%2F91.0.4472.124+Safari%2F537.36&site=1&categories=0&ftype=0&ob=0&pg=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:49] [YoukuScraper:176] [INFO] - Youku: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-17 10:00:49] [httpx:1740] [INFO] - HTTP Request: POST https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.HttpMobileRecall/MbSearchHttp "HTTP/1.1 200 OK"
+[2025-08-17 10:00:49] [TencentScraper:191] [INFO] - Tencent: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-17 10:00:49] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&search_type=media_bangumi&wts=1755396049&w_rid=1358573cca0bc31513ce812aa3521a45 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:49] [BilibiliScraper:525] [INFO] - Bilibili: API for type 'media_bangumi' returned no results. (Code: 0, Message: '0')
+[2025-08-17 10:00:49] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=50236&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:50] [httpx:1740] [INFO] - HTTP Request: GET https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&search_type=media_ft&wts=1755396049&w_rid=9cf39fd527a9e8b109e9424ff4e20307 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:50] [BilibiliScraper:525] [INFO] - Bilibili: API for type 'media_ft' returned no results. (Code: 0, Message: '0')
+[2025-08-17 10:00:50] [BilibiliScraper:469] [INFO] - Bilibili: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个有效结果。
+[2025-08-17 10:00:50] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=13880&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:50] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:50] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:00:51] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=12948&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:51] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=51763&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:52] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=34356&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:52] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=47469&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:53] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=52723&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:53] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=34113&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:54] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=49311&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:54] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:00:54] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=42282&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:54] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:00:54] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:00:55] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=12779&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:55] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=3392&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:56] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=53679&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:56] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=16937&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:57] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=47932&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:57] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=12669&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:58] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=50918&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:58] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=30836&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:59] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=48643&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:00:59] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:00:59] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:00:59] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:00:59] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=4221&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:01:00] [httpx:1740] [INFO] - HTTP Request: GET https://api.rrmj.plus/m-station/drama/page?hsdrOpen=0&isAgeLimit=0&dramaId=17417&hevcOpen=1 "HTTP/1.1 200 OK"
+[2025-08-17 10:01:00] [RenrenScraper:283] [INFO] - renren: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 21 个结果。
+[2025-08-17 10:01:00] [RenrenScraper:286] [INFO] - renren: 搜索结果列表:
+  - 面露一人饭 第二季 (ID: 50236, 类型: tv_series, 年份: 2024)
+  - 请给一顿饭Show 第二季 (ID: 13880, 类型: tv_series, 年份: 2019)
+  - 请给一顿饭Show 第一季 (ID: 12948, 类型: tv_series, 年份: 2016)
+  - 豆豆饭饭 (ID: 51763, 类型: tv_series, 年份: 2025)
+  - 饭饭之交 (ID: 34356, 类型: tv_series, 年份: 2020)
+  - 亚历山大大帝：封神之路 (ID: 47469, 类型: tv_series, 年份: 2024)
+  - 雪场饭 (ID: 52723, 类型: tv_series, 年份: 2025)
+  - Meal Kid (ID: 34113, 类型: tv_series, 年份: 2020)
+  - 饭后一席谈 (ID: 49311, 类型: tv_series, 年份: 2024)
+  - 全果饭 (ID: 42282, 类型: tv_series, 年份: 2023)
+  - 极道美食王 (ID: 12779, 类型: tv_series, 年份: 2018)
+  - 始饭 (ID: 3392, 类型: tv_series, 年份: 2015)
+  - 菲尔来蹭饭 第八季 (ID: 53679, 类型: tv_series, 年份: 2025)
+  - 请给一顿饭Show 第三季 (ID: 16937, 类型: tv_series, 年份: 2020)
+  - 菲尔来蹭饭 第七季 (ID: 47932, 类型: tv_series, 年份: 2024)
+  - 一封关于父亲的信 (ID: 12669, 类型: tv_series, 年份: 2008)
+  - 下山饭 (ID: 50918, 类型: tv_series, 年份: 2024)
+  - 与神同行：罪与罚 (ID: 30836, 类型: tv_series, 年份: 2017)
+  - 神之一手 (ID: 48643, 类型: tv_series, 年份: 2014)
+  - 约饭 第一季 (ID: 4221, 类型: tv_series, 年份: 2015)
+  - 破产投靠 (ID: 17417, 类型: tv_series, 年份: 2020)
+[2025-08-17 10:01:00] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:02:04] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 10:02:04] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:02:05] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:02:05] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:02:05] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:02:05] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:02:05] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 10:02:05] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 10:02:05] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 10:02:05] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 10:02:05] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:02:05] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:02:05] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:02:05] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:02:05] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:02:05] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:02:06] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:02:06] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 10:02:06] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 10:02:06] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:02:07] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:02:07] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:02:12] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:02:13] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:02:13] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:02:13] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:02:36] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:02:37] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:02:37] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:02:37] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:02:37] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:02:37] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:02:37] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:02:37] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:02:37] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:02:37] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:02:37] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:02:37] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:02:37] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:02:37] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:02:37] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:02:37] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:02:38] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:02:38] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:02:43] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:02:43] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:02:43] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:02:48] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:02:48] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:02:48] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:02:48] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:03:05] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 10:03:05] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:03:05] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:03:05] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:03:05] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:03:05] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:03:05] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 10:03:05] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 10:03:05] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 10:03:05] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 10:03:05] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:03:05] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:03:06] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:03:06] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 10:03:06] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 10:03:06] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:03:06] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:03:06] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:03:06] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:03:09] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:03:10] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:03:10] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:03:14] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:03:14] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:03:14] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:03:14] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:03:31] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:03:31] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:03:32] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:03:32] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:03:32] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:03:32] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:03:32] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:03:32] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:03:32] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:03:32] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:03:32] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:03:32] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:03:32] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:03:32] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:03:32] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:03:32] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:03:32] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:03:32] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:03:35] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:03:35] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:03:35] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:03:40] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:03:40] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:03:40] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:03:40] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:07:13] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 10:07:13] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:07:13] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:07:13] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:07:13] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:07:13] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:07:13] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 10:07:13] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 10:07:13] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 10:07:13] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 10:07:13] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:07:13] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:07:13] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:07:13] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:07:13] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:07:13] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:07:14] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:07:14] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 10:07:14] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 10:07:19] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:07:19] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:07:19] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:07:24] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:07:24] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:07:24] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:07:24] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:08:44] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:08:44] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:08:45] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:08:45] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:08:45] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:08:45] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:08:45] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:08:45] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:08:45] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:08:45] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:08:45] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:08:45] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:08:46] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:08:46] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:08:46] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:08:46] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:08:46] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:08:46] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:08:47] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:08:47] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:08:47] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:08:52] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:08:52] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:08:52] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:08:52] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:10:55] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 10:10:55] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:10:55] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:10:55] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:10:56] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:10:56] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:10:56] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 10:10:56] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 10:10:56] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 10:10:56] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 10:10:56] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:10:56] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:10:56] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:10:56] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:10:56] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:10:56] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:10:56] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:10:56] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 10:10:56] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 10:10:58] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:10:58] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:10:58] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:11:03] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:11:03] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:11:03] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:11:03] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:14:59] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:14:59] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:14:59] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:14:59] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:14:59] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:14:59] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:14:59] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:14:59] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:14:59] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:14:59] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:15:00] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:15:00] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:15:00] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:15:00] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:15:00] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:15:00] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:15:00] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:15:00] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:15:03] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:15:03] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:15:03] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:15:08] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:15:08] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:15:08] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:15:08] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:15:35] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:15:35] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:15:35] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:15:35] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:15:35] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:15:35] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:15:35] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:15:35] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:15:35] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:15:35] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:15:35] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:15:35] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:15:35] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:15:35] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:15:35] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:15:35] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:15:36] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:15:36] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:15:39] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:15:39] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:15:39] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:15:44] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:15:44] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:15:44] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:15:44] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:24:59] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:24:59] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:24:59] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:24:59] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:25:00] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:25:00] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:25:00] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:25:00] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:25:00] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:25:00] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:25:00] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:25:00] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:25:00] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:25:00] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:25:00] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:25:00] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:25:00] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:25:00] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:25:02] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:25:02] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:25:02] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:25:07] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:25:07] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:25:07] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:25:07] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:25:27] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 10:25:27] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:25:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:25:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:25:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:25:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:25:27] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 10:25:27] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 10:25:27] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 10:25:27] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 10:25:27] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:25:27] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:25:27] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:25:27] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:25:27] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:25:27] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:25:28] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:25:28] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 10:25:28] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 10:25:33] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:25:33] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:25:33] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:25:38] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:25:39] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:25:39] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:25:39] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:28:24] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:28:24] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:28:24] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:28:24] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:28:24] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:28:24] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:28:24] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:28:24] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:28:24] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:28:24] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:28:24] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:28:24] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:28:24] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:28:24] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:28:24] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:28:24] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:28:25] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:28:25] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:28:25] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:28:26] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:28:26] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:28:30] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:28:31] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:28:31] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:28:31] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:28:58] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 10:28:58] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:28:59] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:28:59] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:28:59] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:28:59] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:28:59] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 10:28:59] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 10:28:59] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 10:28:59] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 10:28:59] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:28:59] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:28:59] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:28:59] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:28:59] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:28:59] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:28:59] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:28:59] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 10:28:59] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 10:29:02] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:29:02] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:29:02] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:29:07] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:29:07] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:29:07] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:29:07] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:29:37] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:29:37] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:29:38] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:29:38] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:29:38] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:29:38] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:29:38] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:29:38] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:29:38] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:29:38] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:29:38] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:29:38] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:29:38] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:29:38] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:29:38] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:29:38] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:29:38] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:29:38] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:29:39] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:29:39] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:29:39] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:29:44] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:29:44] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:29:44] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:29:44] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:30:15] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 10:30:15] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:30:16] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:30:16] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:30:16] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:30:17] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:30:17] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 10:30:17] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 10:30:17] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 10:30:17] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 10:30:17] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:30:17] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:30:17] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:30:17] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:30:17] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:30:17] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:30:17] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:30:17] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 10:30:17] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 10:30:20] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:30:21] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:30:21] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:30:25] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:30:26] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:30:26] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:30:26] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:31:10] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:31:10] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:31:10] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:31:10] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:31:11] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:31:11] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:31:11] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:31:11] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:31:11] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:31:11] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:31:11] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:31:11] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:31:11] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:31:11] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:31:11] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:31:11] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:31:11] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:31:11] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:31:12] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:31:12] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:31:12] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:31:17] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:31:17] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:31:17] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:31:17] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:32:16] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:32:16] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:32:17] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:32:17] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:32:17] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:32:17] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:32:17] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:32:17] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:32:17] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:32:17] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:32:17] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:32:17] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:32:17] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:32:17] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:32:17] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:32:17] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:32:17] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:32:17] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:32:20] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:32:20] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:32:20] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:32:25] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:32:26] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:32:26] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:32:26] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:32:48] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 10:32:48] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:32:49] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:32:49] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:32:49] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:32:49] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:32:49] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 10:32:49] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 10:32:49] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 10:32:49] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 10:32:49] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:32:49] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:32:49] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:32:49] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:32:49] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:32:49] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:32:49] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:32:49] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 10:32:49] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 10:32:52] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:32:52] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:32:52] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:32:57] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:32:57] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:32:57] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:32:57] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:33:36] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:33:36] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:33:37] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:33:37] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:33:37] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:33:37] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:33:37] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:33:37] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:33:37] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:33:37] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:33:37] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:33:37] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:33:37] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:33:37] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:33:37] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:33:37] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:33:38] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:33:38] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:33:39] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:33:39] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:33:39] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:33:45] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:33:45] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:33:45] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:33:45] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:33:55] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:33:55] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:33:56] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:33:56] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:33:56] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:33:56] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:33:56] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:33:56] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:33:56] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:33:56] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:33:56] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:33:56] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:33:56] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:33:56] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:33:56] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:33:56] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:33:56] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:33:56] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:34:00] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:34:00] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:34:00] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:34:05] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:34:05] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:34:05] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:34:05] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:34:47] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 10:34:47] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:34:47] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:34:47] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:34:48] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:34:48] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:34:48] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 10:34:48] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 10:34:48] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 10:34:48] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 10:34:48] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:34:48] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:34:48] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:34:48] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:34:48] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:34:48] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:34:48] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:34:48] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 10:34:48] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 10:34:52] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:34:52] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:34:52] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:34:57] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:34:58] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:34:58] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:34:58] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:35:03] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:35:03] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:35:03] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:35:03] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:35:04] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:35:04] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:35:04] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:35:04] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:35:04] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:35:04] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:35:04] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:35:04] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:35:04] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:35:04] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:35:04] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:35:04] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:35:04] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:35:04] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:35:08] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:35:08] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:35:08] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:35:13] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:35:13] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:35:13] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:35:13] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:36:26] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 10:36:26] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:36:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:36:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:36:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:36:27] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:36:27] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 10:36:27] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 10:36:27] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 10:36:27] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 10:36:27] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:36:27] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:36:27] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:36:27] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:36:27] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:36:27] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:36:27] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:36:27] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 10:36:27] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 10:36:32] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:36:32] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:36:32] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:36:37] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:36:37] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:36:37] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:36:37] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:36:51] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:36:51] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:36:51] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:36:51] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:36:52] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:36:52] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:36:52] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:36:52] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:36:52] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:36:52] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:36:52] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:36:52] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:36:52] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:36:52] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:36:52] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:36:52] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:36:52] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:36:52] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:36:53] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:36:53] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:36:53] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:36:58] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:36:58] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:36:58] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:36:58] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。
+[2025-08-17 10:38:23] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E6%AF%92%E6%B6%B2' (解析为: title='%E6%AF%92%E6%B6%B2', season=None, episode=None)
+[2025-08-17 10:38:23] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:38:23] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:38:23] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E6%25AF%2592%25E6%25B6%25B2&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:38:23] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:38:24] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/221910?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:38:24] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['毒液传奇', 'Legends of Venom']
+[2025-08-17 10:38:24] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 3
+[2025-08-17 10:38:24] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E6%AF%92%E6%B6%B2' 进行全网搜索...
+[2025-08-17 10:38:24] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E6%AF%92%E6%B6%B2' (繁体: '%E6%AF%92%E6%B6%B2')...
+[2025-08-17 10:38:24] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:38:24] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E6%AF%92%E6%B6%B2'...
+[2025-08-17 10:38:24] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:38:24] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:38:24] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:38:24] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E6%AF%92%E6%B6%B2'
+[2025-08-17 10:38:24] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E6%AF%92%E6%B6%B2&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:38:24] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E6%AF%92%E6%B6%B2' 完成，找到 1 个结果。
+[2025-08-17 10:38:24] [MgtvScraper:245] [INFO] - MGTV: 搜索结果列表:
+  - 毒液2 (ID: 369663, 类型: movie, 年份: 2021)
+[2025-08-17 10:38:27] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E6%25AF%2592%25E6%25B6%25B2 "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:38:27] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:38:27] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:38:32] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:38:32] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:38:32] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E6%AF%92%E6%B6%B2' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:38:32] [src.api.ui:289] [INFO] - 别名过滤: 从 25 个原始结果中，保留了 2 个相关结果。
+[2025-08-17 10:39:00] [src.api.ui:205] [INFO] - 用户 'admin' 正在搜索: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (解析为: title='%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E', season=None, episode=None)
+[2025-08-17 10:39:00] [src.api.ui:219] [INFO] - TMDB API Key 已配置，将执行元数据辅助搜索。
+[2025-08-17 10:39:00] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/movie?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:39:00] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/search/tv?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&query=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:39:01] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&language=zh-TW "HTTP/1.1 200 OK"
+[2025-08-17 10:39:01] [httpx:1740] [INFO] - HTTP Request: GET https://tmdb.192168105.xyz/3/tv/296217?api_key=a6ad08aae6dd56d58b9978d5d01c6af7&append_to_response=alternative_titles&language=zh-CN "HTTP/1.1 200 OK"
+[2025-08-17 10:39:01] [src.api.ui:264] [INFO] - TMDB辅助搜索成功，找到别名: ['一饭封神']
+[2025-08-17 10:39:01] [src.api.ui:273] [INFO] - 所有辅助搜索完成，最终别名集大小: 2
+[2025-08-17 10:39:01] [src.api.ui:275] [INFO] - 将使用解析后的标题 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 进行全网搜索...
+[2025-08-17 10:39:01] [GamerScraper:117] [INFO] - Gamer: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' (繁体: '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E')...
+[2025-08-17 10:39:01] [MgtvScraper:190] [INFO] - MGTV: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:39:01] [BilibiliScraper:445] [INFO] - Bilibili: 正在搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'...
+[2025-08-17 10:39:01] [TencentScraper:120] [INFO] - Tencent: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:39:01] [IqiyiScraper:183] [INFO] - 爱奇艺: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:39:01] [YoukuScraper:122] [INFO] - Youku: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:39:01] [BilibiliScraper:450] [INFO] - Bilibili: 从缓存中命中搜索结果 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E'
+[2025-08-17 10:39:01] [httpx:1740] [INFO] - HTTP Request: GET https://mobileso.bz.mgtv.com/msite/search/v2?q=%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000 "HTTP/1.1 200 OK"
+[2025-08-17 10:39:01] [MgtvScraper:242] [INFO] - MGTV: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 完成，找到 0 个结果。
+[2025-08-17 10:39:03] [httpx:1740] [INFO] - HTTP Request: GET https://ani.gamer.com.tw/search.php?keyword=%25E4%25B8%2580%25E9%25A5%25AD%25E5%25B0%2581%25E7%25A5%259E "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:39:04] [GamerScraper:103] [WARNING] - Gamer: 请求 https://ani.gamer.com.tw/search.php 疑似需要登录或已失败 (状态码: 403)。
+[2025-08-17 10:39:04] [GamerScraper:64] [INFO] - Gamer: Cookie可能已过期，正在尝试刷新...
+[2025-08-17 10:39:09] [httpx:1740] [INFO] - HTTP Request: POST https://ani.gamer.com.tw/ajax/token.php "HTTP/1.1 403 Forbidden"
+[2025-08-17 10:39:09] [GamerScraper:85] [ERROR] - Gamer: 刷新 Cookie 失败 (403 Forbidden)。这通常意味着您的 Cookie 已完全失效或 IP 被临时阻止。请尝试在设置中更新 Cookie。
+[2025-08-17 10:39:09] [GamerScraper:192] [ERROR] - Gamer: 搜索 '%E4%B8%80%E9%A5%AD%E5%B0%81%E7%A5%9E' 失败 (403 Forbidden)。这通常是由于无效或过期的 Cookie 导致的。请尝试在“搜索源”设置中更新巴哈姆特动画疯的 Cookie。
+[2025-08-17 10:39:09] [src.api.ui:289] [INFO] - 别名过滤: 从 21 个原始结果中，保留了 0 个相关结果。

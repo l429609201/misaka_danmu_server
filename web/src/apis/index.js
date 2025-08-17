@@ -44,10 +44,17 @@ export const getMatchTest = data =>
 export const clearSearchCache = () => api.post('/api/ui/cache/clear')
 
 /** 搜索结果 */
-export const getSearchResult = data =>
-  api.get('/api/ui/search/provider', {
-    keyword: data.keyword,
-  })
+export const getSearchResult = (data, onProgress) => {
+  return api.get(
+    '/api/ui/search/provider',
+    {
+      keyword: data.keyword,
+    },
+    {
+      onDownloadProgress: onProgress,
+    }
+  )
+}
 
 /** 获取tmdb详情的id */
 export const getTMdbDetail = data =>

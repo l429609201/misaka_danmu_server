@@ -17,6 +17,7 @@ import {
   getAllEpisode,
   getAnimeDetail,
   getAnimeLibrary,
+  getBgmSearch,
   getEgidSearch,
   getTMdbDetail,
   getTmdbSearch,
@@ -259,7 +260,7 @@ export const Library = () => {
   const [searchEgidLoading, setSearchEgidLoading] = useState(false)
   const [searchAllEpisodeLoading, setSearchAllEpisodeLoading] = useState(false)
   const [allEpisode, setAllEpisode] = useState({})
-  const [episodeOpen, setEpisodeOpen] = useState([])
+  const [episodeOpen, setEpisodeOpen] = useState(false)
 
   const onEgidSearch = async () => {
     try {
@@ -300,6 +301,29 @@ export const Library = () => {
       message.error('没有找到相关分集')
     } finally {
       setSearchAllEpisodeLoading(false)
+    }
+  }
+
+  const [bgmResult, setBgmResult] = useState([])
+  const [bgmOpen, setBgmOpen] = useState(false)
+  const [searchBgmLoading, setSearchBgmLoading] = useState(false)
+  const onBgmSearch = async () => {
+    try {
+      if (searchBgmLoading) return
+      setSearchBgmLoading(true)
+      const res = await getBgmSearch({
+        keyword: title,
+      })
+      if (!!res?.data?.length) {
+        setBgmResult(res?.data || [])
+        setBgmOpen(true)
+      } else {
+        message.error('没有找到相关内容')
+      }
+    } catch (error) {
+      message.error('BGM 搜索失败')
+    } finally {
+      setSearchBgmLoading(false)
     }
   }
 
@@ -413,8 +437,10 @@ export const Library = () => {
               placeholder="例如：296100"
               allowClear
               enterButton="Search"
-              //   loading={searchTmdbLoading}
-              onSearch={() => {}}
+              loading={searchBgmLoading}
+              onSearch={() => {
+                onBgmSearch()
+              }}
             />
           </Form.Item>
           <Form.Item name="tvdb_id" label="TVDB ID">
@@ -609,6 +635,56 @@ export const Library = () => {
                     </div>
                   )
                 })}
+              </List.Item>
+            )
+          }}
+        />
+      </Modal>
+      <Modal
+        title={`为 "${title}" 搜索 BGM ID`}
+        open={bgmOpen}
+        footer={null}
+        zIndex={110}
+        onCancel={() => setBgmOpen(false)}
+      >
+        <List
+          itemLayout="vertical"
+          size="large"
+          dataSource={bgmResult}
+          pagination={{
+            pageSize: 4,
+          }}
+          renderItem={(item, index) => {
+            return (
+              <List.Item key={index}>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center justify-start">
+                    <img width={60} alt="logo" src={item.image_url} />
+                    <div className="ml-4">
+                      <div className="text-xl font-bold mb-3">{item.name}</div>
+                      <div>ID: {item.id}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <Button
+                      type="primary"
+                      onClick={async () => {
+                        form.setFieldsValue({
+                          bangumi_id: item.id,
+                          name_en: item.name_en,
+                          name_jp: item.name_jp,
+                          name_romaji: item.name_romaji,
+                          aliases_cn1: item.aliases_cn?.[1] ?? null,
+                          aliases_cn2: item.aliases_cn?.[2] ?? null,
+                          aliases_cn3: item.aliases_cn?.[3] ?? null,
+                        })
+                        setBgmOpen(false)
+                      }}
+                    >
+                      选择
+                    </Button>
+                  </div>
+                </div>
               </List.Item>
             )
           }}

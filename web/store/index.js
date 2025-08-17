@@ -18,3 +18,14 @@ export const lastSearchResultAtom = atomWithStorage(
   undefined,
   { getOnInit: true }
 )
+
+/** 存储 搜索记录 */
+export const searchHistoryAtom = atomWithStorage(
+  'searchHistoryAtom',
+  [],
+  undefined,
+  { getOnInit: true }
+)
+
+/** 首页searchLoafing,跨模块状态 */
+export const searchLoadingAtom = atom(false)

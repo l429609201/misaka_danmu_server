@@ -21,36 +21,28 @@ instance.interceptors.request.use(
     if (config.headers && token) {
       config.headers['Authorization'] = `Bearer ${token}`
     }
-
     return config
   },
   error => Promise.reject(error)
 )
 
 instance.interceptors.response.use(
-  res => {
-    return res
-  },
+  res => res,
   error => {
-    console.log(
-      'resError',
-      error.response && error.response.data,
-      error.response && error.response.config.url
-    )
-
-    return Promise.reject((error.response && error.response.data) || {})
+    console.log('resError', error.response?.data, error.response?.config.url)
+    return Promise.reject(error.response?.data || {})
   }
 )
+
 const api = {
   get(url, data, other = { headers: {} }) {
     return instance({
       method: 'get',
       baseURL: getURL(url).baseURL,
       url: getURL(url).url,
-      headers: {
-        ...other.headers,
-      },
+      headers: { ...other.headers },
       params: data,
+      onDownloadProgress: other.onDownloadProgress,
     })
   },
   post(url, data, other = { headers: {} }) {
@@ -58,21 +50,23 @@ const api = {
       method: 'post',
       baseURL: getURL(url).baseURL,
       url: getURL(url).url,
-      headers: {
-        ...other.headers,
-      },
+      headers: { ...other.headers },
       data,
+      // 同时支持上传和下载进度
+      onUploadProgress: other.onUploadProgress,
+      onDownloadProgress: other.onDownloadProgress,
     })
   },
+  // patch/put/delete 与 post 类似，根据实际需求添加进度配置
   patch(url, data, other = { headers: {} }) {
     return instance({
       method: 'patch',
       baseURL: getURL(url).baseURL,
       url: getURL(url).url,
-      headers: {
-        ...other.headers,
-      },
+      headers: { ...other.headers },
       data,
+      onUploadProgress: other.onUploadProgress,
+      onDownloadProgress: other.onDownloadProgress,
     })
   },
   put(url, data, other = { headers: {} }) {
@@ -80,10 +74,10 @@ const api = {
       method: 'put',
       baseURL: getURL(url).baseURL,
       url: getURL(url).url,
-      headers: {
-        ...other.headers,
-      },
+      headers: { ...other.headers },
       data,
+      onUploadProgress: other.onUploadProgress,
+      onDownloadProgress: other.onDownloadProgress,
     })
   },
   delete(url, data, other = { headers: {} }) {
@@ -91,10 +85,10 @@ const api = {
       method: 'delete',
       baseURL: getURL(url).baseURL,
       url: getURL(url).url,
-      headers: {
-        ...other.headers,
-      },
+      headers: { ...other.headers },
       data,
+      onUploadProgress: other.onUploadProgress,
+      onDownloadProgress: other.onDownloadProgress,
     })
   },
 }
