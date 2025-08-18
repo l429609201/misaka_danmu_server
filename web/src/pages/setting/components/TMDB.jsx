@@ -43,7 +43,11 @@ export const TMDB = () => {
       <Card loading={loading} title="TMDB API 配置">
         <div className="mb-4">
           请从{' '}
-          <a href="https://www.themoviedb.org/settings/api" target="_blank">
+          <a
+            href="https://www.themoviedb.org/settings/api"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             TMDB官网
           </a>{' '}
           获取您的 API Key (v3 auth)。
@@ -54,13 +58,13 @@ export const TMDB = () => {
           onFinish={handleSave}
           className="px-6 pb-6"
           initialValues={{
-            tmdb_api_base_url: info?.tmdb_api_base_url,
-            tmdb_image_base_url: info?.tmdb_image_base_url,
-            tmdb_api_key: info?.tmdb_api_key,
+            tmdbApiBaseUrl: info?.tmdbApiBaseUrl,
+            tmdbImageBaseUrl: info?.tmdbImageBaseUrl,
+            tmdbApiKey: info?.tmdbApiKey,
           }}
         >
           <Form.Item
-            name="tmdb_api_key"
+            name="tmdbApiKey"
             label="API Key (v3)"
             rules={[{ required: true, message: 'API Key (v3)' }]}
             className="mb-6"
@@ -77,15 +81,11 @@ export const TMDB = () => {
               }
             />
           </Form.Item>
-          <Form.Item name="tmdb_api_base_url" label="API 域名" className="mb-4">
+          <Form.Item name="tmdbApiBaseUrl" label="API 域名" className="mb-4">
             <Input placeholder="请输入API 域名" />
           </Form.Item>
 
-          <Form.Item
-            name="tmdb_image_base_url"
-            label="图片域名"
-            className="mb-4"
-          >
+          <Form.Item name="tmdbImageBaseUrl" label="图片域名" className="mb-4">
             <Input placeholder="请输入图片域名" />
           </Form.Item>
 

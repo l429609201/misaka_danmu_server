@@ -135,13 +135,13 @@ export const Bangumi = () => {
           onFinish={handleSave}
           className="px-6 pb-6"
           initialValues={{
-            bangumi_client_id: configInfo?.bangumi_client_id,
-            bangumi_client_secret: configInfo?.bangumi_client_secret,
+            bangumiClientId: configInfo?.bangumiClientId,
+            bangumiClientSecret: configInfo?.bangumiClientSecret,
           }}
         >
           {/* 用户名输入 */}
           <Form.Item
-            name="bangumi_client_id"
+            name="bangumiClientId"
             label="App ID"
             rules={[{ required: true, message: '请输入App ID' }]}
             className="mb-4"
@@ -150,7 +150,7 @@ export const Bangumi = () => {
           </Form.Item>
 
           <Form.Item
-            name="bangumi_client_secret"
+            name="bangumiClientSecret"
             label="App Secret"
             rules={[{ required: true, message: '请输入App Secret' }]}
             className="mb-6"
@@ -178,24 +178,24 @@ export const Bangumi = () => {
         </Form>
       </Card>
       <Card loading={loading} title="Bangumi 授权">
-        {authInfo.is_authenticated ? (
+        {authInfo.isAuthenticated ? (
           <div>
             <p className="my-2">
               状态: 已作为 <strong>{authInfo.nickname}</strong> 授权
             </p>
             <p className="my-2">
-              用户ID: <span>{authInfo.bangumi_user_id}</span>
+              用户ID: <span>{authInfo.bangumiUserId}</span>
             </p>
             <p className="my-2">
               授权时间:{' '}
               <span>
-                {dayjs(authInfo.authorized_at).format('YYYY-MM-DD HH:mm:ss')}
+                {dayjs(authInfo.authorizedAt).format('YYYY-MM-DD HH:mm:ss')}
               </span>
             </p>
             <p className="my-2">
               过期时间:{' '}
               <span>
-                {dayjs(authInfo.expires_at).format('YYYY-MM-DD HH:mm:ss')}
+                {dayjs(authInfo.expiresAt).format('YYYY-MM-DD HH:mm:ss')}
               </span>
             </p>
             <div className="flex justify-end mt-4">

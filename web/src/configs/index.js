@@ -14,5 +14,5 @@ export const DANDAN_TYPE_DESC_MAPPING = {
 }
 
 export const SCHEDULED_TYPE_MAPPING = {
-  tmdb_auto_map: 'TMDB自动映射',
+  tmdbAutoMap: 'TMDB自动映射',
 }

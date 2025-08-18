@@ -40,7 +40,7 @@ const SortableItem = ({ item, index, handleChangeStatus }) => {
           <div {...listeners} style={{ cursor: 'grab' }}>
             <MyIcon icon="drag" size={24} />
           </div>
-          <div>{item.provider_name}</div>
+          <div>{item.providerName}</div>
         </div>
         <div className="flex items-center justify-around gap-4">
           {item.status !== '未配置' ? (
@@ -48,12 +48,12 @@ const SortableItem = ({ item, index, handleChangeStatus }) => {
           ) : (
             <Tag color="red">{item.status}</Tag>
           )}
-          {item.is_aux_search_enabled ? (
+          {item.isAuxSearchEnabled ? (
             <Tag color="green">已启用</Tag>
           ) : (
             <Tag color="red">未启用</Tag>
           )}
-          {item.provider_name !== 'tmdb' ? (
+          {item.providerName !== 'tmdb' ? (
             <div onClick={handleChangeStatus}>
               <MyIcon icon="exchange" size={24} />
             </div>
@@ -93,10 +93,10 @@ export const Metadata = () => {
 
     // 找到原位置和新位置
     const activeIndex = list.findIndex(
-      item => item.provider_name === active.data.current.item.provider_name
+      item => item.providerName === active.data.current.item.providerName
     )
     const overIndex = list.findIndex(
-      item => item.provider_name === over.data.current.item.provider_name
+      item => item.providerName === over.data.current.item.providerName
     )
 
     if (activeIndex !== -1 && overIndex !== -1) {
@@ -108,7 +108,7 @@ export const Metadata = () => {
       // 2. 重新计算所有项的display_order（从1开始连续编号）
       const updatedList = newList.map((item, index) => ({
         ...item,
-        display_order: index + 1, // 排序值从1开始
+        displayOrder: index + 1, // 排序值从1开始
       }))
 
       // 3. 更新状态
@@ -116,7 +116,7 @@ export const Metadata = () => {
       setList(updatedList)
       setMetaData(updatedList)
       message.success(
-        `已更新排序，${movedItem.provider_name} 移动到位置 ${overIndex + 1}`
+        `已更新排序，${movedItem.providerName} 移动到位置 ${overIndex + 1}`
       )
     }
 
@@ -135,10 +135,10 @@ export const Metadata = () => {
 
   const handleChangeStatus = item => {
     const newList = list.map(it => {
-      if (it.provider_name === item.provider_name) {
+      if (it.providerName === item.providerName) {
         return {
           ...it,
-          is_aux_search_enabled: Number(!it.is_aux_search_enabled),
+          isAuxSearchEnabled: Number(!it.isAuxSearchEnabled),
         }
       } else {
         return it
@@ -162,7 +162,7 @@ export const Metadata = () => {
           <div className="w-full flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MyIcon icon="drag" size={24} />
-              <div>{activeItem.provider_name}</div>
+              <div>{activeItem.providerName}</div>
             </div>
             <div className="flex items-center justify-around gap-4">
               {activeItem.status !== '未配置' ? (
@@ -170,12 +170,12 @@ export const Metadata = () => {
               ) : (
                 <Tag color="red">{activeItem.status}</Tag>
               )}
-              {activeItem.is_aux_search_enabled ? (
+              {activeItem.isAuxSearchEnabled ? (
                 <Tag color="green">已启用</Tag>
               ) : (
                 <Tag color="red">未启用</Tag>
               )}
-              {activeItem.provider_name !== 'tmdb' ? (
+              {activeItem.providerName !== 'tmdb' ? (
                 <div>
                   <MyIcon icon="exchange" size={24} />
                 </div>

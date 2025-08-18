@@ -68,10 +68,10 @@ const SortableItem = ({
           <div {...listeners} style={{ cursor: 'grab' }}>
             <MyIcon icon="drag" size={24} />
           </div>
-          <div>{item.provider_name}</div>
+          <div>{item.providerName}</div>
         </div>
         <div className="flex items-center justify-around gap-4">
-          {item.provider_name === 'bilibili' && (
+          {item.providerName === 'bilibili' && (
             <div>
               {biliUserinfo.isLogin ? (
                 <div className="flex items-center justify-start gap-2">
@@ -89,7 +89,7 @@ const SortableItem = ({
           <div onClick={handleConfig} className="cursor-pointer">
             <MyIcon icon="setting" size={24} />
           </div>
-          {item.is_enabled ? (
+          {item.isEnabled ? (
             <Tag color="green">已启用</Tag>
           ) : (
             <Tag color="red">未启用</Tag>
@@ -152,10 +152,10 @@ export const Scrapers = () => {
 
     // 找到原位置和新位置
     const activeIndex = list.findIndex(
-      item => item.provider_name === active.data.current.item.provider_name
+      item => item.providerName === active.data.current.item.providerName
     )
     const overIndex = list.findIndex(
-      item => item.provider_name === over.data.current.item.provider_name
+      item => item.providerName === over.data.current.item.providerName
     )
 
     if (activeIndex !== -1 && overIndex !== -1) {
@@ -167,7 +167,7 @@ export const Scrapers = () => {
       // 2. 重新计算所有项的display_order（从1开始连续编号）
       const updatedList = newList.map((item, index) => ({
         ...item,
-        display_order: index + 1, // 排序值从1开始
+        displayOrder: index + 1, // 排序值从1开始
       }))
 
       // 3. 更新状态
@@ -175,7 +175,7 @@ export const Scrapers = () => {
       setList(updatedList)
       setScrapers(updatedList)
       message.success(
-        `已更新排序，${movedItem.provider_name} 移动到位置 ${overIndex + 1}`
+        `已更新排序，${movedItem.providerName} 移动到位置 ${overIndex + 1}`
       )
     }
 
@@ -194,10 +194,10 @@ export const Scrapers = () => {
 
   const handleChangeStatus = item => {
     const newList = list.map(it => {
-      if (it.provider_name === item.provider_name) {
+      if (it.providerName === item.providerName) {
         return {
           ...it,
-          is_enabled: Number(!it.is_enabled),
+          isEnabled: Number(!it.isEnabled),
         }
       } else {
         return it
@@ -209,21 +209,22 @@ export const Scrapers = () => {
 
   const handleConfig = async item => {
     const res = await getSingleScraper({
-      name: item.provider_name,
+      name: item.providerName,
     })
     setOpen(true)
-    setSetname(item.provider_name)
+    setSetname(item.providerName)
+    const setNameCapitalize = `${item.providerName.charAt(0).toUpperCase()}${item.providerName.slice(1)}`
     form.setFieldsValue({
-      [`scraper_${item.provider_name}_log_responses`]:
-        res.data?.[`scraper_${item.provider_name}_log_responses`] === 'true'
+      [`scraper${setNameCapitalize}LogResponses`]:
+        res.data?.[`scraper${setNameCapitalize}LogResponses`] === 'true'
           ? true
           : false,
-      [`${item.provider_name}_episode_blacklist_regex`]:
-        res.data?.[`${item.provider_name}_episode_blacklist_regex`] || '',
-      [`${item.provider_name}_cookie`]:
-        res.data?.[`${item.provider_name}_cookie`] ?? undefined,
-      [`${item.provider_name}_user_agent`]:
-        res.data?.[`${item.provider_name}_user_agent`] ?? undefined,
+      [`${item.providerName}EpisodeBlacklistRegex`]:
+        res.data?.[`${item.providerName}EpisodeBlacklistRegex`] || '',
+      [`${item.providerName}Cookie`]:
+        res.data?.[`${item.providerName}Cookie`] ?? undefined,
+      [`${item.providerName}UserAgent`]:
+        res.data?.[`${item.providerName}UserAgent`] ?? undefined,
     })
   }
 
@@ -231,14 +232,14 @@ export const Scrapers = () => {
     try {
       setConfirmLoading(true)
       const values = await form.validateFields()
-      console.log(values[`scraper_${setname}_log_responses`], '111111')
+      const setNameCapitalize = `${setname.charAt(0).toUpperCase()}${setname.slice(1)}`
       const status =
-        values[`scraper_${setname}_log_responses`] === 'on'
+        values[`scraper${setNameCapitalize}LogResponses`] === 'on'
           ? 'true'
-          : values[`scraper_${setname}_log_responses`]?.toString()
+          : values[`scraper${setNameCapitalize}LogResponses`]?.toString()
       await setSingleScraper({
         ...values,
-        [`scraper_${setname}_log_responses`]: status,
+        [`scraper${setNameCapitalize}LogResponses`]: status,
         name: setname,
       })
       message.success('保存成功')
@@ -255,7 +256,7 @@ export const Scrapers = () => {
   const startBiliLoginPoll = data => {
     timer.current = window.setInterval(() => {
       pollBiliLogin({
-        qrcode_key: data.qrcode_key,
+        qrcodeKey: data.qrcodeKey,
       })
         .then(res => {
           if (res.data.code === 86038) {
@@ -336,11 +337,11 @@ export const Scrapers = () => {
           <div className="w-full flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MyIcon icon="drag" size={24} />
-              <div>{activeItem.provider_name}</div>
+              <div>{activeItem.providerName}</div>
             </div>
             <div className="flex items-center justify-around gap-4">
               <MyIcon icon="setting" size={24} />
-              {activeItem.is_enabled ? (
+              {activeItem.isEnabled ? (
                 <Tag color="green">已启用</Tag>
               ) : (
                 <Tag color="red">未启用</Tag>
@@ -395,14 +396,14 @@ export const Scrapers = () => {
           {setname === 'gamer' && (
             <>
               <Form.Item
-                name={`${setname}_cookie`}
+                name={`${setname}Cookie`}
                 label="Cookie"
                 className="mb-4"
               >
                 <Input.TextArea />
               </Form.Item>
               <Form.Item
-                name={`${setname}_user_agent`}
+                name={`${setname}UserAgent`}
                 label="User-Agent"
                 className="mb-4"
               >
@@ -412,7 +413,7 @@ export const Scrapers = () => {
           )}
           {/* 通用部分 分集标题黑名单 记录原始响应 */}
           <Form.Item
-            name={`${setname}_episode_blacklist_regex`}
+            name={`${setname}EpisodeBlacklistRegex`}
             label="分集标题黑名单 (正则)"
             className="mb-4"
           >
@@ -420,7 +421,7 @@ export const Scrapers = () => {
           </Form.Item>
           <div className="flex items-center justify-start gap-4 mb-4">
             <Form.Item
-              name={`scraper_${setname}_log_responses`}
+              name={`scraper${setname.charAt(0).toUpperCase()}${setname.slice(1)}LogResponses`}
               label="记录原始响应"
               valuePropName="checked"
               className="min-w-[100px] shrink-0"

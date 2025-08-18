@@ -137,12 +137,12 @@ export const Token = () => {
     {
       title: '状态',
       width: 100,
-      dataIndex: 'is_enabled',
-      key: 'is_enabled',
+      dataIndex: 'isEnabled',
+      key: 'isEnabled',
       render: (_, record) => {
         return (
           <div>
-            {record.is_enabled ? (
+            {record.isEnabled ? (
               <Tag color="green">启用</Tag>
             ) : (
               <Tag color="red">禁用</Tag>
@@ -153,25 +153,25 @@ export const Token = () => {
     },
     {
       title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 200,
       render: (_, record) => {
         return (
-          <div>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</div>
+          <div>{dayjs(record.createdAt).format('YYYY-MM-DD HH:mm:ss')}</div>
         )
       },
     },
     {
       title: '有效期',
-      dataIndex: 'expires_at',
-      key: 'expires_at',
+      dataIndex: 'expiresAt',
+      key: 'expiresAt',
       width: 200,
       render: (_, record) => {
         return (
           <div>
-            {!!record.expires_at
-              ? dayjs(record.expires_at).format('YYYY-MM-DD HH:mm:ss')
+            {!!record.expiresAt
+              ? dayjs(record.expiresAt).format('YYYY-MM-DD HH:mm:ss')
               : '永久'}
           </div>
         )
@@ -206,7 +206,7 @@ export const Token = () => {
               }}
             >
               <div>
-                {record.is_enabled ? (
+                {record.isEnabled ? (
                   <MyIcon icon="pause" size={20}></MyIcon>
                 ) : (
                   <MyIcon icon="start" size={20}></MyIcon>
@@ -228,19 +228,19 @@ export const Token = () => {
   const logsColumns = [
     {
       title: '访问时间',
-      dataIndex: 'access_time',
-      key: 'access_time',
+      dataIndex: 'accessTime',
+      key: 'accessTime',
       width: 200,
       render: (_, record) => {
         return (
-          <div>{dayjs(record.access_time).format('YYYY-MM-DD HH:mm:ss')}</div>
+          <div>{dayjs(record.accessTime).format('YYYY-MM-DD HH:mm:ss')}</div>
         )
       },
     },
     {
       title: 'IP地址',
-      dataIndex: 'ip_address',
-      key: 'ip_address',
+      dataIndex: 'ipAddress',
+      key: 'ipAddress',
       width: 150,
     },
     {
@@ -257,8 +257,8 @@ export const Token = () => {
     },
     {
       title: 'User-Agent',
-      dataIndex: 'user_agent',
-      key: 'user_agent',
+      dataIndex: 'userAgent',
+      key: 'userAgent',
       width: 400,
     },
   ]
@@ -298,7 +298,7 @@ export const Token = () => {
           form={form}
           layout="vertical"
           initialValues={{
-            validity_period: 'permanent',
+            validityPeriod: 'permanent',
           }}
         >
           <Form.Item
@@ -310,7 +310,7 @@ export const Token = () => {
             <Input placeholder="例如：我的dandanplay客户端" />
           </Form.Item>
           <Form.Item
-            name="validity_period"
+            name="validityPeriod"
             label="有效期"
             rules={[{ required: true, message: '请选择有效期' }]}
             className="mb-4"
@@ -344,7 +344,7 @@ export const Token = () => {
           size="small"
           dataSource={tokenLogs}
           columns={logsColumns}
-          rowKey={'access_time'}
+          rowKey={'accessTime'}
           scroll={{
             x: '100%',
             y: 400,

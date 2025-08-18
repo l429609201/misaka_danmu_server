@@ -259,7 +259,7 @@ export const getAnimeSource = data =>
 /** 关联数据源 */
 export const setAnimeSource = data =>
   api.post(`/api/ui/library/anime/${data.sourceAnimeId}/reassociate`, {
-    target_anime_id: data.targetAnimeId,
+    targetAnimeId: data.targetAnimeId,
   })
 
 /** 批量删除数据源 */
@@ -292,10 +292,10 @@ export const getEpisodes = data =>
 
 /** 编辑分集信息 */
 export const editEpisode = data =>
-  api.put(`/api/ui/library/episode/${data.episode_id}`, data)
+  api.put(`/api/ui/library/episode/${data.episodeId}`, data)
 /** 手动导入集 */
 export const manualImportEpisode = data =>
-  api.post(`/api/ui/library/source/${data.source_id}/manual-import`, data)
+  api.post(`/api/ui/library/source/${data.sourceId}/manual-import`, data)
 
 /** 批量删除集 */
 export const deleteAnimeEpisode = data =>

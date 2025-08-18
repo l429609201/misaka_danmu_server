@@ -54,28 +54,28 @@ export const ScheduleTask = () => {
     },
     {
       title: '类型',
-      dataIndex: 'job_type',
-      key: 'job_type',
+      dataIndex: 'jobType',
+      key: 'jobType',
       width: 200,
       render: (_, record) => {
-        return <>{SCHEDULED_TYPE_MAPPING[record.job_type]}</>
+        return <>{SCHEDULED_TYPE_MAPPING[record.jobType]}</>
       },
     },
     {
       title: 'Cron表达式',
       width: 100,
-      dataIndex: 'cron_expression',
-      key: 'cron_expression',
+      dataIndex: 'cronExpression',
+      key: 'cronExpression',
     },
     {
       title: '状态',
-      dataIndex: 'is_enabled',
-      key: 'is_enabled',
+      dataIndex: 'isEnabled',
+      key: 'isEnabled',
       width: 100,
       render: (_, record) => {
         return (
           <div>
-            {record.is_enabled ? (
+            {record.isEnabled ? (
               <Tag color="green">启用</Tag>
             ) : (
               <Tag color="red">禁用</Tag>
@@ -86,23 +86,23 @@ export const ScheduleTask = () => {
     },
     {
       title: '上次运行时间',
-      dataIndex: 'last_run_at',
-      key: 'last_run_at',
+      dataIndex: 'lastRunAt',
+      key: 'lastRunAt',
       width: 200,
       render: (_, record) => {
         return (
-          <div>{dayjs(record.last_run_at).format('YYYY-MM-DD HH:mm:ss')}</div>
+          <div>{dayjs(record.lastRunAt).format('YYYY-MM-DD HH:mm:ss')}</div>
         )
       },
     },
     {
       title: '下次运行时间',
-      dataIndex: 'next_run_at',
-      key: 'next_run_at',
+      dataIndex: 'nextRunAt',
+      key: 'nextRunAt',
       width: 200,
       render: (_, record) => {
         return (
-          <div>{dayjs(record.next_run_at).format('YYYY-MM-DD HH:mm:ss')}</div>
+          <div>{dayjs(record.nextRunAt).format('YYYY-MM-DD HH:mm:ss')}</div>
         )
       },
     },
@@ -238,8 +238,8 @@ export const ScheduleTask = () => {
           form={form}
           layout="vertical"
           initialValues={{
-            job_type: 'tmdb_auto_map',
-            is_enabled: true,
+            jobType: 'tmdbAutoMap',
+            isEnabled: true,
           }}
         >
           <Form.Item
@@ -251,25 +251,22 @@ export const ScheduleTask = () => {
             <Input placeholder="例如：我的每日TMDB更新" />
           </Form.Item>
           <Form.Item
-            name="job_type"
+            name="jobType"
             label="任务类型"
             rules={[{ required: true, message: '请选择有效期' }]}
             className="mb-4"
           >
             <Select
-              onChange={value => {
-                form.setFieldsValue({ job_type: value })
-              }}
               options={[
                 {
-                  value: 'tmdb_auto_map',
-                  label: SCHEDULED_TYPE_MAPPING['tmdb_auto_map'],
+                  value: 'tmdbAutoMap',
+                  label: SCHEDULED_TYPE_MAPPING['tmdbAutoMap'],
                 },
               ]}
             />
           </Form.Item>
           <Form.Item
-            name="cron_expression"
+            name="cronExpression"
             label="Corn表达式"
             rules={[{ required: true, message: '请输入Corn表达式' }]}
             className="mb-4"
@@ -277,15 +274,12 @@ export const ScheduleTask = () => {
             <Input placeholder="例如：0 2 * * *（每天凌晨2点）" />
           </Form.Item>
           <Form.Item
-            name="is_enabled"
+            name="isEnabled"
             label="是否启用"
             rules={[{ required: true, message: '请选择启用状态' }]}
             className="mb-4"
           >
             <Select
-              onChange={value => {
-                form.setFieldsValue({ is_enabled: value })
-              }}
               options={[
                 { value: true, label: '启用' },
                 { value: false, label: '禁用' },

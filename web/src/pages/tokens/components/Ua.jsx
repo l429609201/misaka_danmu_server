@@ -33,18 +33,18 @@ export const Ua = () => {
   const columns = [
     {
       title: 'UA字符串',
-      dataIndex: 'ua_string',
-      key: 'ua_string',
+      dataIndex: 'uaString',
+      key: 'uaString',
       width: 150,
     },
     {
       title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 200,
       render: (_, record) => {
         return (
-          <div>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</div>
+          <div>{dayjs(record.createdAt).format('YYYY-MM-DD HH:mm:ss')}</div>
         )
       },
     },
@@ -91,7 +91,7 @@ export const Ua = () => {
     Modal.confirm({
       title: '删除',
       zIndex: 1002,
-      content: <div>您确定要删除{record.ua_string}吗？</div>,
+      content: <div>您确定要删除{record.uaString}吗？</div>,
       okText: '确认',
       cancelText: '取消',
       onOk: async () => {
@@ -118,7 +118,7 @@ export const Ua = () => {
       }
       setAddLoading(true)
       await addUaRule({
-        ua_string: uakeyword,
+        uaString: uakeyword,
       })
     } catch (error) {
       message.error('添加失败')

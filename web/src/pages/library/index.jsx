@@ -47,7 +47,7 @@ export const Library = () => {
   const [editOpen, setEditOpen] = useState(false)
   const [confirmLoading, setConfirmLoading] = useState(false)
   const title = Form.useWatch('title', form)
-  const tmdbId = Form.useWatch('tmdb_id', form)
+  const tmdbId = Form.useWatch('tmdbId', form)
   const type = Form.useWatch('type', form)
 
   const getList = async () => {
@@ -223,8 +223,8 @@ export const Library = () => {
       const values = await form.validateFields()
       await setAnimeDetail({
         ...values,
-        tmdb_id: values.tmdb_id ? `${values.tmdb_id}` : null,
-        tvdb_id: values.tmvb_id ? `${values.tmvb_id}` : null,
+        tmdbId: values.tmdbId ? `${values.tmdbId}` : null,
+        tvdbId: values.tvdbId ? `${values.tvdbId}` : null,
       })
       getList()
       message.success('信息更新成功')
@@ -490,7 +490,7 @@ export const Library = () => {
               placeholder="留空则自动计算"
             />
           </Form.Item>
-          <Form.Item name="tmdb_id" label="TMDB ID">
+          <Form.Item name="tmdbId" label="TMDB ID">
             <Input.Search
               placeholder="例如：1396"
               allowClear
@@ -501,7 +501,7 @@ export const Library = () => {
               }}
             />
           </Form.Item>
-          <Form.Item name="tmdb_episode_group_id" label="剧集组ID">
+          <Form.Item name="tmdbEpisodeGroupId" label="剧集组ID">
             <Input.Search
               placeholder="TMDB Episode Group Id"
               allowClear
@@ -513,7 +513,7 @@ export const Library = () => {
               disabled={type === DANDAN_TYPE_MAPPING.movie || !tmdbId}
             />
           </Form.Item>
-          <Form.Item name="bangumi_id" label="BGM ID">
+          <Form.Item name="bangumiId" label="BGM ID">
             <Input.Search
               placeholder="例如：296100"
               allowClear
@@ -524,7 +524,7 @@ export const Library = () => {
               }}
             />
           </Form.Item>
-          <Form.Item name="tvdb_id" label="TVDB ID">
+          <Form.Item name="tvdbId" label="TVDB ID">
             <Input.Search
               placeholder="例如：364093"
               allowClear
@@ -535,7 +535,7 @@ export const Library = () => {
               }}
             />
           </Form.Item>
-          <Form.Item name="douban_id" label="豆瓣ID">
+          <Form.Item name="doubanId" label="豆瓣ID">
             <Input.Search
               placeholder="例如：35297708"
               allowClear
@@ -546,7 +546,7 @@ export const Library = () => {
               }}
             />
           </Form.Item>
-          <Form.Item name="imdb_id" label="IMDB ID">
+          <Form.Item name="imdbId" label="IMDB ID">
             <Input.Search
               placeholder="例如：tt9140554"
               allowClear
@@ -557,22 +557,22 @@ export const Library = () => {
               }}
             />
           </Form.Item>
-          <Form.Item name="name_en" label="英文名">
+          <Form.Item name="nameEn" label="英文名">
             <Input />
           </Form.Item>
-          <Form.Item name="name_jp" label="日文名">
+          <Form.Item name="nameJp" label="日文名">
             <Input />
           </Form.Item>
-          <Form.Item name="name_romaji" label="罗马音">
+          <Form.Item name="nameRomaji" label="罗马音">
             <Input />
           </Form.Item>
-          <Form.Item name="alias_cn_1" label="中文别名1">
+          <Form.Item name="aliasCn1" label="中文别名1">
             <Input />
           </Form.Item>
-          <Form.Item name="alias_cn_2" label="中文别名2">
+          <Form.Item name="aliasCn2" label="中文别名2">
             <Input />
           </Form.Item>
-          <Form.Item name="alias_cn_3" label="中文别名3">
+          <Form.Item name="aliasCn3" label="中文别名3">
             <Input />
           </Form.Item>
           <Form.Item name="animeId" hidden>
@@ -599,7 +599,7 @@ export const Library = () => {
               <List.Item key={index}>
                 <div className="flex justify-between items-center">
                   <div className="flex items-center justify-start">
-                    <img width={60} alt="logo" src={item.image_url} />
+                    <img width={60} alt="logo" src={item.imageUrl} />
                     <div className="ml-4">
                       <div className="text-xl font-bold mb-3">{item.name}</div>
                       <div>ID: {item.id}</div>
@@ -614,17 +614,17 @@ export const Library = () => {
                           tmdbId: item.id,
                         })
                         form.setFieldsValue({
-                          tmdb_id: res.data.id,
-                          tvdb_id: res.data.tvdb_id,
-                          imdb_id: res.data.imdb_id,
-                          name_en: res.data.name_en,
-                          name_jp: containsJapanese(res.data.name_jp)
-                            ? res.data.name_jp
+                          tmdbId: res.data.id,
+                          tvdbId: res.data.tvdbId,
+                          imdbId: res.data.imdbId,
+                          nameEn: res.data.nameEn,
+                          nameJp: containsJapanese(res.data?.nameJp)
+                            ? res.data?.nameJp
                             : null,
-                          name_romaji: res.data.name_romaji,
-                          alias_cn_1: res.data.aliases_cn?.[1] ?? null,
-                          aliases_cn_2: res.data.aliases_cn?.[2] ?? null,
-                          alias_cn_3: res.data.aliases_cn?.[3] ?? null,
+                          nameRomaji: res.data?.nameRomaji ?? null,
+                          aliasCn1: res.data?.aliasesCn?.[1] ?? null,
+                          aliasCn2: res.data?.aliasesCn?.[2] ?? null,
+                          aliasCn3: res.data?.aliasesCn?.[3] ?? null,
                         })
                         setTmdbOpen(false)
                       }}
@@ -657,7 +657,7 @@ export const Library = () => {
               <List.Item key={index}>
                 <div className="flex justify-between items-center">
                   <div className="flex items-center justify-start">
-                    <img width={60} alt="logo" src={item.image_url} />
+                    <img width={60} alt="logo" src={item.imageUrl} />
                     <div className="ml-4">
                       <div className="text-xl font-bold mb-3">{item.title}</div>
                       <div>ID: {item.id}</div>
@@ -672,13 +672,13 @@ export const Library = () => {
                           imdbId: item.id,
                         })
                         form.setFieldsValue({
-                          imdb_id: res.data.id,
-                          name_jp: containsJapanese(res.data.name_jp)
-                            ? res.data.name_jp
+                          imdbId: res.data.id,
+                          nameJp: containsJapanese(res.data?.nameJp)
+                            ? res.data?.nameJp
                             : null,
-                          alias_cn_1: res.data.aliases_cn?.[1] ?? null,
-                          aliases_cn_2: res.data.aliases_cn?.[2] ?? null,
-                          alias_cn_3: res.data.aliases_cn?.[3] ?? null,
+                          aliasCn1: res.data?.aliasesCn?.[1] ?? null,
+                          aliasCn2: res.data?.aliasesCn?.[2] ?? null,
+                          aliasCn3: res.data?.aliasesCn?.[3] ?? null,
                         })
                         setImdbOpen(false)
                       }}
@@ -711,7 +711,7 @@ export const Library = () => {
               <List.Item key={index}>
                 <div className="flex justify-between items-center">
                   <div className="flex items-center justify-start">
-                    <img width={60} alt="logo" src={item.image_url} />
+                    <img width={60} alt="logo" src={item.imageUrl} />
                     <div className="ml-4">
                       <div className="text-xl font-bold mb-3">{item.title}</div>
                       <div>ID: {item.id}</div>
@@ -726,16 +726,16 @@ export const Library = () => {
                           tvdbId: item.id,
                         })
                         form.setFieldsValue({
-                          tvdb_id: res.data.id,
-                          imdb_id: res.data.imdb_id,
-                          name_en: res.data.name_en,
-                          name_jp: containsJapanese(res.data?.name_jp)
-                            ? res.data?.name_jp
+                          tvdbId: res.data.id,
+                          imdbId: res.data.imdbId,
+                          nameEn: res.data.nameEn,
+                          nameJp: containsJapanese(res.data?.nameJp)
+                            ? res.data?.nameJp
                             : null,
-                          name_romaji: res.data?.name_romaji ?? null,
-                          alias_cn_1: res.data?.aliases_cn?.[1] ?? null,
-                          alias_cn_2: res.data?.aliases_cn?.[2] ?? null,
-                          alias_cn_3: res.data?.aliases_cn?.[3] ?? null,
+                          nameRomaji: res.data?.nameRomaji ?? null,
+                          aliasCn1: res.data?.aliasesCn?.[1] ?? null,
+                          aliasCn2: res.data?.aliasesCn?.[2] ?? null,
+                          aliasCn3: res.data?.aliasesCn?.[3] ?? null,
                         })
                         setTvdbOpen(false)
                       }}
@@ -768,10 +768,10 @@ export const Library = () => {
               <List.Item key={index}>
                 <div className="flex justify-between items-center">
                   <div className="flex items-center justify-start">
-                    <img width={60} alt="logo" src={item.image_url} />
+                    <img width={60} alt="logo" src={item.imageUrl} />
                     <div className="ml-4">
                       <div className="text-xl font-bold mb-3">
-                        {item.name} ({item.group_count} 组, {item.episode_count}{' '}
+                        {item.name} ({item.groupCount} 组, {item.episodeCount}{' '}
                         集)
                       </div>
                       <div>{item.description || '无描述'}</div>
@@ -783,7 +783,7 @@ export const Library = () => {
                       size="small"
                       onClick={() => {
                         form.setFieldsValue({
-                          tmdb_episode_group_id: item.id,
+                          tmdbEpisodeGroupId: item.id,
                         })
                         setEgidOpen(false)
                       }}
@@ -829,8 +829,8 @@ export const Library = () => {
                   return (
                     <div key={i}>
                       第{ep.order + 1}集（绝对：S
-                      {ep.season_number.toString().padStart(2, '0')}E
-                      {ep.episode_number.toString().padStart(2, '0')}）|
+                      {ep.seasonNumber.toString().padStart(2, '0')}E
+                      {ep.episodeNumber.toString().padStart(2, '0')}）|
                       {ep.name || '无标题'}`
                     </div>
                   )
@@ -859,7 +859,7 @@ export const Library = () => {
               <List.Item key={index}>
                 <div className="flex justify-between items-center">
                   <div className="flex items-center justify-start">
-                    <img width={60} alt="logo" src={item.image_url} />
+                    <img width={60} alt="logo" src={item.imageUrl} />
                     <div className="ml-4">
                       <div className="text-xl font-bold mb-3">{item.name}</div>
                       <div>ID: {item.id}</div>
@@ -870,15 +870,15 @@ export const Library = () => {
                       type="primary"
                       onClick={async () => {
                         form.setFieldsValue({
-                          bangumi_id: item.id,
-                          name_en: item.name_en,
-                          name_jp: containsJapanese(item.name_jp)
-                            ? item.name_jp
+                          bangumiId: item.id,
+                          nameEn: item.nameEn,
+                          nameJp: containsJapanese(item.nameJp)
+                            ? item.nameJp
                             : null,
-                          name_romaji: item.name_romaji,
-                          alias_cn_1: item.aliases_cn?.[1] ?? null,
-                          alias_cn_2: item.aliases_cn?.[2] ?? null,
-                          alias_cn_3: item.aliases_cn?.[3] ?? null,
+                          nameRomaji: item.nameRomaji,
+                          aliasCn1: item.aliasesCn?.[1] ?? null,
+                          aliasCn2: item.aliasesCn?.[2] ?? null,
+                          aliasCn3: item.aliasesCn?.[3] ?? null,
                         })
                         setBgmOpen(false)
                       }}
@@ -911,7 +911,7 @@ export const Library = () => {
               <List.Item key={index}>
                 <div className="flex justify-between items-center">
                   <div className="flex items-center justify-start">
-                    <img width={60} alt="logo" src={item.image_url} />
+                    <img width={60} alt="logo" src={item.imageUrl} />
                     <div className="ml-4">
                       <div className="text-xl font-bold mb-3">{item.title}</div>
                       <div>ID: {item.id}</div>
@@ -926,21 +926,21 @@ export const Library = () => {
                           doubanId: item.id,
                         })
                         console.log(
-                          res.data.aliases_cn,
-                          res.data.aliases_cn?.[1] ?? null,
-                          ' res.data.aliases_cn'
+                          res.data.aliasesCn,
+                          res.data.aliasesCn?.[1] ?? null,
+                          ' res.data.aliasesCn'
                         )
                         form.setFieldsValue({
-                          douban_id: res.data.id,
-                          imdb_id: res.data.imdb_id,
-                          name_en: res.data.name_en,
-                          name_jp: containsJapanese(res.data.name_jp)
-                            ? res.data.name_jp
+                          doubanId: res.data.id,
+                          imdbId: res.data.imdbId,
+                          nameEn: res.data.nameEn,
+                          nameJp: containsJapanese(res.data.nameJp)
+                            ? res.data.nameJp
                             : null,
-                          name_romaji: res.data.name_romaji,
-                          alias_cn_1: res.data.aliases_cn?.[1] ?? null,
-                          alias_cn_2: res.data.aliases_cn?.[2] ?? null,
-                          alias_cn_3: res.data.aliases_cn?.[3] ?? null,
+                          nameRomaji: res.data.nameRomaji,
+                          aliasCn1: res.data.aliasesCn?.[1] ?? null,
+                          aliasCn2: res.data.aliasesCn?.[2] ?? null,
+                          aliasCn3: res.data.aliasesCn?.[3] ?? null,
                         })
                         setDoubanOpen(false)
                       }}

@@ -29,7 +29,7 @@ export const TVDB = () => {
       setIsSaveLoading(true)
       const values = await form.validateFields()
       await setTvdbConfig({
-        value: values.tvdb_api_key,
+        value: values.tvdbApiKey,
       })
       setIsSaveLoading(false)
       message.success('保存成功')
@@ -45,7 +45,11 @@ export const TVDB = () => {
       <Card loading={loading} title="TVDB API 配置">
         <div className="mb-4">
           此项目需要 TheTVDB V4 API Key。您可以从{' '}
-          <a href="https://thetvdb.com/subscribe" target="_blank">
+          <a
+            href="https://thetvdb.com/subscribe"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             TheTVDB官网
           </a>{' '}
           获取您自己的 Key。
@@ -56,10 +60,10 @@ export const TVDB = () => {
           onFinish={handleSave}
           className="px-6 pb-6"
           initialValues={{
-            tvdb_api_key: apikey,
+            tvdbApiKey: apikey,
           }}
         >
-          <Form.Item name="tvdb_api_key" label="API Key" className="mb-6">
+          <Form.Item name="tvdbApiKey" label="API Key" className="mb-6">
             <Input.Password
               prefix={<LockOutlined className="text-gray-400" />}
               placeholder="请输入API Key (v3)"

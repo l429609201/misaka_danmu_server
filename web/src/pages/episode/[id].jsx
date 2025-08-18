@@ -81,41 +81,45 @@ export const EpisodeDetail = () => {
     },
     {
       title: '集数',
-      dataIndex: 'episode_index',
-      key: 'episode_index',
+      dataIndex: 'episodeIndex',
+      key: 'episodeIndex',
       width: 60,
       sorter: {
-        compare: (a, b) => a.episode_index - b.episode_index,
+        compare: (a, b) => a.episodeIndex - b.episodeIndex,
         multiple: 1,
       },
     },
     {
       title: '弹幕数',
-      dataIndex: 'comment_count',
-      key: 'comment_count',
+      dataIndex: 'commentCount',
+      key: 'commentCount',
       width: 60,
     },
 
     {
       title: '采集时间',
-      dataIndex: 'fetched_at',
-      key: 'fetched_at',
+      dataIndex: 'fetchedAt',
+      key: 'fetchedAt',
       width: 200,
       render: (_, record) => {
         return (
-          <div>{dayjs(record.fetched_at).format('YYYY-MM-DD HH:mm:ss')}</div>
+          <div>{dayjs(record.fetchedAt).format('YYYY-MM-DD HH:mm:ss')}</div>
         )
       },
     },
     {
       title: '官方链接',
-      dataIndex: 'source_url',
-      key: 'source_url',
+      dataIndex: 'sourceUrl',
+      key: 'sourceUrl',
       width: 100,
       render: (_, record) => {
         return (
           <div>
-            <a href={record.source_url} target="_blank">
+            <a
+              href={record.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               跳转
             </a>
           </div>
@@ -134,8 +138,8 @@ export const EpisodeDetail = () => {
               onClick={() => {
                 form.setFieldsValue({
                   ...record,
-                  episode_id: record.id,
-                  original_episode_index: record.episode_index,
+                  episodeId: record.id,
+                  originalEpisodeIndex: record.episodeIndex,
                 })
                 setEditOpen(true)
               }}
@@ -173,8 +177,8 @@ export const EpisodeDetail = () => {
   const keepColumns = [
     {
       title: '集数',
-      dataIndex: 'episode_index',
-      key: 'episode_index',
+      dataIndex: 'episodeIndex',
+      key: 'episodeIndex',
       width: 60,
     },
     {
@@ -185,8 +189,8 @@ export const EpisodeDetail = () => {
     },
     {
       title: '弹幕数',
-      dataIndex: 'comment_count',
-      key: 'comment_count',
+      dataIndex: 'commentCount',
+      key: 'commentCount',
       width: 60,
     },
   ]
@@ -207,7 +211,7 @@ export const EpisodeDetail = () => {
       onOk: async () => {
         try {
           const res = await deleteAnimeEpisode({
-            episode_ids: selectedRows?.map(it => it.id),
+            episodeIds: selectedRows?.map(it => it.id),
           })
           goTask(res)
         } catch (error) {
@@ -291,17 +295,17 @@ export const EpisodeDetail = () => {
       if (confirmLoading) return
       setConfirmLoading(true)
       const values = await form.validateFields()
-      if (values.episode_id) {
+      if (values.episodeId) {
         await editEpisode({
           ...values,
-          source_id: Number(id),
+          sourceId: Number(id),
         })
       } else {
         await manualImportEpisode({
           title: values.title,
-          episode_index: values.episode_index,
-          url: values.source_url,
-          source_id: Number(id),
+          episodeIndex: values.episodeIndex,
+          url: values.sourceUrl,
+          sourceId: Number(id),
         })
       }
       getDetail()
@@ -349,7 +353,7 @@ export const EpisodeDetail = () => {
       setResetLoading(true)
       const episodeIds = resetInfo?.toDelete?.map(ep => ep.id)
       await deleteAnimeEpisode({
-        episode_ids: Number(episodeIds),
+        episodeIds: Number(episodeIds),
       })
       await resetEpisode({
         sourceId: Number(id),
@@ -389,7 +393,7 @@ export const EpisodeDetail = () => {
             <Button
               onClick={() => {
                 const validCounts = episodeList
-                  .map(ep => Number(ep.comment_count))
+                  .map(ep => Number(ep.commentCount))
                   .filter(n => Number.isFinite(n) && n >= 0)
                 if (validCounts.length === 0) {
                   message.error('所有分集的弹幕数不可用。')
@@ -398,10 +402,10 @@ export const EpisodeDetail = () => {
                 const average =
                   validCounts.reduce((a, b) => a + b, 0) / validCounts.length
                 const toDelete = episodeList.filter(
-                  ep => Number(ep.comment_count) < average
+                  ep => Number(ep.commentCount) < average
                 )
                 const toKeep = episodeList.filter(
-                  ep => Number(ep.comment_count) >= average
+                  ep => Number(ep.commentCount) >= average
                 )
 
                 if (toDelete.length === 0) {
@@ -475,7 +479,7 @@ export const EpisodeDetail = () => {
             <Input placeholder="请输入分集标题" />
           </Form.Item>
           <Form.Item
-            name="episode_index"
+            name="episodeIndex"
             label="集数"
             rules={[{ required: true, message: '请输入集数' }]}
           >
@@ -485,16 +489,16 @@ export const EpisodeDetail = () => {
             />
           </Form.Item>
           <Form.Item
-            name="source_url"
+            name="sourceUrl"
             label="官方链接"
             rules={[{ required: true, message: '请输入官方链接' }]}
           >
             <Input placeholder="请输入官方链接" />
           </Form.Item>
-          <Form.Item name="episode_id" hidden>
+          <Form.Item name="episodeId" hidden>
             <Input />
           </Form.Item>
-          <Form.Item name="original_episode_index" hidden>
+          <Form.Item name="originalEpisodeIndex" hidden>
             <Input />
           </Form.Item>
         </Form>

@@ -114,15 +114,15 @@ export const SearchResult = () => {
       const res = await importDanmu(
         JSON.stringify({
           provider: item.provider,
-          media_id: item.mediaId,
-          anime_title: item.title,
+          mediaId: item.mediaId,
+          animeTitle: item.title,
           type: item.type,
           // 关键修正：如果用户搜索时指定了季度，则优先使用该季度
           // 否则，使用从单个结果中解析出的季度
           season: searchSeason !== null ? searchSeason : item.season,
-          image_url: item.imageUrl,
-          douban_id: item.douban_id,
-          current_episode_index: item.currentEpisodeIndex,
+          imageUrl: item.imageUrl,
+          doubanId: item.doubanId,
+          currentEpisodeIndex: item.currentEpisodeIndex,
         })
       )
       message.success(res.data.message || '导入成功')
@@ -141,7 +141,7 @@ export const SearchResult = () => {
         return
       }
       tmdbparams = {
-        tmdb_id: `${tmdbid}`,
+        tmdbId: `${tmdbid}`,
       }
     }
     Modal.confirm({
@@ -164,13 +164,13 @@ export const SearchResult = () => {
               return importDanmu(
                 JSON.stringify({
                   provider: item.provider,
-                  media_id: item.mediaId,
+                  mediaId: item.mediaId,
                   type: item.type,
                   season: item.season,
-                  image_url: item.imageUrl,
-                  douban_id: item.douban_id,
-                  current_episode_index: item.currentEpisodeIndex,
-                  anime_title: title ?? item.title,
+                  imageUrl: item.imageUrl,
+                  doubanId: item.doubanId,
+                  currentEpisodeIndex: item.currentEpisodeIndex,
+                  animeTitle: title ?? item.title,
                   ...tmdbparams,
                 })
               )
@@ -425,7 +425,7 @@ export const SearchResult = () => {
               <List.Item key={index}>
                 <div className="flex justify-between items-center">
                   <div className="flex items-center justify-start">
-                    <img width={60} alt="logo" src={item.image_url} />
+                    <img width={60} alt="logo" src={item.imageUrl} />
                     <div className="ml-4">
                       <div className="text-xl font-bold mb-3">{item.name}</div>
                       <div>ID: {item.id}</div>

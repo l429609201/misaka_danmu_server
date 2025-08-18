@@ -69,8 +69,7 @@ export const AnimeDetail = () => {
     try {
       const res = await getAnimeLibrary()
       const list =
-        res.data?.animes?.filter(it => it.animeId !== animeDetail.anime_id) ||
-        []
+        res.data?.animes?.filter(it => it.animeId !== animeDetail.animeId) || []
       setLibraryList(list)
       setRenderList(list)
       setEditOpen(true)
@@ -100,7 +99,7 @@ export const AnimeDetail = () => {
       onOk: async () => {
         try {
           await setAnimeSource({
-            sourceAnimeId: animeDetail.anime_id,
+            sourceAnimeId: animeDetail.animeId,
             targetAnimeId: item.animeId,
           })
           message.success('关联成功')
@@ -129,7 +128,7 @@ export const AnimeDetail = () => {
       onOk: async () => {
         try {
           const res = await deleteAnimeSource({
-            source_ids: selectedRows?.map(it => it.source_id),
+            sourceIds: selectedRows?.map(it => it.sourceId),
           })
           goTask(res)
         } catch (error) {
@@ -155,7 +154,7 @@ export const AnimeDetail = () => {
       onOk: async () => {
         try {
           const res = await deleteAnimeSourceSingle({
-            sourceId: record.source_id,
+            sourceId: record.sourceId,
           })
           goTask(res)
         } catch (error) {
@@ -181,7 +180,7 @@ export const AnimeDetail = () => {
       onOk: async () => {
         try {
           const res = await incrementalUpdate({
-            sourceId: record.source_id,
+            sourceId: record.sourceId,
           })
           goTask(res)
         } catch (error) {
@@ -203,7 +202,7 @@ export const AnimeDetail = () => {
       onOk: async () => {
         try {
           const res = await fullSourceUpdate({
-            sourceId: record.source_id,
+            sourceId: record.sourceId,
           })
           goTask(res)
         } catch (error) {
@@ -239,32 +238,32 @@ export const AnimeDetail = () => {
   const columns = [
     {
       title: '源提供方',
-      dataIndex: 'provider_name',
-      key: 'provider_name',
+      dataIndex: 'providerName',
+      key: 'providerName',
       width: 100,
     },
     {
       title: '媒体库ID',
-      dataIndex: 'media_id',
-      key: 'media_id',
+      dataIndex: 'mediaId',
+      key: 'mediaId',
       width: 200,
     },
     {
       title: '状态',
       width: 100,
-      dataIndex: 'is_favorited',
-      key: 'is_favorited',
+      dataIndex: 'isFavorited',
+      key: 'isFavorited',
       render: (_, record) => {
         return (
           <Space>
-            {record.is_favorited && (
+            {record.isFavorited && (
               <MyIcon
                 icon="favorites-fill"
                 size={20}
                 className="text-yellow-300"
               />
             )}
-            {record.incremental_refresh_enabled && (
+            {record.incrementalRefreshEnabled && (
               <MyIcon icon="clock" size={20} className="text-red-400" />
             )}
           </Space>
@@ -274,12 +273,12 @@ export const AnimeDetail = () => {
 
     {
       title: '收录时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 200,
       render: (_, record) => {
         return (
-          <div>{dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}</div>
+          <div>{dayjs(record.createdAt).format('YYYY-MM-DD HH:mm:ss')}</div>
         )
       },
     },
@@ -295,14 +294,14 @@ export const AnimeDetail = () => {
               onClick={async () => {
                 try {
                   await toggleSourceFavorite({
-                    sourceId: record.source_id,
+                    sourceId: record.sourceId,
                   })
                   setSourceList(list => {
                     return list.map(it => {
-                      if (it.source_id === record.source_id) {
+                      if (it.sourceId === record.sourceId) {
                         return {
                           ...it,
-                          is_favorited: !it.is_favorited,
+                          isFavorited: !it.isFavorited,
                         }
                       } else {
                         return it
@@ -314,7 +313,7 @@ export const AnimeDetail = () => {
                 }
               }}
             >
-              {record.is_favorited ? (
+              {record.isFavorited ? (
                 <MyIcon
                   icon="favorites-fill"
                   size={20}
@@ -329,15 +328,15 @@ export const AnimeDetail = () => {
               onClick={async () => {
                 try {
                   await toggleSourceIncremental({
-                    sourceId: record.source_id,
+                    sourceId: record.sourceId,
                   })
                   setSourceList(list => {
                     return list.map(it => {
-                      if (it.source_id === record.source_id) {
+                      if (it.sourceId === record.sourceId) {
                         return {
                           ...it,
-                          incremental_refresh_enabled:
-                            !it.incremental_refresh_enabled,
+                          incrementalRefreshEnabled:
+                            !it.incrementalRefreshEnabled,
                         }
                       } else {
                         return it
@@ -353,7 +352,7 @@ export const AnimeDetail = () => {
                 icon="clock"
                 size={20}
                 className={classNames({
-                  'text-red-400': record.incremental_refresh_enabled,
+                  'text-red-400': record.incrementalRefreshEnabled,
                 })}
               ></MyIcon>
             </span>
@@ -366,7 +365,7 @@ export const AnimeDetail = () => {
             <span
               className="cursor-pointer hover:text-primary"
               onClick={() => {
-                navigate(`/episode/${record.source_id}?animeId=${id}`)
+                navigate(`/episode/${record.sourceId}?animeId=${id}`)
               }}
             >
               <MyIcon icon="book" size={20}></MyIcon>
@@ -408,7 +407,7 @@ export const AnimeDetail = () => {
         <Row gutter={[12, 12]}>
           <Col md={20} xs={24}>
             <div className="flex items-center justify-start gap-4">
-              <img src={animeDetail.image_url} className="h-[100px]" />
+              <img src={animeDetail.imageUrl} className="h-[100px]" />
               <div>
                 <div className="text-xl font-bold mb-3">
                   {animeDetail.title}
@@ -452,7 +451,7 @@ export const AnimeDetail = () => {
               size="small"
               dataSource={soueceList}
               columns={columns}
-              rowKey={'source_id'}
+              rowKey={'sourceId'}
               scroll={{ x: '100%' }}
             />
           ) : (
@@ -468,7 +467,7 @@ export const AnimeDetail = () => {
         onCancel={() => setEditOpen(false)}
       >
         <div>
-          此操作会将 "{animeDetail.title}" (ID: {animeDetail.anime_id})
+          此操作会将 "{animeDetail.title}" (ID: {animeDetail.animeId})
           下的所有数据源移动到您选择的另一个作品条目下，然后删除原条目。
         </div>
         <div className="flex items-center justify-between my-4">

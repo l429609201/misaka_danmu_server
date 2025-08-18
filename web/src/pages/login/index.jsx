@@ -26,7 +26,7 @@ export const Login = () => {
 
       // console.log('登录信息:', res)
       navigate('/')
-      setStorage(DANMU_API_TOKEN_KEY, res.data.access_token)
+      setStorage(DANMU_API_TOKEN_KEY, res.data.accessToken)
       message.success('登录成功！')
     } catch (error) {
       console.error('登录失败:', error)

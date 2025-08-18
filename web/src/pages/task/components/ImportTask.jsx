@@ -52,7 +52,7 @@ export const ImportTask = () => {
   const [search, status] = useMemo(() => {
     return [
       searchParams.get('search') ?? '',
-      searchParams.get('status') ?? 'in_progress',
+      searchParams.get('status') ?? 'inProgress',
     ]
   }, [searchParams])
 
@@ -75,7 +75,7 @@ export const ImportTask = () => {
     if (isPause) {
       try {
         await Promise.all(
-          selectList.map(it => resumeTask({ taskId: it.task_id }))
+          selectList.map(it => resumeTask({ taskId: it.taskId }))
         )
       } catch (error) {
         message.error(`操作失败: ${error.message}`)
@@ -83,7 +83,7 @@ export const ImportTask = () => {
     } else {
       try {
         await Promise.all(
-          selectList.map(it => pauseTask({ taskId: it.task_id }))
+          selectList.map(it => pauseTask({ taskId: it.taskId }))
         )
       } catch (error) {
         message.error(`操作失败: ${error.message}`)
@@ -112,7 +112,7 @@ export const ImportTask = () => {
       onOk: async () => {
         try {
           await Promise.all(
-            selectList.map(it => deleteTask({ taskId: it.task_id }))
+            selectList.map(it => deleteTask({ taskId: it.taskId }))
           )
           setSelectList([])
           refreshTasks()
@@ -194,10 +194,10 @@ export const ImportTask = () => {
           </div>
           <div
             className={classNames('cursor-pointer px-3 py-1 rounded-full', {
-              'bg-primary': status === 'in_progress',
+              'bg-primary': status === 'inProgress',
             })}
             onClick={() => {
-              navigate(`/task?search=${search}&status=in_progress`, {
+              navigate(`/task?search=${search}&status=inProgress`, {
                 replace: true,
               })
             }}
@@ -213,7 +213,7 @@ export const ImportTask = () => {
               dataSource={taskList}
               renderItem={(item, index) => {
                 const isActive = selectList.some(
-                  it => it.task_id === item.task_id
+                  it => it.taskId === item.taskId
                 )
 
                 return (
@@ -230,8 +230,8 @@ export const ImportTask = () => {
                     }
                     onClick={() => {
                       setSelectList(list => {
-                        return list.map(it => it.task_id).includes(item.task_id)
-                          ? list.filter(i => i.task_id !== item.task_id)
+                        return list.map(it => it.taskId).includes(item.taskId)
+                          ? list.filter(i => i.taskId !== item.taskId)
                           : [...list, item]
                       })
                     }}
