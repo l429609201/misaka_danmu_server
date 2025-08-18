@@ -16,11 +16,12 @@ class ClientConfig(BaseModel):
     port: int = 5173
 
 class DatabaseConfig(BaseModel):
-    host: str = "117.147.37.7"
-    port: int = 3733
-    user: str = "danmuapi"
-    password: str = "jisi9Lnfr&CyJ4"
-    name: str = "danmuapi"
+    type: str = "mysql"
+    host: str = "127.0.0.1"
+    port: int = 3306
+    user: str = "root"
+    password: str = "password"
+    name: str = "danmaku_db"
 
 class JWTConfig(BaseModel):
     secret_key: str = "a_very_secret_key_that_should_be_changed"
