@@ -8,11 +8,17 @@ import httpx
 
 from .. import crud, models
 from .base import BaseJob
-from ..task_manager import TaskSuccess
+from ..task_manager import TaskManager, TaskSuccess
+from ..scraper_manager import ScraperManager
 
 class TmdbAutoMapJob(BaseJob):
     job_type = "tmdb_auto_map"
     job_name = "TMDB自动映射与更新"
+
+    # Add this __init__ to match the base class
+    def __init__(self, pool: aiomysql.Pool, task_manager: TaskManager, scraper_manager: ScraperManager):
+        super().__init__(pool, task_manager, scraper_manager)
+
 
     async def _create_tmdb_client(self) -> httpx.AsyncClient:
         """Non-FastAPI dependent version of get_tmdb_client."""

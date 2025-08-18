@@ -73,6 +73,7 @@ function populateEditForm(details) {
     document.getElementById('edit-anime-title').value = details.title;
     editAnimeTypeSelect.value = details.type;
     document.getElementById('edit-episode-original-index').value = details.episode_index;
+    document.getElementById('edit-anime-poster-url').value = details.image_url || '';
     document.getElementById('edit-anime-season').value = details.season;
     document.getElementById('edit-anime-episode-count').value = details.episode_count || '';
     editAnimeTmdbIdInput.value = details.tmdb_id || '';
@@ -100,6 +101,7 @@ async function handleEditAnimeSave(e) {
         title: document.getElementById('edit-anime-title').value,
         type: document.getElementById('edit-anime-type').value,
         season: parseInt(document.getElementById('edit-anime-season').value, 10),
+        image_url: document.getElementById('edit-anime-poster-url').value.trim() || null,
         episode_count: document.getElementById('edit-anime-episode-count').value ? parseInt(document.getElementById('edit-anime-episode-count').value, 10) : null,
         tmdb_id: document.getElementById('edit-anime-tmdbid').value || null,
         source_id: parseInt(sourceId, 10),
@@ -384,8 +386,14 @@ function renderTmdbSearchResults(results) {
         `;
         li.querySelector('.select-btn').addEventListener('click', async () => {
             const mediaType = document.getElementById('edit-anime-type').value === 'movie' ? 'movie' : 'tv';
+            const seasonInput = document.getElementById('edit-anime-season');
+            const season = seasonInput.value ? parseInt(seasonInput.value, 10) : null;
             try {
-                const details = await apiFetch(`/api/tmdb/details/${mediaType}/${result.id}`);
+                let apiUrl = `/api/tmdb/details/${mediaType}/${result.id}`;
+                if (season) {
+                    apiUrl += `?season=${season}`;
+                }
+                const details = await apiFetch(apiUrl);
                 details._source = 'tmdb';
                 details.main_title_from_search = result.name; // 将搜索时的主标题传递给详情对象
                 if (tmdbSearchView.dataset.source === 'bulk-import') {
@@ -812,6 +820,29 @@ async function handleEditEpisodeSave(e) {
     }
 }
 
+async function handleRefreshPoster() {
+    const animeId = document.getElementById('edit-anime-id').value;
+    const newUrl = document.getElementById('edit-anime-poster-url').value.trim();
+    if (!animeId || !newUrl) {
+        alert("请输入有效的海报URL。");
+        return;
+    }
+    const refreshBtn = document.getElementById('refresh-poster-btn');
+    refreshBtn.textContent = '...';
+    refreshBtn.disabled = true;
+    try {
+        await apiFetch(`/api/ui/library/anime/${animeId}/refresh-poster`, {
+            method: 'POST', body: JSON.stringify({ image_url: newUrl })
+        });
+        alert("海报已刷新并缓存成功！");
+    } catch (error) {
+        alert(`刷新海报失败: ${error.message}`);
+    } finally {
+        refreshBtn.textContent = '🔄';
+        refreshBtn.disabled = false;
+    }
+}
+
 export function setupEditAnimeEventListeners() {
     initializeElements();
     document.addEventListener('show:edit-anime', (e) => showEditAnimeView(e.detail.animeId));
@@ -834,6 +865,7 @@ export function setupEditAnimeEventListeners() {
         // After going back, we should refresh the library list
         document.dispatchEvent(new CustomEvent('viewchange', { detail: { viewId: 'library-view' } }));
     });
+    document.getElementById('refresh-poster-btn').addEventListener('click', handleRefreshPoster);
     document.getElementById('search-bgmid-btn').addEventListener('click', handleSearchBgmId);
     document.getElementById('search-tmdbid-btn').addEventListener('click', handleSearchTmdbId);
     document.getElementById('search-doubanid-btn').addEventListener('click', handleSearchDoubanId);

@@ -15,7 +15,6 @@ from fastapi.routing import APIRoute
 from . import crud, models
 from .database import get_db_pool
 from .scraper_manager import ScraperManager
-from .scrapers.acfun import AcfunScraper
 from .scrapers.bilibili import BilibiliScraper
 from .scrapers.iqiyi import IqiyiScraper
 from .scrapers.tencent import TencentScraper
@@ -24,7 +23,7 @@ from .scrapers.mgtv import MgtvScraper
 
 logger = logging.getLogger(__name__)
 
-# --- Module-level Constants for Type Mappings ---
+# --- Module-level Constants for Type Mappings and Parsing ---
 # To avoid repetition and improve maintainability.
 DANDAN_TYPE_MAPPING = {
     "tv_series": "tvseries", "movie": "movie", "ova": "ova", "other": "other"
@@ -32,6 +31,11 @@ DANDAN_TYPE_MAPPING = {
 DANDAN_TYPE_DESC_MAPPING = {
     "tv_series": "TV动画", "movie": "电影/剧场版", "ova": "OVA", "other": "其他"
 }
+# 新增：用于清理文件名中常见元数据关键词的正则表达式
+METADATA_KEYWORDS_PATTERN = re.compile(
+    r'1080p|720p|2160p|4k|bluray|x264|h\s*\.?\s*264|hevc|x265|h\s*\.?\s*265|aac|flac|web-dl|BDRip|WEBRip|TVRip|DVDrip|AVC|CHT|CHS|BIG5|GB|10bit|8bit',
+    re.IGNORECASE
+)
 
 # 这个子路由将包含所有接口的实际实现。
 # 它将被挂载到主路由的不同路径上。
@@ -382,7 +386,7 @@ def _parse_filename_for_match(filename: str) -> Optional[Dict[str, Any]]:
             title = data["title"]
             # 清理标题中的元数据
             title = re.sub(r'\[.*?\]|\(.*?\)|\【.*?\】', '', title).strip()
-            title = re.sub(r'1080p|720p|4k|bluray|x264|h\s*\.?\s*264|hevc|x265|h\s*\.?\s*265|aac|flac|web-dl|BDRip|WEBRip|TVRip|DVDrip|AVC|CHT|CHS|BIG5|GB', '', title, flags=re.IGNORECASE).strip()
+            title = METADATA_KEYWORDS_PATTERN.sub('', title).strip()
             title = title.replace("_", " ").replace(".", " ").strip()
             # 新增：移除标题中的年份并清理多余空格
             title = re.sub(r'\b(19|20)\d{2}\b', '', title).strip()
@@ -396,7 +400,7 @@ def _parse_filename_for_match(filename: str) -> Optional[Dict[str, Any]]:
     # 模式3: 电影或单文件视频 (没有集数)
     title = name_without_ext
     title = re.sub(r'\[.*?\]|\(.*?\)|\【.*?\】', '', title).strip()
-    title = re.sub(r'1080p|720p|4k|bluray|x264|h\s*\.?\s*264|hevc|x265|h\s*\.?\s*265|aac|flac|web-dl|BDRip|WEBRip|TVRip|DVDrip|AVC|CHT|CHS|BIG5|GB', '', title, flags=re.IGNORECASE).strip()
+    title = METADATA_KEYWORDS_PATTERN.sub('', title).strip()
     title = title.replace("_", " ").replace(".", " ").strip()
     # 移除年份, 兼容括号内和独立两种形式
     title = re.sub(r'\(\s*(19|20)\d{2}\s*\)', '', title).strip()
@@ -726,10 +730,27 @@ async def match_single_file(
     # 新增：对结果进行严格的标题过滤，避免模糊匹配带来的问题
     normalized_search_title = parsed_info["title"].replace("：", ":").replace(" ", "")
     if normalized_search_title:
-        exact_matches = [
-            r for r in results 
-            if r['animeTitle'].replace("：", ":").replace(" ", "").startswith(normalized_search_title)
-        ]
+        exact_matches = []
+        for r in results:
+            # 将主标题和所有别名都收集起来进行检查
+            all_titles_to_check = [
+                r.get('animeTitle'),
+                r.get('name_en'),
+                r.get('name_jp'),
+                r.get('name_romaji'),
+                r.get('alias_cn_1'),
+                r.get('alias_cn_2'),
+                r.get('alias_cn_3'),
+            ]
+            # 规范化并移除空值
+            normalized_aliases = {
+                t.replace("：", ":").replace(" ", "") for t in all_titles_to_check if t
+            }
+            
+            # 检查搜索词是否是任何一个标题/别名的子串
+            if any(normalized_search_title in alias for alias in normalized_aliases):
+                exact_matches.append(r)
+
         if len(exact_matches) < len(results):
             logger.info(f"过滤掉 {len(results) - len(exact_matches)} 条模糊匹配的结果。")
             results = exact_matches
@@ -826,7 +847,7 @@ async def match_batch_files(
     summary="[dandanplay兼容] 获取外部弹幕"
 )
 async def get_external_comments_from_url(
-    url: str = Query(..., description="外部视频链接 (支持 AcFun, Bilibili, 腾讯, 爱奇艺, 优酷, 芒果TV)"),
+    url: str = Query(..., description="外部视频链接 (支持 Bilibili, 腾讯, 爱奇艺, 优酷, 芒果TV)"),
     chConvert: int = Query(0, description="中文简繁转换。0-不转换，1-转换为简体，2-转换为繁体。"),
     token: str = Depends(get_token_from_path),
     pool: aiomysql.Pool = Depends(get_db_pool),
@@ -846,7 +867,6 @@ async def get_external_comments_from_url(
         comments_data = []
         
         provider_map = {
-            "acfun.cn": ("acfun", AcfunScraper),
             "bilibili.com": ("bilibili", BilibiliScraper),
             "iqiyi.com": ("iqiyi", IqiyiScraper),
             "v.qq.com": ("tencent", TencentScraper),
@@ -862,11 +882,8 @@ async def get_external_comments_from_url(
         try:
             scraper = manager.get_scraper(provider)
             if not isinstance(scraper, scraper_class):
-                raise ValueError(f"{provider} scraper not found or has wrong type.")
-
-            if provider == "acfun":
-                if danmaku_id := await scraper.get_danmaku_id_from_url(url): comments_data = await scraper.get_comments(danmaku_id)
-            elif provider == "bilibili":
+                raise ValueError(f"{provider} scraper not found or has wrong type.")            
+            if provider == "bilibili":
                 if ids := await scraper.get_ids_from_url(url): comments_data = await scraper.get_comments(f"{ids['aid']},{ids['cid']}")
             elif provider == "iqiyi":
                 if tvid := await scraper.get_tvid_from_url(url): comments_data = await scraper.get_comments(tvid)

@@ -60,6 +60,9 @@ async def lifespan(app: FastAPI):
         'webhook_api_key': ('', '用于Webhook调用的安全密钥。'),
         'webhook_custom_domain': ('', '用于拼接Webhook URL的自定义域名。'),
         # 认证
+        # 代理
+        'proxy_url': ('', '全局HTTP/HTTPS/SOCKS5代理地址。'),
+        'proxy_enabled': ('false', '是否全局启用代理。'),
         'jwt_expire_minutes': (settings.jwt.access_token_expire_minutes, 'JWT令牌的有效期（分钟）。-1 表示永不过期。'),
         # 元数据源
         'tmdb_api_key': ('', '用于访问 The Movie Database API 的密钥。'),
@@ -90,7 +93,7 @@ async def lifespan(app: FastAPI):
     app.state.task_manager.start()
     await create_initial_admin_user(app)
     app.state.cleanup_task = asyncio.create_task(cleanup_task(app))
-    app.state.scheduler_manager = SchedulerManager(pool, app.state.task_manager)
+    app.state.scheduler_manager = SchedulerManager(pool, app.state.task_manager, app.state.scraper_manager)
     await app.state.scheduler_manager.start()
     
     yield

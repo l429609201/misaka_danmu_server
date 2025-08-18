@@ -3,7 +3,7 @@ uvicorn[standard]
 aiomysql
 apscheduler
 pydantic-settings
-httpx
+httpx>=0.23.0
 # 使用固定的 passlib 和 bcrypt 版本以避免兼容性问题
 # passlib>=1.7.4 才与 bcrypt>=4.0 兼容
 passlib>=1.7.4

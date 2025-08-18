@@ -50,6 +50,9 @@ function setupEventListeners() {
     document.getElementById('filter-btn-movie').addEventListener('click', handleTypeFilterClick);
     document.getElementById('filter-btn-tv_series').addEventListener('click', handleTypeFilterClick);
     document.getElementById('results-filter-input').addEventListener('input', applyFiltersAndRender);
+    document.getElementById('edit-import-modal-close-btn').addEventListener('click', () => document.getElementById('edit-import-modal').classList.add('hidden'));
+    document.getElementById('edit-import-modal-cancel-btn').addEventListener('click', () => document.getElementById('edit-import-modal').classList.add('hidden'));
+    document.getElementById('edit-import-modal-confirm-btn').addEventListener('click', handleConfirmEditImport);
 
     // --- 电视节目精确搜索逻辑重构 ---
     const searchSeasonInput = document.getElementById('search-season');
@@ -336,14 +339,28 @@ function renderSearchResults(results, searchSeason) {
         infoDiv.innerHTML = `<p class="title">${item.title}</p><p class="meta">${metaParts.join(' | ')}</p>`;
 
         leftContainer.appendChild(infoDiv);
-        const importBtn = document.createElement('button');
-        importBtn.textContent = '导入弹幕';
-        li.appendChild(leftContainer);
-        importBtn.addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevent the li click event from firing
-            handleImportClick(importBtn, item, searchSeason)
+
+        const buttonGroup = document.createElement('div');
+        buttonGroup.className = 'result-item-actions';
+
+        const editImportBtn = document.createElement('button');
+        editImportBtn.textContent = '编辑导入';
+        editImportBtn.className = 'secondary-btn';
+        editImportBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showEditImportModal(item);
         });
-        li.appendChild(importBtn);
+
+        const directImportBtn = document.createElement('button');
+        directImportBtn.textContent = '直接导入';
+        directImportBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent the li click event from firing
+            handleImportClick(directImportBtn, item, searchSeason)
+        });
+        buttonGroup.appendChild(editImportBtn);
+        buttonGroup.appendChild(directImportBtn);
+        li.appendChild(leftContainer);
+        li.appendChild(buttonGroup);
         resultsList.appendChild(li);
     });
 }
@@ -580,6 +597,196 @@ function handleTypeFilterClick(e) {
     const icon = btn.querySelector('.status-icon');
     icon.textContent = btn.classList.contains('active') ? '✅' : '❌';
     applyFiltersAndRender();
+}
+
+async function showEditImportModal(item) {
+    const modal = document.getElementById('edit-import-modal');
+    const modalTitle = document.getElementById('edit-import-modal-title');
+    const modalBody = document.getElementById('edit-import-modal-body');
+    const confirmBtn = document.getElementById('edit-import-modal-confirm-btn');
+
+    modalTitle.textContent = `编辑导入: ${item.title}`;
+    modalBody.innerHTML = '<div id="loader"></div>'; // Show loader
+    modal.classList.remove('hidden');
+    
+    // Store item data on the modal for later use
+    modal.dataset.item = JSON.stringify(item);
+
+    try {
+        const episodes = await apiFetch(`/api/ui/search/episodes?provider=${item.provider}&media_id=${item.mediaId}&media_type=${item.type}`);
+        renderEditImportModalContent(item, episodes);
+    } catch (error) {
+        modalBody.innerHTML = `<p class="error">加载分集列表失败: ${error.message}</p>`;
+        confirmBtn.disabled = true;
+    }
+}
+
+let draggedItem = null; // To keep track of the item being dragged
+
+function renderEditImportModalContent(item, episodes) {
+    const modalBody = document.getElementById('edit-import-modal-body');
+    const confirmBtn = document.getElementById('edit-import-modal-confirm-btn');
+    confirmBtn.disabled = false;
+
+    modalBody.innerHTML = `
+        <div class="edit-import-title-section">
+            <label for="edit-import-anime-title">作品标题:</label>
+            <input type="text" id="edit-import-anime-title" value="${item.title}">
+            <button type="button" id="reimport-episodes-btn" class="secondary-btn" title="根据此标题在弹幕库中查找已存在的集数，并从下方列表中移除它们。">重整导入分集</button>
+        </div>
+        <ul id="edit-import-episodes-list" class="edit-import-episodes-list">
+        </ul>
+    `;
+
+    document.getElementById('reimport-episodes-btn').addEventListener('click', handleReimportEpisodes);
+    const episodeListEl = document.getElementById('edit-import-episodes-list');
+    if (episodes.length === 0) {
+        episodeListEl.innerHTML = '<li>未找到任何分集。</li>';
+        return;
+    }
+
+    episodes.forEach(ep => {
+        const li = document.createElement('li');
+        li.draggable = true; // Make the list item draggable
+        li.dataset.episode = JSON.stringify(ep); // Store original episode data
+        li.innerHTML = `
+            <span class="ep-index">${ep.episodeIndex}.</span>
+            <input type="text" class="ep-title-input" value="${ep.title}">
+            <button class="ep-delete-btn" title="删除此集">&times;</button>
+        `;
+        li.querySelector('.ep-delete-btn').addEventListener('click', () => {
+            li.remove();
+            reindexEpisodes();
+        });
+        episodeListEl.appendChild(li);
+    });
+
+    // Add drag-and-drop event listeners to the list container
+    episodeListEl.addEventListener('dragstart', (e) => {
+        // We only want to drag 'LI' elements
+        if (e.target.tagName === 'LI') {
+            draggedItem = e.target;
+            // Use a timeout to avoid the drag image disappearing
+            setTimeout(() => {
+                e.target.classList.add('dragging');
+            }, 0);
+        }
+    });
+
+    episodeListEl.addEventListener('dragover', (e) => {
+        e.preventDefault(); // This is necessary to allow dropping
+        if (!draggedItem) return;
+
+        const afterElement = getDragAfterElement(episodeListEl, e.clientY);
+        if (afterElement == null) {
+            episodeListEl.appendChild(draggedItem);
+        } else {
+            episodeListEl.insertBefore(draggedItem, afterElement);
+        }
+    });
+
+    episodeListEl.addEventListener('dragend', () => {
+        if (draggedItem) {
+            draggedItem.classList.remove('dragging');
+            draggedItem = null;
+            reindexEpisodes(); // Re-number the episodes after the drop is complete
+        }
+    });
+}
+
+function getDragAfterElement(container, y) {
+    const draggableElements = [...container.querySelectorAll('li:not(.dragging)')];
+    return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) { return { offset: offset, element: child }; } 
+        else { return closest; }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function reindexEpisodes() {
+    const episodeListEl = document.getElementById('edit-import-episodes-list');
+    const items = episodeListEl.querySelectorAll('li');
+    items.forEach((li, index) => {
+        const indexSpan = li.querySelector('.ep-index');
+        if (indexSpan) indexSpan.textContent = `${index + 1}.`;
+        const epData = JSON.parse(li.dataset.episode);
+        epData.episodeIndex = index + 1;
+        li.dataset.episode = JSON.stringify(epData);
+    });
+}
+
+async function handleReimportEpisodes() {
+    const titleInput = document.getElementById('edit-import-anime-title');
+    const animeTitle = titleInput.value.trim();
+    if (!animeTitle) {
+        alert('请输入要匹配的作品标题。');
+        return;
+    }
+
+    const reimportBtn = document.getElementById('reimport-episodes-btn');
+    reimportBtn.disabled = true;
+    reimportBtn.textContent = '查询中...';
+
+    try {
+        const existingIndices = await apiFetch(`/api/ui/library/episodes-by-title?title=${encodeURIComponent(animeTitle)}`);
+        
+        if (existingIndices.length === 0) {
+            alert(`在弹幕库中未找到作品 "${animeTitle}" 或该作品没有任何分集。`);
+            return;
+        }
+
+        const existingIndicesSet = new Set(existingIndices);
+        const episodeListEl = document.getElementById('edit-import-episodes-list');
+        const allEpisodeItems = Array.from(episodeListEl.querySelectorAll('li'));
+        
+        let removedCount = 0;
+        allEpisodeItems.forEach(li => {
+            const epData = JSON.parse(li.dataset.episode);
+            if (existingIndicesSet.has(epData.episodeIndex)) {
+                li.remove();
+                removedCount++;
+            }
+        });
+
+        reindexEpisodes(); // Re-number the remaining episodes
+        alert(`重整完成！根据库内记录，移除了 ${removedCount} 个已存在的分集。`);
+
+    } catch (error) {
+        alert(`查询已存在分集失败: ${error.message}`);
+    } finally {
+        reimportBtn.disabled = false;
+        reimportBtn.textContent = '重整导入分集';
+    }
+}
+
+async function handleConfirmEditImport() {
+    const modal = document.getElementById('edit-import-modal');
+    const confirmBtn = document.getElementById('edit-import-modal-confirm-btn');
+    const originalItem = JSON.parse(modal.dataset.item);
+    const finalAnimeTitle = document.getElementById('edit-import-anime-title').value.trim();
+    if (!finalAnimeTitle) { alert('作品标题不能为空。'); return; }
+
+    const finalEpisodes = Array.from(document.querySelectorAll('#edit-import-episodes-list li')).map(li => {
+        const originalEpisode = JSON.parse(li.dataset.episode);
+        return { ...originalEpisode, title: li.querySelector('.ep-title-input').value.trim(), episodeIndex: parseInt(li.querySelector('.ep-index').textContent, 10) };
+    });
+
+    const payload = { ...originalItem, anime_title: finalAnimeTitle, media_type: originalItem.type, episodes: finalEpisodes };
+    delete payload.currentEpisodeIndex; // Not needed for this endpoint
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '提交中...';
+    try {
+        const data = await apiFetch('/api/ui/import/edited', { method: 'POST', body: JSON.stringify(payload) });
+        alert(data.message || '编辑导入任务已提交。');
+        modal.classList.add('hidden');
+    } catch (error) {
+        alert(`提交导入任务失败: ${error.message}`);
+    } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '确认导入';
+    }
 }
 
 export { setupEventListeners as setupHomeEventListeners };

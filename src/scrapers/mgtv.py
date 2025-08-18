@@ -76,6 +76,7 @@ class MgtvEpisode(BaseModel):
     title3: Optional[str] = Field(None, alias="t3")
     time: Optional[str] = None
     video_id: str = Field(alias="video_id")
+    timestamp: Optional[str] = Field(None, alias="ts")
 
 class MgtvEpisodeListTab(BaseModel):
     month: str = Field(alias="m")
@@ -171,7 +172,9 @@ class MgtvScraper(BaseScraper):
         )
         self._api_lock = asyncio.Lock()
         self._last_request_time = 0
-        self._min_interval = 0.5
+        # 根据用户反馈，0.5秒的请求间隔在某些网络环境下仍然过快，
+        # 适当增加延迟以提高稳定性。
+        self._min_interval = 1.0
 
     async def _request_with_rate_limit(self, method: str, url: str, **kwargs) -> httpx.Response:
         async with self._api_lock:
@@ -291,17 +294,28 @@ class MgtvScraper(BaseScraper):
                     continue
                 filtered_episodes.append(ep)
 
-            # The API returns episodes in the correct order.
-            # The previous sorting by video_id was incorrect and has been removed.
-            # We will now process the filtered_episodes list directly.
-            sorted_episodes = filtered_episodes
+            # 修正：API返回的默认顺序和 video_id 都不可靠。
+            # 优先使用标题中的“第N集”进行排序，如果无法解析，则回退到使用发布时间戳排序。
+            # 这种复合排序策略比单独依赖 video_id 或 API 顺序更健壮。
+            def get_sort_keys(episode: MgtvEpisode) -> tuple:
+                # 主排序键：从标题 't2' (例如 "第1集") 中解析出的集数
+                ep_num_match = re.search(r'第(\d+)集', episode.title2)
+                ep_num = int(ep_num_match.group(1)) if ep_num_match else float('inf')
+                
+                # 次排序键：发布时间戳
+                # 如果时间戳不存在，则给一个很大的默认值，使其排在后面
+                timestamp = episode.timestamp or "9999-99-99 99:99:99.9"
+
+                return (ep_num, timestamp)
+
+            sorted_episodes = sorted(filtered_episodes, key=get_sort_keys)
             
             provider_episodes = [
                 models.ProviderEpisodeInfo(
                     provider=self.provider_name,
                     # The comment ID is a combination of collection_id and video_id
                     episodeId=f"{media_id},{ep.video_id}",
-                    title=ep.title2 if re.match(r"^第.+?集$", ep.title2) else ep.title,
+                    title=f"{ep.title2} {ep.title}".strip(),
                     episodeIndex=i + 1,
                     url=f"https://www.mgtv.com/b/{media_id}/{ep.video_id}.html"
                 ) for i, ep in enumerate(sorted_episodes)
@@ -337,7 +351,7 @@ class MgtvScraper(BaseScraper):
 
         self.logger.info(f"MGTV: 正在为 cid={cid}, vid={vid} 获取弹幕...")
 
-        # Strategy 1: Use getctlbarrage
+        # --- 策略 1: 使用 getctlbarrage (主策略) ---
         try:
             ctl_url = f"https://galaxy.bz.mgtv.com/getctlbarrage?version=8.1.39&abroad=0&uuid=&os=10.15.7&platform=0&mac=&vid={vid}&pid=&cid={cid}&ticket="
             ctl_response = await self._request_with_rate_limit("GET", ctl_url)
@@ -347,7 +361,7 @@ class MgtvScraper(BaseScraper):
             ctl_result = MgtvControlBarrageResult.model_validate(ctl_response.json())
 
             if ctl_result.data and ctl_result.data.cdn_version:
-                self.logger.info("MGTV: 使用主策略 (getctlbarrage) 获取弹幕。")
+                self.logger.info("MGTV: 正在使用主策略 (getctlbarrage) 获取弹幕。")
                 video_info_url = f"https://pcweb.api.mgtv.com/video/info?allowedRC=1&cid={cid}&vid={vid}&change=3&datatype=1&type=1&_support=10000000"
                 video_info_response = await self._request_with_rate_limit("GET", video_info_url)
                 if await self._should_log_responses():
@@ -377,10 +391,10 @@ class MgtvScraper(BaseScraper):
                     
                     return self._format_comments(all_comments)
         except Exception as e:
-            self.logger.warning(f"MGTV: 主弹幕获取策略失败，将尝试备用策略。错误: {e}")
+            self.logger.warning(f"MGTV: 主弹幕获取策略失败，将尝试备用策略 #1。错误: {e}")
 
-        # Strategy 2: Fallback to opbarrage
-        self.logger.info("MGTV: 使用备用策略 (opbarrage) 获取弹幕。")
+        # --- 策略 2: 使用 opbarrage (备用策略 #1) ---
+        self.logger.info("MGTV: 正在使用备用策略 #1 (opbarrage) 获取弹幕。")
         try:
             all_comments = []
             time_offset = 0
@@ -408,12 +422,36 @@ class MgtvScraper(BaseScraper):
             if progress_callback: progress_callback(100, "弹幕处理完成")
             return self._format_comments(all_comments)
 
-        except (httpx.TimeoutException, httpx.ConnectError) as e:
-            self.logger.warning(f"MGTV: 获取弹幕失败 (episode_id={episode_id})，连接超时或网络错误: {e}")
-            return []
         except Exception as e:
-            self.logger.error(f"MGTV: 备用弹幕获取策略失败 (episode_id={episode_id}): {e}", exc_info=True)
-            return []
+            self.logger.warning(f"MGTV: 备用策略 #1 (opbarrage) 失败，将尝试备用策略 #2。错误: {e}")
+
+        # --- 策略 3: 使用 bullet-ws (备用策略 #2) ---
+        self.logger.info("MGTV: 正在使用备用策略 #2 (bullet-ws) 获取弹幕。")
+        try:
+            ws_url = f"https://bullet-ws.hitv.com/bullet/role/all/{vid}"
+            ws_response = await self._request_with_rate_limit("GET", ws_url)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"MGTV Fallback #2 Danmaku Response (vid={vid}): {ws_response.text}")
+            ws_response.raise_for_status()
+            ws_data = ws_response.json()
+
+            all_comments = []
+            if ws_data.get("status") == 200 and ws_data.get("data"):
+                for item in ws_data["data"]["items"]:
+                    try:
+                        # 手动构造 MgtvComment 模型以复用格式化逻辑
+                        style_json = json.loads(item.get("style", "{}"))
+                        color_data = {"color_left": style_json.get("color", {"r":255,"g":255,"b":255})}
+                        all_comments.append(MgtvComment(
+                            id=item.get("id", 0), content=item.get("content", ""), time=item.get("time", 0),
+                            type=style_json.get("pos", 0), uuid="", color=MgtvCommentColor.model_validate(color_data)
+                        ))
+                    except (json.JSONDecodeError, ValidationError):
+                        continue
+            return self._format_comments(all_comments)
+        except Exception as e:
+            self.logger.error(f"MGTV: 所有弹幕获取策略均失败 (episode_id={episode_id})。最终错误: {e}", exc_info=True)
+        return []
 
     def _format_comments(self, comments: List[MgtvComment]) -> List[dict]:
         # 新增：按弹幕ID去重

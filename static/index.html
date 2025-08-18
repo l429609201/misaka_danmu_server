@@ -40,7 +40,7 @@
             <header>
                 <div class="header-title-group">
                     <img src="/static/logo.png" alt="Logo" id="header-logo">
-                    <h1>御坂网络弹幕服务 v1.0.10</h1>
+                    <h1>御坂网络弹幕服务 v1.0.12</h1>
                 </div>
                 <div class="header-user-info">
                     <span id="current-user"></span>
@@ -198,11 +198,18 @@
                                 </div>
                                 <div class="form-row">
                                     <label for="edit-anime-season">季度</label>
-                                    <input type="number" id="edit-anime-season" min="1" required>
+                                    <input type="number" id="edit-anime-season" min="0" required>
                                 </div>
                                 <div class="form-row">
                                     <label for="edit-anime-episode-count">集数</label>
                                     <input type="number" id="edit-anime-episode-count" min="1" placeholder="留空则自动计算">
+                                </div>
+                                <div class="form-row">
+                                    <label for="edit-anime-poster-url">海报URL</label>
+                                    <div class="input-with-icon">
+                                        <input type="text" id="edit-anime-poster-url" placeholder="输入海报图片的URL">
+                                        <button type="button" id="refresh-poster-btn" class="icon-btn" title="刷新缓存">🔄</button>
+                                    </div>
                                 </div>
                                 
                                 <div class="form-row">
@@ -382,7 +389,7 @@
                     <div id="anime-detail-view" class="content-view hidden">
                         <div class="view-header-flexible">
                             <div class="anime-detail-header-main">
-                                <img src="/static/placeholder.png" alt="Poster" id="detail-view-img" referrerpolicy="strict-origin-when-cross-origin">
+                                <img src="/static/placeholder.png" alt="Poster" id="detail-view-img" referrerpolicy="no-referrer">
                                 <div>
                                     <h2 id="detail-view-title">作品标题</h2>
                                     <p id="detail-view-meta">元数据</p>
@@ -447,9 +454,9 @@
 
                         <div id="running-tasks-subview" class="settings-subview">
                             <div class="library-header">
-                                <h2>运行中任务</h2>
                                 <div class="view-controls">
                                     <div class="task-actions">
+                                        <button id="select-all-running-tasks-btn" class="control-btn">全选</button>
                                         <button id="pause-resume-task-btn" class="control-btn" disabled>暂停/恢复</button> 
                                         <button id="abort-running-task-btn" class="control-btn danger" disabled>中止任务</button>
                                         <button id="delete-running-task-btn" class="control-btn danger">删除任务</button>
@@ -642,6 +649,7 @@
                         <h2>设置</h2>
                         <div class="settings-sub-nav">
                             <button class="sub-nav-btn active" data-subview="account-settings-subview">账户安全</button>
+                            <button class="sub-nav-btn" data-subview="proxy-settings-subview">代理配置</button>
                             <button class="sub-nav-btn" data-subview="webhook-settings-subview">Webhook</button>
                             <button class="sub-nav-btn" data-subview="bangumi-settings-subview">Bangumi配置</button>
                             <button class="sub-nav-btn" data-subview="tmdb-settings-subview">TMDB配置</button>
@@ -671,6 +679,51 @@
                                     </div>
                                     <p id="password-change-message" class="message"></p>
                                 </form>
+                            </div>
+                        </div>
+
+                        <div id="proxy-settings-subview" class="settings-subview hidden">
+                            <div class="form-card">
+                                <h3>代理服务器配置</h3>
+                                <p>配置一个全局代理，可用于访问受限的网络资源。支持 http, https, socks5 协议。</p>
+                                <form id="proxy-settings-form">
+                                    <div class="proxy-layout">
+                                        <div class="form-row proxy-protocol-row">
+                                            <label for="proxy-protocol">协议</label>
+                                            <select id="proxy-protocol">
+                                                <option value="http">http</option>
+                                                <option value="https">https</option>
+                                                <option value="socks5">socks5</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-row proxy-host-row">
+                                            <label for="proxy-host">主机</label>
+                                            <input type="text" id="proxy-host" placeholder="例如: 127.0.0.1">
+                                        </div>
+                                        <div class="form-row proxy-port-row">
+                                            <label for="proxy-port">端口</label>
+                                            <input type="number" id="proxy-port" placeholder="例如: 7890">
+                                        </div>
+                                        <div class="form-row proxy-user-row">
+                                            <label for="proxy-username">用户名 (可选)</label>
+                                            <input type="text" id="proxy-username" autocomplete="off">
+                                        </div>
+                                        <div class="form-row proxy-pass-row">
+                                            <label for="proxy-password">密码 (可选)</label>
+                                            <input type="password" id="proxy-password" autocomplete="new-password">
+                                        </div>
+                                    </div>
+                                    <div class="form-row" style="margin-top: 15px;">
+                                        <label for="proxy-enabled">全局启用代理</label>
+                                        <input type="checkbox" id="proxy-enabled">
+                                    </div>
+                                    <div class="form-actions">
+                                        <button type="button" id="test-proxy-btn">测试延迟</button>
+                                        <button type="submit">保存</button>
+                                    </div>
+                                </form>
+                                <pre id="proxy-test-results" class="hidden" style="background-color: #282c34; color: #abb2bf; padding: 15px; border-radius: 4px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-family: 'Courier New', Courier, monospace;"></pre>
+                                <p id="proxy-save-message" class="message"></p>
                             </div>
                         </div>
 
@@ -822,6 +875,21 @@
             <div class="modal-footer">
                 <button id="modal-cancel-btn" class="secondary-btn">取消</button>
                 <button id="modal-save-btn">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="edit-import-modal" class="modal-overlay hidden">
+        <div class="modal-content large"> <!-- Add a 'large' class for wider modal -->
+            <div class="modal-header">
+                <h3 id="edit-import-modal-title">编辑并导入</h3>
+                <button id="edit-import-modal-close-btn" class="modal-close">&times;</button>
+            </div>
+            <div id="edit-import-modal-body" class="modal-body">
+                <!-- Content will be generated by JS -->
+            </div>
+            <div class="modal-footer">
+                <button id="edit-import-modal-cancel-btn" class="secondary-btn">取消</button>
+                <button id="edit-import-modal-confirm-btn">确认导入</button>
             </div>
         </div>
     </div>

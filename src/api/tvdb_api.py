@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
 import re
 
+import asyncio
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
@@ -54,7 +55,22 @@ async def get_tvdb_client(
     pool=Depends(get_db_pool),
 ) -> httpx.AsyncClient:
     """依赖项：获取一个经过认证的TVDB客户端。"""
-    client = httpx.AsyncClient(base_url="https://api4.thetvdb.com/v4", timeout=20.0)
+    # --- Start of new proxy logic ---
+    proxy_url_task = crud.get_config_value(pool, "proxy_url", "")
+    proxy_enabled_globally_task = crud.get_config_value(pool, "proxy_enabled", "false")
+    metadata_settings_task = crud.get_all_metadata_source_settings(pool)
+
+    proxy_url, proxy_enabled_str, metadata_settings = await asyncio.gather(
+        proxy_url_task, proxy_enabled_globally_task, metadata_settings_task
+    )
+    proxy_enabled_globally = proxy_enabled_str.lower() == 'true'
+
+    provider_setting = next((s for s in metadata_settings if s['provider_name'] == 'tvdb'), None)
+    use_proxy_for_this_provider = provider_setting.get('use_proxy', False) if provider_setting else False
+
+    proxy_to_use = proxy_url if proxy_enabled_globally and use_proxy_for_this_provider and proxy_url else None
+    # --- End of new proxy logic ---
+    client = httpx.AsyncClient(base_url="https://api4.thetvdb.com/v4", timeout=20.0, proxy=proxy_to_use)
     token = await get_tvdb_token(pool, client)
     client.headers.update(
         {"Authorization": f"Bearer {token}", "User-Agent": "DanmuApiServer/1.0"}

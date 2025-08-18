@@ -11,6 +11,9 @@
   <div id="app">
     <!-- 登录视图 -->
     <section id="auth-screen">
+      <div class="theme-toggle-login">
+        <button id="theme-toggle-login" class="text-btn" title="切换主题">🎨</button>
+      </div>
       <div class="auth-card">
         <div class="brand">
           <img src="/static/logo.png" alt="logo" />
@@ -33,6 +36,7 @@
           <span>御坂弹幕 · 移动</span>
         </div>
         <div class="user">
+          <button id="theme-toggle" class="text-btn" title="切换主题">🌙</button>
           <span id="current-user-name">...</span>
           <button id="logout-btn" class="text-btn">退出</button>
         </div>
@@ -42,7 +46,26 @@
         <section id="search-card" class="card search-sticky">
           <form id="search-form" class="search-bar">
             <input id="search-input" type="text" inputmode="search" placeholder="输入番剧名称，支持 SxxExx" required />
-            <button type="submit" class="primary">搜索</button>
+            <div class="search-btn-wrapper">
+              <button type="submit" class="primary" id="search-btn">搜索</button>
+              <svg class="search-progress-ring" width="100" height="56" viewBox="0 0 100 56">
+                <defs>
+                  <linearGradient id="rainbow-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" style="stop-color:#ff6b6b" />
+                    <stop offset="20%" style="stop-color:#4ecdc4" />
+                    <stop offset="40%" style="stop-color:#45b7d1" />
+                    <stop offset="60%" style="stop-color:#96ceb4" />
+                    <stop offset="80%" style="stop-color:#ffeaa7" />
+                    <stop offset="100%" style="stop-color:#ff6b6b" />
+                  </linearGradient>
+                </defs>
+                <rect class="track" x="2" y="2" width="96" height="52" rx="26" ry="26" />
+                <rect class="progress" x="2" y="2" width="96" height="52" rx="26" ry="26"
+                      stroke="url(#rainbow-gradient)"
+                      stroke-dasharray="296"
+                      stroke-dashoffset="296" />
+              </svg>
+            </div>
           </form>
           <div id="loader" class="loader hidden"></div>
           <div id="search-progress" class="progress hidden"><div class="bar"></div><span id="search-progress-label" class="label">0%</span></div>
@@ -64,12 +87,146 @@
 
         <section id="tasks-card" class="card hidden">
           <h2>任务</h2>
-          <div id="tasks-progress" class="progress hidden"><div class="bar"></div><span id="tasks-progress-label" class="label">0%</span></div>
+          
+          <!-- 任务总进度环形展示 -->
+          <div class="task-progress-container">
+            <div class="task-progress-ring">
+              <svg viewBox="0 0 120 120">
+                <defs>
+                  <linearGradient id="task-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" class="gradient-stop-1" />
+                    <stop offset="50%" class="gradient-stop-2" />
+                    <stop offset="100%" class="gradient-stop-3" />
+                  </linearGradient>
+                </defs>
+                <circle class="track" cx="60" cy="60" r="52" />
+                <circle class="progress" cx="60" cy="60" r="52" 
+                        stroke="url(#task-gradient)"
+                        stroke-dasharray="326.73"
+                        stroke-dashoffset="326.73" />
+              </svg>
+              <div class="task-progress-center">
+                <span class="task-progress-percentage">0%</span>
+                <span class="task-progress-label">总进度</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 任务统计信息 -->
+          <div class="task-stats">
+            <div class="task-stat-item running">
+              <span class="task-stat-number" id="task-stat-running">0</span>
+              <span class="task-stat-label">运行中</span>
+            </div>
+            <div class="task-stat-item queued">
+              <span class="task-stat-number" id="task-stat-queued">0</span>
+              <span class="task-stat-label">排队中</span>
+            </div>
+            <div class="task-stat-item completed">
+              <span class="task-stat-number" id="task-stat-completed">0</span>
+              <span class="task-stat-label">已完成</span>
+            </div>
+            <div class="task-stat-item failed">
+              <span class="task-stat-number" id="task-stat-failed">0</span>
+              <span class="task-stat-label">失败</span>
+            </div>
+          </div>
+          
+          <!-- 任务页面骨架屏 -->
+          <div id="tasks-skeleton" class="skeleton-container">
+            <div class="skeleton-item">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-content">
+                <div class="skeleton-title"></div>
+                <div class="skeleton-subtitle"></div>
+              </div>
+              <div class="skeleton-actions">
+                <div class="skeleton-button"></div>
+              </div>
+            </div>
+            <div class="skeleton-item">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-content">
+                <div class="skeleton-title"></div>
+                <div class="skeleton-subtitle"></div>
+              </div>
+              <div class="skeleton-actions">
+                <div class="skeleton-button"></div>
+              </div>
+            </div>
+            <div class="skeleton-item">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-content">
+                <div class="skeleton-title"></div>
+                <div class="skeleton-subtitle"></div>
+              </div>
+              <div class="skeleton-actions">
+                <div class="skeleton-button"></div>
+              </div>
+            </div>
+          </div>
+          
           <ul id="tasks-list" class="list"></ul>
         </section>
 
         <section id="library-card" class="card hidden">
-          <h2>弹幕库</h2>
+          <div class="library-header">
+            <h2>弹幕库</h2>
+            <button id="library-refresh-btn" class="text-btn" title="刷新弹幕库">🔄</button>
+          </div>
+          
+          <!-- 筛选输入框 -->
+          <div class="library-filter">
+            <input id="library-filter-input" type="text" placeholder="输入动漫名称进行筛选..." />
+          </div>
+          
+          <div id="library-loading" class="loading-indicator hidden">
+            <div class="loading-spinner"></div>
+            <span>加载中...</span>
+          </div>
+
+          <!-- 弹幕库骨架屏 -->
+          <div id="library-skeleton" class="skeleton-container">
+            <div class="skeleton-item library-skeleton-item">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-content">
+                <div class="skeleton-title"></div>
+                <div class="skeleton-subtitle"></div>
+              </div>
+            </div>
+            <div class="skeleton-actions-row">
+              <div class="skeleton-button"></div>
+              <div class="skeleton-button"></div>
+              <div class="skeleton-button"></div>
+            </div>
+            
+            <div class="skeleton-item library-skeleton-item">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-content">
+                <div class="skeleton-title"></div>
+                <div class="skeleton-subtitle"></div>
+              </div>
+            </div>
+            <div class="skeleton-actions-row">
+              <div class="skeleton-button"></div>
+              <div class="skeleton-button"></div>
+              <div class="skeleton-button"></div>
+            </div>
+            
+            <div class="skeleton-item library-skeleton-item">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-content">
+                <div class="skeleton-title"></div>
+                <div class="skeleton-subtitle"></div>
+              </div>
+            </div>
+            <div class="skeleton-actions-row">
+              <div class="skeleton-button"></div>
+              <div class="skeleton-button"></div>
+              <div class="skeleton-button"></div>
+            </div>
+          </div>
+
           <ul id="library-list" class="list"></ul>
         </section>
 
@@ -241,7 +398,6 @@
         <button id="tab-tasks" class="nav-btn">任务</button>
         <button id="tab-tokens" class="nav-btn">Token</button>
         <button id="tab-settings" class="nav-btn">设置</button>
-        <span id="nav-indicator" class="nav-indicator"></span>
       </nav>
     </section>
   </div>

@@ -15,15 +15,40 @@ from apscheduler.triggers.cron import CronTrigger
 from . import crud
 from .jobs.base import BaseJob
 from .task_manager import TaskManager
+from .scraper_manager import ScraperManager
 
 logger = logging.getLogger(__name__)
+
+def cron_is_valid(cron: str, min_hours: int) -> bool:
+    """
+    一个简单的CRON表达式验证器，用于检查轮询间隔是否满足最小小时数。
+    注意：这是一个非常简化的检查，只处理常见的 '*/X' 小时格式。
+    """
+    try:
+        parts = cron.split()
+        if len(parts) != 5:
+            # 不支持带秒或年的格式，但允许它通过，因为这可能是高级用法
+            return True
+
+        hour_part = parts[1]
+        
+        # Case 1: '*/X' - every X hours
+        if hour_part.startswith('*/'):
+            interval = int(hour_part[2:])
+            if interval < min_hours:
+                return False
+        elif hour_part == '*': # every hour
+            return False
+    except (ValueError, IndexError): return False
+    return True
 
 # --- Scheduler Manager ---
 
 class SchedulerManager:
-    def __init__(self, pool: aiomysql.Pool, task_manager: TaskManager):
+    def __init__(self, pool: aiomysql.Pool, task_manager: TaskManager, scraper_manager: ScraperManager):
         self.pool = pool
         self.task_manager = task_manager
+        self.scraper_manager = scraper_manager
         self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
         self._job_classes: Dict[str, Type[BaseJob]] = {}
 
@@ -57,7 +82,7 @@ class SchedulerManager:
         job_class = self._job_classes[job_type]
         
         async def runner():
-            job_instance = job_class(self.pool)
+            job_instance = job_class(self.pool, self.task_manager, self.scraper_manager)
             task_coro_factory = lambda callback: job_instance.run(callback)
             task_id, done_event = await self.task_manager.submit_task(task_coro_factory, job_instance.job_name)
             # The apscheduler job now waits for the actual task to complete.
@@ -116,16 +141,35 @@ class SchedulerManager:
     async def add_task(self, name: str, job_type: str, cron: str, is_enabled: bool) -> Dict[str, Any]:
         if job_type not in self._job_classes:
             raise ValueError(f"未知的任务类型: {job_type}")
+        # 确保增量更新任务的轮询间隔不低于3小时
+        if job_type == "incremental_refresh" and not cron_is_valid(cron, 3):
+            raise ValueError("定时增量更新任务的轮询间隔不得低于3小时。请使用如 '0 */3 * * *' (每3小时) 或更长的间隔。")
+        
+        # 新增：确保“定时追更”任务只能创建一个
+        if job_type == "incremental_refresh":
+            exists = await crud.check_scheduled_task_exists_by_type(self.pool, "incremental_refresh")
+            if exists:
+                raise ValueError("“定时追更”任务已存在，无法重复创建。")
+
         task_id = str(uuid4())
         await crud.create_scheduled_task(self.pool, task_id, name, job_type, cron, is_enabled)
         runner = self._create_job_runner(job_type)
         job = self.scheduler.add_job(runner, CronTrigger.from_crontab(cron), id=task_id, name=name)
-        if not is_enabled: job.pause()
+        if not is_enabled: job.pause()        
         await crud.update_scheduled_task_run_times(self.pool, task_id, None, job.next_run_time)
         return await crud.get_scheduled_task(self.pool, task_id)
 
     async def update_task(self, task_id: str, name: str, cron: str, is_enabled: bool) -> Optional[Dict[str, Any]]:
-        if not (job := self.scheduler.get_job(task_id)): return None
+        job = self.scheduler.get_job(task_id)
+        if not job: return None
+
+        task_info = await crud.get_scheduled_task(self.pool, task_id)
+        if not task_info: return None
+        job_type = task_info['job_type']
+
+        # 确保增量更新任务的轮询间隔不低于3小时
+        if job_type == "incremental_refresh" and not cron_is_valid(cron, 3):
+            raise ValueError("定时增量更新任务的轮询间隔不得低于3小时。请使用如 '0 */3 * * *' (每3小时) 或更长的间隔。")
         await crud.update_scheduled_task(self.pool, task_id, name, cron, is_enabled)
         job.modify(name=name)
         job.reschedule(trigger=CronTrigger.from_crontab(cron))

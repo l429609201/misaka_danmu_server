@@ -46,6 +46,16 @@
     padding: 0;
     transition: background-color 0.2s;
 }
+.input-with-icon .full-width-btn {
+    flex-grow: 1;
+    border: none;
+    background-color: var(--secondary-color);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 10px;
+    transition: background-color 0.2s;
+    text-align: center;
+}
 
 .input-with-icon .icon-btn:hover {
     background-color: #e9ecef;

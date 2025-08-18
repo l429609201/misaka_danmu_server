@@ -262,6 +262,56 @@ export const setAnimeSource = data =>
     target_anime_id: data.targetAnimeId,
   })
 
-/** 删除数据源 */
+/** 批量删除数据源 */
 export const deleteAnimeSource = data =>
   api.post('/api/ui/library/sources/delete-bulk', data)
+
+/** 删除单个数据源 */
+export const deleteAnimeSourceSingle = data =>
+  api.delete(`/api/ui/library/source/${data.sourceId}`)
+
+/** 数据源收藏状态 */
+export const toggleSourceFavorite = data =>
+  api.put(`/api/ui/library/source/${data.sourceId}/favorite`)
+
+/** 数据源增量定时状态 */
+export const toggleSourceIncremental = data =>
+  api.put(`/api/ui/library/source/${data.sourceId}/toggle-incremental-refresh`)
+
+/** 增量更新 */
+export const incrementalUpdate = data =>
+  api.post(`/api/ui/library/source/${data.sourceId}/refresh`)
+
+/** 全量刷新 */
+export const fullSourceUpdate = data =>
+  api.post(`/api/ui/library/source/${data.sourceId}/refresh`)
+
+/** 获取分集 */
+export const getEpisodes = data =>
+  api.get(`/api/ui/library/source/${data.sourceId}/episodes`)
+
+/** 编辑分集信息 */
+export const editEpisode = data =>
+  api.put(`/api/ui/library/episode/${data.episode_id}`, data)
+/** 手动导入集 */
+export const manualImportEpisode = data =>
+  api.post(`/api/ui/library/source/${data.source_id}/manual-import`, data)
+
+/** 批量删除集 */
+export const deleteAnimeEpisode = data =>
+  api.post('/api/ui/library/episodes/delete-bulk', data)
+
+/** 刷新集弹幕 */
+export const refreshEpisodeDanmaku = data =>
+  api.post(`/api/ui/library/episode/${data.id}/refresh`)
+
+/** 删除集 */
+export const deleteAnimeEpisodeSingle = data =>
+  api.delete(`/api/ui/library/episode/${data.id}`)
+
+/** 重整集数 */
+export const resetEpisode = data =>
+  api.post(`/api/ui/library/source/${data.sourceId}/reorder-episodes`)
+
+/** 获取弹幕详情 */
+export const getDanmakuDetail = data => api.get(`/api/ui/comment/${data.id}`)

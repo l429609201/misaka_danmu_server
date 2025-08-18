@@ -58,3 +58,21 @@ textarea#douban-cookie {
     font-size: 1.1em;
     color: #333;
 }
+
+/* Proxy Settings Layout */
+.proxy-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+        "protocol protocol"
+        "host     port"
+        "user     pass";
+    gap: 15px;
+    align-items: center;
+    padding-right: 20px; /* 为右侧输入框增加一些视觉间距，避免贴边 */
+}
+.proxy-protocol-row { grid-area: protocol; }
+.proxy-host-row     { grid-area: host; }
+.proxy-port-row     { grid-area: port; }
+.proxy-user-row     { grid-area: user; }
+.proxy-pass-row     { grid-area: pass; }

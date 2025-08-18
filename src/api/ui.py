@@ -3,20 +3,24 @@ from typing import Optional, List, Any, Dict, Callable
 import asyncio
 import secrets
 import string
+import time
+from urllib.parse import urlparse, urlunparse, quote, unquote
 import logging
 
 from datetime import timedelta, datetime, timezone
 import aiomysql
 import httpx
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, Response
 from fastapi.security import OAuth2PasswordRequestForm
 
-from .. import crud, models, security
+from .. import crud, models, security, scraper_manager
 from ..log_manager import get_logs
 from ..task_manager import TaskManager, TaskSuccess, TaskStatus
 from ..metadata_manager import MetadataSourceManager
 from ..scraper_manager import ScraperManager
 from ..webhook_manager import WebhookManager
+from ..image_utils import download_image
 from ..scheduler import SchedulerManager
 from thefuzz import fuzz
 from .tmdb_api import get_tmdb_client, _get_robust_image_base_url
@@ -326,17 +330,59 @@ async def search_anime_provider(
     for item in results:
         item.currentEpisodeIndex = current_episode_index_for_this_request
 
-    # 新增：根据搜索源的显示顺序对结果进行排序
+    # 新增：根据搜索源的显示顺序和标题相似度对结果进行排序
     source_settings = await crud.get_all_scraper_settings(pool)
     source_order_map = {s['provider_name']: s['display_order'] for s in source_settings}
-    # 使用 sorted 创建一个新的排序列表，而不是原地排序
-    sorted_results = sorted(results, key=lambda x: source_order_map.get(x.provider, 999))
+
+    def sort_key(item: models.ProviderSearchInfo):
+        provider_order = source_order_map.get(item.provider, 999)
+        # 使用 token_set_ratio 来获得更鲁棒的标题相似度评分
+        similarity_score = fuzz.token_set_ratio(search_title, item.title)
+        # 主排序键：源顺序（升序）；次排序键：相似度（降序）
+        return (provider_order, -similarity_score)
+
+    sorted_results = sorted(results, key=sort_key)
 
     return UIProviderSearchResponse(
         results=sorted_results,
         search_season=season_to_filter,
         search_episode=episode_to_filter
     )
+
+@router.get("/library/episodes-by-title", response_model=List[int], summary="根据作品标题获取已存在的分集序号")
+async def get_existing_episode_indices(
+    title: str = Query(..., description="要查询的作品标题"),
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool)
+):
+    """
+    根据一个作品的标题，查询弹幕库中该作品已存在的所有分集的序号列表。
+    用于在“编辑导入”界面实现增量导入。
+    """
+    return await crud.get_episode_indices_by_anime_title(pool, title)
+
+
+
+@router.get("/search/episodes", response_model=List[models.ProviderEpisodeInfo], summary="获取搜索结果的分集列表")
+async def get_episodes_for_search_result(
+    provider: str = Query(...),
+    media_id: str = Query(...),
+    media_type: Optional[str] = Query(None), # Pass media_type to help scraper
+    manager: ScraperManager = Depends(get_scraper_manager),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """为指定的搜索结果获取完整的分集列表。"""
+    try:
+        scraper = manager.get_scraper(provider)
+        # 将 db_media_type 传递给 get_episodes 以帮助需要它的刮削器（如 mgtv）
+        episodes = await scraper.get_episodes(media_id, db_media_type=media_type)
+        return episodes
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.error(f"获取分集列表失败 (provider={provider}, media_id={media_id}): {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="获取分集列表失败。")
+
 
 @router.get("/library", response_model=models.LibraryResponse, summary="获取媒体库内容")
 async def get_library(
@@ -372,7 +418,7 @@ async def edit_anime_info(
     """更新指定番剧的标题、季度和元数据。"""
     updated = await crud.update_anime_details(pool, anime_id, update_data)
     if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anime not found or update failed")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="作品未找到或更新失败")
     logger.info(f"用户 '{current_user.username}' 更新了番剧 ID: {anime_id} 的详细信息。")
 
     # 新增：如果提供了TMDB ID和剧集组ID，则更新映射表
@@ -390,6 +436,32 @@ async def edit_anime_info(
             # 仅记录错误，不中断主流程，因为核心信息已保存
             logger.error(f"更新TMDB映射失败: {e}", exc_info=True)
     return
+
+class RefreshPosterRequest(models.BaseModel):
+    image_url: str
+
+@router.post("/library/anime/{anime_id}/refresh-poster", summary="刷新并缓存影视海报")
+async def refresh_anime_poster(
+    anime_id: int,
+    request_data: RefreshPosterRequest,
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool)
+):
+    """根据提供的URL，重新下载并缓存海报，更新数据库记录。"""
+    new_local_path = await download_image(request_data.image_url, pool)
+    if not new_local_path:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="图片下载失败，请检查URL或服务器日志。")
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            # 同时更新原始URL和本地路径
+            affected_rows = await cursor.execute(
+                "UPDATE anime SET image_url = %s, local_image_path = %s WHERE id = %s",
+                (request_data.image_url, new_local_path, anime_id)
+            )
+    if affected_rows == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="作品未找到。")
+    return {"new_path": new_local_path}
 
 @router.get("/library/source/{source_id}/details", summary="获取单个数据源的详情")
 async def get_source_details(
@@ -479,7 +551,27 @@ async def toggle_source_favorite(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
     return
 
-@router.get("/library/anime/{anime_id}/sources", response_model=List[Dict[str, Any]], summary="获取作品的所有数据源")
+@router.put("/library/source/{source_id}/toggle-incremental-refresh", status_code=status.HTTP_204_NO_CONTENT, summary="切换数据源的定时增量更新状态")
+async def toggle_source_incremental_refresh(
+    source_id: int,
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool)
+):
+    """切换指定数据源的定时增量更新的启用/禁用状态。"""
+    toggled = await crud.toggle_source_incremental_refresh(pool, source_id)
+    if not toggled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+    logger.info(f"用户 '{current_user.username}' 切换了源 ID {source_id} 的定时增量更新状态。")
+
+class SourceDetail(models.BaseModel):
+    source_id: int
+    provider_name: str
+    media_id: str
+    is_favorited: bool
+    incremental_refresh_enabled: bool
+    created_at: datetime
+
+@router.get("/library/anime/{anime_id}/sources", response_model=List[SourceDetail], summary="获取作品的所有数据源")
 async def get_anime_sources_for_anime(
     anime_id: int,
     current_user: models.User = Depends(security.get_current_user),
@@ -533,6 +625,64 @@ async def reorder_source_episodes(
 
     logger.info(f"用户 '{current_user.username}' 提交了重整源 ID: {source_id} 集数的任务 (Task ID: {task_id})。")
     return {"message": f"重整集数任务 '{task_title}' 已提交。", "task_id": task_id}
+
+@router.post("/library/source/{source_id}/incremental-refresh", status_code=status.HTTP_202_ACCEPTED, summary="增量刷新指定源")
+async def incremental_refresh_source(
+    source_id: int,
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool),
+    scraper_manager: ScraperManager = Depends(get_scraper_manager),
+    task_manager: TaskManager = Depends(get_task_manager)
+):
+    """提交一个后台任务，增量刷新指定源，抓取比当前已收录分集多一集的弹幕"""
+    source_info = await crud.get_anime_source_info(pool, source_id)
+    if not source_info or not source_info.get("provider_name") or not source_info.get("media_id"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anime not found or missing source information for refresh.")
+
+    # 获取当前最新分集
+    eps = await crud.get_episodes_for_source(pool, source_id)
+    if len(eps) > 0:
+        latest_episode_index = sorted(eps, key=lambda x: x['episode_index'])[-1]['episode_index']
+    else:
+        latest_episode_index = 0
+
+    next_episode_index = latest_episode_index + 1
+    logger.info(f"用户 '{current_user.username}' 为番剧 '{source_info['title']}' (源ID: {source_id}) 启动了增量刷新任务。")
+
+    # 从新集信息创建任务
+    task_coro = lambda callback: incremental_refresh_task(source_id, next_episode_index, pool, scraper_manager, task_manager, callback, source_info["title"])
+    task_id, _ = await task_manager.submit_task(task_coro, f"增量刷新: {source_info['title']} - 尝试获取第{next_episode_index}集")
+
+    return {"message": f"番剧 '{source_info['title']}' 的增量刷新任务已提交，尝试获取第{next_episode_index}集。", "task_id": task_id}
+
+async def incremental_refresh_task(source_id: int, next_episode_index: int, pool: aiomysql.Pool, manager: ScraperManager, task_manager: TaskManager, progress_callback: Callable, anime_title: str):
+    """后台任务：增量刷新一个已存在的番剧。"""
+    logger.info(f"开始增量刷新源 ID: {source_id}，尝试获取第{next_episode_index}集")
+    source_info = await crud.get_anime_source_info(pool, source_id)
+    if not source_info:
+        progress_callback(100, "失败: 找不到源信息")
+        logger.error(f"刷新失败：在数据库中找不到源 ID: {source_id}")
+        return
+    try:
+        # 重新执行通用导入逻辑, 只导入指定的一集
+        await generic_import_task(
+            provider=source_info["provider_name"],
+            media_id=source_info["media_id"],
+            anime_title=anime_title,
+            media_type=source_info["type"],
+            season=source_info.get("season", 1),
+            current_episode_index=next_episode_index,
+            image_url=None,
+            douban_id=None, tmdb_id=source_info.get("tmdb_id"), 
+            imdb_id=None, tvdb_id=None,
+            progress_callback=progress_callback,
+            pool=pool,
+            manager=manager,
+            task_manager=task_manager)
+    except Exception as e:
+        logger.error(f"增量刷新源任务 (ID: {source_id}) 失败: {e}", exc_info=True)
+        raise
+
 
 @router.delete("/library/episode/{episode_id}", status_code=status.HTTP_202_ACCEPTED, summary="提交删除指定分集的任务")
 async def delete_episode_from_source(
@@ -698,6 +848,161 @@ async def update_scraper_settings(
     await manager.load_and_sync_scrapers()
     logger.info(f"用户 '{current_user.username}' 更新了搜索源设置，已重新加载。")
     return
+
+class ProxyTestResult(BaseModel):
+    status: str  # 'success' or 'failure'
+    latency: Optional[float] = None # in ms
+    error: Optional[str] = None
+
+class ProxySettingsResponse(BaseModel):
+    proxy_protocol: str
+    proxy_host: Optional[str] = None
+    proxy_port: Optional[int] = None
+    proxy_username: Optional[str] = None
+    proxy_password: Optional[str] = None
+    proxy_enabled: bool
+
+class ProxySettingsUpdate(BaseModel):
+    proxy_protocol: str
+    proxy_host: Optional[str] = None
+    proxy_port: Optional[int] = None
+    proxy_username: Optional[str] = None
+    proxy_password: Optional[str] = None
+    proxy_enabled: bool
+
+@router.get("/config/proxy", response_model=ProxySettingsResponse, summary="获取代理配置")
+
+async def get_proxy_settings(
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool)
+):
+    """获取全局代理配置。"""
+    proxy_url_task = crud.get_config_value(pool, "proxy_url", "")
+    proxy_enabled_task = crud.get_config_value(pool, "proxy_enabled", "false")
+    proxy_url, proxy_enabled_str = await asyncio.gather(proxy_url_task, proxy_enabled_task)
+
+    proxy_enabled = proxy_enabled_str.lower() == 'true'
+    
+    # Parse the URL into components
+    protocol, host, port, username, password = "http", None, None, None, None
+    if proxy_url:
+        try:
+            p = urlparse(proxy_url)
+            protocol = p.scheme or "http"
+            host = p.hostname
+            port = p.port
+            username = unquote(p.username) if p.username else None
+            password = unquote(p.password) if p.password else None
+        except Exception as e:
+            logger.error(f"解析存储的代理URL '{proxy_url}' 失败: {e}")
+
+    return ProxySettingsResponse(
+        proxy_protocol=protocol,
+        proxy_host=host,
+        proxy_port=port,
+        proxy_username=username,
+        proxy_password=password,
+        proxy_enabled=proxy_enabled
+    )
+
+@router.put("/config/proxy", status_code=status.HTTP_204_NO_CONTENT, summary="更新代理配置")
+async def update_proxy_settings(
+    payload: ProxySettingsUpdate,
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool)
+):
+    """更新全局代理配置。"""
+    proxy_url = ""
+    if payload.proxy_host and payload.proxy_port:
+        # URL-encode username and password to handle special characters like '@'
+        userinfo = ""
+        if payload.proxy_username:
+            userinfo = quote(payload.proxy_username)
+            if payload.proxy_password:
+                userinfo += ":" + quote(payload.proxy_password)
+            userinfo += "@"
+        
+        proxy_url = f"{payload.proxy_protocol}://{userinfo}{payload.proxy_host}:{payload.proxy_port}"
+
+    tasks = [
+        crud.update_config_value(pool, "proxy_url", proxy_url),
+        crud.update_config_value(pool, "proxy_enabled", str(payload.proxy_enabled).lower())
+    ]
+    await asyncio.gather(*tasks)
+    logger.info(f"用户 '{current_user.username}' 更新了代理配置。")
+
+class ProxyTestRequest(BaseModel):
+    proxy_url: Optional[str] = None
+
+class FullProxyTestResponse(BaseModel):
+    proxy_connectivity: ProxyTestResult
+    target_sites: Dict[str, ProxyTestResult]
+
+@router.post("/proxy/test", response_model=FullProxyTestResponse, summary="测试代理连接和延迟")
+async def test_proxy_latency(
+    request: ProxyTestRequest,
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool)
+):
+    """测试代理到常用域名的连接延迟。如果未提供代理URL，则测试直接连接。"""
+    proxy_url = request.proxy_url
+    # 修正：使用旧的 'proxy' 参数以兼容旧版 httpx
+    proxy_to_use = proxy_url if proxy_url else None
+
+    # Test 1: Proxy Connectivity
+    proxy_connectivity_result: ProxyTestResult
+    # 使用一个已知的高可用、轻量级端点进行测试
+    test_url_google = "http://www.google.com/generate_204"
+
+    if not proxy_url:
+        proxy_connectivity_result = ProxyTestResult(status="skipped", error="未配置代理，跳过测试")
+    else:
+        try:
+            async with httpx.AsyncClient(proxy=proxy_to_use, timeout=10.0, follow_redirects=False) as client:
+                start_time = time.time()
+                response = await client.get(test_url_google)
+                latency = (time.time() - start_time) * 1000
+                # 204 No Content 是成功的标志
+                if response.status_code == 204:
+                    proxy_connectivity_result = ProxyTestResult(status="success", latency=latency)
+                else:
+                    proxy_connectivity_result = ProxyTestResult(
+                        status="failure",
+                        error=f"连接成功但状态码异常: {response.status_code}"
+                    )
+        except Exception as e:
+            proxy_connectivity_result = ProxyTestResult(status="failure", error=str(e))
+
+    # Test 2: Target Site Reachability
+    target_sites_results: Dict[str, ProxyTestResult] = {}
+    test_domains = [
+        "https://api.bilibili.com", "https://www.iqiyi.com", "https://v.qq.com",
+        "https://youku.com", "https://www.mgtv.com", "https://ani.gamer.com.tw",
+        "https://api.themoviedb.org", "https://api.bgm.tv", "https://movie.douban.com"
+    ]
+    
+    async def test_domain(domain: str, client: httpx.AsyncClient) -> tuple[str, ProxyTestResult]:
+        try:
+            start_time = time.time()
+            # 使用 HEAD 请求以提高效率，我们只关心连通性
+            await client.head(domain, timeout=10.0)
+            latency = (time.time() - start_time) * 1000
+            return domain, ProxyTestResult(status="success", latency=latency)
+        except Exception as e:
+            # 简化错误信息，避免在UI上显示过长的堆栈跟踪
+            error_str = f"{type(e).__name__}"
+            return domain, ProxyTestResult(status="failure", error=error_str)
+
+    async with httpx.AsyncClient(proxy=proxy_to_use, timeout=10.0) as client:
+        tasks = [test_domain(domain, client) for domain in test_domains]
+        results = await asyncio.gather(*tasks)
+        for domain, result in results:
+            target_sites_results[domain] = result
+
+    return FullProxyTestResponse(
+        proxy_connectivity=proxy_connectivity_result,
+        target_sites=target_sites_results
+    )
 
 @router.get("/scrapers/{provider_name}/config", response_model=Dict[str, str], summary="获取指定搜索源的配置")
 async def get_scraper_config(
@@ -1181,7 +1486,7 @@ async def delete_bulk_episodes_task(episode_ids: List[int], pool: aiomysql.Pool,
     raise TaskSuccess(f"批量删除完成，共处理 {total} 个，成功删除 {deleted_count} 个。")
 
 async def generic_import_task(
-    provider: str,
+    provider: str, # noqa: F821
     media_id: str,
     anime_title: str,
     media_type: str,
@@ -1223,44 +1528,102 @@ async def generic_import_task(
             logger.info(f"检测到媒体类型为电影，将只处理第一个分集 '{episodes[0].title}'。")
             episodes = episodes[:1]
 
-        # 步骤 2: 为每个分集获取弹幕，并存储在内存中
-        episode_comment_data = []
+        # 步骤 2: 循环处理分集，在首次成功获取弹幕后再创建数据库主条目
+        anime_id: Optional[int] = None
+        source_id: Optional[int] = None
+        total_comments_added = 0
         total_episodes = len(episodes)
+
         for i, episode in enumerate(episodes):
             logger.info(f"--- 开始处理分集 {i+1}/{total_episodes}: '{episode.title}' (ID: {episode.episodeId}) ---")
-            base_progress = 10 + int((i / total_episodes) * 80)
+            base_progress = 10 + int((i / total_episodes) * 85) # 10% for setup, 85% for processing, 5% for final
             await progress_callback(base_progress, f"正在处理: {episode.title} ({i+1}/{total_episodes})")
 
             async def sub_progress_callback(danmaku_progress: int, danmaku_description: str):
-                current_total_progress = base_progress + (danmaku_progress / 100) * (80 / total_episodes)
+                current_total_progress = base_progress + (danmaku_progress / 100) * (85 / total_episodes)
                 await progress_callback(current_total_progress, f"处理: {episode.title} - {danmaku_description}")
 
             comments = await scraper.get_comments(episode.episodeId, progress_callback=sub_progress_callback)
-            episode_comment_data.append({"episode_info": episode, "comments": comments})
 
-        # 步骤 3: 所有数据获取成功，现在开始写入数据库
-        await progress_callback(95, "数据获取完成，正在写入数据库...")
-        anime_id = await crud.get_or_create_anime(pool, normalized_title, media_type, season, image_url)
-        await crud.update_metadata_if_empty(pool, anime_id, tmdb_id, imdb_id, tvdb_id, douban_id)
-        source_id = await crud.link_source_to_anime(pool, anime_id, provider, media_id)
+            # 只有在确实有弹幕需要写入时，才创建番剧和源的记录
+            if comments and anime_id is None:
+                logger.info("首次成功获取弹幕，正在创建数据库主条目...")
+                await progress_callback(base_progress + 1, "正在创建数据库主条目...")
+                # 在创建主条目前，先下载并缓存图片
+                local_image_path = await download_image(image_url, pool, provider)
+                # 修正：将 local_image_path 传递给 get_or_create_anime
+                anime_id = await crud.get_or_create_anime(pool, normalized_title, media_type, season, image_url, local_image_path)
+                await crud.update_metadata_if_empty(pool, anime_id, tmdb_id, imdb_id, tvdb_id, douban_id)
+                source_id = await crud.link_source_to_anime(pool, anime_id, provider, media_id)
+                logger.info(f"主条目创建完成 (Anime ID: {anime_id}, Source ID: {source_id})。")
 
-        # 步骤 4: 循环写入分集和弹幕
-        total_comments_added = 0
-        for data in episode_comment_data:
-            episode_info = data["episode_info"]
-            comments = data["comments"]
-            episode_db_id = await crud.get_or_create_episode(pool, source_id, episode_info.episodeIndex, episode_info.title, episode_info.url, episode_info.episodeId)
-            if not comments: continue
-            added_count = await crud.bulk_insert_comments(pool, episode_db_id, comments)
-            total_comments_added += added_count
-            logger.info(f"分集 '{episode_info.title}' (DB ID: {episode_db_id}) 新增 {added_count} 条弹幕。")
+            # 如果主条目已创建（意味着至少有一集有弹幕），则处理当前分集
+            if anime_id and source_id:
+                episode_db_id = await crud.create_episode_if_not_exists(pool, anime_id, source_id, episode.episodeIndex, episode.title, episode.url, episode.episodeId)
+                if not comments:
+                    logger.info(f"分集 '{episode.title}' (DB ID: {episode_db_id}) 未找到弹幕，但已创建分集记录。")
+                    continue
+                added_count = await crud.bulk_insert_comments(pool, episode_db_id, comments)
+                total_comments_added += added_count
+                logger.info(f"分集 '{episode.title}' (DB ID: {episode_db_id}) 新增 {added_count} 条弹幕。")
+            else:
+                # 如果 anime_id 仍然是 None，说明到目前为止还没有一集成功获取到弹幕
+                logger.info(f"分集 '{episode.title}' 未找到弹幕，跳过创建主条目。")
 
-        raise TaskSuccess(f"导入完成，共新增 {total_comments_added} 条弹幕。")
+        if total_comments_added == 0:
+            raise TaskSuccess("导入完成，但未找到任何新弹幕。")
+        else:
+            raise TaskSuccess(f"导入完成，共新增 {total_comments_added} 条弹幕。")
     except TaskSuccess:
         raise # 重新抛出以被 TaskManager 正确处理
     except Exception as e:
         logger.error(f"导入任务发生严重错误: {e}", exc_info=True)
         raise  # 重新抛出异常，以便任务管理器能捕获并标记任务为“失败”
+    
+async def edited_import_task(
+    request_data: "EditedImportRequest",
+    progress_callback: Callable,
+    pool: aiomysql.Pool,
+    manager: ScraperManager
+):
+    """后台任务：处理编辑后的导入请求。"""
+    try:
+        scraper = manager.get_scraper(request_data.provider)
+        normalized_title = request_data.anime_title.replace(":", "：")
+        
+        episodes = request_data.episodes
+        if not episodes:
+            raise TaskSuccess("没有提供任何分集，任务结束。")
+
+        anime_id: Optional[int] = None
+        source_id: Optional[int] = None
+        total_comments_added = 0
+        total_episodes = len(episodes)
+
+        for i, episode in enumerate(episodes):
+            await progress_callback(10 + int((i / total_episodes) * 85), f"正在处理: {episode.title} ({i+1}/{total_episodes})")
+            # 修正：当不需要子进度回调时，应传递 None 或不传递该参数。
+            # 之前传递的 lambda p, d: None 是一个同步函数，对其进行 await 会导致 TypeError。
+            # 直接调用而不传递 progress_callback 会使用其默认值 None，从而修复此问题。
+            comments = await scraper.get_comments(episode.episodeId)
+
+            if comments and anime_id is None:
+                local_image_path = await download_image(request_data.image_url, pool, request_data.provider)
+                anime_id = await crud.get_or_create_anime(pool, normalized_title, request_data.media_type, request_data.season, request_data.image_url, local_image_path)
+                await crud.update_metadata_if_empty(pool, anime_id, request_data.tmdb_id, None, None, request_data.douban_id)
+                source_id = await crud.link_source_to_anime(pool, anime_id, request_data.provider, request_data.media_id)
+
+            if anime_id and source_id:
+                episode_db_id = await crud.create_episode_if_not_exists(pool, anime_id, source_id, episode.episodeIndex, episode.title, episode.url, episode.episodeId)
+                if comments:
+                    total_comments_added += await crud.bulk_insert_comments(pool, episode_db_id, comments)
+
+        if total_comments_added == 0: raise TaskSuccess("导入完成，但未找到任何新弹幕。")
+        else: raise TaskSuccess(f"导入完成，共新增 {total_comments_added} 条弹幕。")
+    except TaskSuccess: raise
+    except Exception as e:
+        logger.error(f"编辑后导入任务发生严重错误: {e}", exc_info=True)
+        raise
 
 async def full_refresh_task(source_id: int, pool: aiomysql.Pool, manager: ScraperManager, task_manager: TaskManager, progress_callback: Callable):
     """
@@ -1549,6 +1912,37 @@ async def import_from_provider(
 
     return {"message": f"'{request_data.anime_title}' 的导入任务已提交。请在任务管理器中查看进度。", "task_id": task_id}
 
+class EditedImportRequest(models.BaseModel):
+    provider: str
+    media_id: str = Field(..., alias="mediaId")
+    anime_title: str
+    media_type: str
+    season: int
+    image_url: Optional[str] = Field(None, alias="imageUrl")
+    douban_id: Optional[str] = None
+    tmdb_id: Optional[str] = None
+    # 关键区别：直接提供一个分集列表
+    episodes: List[models.ProviderEpisodeInfo]
+
+@router.post("/import/edited", status_code=status.HTTP_202_ACCEPTED, summary="导入编辑后的分集列表")
+async def import_edited_episodes(
+    request_data: EditedImportRequest,
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool),
+    scraper_manager: ScraperManager = Depends(get_scraper_manager),
+    task_manager: TaskManager = Depends(get_task_manager)
+):
+    """提交一个后台任务，使用用户在前端编辑过的分集列表进行导入。"""
+    task_title = f"编辑后导入: {request_data.anime_title}"
+    task_coro = lambda callback: edited_import_task(
+        request_data=request_data,
+        progress_callback=callback,
+        pool=pool,
+        manager=scraper_manager
+    )
+    task_id, _ = await task_manager.submit_task(task_coro, task_title)
+    return {"message": f"'{request_data.anime_title}' 的编辑导入任务已提交。", "task_id": task_id}
+
 @router.post("/tasks/{task_id}/pause", status_code=status.HTTP_202_ACCEPTED, summary="暂停一个正在运行的任务")
 async def pause_task(
     task_id: str,
@@ -1684,6 +2078,88 @@ async def create_scheduled_task(
     except Exception as e:
         logger.error(f"创建定时任务失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="创建定时任务时发生内部错误")
+
+class ImportFromUrlRequest(models.BaseModel):
+    provider: str
+    url: str
+    title: str
+    media_type: str
+    season: int
+
+@router.post("/import-from-url", status_code=status.HTTP_202_ACCEPTED, summary="从URL导入弹幕")
+async def import_from_url(
+    request_data: ImportFromUrlRequest,
+    current_user: models.User = Depends(security.get_current_user),
+    pool: aiomysql.Pool = Depends(get_db_pool),
+    scraper_manager: ScraperManager = Depends(get_scraper_manager),
+    task_manager: TaskManager = Depends(get_task_manager)
+):
+    provider = request_data.provider
+    url = request_data.url
+    title = request_data.title
+    
+    try:
+        scraper = scraper_manager.get_scraper(provider)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    media_id_for_scraper = None
+
+    try:
+        if provider == 'bilibili':
+            bvid_match = re.search(r'video/(BV[a-zA-Z0-9]+)', url)
+            ssid_match = re.search(r'bangumi/play/ss(\d+)', url)
+            epid_match = re.search(r'bangumi/play/ep(\d+)', url)
+            if ssid_match:
+                media_id_for_scraper = f"ss{ssid_match.group(1)}"
+            elif bvid_match:
+                media_id_for_scraper = f"bv{bvid_match.group(1)}"
+            elif epid_match:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True)
+                    resp.raise_for_status()
+                    html_text = resp.text
+                    ssid_match_from_page = re.search(r'"season_id":(\d+)', html_text)
+                    if ssid_match_from_page:
+                        media_id_for_scraper = f"ss{ssid_match_from_page.group(1)}"
+        elif provider == 'tencent':
+            cid_match = re.search(r'/cover/([^/]+)', url)
+            if cid_match:
+                media_id_for_scraper = cid_match.group(1)
+        elif provider == 'iqiyi':
+            linkid_match = re.search(r'v_(\w+)\.html', url)
+            if linkid_match:
+                media_id_for_scraper = linkid_match.group(1)
+        elif provider == 'youku':
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True)
+                resp.raise_for_status()
+                html_text = resp.text
+                showid_match = re.search(r'showid:"(\d+)"', html_text)
+                if showid_match:
+                    media_id_for_scraper = showid_match.group(1)
+        elif provider == 'mgtv':
+            cid_match = re.search(r'/b/(\d+)/', url)
+            if cid_match:
+                media_id_for_scraper = cid_match.group(1)
+    except Exception as e:
+        logger.error(f"从URL解析媒体ID时出错: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="从URL解析媒体ID时出错")
+
+    if not media_id_for_scraper:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"无法从URL '{url}' 中为提供商 '{provider}' 解析出媒体ID。")
+
+    task_coro = lambda callback: generic_import_task(
+        provider=provider, media_id=media_id_for_scraper, anime_title=title,
+        media_type=request_data.media_type, season=request_data.season,
+        current_episode_index=None, image_url=None, douban_id=None, tmdb_id=None, imdb_id=None, tvdb_id=None,
+        progress_callback=callback, pool=pool, manager=scraper_manager, task_manager=task_manager
+    )
+    
+    task_title = f"URL导入: {title}"
+    task_id, _ = await task_manager.submit_task(task_coro, task_title)
+
+    return {"message": f"'{title}' 的URL导入任务已提交。", "task_id": task_id}
 
 @router.put("/scheduled-tasks/{task_id}", response_model=ScheduledTaskInfo, summary="更新定时任务")
 async def update_scheduled_task(

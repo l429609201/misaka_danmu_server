@@ -8,6 +8,7 @@ let episodeListView, danmakuListView;
 
 // State
 let currentEpisodes = [];
+let episodeSortOrder = 'asc'; // 'asc' or 'desc'
 let currentModalConfirmHandler = null; // 仅用于本模块控制通用模态的“确认”按钮
 
 function initializeElements() {
@@ -45,9 +46,12 @@ function renderLibrary(animes) {
     animes.forEach(anime => {
         const row = libraryTableBody.insertRow();
         row.dataset.title = anime.title.toLowerCase();
-        
+
+        // 优先使用本地缓存路径，否则回退到原始URL，最后使用占位图
+        const imageUrl = anime.local_image_path || anime.imageUrl || '/static/placeholder.png';
+
         row.innerHTML = `
-            <td class="poster-cell"><img src="${anime.imageUrl || '/static/placeholder.png'}" referrerpolicy="strict-origin-when-cross-origin" alt="${anime.title}"></td>
+            <td class="poster-cell"><img src="${imageUrl}" referrerpolicy="no-referrer" alt="${anime.title}"></td>
             <td>${anime.title}</td>
             <td>${{ 'tv_series': '电视节目', 'movie': '电影/剧场版', 'ova': 'OVA', 'other': '其他' }[anime.type] || anime.type}</td>
             <td>${anime.season}</td>
@@ -133,7 +137,8 @@ async function showAnimeDetailView(animeId) {
         const anime = fullLibrary.animes.find(a => a.animeId === animeId);
         if (!anime) throw new Error("找不到该作品的信息。");
 
-        detailViewImg.src = anime.imageUrl || '/static/placeholder.png';
+        // 同样，在详情页也优先使用本地图片
+        detailViewImg.src = anime.local_image_path || anime.imageUrl || '/static/placeholder.png';
         detailViewImg.alt = anime.title;
         detailViewTitle.textContent = anime.title;
         detailViewMeta.textContent = `季: ${anime.season} | 总集数: ${anime.episodeCount || 0} | 已关联 ${sources.length} 个源`;
@@ -160,15 +165,24 @@ function renderSourceDetailTable(sources, anime) {
                     if (checkbox) checkbox.click();
                 }
             });
+            const statusIcons = [];
+            if (source.is_favorited) {
+                statusIcons.push('<span title="精确标记">🌟</span>');
+            }
+            if (source.incremental_refresh_enabled) {
+                statusIcons.push('<span title="定时追更">⏰</span>');
+            }
             row.innerHTML = `
                 <td><input type="checkbox" class="source-checkbox" value="${source.source_id}"></td>
                 <td>${source.provider_name}</td>
                 <td>${source.media_id}</td>
-                <td>${source.is_favorited ? '🌟' : ''}</td>
+                <td class="status-cell">${statusIcons.join(' ')}</td>
                 <td>${new Date(source.created_at).toLocaleString()}</td>
                 <td class="actions-cell">
                     <div class="action-buttons-wrapper" data-source-id="${source.source_id}" data-anime-title="${anime.title}" data-anime-id="${anime.animeId}">
-                        <button class="action-btn" data-action="favorite" title="精确标记">${source.is_favorited ? '🌟' : '⭐'}</button>
+                        <button class="action-btn" data-action="favorite" title="精确标记(用于自动匹配)">${source.is_favorited ? '🌟' : '⭐'}</button>
+                        <button class="action-btn ${source.incremental_refresh_enabled ? '' : 'disabled-icon'}" data-action="toggle-incremental" title="定时增量更新">⏰</button>
+                        <button class="action-btn" data-action="incremental-update" title="手动增量更新 (获取下一集)">⏭️</button>
                         <button class="action-btn" data-action="view_episodes" title="查看/编辑分集">📖</button>
                         <button class="action-btn" data-action="refresh" title="刷新此源">🔄</button>
                         <button class="action-btn" data-action="delete" title="删除此源">🗑️</button>
@@ -177,6 +191,7 @@ function renderSourceDetailTable(sources, anime) {
             `;
         });
     } else {
+
         sourceDetailTableBody.innerHTML = `<tr><td colspan="6">未关联任何数据源。</td></tr>`;
     }
     // Add event listener for individual checkboxes to update the "Select All" button state
@@ -202,6 +217,25 @@ async function handleSourceAction(e) {
                 showAnimeDetailView(animeId);
             } catch (error) {
                 alert(`操作失败: ${error.message}`);
+            }
+            break;
+        case 'toggle-incremental':
+            try {
+                await apiFetch(`/api/ui/library/source/${sourceId}/toggle-incremental-refresh`, { method: 'PUT' });
+                showAnimeDetailView(animeId); // Refresh the view to show the new status icon
+            } catch (error) {
+                alert(`操作失败: ${error.message}`);
+            }
+            break;
+        case 'incremental-update':
+            if (confirm(`您确定要为 '${animeTitle}' 的这个数据源执行增量更新吗？\n此操作将尝试获取下一集。`)) {
+                apiFetch(`/api/ui/library/source/${sourceId}/incremental-refresh`, { method: 'POST' })
+                    .then(response => {
+                        if (confirm((response.message || "增量更新任务已提交。") + "\n\n是否立即跳转到任务管理器查看进度？")) {
+                            document.querySelector('.nav-link[data-view="task-manager-view"]').click();
+                        }
+                    })
+                    .catch(error => alert(`启动增量更新任务失败: ${error.message}`));
             }
             break;
         case 'view_episodes':
@@ -252,14 +286,22 @@ async function showEpisodeListView(sourceId, animeTitle, animeId) {
 
     try {
         const episodes = await apiFetch(`/api/ui/library/source/${sourceId}/episodes`);
-        currentEpisodes = episodes;
-        renderEpisodeListView(sourceId, animeTitle, episodes, animeId);
+        currentEpisodes = episodes; // Store the original, unsorted list
+        renderEpisodeListView(sourceId, animeTitle, episodes, animeId); // Pass the unsorted list
     } catch (error) {
         episodeListView.innerHTML = `<div class="error">加载分集列表失败: ${(error.message || error)}</div>`;
     }
 }
 
 function renderEpisodeListView(sourceId, animeTitle, episodes, animeId) {
+    // Sort episodes based on the current sort order
+    const sortedEpisodes = [...episodes].sort((a, b) => {
+        if (episodeSortOrder === 'desc') {
+            return b.episode_index - a.episode_index;
+        }
+        return a.episode_index - b.episode_index;
+    });
+
     episodeListView.innerHTML = `
         <div class="episode-list-header">
             <h3>分集列表: ${animeTitle}</h3>
@@ -269,6 +311,13 @@ function renderEpisodeListView(sourceId, animeTitle, episodes, animeId) {
             <div class="actions-left">
                 <button id="select-all-episodes-btn" class="secondary-btn">全选</button>
                 <button id="delete-selected-episodes-btn" class="secondary-btn danger">批量删除选中</button>
+                <div class="sort-switch-container">
+                    <label for="episode-sort-switch">倒序显示</label>
+                    <label class="switch">
+                        <input type="checkbox" id="episode-sort-switch" ${episodeSortOrder === 'desc' ? 'checked' : ''}>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
             </div>
             <div class="actions-right">
                 <button id="cleanup-by-average-btn" class="secondary-btn danger">正片重整</button>
@@ -277,7 +326,7 @@ function renderEpisodeListView(sourceId, animeTitle, episodes, animeId) {
             </div>
         </div>
         <table id="episode-list-table">
-            <thead><tr><th><input type="checkbox" class="hidden"></th><th>ID</th><th>剧集名</th><th>集数</th><th>弹幕数</th><th>采集时间</th><th>官方链接</th><th>剧集操作</th></tr></thead>
+            <thead><tr><th><input type="checkbox" class="hidden"></th><th>ID</th><th>剧集名</th><th>集数</th><th>弹幕数</th><th>采集时间</th><th>官方<br>链接</th><th>剧集操作</th></tr></thead>
             <tbody></tbody>
         </table>
     `;
@@ -286,8 +335,8 @@ function renderEpisodeListView(sourceId, animeTitle, episodes, animeId) {
     episodeListView.dataset.animeId = animeId;
 
     const tableBody = episodeListView.querySelector('tbody');
-    if (episodes.length > 0) {
-        episodes.forEach(ep => {
+    if (sortedEpisodes.length > 0) {
+        sortedEpisodes.forEach(ep => {
             const row = tableBody.insertRow();
             row.style.cursor = 'pointer';
             row.addEventListener('click', (e) => {
@@ -310,6 +359,7 @@ function renderEpisodeListView(sourceId, animeTitle, episodes, animeId) {
                     </div>
                 </td>
             `;
+
         });
     } else {
         tableBody.innerHTML = `<tr><td colspan="8">未找到任何分集数据。</td></tr>`;
@@ -326,6 +376,13 @@ function renderEpisodeListView(sourceId, animeTitle, episodes, animeId) {
     document.getElementById('manual-import-btn').addEventListener('click', () => showManualImportModal(sourceId));
     document.getElementById('back-to-detail-view-btn').addEventListener('click', () => showAnimeDetailView(animeId));
     tableBody.addEventListener('click', handleEpisodeAction);
+
+    // Add event listener for the new sort switch
+    document.getElementById('episode-sort-switch').addEventListener('change', (e) => {
+        episodeSortOrder = e.target.checked ? 'desc' : 'asc';
+        // Re-render with the new sort order. We use `currentEpisodes` which is the original unsorted list.
+        renderEpisodeListView(sourceId, animeTitle, currentEpisodes, animeId);
+    });
 }
 
 function handleSelectAllEpisodes() {

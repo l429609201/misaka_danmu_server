@@ -84,6 +84,9 @@ class ScraperManager:
                 # 使用标准日志记录器
                 logging.getLogger(__name__).error(f"加载搜索源模块 {module_name} 失败，已跳过。错误: {e}", exc_info=True)
         
+        # 新增：在同步新搜索源之前，先从数据库中移除不再存在的过时搜索源。
+        await crud.remove_stale_scrapers(self.pool, discovered_providers)
+        
         await crud.sync_scrapers_to_db(self.pool, discovered_providers)
         settings_list = await crud.get_all_scraper_settings(self.pool)
         self.scraper_settings = {s['provider_name']: s for s in settings_list}

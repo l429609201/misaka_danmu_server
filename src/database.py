@@ -125,11 +125,11 @@ async def init_db_tables(app: FastAPI):
             # 将所有建表语句放入一个字典中
             tables_to_create = {
                 "anime": """CREATE TABLE `anime` (`id` BIGINT NOT NULL AUTO_INCREMENT, `title` VARCHAR(255) NOT NULL, `type` ENUM('tv_series', 'movie', 'ova', 'other') NOT NULL DEFAULT 'tv_series', `image_url` VARCHAR(512) NULL, `season` INT NOT NULL DEFAULT 1, `episode_count` INT NULL DEFAULT NULL, `source_url` VARCHAR(512) NULL, `created_at` TIMESTAMP NULL, PRIMARY KEY (`id`), FULLTEXT INDEX `idx_title_fulltext` (`title`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "episode": """CREATE TABLE `episode` (`id` BIGINT NOT NULL AUTO_INCREMENT, `source_id` BIGINT NOT NULL, `title` VARCHAR(255) NOT NULL, `episode_index` INT NOT NULL, `provider_episode_id` VARCHAR(255) NULL, `source_url` VARCHAR(512) NULL, `fetched_at` TIMESTAMP NULL, `comment_count` INT NOT NULL DEFAULT 0, PRIMARY KEY (`id`), UNIQUE INDEX `idx_source_episode_unique` (`source_id` ASC, `episode_index` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
+                "episode": """CREATE TABLE `episode` (`id` BIGINT NOT NULL, `source_id` BIGINT NOT NULL, `title` VARCHAR(255) NOT NULL, `episode_index` INT NOT NULL, `provider_episode_id` VARCHAR(255) NULL, `source_url` VARCHAR(512) NULL, `fetched_at` TIMESTAMP NULL, `comment_count` INT NOT NULL DEFAULT 0, PRIMARY KEY (`id`), UNIQUE INDEX `idx_source_episode_unique` (`source_id` ASC, `episode_index` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
                 "comment": """CREATE TABLE `comment` (`id` BIGINT NOT NULL AUTO_INCREMENT, `cid` VARCHAR(255) NOT NULL, `episode_id` BIGINT NOT NULL, `p` VARCHAR(255) NOT NULL, `m` TEXT NOT NULL, `t` DECIMAL(10, 2) NOT NULL, PRIMARY KEY (`id`), UNIQUE INDEX `idx_episode_cid_unique` (`episode_id` ASC, `cid` ASC), INDEX `idx_episode_time` (`episode_id` ASC, `t` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
                 "users": """CREATE TABLE `users` (`id` BIGINT NOT NULL AUTO_INCREMENT, `username` VARCHAR(50) NOT NULL, `hashed_password` VARCHAR(255) NOT NULL, `token` TEXT NULL, `token_update` TIMESTAMP NULL, `created_at` TIMESTAMP NULL, PRIMARY KEY (`id`), UNIQUE INDEX `idx_username_unique` (`username` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
                 "scrapers": """CREATE TABLE `scrapers` (`provider_name` VARCHAR(50) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `display_order` INT NOT NULL DEFAULT 0, PRIMARY KEY (`provider_name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "anime_sources": """CREATE TABLE `anime_sources` (`id` BIGINT NOT NULL AUTO_INCREMENT, `anime_id` BIGINT NOT NULL, `provider_name` VARCHAR(50) NOT NULL, `media_id` VARCHAR(255) NOT NULL, `is_favorited` BOOLEAN NOT NULL DEFAULT FALSE, `created_at` TIMESTAMP NULL, PRIMARY KEY (`id`), UNIQUE INDEX `idx_anime_provider_media_unique` (`anime_id` ASC, `provider_name` ASC, `media_id` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
+                "anime_sources": """CREATE TABLE `anime_sources` (`id` BIGINT NOT NULL AUTO_INCREMENT, `anime_id` BIGINT NOT NULL, `provider_name` VARCHAR(50) NOT NULL, `media_id` VARCHAR(255) NOT NULL, `is_favorited` BOOLEAN NOT NULL DEFAULT FALSE, `incremental_refresh_enabled` BOOLEAN NOT NULL DEFAULT FALSE, `created_at` TIMESTAMP NULL, PRIMARY KEY (`id`), UNIQUE INDEX `idx_anime_provider_media_unique` (`anime_id` ASC, `provider_name` ASC, `media_id` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
                 "anime_metadata": """CREATE TABLE `anime_metadata` (`id` BIGINT NOT NULL AUTO_INCREMENT, `anime_id` BIGINT NOT NULL, `tmdb_id` VARCHAR(50) NULL, `tmdb_episode_group_id` VARCHAR(50) NULL, `imdb_id` VARCHAR(50) NULL, `tvdb_id` VARCHAR(50) NULL, `douban_id` VARCHAR(50) NULL, `bangumi_id` VARCHAR(50) NULL, PRIMARY KEY (`id`), UNIQUE INDEX `idx_anime_id_unique` (`anime_id` ASC), CONSTRAINT `fk_metadata_anime` FOREIGN KEY (`anime_id`) REFERENCES `anime`(`id`) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
                 "config": """CREATE TABLE `config` (`config_key` VARCHAR(100) NOT NULL, `config_value` TEXT NOT NULL, `description` TEXT NULL, PRIMARY KEY (`config_key`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
                 "cache_data": """CREATE TABLE `cache_data` (`cache_provider` VARCHAR(50) NULL, `cache_key` VARCHAR(255) NOT NULL, `cache_value` LONGTEXT NOT NULL, `expires_at` TIMESTAMP NOT NULL, PRIMARY KEY (`cache_key`), INDEX `idx_expires_at` (`expires_at`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
@@ -142,7 +142,8 @@ async def init_db_tables(app: FastAPI):
                 "tmdb_episode_mapping": """CREATE TABLE `tmdb_episode_mapping` (`id` BIGINT NOT NULL AUTO_INCREMENT, `tmdb_tv_id` INT NOT NULL, `tmdb_episode_group_id` VARCHAR(50) NOT NULL, `tmdb_episode_id` INT NOT NULL, `tmdb_season_number` INT NOT NULL, `tmdb_episode_number` INT NOT NULL, `custom_season_number` INT NOT NULL, `custom_episode_number` INT NOT NULL, `absolute_episode_number` INT NOT NULL, PRIMARY KEY (`id`), UNIQUE KEY `idx_group_episode_unique` (`tmdb_episode_group_id`, `tmdb_episode_id`), INDEX `idx_custom_season_episode` (`tmdb_tv_id`, `tmdb_episode_group_id`, `custom_season_number`, `custom_episode_number`), INDEX `idx_absolute_episode` (`tmdb_tv_id`, `tmdb_episode_group_id`, `absolute_episode_number`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
                 "scheduled_tasks": """CREATE TABLE `scheduled_tasks` (`id` VARCHAR(100) NOT NULL, `name` VARCHAR(255) NOT NULL, `job_type` VARCHAR(50) NOT NULL, `cron_expression` VARCHAR(100) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `last_run_at` TIMESTAMP NULL, `next_run_at` TIMESTAMP NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
                 "task_history": """CREATE TABLE `task_history` (`id` VARCHAR(100) NOT NULL, `title` VARCHAR(255) NOT NULL, `status` VARCHAR(50) NOT NULL, `progress` INT NOT NULL DEFAULT 0, `description` TEXT NULL, `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, `finished_at` TIMESTAMP NULL, PRIMARY KEY (`id`), INDEX `idx_created_at` (`created_at` DESC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "metadata_sources": """CREATE TABLE `metadata_sources` (`provider_name` VARCHAR(50) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `is_aux_search_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `display_order` INT NOT NULL DEFAULT 0, PRIMARY KEY (`provider_name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
+                "scrapers": """CREATE TABLE `scrapers` (`provider_name` VARCHAR(50) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `display_order` INT NOT NULL DEFAULT 0, `use_proxy` BOOLEAN NOT NULL DEFAULT FALSE, PRIMARY KEY (`provider_name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
+                "metadata_sources": """CREATE TABLE `metadata_sources` (`provider_name` VARCHAR(50) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `is_aux_search_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `display_order` INT NOT NULL DEFAULT 0, `use_proxy` BOOLEAN NOT NULL DEFAULT FALSE, PRIMARY KEY (`provider_name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
             }
 
             # 先获取数据库中所有已存在的表
@@ -196,6 +197,69 @@ async def init_db_tables(app: FastAPI):
                     logger.info("检测到旧的 'config.config_value' 列定义，正在将其更新为 TEXT...")
                     await cursor.execute("ALTER TABLE config MODIFY COLUMN config_value TEXT NOT NULL;")
                     logger.info("列 'config.config_value' 更新成功。")
+
+                # 检查 anime_sources.incremental_refresh_enabled
+                await cursor.execute("""
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'anime_sources' AND COLUMN_NAME = 'incremental_refresh_enabled'
+                """, (db_name,))
+                if not await cursor.fetchone():
+                    logger.info("在 'anime_sources' 表中未找到 'incremental_refresh_enabled' 列，正在添加...")
+                    await cursor.execute("ALTER TABLE anime_sources ADD COLUMN incremental_refresh_enabled BOOLEAN NOT NULL DEFAULT FALSE;")
+                    logger.info("列 'incremental_refresh_enabled' 添加成功。")
+
+                # 检查 anime_sources.incremental_refresh_failures
+                await cursor.execute("""
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'anime_sources' AND COLUMN_NAME = 'incremental_refresh_failures'
+                """, (db_name,))
+                if not await cursor.fetchone():
+                    logger.info("在 'anime_sources' 表中未找到 'incremental_refresh_failures' 列，正在添加...")
+                    await cursor.execute("ALTER TABLE anime_sources ADD COLUMN incremental_refresh_failures INT NOT NULL DEFAULT 0 AFTER incremental_refresh_enabled;")
+                    logger.info("列 'incremental_refresh_failures' 添加成功。")
+
+                # 检查 anime.local_image_path
+                await cursor.execute("""
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'anime' AND COLUMN_NAME = 'local_image_path'
+                """, (db_name,))
+                if not await cursor.fetchone():
+                    logger.info("在 'anime' 表中未找到 'local_image_path' 列，正在添加...")
+                    await cursor.execute("ALTER TABLE anime ADD COLUMN local_image_path VARCHAR(512) NULL DEFAULT NULL AFTER image_url;")
+                    logger.info("列 'local_image_path' 添加成功。")
+
+                # 新增：检查 scrapers.use_proxy
+                await cursor.execute("""
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'scrapers' AND COLUMN_NAME = 'use_proxy'
+                """, (db_name,))
+                if not await cursor.fetchone():
+                    logger.info("在 'scrapers' 表中未找到 'use_proxy' 列，正在添加...")
+                    await cursor.execute("ALTER TABLE scrapers ADD COLUMN use_proxy BOOLEAN NOT NULL DEFAULT FALSE;")
+
+                # 新增：检查 metadata_sources.use_proxy
+                await cursor.execute("""
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'metadata_sources' AND COLUMN_NAME = 'use_proxy'
+                """, (db_name,))
+                if not await cursor.fetchone():
+                    logger.info("在 'metadata_sources' 表中未找到 'use_proxy' 列，正在添加...")
+                    await cursor.execute("ALTER TABLE metadata_sources ADD COLUMN use_proxy BOOLEAN NOT NULL DEFAULT FALSE;")
+            except Exception as e:
+                # 仅记录错误，不中断启动流程
+                logger.warning(f"检查或更新表结构时发生非致命错误: {e}")
+
+            try:
+                # 新增：检查并修正 episode.id 的自增属性
+                await cursor.execute("""
+                    SELECT EXTRA FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'episode' AND COLUMN_NAME = 'id'
+                """, (db_name,))
+                id_col_extra = await cursor.fetchone()
+                if id_col_extra and 'auto_increment' in id_col_extra[0].lower():
+                    logger.info("检测到旧的 'episode.id' 列定义 (带自增属性)，正在进行迁移...")
+                    await cursor.execute("ALTER TABLE `episode` DROP PRIMARY KEY, MODIFY `id` BIGINT NOT NULL, ADD PRIMARY KEY (`id`);")
+                    logger.info("列 'episode.id' 结构迁移成功。")
             except Exception as e:
                 # 仅记录错误，不中断启动流程
                 logger.warning(f"检查或更新表结构时发生非致命错误: {e}")

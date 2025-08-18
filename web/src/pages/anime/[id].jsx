@@ -2,10 +2,15 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   deleteAnimeSource,
+  deleteAnimeSourceSingle,
+  fullSourceUpdate,
   getAnimeDetail,
   getAnimeLibrary,
   getAnimeSource,
+  incrementalUpdate,
   setAnimeSource,
+  toggleSourceFavorite,
+  toggleSourceIncremental,
 } from '../../apis'
 import {
   Button,
@@ -24,6 +29,7 @@ import { DANDAN_TYPE_DESC_MAPPING } from '../../configs'
 import { RoutePaths } from '../../general/RoutePaths'
 import dayjs from 'dayjs'
 import { MyIcon } from '@/components/MyIcon'
+import classNames from 'classnames'
 
 export const AnimeDetail = () => {
   const { id } = useParams()
@@ -133,13 +139,87 @@ export const AnimeDetail = () => {
     })
   }
 
+  const handleDeleteSingle = record => {
+    Modal.confirm({
+      title: '删除数据源',
+      zIndex: 1002,
+      content: (
+        <div>
+          您确定要删除这个数据源吗？
+          <br />
+          此操作将在后台提交一个删除任务。
+        </div>
+      ),
+      okText: '确认',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const res = await deleteAnimeSourceSingle({
+            sourceId: record.source_id,
+          })
+          goTask(res)
+        } catch (error) {
+          message.error(`提交删除任务失败:${error.message}`)
+        }
+      },
+    })
+  }
+
+  const handleIncrementalUpdate = record => {
+    Modal.confirm({
+      title: '增量刷新',
+      zIndex: 1002,
+      content: (
+        <div>
+          您确定要为 '{animeDetail.title}' 的这个数据源执行增量更新吗？
+          <br />
+          此操作将尝试获取下一集。
+        </div>
+      ),
+      okText: '确认',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const res = await incrementalUpdate({
+            sourceId: record.source_id,
+          })
+          goTask(res)
+        } catch (error) {
+          message.error(`启动增量更新任务失败: ${error.message}`)
+        }
+      },
+    })
+  }
+
+  const handleFullSourceUpdate = record => {
+    Modal.confirm({
+      title: '全量刷新',
+      zIndex: 1002,
+      content: (
+        <div>您确定要为 '{animeDetail.title}' 的这个数据源执行全量更新吗？</div>
+      ),
+      okText: '确认',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const res = await fullSourceUpdate({
+            sourceId: record.source_id,
+          })
+          goTask(res)
+        } catch (error) {
+          message.error(`启动刷新任务失败: ${error.message}`)
+        }
+      },
+    })
+  }
+
   const goTask = res => {
     Modal.confirm({
       title: '提示',
       zIndex: 1002,
       content: (
         <div>
-          {res.data.message || '删除任务已提交'}
+          {res.data?.message || '任务已提交'}
           <br />
           是否立即跳转到任务管理器查看进度？
         </div>
@@ -151,6 +231,7 @@ export const AnimeDetail = () => {
       },
       onCancel: () => {
         getDetail()
+        setSelectedRows([])
       },
     })
   }
@@ -174,10 +255,19 @@ export const AnimeDetail = () => {
       dataIndex: 'is_favorited',
       key: 'is_favorited',
       render: (_, record) => {
-        return record.is_favorited ? (
-          <MyIcon icon="favorites-fill" size={20} className="text-yellow-300" />
-        ) : (
-          <MyIcon icon="favorites" size={20} />
+        return (
+          <Space>
+            {record.is_favorited && (
+              <MyIcon
+                icon="favorites-fill"
+                size={20}
+                className="text-yellow-300"
+              />
+            )}
+            {record.incremental_refresh_enabled && (
+              <MyIcon icon="clock" size={20} className="text-red-400" />
+            )}
+          </Space>
         )
       },
     },
@@ -202,7 +292,27 @@ export const AnimeDetail = () => {
           <Space>
             <span
               className="cursor-pointer hover:text-primary"
-              onClick={() => {}}
+              onClick={async () => {
+                try {
+                  await toggleSourceFavorite({
+                    sourceId: record.source_id,
+                  })
+                  setSourceList(list => {
+                    return list.map(it => {
+                      if (it.source_id === record.source_id) {
+                        return {
+                          ...it,
+                          is_favorited: !it.is_favorited,
+                        }
+                      } else {
+                        return it
+                      }
+                    })
+                  })
+                } catch (error) {
+                  alert(`操作失败: ${error.message}`)
+                }
+              }}
             >
               {record.is_favorited ? (
                 <MyIcon
@@ -216,32 +326,61 @@ export const AnimeDetail = () => {
             </span>
             <span
               className="cursor-pointer hover:text-primary"
-              onClick={() => {}}
+              onClick={async () => {
+                try {
+                  await toggleSourceIncremental({
+                    sourceId: record.source_id,
+                  })
+                  setSourceList(list => {
+                    return list.map(it => {
+                      if (it.source_id === record.source_id) {
+                        return {
+                          ...it,
+                          incremental_refresh_enabled:
+                            !it.incremental_refresh_enabled,
+                        }
+                      } else {
+                        return it
+                      }
+                    })
+                  })
+                } catch (error) {
+                  alert(`操作失败: ${error.message}`)
+                }
+              }}
             >
-              <MyIcon icon="clock" size={20}></MyIcon>
+              <MyIcon
+                icon="clock"
+                size={20}
+                className={classNames({
+                  'text-red-400': record.incremental_refresh_enabled,
+                })}
+              ></MyIcon>
             </span>
             <span
               className="cursor-pointer hover:text-primary"
-              onClick={() => {}}
+              onClick={() => handleIncrementalUpdate(record)}
             >
               <MyIcon icon="zengliang" size={20}></MyIcon>
             </span>
             <span
               className="cursor-pointer hover:text-primary"
-              onClick={() => {}}
+              onClick={() => {
+                navigate(`/episode/${record.source_id}?animeId=${id}`)
+              }}
             >
               <MyIcon icon="book" size={20}></MyIcon>
             </span>
             <span
               className="cursor-pointer hover:text-primary"
-              onClick={() => {}}
+              onClick={() => handleFullSourceUpdate(record)}
             >
               <MyIcon icon="refresh" size={20}></MyIcon>
             </span>
             <span
               className="cursor-pointer hover:text-primary"
               onClick={() => {
-                // handleDelete(record)
+                handleDeleteSingle(record)
               }}
             >
               <MyIcon icon="delete" size={20}></MyIcon>

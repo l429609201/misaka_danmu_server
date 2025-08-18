@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 import aiomysql
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .. import crud, models, security
 from ..database import get_db_pool
@@ -20,6 +20,21 @@ async def get_douban_client(
     pool: aiomysql.Pool = Depends(get_db_pool),
 ) -> httpx.AsyncClient:
     """依赖项：创建一个带有可选豆瓣Cookie的httpx客户端。"""
+    # --- Start of new proxy logic ---
+    proxy_url_task = crud.get_config_value(pool, "proxy_url", "")
+    proxy_enabled_globally_task = crud.get_config_value(pool, "proxy_enabled", "false")
+    metadata_settings_task = crud.get_all_metadata_source_settings(pool)
+
+    proxy_url, proxy_enabled_str, metadata_settings = await asyncio.gather(
+        proxy_url_task, proxy_enabled_globally_task, metadata_settings_task
+    )
+    proxy_enabled_globally = proxy_enabled_str.lower() == 'true'
+
+    provider_setting = next((s for s in metadata_settings if s['provider_name'] == 'douban'), None)
+    use_proxy_for_this_provider = provider_setting.get('use_proxy', False) if provider_setting else False
+
+    proxies = proxy_url if proxy_enabled_globally and use_proxy_for_this_provider and proxy_url else None
+    # --- End of new proxy logic ---
     cookie = await crud.get_config_value(pool, "douban_cookie", "")
 
     headers = {
@@ -28,7 +43,7 @@ async def get_douban_client(
     if cookie:
         headers["Cookie"] = cookie
 
-    return httpx.AsyncClient(headers=headers, timeout=20.0, follow_redirects=True)
+    return httpx.AsyncClient(headers=headers, timeout=20.0, follow_redirects=True, proxy=proxies)
 
 
 class DoubanSearchResult(BaseModel):
@@ -37,56 +52,68 @@ class DoubanSearchResult(BaseModel):
     details: str
     image_url: Optional[str] = None
 
+# --- 新增：用于解析豆瓣JSON API响应的模型 ---
+class DoubanJsonSearchSubject(BaseModel):
+    id: str
+    title: str
+    url: str
+    cover: str
+    rate: str
+    cover_x: int
+    cover_y: int
 
-async def _scrape_douban_search(keyword: str, client: httpx.AsyncClient) -> List[DoubanSearchResult]:
-    """从豆瓣网站抓取搜索结果。"""
-    search_url = f"https://www.douban.com/search?cat=1002&q={keyword}"
+class DoubanJsonSearchResponse(BaseModel):
+    subjects: List[DoubanJsonSearchSubject]
+
+
+async def _search_douban_json_api(keyword: str, client: httpx.AsyncClient) -> List[DoubanSearchResult]:
+    """通过豆瓣的JSON API搜索影视作品，这比抓取HTML更稳定、更快速。"""
+    # 并发请求电影和电视剧两个分类
+    movie_task = client.get(
+        "https://movie.douban.com/j/search_subjects",
+        params={"type": "movie", "tag": keyword, "page_limit": 20, "page_start": 0}
+    )
+    tv_task = client.get(
+        "https://movie.douban.com/j/search_subjects",
+        params={"type": "tv", "tag": keyword, "page_limit": 20, "page_start": 0}
+    )
+
     try:
-        response = await client.get(search_url)
-        response.raise_for_status()
-        html = response.text
+        movie_res, tv_res = await asyncio.gather(movie_task, tv_task, return_exceptions=True)
+        
+        all_subjects = []
+        for res in [movie_res, tv_res]:
+            if isinstance(res, httpx.Response):
+                if res.status_code == 200:
+                    try:
+                        data = DoubanJsonSearchResponse.model_validate(res.json())
+                        all_subjects.extend(data.subjects)
+                    except ValidationError as e:
+                        logger.warning(f"解析豆瓣JSON API响应失败: {e} - 响应: {res.text[:200]}")
+                else:
+                    logger.warning(f"请求豆瓣JSON API失败，状态码: {res.status_code}")
+            elif isinstance(res, Exception):
+                logger.error(f"请求豆瓣JSON API时发生网络错误: {res}")
 
+        # 去重并格式化为前端期望的 DoubanSearchResult 格式
+        seen_ids = set()
         results = []
-        # 修正：更新正则表达式以匹配豆瓣搜索结果页的新HTML结构。
-        # 新结构将 subject ID 放在了 onclick 事件中，并且 rating-info 的内部结构更复杂。
-        result_pattern = re.compile(
-            r'<div class="result">.*?'  # Start of a result item
-            r'onclick=".*?sid: (\d+).*?".*?'  # Capture the subject ID from the onclick attribute
-            r'<img src="([^"]+)".*?>.*?'  # Capture the image URL
-            r'<h3>.*?<a.*?>(.*?)</a>.*?</h3>.*?'  # Capture the title HTML
-            r'<div class="rating-info">(.*?)</div>.*?'  # Capture the entire rating info block
-            r'<p>(.*?)</p>',  # Capture the description paragraph
-            re.DOTALL,
-        )
-
-        for match in result_pattern.finditer(html):
-            douban_id, img_url, title_html, rating_info_html, description_html = match.groups()
-
-            # 清理标题
-            title = re.sub(r"<.*?>", "", title_html).strip()
-
-            # 从HTML块中提取纯文本并合并为详细信息
-            rating_text = ' '.join(re.sub(r'<.*?>', ' ', rating_info_html).split())
-            description_text = ' '.join(re.sub(r'<.*?>', ' ', description_html).split())
-            details = f"{rating_text} / {description_text}"
-
-            results.append(
-                DoubanSearchResult(
-                    id=douban_id,
-                    title=title,
-                    details=details,
-                    image_url=img_url,
+        for subject in all_subjects:
+            if subject.id not in seen_ids:
+                results.append(
+                    DoubanSearchResult(
+                        id=subject.id,
+                        title=subject.title,
+                        details=f"评分: {subject.rate}",
+                        image_url=subject.cover,
+                    )
                 )
-            )
+                seen_ids.add(subject.id)
         return results
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 403:
-            logger.error("豆瓣搜索请求被拒绝(403)，可能是Cookie已失效或IP被限制。")
-            raise HTTPException(status_code=403, detail="豆瓣请求被拒绝，请检查Cookie或网络环境。")
-        raise HTTPException(status_code=500, detail=f"请求豆瓣时发生错误: {e}")
+
     except Exception as e:
-        logger.error(f"解析豆瓣搜索结果时发生错误: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="解析豆瓣搜索结果失败。")
+        logger.error(f"处理豆瓣JSON API请求时发生未知错误: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="豆瓣搜索失败。")
 
 @router.get("/search", response_model=List[DoubanSearchResult], summary="搜索豆瓣作品")
 async def search_douban(
@@ -94,7 +121,7 @@ async def search_douban(
     client: httpx.AsyncClient = Depends(get_douban_client),
 ):
     """通过关键词在豆瓣网站上搜索影视作品。"""
-    return await _scrape_douban_search(keyword, client)
+    return await _search_douban_json_api(keyword, client)
 
 async def _scrape_douban_details(douban_id: str, client: httpx.AsyncClient) -> Dict[str, Any]:
     """从豆瓣详情页抓取作品信息。"""

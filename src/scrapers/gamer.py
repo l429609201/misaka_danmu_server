@@ -326,7 +326,8 @@ class GamerScraper(BaseScraper):
             for comment in processed_comments:
                 try:
                     text = comment.get("text")
-                    time_sec = float(comment.get("time", 0))
+                    # 修正：巴哈姆特API返回的时间单位是十分之一秒，需要除以10
+                    time_sec = float(comment.get("time", 0)) / 10.0
                     pos = int(comment.get("position", 0))
                     hex_color = comment.get("color", "#ffffff")
                     

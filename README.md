@@ -12,7 +12,6 @@
 
 ## ✨ 核心功能
 
-- **多源刮削**: 自动从 Bilibili、腾讯视频、爱奇艺、优酷等多个来源获取弹幕。
 - **智能匹配**: 通过文件名或元数据（TMDB, TVDB等）智能匹配您的影视文件，提供准确的弹幕。
 - **Web管理界面**: 提供一个直观的Web UI，用于：
   - 搜索和手动导入弹幕。
@@ -25,6 +24,34 @@
 - **灵活部署**: 提供 Docker 镜像和 Docker Compose 文件，方便快速部署。
 
 ## 其他
+
+### 免责声明
+
+在使用本项目前，请您务必仔细阅读并理解本声明。一旦您选择使用，即表示您已充分理解并同意以下所有条款。
+
+#### 1. 项目性质
+
+- **技术中立性**: 本项目是一个开源的、自托管的技术工具，旨在通过自动化程序从公开的第三方视频网站、公开的API中获取弹幕评论数据。
+- **功能范围**: 本工具仅提供弹幕数据的聚合、存储和API访问功能，供用户在个人合法拥有的媒体上匹配和加载，以提升观影体验。
+- **非内容提供方**: 本项目不生产、不修改、不存储、不分发任何视频内容本身，所有弹幕内容均来源于第三方平台的公开分享。
+
+#### 2. 用户责任
+
+- **遵守服务条款**: 您理解并同意，抓取第三方网站数据的行为可能违反其服务条款（ToS）。您承诺将自行承担因使用本工具而可能引发的任何风险，包括但不限于来自源网站的警告、账号限制或法律追究。
+- **内容风险自负**: 所有弹幕均为第三方平台用户公开发布，其内容（可能包含不当言论、剧透、广告等）的合法性、真实性及安全性由发布者独立负责。您需自行判断并承担查看这些内容可能带来的所有风险。
+- **合法合规使用**: 您承诺仅将本工具用于个人学习、研究或非商业用途，并遵守您所在国家/地区的相关法律法规，不得将本工具及获取的数据用于任何非法或侵权活动。
+
+#### 3. 开发者免责
+
+- **内容无关性**: 开发者仅提供技术实现，不参与任何弹幕内容的创作、审核、编辑或推荐，亦无法保证弹幕的准确性、完整性、实时性或质量。
+- **服务不保证**: 由于本项目依赖第三方网站的接口和数据结构，开发者无法保证服务的永久可用性。任何因源网站API变更、反爬虫策略升级、网络环境变化或不可抗力导致的服务中断或功能失效，开发者不承担任何责任。
+- **免责范围**: 在法律允许的最大范围内，开发者不对以下情况负责：
+    - 您因违反第三方网站服务条款而导致的任何损失或法律后果。
+    - 您因接触或使用弹幕内容而产生的任何心理或生理不适。
+    - 因使用本工具导致的任何直接、间接、偶然或必然的设备损坏或数据丢失。
+- **权利保留**: 开发者保留随时修改、更新或终止本项目的权利，恕不另行通知。
+
+---
 
 ### 推广须知
 
@@ -74,21 +101,21 @@
         timeout: 3s
         retries: 2
         start_period: 0s
-      networks:
-        - bridge
+      network_mode: "bridge"
 
 ```
 3.  **重要**: 修改文件中的 `MYSQL_ROOT_PASSWORD` 和 `MYSQL_PASSWORD` 为您自己的安全密码。
 
-4.  在 `docker-compose.mysql.yml` 所在目录运行命令启动数据库：
+4.  在 `docker-compose.mysql.yaml` 所在目录运行命令启动数据库：
     ```bash
-    docker-compose -f docker-compose.mysql.yml up -d
+    docker-compose -f docker-compose.mysql.yaml up -d
     ```
 
 ### 步骤 2: 部署弹幕库
 1. 创建 `docker-compose.app.yaml` 文件
 
 ```yaml
+  services:
     danmu-app:
       image: l429609201/misaka_danmu_server:latest
       container_name: misaka-danmu-server
@@ -110,17 +137,14 @@
         - DANMUAPI_ADMIN__INITIAL_USER=admin
       volumes:
         - ./config:/app/config
-      ports:
-        - "7768:7768"
-      networks: host
-
+      network_mode: "host"
 ```
 2.  **重要**:
-    -   确保 `DANMUAPI_DATABASE__PASSWORD` 与您在 `docker-compose.mysql.yml` 中设置的 `MYSQL_PASSWORD` 一致。
+    -   确保 `DANMUAPI_DATABASE__PASSWORD` 与您在 `docker-compose.mysql.yaml` 中设置的 `MYSQL_PASSWORD` 一致。
 
 3.  在同一目录运行命令启动应用：
     ```bash
-    docker-compose -f docker-compose.app.yml up -d
+    docker-compose -f docker-compose.app.yaml up -d
     ```
 
 
@@ -226,4 +250,5 @@
 
  - [danmuku](https://github.com/lyz05/danmaku)
  - [emby-toolkit](https://github.com/hbq0405/emby-toolkit)
+
  - [imdbsource](https://github.com/wumode/MoviePilot-Plugins/tree/main/plugins.v2/imdbsource)

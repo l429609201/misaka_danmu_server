@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional, Callable
 from collections import defaultdict
 import httpx
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator, ConfigDict, field_validator
 
 from ..config_manager import ConfigManager
 from .. import models
@@ -18,7 +18,7 @@ from .base import BaseScraper, get_season_from_title
 
 scraper_responses_logger = logging.getLogger("scraper_responses")
 
-# --- Pydantic Models for iQiyi API (部分模型现在仅用于旧缓存兼容或作为新API响应的子集) ---
+# --- Pydantic Models for iQiyi Mobile Search API ---
 
 class IqiyiVideoLibMeta(BaseModel):
     douban_id: Optional[int] = Field(None, alias="douban_id")
@@ -67,11 +67,61 @@ class IqiyiSearchDoc(BaseModel):
 class IqiyiSearchResult(BaseModel):
     data: IqiyiSearchDoc
 
+# --- Pydantic Models for iQiyi Desktop Search API (New) ---
+
+class IqiyiDesktopSearchVideo(BaseModel):
+    title: str
+    pageUrl: Optional[str] = None
+    playUrl: Optional[str] = None
+
+class IqiyiDesktopSearchAlbumInfo(BaseModel):
+    qipuId: Optional[str] = None
+    playQipuId: Optional[str] = None
+    title: Optional[str] = None
+    channel: Optional[str] = None
+    pageUrl: Optional[str] = None
+    playUrl: Optional[str] = None
+    img: Optional[str] = None
+    imgH: Optional[str] = None
+    btnText: Optional[str] = None
+    videos: Optional[List[IqiyiDesktopSearchVideo]] = None
+    year: Optional[Dict[str, Any]] = None
+    actors: Optional[Dict[str, Any]] = None
+    directors: Optional[Dict[str, Any]] = None
+
+    @field_validator('qipuId', 'playQipuId', mode='before')
+    @classmethod
+    def coerce_qipu_ids_to_string(cls, v: Any) -> Optional[str]:
+        if v is None:
+            return None
+        return str(v)
+
+    @property
+    def link_id(self) -> Optional[str]:
+        url_to_parse = self.pageUrl or self.playUrl
+        if not url_to_parse:
+            return None
+        match = re.search(r"v_(\w+?)\.html", url_to_parse)
+        return match.group(1).strip() if match else None
+
+class IqiyiDesktopSearchTemplate(BaseModel):
+    template: int
+    albumInfo: Optional[IqiyiDesktopSearchAlbumInfo] = None
+
+class IqiyiDesktopSearchData(BaseModel):
+    templates: List[IqiyiDesktopSearchTemplate] = []
+
+class IqiyiDesktopSearchResult(BaseModel):
+    data: Optional[IqiyiDesktopSearchData] = None
+
 class IqiyiHtmlAlbumInfo(BaseModel):
     video_count: Optional[int] = Field(None, alias="videoCount")
 
 # 修正：此模型现在用于解析新的 baseinfo API 响应
 class IqiyiHtmlVideoInfo(BaseModel):
+    # 新增：允许模型通过字段名或别名进行填充，以兼容新旧缓存格式
+    model_config = ConfigDict(populate_by_name=True)
+
     album_id: int = Field(alias="albumId")
     tv_id: Optional[int] = Field(None, alias="tvId")
     video_id: Optional[int] = Field(None, alias="videoId")
@@ -152,9 +202,19 @@ class IqiyiMobileVideoListResult(BaseModel):
 class IqiyiScraper(BaseScraper):
     provider_name = "iqiyi"
     _EPISODE_BLACKLIST_PATTERN = re.compile(r"加更|走心|解忧|纯享", re.IGNORECASE)
-    # 新增：用于过滤搜索结果中非正片内容的正则表达式
+    # 新增：合并了JS脚本中的过滤关键词，用于过滤搜索结果中的非正片内容
     _SEARCH_JUNK_TITLE_PATTERN = re.compile(
-        r'纪录片|预告|花絮|专访|MV|特辑|演唱会|音乐会|独家|解读|揭秘|赏析|速看|资讯|彩蛋|访谈|番外|短片',
+        r'纪录片|预告|花絮|专访|直拍|直播回顾|加更|走心|解忧|纯享|节点|解读|揭秘|赏析|速看|资讯|访谈|番外|短片|'
+        r'拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|花絮特辑|'
+        r'预告片|先导预告|终极预告|正式预告|官方预告|'
+        r'彩蛋片段|删减片段|未播片段|番外彩蛋|'
+        r'精彩片段|精彩看点|精彩回顾|精彩集锦|看点解析|看点预告|'
+        r'NG镜头|NG花絮|番外篇|番外特辑|'
+        r'制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|'
+        r'片尾曲|插曲|主题曲|背景音乐|OST|音乐MV|歌曲MV|'
+        r'前季回顾|剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|'
+        r'独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|'
+        r'抢先看|抢先版|试看版|即将上线',
         re.IGNORECASE
     )
 
@@ -162,17 +222,99 @@ class IqiyiScraper(BaseScraper):
         super().__init__(pool, config_manager)
         self.mobile_user_agent = "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36 Edg/136.0.0.0"
         self.reg_video_info = re.compile(r'"videoInfo":(\{.+?\}),')
-
-        self.client = httpx.AsyncClient(
-            headers={
-                "User-Agent": self.mobile_user_agent,
-                "Referer": "https://www.iqiyi.com/",
-            },
-            timeout=20.0, follow_redirects=True
-        )
+        self.cookies = {"pgv_pvid": "40b67e3b06027f3d","video_platform": "2","vversion_name": "8.2.95","video_bucketid": "4","video_omgid": "0a1ff6bc9407c0b1cff86ee5d359614d"}
 
     async def close(self):
-        await self.client.aclose()
+        """关闭HTTP客户端"""
+        if self.client:
+            await self.client.aclose()
+            self.client = None
+
+    async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """
+        A wrapper for making requests that lazily initializes the client.
+        """
+        if self.client is None:
+            self.client = await self._create_client(
+                headers={
+                    "User-Agent": self.mobile_user_agent,
+                    "Referer": "https://www.iqiyi.com/",
+                },
+                cookies=self.cookies,
+            )
+        return await self.client.request(method, url, **kwargs)
+
+    async def _search_desktop_api(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """使用桌面版API进行搜索 (主API)"""
+        self.logger.info(f"爱奇艺 (桌面API): 正在搜索 '{keyword}'...")
+        url = "https://mesh.if.iqiyi.com/portal/lw/search/homePageV3"
+        params = {
+            'key': keyword, 'current_page': '1', 'mode': '1', 'source': 'input',
+            'suggest': '', 'pcv': '13.074.22699', 'version': '13.074.22699',
+            'pageNum': '1', 'pageSize': '25', 'pu': '', 'u': 'f6440fc5d919dca1aea12b6aff56e1c7',
+            'scale': '200', 'token': '', 'userVip': '0', 'conduit': '', 'vipType': '-1',
+            'os': '', 'osShortName': 'win10', 'dataType': '', 'appMode': '',
+            'ad': json.dumps({"lm":3,"azd":1000000000951,"azt":733,"position":"feed"}),
+            'adExt': json.dumps({"r":"2.1.5-ares6-pure"})
+        }
+        headers = {
+            'accept': '*/*', 'origin': 'https://www.iqiyi.com', 'referer': 'https://www.iqiyi.com/',
+            'user-agent': 'Mozilla/5.0 (Linux; Android 13; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36'
+        }
+
+        results = []
+        try:
+            response = await self._request("GET", url, params=params, headers=headers)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"iQiyi Desktop Search Response (keyword='{keyword}'): {response.text}")
+            response.raise_for_status()
+            data = IqiyiDesktopSearchResult.model_validate(response.json())
+
+            if not data.data or not data.data.templates:
+                return []
+
+            for template in data.data.templates:
+                if not template.albumInfo or template.template not in [101, 102, 103]:
+                    continue
+                
+                album = template.albumInfo
+                if not album.title or not album.link_id:
+                    continue
+
+                if self._SEARCH_JUNK_TITLE_PATTERN.search(album.title):
+                    self.logger.debug(f"爱奇艺 (桌面API): 根据标题黑名单过滤掉 '{album.title}'")
+                    continue
+                
+                if album.btnText == '外站付费播放':
+                    self.logger.debug(f"爱奇艺 (桌面API): 过滤掉外站付费播放内容 '{album.title}'")
+                    continue
+
+                channel = album.channel or ""
+                if "电影" in channel: media_type = "movie"
+                elif "电视剧" in channel or "动漫" in channel: media_type = "tv_series"
+                else: continue # 只保留电影、电视剧、动漫
+
+                year_str = (album.year or {}).get("value") or (album.year or {}).get("name")
+                year = int(year_str) if isinstance(year_str, str) and year_str.isdigit() and len(year_str) == 4 else None
+
+                cleaned_title = re.sub(r'<[^>]+>', '', album.title).replace(":", "：")
+                
+                provider_search_info = models.ProviderSearchInfo(
+                    provider=self.provider_name,
+                    mediaId=album.link_id,
+                    title=cleaned_title,
+                    type=media_type,
+                    season=get_season_from_title(cleaned_title),
+                    year=year,
+                    imageUrl=album.img or album.imgH,
+                    episodeCount=len(album.videos) if album.videos else None,
+                    currentEpisodeIndex=episode_info.get("episode") if episode_info else None,
+                )
+                results.append(provider_search_info)
+        except Exception as e:
+            self.logger.error(f"爱奇艺 (桌面API): 搜索 '{keyword}' 失败: {e}", exc_info=True)
+        
+        return results
 
     async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
         # 修正：缓存键必须包含分集信息，以区分对同一标题的不同分集搜索
@@ -180,15 +322,42 @@ class IqiyiScraper(BaseScraper):
         cache_key = f"search_{self.provider_name}_{keyword}{cache_key_suffix}"
         cached_results = await self._get_from_cache(cache_key)
         if cached_results is not None:
-            self.logger.info(f"爱奇艺: 从缓存中命中搜索结果 '{keyword}{cache_key_suffix}'")
+            self.logger.info(f"爱奇艺 (合并): 从缓存中命中搜索结果 '{keyword}{cache_key_suffix}'")
             return [models.ProviderSearchInfo.model_validate(r) for r in cached_results]
 
-        self.logger.info(f"爱奇艺: 正在搜索 '{keyword}'...")
+        # 并行执行两个搜索API
+        desktop_task = self._search_desktop_api(keyword, episode_info)
+        mobile_task = self._search_mobile_api(keyword, episode_info)
+        
+        results_lists = await asyncio.gather(desktop_task, mobile_task, return_exceptions=True)
+        
+        all_results = []
+        for i, res_list in enumerate(results_lists):
+            api_name = "桌面API" if i == 0 else "移动API"
+            if isinstance(res_list, list):
+                all_results.extend(res_list)
+            elif isinstance(res_list, Exception):
+                self.logger.error(f"爱奇艺 ({api_name}): 搜索子任务失败: {res_list}", exc_info=True)
 
+        # 基于 mediaId 去重
+        unique_results = list({item.mediaId: item for item in all_results}.values())
+
+        self.logger.info(f"爱奇艺 (合并): 搜索 '{keyword}' 完成，找到 {len(unique_results)} 个唯一结果。")
+        if unique_results:
+            log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in unique_results])
+            self.logger.info(f"爱奇艺 (合并): 搜索结果列表:\n{log_results}")
+        
+        results_to_cache = [r.model_dump() for r in unique_results]
+        await self._set_to_cache(cache_key, results_to_cache, 'search_ttl_seconds', 300)
+        return unique_results
+
+    async def _search_mobile_api(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """使用移动版API进行搜索 (备用API)"""
+        self.logger.info(f"爱奇艺 (移动API): 正在搜索 '{keyword}'...")
         url = f"https://search.video.iqiyi.com/o?if=html5&key={keyword}&pageNum=1&pageSize=20"
         results = []
         try:
-            response = await self.client.get(url)
+            response = await self._request("GET", url)
             if await self._should_log_responses():
                 scraper_responses_logger.debug(f"iQiyi Search Response (keyword='{keyword}'): {response.text}")
             response.raise_for_status()
@@ -203,7 +372,7 @@ class IqiyiScraper(BaseScraper):
                 album = doc.album_doc_info
                 if not (album.album_link and "iqiyi.com" in album.album_link and album.site_id == "iqiyi" and album.video_doc_type == 1):
                     continue
-               # 修正：增加对 album.channel 的非空检查，并添加对“纪录片”频道的过滤
+                # 修正：增加对 album.channel 的非空检查，并添加对“纪录片”频道的过滤
                 if album.channel and ("原创" in album.channel or "教育" in album.channel or "纪录片" in album.channel):
                     self.logger.debug(f"爱奇艺: 根据频道 '{album.channel}' 过滤掉 '{album.album_title}'")
                     continue
@@ -240,38 +409,52 @@ class IqiyiScraper(BaseScraper):
                 )
                 self.logger.debug(f"爱奇艺: 创建的 ProviderSearchInfo: {provider_search_info.model_dump_json(indent=2)}")
                 results.append(provider_search_info)
-
         except Exception as e:
-            self.logger.error(f"爱奇艺: 搜索 '{keyword}' 失败: {e}", exc_info=True)
-
-        self.logger.info(f"爱奇艺: 搜索 '{keyword}' 完成，找到 {len(results)} 个有效结果。")
-        if results:
-            log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in results])
-            self.logger.info(f"爱奇艺: 搜索结果列表:\n{log_results}")
-        results_to_cache = [r.model_dump() for r in results]
-        await self._set_to_cache(cache_key, results_to_cache, 'search_ttl_seconds', 300)
+            self.logger.error(f"爱奇艺 (移动API): 搜索 '{keyword}' 失败: {e}", exc_info=True)
         return results
 
     async def _get_tvid_from_link_id(self, link_id: str) -> Optional[str]:
         """
         新增：使用官方API将视频链接ID解码为tvid。
         这比解析HTML更可靠。
+        新增：增加国内API端点作为备用，以提高连接成功率。
+        新增：增加tvid缓存，减少不必要的API请求。
         """
-        api_url = f"https://pcw-api.iq.com/api/decode/{link_id}?platformId=3&modeCode=intl&langCode=sg"
-        try:
-            response = await self.client.get(api_url)
-            if await self._should_log_responses():
-                scraper_responses_logger.debug(f"iQiyi Decode API Response (link_id={link_id}): {response.text}")
-            response.raise_for_status()
-            data = response.json()
-            if data.get("code") in ["A00000", "0"] and data.get("data"):
-                return str(data["data"])
-            else:
-                self.logger.warning(f"爱奇艺: decode API 未成功返回 tvid (link_id: {link_id})。响应: {data}")
-                return None
-        except Exception as e:
-            self.logger.error(f"爱奇艺: 调用 decode API 失败 (link_id: {link_id}): {e}", exc_info=True)
-            return None
+        cache_key = f"tvid_{link_id}"
+        cached_tvid = await self._get_from_cache(cache_key)
+        if cached_tvid:
+            self.logger.info(f"爱奇艺: 从缓存中命中 tvid (link_id={link_id})")
+            return str(cached_tvid)
+
+        endpoints = [
+            f"https://pcw-api.iq.com/api/decode/{link_id}?platformId=3&modeCode=intl&langCode=sg",  # International (main)
+            f"https://pcw-api.iqiyi.com/api/decode/{link_id}?platformId=3&modeCode=intl&langCode=sg" # Mainland China (fallback)
+        ]
+
+        for i, api_url in enumerate(endpoints):
+            try:
+                self.logger.info(f"爱奇艺: 正在尝试从端点 #{i+1} 解码 tvid (link_id: {link_id})")
+                response = await self._request("GET", api_url)
+                if await self._should_log_responses():
+                    scraper_responses_logger.debug(f"iQiyi Decode API Response (link_id={link_id}, endpoint=#{i+1}): {response.text}")
+                response.raise_for_status()
+                data = response.json()
+                if data.get("code") in ["A00000", "0"] and data.get("data"):
+                    tvid = str(data["data"])
+                    self.logger.info(f"爱奇艺: 从端点 #{i+1} 成功解码 tvid。")
+                    # 缓存结果。tvid 相对稳定，可以使用与基础信息相同的TTL。
+                    await self._set_to_cache(cache_key, tvid, 'base_info_ttl_seconds', 1800)
+                    return tvid
+                else:
+                    self.logger.warning(f"爱奇艺: decode API (端点 #{i+1}) 未成功返回 tvid (link_id: {link_id})。响应: {data}")
+                    # Don't return here, let it try the next endpoint
+            except Exception as e:
+                self.logger.warning(f"爱奇艺: 调用 decode API (端点 #{i+1}) 失败: {e}")
+                # Don't re-raise, just continue to the next endpoint
+        
+        # If all endpoints fail
+        self.logger.error(f"爱奇艺: 所有 decode API 端点均调用失败 (link_id: {link_id})。")
+        return None
 
     async def _get_video_base_info(self, link_id: str) -> Optional[IqiyiHtmlVideoInfo]:
         # 修正：缓存键必须包含分集信息，以区分对同一标题的不同分集搜索
@@ -294,7 +477,7 @@ class IqiyiScraper(BaseScraper):
 
         url = f"https://pcw-api.iqiyi.com/video/video/baseinfo/{tvid}"
         try:
-            response = await self.client.get(url)
+            response = await self._request("GET", url)
             if await self._should_log_responses():
                 scraper_responses_logger.debug(f"iQiyi BaseInfo Response (tvid={tvid}): {response.text}")
             response.raise_for_status()
@@ -315,7 +498,7 @@ class IqiyiScraper(BaseScraper):
         self.logger.warning(f"爱奇艺: API获取基础信息失败，正在尝试备用方案 (解析HTML)...")
         try:
             url = f"https://m.iqiyi.com/v_{link_id}.html"
-            response = await self.client.get(url)
+            response = await self._request("GET", url)
             if await self._should_log_responses():
                 scraper_responses_logger.debug(f"iQiyi HTML Fallback Response (link_id={link_id}): {response.text}")
             response.raise_for_status()
@@ -345,7 +528,7 @@ class IqiyiScraper(BaseScraper):
         for i, url in enumerate(endpoints):
             try:
                 self.logger.info(f"爱奇艺: 正在尝试从端点 #{i+1} 获取剧集列表 (album_id: {album_id})")
-                response = await self.client.get(url)
+                response = await self._request("GET", url)
                 if await self._should_log_responses():
                     scraper_responses_logger.debug(f"iQiyi Album List Response (album_id={album_id}, endpoint=#{i+1}): {response.text}")
                 response.raise_for_status()
@@ -368,7 +551,7 @@ class IqiyiScraper(BaseScraper):
         try:
             # 1. 获取节目的开播和最新日期
             url = f"https://pcw-api.iqiyi.com/album/album/baseinfo/{album_id}"
-            response = await self.client.get(url)
+            response = await self._request("GET", url)
             response.raise_for_status()
             album_base_info = IqiyiAlbumBaseInfoResult.model_validate(response.json()).data
             start_date = datetime.fromtimestamp(album_base_info.first_video.publish_time / 1000)
@@ -376,14 +559,15 @@ class IqiyiScraper(BaseScraper):
 
             # 2. 逐月获取分集
             all_videos: List[IqiyiMobileVideo] = []
-            current_date = start_date
-            while current_date <= end_date:
+            # 标准化 current_date 为当月第一天，以进行安全的月份迭代
+            current_date = start_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            while (current_date.year, current_date.month) <= (end_date.year, end_date.month):
                 year = current_date.year
                 month = f"{current_date.month:02d}"
                 month_url = f"https://pub.m.iqiyi.com/h5/main/videoList/source/month/?sourceId={album_id}&year={year}&month={month}"
                 
                 self.logger.debug(f"爱奇艺 (综艺): 正在获取 {year}-{month} 的分集...")
-                month_response = await self.client.get(month_url)
+                month_response = await self._request("GET", month_url)
                 # 如果某个月份没有数据，API可能返回404或空列表，这都是正常情况
                 if month_response.status_code == 200:
                     try:
@@ -469,9 +653,20 @@ class IqiyiScraper(BaseScraper):
                     return []
 
             self.logger.debug(f"爱奇艺: 正在为 {len(episodes)} 个分集并发获取真实标题...")
+            
+            # 修正：将并发请求分批处理，以避免因请求过多而触发API速率限制或导致连接错误。
+            # 每次处理5个分集的详情获取，并在批次之间增加1秒的延迟。
             tasks = [self._get_video_base_info(ep.link_id) for ep in episodes if ep.link_id]
-            detailed_infos = await asyncio.gather(*tasks, return_exceptions=True)
-
+            detailed_infos = []
+            batch_size = 5
+            for i in range(0, len(tasks), batch_size):
+                batch = tasks[i:i+batch_size]
+                batch_results = await asyncio.gather(*batch, return_exceptions=True)
+                detailed_infos.extend(batch_results)
+                if i + batch_size < len(tasks):
+                    self.logger.debug(f"爱奇艺: 完成一批 ({len(batch)}) 标题获取，等待1秒...")
+                    await asyncio.sleep(1)
+            
             specific_title_map = {}
             for info in detailed_infos:
                 if isinstance(info, IqiyiHtmlVideoInfo) and info.tv_id:
@@ -520,7 +715,7 @@ class IqiyiScraper(BaseScraper):
         """新增：为指定的tvid获取视频时长。"""
         url = f"https://pcw-api.iqiyi.com/video/video/baseinfo/{tvid}"
         try:
-            response = await self.client.get(url)
+            response = await self._request("GET", url)
             response.raise_for_status()
             data = response.json()
             if data.get("code") == "A00000" and data.get("data"):
@@ -537,7 +732,7 @@ class IqiyiScraper(BaseScraper):
         url = f"http://cmts.iqiyi.com/bullet/{s1}/{s2}/{tv_id}_300_{mat}.z"
         
         try:
-            response = await self.client.get(url)
+            response = await self._request("GET", url)
             if await self._should_log_responses():
                 scraper_responses_logger.debug(f"iQiyi Danmaku Segment Response (tvId={tv_id}, mat={mat}): status={response.status_code}")
             if response.status_code == 404:

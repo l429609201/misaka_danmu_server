@@ -87,8 +87,9 @@ class AnimeDetailUpdate(BaseModel):
     """用于更新番剧详细信息的模型"""
     title: str = Field(..., min_length=1, description="新的影视名称")
     type: str
-    season: int = Field(..., ge=1, description="新的季度")
+    season: int = Field(..., ge=0, description="新的季度")
     episode_count: Optional[int] = Field(None, ge=1, description="新的集数")
+    image_url: Optional[str] = None
     tmdb_id: Optional[str] = None
     tmdb_episode_group_id: Optional[str] = None
     bangumi_id: Optional[str] = None
@@ -118,6 +119,7 @@ class AnimeFullDetails(BaseModel):
     type: str
     season: int
     episode_count: Optional[int] = None
+    local_image_path: Optional[str] = None
     image_url: Optional[str] = None
     tmdb_id: Optional[str] = None
     tmdb_episode_group_id: Optional[str] = None
@@ -136,11 +138,13 @@ class AnimeFullDetails(BaseModel):
 class ScraperSetting(BaseModel):
     provider_name: str
     is_enabled: bool
+    use_proxy: bool
     display_order: int
 
 class MetadataSourceSettingUpdate(BaseModel):
     provider_name: str
     is_aux_search_enabled: bool
+    use_proxy: bool
     display_order: int
 
 
@@ -148,6 +152,7 @@ class MetadataSourceSettingUpdate(BaseModel):
 class LibraryAnimeInfo(BaseModel):
     """代表媒体库中的一个番剧条目。"""
     animeId: int
+    local_image_path: Optional[str] = None
     imageUrl: Optional[str] = None
     title: str
     type: str

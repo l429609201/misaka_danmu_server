@@ -17,6 +17,7 @@ async def get_library_anime(pool: aiomysql.Pool) -> List[Dict[str, Any]]:
             query = """
                 SELECT
                     a.id as animeId,
+                    a.local_image_path,
                     a.image_url as imageUrl,
                     a.title,
             a.type,
@@ -70,7 +71,13 @@ async def search_episodes_in_library(pool: aiomysql.Pool, anime_title: str, epis
             CASE
                 WHEN a.type = 'movie' THEN CONCAT(s.provider_name, ' 源')
                 ELSE e.title
-            END AS episodeTitle,
+            END AS episodeTitle,            
+            al.name_en,
+            al.name_jp,
+            al.name_romaji,
+            al.alias_cn_1,
+            al.alias_cn_2,
+            al.alias_cn_3,
             sc.display_order,
             s.is_favorited AS isFavorited,
             (SELECT COUNT(DISTINCT e_count.id) FROM anime_sources s_count JOIN episode e_count ON s_count.id = e_count.source_id WHERE s_count.anime_id = a.id) as totalEpisodeCount,
@@ -120,6 +127,22 @@ async def search_episodes_in_library(pool: aiomysql.Pool, anime_title: str, epis
             like_params = [normalized_like_title] * len(like_conditions)
             await cursor.execute(query_like, tuple(like_params + params_episode + params_season))
             return await cursor.fetchall()
+
+async def get_episode_indices_by_anime_title(pool: aiomysql.Pool, title: str) -> List[int]:
+    """获取指定标题的作品已存在的所有分集序号。"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            # This query finds the anime by title, then joins to get all its episodes' indices.
+            # Using DISTINCT to avoid duplicates if multiple sources have the same episode index.
+            query = """
+                SELECT DISTINCT e.episode_index
+                FROM episode e
+                JOIN anime_sources s ON e.source_id = s.id
+                JOIN anime a ON s.anime_id = a.id
+                WHERE a.title = %s
+            """
+            await cursor.execute(query, (title,))
+            return [row[0] for row in await cursor.fetchall()]
 
 async def find_favorited_source_for_anime(pool: aiomysql.Pool, title: str, season: int) -> Optional[Dict[str, Any]]:
     """
@@ -387,19 +410,30 @@ async def get_existing_comment_cids(pool: aiomysql.Pool, episode_id: int) -> set
             await cursor.execute("SELECT cid FROM comment WHERE episode_id = %s", (episode_id,))
             return {row[0] for row in await cursor.fetchall()}
 
-async def get_or_create_anime(pool: aiomysql.Pool, title: str, media_type: str, season: int, image_url: Optional[str]) -> int:
+async def get_or_create_anime(pool: aiomysql.Pool, title: str, media_type: str, season: int, image_url: Optional[str], local_image_path: Optional[str]) -> int:
     """通过标题查找番剧，如果不存在则创建。如果存在但缺少海报，则更新海报。返回其ID。"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
             # 1. 检查番剧是否已存在
-            await cursor.execute("SELECT id, image_url FROM anime WHERE title = %s AND season = %s", (title, season))
+            await cursor.execute("SELECT id, image_url, local_image_path FROM anime WHERE title = %s AND season = %s", (title, season))
             result = await cursor.fetchone()
             if result:
                 anime_id = result[0]
                 existing_image_url = result[1]
-                # 如果番剧已存在，但没有海报，而这次导入提供了海报，则更新它
+                existing_local_path = result[2]
+                
+                updates, params = [], []
+                # 如果番剧已存在，但没有远程海报URL，而这次导入提供了，则更新它
                 if not existing_image_url and image_url:
-                    await cursor.execute("UPDATE anime SET image_url = %s WHERE id = %s", (image_url, anime_id))
+                    updates.append("image_url = %s")
+                    params.append(image_url)
+                # 如果番剧已存在，但没有本地海报路径，而这次导入提供了，则更新它
+                if not existing_local_path and local_image_path:
+                    updates.append("local_image_path = %s")
+                    params.append(local_image_path)
+                if updates:
+                    params.append(anime_id)
+                    await cursor.execute(f"UPDATE anime SET {', '.join(updates)} WHERE id = %s", tuple(params))
                 return anime_id
             
             # 2. 番剧不存在，在事务中创建新记录
@@ -407,8 +441,8 @@ async def get_or_create_anime(pool: aiomysql.Pool, title: str, media_type: str, 
                 await conn.begin()
                 # 2.1 插入主表
                 await cursor.execute(
-                    "INSERT INTO anime (title, type, season, image_url, created_at) VALUES (%s, %s, %s, %s, %s)",
-                    (title, media_type, season, image_url, datetime.now())
+                    "INSERT INTO anime (title, type, season, image_url, local_image_path, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (title, media_type, season, image_url, local_image_path, datetime.now())
                 )
                 anime_id = cursor.lastrowid
                 # 2.2 插入元数据表 (使用 INSERT IGNORE 避免因孤儿数据导致重复键警告)
@@ -436,22 +470,35 @@ async def link_source_to_anime(pool: aiomysql.Pool, anime_id: int, provider: str
             source = await cursor.fetchone()
             return source[0]
 
-async def get_or_create_episode(pool: aiomysql.Pool, source_id: int, episode_index: int, title: str, url: Optional[str], provider_episode_id: str) -> int:
-    """如果分集不存在则创建，并返回其ID"""
+async def create_episode_if_not_exists(pool: aiomysql.Pool, anime_id: int, source_id: int, episode_index: int, title: str, url: Optional[str], provider_episode_id: str) -> int:
+    """如果分集不存在则创建，并返回其确定性的ID。"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
             # 检查是否存在
             await cursor.execute("SELECT id FROM episode WHERE source_id = %s AND episode_index = %s", (source_id, episode_index))
             result = await cursor.fetchone()
             if result:
-                return result[0]
-            
-            # 不存在则创建
+                return int(result[0])
+
+            # 获取此源在当前作品下的索引 (1-based)
+            await cursor.execute("SELECT id FROM anime_sources WHERE anime_id = %s ORDER BY id ASC", (anime_id,))
+            source_ids = [row[0] for row in await cursor.fetchall()]
+            try:
+                source_order = source_ids.index(source_id) + 1
+            except ValueError:
+                # This should not happen in a normal flow
+                raise ValueError(f"Source ID {source_id} does not belong to Anime ID {anime_id}")
+
+            # 生成新的确定性ID
+            # 格式: 25{anime_id:06d}{source_order:02d}{episode_index:04d}
+            new_episode_id_str = f"25{anime_id:06d}{source_order:02d}{episode_index:04d}"
+            new_episode_id = int(new_episode_id_str)
+
             await cursor.execute(
-                "INSERT INTO episode (source_id, episode_index, provider_episode_id, title, source_url, fetched_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                (source_id, episode_index, provider_episode_id, title, url, datetime.now())
+                "INSERT INTO episode (id, source_id, episode_index, provider_episode_id, title, source_url, fetched_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (new_episode_id, source_id, episode_index, provider_episode_id, title, url, datetime.now())
             )
-            return cursor.lastrowid
+            return new_episode_id
 
 
 async def bulk_insert_comments(pool: aiomysql.Pool, episode_id: int, comments: List[Dict[str, Any]]) -> int:
@@ -533,7 +580,7 @@ async def get_anime_sources(pool: aiomysql.Pool, anime_id: int) -> List[Dict[str
     """获取指定作品的所有关联数据源。"""
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            query = "SELECT id as source_id, provider_name, media_id, is_favorited, created_at FROM anime_sources WHERE anime_id = %s ORDER BY created_at ASC"
+            query = "SELECT id as source_id, provider_name, media_id, is_favorited, incremental_refresh_enabled, created_at FROM anime_sources WHERE anime_id = %s ORDER BY created_at ASC"
             await cursor.execute(query, (anime_id,))
             return await cursor.fetchall()
 
@@ -598,6 +645,7 @@ async def get_anime_full_details(pool: aiomysql.Pool, anime_id: int) -> Optional
                     a.title,
                     a.type,
                     a.season,
+                    a.local_image_path,
                     a.episode_count,
                     a.image_url,
                     m.tmdb_id,
@@ -630,11 +678,11 @@ async def update_anime_details(pool: aiomysql.Pool, anime_id: int, update_data: 
                 return False
             try:
                 await conn.begin()
-
-                # 1. 更新 anime 表 (此表没有 ON DUPLICATE KEY UPDATE，无需修改)
+                
+                # 1. 更新 anime 表
                 await cursor.execute(
-                    "UPDATE anime SET title = %s, type = %s, season = %s, episode_count = %s WHERE id = %s",
-                    (update_data.title, update_data.type, update_data.season, update_data.episode_count, anime_id)
+                    "UPDATE anime SET title = %s, type = %s, season = %s, episode_count = %s, image_url = %s WHERE id = %s",
+                    (update_data.title, update_data.type, update_data.season, update_data.episode_count, update_data.image_url, anime_id)
                 )
                 
                 # 2. 更新 anime_metadata 表 (使用新的 AS alias 语法)
@@ -873,24 +921,44 @@ async def sync_scrapers_to_db(pool: aiomysql.Pool, provider_names: List[str]):
             max_order = (await cursor.fetchone())[0] or 0
 
             # 只插入新的搜索源
-            query = "INSERT INTO scrapers (provider_name, display_order) VALUES (%s, %s)"
-            data_to_insert = [(name, max_order + i + 1) for i, name in enumerate(new_providers)]
+            query = "INSERT INTO scrapers (provider_name, display_order, use_proxy) VALUES (%s, %s, %s)"
+            data_to_insert = [(name, max_order + i + 1, False) for i, name in enumerate(new_providers)]
             await cursor.executemany(query, data_to_insert)
 
 async def get_all_scraper_settings(pool: aiomysql.Pool) -> List[Dict[str, Any]]:
     """获取所有搜索源的设置，按顺序排列。"""
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("SELECT provider_name, is_enabled, display_order FROM scrapers ORDER BY display_order ASC")
+            await cursor.execute("SELECT provider_name, is_enabled, display_order, use_proxy FROM scrapers ORDER BY display_order ASC")
             return await cursor.fetchall()
 
 async def update_scrapers_settings(pool: aiomysql.Pool, settings: List[models.ScraperSetting]):
     """批量更新搜索源的设置。"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
-            query = "UPDATE scrapers SET is_enabled = %s, display_order = %s WHERE provider_name = %s"
-            data_to_update = [(s.is_enabled, s.display_order, s.provider_name) for s in settings]
+            query = "UPDATE scrapers SET is_enabled = %s, display_order = %s, use_proxy = %s WHERE provider_name = %s"
+            data_to_update = [(s.is_enabled, s.display_order, s.use_proxy, s.provider_name) for s in settings]
             await cursor.executemany(query, data_to_update)
+
+async def remove_stale_scrapers(pool: aiomysql.Pool, discovered_providers: List[str]):
+    """
+    从数据库中移除不再存在于文件系统中的搜索源。
+    """
+    # 如果由于某种原因发现列表为空，则不执行任何操作，以防意外清空整个表。
+    if not discovered_providers:
+        logging.warning("发现的搜索源列表为空，跳过清理过时源的操作。")
+        return
+
+    # 创建占位符字符串，例如: (%s, %s, %s)
+    format_strings = ','.join(['%s'] * len(discovered_providers))
+    query = f"DELETE FROM scrapers WHERE provider_name NOT IN ({format_strings})"
+    params = tuple(discovered_providers)
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            deleted_rows = await cursor.execute(query, params)
+            if deleted_rows > 0:
+                logging.info(f"已从数据库中移除了 {deleted_rows} 个过时的搜索源。")
 
 # --- Metadata Source Management ---
 
@@ -909,50 +977,29 @@ async def sync_metadata_sources_to_db(pool: aiomysql.Pool, provider_names: List[
             max_order = (await cursor.fetchone())[0] or 0
             data_to_insert = []
             for i, name in enumerate(new_providers):
-                # TMDB is always an enabled auxiliary source
                 is_aux_enabled = True if name == 'tmdb' else False
-                data_to_insert.append((name, max_order + i + 1, is_aux_enabled))
+                data_to_insert.append((name, max_order + i + 1, is_aux_enabled, False))
             
-            query = "INSERT INTO metadata_sources (provider_name, display_order, is_aux_search_enabled) VALUES (%s, %s, %s)"
+            query = "INSERT INTO metadata_sources (provider_name, display_order, is_aux_search_enabled, use_proxy) VALUES (%s, %s, %s, %s)"
             await cursor.executemany(query, data_to_insert)
 
 async def get_all_metadata_source_settings(pool: aiomysql.Pool) -> List[Dict[str, Any]]:
     """获取所有元数据源的设置。"""
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
-            await cursor.execute("SELECT provider_name, is_enabled, is_aux_search_enabled, display_order FROM metadata_sources ORDER BY display_order ASC")
+            await cursor.execute("SELECT provider_name, is_enabled, is_aux_search_enabled, display_order, use_proxy FROM metadata_sources ORDER BY display_order ASC")
             return await cursor.fetchall()
 
 async def update_metadata_sources_settings(pool: aiomysql.Pool, settings: List['models.MetadataSourceSettingUpdate']):
     """批量更新元数据源的设置。"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cursor:
-            await conn.begin()
-            try:
-                # 为了彻底解决状态互相干扰的Bug，我们将TMDB的更新和其他源的更新分开处理。
-                # 这种方式隔离了具有特殊逻辑的条目，增加了操作的原子性和可预测性。
-                
-                # 1. 单独处理 TMDB
-                tmdb_setting = next((s for s in settings if s.provider_name == 'tmdb'), None)
-                if tmdb_setting:
-                    await cursor.execute(
-                        "UPDATE metadata_sources SET is_aux_search_enabled = %s, display_order = %s WHERE provider_name = %s",
-                        (True, tmdb_setting.display_order, 'tmdb') # is_aux_search_enabled is always True for TMDB
-                    )
-
-                # 2. 批量处理所有其他源
-                other_settings = [s for s in settings if s.provider_name != 'tmdb']
-                for s in other_settings:
-                    await cursor.execute(
-                        "UPDATE metadata_sources SET is_aux_search_enabled = %s, display_order = %s WHERE provider_name = %s",
-                        (s.is_aux_search_enabled, s.display_order, s.provider_name)
-                    )
-
-                await conn.commit()
-            except Exception as e:
-                await conn.rollback()
-                logging.error(f"更新元数据源设置时发生错误: {e}", exc_info=True)
-                raise
+            query = "UPDATE metadata_sources SET is_aux_search_enabled = %s, display_order = %s, use_proxy = %s WHERE provider_name = %s"
+            data_to_update = []
+            for s in settings:
+                is_aux_enabled = True if s.provider_name == 'tmdb' else s.is_aux_search_enabled
+                data_to_update.append((is_aux_enabled, s.display_order, s.use_proxy, s.provider_name))
+            await cursor.executemany(query, data_to_update)
 
 async def update_episode_fetch_time(pool: aiomysql.Pool, episode_id: int):
     """更新分集的采集时间"""
@@ -1211,6 +1258,53 @@ async def toggle_source_favorite_status(pool: aiomysql.Pool, source_id: int) -> 
                 logging.error(f"切换源收藏状态时出错: {e}", exc_info=True)
                 return False
 
+async def toggle_source_incremental_refresh(pool: aiomysql.Pool, source_id: int) -> bool:
+    """切换一个数据源的定时增量更新状态。"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            affected_rows = await cursor.execute(
+                "UPDATE anime_sources SET incremental_refresh_enabled = NOT incremental_refresh_enabled WHERE id = %s",
+                (source_id,)
+            )
+            return affected_rows > 0
+
+async def increment_incremental_refresh_failures(pool: aiomysql.Pool, source_id: int) -> int:
+    """将指定源的增量更新失败次数加一，并返回新的失败次数。"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            await conn.begin()
+            try:
+                await cursor.execute(
+                    "UPDATE anime_sources SET incremental_refresh_failures = incremental_refresh_failures + 1 WHERE id = %s",
+                    (source_id,)
+                )
+                await cursor.execute("SELECT incremental_refresh_failures FROM anime_sources WHERE id = %s", (source_id,))
+                result = await cursor.fetchone()
+                await conn.commit()
+                return result[0] if result else 0
+            except Exception:
+                await conn.rollback()
+                raise
+
+async def reset_incremental_refresh_failures(pool: aiomysql.Pool, source_id: int):
+    """重置指定源的增量更新失败次数为0。"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute(
+                "UPDATE anime_sources SET incremental_refresh_failures = 0 WHERE id = %s",
+                (source_id,)
+            )
+
+async def disable_incremental_refresh(pool: aiomysql.Pool, source_id: int) -> bool:
+    """禁用指定源的增量更新。"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            affected_rows = await cursor.execute(
+                "UPDATE anime_sources SET incremental_refresh_enabled = FALSE WHERE id = %s",
+                (source_id,)
+            )
+            return affected_rows > 0
+
 # --- OAuth State Management ---
 
 async def create_oauth_state(pool: aiomysql.Pool, user_id: int) -> str:
@@ -1283,6 +1377,13 @@ async def delete_bangumi_auth(pool: aiomysql.Pool, user_id: int) -> bool:
             affected_rows = await cursor.execute("DELETE FROM bangumi_auth WHERE user_id = %s", (user_id,))
             return affected_rows > 0
 
+async def get_sources_with_incremental_refresh_enabled(pool: aiomysql.Pool) -> List[int]:
+    """获取所有启用了定时增量更新的数据源的ID。"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT id FROM anime_sources WHERE incremental_refresh_enabled = TRUE")
+            return [row[0] for row in await cursor.fetchall()]
+
 # --- Scheduled Tasks ---
 
 async def get_animes_with_tmdb_id(pool: aiomysql.Pool) -> List[Dict[str, Any]]:
@@ -1341,6 +1442,14 @@ async def get_scheduled_tasks(pool: aiomysql.Pool) -> List[Dict[str, Any]]:
         async with conn.cursor(aiomysql.DictCursor) as cursor:
             await cursor.execute("SELECT id, name, job_type, cron_expression, is_enabled, last_run_at, next_run_at FROM scheduled_tasks ORDER BY name")
             return await cursor.fetchall()
+
+async def check_scheduled_task_exists_by_type(pool: aiomysql.Pool, job_type: str) -> bool:
+    """检查指定类型的定时任务是否已存在。"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT 1 FROM scheduled_tasks WHERE job_type = %s LIMIT 1", (job_type,))
+            result = await cursor.fetchone()
+            return result is not None
 
 async def get_scheduled_task(pool: aiomysql.Pool, task_id: str) -> Optional[Dict[str, Any]]:
     async with pool.acquire() as conn:

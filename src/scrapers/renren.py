@@ -336,7 +336,8 @@ class RenrenScraper(BaseScraper):
             sid = str(ep.get("sid", "").strip())
             if not sid:
                 continue
-            ep_title = str(ep.get("title") or detail_env.data.dramaInfo.title)
+            #ep_title = str(ep.get("title") or detail_env.data.dramaInfo.title)    #佬说这里引起标题不对
+            ep_title = str(ep.get("title") or f"第{idx:02d}集")
             episodes.append(RrspEpisodeInfo(sid=sid, order=idx, title=ep_title))
 
         if target_episode_index:

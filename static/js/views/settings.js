@@ -4,6 +4,7 @@ import { apiFetch } from '../api.js';
 let settingsSubNav, settingsSubViews;
 // Account
 let changePasswordForm, passwordChangeMessage;
+let proxySettingsForm, proxyTestResults, proxySaveMessage, testProxyBtn;
 // Webhook
 let webhookApiKeyInput, regenerateWebhookKeyBtn, webhookCustomDomainInput, saveWebhookDomainBtn, webhookDomainSaveMessage;
 let webhookServiceSelect, webhookGeneratedUrlInput, copyWebhookUrlBtn;
@@ -28,6 +29,12 @@ function initializeElements() {
     // Account
     changePasswordForm = document.getElementById('change-password-form');
     passwordChangeMessage = document.getElementById('password-change-message');
+
+    // Proxy
+    proxySettingsForm = document.getElementById('proxy-settings-form');
+    proxyTestResults = document.getElementById('proxy-test-results');
+    proxySaveMessage = document.getElementById('proxy-save-message');
+    testProxyBtn = document.getElementById('test-proxy-btn');
 
     // Webhook
     webhookApiKeyInput = document.getElementById('webhook-api-key');
@@ -83,6 +90,9 @@ function handleSettingsSubNav(e) {
     switch (subViewId) {
         case 'account-settings-subview':
             // No data to load initially
+            break;
+        case 'proxy-settings-subview':
+            loadProxySettings();
             break;
         case 'webhook-settings-subview':
             loadWebhookSettings();
@@ -141,6 +151,117 @@ async function handleChangePassword(e) {
         passwordChangeMessage.classList.add('error');
     } finally {
         saveBtn.disabled = false;
+    }
+}
+
+// --- Proxy Settings ---
+async function loadProxySettings() {
+    proxySaveMessage.textContent = '';
+    proxyTestResults.classList.add('hidden');
+    try {
+        const data = await apiFetch('/api/ui/config/proxy');
+        document.getElementById('proxy-protocol').value = data.proxy_protocol || 'http';
+        document.getElementById('proxy-host').value = data.proxy_host || '';
+        document.getElementById('proxy-port').value = data.proxy_port || '';
+        document.getElementById('proxy-username').value = data.proxy_username || '';
+        document.getElementById('proxy-password').value = data.proxy_password || '';
+        document.getElementById('proxy-enabled').checked = data.proxy_enabled;
+    } catch (error) {
+        proxySaveMessage.textContent = `加载代理配置失败: ${error.message}`;
+        proxySaveMessage.classList.add('error');
+    }
+}
+
+async function handleSaveProxySettings(e) {
+    e.preventDefault();
+    const payload = {
+        proxy_protocol: document.getElementById('proxy-protocol').value,
+        proxy_host: document.getElementById('proxy-host').value.trim(),
+        proxy_port: document.getElementById('proxy-port').value ? parseInt(document.getElementById('proxy-port').value, 10) : null,
+        proxy_username: document.getElementById('proxy-username').value.trim(),
+        proxy_password: document.getElementById('proxy-password').value, // Don't trim password
+        proxy_enabled: document.getElementById('proxy-enabled').checked,
+    };
+    const saveBtn = e.target.querySelector('button[type="submit"]');
+    saveBtn.disabled = true;
+    proxySaveMessage.textContent = '保存中...';
+    proxySaveMessage.className = 'message';
+    try {
+        await apiFetch('/api/ui/config/proxy', { method: 'PUT', body: JSON.stringify(payload) });
+        proxySaveMessage.textContent = '代理配置保存成功！';
+        proxySaveMessage.classList.add('success');
+    } catch (error) {
+        proxySaveMessage.textContent = `保存失败: ${error.message}`;
+        proxySaveMessage.classList.add('error');
+    } finally {
+        saveBtn.disabled = false;
+    }
+}
+
+function _buildProxyUrlFromForm() {
+    const protocol = document.getElementById('proxy-protocol').value;
+    const host = document.getElementById('proxy-host').value.trim();
+    const port = document.getElementById('proxy-port').value.trim();
+    const username = document.getElementById('proxy-username').value.trim();
+    const password = document.getElementById('proxy-password').value;
+
+    if (!host || !port) {
+        return "";
+    }
+
+    let url = `${protocol}://`;
+    if (username) {
+        url += `${encodeURIComponent(username)}`;
+        if (password) {
+            url += `:${encodeURIComponent(password)}`;
+        }
+        url += "@";
+    }
+    url += `${host}:${port}`;
+    return url;
+}
+
+async function handleTestProxy() {
+    proxyTestResults.classList.remove('hidden');
+    proxyTestResults.textContent = '正在测试...';
+    testProxyBtn.disabled = true;
+
+    const proxyUrl = _buildProxyUrlFromForm();
+    const payload = { proxy_url: proxyUrl };
+
+    try {
+        const response = await apiFetch('/api/ui/proxy/test', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+
+        let resultsText = "--- 代理服务器连通性测试 ---\n";
+        const connectivity = response.proxy_connectivity;
+        if (!connectivity) {
+            resultsText += `❌ 代理服务器连接测试失败: 后端未返回有效结果。\n`;
+        } else if (connectivity.status === 'success') {
+            resultsText += `✅ 代理服务器连接正常，延迟: ${connectivity.latency.toFixed(0)} ms\n`;
+        } else if (connectivity.status === 'skipped') {
+            resultsText += `⚪️ ${connectivity.error || '未配置代理，跳过测试'}\n`;
+        } else { // 'failure'
+            resultsText += `❌ 代理服务器连接失败: ${connectivity.error || '无响应或格式错误'}\n`;
+        }
+
+        resultsText += "\n--- 目标站点可用性测试 ---\n";
+        for (const [domain, result] of Object.entries(response.target_sites || {})) {
+            const friendlyDomain = new URL(domain).hostname;
+            if (result && result.status === 'success') {
+                resultsText += `✅ ${friendlyDomain}: 可达, 延迟: ${result.latency.toFixed(0)} ms\n`;
+            } else {
+                resultsText += `❌ ${friendlyDomain}: 无法访问 (${result ? result.error : '未知错误'})\n`;
+            }
+        }
+
+        proxyTestResults.textContent = resultsText;
+    } catch (error) {
+        proxyTestResults.textContent = `测试请求失败: ${error.message}`;
+    } finally {
+        testProxyBtn.disabled = false;
     }
 }
 
@@ -499,6 +620,10 @@ export function setupSettingsEventListeners() {
 
     // Account
     changePasswordForm.addEventListener('submit', handleChangePassword);
+
+    // Proxy
+    proxySettingsForm.addEventListener('submit', handleSaveProxySettings);
+    testProxyBtn.addEventListener('click', handleTestProxy);
 
     // Webhook
     regenerateWebhookKeyBtn.addEventListener('click', handleRegenerateWebhookKey);
