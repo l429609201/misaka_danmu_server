@@ -51,10 +51,10 @@ export const AnimeDetail = () => {
     try {
       const [detailRes, sourceRes] = await Promise.all([
         getAnimeDetail({
-          animeId: id,
+          animeId: Number(id),
         }),
         getAnimeSource({
-          animeId: id,
+          animeId: Number(id),
         }),
       ])
       setAnimeDetail(detailRes.data)

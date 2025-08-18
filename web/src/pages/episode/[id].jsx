@@ -48,10 +48,10 @@ export const EpisodeDetail = () => {
     try {
       const [detailRes, episodeRes] = await Promise.all([
         getAnimeDetail({
-          animeId: animeId,
+          animeId: Number(animeId),
         }),
         getEpisodes({
-          sourceId: id,
+          sourceId: Number(id),
         }),
       ])
       setAnimeDetail(detailRes.data)
@@ -294,14 +294,14 @@ export const EpisodeDetail = () => {
       if (values.episode_id) {
         await editEpisode({
           ...values,
-          source_id: id,
+          source_id: Number(id),
         })
       } else {
         await manualImportEpisode({
           title: values.title,
           episode_index: values.episode_index,
           url: values.source_url,
-          source_id: id,
+          source_id: Number(id),
         })
       }
       getDetail()
@@ -333,7 +333,7 @@ export const EpisodeDetail = () => {
       onOk: async () => {
         try {
           const res = await resetEpisode({
-            sourceId: id,
+            sourceId: Number(id),
           })
           goTask(res)
         } catch (error) {
@@ -349,10 +349,10 @@ export const EpisodeDetail = () => {
       setResetLoading(true)
       const episodeIds = resetInfo?.toDelete?.map(ep => ep.id)
       await deleteAnimeEpisode({
-        episode_ids: episodeIds,
+        episode_ids: Number(episodeIds),
       })
       await resetEpisode({
-        sourceId: id,
+        sourceId: Number(id),
       })
       message.success('已提交：批量删除 + 重整集数 两个任务。')
     } catch (error) {

@@ -17,10 +17,10 @@ export const CommentDetail = () => {
     try {
       const [episodeRes, commentRes] = await Promise.all([
         getEpisodes({
-          sourceId: episodeId,
+          sourceId: Number(episodeId),
         }),
         getDanmakuDetail({
-          id: id,
+          id: Number(id),
         }),
       ])
       setCommentList(commentRes.data?.comments || [])
