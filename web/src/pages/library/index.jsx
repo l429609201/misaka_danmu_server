@@ -196,11 +196,11 @@ export const Library = () => {
 
   const goTask = res => {
     Modal.confirm({
-      title: '删除',
+      title: '提示',
       zIndex: 1002,
       content: (
         <div>
-          {res.message || '删除任务已提交'}
+          {res.message || '批量删除任务已提交'}
           <br />
           是否立即跳转到任务管理器查看进度？
         </div>
@@ -208,7 +208,7 @@ export const Library = () => {
       okText: '确认',
       cancelText: '取消',
       onOk: () => {
-        navigate(`${RoutePaths.TASKstatus}?status=all`)
+        navigate(`${RoutePaths.TASK}?status=all`)
       },
       onCancel: () => {
         getList()

@@ -37,7 +37,7 @@ export const Login = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div>
       {/* 登录卡片容器 */}
       <Card className="w-full max-w-md rounded-xl shadow-lg overflow-hidden transform transition-all duration-300 hover:shadow-xl">
         {/* 登录标题区域 */}

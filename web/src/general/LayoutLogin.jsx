@@ -12,8 +12,8 @@ export const LayoutLogin = () => {
     <ErrorBoundary FallbackComponent={ErrorFallback}>
       <div
         className={classNames({
-          'w-full px-4 pb-20 pt-8': isMobile,
-          'max-w-[1200px] mx-auto pt-20 px-8': !isMobile,
+          'w-full min-h-screen px-4 pb-20 pt-8': isMobile,
+          'max-w-[1200px] min-h-screen mx-auto pt-20 px-8': !isMobile,
         })}
       >
         <Outlet />

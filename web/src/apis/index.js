@@ -255,3 +255,13 @@ export const setAnimeDetail = data =>
 /** 获取影视的资源 */
 export const getAnimeSource = data =>
   api.get(`/api/ui/library/anime/${data.animeId}/sources`)
+
+/** 关联数据源 */
+export const setAnimeSource = data =>
+  api.post(`/api/ui/library/anime/${data.sourceAnimeId}/reassociate`, {
+    target_anime_id: data.targetAnimeId,
+  })
+
+/** 删除数据源 */
+export const deleteAnimeSource = data =>
+  api.post('/api/ui/library/sources/delete-bulk', data)
