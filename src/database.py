@@ -1,32 +1,32 @@
-import aiomysql
 import secrets
 import string
 import logging
 from fastapi import FastAPI, Request
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy import text
 from .config import settings
-from pymysql.err import OperationalError
+from .orm_models import Base
 
 # 使用模块级日志记录器
 logger = logging.getLogger(__name__)
 
-
-async def create_db_pool(app: FastAPI) -> aiomysql.Pool:
-    """创建数据库连接池并存储在 app.state 中"""
+async def create_db_engine_and_session(app: FastAPI):
+    """创建数据库引擎和会话工厂，并存储在 app.state 中"""
+    db_type = settings.database.type.lower()
+    if db_type == "mysql":
+        db_url = f"mysql+aiomysql://{settings.database.user}:{settings.database.password}@{settings.database.host}:{settings.database.port}/{settings.database.name}?charset=utf8mb4"
+    elif db_type == "postgresql":
+        db_url = f"postgresql+asyncpg://{settings.database.user}:{settings.database.password}@{settings.database.host}:{settings.database.port}/{settings.database.name}"
+    else:
+        raise ValueError(f"不支持的数据库类型: '{db_type}'。请使用 'mysql' 或 'postgresql'。")
     try:
-        app.state.db_pool = await aiomysql.create_pool(
-            host=settings.database.host,
-            port=settings.database.port,
-            user=settings.database.user,
-            password=settings.database.password,
-            db=settings.database.name,
-            autocommit=True  # 建议在Web应用中开启自动提交
-        )
-        logger.info("数据库连接池创建成功。")
-        return app.state.db_pool
-    except OperationalError as e:
-        # 捕获特定的 OperationalError 以提供更具指导性的错误消息
+        engine = create_async_engine(db_url, echo=False, pool_recycle=3600)
+        app.state.db_engine = engine
+        app.state.db_session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+        logger.info("数据库引擎和会话工厂创建成功。")
+    except Exception as e:
         logger.error("="*60)
-        logger.error("=== 无法创建数据库连接池，应用无法启动。 ===")
+        logger.error("=== 无法连接到数据库服务器，应用无法启动。 ===")
         logger.error(f"=== 错误类型: {type(e).__name__}")
         logger.error(f"=== 错误详情: {e}")
         logger.error("---")
@@ -36,23 +36,76 @@ async def create_db_pool(app: FastAPI) -> aiomysql.Pool:
         logger.error(f"---    - 主机 (Host): {settings.database.host}")
         logger.error(f"---    - 端口 (Port): {settings.database.port}")
         logger.error(f"---    - 用户 (User): {settings.database.user}")
-        logger.error(f"---    - 数据库 (DB Name): {settings.database.name}")
         logger.error("--- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。")
-        logger.error("--- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接。")
+        logger.error("--- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接，并有创建数据库的权限。")
         logger.error("="*60)
-        # 重新抛出异常以终止应用启动，因为没有数据库连接应用无法运行
         raise
 
-async def get_db_pool(request: Request) -> aiomysql.Pool:
-    """依赖项：从应用状态获取数据库连接池"""
-    return request.app.state.db_pool
+async def _create_db_if_not_exists():
+    """如果数据库不存在，则使用 SQLAlchemy 引擎创建它。"""
+    db_type = settings.database.type.lower()
+    db_name = settings.database.name
 
-async def close_db_pool(app: FastAPI):
-    """关闭数据库连接池"""
-    if hasattr(app.state, "db_pool") and app.state.db_pool:
-        app.state.db_pool.close()
-        await app.state.db_pool.wait_closed()
-        logger.info("数据库连接池已关闭。")
+    if db_type == "mysql":
+        # 创建一个不带数据库名称的连接URL
+        server_url = f"mysql+aiomysql://{settings.database.user}:{settings.database.password}@{settings.database.host}:{settings.database.port}?charset=utf8mb4"
+        check_sql = text(f"SHOW DATABASES LIKE '{db_name}'")
+        create_sql = text(f"CREATE DATABASE `{db_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+    elif db_type == "postgresql":
+        # 对于PostgreSQL，连接到默认的 'postgres' 数据库来执行创建操作
+        server_url = f"postgresql+asyncpg://{settings.database.user}:{settings.database.password}@{settings.database.host}:{settings.database.port}/postgres"
+        check_sql = text(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'")
+        create_sql = text(f'CREATE DATABASE "{db_name}"')
+    else:
+        logger.warning(f"不支持为数据库类型 '{db_type}' 自动创建数据库。请确保数据库已手动创建。")
+        return
+    
+    engine = create_async_engine(server_url, echo=False)
+    
+    try:
+        async with engine.connect() as conn:
+            # 检查数据库是否存在
+            result = await conn.execute(check_sql)
+            if result.scalar_one_or_none() is None:
+                logger.info(f"数据库 '{db_name}' 不存在，正在创建...")
+                # 设置隔离级别以允许 DDL 语句
+                await conn.execution_options(isolation_level="AUTOCOMMIT")
+                await conn.execute(create_sql)
+                logger.info(f"数据库 '{db_name}' 创建成功。")
+            else:
+                logger.info(f"数据库 '{db_name}' 已存在，跳过创建。")
+    except Exception as e:
+        logger.error(f"检查或创建数据库时发生错误: {e}", exc_info=True)
+        # Provide detailed error message like the old code
+        logger.error("="*60)
+        logger.error("=== 无法连接到数据库服务器，应用无法启动。 ===")
+        logger.error(f"=== 错误类型: {type(e).__name__}")
+        logger.error(f"=== 错误详情: {e}")
+        logger.error("---")
+        logger.error("--- 可能的原因与排查建议: ---")
+        logger.error("--- 1. 数据库服务未运行: 请确认您的 MySQL/MariaDB 服务正在运行。")
+        logger.error(f"--- 2. 配置错误: 请检查您的配置文件或环境变量中的数据库连接信息是否正确。")
+        logger.error(f"---    - 主机 (Host): {settings.database.host}")
+        logger.error(f"---    - 端口 (Port): {settings.database.port}")
+        logger.error(f"---    - 用户 (User): {settings.database.user}")
+        logger.error("--- 3. 网络问题: 如果应用和数据库在不同的容器或机器上，请检查它们之间的网络连接和防火墙设置。")
+        logger.error("--- 4. 权限问题: 确认提供的用户有权限从应用所在的IP地址连接，并有创建数据库的权限。")
+        logger.error("="*60)
+        raise
+    finally:
+        await engine.dispose()
+
+async def get_db_session(request: Request) -> AsyncSession:
+    """依赖项：从应用状态获取数据库会话"""
+    session_factory = request.app.state.db_session_factory
+    async with session_factory() as session:
+        yield session
+
+async def close_db_engine(app: FastAPI):
+    """关闭数据库引擎"""
+    if hasattr(app.state, "db_engine"):
+        await app.state.db_engine.dispose()
+        logger.info("数据库引擎已关闭。")
 
 async def create_initial_admin_user(app: FastAPI):
     """在应用启动时创建初始管理员用户（如果已配置且不存在）"""
@@ -64,8 +117,9 @@ async def create_initial_admin_user(app: FastAPI):
     if not admin_user:
         return
 
-    pool = app.state.db_pool
-    existing_user = await crud.get_user_by_username(pool, admin_user)
+    session_factory = app.state.db_session_factory
+    async with session_factory() as session:
+        existing_user = await crud.get_user_by_username(session, admin_user)
 
     if existing_user:
         logger.info(f"管理员用户 '{admin_user}' 已存在，跳过创建。")
@@ -80,7 +134,8 @@ async def create_initial_admin_user(app: FastAPI):
         logger.info("未提供初始管理员密码，已生成随机密码。")
 
     user_to_create = models.UserCreate(username=admin_user, password=admin_pass)
-    await crud.create_user(pool, user_to_create)
+    async with session_factory() as session:
+        await crud.create_user(session, user_to_create)
 
     # 打印凭据信息。
     # 注意：，
@@ -96,174 +151,10 @@ async def create_initial_admin_user(app: FastAPI):
 
 async def init_db_tables(app: FastAPI):
     """初始化数据库和表"""
-    db_name = settings.database.name
-    # 1. 先尝试连接MySQL实例，但不指定数据库
-    try:
-        conn = await aiomysql.connect(
-            host=settings.database.host, port=settings.database.port,
-            user=settings.database.user, password=settings.database.password
-        )
-    except OperationalError as e:
-        logger.error(f"数据库连接失败，请检查配置: {e}")
-        raise RuntimeError(f"无法连接到数据库: {e}") from e
+    await _create_db_if_not_exists()
+    await create_db_engine_and_session(app)
 
-    async with conn.cursor() as cursor:
-        # 2. 创建数据库 (如果不存在)
-        await cursor.execute("SHOW DATABASES LIKE %s", (db_name,))
-        if not await cursor.fetchone():
-            logger.info(f"数据库 '{db_name}' 不存在，正在创建...")
-            await cursor.execute(f"CREATE DATABASE `{db_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-            logger.info(f"数据库 '{db_name}' 创建成功。")
-    conn.close()
-
-    # 3. 检查并创建/更新表
-    async with app.state.db_pool.acquire() as conn:
-        async with conn.cursor() as cursor:
-            # --- 步骤 3.1: 检查并创建所有表 ---
-            logger.info("正在检查并创建数据表...")
-            
-            # 将所有建表语句放入一个字典中
-            tables_to_create = {
-                "anime": """CREATE TABLE `anime` (`id` BIGINT NOT NULL AUTO_INCREMENT, `title` VARCHAR(255) NOT NULL, `type` ENUM('tv_series', 'movie', 'ova', 'other') NOT NULL DEFAULT 'tv_series', `image_url` VARCHAR(512) NULL, `season` INT NOT NULL DEFAULT 1, `episode_count` INT NULL DEFAULT NULL, `source_url` VARCHAR(512) NULL, `created_at` TIMESTAMP NULL, PRIMARY KEY (`id`), FULLTEXT INDEX `idx_title_fulltext` (`title`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "episode": """CREATE TABLE `episode` (`id` BIGINT NOT NULL, `source_id` BIGINT NOT NULL, `title` VARCHAR(255) NOT NULL, `episode_index` INT NOT NULL, `provider_episode_id` VARCHAR(255) NULL, `source_url` VARCHAR(512) NULL, `fetched_at` TIMESTAMP NULL, `comment_count` INT NOT NULL DEFAULT 0, PRIMARY KEY (`id`), UNIQUE INDEX `idx_source_episode_unique` (`source_id` ASC, `episode_index` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "comment": """CREATE TABLE `comment` (`id` BIGINT NOT NULL AUTO_INCREMENT, `cid` VARCHAR(255) NOT NULL, `episode_id` BIGINT NOT NULL, `p` VARCHAR(255) NOT NULL, `m` TEXT NOT NULL, `t` DECIMAL(10, 2) NOT NULL, PRIMARY KEY (`id`), UNIQUE INDEX `idx_episode_cid_unique` (`episode_id` ASC, `cid` ASC), INDEX `idx_episode_time` (`episode_id` ASC, `t` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "users": """CREATE TABLE `users` (`id` BIGINT NOT NULL AUTO_INCREMENT, `username` VARCHAR(50) NOT NULL, `hashed_password` VARCHAR(255) NOT NULL, `token` TEXT NULL, `token_update` TIMESTAMP NULL, `created_at` TIMESTAMP NULL, PRIMARY KEY (`id`), UNIQUE INDEX `idx_username_unique` (`username` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "scrapers": """CREATE TABLE `scrapers` (`provider_name` VARCHAR(50) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `display_order` INT NOT NULL DEFAULT 0, PRIMARY KEY (`provider_name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "anime_sources": """CREATE TABLE `anime_sources` (`id` BIGINT NOT NULL AUTO_INCREMENT, `anime_id` BIGINT NOT NULL, `provider_name` VARCHAR(50) NOT NULL, `media_id` VARCHAR(255) NOT NULL, `is_favorited` BOOLEAN NOT NULL DEFAULT FALSE, `incremental_refresh_enabled` BOOLEAN NOT NULL DEFAULT FALSE, `created_at` TIMESTAMP NULL, PRIMARY KEY (`id`), UNIQUE INDEX `idx_anime_provider_media_unique` (`anime_id` ASC, `provider_name` ASC, `media_id` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "anime_metadata": """CREATE TABLE `anime_metadata` (`id` BIGINT NOT NULL AUTO_INCREMENT, `anime_id` BIGINT NOT NULL, `tmdb_id` VARCHAR(50) NULL, `tmdb_episode_group_id` VARCHAR(50) NULL, `imdb_id` VARCHAR(50) NULL, `tvdb_id` VARCHAR(50) NULL, `douban_id` VARCHAR(50) NULL, `bangumi_id` VARCHAR(50) NULL, PRIMARY KEY (`id`), UNIQUE INDEX `idx_anime_id_unique` (`anime_id` ASC), CONSTRAINT `fk_metadata_anime` FOREIGN KEY (`anime_id`) REFERENCES `anime`(`id`) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "config": """CREATE TABLE `config` (`config_key` VARCHAR(100) NOT NULL, `config_value` TEXT NOT NULL, `description` TEXT NULL, PRIMARY KEY (`config_key`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "cache_data": """CREATE TABLE `cache_data` (`cache_provider` VARCHAR(50) NULL, `cache_key` VARCHAR(255) NOT NULL, `cache_value` LONGTEXT NOT NULL, `expires_at` TIMESTAMP NOT NULL, PRIMARY KEY (`cache_key`), INDEX `idx_expires_at` (`expires_at`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "api_tokens": """CREATE TABLE `api_tokens` (`id` INT NOT NULL AUTO_INCREMENT, `name` VARCHAR(100) NOT NULL, `token` VARCHAR(50) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, `expires_at` TIMESTAMP NULL DEFAULT NULL, PRIMARY KEY (`id`), UNIQUE INDEX `idx_token_unique` (`token` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "token_access_logs": """CREATE TABLE `token_access_logs` (`id` BIGINT NOT NULL AUTO_INCREMENT, `token_id` INT NOT NULL, `ip_address` VARCHAR(45) NOT NULL, `user_agent` TEXT NULL, `access_time` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, `status` VARCHAR(50) NOT NULL, `path` VARCHAR(512) NULL, PRIMARY KEY (`id`), INDEX `idx_token_id_time` (`token_id` ASC, `access_time` DESC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "ua_rules": """CREATE TABLE `ua_rules` (`id` INT NOT NULL AUTO_INCREMENT, `ua_string` VARCHAR(255) NOT NULL, `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (`id`), UNIQUE INDEX `idx_ua_string_unique` (`ua_string` ASC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "bangumi_auth": """CREATE TABLE `bangumi_auth` (`user_id` BIGINT NOT NULL, `bangumi_user_id` INT NULL, `nickname` VARCHAR(255) NULL, `avatar_url` VARCHAR(512) NULL, `access_token` TEXT NOT NULL, `refresh_token` TEXT NULL, `expires_at` TIMESTAMP NULL, `authorized_at` TIMESTAMP NULL, PRIMARY KEY (`user_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "oauth_states": """CREATE TABLE `oauth_states` (`state_key` VARCHAR(100) NOT NULL, `user_id` BIGINT NOT NULL, `expires_at` TIMESTAMP NOT NULL, PRIMARY KEY (`state_key`), INDEX `idx_oauth_expires_at` (`expires_at`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "anime_aliases": """CREATE TABLE `anime_aliases` (`id` BIGINT NOT NULL AUTO_INCREMENT, `anime_id` BIGINT NOT NULL, `name_en` VARCHAR(255) NULL, `name_jp` VARCHAR(255) NULL, `name_romaji` VARCHAR(255) NULL, `alias_cn_1` VARCHAR(255) NULL, `alias_cn_2` VARCHAR(255) NULL, `alias_cn_3` VARCHAR(255) NULL, PRIMARY KEY (`id`), UNIQUE INDEX `idx_anime_id_unique` (`anime_id` ASC), CONSTRAINT `fk_aliases_anime` FOREIGN KEY (`anime_id`) REFERENCES `anime`(`id`) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "tmdb_episode_mapping": """CREATE TABLE `tmdb_episode_mapping` (`id` BIGINT NOT NULL AUTO_INCREMENT, `tmdb_tv_id` INT NOT NULL, `tmdb_episode_group_id` VARCHAR(50) NOT NULL, `tmdb_episode_id` INT NOT NULL, `tmdb_season_number` INT NOT NULL, `tmdb_episode_number` INT NOT NULL, `custom_season_number` INT NOT NULL, `custom_episode_number` INT NOT NULL, `absolute_episode_number` INT NOT NULL, PRIMARY KEY (`id`), UNIQUE KEY `idx_group_episode_unique` (`tmdb_episode_group_id`, `tmdb_episode_id`), INDEX `idx_custom_season_episode` (`tmdb_tv_id`, `tmdb_episode_group_id`, `custom_season_number`, `custom_episode_number`), INDEX `idx_absolute_episode` (`tmdb_tv_id`, `tmdb_episode_group_id`, `absolute_episode_number`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "scheduled_tasks": """CREATE TABLE `scheduled_tasks` (`id` VARCHAR(100) NOT NULL, `name` VARCHAR(255) NOT NULL, `job_type` VARCHAR(50) NOT NULL, `cron_expression` VARCHAR(100) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `last_run_at` TIMESTAMP NULL, `next_run_at` TIMESTAMP NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "task_history": """CREATE TABLE `task_history` (`id` VARCHAR(100) NOT NULL, `title` VARCHAR(255) NOT NULL, `status` VARCHAR(50) NOT NULL, `progress` INT NOT NULL DEFAULT 0, `description` TEXT NULL, `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, `finished_at` TIMESTAMP NULL, PRIMARY KEY (`id`), INDEX `idx_created_at` (`created_at` DESC)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "scrapers": """CREATE TABLE `scrapers` (`provider_name` VARCHAR(50) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `display_order` INT NOT NULL DEFAULT 0, `use_proxy` BOOLEAN NOT NULL DEFAULT FALSE, PRIMARY KEY (`provider_name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-                "metadata_sources": """CREATE TABLE `metadata_sources` (`provider_name` VARCHAR(50) NOT NULL, `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `is_aux_search_enabled` BOOLEAN NOT NULL DEFAULT TRUE, `display_order` INT NOT NULL DEFAULT 0, `use_proxy` BOOLEAN NOT NULL DEFAULT FALSE, PRIMARY KEY (`provider_name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;""",
-            }
-
-            # 先获取数据库中所有已存在的表
-            await cursor.execute("SELECT table_name FROM information_schema.TABLES WHERE table_schema = %s", (db_name,))
-            existing_tables = {row[0] for row in await cursor.fetchall()}
-
-            # 遍历需要创建的表
-            for table_name, create_sql in tables_to_create.items():
-                if table_name in existing_tables:
-                    logger.debug(f"数据表 '{table_name}' 已存在，跳过创建。")
-                else:
-                    logger.info(f"正在创建数据表 '{table_name}'...")
-                    # 在建表语句中保留 IF NOT EXISTS 作为最后的保险
-                    await cursor.execute(create_sql.replace(f"CREATE TABLE `{table_name}`", f"CREATE TABLE IF NOT EXISTS `{table_name}`"))
-                    logger.info(f"数据表 '{table_name}' 创建成功。")
-            
-            logger.info("数据表检查完成。")
-
-            # --- 步骤 3.2: 检查并修正旧的表结构 (静默迁移) ---
-            logger.info("正在检查并修正表结构...")
-            try:
-                # 检查 token_access_logs.status
-                await cursor.execute("""
-                    SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'token_access_logs' AND COLUMN_NAME = 'status'
-                """, (db_name,))
-                status_col_len_row = await cursor.fetchone()
-                if status_col_len_row and status_col_len_row[0] < 50:
-                    logger.info("检测到旧的 'token_access_logs.status' 列定义，正在将其更新为 VARCHAR(50)...")
-                    await cursor.execute("ALTER TABLE token_access_logs MODIFY COLUMN status VARCHAR(50) NOT NULL;")
-                    logger.info("列 'token_access_logs.status' 更新成功。")
-
-                # 检查 task_history.status
-                await cursor.execute("""
-                    SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'task_history' AND COLUMN_NAME = 'status'
-                """, (db_name,))
-                task_status_col_len_row = await cursor.fetchone()
-                if task_status_col_len_row and task_status_col_len_row[0] < 50:
-                    logger.info("检测到旧的 'task_history.status' 列定义，正在将其更新为 VARCHAR(50)...")
-                    await cursor.execute("ALTER TABLE task_history MODIFY COLUMN status VARCHAR(50) NOT NULL;")
-                    logger.info("列 'task_history.status' 更新成功。")
-
-                # 检查 config.config_value 的类型
-                await cursor.execute("""
-                    SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'config' AND COLUMN_NAME = 'config_value'
-                """, (db_name,))
-                config_value_col_type_row = await cursor.fetchone()
-                if config_value_col_type_row and config_value_col_type_row[0].lower() not in ['text', 'longtext']:
-                    logger.info("检测到旧的 'config.config_value' 列定义，正在将其更新为 TEXT...")
-                    await cursor.execute("ALTER TABLE config MODIFY COLUMN config_value TEXT NOT NULL;")
-                    logger.info("列 'config.config_value' 更新成功。")
-
-                # 检查 anime_sources.incremental_refresh_enabled
-                await cursor.execute("""
-                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'anime_sources' AND COLUMN_NAME = 'incremental_refresh_enabled'
-                """, (db_name,))
-                if not await cursor.fetchone():
-                    logger.info("在 'anime_sources' 表中未找到 'incremental_refresh_enabled' 列，正在添加...")
-                    await cursor.execute("ALTER TABLE anime_sources ADD COLUMN incremental_refresh_enabled BOOLEAN NOT NULL DEFAULT FALSE;")
-                    logger.info("列 'incremental_refresh_enabled' 添加成功。")
-
-                # 检查 anime_sources.incremental_refresh_failures
-                await cursor.execute("""
-                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'anime_sources' AND COLUMN_NAME = 'incremental_refresh_failures'
-                """, (db_name,))
-                if not await cursor.fetchone():
-                    logger.info("在 'anime_sources' 表中未找到 'incremental_refresh_failures' 列，正在添加...")
-                    await cursor.execute("ALTER TABLE anime_sources ADD COLUMN incremental_refresh_failures INT NOT NULL DEFAULT 0 AFTER incremental_refresh_enabled;")
-                    logger.info("列 'incremental_refresh_failures' 添加成功。")
-
-                # 检查 anime.local_image_path
-                await cursor.execute("""
-                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'anime' AND COLUMN_NAME = 'local_image_path'
-                """, (db_name,))
-                if not await cursor.fetchone():
-                    logger.info("在 'anime' 表中未找到 'local_image_path' 列，正在添加...")
-                    await cursor.execute("ALTER TABLE anime ADD COLUMN local_image_path VARCHAR(512) NULL DEFAULT NULL AFTER image_url;")
-                    logger.info("列 'local_image_path' 添加成功。")
-
-                # 新增：检查 scrapers.use_proxy
-                await cursor.execute("""
-                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'scrapers' AND COLUMN_NAME = 'use_proxy'
-                """, (db_name,))
-                if not await cursor.fetchone():
-                    logger.info("在 'scrapers' 表中未找到 'use_proxy' 列，正在添加...")
-                    await cursor.execute("ALTER TABLE scrapers ADD COLUMN use_proxy BOOLEAN NOT NULL DEFAULT FALSE;")
-
-                # 新增：检查 metadata_sources.use_proxy
-                await cursor.execute("""
-                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'metadata_sources' AND COLUMN_NAME = 'use_proxy'
-                """, (db_name,))
-                if not await cursor.fetchone():
-                    logger.info("在 'metadata_sources' 表中未找到 'use_proxy' 列，正在添加...")
-                    await cursor.execute("ALTER TABLE metadata_sources ADD COLUMN use_proxy BOOLEAN NOT NULL DEFAULT FALSE;")
-            except Exception as e:
-                # 仅记录错误，不中断启动流程
-                logger.warning(f"检查或更新表结构时发生非致命错误: {e}")
-
-            try:
-                # 新增：检查并修正 episode.id 的自增属性
-                await cursor.execute("""
-                    SELECT EXTRA FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'episode' AND COLUMN_NAME = 'id'
-                """, (db_name,))
-                id_col_extra = await cursor.fetchone()
-                if id_col_extra and 'auto_increment' in id_col_extra[0].lower():
-                    logger.info("检测到旧的 'episode.id' 列定义 (带自增属性)，正在进行迁移...")
-                    await cursor.execute("ALTER TABLE `episode` DROP PRIMARY KEY, MODIFY `id` BIGINT NOT NULL, ADD PRIMARY KEY (`id`);")
-                    logger.info("列 'episode.id' 结构迁移成功。")
-            except Exception as e:
-                # 仅记录错误，不中断启动流程
-                logger.warning(f"检查或更新表结构时发生非致命错误: {e}")
-
-            # --- 步骤 3.3: 初始化默认配置 ---
-            # 初始化默认配置的逻辑已移至 ConfigManager
-            pass
+    engine = app.state.db_engine
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("ORM 模型已同步到数据库。")

@@ -4,18 +4,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Depends
 import logging
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse # noqa: F401
 from fastapi.middleware.cors import CORSMiddleware  # 新增：处理跨域
 import json
 from .config_manager import ConfigManager
-from .database import create_db_pool, close_db_pool, init_db_tables, create_initial_admin_user
-from .api.ui import router as ui_router, auth_router
-from .api.bangumi_api import router as bangumi_router
-from .api.tmdb_api import router as tmdb_router
-from .api.webhook_api import router as webhook_router
-from .api.imdb_api import router as imdb_router
-from .api.tvdb_api import router as tvdb_router
-from .api.douban_api import router as douban_router
+from .database import init_db_tables, close_db_engine, create_initial_admin_user
+from .api import api_router
 from .dandan_api import dandan_router
 from .task_manager import TaskManager
 from .metadata_manager import MetadataSourceManager
@@ -38,16 +32,18 @@ async def lifespan(app: FastAPI):
     # --- Startup Logic ---
     setup_logging()
 
-
-    pool = await create_db_pool(app)
+    # init_db_tables 现在处理数据库创建、引擎和会话工厂的创建
     await init_db_tables(app)
+    session_factory = app.state.db_session_factory
+
     # 新增：在启动时清理任何未完成的任务
-    interrupted_count = await crud.mark_interrupted_tasks_as_failed(pool)
-    if interrupted_count > 0:
-        logging.getLogger(__name__).info(f"已将 {interrupted_count} 个中断的任务标记为失败。")
+    async with session_factory() as session:
+        interrupted_count = await crud.mark_interrupted_tasks_as_failed(session)
+        if interrupted_count > 0:
+            logging.getLogger(__name__).info(f"已将 {interrupted_count} 个中断的任务标记为失败。")
     
     # 新增：初始化配置管理器
-    app.state.config_manager = ConfigManager(pool)
+    app.state.config_manager = ConfigManager(session_factory)
     # 新增：集中定义所有默认配置
     default_configs = {
         # 缓存 TTL
@@ -58,6 +54,7 @@ async def lifespan(app: FastAPI):
         # API 和 Webhook
         'custom_api_domain': ('', '用于拼接弹幕API地址的自定义域名。'),
         'webhook_api_key': ('', '用于Webhook调用的安全密钥。'),
+        'external_api_key': ('', '用于外部API调用的安全密钥。'),
         'webhook_custom_domain': ('', '用于拼接Webhook URL的自定义域名。'),
         # 认证
         # 代理
@@ -73,27 +70,30 @@ async def lifespan(app: FastAPI):
         'bangumi_client_secret': ('', '用于Bangumi OAuth的App Secret。'),
         'douban_cookie': ('', '用于访问豆瓣API的Cookie。'),
         # 弹幕源
+        'danmaku_output_limit_per_source': ('-1', '单源弹幕输出总数限制。-1为无限制。'),
+        'danmaku_aggregation_enabled': ('true', '是否启用跨源弹幕聚合功能。'),
+        'scraper_verification_enabled': ('false', '是否启用搜索源签名验证。'),
         'bilibili_cookie': ('', '用于访问B站API的Cookie，特别是buvid3。'),
         'gamer_cookie': ('', '用于访问巴哈姆特动画疯的Cookie。'),
         'gamer_user_agent': ('', '用于访问巴哈姆特动画疯的User-Agent。'),
     }
     await app.state.config_manager.register_defaults(default_configs)
 
-    app.state.scraper_manager = ScraperManager(pool, app.state.config_manager)
-    await app.state.scraper_manager.load_and_sync_scrapers()
+    app.state.scraper_manager = ScraperManager(session_factory, app.state.config_manager)
+    await app.state.scraper_manager.initialize()
     # 新增：初始化元数据源管理器
-    app.state.metadata_manager = MetadataSourceManager(pool)
+    app.state.metadata_manager = MetadataSourceManager(session_factory)
     await app.state.metadata_manager.initialize()
 
-    app.state.task_manager = TaskManager(pool)
+    app.state.task_manager = TaskManager(session_factory)
     # 修正：将 ConfigManager 传递给 WebhookManager
     app.state.webhook_manager = WebhookManager(
-        pool, app.state.task_manager, app.state.scraper_manager, app.state.config_manager
+        session_factory, app.state.task_manager, app.state.scraper_manager, app.state.config_manager
     )
     app.state.task_manager.start()
     await create_initial_admin_user(app)
     app.state.cleanup_task = asyncio.create_task(cleanup_task(app))
-    app.state.scheduler_manager = SchedulerManager(pool, app.state.task_manager, app.state.scraper_manager)
+    app.state.scheduler_manager = SchedulerManager(session_factory, app.state.task_manager, app.state.scraper_manager)
     await app.state.scheduler_manager.start()
     
     yield
@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI):
             await app.state.cleanup_task
         except asyncio.CancelledError:
             pass
-    await close_db_pool(app)
+    await close_db_engine(app)
     if hasattr(app.state, "scraper_manager"):
         await app.state.scraper_manager.close_all()
     if hasattr(app.state, "task_manager"):
@@ -114,7 +114,14 @@ async def lifespan(app: FastAPI):
         await app.state.scheduler_manager.stop()
 
 
-app = FastAPI(title="Danmaku API", description="一个基于dandanplay API风格的弹幕服务", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="Misaka Danmaku External Control API",
+    description="用于外部自动化和集成的API。所有端点都需要通过 `?api_key=` 进行鉴权。",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/api/control/docs",  # 为外部控制API设置专用的文档路径
+    redoc_url=None         # 禁用ReDoc
+)
 
 # 新增：配置CORS，允许前端开发服务器访问API
 app.add_middleware(
@@ -162,12 +169,13 @@ async def log_not_found_requests(request: Request, call_next):
 
 async def cleanup_task(app: FastAPI):
     """定期清理过期缓存和OAuth states的后台任务。"""
-    pool = app.state.db_pool
+    session_factory = app.state.db_session_factory
     while True:
         try:
             await asyncio.sleep(3600) # 每小时清理一次
-            await crud.clear_expired_cache(pool)
-            await crud.clear_expired_oauth_states(app.state.db_pool)
+            async with session_factory() as session:
+                await crud.clear_expired_cache(session)
+                await crud.clear_expired_oauth_states(session)
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -182,19 +190,10 @@ else:
     app.mount("/assets", StaticFiles(directory="web/dist/assets"), name="assets")
     print("生产环境：已挂载静态文件")
 
-# 包含 v2 版本的 API 路由
-app.include_router(ui_router, prefix="/api/ui", tags=["Web UI API"])
-app.include_router(auth_router, prefix="/api/ui/auth", tags=["Auth"])
-app.include_router(bangumi_router, prefix="/api/bgm", tags=["Bangumi"])
-app.include_router(tmdb_router, prefix="/api/tmdb", tags=["TMDB"])
-app.include_router(douban_router, prefix="/api/douban", tags=["Douban"])
-app.include_router(imdb_router, prefix="/api/imdb", tags=["IMDb"])
-app.include_router(tvdb_router, prefix="/api/tvdb", tags=["TVDB"])
-app.include_router(webhook_router, prefix="/api/webhook", tags=["Webhook"])
+# 包含所有非 dandanplay 的 API 路由
+app.include_router(api_router, prefix="/api")
 
-# 将最通用的 dandan_router 挂载在最后，以避免路径冲突。
-# 这样可以确保像 /api/ui 这样的静态路径会优先于 /api/{token} 被匹配。
-app.include_router(dandan_router, prefix="/api", tags=["DanDanPlay Compatible"])
+app.include_router(dandan_router, prefix="/api/v1", tags=["DanDanPlay Compatible"], include_in_schema=False)
 
 # 将最通用的 dandan_router 挂载在最后，以避免路径冲突。
 # 这样可以确保像 /api/ui 这样的静态路径会优先于 /api/{token} 被匹配。

@@ -166,22 +166,22 @@ function renderSourceDetailTable(sources, anime) {
                 }
             });
             const statusIcons = [];
-            if (source.is_favorited) {
+            if (source.isFavorited) {
                 statusIcons.push('<span title="精确标记">🌟</span>');
             }
-            if (source.incremental_refresh_enabled) {
+            if (source.incrementalRefreshEnabled) {
                 statusIcons.push('<span title="定时追更">⏰</span>');
             }
             row.innerHTML = `
-                <td><input type="checkbox" class="source-checkbox" value="${source.source_id}"></td>
-                <td>${source.provider_name}</td>
-                <td>${source.media_id}</td>
+                <td><input type="checkbox" class="source-checkbox" value="${source.sourceId}"></td>
+                <td>${source.providerName}</td>
+                <td>${source.mediaId}</td>
                 <td class="status-cell">${statusIcons.join(' ')}</td>
-                <td>${new Date(source.created_at).toLocaleString()}</td>
+                <td>${new Date(source.createdAt).toLocaleString()}</td>
                 <td class="actions-cell">
-                    <div class="action-buttons-wrapper" data-source-id="${source.source_id}" data-anime-title="${anime.title}" data-anime-id="${anime.animeId}">
-                        <button class="action-btn" data-action="favorite" title="精确标记(用于自动匹配)">${source.is_favorited ? '🌟' : '⭐'}</button>
-                        <button class="action-btn ${source.incremental_refresh_enabled ? '' : 'disabled-icon'}" data-action="toggle-incremental" title="定时增量更新">⏰</button>
+                    <div class="action-buttons-wrapper" data-source-id="${source.sourceId}" data-anime-title="${anime.title}" data-anime-id="${anime.animeId}">
+                        <button class="action-btn" data-action="favorite" title="精确标记(用于自动匹配)">${source.isFavorited ? '🌟' : '⭐'}</button>
+                        <button class="action-btn ${source.incrementalRefreshEnabled ? '' : 'disabled-icon'}" data-action="toggle-incremental" title="定时增量更新">⏰</button>
                         <button class="action-btn" data-action="incremental-update" title="手动增量更新 (获取下一集)">⏭️</button>
                         <button class="action-btn" data-action="view_episodes" title="查看/编辑分集">📖</button>
                         <button class="action-btn" data-action="refresh" title="刷新此源">🔄</button>
@@ -285,7 +285,15 @@ async function showEpisodeListView(sourceId, animeTitle, animeId) {
     episodeListView.innerHTML = '<div>加载中...</div>';
 
     try {
-        const episodes = await apiFetch(`/api/ui/library/source/${sourceId}/episodes`);
+        let episodes = await apiFetch(`/api/ui/library/source/${sourceId}/episodes`);
+        // 标准化数据：确保每个分集对象都有 episodeId 属性
+        // 这样可以使前端代码对后端返回 id 还是 episodeId 具有鲁棒性。
+        episodes = episodes.map(ep => {
+            if (ep.id && typeof ep.episodeId === 'undefined') {
+                ep.episodeId = ep.id;
+            }
+            return ep;
+        });
         currentEpisodes = episodes; // Store the original, unsorted list
         renderEpisodeListView(sourceId, animeTitle, episodes, animeId); // Pass the unsorted list
     } catch (error) {
@@ -346,12 +354,12 @@ function renderEpisodeListView(sourceId, animeTitle, episodes, animeId) {
                 }
             });
             row.innerHTML = `
-                <td><input type="checkbox" class="episode-checkbox" value="${ep.id}"></td>
-                <td>${ep.id}</td><td>${ep.title}</td><td>${ep.episode_index}</td><td>${ep.comment_count}</td>
-                <td>${ep.fetched_at ? new Date(ep.fetched_at).toLocaleString() : 'N/A'}</td>
-                <td>${ep.source_url ? `<a href="${ep.source_url}" target="_blank">跳转</a>` : '无'}</td>
+                <td><input type="checkbox" class="episode-checkbox" value="${ep.episodeId}"></td>
+                <td>${ep.episodeId}</td><td>${ep.title}</td><td>${ep.episodeIndex}</td><td>${ep.commentCount}</td>
+                <td>${ep.fetchedAt ? new Date(ep.fetchedAt).toLocaleString() : 'N/A'}</td>
+                <td>${ep.sourceUrl ? `<a href="${ep.sourceUrl}" target="_blank">跳转</a>` : '无'}</td>
                 <td class="actions-cell">
-                    <div class="action-buttons-wrapper" data-episode-id="${ep.id}" data-episode-title="${ep.title}">
+                    <div class="action-buttons-wrapper" data-episode-id="${ep.episodeId}" data-episode-title="${ep.title}">
                         <button class="action-btn" data-action="edit" title="编辑剧集">✏️</button>
                         <button class="action-btn" data-action="refresh" title="刷新剧集">🔄</button>
                         <button class="action-btn" data-action="view_danmaku" title="查看具体弹幕">💬</button>
@@ -404,7 +412,7 @@ async function handleDeleteSelectedEpisodes() {
 
     const episodeIds = Array.from(selectedCheckboxes).map(cb => parseInt(cb.value, 10));
     try {
-        await apiFetch('/api/ui/library/episodes/delete-bulk', { method: 'POST', body: JSON.stringify({ episode_ids: episodeIds }) });
+        await apiFetch('/api/ui/library/episodes/delete-bulk', { method: 'POST', body: JSON.stringify({ episodeIds: episodeIds }) });
         alert('批量删除任务已提交。');
         document.querySelector('.nav-link[data-view="task-manager-view"]').click();
     } catch (error) { alert(`提交批量删除任务失败: ${error.message}`); }
@@ -434,7 +442,7 @@ async function handleCleanupByAverage(sourceId, animeTitle) {
     }
 
     const validCounts = episodes
-        .map(ep => Number(ep.comment_count))
+        .map(ep => Number(ep.commentCount))
         .filter(n => Number.isFinite(n) && n >= 0);
     if (validCounts.length === 0) {
         alert('所有分集的弹幕数不可用。');
@@ -442,8 +450,8 @@ async function handleCleanupByAverage(sourceId, animeTitle) {
     }
 
     const average = validCounts.reduce((a, b) => a + b, 0) / validCounts.length;
-    const toDelete = episodes.filter(ep => Number(ep.comment_count) < average);
-    const toKeep = episodes.filter(ep => Number(ep.comment_count) >= average);
+    const toDelete = episodes.filter(ep => Number(ep.commentCount) < average);
+    const toKeep = episodes.filter(ep => Number(ep.commentCount) >= average);
 
     if (toDelete.length === 0) {
         alert(`未找到低于平均值 (${average.toFixed(2)}) 的分集。`);
@@ -462,9 +470,9 @@ async function handleCleanupByAverage(sourceId, animeTitle) {
     modalSaveBtn.textContent = '确认执行';
 
     const keepPreviewRows = toKeep
-        .sort((a, b) => a.episode_index - b.episode_index)
+        .sort((a, b) => a.episodeIndex - b.episodeIndex)
         .slice(0, 80) // 控制渲染数量
-        .map(ep => `<tr><td>${ep.episode_index}</td><td>${ep.title}</td><td>${ep.comment_count}</td></tr>`) // 预览保留的集
+        .map(ep => `<tr><td>${ep.episodeIndex}</td><td>${ep.title}</td><td>${ep.commentCount}</td></tr>`) // 预览保留的集
         .join('');
 
     const deleteCountText = `<span style="color: var(--error-color); font-weight: 600;">${toDelete.length}</span>`;
@@ -496,10 +504,10 @@ async function handleCleanupByAverage(sourceId, animeTitle) {
         e.preventDefault();
         try {
             // 1) 提交批量删除
-            const episodeIds = toDelete.map(ep => ep.id);
+            const episodeIds = toDelete.map(ep => ep.episodeId);
             await apiFetch('/api/ui/library/episodes/delete-bulk', {
                 method: 'POST',
-                body: JSON.stringify({ episode_ids: episodeIds })
+                body: JSON.stringify({ episodeIds: episodeIds })
             });
             // 2) 紧接着提交重整集数（队列中会按顺序执行）
             await apiFetch(`/api/ui/library/source/${sourceId}/reorder-episodes`, { method: 'POST' });
@@ -524,7 +532,7 @@ async function handleCleanupByAverage(sourceId, animeTitle) {
 async function showManualImportModal(sourceId) {
     try {
         const sourceDetails = await apiFetch(`/api/ui/library/source/${sourceId}/details`);
-        const providerName = sourceDetails.provider_name;
+        const providerName = sourceDetails.providerName;
         const urlPrefixMap = {
             'bilibili': ['https://www.bilibili.com/video/', 'https://www.bilibili.com/bangumi/play/'],
             'tencent': 'https://v.qq.com/x/cover/',
@@ -622,7 +630,7 @@ async function handleEpisodeAction(e) {
 
     switch (action) {
         case 'edit':
-            const episode = currentEpisodes.find(ep => ep.id === episodeId);
+            const episode = currentEpisodes.find(ep => ep.episodeId === episodeId);
             if (episode) {
                 document.dispatchEvent(new CustomEvent('show:edit-episode', { detail: { episode, sourceId, animeTitle, animeId } }));
             }
@@ -726,7 +734,7 @@ export function setupLibraryEventListeners() {
         try {
             const response = await apiFetch(`/api/ui/library/sources/delete-bulk`, {
                 method: 'POST',
-                body: JSON.stringify({ source_ids: sourceIds })
+                body: JSON.stringify({ sourceIds: sourceIds })
             });
             if (confirm((response.message || "批量删除任务已提交。") + "\n\n是否立即跳转到任务管理器查看进度？")) {
                 document.querySelector('.nav-link[data-view="task-manager-view"]').click();

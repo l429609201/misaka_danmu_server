@@ -18,6 +18,7 @@ RUN set -ex \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         default-libmysqlclient-dev \
+        libpq-dev \
         tzdata \
         iputils-ping \
     && addgroup --gid 1000 appgroup \

@@ -3,17 +3,17 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
-
+from typing import Set
 from urllib.parse import urlencode, quote
-import aiomysql
+from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from .. import crud, models, security
 from ..config import settings
-from ..database import get_db_pool
+from ..database import get_db_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -49,6 +49,12 @@ class BangumiUser(BaseModel):
     username: str
     nickname: str
     avatar: Dict[str, str]
+
+class BangumiApiSearchResult(BaseModel):
+    id: str
+    title: str
+    details: Optional[str] = None
+    imageUrl: Optional[str] = None
 
 class InfoboxItem(BaseModel):
     key: str
@@ -167,32 +173,25 @@ class BangumiAuthState(BaseModel):
 
 # --- Helper Function ---
 
-async def get_bangumi_client(
-    current_user: models.User = Depends(security.get_current_user),
-    pool: aiomysql.Pool = Depends(get_db_pool)
-) -> httpx.AsyncClient:
-    """依赖项：创建一个带有 Bangumi 授权的 httpx 客户端。"""
-    auth_info = await crud.get_bangumi_auth(pool, current_user.id)
+async def _create_bangumi_client(session: AsyncSession, user_id: int) -> httpx.AsyncClient:
+    """Creates an httpx.AsyncClient with Bangumi auth."""
+    auth_info = await crud.get_bangumi_auth(session, user_id)
     if not auth_info or not auth_info.get("access_token"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bangumi not authenticated")
+        raise ValueError("Bangumi not authenticated")
 
-    # 检查 token 是否过期
     expires_at = auth_info.get("expires_at")
     if expires_at and datetime.now() >= expires_at:
-        # 尝试刷新 token
         try:
-            client_id_task = crud.get_config_value(pool, "bangumi_client_id", "")
-            client_secret_task = crud.get_config_value(pool, "bangumi_client_secret", "")
+            client_id_task = crud.get_config_value(session, "bangumi_client_id", "")
+            client_secret_task = crud.get_config_value(session, "bangumi_client_secret", "")
             client_id, client_secret = await asyncio.gather(client_id_task, client_secret_task)
             if not client_id or not client_secret:
                 raise ValueError("Bangumi App ID/Secret 未配置，无法刷新Token。")
 
             async with httpx.AsyncClient() as client:
                 token_data = {
-                    "grant_type": "refresh_token",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "refresh_token": auth_info["refresh_token"],
+                    "grant_type": "refresh_token", "client_id": client_id,
+                    "client_secret": client_secret, "refresh_token": auth_info["refresh_token"],
                 }
                 response = await client.post("https://bgm.tv/oauth/access_token", data=token_data)
                 response.raise_for_status()
@@ -201,31 +200,77 @@ async def get_bangumi_client(
                 auth_info["access_token"] = new_token_info.access_token
                 auth_info["refresh_token"] = new_token_info.refresh_token
                 auth_info["expires_at"] = datetime.now() + timedelta(seconds=new_token_info.expires_in)
-                await crud.save_bangumi_auth(pool, current_user.id, auth_info)
-                logger.info(f"用户 '{current_user.username}' 的 Bangumi token 已成功刷新。")
+                await crud.save_bangumi_auth(session, user_id, auth_info)
         except Exception as e:
             logger.error(f"刷新 Bangumi token 失败: {e}", exc_info=True)
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bangumi token 已过期且刷新失败")
+            raise ValueError("Bangumi token 已过期且刷新失败")
 
-    headers = {
-        "Authorization": f"Bearer {auth_info['access_token']}",
-        "User-Agent": "l429609201/misaka_danmu_server(https://github.com/l429609201/misaka_danmu_server)",
-    }
+    headers = {"Authorization": f"Bearer {auth_info['access_token']}", "User-Agent": "l429609201/misaka_danmu_server(https://github.com/l429609201/misaka_danmu_server)"}
     return httpx.AsyncClient(headers=headers, timeout=20.0)
 
+async def get_bangumi_client(
+    current_user: models.User = Depends(security.get_current_user),
+    session: AsyncSession = Depends(get_db_session)
+) -> httpx.AsyncClient:
+    """依赖项：创建一个带有 Bangumi 授权的 httpx 客户端。"""
+    auth_info = await crud.get_bangumi_auth(session, current_user.id)
+    if not auth_info or not auth_info.get("access_token"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bangumi not authenticated")
+    try:
+        return await _create_bangumi_client(session, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+
 # --- API Endpoints ---
+
+async def get_bangumi_subject_details_logic(subject_id: int, client: httpx.AsyncClient) -> "models.MetadataDetailsResponse":
+    """获取指定 Bangumi ID 的作品详情。"""
+    details_url = f"https://api.bgm.tv/v0/subjects/{subject_id}"
+    details_response = await client.get(details_url)
+    if details_response.status_code == 404:
+        raise ValueError("未找到指定的 Bangumi 作品。")
+    details_response.raise_for_status()
+
+    subject_data = details_response.json()
+    subject = BangumiSearchSubject.model_validate(subject_data)
+    aliases = subject.aliases
+
+    return models.MetadataDetailsResponse(
+        id=str(subject.id),
+        bangumiId=str(subject.id),
+        title=subject.display_name,
+        nameJp=subject.name,
+        imageUrl=subject.image_url,
+        details=subject.details_string,
+        nameEn=aliases.get("name_en"),
+        nameRomaji=aliases.get("name_romaji"),
+        aliasesCn=aliases.get("aliases_cn", [])
+    )
+
+@router.get("/subjects/{subject_id}", response_model=models.MetadataDetailsResponse, summary="获取 Bangumi 作品详情")
+async def get_bangumi_subject_details(
+    subject_id: int = Path(..., description="Bangumi 作品ID"),
+    client: httpx.AsyncClient = Depends(get_bangumi_client),
+):
+    """获取指定 Bangumi ID 的作品详情。"""
+    try:
+        return await get_bangumi_subject_details_logic(subject_id, client)
+    except Exception as e:
+        logger.error(f"获取 Bangumi subject {subject_id} 详情失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="获取 Bangumi 详情失败。")
+
 
 @router.get("/auth/url", response_model=Dict[str, str], summary="获取 Bangumi OAuth 授权链接")
 async def get_bangumi_auth_url(
     request: Request,
     current_user: models.User = Depends(security.get_current_user),
-    pool: aiomysql.Pool = Depends(get_db_pool)
+    session: AsyncSession = Depends(get_db_session)
 ):
     """生成用于 Bangumi OAuth 流程的重定向 URL。"""
     # 1. 创建并存储一个唯一的、有有效期的 state
-    state = await crud.create_oauth_state(pool, current_user.id)
+    state = await crud.create_oauth_state(session, current_user.id)
 
-    client_id = await crud.get_config_value(pool, "bangumi_client_id", "")
+    client_id = await crud.get_config_value(session, "bangumi_client_id", "")
     if not client_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bangumi App ID 未在设置中配置。")
 
@@ -245,25 +290,25 @@ async def get_bangumi_auth_url(
 async def bangumi_auth_callback(
     code: str = Query(...),
     state: str = Query(...),
-    pool: aiomysql.Pool = Depends(get_db_pool),
+    session: AsyncSession = Depends(get_db_session),
     request: Request = None
 ):
     """处理来自 Bangumi 的 OAuth 回调，用 code 交换 token。"""
     # 1. 验证并消费 state，获取发起授权的用户ID
-    user_id = await crud.consume_oauth_state(pool, state)
+    user_id = await crud.consume_oauth_state(session, state)
     if user_id is None:
         logger.error(f"Bangumi OAuth回调失败：无效或已过期的 state '{state}'")
         return HTMLResponse("<h1>认证失败：无效的请求状态，请重新发起授权。</h1>", status_code=400)
 
     # 2. 从数据库获取用户信息
-    user_dict = await crud.get_user_by_id(pool, user_id)
+    user_dict = await crud.get_user_by_id(session, user_id)
     if not user_dict:
         logger.error(f"Bangumi OAuth回调失败：找不到与 state 关联的用户 ID '{user_id}'")
         return HTMLResponse("<h1>认证失败：找不到与此授权请求关联的用户。</h1>", status_code=404)
     user = models.User.model_validate(user_dict)
 
-    client_id_task = crud.get_config_value(pool, "bangumi_client_id", "")
-    client_secret_task = crud.get_config_value(pool, "bangumi_client_secret", "")
+    client_id_task = crud.get_config_value(session, "bangumi_client_id", "")
+    client_secret_task = crud.get_config_value(session, "bangumi_client_secret", "")
     client_id, client_secret = await asyncio.gather(client_id_task, client_secret_task)
     if not client_id or not client_secret:
         return HTMLResponse("<h1>认证失败：服务器未配置Bangumi App ID或App Secret。</h1>", status_code=500)
@@ -295,7 +340,7 @@ async def bangumi_auth_callback(
                 "refresh_token": token_info.refresh_token,
                 "expires_at": datetime.now() + timedelta(seconds=token_info.expires_in)
             }
-            await crud.save_bangumi_auth(pool, user.id, auth_to_save)
+            await crud.save_bangumi_auth(session, user.id, auth_to_save)
 
         # 返回一个HTML页面，该页面将关闭自身并通知父窗口
         return HTMLResponse("<script>window.opener.postMessage('BANGUMI-OAUTH-COMPLETE', '*'); window.close();</script>")
@@ -306,9 +351,9 @@ async def bangumi_auth_callback(
 @router.get("/auth/state", response_model=BangumiAuthState, summary="获取 Bangumi 授权状态")
 async def get_bangumi_auth_state(
     current_user: models.User = Depends(security.get_current_user),
-    pool: aiomysql.Pool = Depends(get_db_pool)
+    session: AsyncSession = Depends(get_db_session)
 ):
-    auth_info = await crud.get_bangumi_auth(pool, current_user.id)
+    auth_info = await crud.get_bangumi_auth(session, current_user.id)
     if not auth_info:
         return BangumiAuthState(is_authenticated=False)
     return BangumiAuthState(
@@ -323,18 +368,18 @@ async def get_bangumi_auth_state(
 @router.delete("/auth", status_code=status.HTTP_204_NO_CONTENT, summary="注销 Bangumi 授权")
 async def deauthorize_bangumi(
     current_user: models.User = Depends(security.get_current_user),
-    pool: aiomysql.Pool = Depends(get_db_pool)
+    session: AsyncSession = Depends(get_db_session)
 ):
-    await crud.delete_bangumi_auth(pool, current_user.id)
+    await crud.delete_bangumi_auth(session, current_user.id)
 
-@router.get("/search", response_model=List[Dict[str, Any]], summary="搜索 Bangumi 作品")
+@router.get("/search", response_model=List[BangumiApiSearchResult], summary="搜索 Bangumi 作品")
 async def search_bangumi_subjects(
     keyword: str = Query(..., min_length=1),
     client: httpx.AsyncClient = Depends(get_bangumi_client),
-    pool: aiomysql.Pool = Depends(get_db_pool),
+    session: AsyncSession = Depends(get_db_session),
 ):
     cache_key = f"bgm_search_{keyword}"
-    cached_results = await crud.get_cache(pool, cache_key)
+    cached_results = await crud.get_cache(session, cache_key)
     if cached_results is not None:
         logger.info(f"Bangumi 搜索 '{keyword}' 命中缓存。")
         # The response model is List[Dict[str, Any]], so no strict validation is needed here
@@ -377,24 +422,87 @@ async def search_bangumi_subjects(
         for subject_data in detailed_results:
             if subject_data:
                 try:
-                    # 使用我们扩展后的模型来验证和处理数据
                     subject = BangumiSearchSubject.model_validate(subject_data)
-                    aliases = subject.aliases
-                    final_results.append({
-                        "id": subject.id,
-                        "name": subject.display_name,
-                        "name_jp": subject.name, # 原始名称，通常是日文名
-                        "image_url": subject.image_url,
-                        "details": subject.details_string,
-                        "name_en": aliases.get("name_en"),
-                        "name_romaji": aliases.get("name_romaji"),
-                        "aliases_cn": aliases.get("aliases_cn", [])
-                    })
+                    final_results.append(BangumiApiSearchResult(
+                        id=str(subject.id),
+                        title=subject.display_name,
+                        imageUrl=subject.image_url,
+                        details=subject.details_string,
+                    ))
                 except ValidationError as e:
                     logger.error(f"验证 Bangumi subject 详情失败: {e}")
         
         # 缓存结果
-        ttl_seconds_str = await crud.get_config_value(pool, 'metadata_search_ttl_seconds', '1800')
-        await crud.set_cache(pool, cache_key, final_results, int(ttl_seconds_str), provider='bangumi')
+        ttl_seconds_str = await crud.get_config_value(session, 'metadata_search_ttl_seconds', '1800')
+        results_to_cache = [r.model_dump() for r in final_results]
+        await crud.set_cache(session, cache_key, results_to_cache, int(ttl_seconds_str), provider='bangumi')
 
         return final_results
+
+async def search_bangumi_aliases(keyword: str, client: httpx.AsyncClient) -> Set[str]:
+    """从Bangumi获取别名。"""
+    local_aliases: Set[str] = set()
+    try:
+        search_payload = {"keyword": keyword, "filter": {"type": [2]}}
+        search_response = await client.post("https://api.bgm.tv/v0/search/subjects", json=search_payload)
+        if search_response.status_code != 200:
+            return set()
+
+        search_result = BangumiSearchResponse.model_validate(search_response.json())
+        if not search_result.data:
+            return set()
+
+        best_match = search_result.data[0]
+        details_response = await client.get(f"https://api.bgm.tv/v0/subjects/{best_match.id}")
+        if details_response.status_code != 200:
+            return set()
+
+        details = details_response.json()
+        local_aliases.add(details.get('name'))
+        local_aliases.add(details.get('name_cn'))
+        for item in details.get('infobox', []):
+            if item.get('key') == '别名':
+                if isinstance(item['value'], str):
+                    local_aliases.add(item['value'])
+                elif isinstance(item['value'], list):
+                    for v_item in item['value']:
+                        if isinstance(v_item, dict) and v_item.get('v'):
+                            local_aliases.add(v_item['v'])
+        logger.info(f"Bangumi辅助搜索成功，找到别名: {[a for a in local_aliases if a]}")
+    except Exception as e:
+        logger.warning(f"Bangumi辅助搜索失败: {e}")
+    return {alias for alias in local_aliases if alias}
+
+async def search_bangumi_aliases(keyword: str, client: httpx.AsyncClient) -> Set[str]:
+    """从Bangumi获取别名。"""
+    local_aliases: Set[str] = set()
+    try:
+        search_payload = {"keyword": keyword, "filter": {"type": [2]}}
+        search_response = await client.post("https://api.bgm.tv/v0/search/subjects", json=search_payload)
+        if search_response.status_code != 200:
+            return set()
+
+        search_result = BangumiSearchResponse.model_validate(search_response.json())
+        if not search_result.data:
+            return set()
+
+        best_match = search_result.data[0]
+        details_response = await client.get(f"https://api.bgm.tv/v0/subjects/{best_match.id}")
+        if details_response.status_code != 200:
+            return set()
+
+        details = details_response.json()
+        local_aliases.add(details.get('name'))
+        local_aliases.add(details.get('name_cn'))
+        for item in details.get('infobox', []):
+            if item.get('key') == '别名':
+                if isinstance(item['value'], str):
+                    local_aliases.add(item['value'])
+                elif isinstance(item['value'], list):
+                    for v_item in item['value']:
+                        if isinstance(v_item, dict) and v_item.get('v'):
+                            local_aliases.add(v_item['v'])
+        logger.info(f"Bangumi辅助搜索成功，找到别名: {[a for a in local_aliases if a]}")
+    except Exception as e:
+        logger.warning(f"Bangumi辅助搜索失败: {e}")
+    return {alias for alias in local_aliases if alias}

@@ -5,7 +5,7 @@ import re
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional
 
-import aiomysql
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import httpx
 from bs4 import BeautifulSoup
 from opencc import OpenCC
@@ -19,6 +19,8 @@ scraper_responses_logger = logging.getLogger("scraper_responses")
 
 class GamerScraper(BaseScraper):
     provider_name = "gamer"
+    handled_domains = ["ani.gamer.com.tw"]
+    referer = "https://ani.gamer.com.tw/"
 
     # 新增：声明此源是可配置的，并定义了配置字段
     # 键 (key) 是数据库中 config 表的 config_key
@@ -28,9 +30,8 @@ class GamerScraper(BaseScraper):
         "gamer_user_agent": "User-Agent",
     }
     _EPISODE_BLACKLIST_PATTERN = re.compile(r"加更|走心|解忧|纯享", re.IGNORECASE)
-
-    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
-        super().__init__(pool, config_manager)
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager):
+        super().__init__(session_factory, config_manager)
         self.cc_s2t = OpenCC('s2twp')  # Simplified to Traditional Chinese with phrases
         self.cc_t2s = OpenCC('t2s') # Traditional to Simplified
         self.client = httpx.AsyncClient(
@@ -46,8 +47,9 @@ class GamerScraper(BaseScraper):
         if self._config_loaded:
             return
         
-        self._cookie = await crud.get_config_value(self.pool, "gamer_cookie", "")
-        user_agent = await crud.get_config_value(self.pool, "gamer_user_agent", "")
+        async with self._session_factory() as session:
+            self._cookie = await crud.get_config_value(session, "gamer_cookie", "")
+            user_agent = await crud.get_config_value(session, "gamer_user_agent", "")
 
         if self._cookie:
             self.client.headers["Cookie"] = self._cookie
@@ -74,7 +76,8 @@ class GamerScraper(BaseScraper):
             
             if new_cookie_str and new_cookie_str != self._cookie:
                 self.logger.info("Gamer: Cookie 刷新成功，正在更新数据库...")
-                await crud.update_config_value(self.pool, "gamer_cookie", new_cookie_str)
+                async with self._session_factory() as session:
+                    await crud.update_config_value(session, "gamer_cookie", new_cookie_str)
                 self._cookie = new_cookie_str # 更新内部状态
                 return True
             else:
@@ -196,6 +199,17 @@ class GamerScraper(BaseScraper):
         except Exception as e:
             self.logger.error(f"Gamer: 搜索 '{keyword}' 时发生未知错误: {e}", exc_info=True)
             return []
+
+    async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
+        """(未实现) 从URL中提取作品信息。"""
+        self.logger.warning(f"从URL导入功能尚未为 {self.provider_name} 实现。")
+        raise NotImplementedError(f"从URL导入功能尚未为 {self.provider_name} 实现。")
+
+    async def get_id_from_url(self, url: str) -> Optional[str]:
+        """从动画疯URL中提取sn号。"""
+        sn_match = re.search(r"sn=(\d+)", url)
+        if sn_match: return sn_match.group(1)
+        return None
 
     async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         await self._ensure_config()

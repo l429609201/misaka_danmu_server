@@ -46,12 +46,19 @@
 }
 
 .form-card {
-    max-width: 700px;
+    max-width: 1000px; /* 统一所有表单卡片宽度为1000px */
     margin: 20px auto;
+    width: 100%; /* 确保卡片在容器内撑满宽度，从而对齐 */
+    box-sizing: border-box; /* 确保 padding 不会影响总宽度 */
     padding: 20px;
     background: var(--card-bg);
     border-radius: 8px;
     box-shadow: var(--shadow);
+}
+
+/* 为编辑影视信息等需要更多空间的页面提供一个更宽的卡片 */
+.form-card-wide {
+    max-width: 1300px;
 }
 
 .form-card h2, .form-card h3 {
@@ -90,6 +97,15 @@
     margin-top: 20px;
     padding-top: 15px;
     border-top: 1px solid var(--border-color);
+}
+
+.form-help-text {
+    grid-column: 2 / -1; /* Align with the input field */
+    font-size: 13px;
+    color: #606266;
+    margin-top: -5px; /* Reduce space after the input */
+    margin-bottom: 10px;
+    line-height: 1.5;
 }
 
 input[type="text"],
@@ -423,4 +439,3 @@ th {
 .bili-login-disclaimer a:hover {
     text-decoration: underline;
 }
-

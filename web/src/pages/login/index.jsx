@@ -21,13 +21,15 @@ export const Login = () => {
   const handleLogin = async values => {
     try {
       setIsLoading(true)
-      // 模拟登录请求
       const res = await login(values)
 
-      // console.log('登录信息:', res)
-      navigate('/')
-      setStorage(DANMU_API_TOKEN_KEY, res.data.accessToken)
-      message.success('登录成功！')
+      if (res.data.accessToken) {
+        setStorage(DANMU_API_TOKEN_KEY, res.data.accessToken)
+        message.success('登录成功！')
+        navigate('/')
+      } else {
+        message.error('登录失败，请检查用户名或密码')
+      }
     } catch (error) {
       console.error('登录失败:', error)
       message.error('登录失败，请检查用户名或密码')
@@ -37,9 +39,9 @@ export const Login = () => {
   }
 
   return (
-    <div>
+    <div className="my-6 flex items-center justify-center">
       {/* 登录卡片容器 */}
-      <Card className="w-full max-w-md rounded-xl shadow-lg overflow-hidden transform transition-all duration-300 hover:shadow-xl">
+      <Card className="w-full max-w-md rounded-xl shadow-lg overflow-hidden mx-auto">
         {/* 登录标题区域 */}
         <div className="text-center mb-8 pt-4">
           <h2 className="text-[clamp(1.5rem,3vw,2rem)] font-bold text-base-text">
@@ -54,6 +56,7 @@ export const Login = () => {
           layout="vertical"
           onFinish={handleLogin}
           className="px-6 pb-6"
+          size="large"
         >
           {/* 用户名输入 */}
           <Form.Item
@@ -65,7 +68,6 @@ export const Login = () => {
             <Input
               prefix={<UserOutlined className="text-gray-400" />}
               placeholder="请输入用户名"
-              className="h-11 rounded-lg border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
             />
           </Form.Item>
 
@@ -86,18 +88,12 @@ export const Login = () => {
               iconRender={visible =>
                 visible ? <EyeOutlined /> : <EyeInvisibleOutlined />
               }
-              className="h-11 rounded-lg border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
             />
           </Form.Item>
 
           {/* 登录按钮 */}
           <Form.Item>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={isLoading}
-              className="w-full h-11 text-base font-medium rounded-lg bg-primary hover:bg-primary/90 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]"
-            >
+            <Button block type="primary" htmlType="submit" loading={isLoading}>
               登录
             </Button>
           </Form.Item>

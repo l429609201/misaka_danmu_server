@@ -347,7 +347,7 @@ function renderLibrary(animes) {
           // 获取动画的所有源，然后刷新每个源
           const sources = await apiFetch(`/api/ui/library/anime/${a.animeId}/sources`);
           for (const source of sources) {
-            await apiFetch(`/api/ui/library/source/${source.source_id}/refresh`, { method: 'POST' });
+            await apiFetch(`/api/ui/library/source/${source.sourceId}/refresh`, { method: 'POST' });
           }
           alert(`${a.title} 的刷新任务已提交`);
           loadLibrary();
@@ -426,12 +426,12 @@ async function showAnimeSources(animeId, title) {
     sources.forEach(s => {
       const li = document.createElement('li');
       li.style.gridTemplateColumns = '1fr auto';
-      li.innerHTML = `<div><div class="title">${s.provider_name}</div><div class="meta">${s.media_id}</div></div>`;
+      li.innerHTML = `<div><div class="title">${s.providerName}</div><div class="meta">${s.mediaId}</div></div>`;
       const actions = document.createElement('div'); actions.style.display = 'grid'; actions.style.gap = '6px'; actions.style.justifyItems = 'end';
       const epBtn = document.createElement('button'); epBtn.className = 'row-action'; epBtn.textContent = '分集';
-      epBtn.addEventListener('click', () => showEpisodes(s.source_id, title, animeId));
+      epBtn.addEventListener('click', () => showEpisodes(s.sourceId, title, animeId));
       const delBtn = document.createElement('button'); delBtn.className = 'row-action'; delBtn.textContent = '删除';
-      delBtn.addEventListener('click', async () => { if (!confirm('删除该源？')) return; await apiFetch(`/api/ui/library/source/${s.source_id}`, { method: 'DELETE' }); showAnimeSources(animeId, title); });
+      delBtn.addEventListener('click', async () => { if (!confirm('删除该源？')) return; await apiFetch(`/api/ui/library/source/${s.sourceId}`, { method: 'DELETE' }); showAnimeSources(animeId, title); });
       actions.appendChild(epBtn); actions.appendChild(delBtn); li.appendChild(actions); ul.appendChild(li);
     });
   } catch (e) { ul.innerHTML = `<li class=\"small\">加载失败: ${e.message || e}</li>`; }
@@ -441,18 +441,26 @@ async function showEpisodes(sourceId, title, animeId) {
   const ul = document.getElementById('library-list');
   ul.innerHTML = `<li class="small">${title} · 分集加载中...</li>`;
   try {
-    const eps = await apiFetch(`/api/ui/library/source/${sourceId}/episodes`);
+    let eps = await apiFetch(`/api/ui/library/source/${sourceId}/episodes`);
+    // 标准化数据：确保每个分集对象都有 episodeId 属性
+    // 这样可以使前端代码对后端返回 id 还是 episodeId 具有鲁棒性。
+    eps = eps.map(ep => {
+        if (ep.id && typeof ep.episodeId === 'undefined') {
+            ep.episodeId = ep.id;
+        }
+        return ep;
+    });
     ul.innerHTML = '';
     if (eps.length === 0) { ul.innerHTML = '<li class="small">无分集</li>'; return; }
     eps.forEach(ep => {
       const li = document.createElement('li');
       li.style.gridTemplateColumns = '1fr auto';
-      li.innerHTML = `<div><div class="title">${ep.title}</div><div class="meta">集 ${ep.episode_index} · 弹幕 ${ep.comment_count}</div></div>`;
+      li.innerHTML = `<div><div class="title">${ep.title}</div><div class="meta">集 ${ep.episodeIndex} · 弹幕 ${ep.commentCount}</div></div>`;
       const actions = document.createElement('div'); actions.style.display = 'grid'; actions.style.gap = '6px'; actions.style.justifyItems = 'end';
       const refreshBtn = document.createElement('button'); refreshBtn.className = 'row-action'; refreshBtn.textContent = '刷新';
-      refreshBtn.addEventListener('click', async () => { await apiFetch(`/api/ui/library/episode/${ep.id}/refresh`, { method: 'POST' }); alert('已触发刷新'); });
+      refreshBtn.addEventListener('click', async () => { await apiFetch(`/api/ui/library/episode/${ep.episodeId}/refresh`, { method: 'POST' }); alert('已触发刷新'); });
       const delBtn = document.createElement('button'); delBtn.className = 'row-action'; delBtn.textContent = '删除';
-      delBtn.addEventListener('click', async () => { if (!confirm('删除该分集？')) return; await apiFetch(`/api/ui/library/episode/${ep.id}`, { method: 'DELETE' }); showEpisodes(sourceId, title, animeId); });
+      delBtn.addEventListener('click', async () => { if (!confirm('删除该分集？')) return; await apiFetch(`/api/ui/library/episode/${ep.episodeId}`, { method: 'DELETE' }); showEpisodes(sourceId, title, animeId); });
       actions.appendChild(refreshBtn); actions.appendChild(delBtn); li.appendChild(actions); ul.appendChild(li);
     });
   } catch (e) { ul.innerHTML = `<li class=\"small\">加载失败: ${e.message || e}</li>`; }
@@ -1313,7 +1321,7 @@ function initMobileSettingsOnce() {
   // Bangumi
   (async () => {
     try {
-      const cfg = await apiFetch('/api/ui/config/bangumi');
+      const cfg = await apiFetch('/api/ui/config/provider/bangumi');
       document.getElementById('mset-bgm-client-id').value = cfg.bangumi_client_id || '';
       document.getElementById('mset-bgm-client-secret').value = cfg.bangumi_client_secret || '';
     } catch {}
@@ -1329,7 +1337,7 @@ function initMobileSettingsOnce() {
   }
   document.getElementById('mset-save-bgm').addEventListener('click', async () => {
     const payload = { bangumi_client_id: document.getElementById('mset-bgm-client-id').value.trim(), bangumi_client_secret: document.getElementById('mset-bgm-client-secret').value.trim() };
-    await apiFetch('/api/ui/config/bangumi', { method: 'PUT', body: JSON.stringify(payload) });
+    await apiFetch('/api/ui/config/provider/bangumi', { method: 'PUT', body: JSON.stringify(payload) });
     alert('已保存');
   });
   document.getElementById('mset-bgm-login').addEventListener('click', async () => {
@@ -1340,7 +1348,7 @@ function initMobileSettingsOnce() {
   // TMDB
   (async () => {
     try {
-      const cfg = await apiFetch('/api/ui/config/tmdb');
+      const cfg = await apiFetch('/api/ui/config/provider/tmdb');
       document.getElementById('mset-tmdb-key').value = cfg.tmdb_api_key || '';
       document.getElementById('mset-tmdb-api-base').value = cfg.tmdb_api_base_url || '';
       document.getElementById('mset-tmdb-img-base').value = cfg.tmdb_image_base_url || '';
@@ -1348,7 +1356,7 @@ function initMobileSettingsOnce() {
   })();
   document.getElementById('mset-save-tmdb').addEventListener('click', async () => {
     const payload = { tmdb_api_key: document.getElementById('mset-tmdb-key').value.trim(), tmdb_api_base_url: document.getElementById('mset-tmdb-api-base').value.trim(), tmdb_image_base_url: document.getElementById('mset-tmdb-img-base').value.trim() };
-    await apiFetch('/api/ui/config/tmdb', { method: 'PUT', body: JSON.stringify(payload) });
+    await apiFetch('/api/ui/config/provider/tmdb', { method: 'PUT', body: JSON.stringify(payload) });
     document.getElementById('mset-tmdb-msg').textContent = '已保存';
   });
 
@@ -1432,7 +1440,7 @@ async function loadTokens() {
       const copyBtn = document.createElement('button'); copyBtn.className = 'token-btn'; copyBtn.textContent = '复制链接';
       copyBtn.addEventListener('click', async () => {
         const domain = (document.getElementById('token-custom-domain-input').value || '').trim();
-        const url = domain ? `${domain.replace(/\/$/, '')}/api/${t.token}` : t.token;
+        const url = domain ? `${domain.replace(/\/$/, '')}/api/v1/${t.token}` : t.token;
         await safeCopy(url);
         alert('已复制');
       });
@@ -1502,8 +1510,8 @@ async function loadUaRules() {
     if (!rules || rules.length === 0) { ul.innerHTML = '<li class="small">名单为空</li>'; return; }
     rules.forEach(r => {
       const li = document.createElement('li');
-      const dateHtml = formatDateForMobile(r.created_at);
-      li.innerHTML = `<div><div class="title">${r.ua_string}</div></div>${dateHtml}`;
+      const dateHtml = formatDateForMobile(r.createdAt);
+      li.innerHTML = `<div><div class="title">${r.uaString}</div></div>${dateHtml}`;
       const del = document.createElement('button'); del.className = 'row-action'; del.textContent = '删除';
       del.addEventListener('click', async () => { await apiFetch(`/api/ui/ua-rules/${r.id}`, { method: 'DELETE' }); loadUaRules(); });
       const actions = document.createElement('div'); actions.style.display = 'grid'; actions.style.justifyItems = 'end'; actions.appendChild(del); // This seems redundant, but keeping for consistency if other actions are added.
@@ -1515,7 +1523,7 @@ async function loadUaRules() {
 document.getElementById('token-ua-add-btn')?.addEventListener('click', async () => {
   const v = (document.getElementById('token-ua-new').value || '').trim();
   if (!v) return;
-  await apiFetch('/api/ui/ua-rules', { method: 'POST', body: JSON.stringify({ ua_string: v }) });
+  await apiFetch('/api/ui/ua-rules', { method: 'POST', body: JSON.stringify({ uaString: v }) });
   document.getElementById('token-ua-new').value = '';
   loadUaRules();
 });
@@ -1537,8 +1545,8 @@ async function loadTokenLog(tokenId) {
     if (!logs || logs.length === 0) { ul.innerHTML = '<li class="small">暂无记录</li>'; return; }
     logs.forEach(l => {
       const li = document.createElement('li');
-      const dateHtml = formatDateForMobile(l.access_time);
-      li.innerHTML = `<div class="info"><div class="title">${l.ip_address} · ${l.status}</div><div class="meta">${l.user_agent || 'No User-Agent'}</div></div>${dateHtml}`;
+      const dateHtml = formatDateForMobile(l.accessTime);
+      li.innerHTML = `<div class="info"><div class="title">${l.ipAddress} · ${l.status}</div><div class="meta">${l.userAgent || 'No User-Agent'}</div></div>${dateHtml}`;
        ul.appendChild(li);
     });
   } catch (e) { ul.innerHTML = `<li class=\"small\">加载失败: ${e.message || e}</li>`; }

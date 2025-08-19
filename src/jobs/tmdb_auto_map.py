@@ -3,7 +3,7 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Optional
 
-import aiomysql
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import httpx
 
 from .. import crud, models
@@ -16,16 +16,16 @@ class TmdbAutoMapJob(BaseJob):
     job_name = "TMDB自动映射与更新"
 
     # Add this __init__ to match the base class
-    def __init__(self, pool: aiomysql.Pool, task_manager: TaskManager, scraper_manager: ScraperManager):
-        super().__init__(pool, task_manager, scraper_manager)
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: TaskManager, scraper_manager: ScraperManager):
+        super().__init__(session_factory, task_manager, scraper_manager)
 
 
-    async def _create_tmdb_client(self) -> httpx.AsyncClient:
+    async def _create_tmdb_client(self, session: AsyncSession) -> httpx.AsyncClient:
         """Non-FastAPI dependent version of get_tmdb_client."""
         # 修正：移除硬编码的后备URL，改为在数据库查询时提供默认值。
         # 这使得配置逻辑更统一，所有默认值都由 config 表或 crud 函数管理。
-        api_key_task = crud.get_config_value(self.pool, "tmdb_api_key", "")
-        domain_task = crud.get_config_value(self.pool, "tmdb_api_base_url", "https://api.themoviedb.org")
+        api_key_task = crud.get_config_value(session, "tmdb_api_key", "")
+        domain_task = crud.get_config_value(session, "tmdb_api_base_url", "https://api.themoviedb.org")
         api_key, domain = await asyncio.gather(api_key_task, domain_task)
 
         if not api_key:
@@ -40,13 +40,13 @@ class TmdbAutoMapJob(BaseJob):
         headers = {"User-Agent": "DanmuApiServer/1.0 (Scheduled Task)"}
         return httpx.AsyncClient(base_url=base_url, params=params, headers=headers, timeout=30.0)
 
-    async def _update_tmdb_mappings(self, client: httpx.AsyncClient, tmdb_tv_id: int, group_id: str):
+    async def _update_tmdb_mappings(self, client: httpx.AsyncClient, session: AsyncSession, tmdb_tv_id: int, group_id: str):
         """Non-FastAPI dependent version of update_tmdb_mappings."""
         response = await client.get(f"/tv/episode_group/{group_id}", params={"language": "zh-CN"})
         response.raise_for_status()
         group_details = models.TMDBEpisodeGroupDetails.model_validate(response.json())
         await crud.save_tmdb_episode_group_mappings(
-            pool=self.pool,
+            session=session,
             tmdb_tv_id=tmdb_tv_id,
             group_id=group_id,
             group_details=group_details
@@ -113,19 +113,19 @@ class TmdbAutoMapJob(BaseJob):
             "aliases_cn": list(dict.fromkeys([_clean_movie_title(a) for a in aliases_cn if a]))
         }
 
-    async def run(self, progress_callback: Callable):
+    async def run(self, session: AsyncSession, progress_callback: Callable):
         """定时任务的核心逻辑。"""
         self.logger.info(f"开始执行 [{self.job_name}] 定时任务...")
         progress_callback(0, "正在初始化...")
         try:
-            client = await self._create_tmdb_client()
+            client = await self._create_tmdb_client(session)
         except ValueError as e:
             self.logger.error(f"无法创建TMDB客户端，任务中止: {e}")
             # 修正：直接抛出异常，让 TaskManager 捕获并标记任务为失败
             raise
 
         async with client:
-            shows_to_update = await crud.get_animes_with_tmdb_id(self.pool)
+            shows_to_update = await crud.get_animes_with_tmdb_id(session)
             total_shows = len(shows_to_update)
             self.logger.info(f"找到 {total_shows} 个带TMDB ID的电视节目需要处理。")
             progress_callback(5, f"找到 {total_shows} 个节目待处理")
@@ -145,13 +145,13 @@ class TmdbAutoMapJob(BaseJob):
                             if best_group:
                                 group_id = best_group['id']
                                 self.logger.info(f"为 '{title}' 选择了剧集组: '{best_group['name']}' ({group_id})")
-                                await crud.update_anime_tmdb_group_id(self.pool, anime_id, group_id)
-                                await self._update_tmdb_mappings(client, int(tmdb_id), group_id)
+                                await crud.update_anime_tmdb_group_id(session, anime_id, group_id)
+                                await self._update_tmdb_mappings(client, session, int(tmdb_id), group_id)
                     
                     details_res = await client.get(f"/tv/{tmdb_id}", params={"append_to_response": "alternative_titles"})
                     if details_res.status_code == 200:
                         aliases_to_update = self._parse_tmdb_details_for_aliases(details_res.json())
-                        await crud.update_anime_aliases_if_empty(self.pool, anime_id, aliases_to_update)
+                        await crud.update_anime_aliases_if_empty(session, anime_id, aliases_to_update)
 
                     await asyncio.sleep(1)
                 except Exception as e:

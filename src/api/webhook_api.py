@@ -2,11 +2,11 @@ import logging
 from typing import Dict
 import json
 
-import aiomysql
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from .. import crud
-from ..database import get_db_pool
+from ..database import get_db_session
 from ..webhook_manager import WebhookManager
 
 logger = logging.getLogger(__name__)
@@ -23,11 +23,11 @@ async def handle_webhook(
     webhook_type: str,
     request: Request,
     api_key: str = Query(..., description="Webhook安全密钥"),
-    pool: aiomysql.Pool = Depends(get_db_pool),
+    session: AsyncSession = Depends(get_db_session),
     webhook_manager: WebhookManager = Depends(get_webhook_manager),
 ):
     """统一的Webhook入口，用于接收来自Sonarr, Radarr等服务的通知。"""
-    stored_key = await crud.get_config_value(pool, "webhook_api_key", "")
+    stored_key = await crud.get_config_value(session, "webhook_api_key", "")
     if not stored_key or api_key != stored_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效的Webhook API Key")
 

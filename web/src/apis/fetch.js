@@ -18,7 +18,7 @@ const instance = axios.create({
 instance.interceptors.request.use(
   async config => {
     const token = getStorage(DANMU_API_TOKEN_KEY)
-    if (config.headers && token) {
+    if (config.headers && !!token) {
       config.headers['Authorization'] = `Bearer ${token}`
     }
     return config

@@ -117,7 +117,7 @@ function renderTasks(tasksToRender) {
         } else {
             const li = document.createElement('li');
             li.className = 'task-item';
-            li.dataset.taskId = task.task_id;
+            li.dataset.taskId = task.taskId;
             li.dataset.status = task.status; // e.g., "运行中", "已暂停"
             li.innerHTML = `
                 <div class="task-header">
@@ -229,13 +229,19 @@ function renderScheduledTasks(tasks) {
 
     tasks.forEach(task => {
         const row = scheduledTasksTableBody.insertRow();
+        // 新增：创建一个从 job_type 到中文显示名称的映射
+        const jobTypeDisplay = {
+            'tmdb_auto_map': 'TMDB自动映射',
+            'incremental_refresh': '定时增量追更'
+        }[task.job_type] || task.job_type;
+
         row.innerHTML = `
             <td>${task.name}</td>
-            <td>${task.job_type === 'tmdb_auto_map' ? 'TMDB自动映射' : task.job_type}</td>
-            <td>${task.cron_expression}</td>
-            <td>${task.is_enabled ? '✅' : '❌'}</td>
-            <td>${task.last_run_at ? new Date(task.last_run_at).toLocaleString() : '从未'}</td>
-            <td>${task.next_run_at ? new Date(task.next_run_at).toLocaleString() : 'N/A'}</td>
+            <td>${jobTypeDisplay}</td>
+            <td>${task.cronExpression}</td>
+            <td>${task.isEnabled ? '✅' : '❌'}</td>
+            <td>${task.lastRunAt ? new Date(task.lastRunAt).toLocaleString() : '从未'}</td>
+            <td>${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString() : 'N/A'}</td>
             <td class="actions-cell">
                 <div class="action-buttons-wrapper">
                     <button class="action-btn" data-action="run" data-task-id="${task.id}" title="立即运行">▶️</button>
@@ -285,9 +291,9 @@ function showEditScheduledTaskView(task = null) {
             editScheduledTaskTitle.textContent = '编辑定时任务';
             document.getElementById('edit-scheduled-task-id').value = task.id;
             document.getElementById('edit-scheduled-task-name').value = task.name;
-            taskTypeSelect.value = task.job_type;
-            document.getElementById('edit-scheduled-task-cron').value = task.cron_expression;
-            document.getElementById('edit-scheduled-task-enabled').checked = task.is_enabled;
+            taskTypeSelect.value = task.jobType;
+            document.getElementById('edit-scheduled-task-cron').value = task.cronExpression;
+            document.getElementById('edit-scheduled-task-enabled').checked = task.isEnabled;
         } else {
             editScheduledTaskTitle.textContent = '添加定时任务';
             document.getElementById('edit-scheduled-task-id').value = '';
@@ -302,9 +308,9 @@ async function handleScheduledTaskFormSubmit(e) {
     const id = document.getElementById('edit-scheduled-task-id').value;
     const payload = {
         name: document.getElementById('edit-scheduled-task-name').value,
-        job_type: document.getElementById('edit-scheduled-task-type').value,
-        cron_expression: document.getElementById('edit-scheduled-task-cron').value,
-        is_enabled: document.getElementById('edit-scheduled-task-enabled').checked,
+        jobType: document.getElementById('edit-scheduled-task-type').value,
+        cronExpression: document.getElementById('edit-scheduled-task-cron').value,
+        isEnabled: document.getElementById('edit-scheduled-task-enabled').checked,
     };
     const url = id ? `/api/ui/scheduled-tasks/${id}` : '/api/ui/scheduled-tasks';
     const method = id ? 'PUT' : 'POST';

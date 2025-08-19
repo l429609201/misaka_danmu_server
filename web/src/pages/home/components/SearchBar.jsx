@@ -90,9 +90,7 @@ export const SearchBar = () => {
         lastEpisode === null
       ) {
         console.log('前端缓存命中：正在使用上次的搜索结果。')
-        const updatedResults = JSON.parse(
-          JSON.stringify(lastSearchResultData.results)
-        )
+        const updatedResults = lastSearchResultData.results
         updatedResults.forEach(item => {
           item.currentEpisodeIndex = newEpisode
         })

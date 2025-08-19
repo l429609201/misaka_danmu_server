@@ -53,8 +53,9 @@
                         <li><a href="#" class="nav-link active" data-view="home-view">主页</a></li>
                         <li><a href="#" class="nav-link" data-view="library-view">弹幕库</a></li>
                         <li><a href="#" class="nav-link" data-view="task-manager-view">任务管理器</a></li>
-                        <li><a href="#" class="nav-link" data-view="token-manager-view">弹幕Token</a></li>
+                        <li><a href="#" class="nav-link" data-view="token-manager-view">弹幕</a></li>
                         <li><a href="#" class="nav-link" data-view="sources-view">搜索源</a></li>
+                        <li><a href="#" class="nav-link" data-view="external-api-view">外部控制</a></li>
                         <li><a href="#" class="nav-link" data-view="settings-view">设置</a></li>
                     </ul>
                 </nav>
@@ -182,10 +183,10 @@
                                 <button id="clear-all-cache-in-edit-btn" class="secondary-btn">清除所有缓存</button>
                             </div>
                         </div>
-                        <div class="form-card">
+                        <div class="form-card form-card-wide">
                             <form id="edit-anime-form">
                                 <input type="hidden" id="edit-anime-id">
-                                <div class="form-row">
+                                <div class="form-row form-row-full-width">
                                     <label for="edit-anime-title">影视名称</label>
                                     <input type="text" id="edit-anime-title" required>
                                 </div>
@@ -204,7 +205,7 @@
                                     <label for="edit-anime-episode-count">集数</label>
                                     <input type="number" id="edit-anime-episode-count" min="1" placeholder="留空则自动计算">
                                 </div>
-                                <div class="form-row">
+                                <div class="form-row form-row-full-width">
                                     <label for="edit-anime-poster-url">海报URL</label>
                                     <div class="input-with-icon">
                                         <input type="text" id="edit-anime-poster-url" placeholder="输入海报图片的URL">
@@ -214,44 +215,49 @@
                                 
                                 <div class="form-row">
                                     <label for="edit-anime-tmdbid">TMDB ID</label>
-                                    <div class="input-with-icon">
+                                    <div class="input-with-icons">
                                         <input type="text" id="edit-anime-tmdbid" placeholder="例如: 1396">
-                                        <button type="button" id="search-tmdbid-btn" class="icon-btn" title="查找">🔍</button>
+                                        <button type="button" class="icon-btn" data-action="direct-search" data-source="tmdb" title="ID直搜">🎯</button>
+                                        <button type="button" id="search-tmdbid-btn" class="icon-btn" data-action="search" data-source="tmdb" title="名称搜索">🔍</button>
                                     </div>
                                 </div>
                                 <div class="form-row">
                                     <label for="edit-anime-egid">剧集组ID</label>
-                                    <div class="input-with-icon">
+                                    <div class="input-with-icons">
                                         <input type="text" id="edit-anime-egid" placeholder="TMDB Episode Group ID">
-                                        <button type="button" id="select-egid-btn" class="icon-btn" title="查找/选择">🔍</button>
+                                        <button type="button" id="select-egid-btn" class="icon-btn" data-action="select-egid" title="查找/选择">🔍</button>
                                     </div>
                                 </div>
                                 <div class="form-row">
                                     <label for="edit-anime-bgmid">BGM ID</label>
-                                    <div class="input-with-icon">
+                                    <div class="input-with-icons">
                                         <input type="text" id="edit-anime-bgmid" placeholder="例如: 296100">
-                                        <button type="button" id="search-bgmid-btn" class="icon-btn" title="查找">🔍</button>
+                                        <button type="button" class="icon-btn" data-action="direct-search" data-source="bangumi" title="ID直搜">🎯</button>
+                                        <button type="button" id="search-bgmid-btn" class="icon-btn" data-action="search" data-source="bangumi" title="名称搜索">🔍</button>
                                     </div>
                                 </div>
                                 <div class="form-row">
                                     <label for="edit-anime-tvdbid">TVDB ID</label>
-                                    <div class="input-with-icon">
+                                    <div class="input-with-icons">
                                         <input type="text" id="edit-anime-tvdbid" placeholder="例如: 364093">
-                                        <button type="button" id="search-tvdbid-btn" class="icon-btn" title="查找">🔍</button>
+                                        <button type="button" class="icon-btn" data-action="direct-search" data-source="tvdb" title="ID直搜">🎯</button>
+                                        <button type="button" id="search-tvdbid-btn" class="icon-btn" data-action="search" data-source="tvdb" title="名称搜索">🔍</button>
                                     </div>
                                 </div>
                                 <div class="form-row">
                                     <label for="edit-anime-doubanid">豆瓣ID</label>
-                                    <div class="input-with-icon">
+                                    <div class="input-with-icons">
                                         <input type="text" id="edit-anime-doubanid" placeholder="例如: 35297708">
-                                        <button type="button" id="search-doubanid-btn" class="icon-btn" title="查找">🔍</button>
+                                        <button type="button" class="icon-btn" data-action="direct-search" data-source="douban" title="ID直搜">🎯</button>
+                                        <button type="button" id="search-doubanid-btn" class="icon-btn" data-action="search" data-source="douban" title="名称搜索">🔍</button>
                                     </div>
                                 </div>
                                 <div class="form-row">
                                     <label for="edit-anime-imdbid">IMDB ID</label>
-                                    <div class="input-with-icon">
+                                    <div class="input-with-icons">
                                         <input type="text" id="edit-anime-imdbid" placeholder="例如: tt9140554">
-                                        <button type="button" id="search-imdbid-btn" class="icon-btn" title="查找">🔍</button>
+                                        <button type="button" class="icon-btn" data-action="direct-search" data-source="imdb" title="ID直搜">🎯</button>
+                                        <button type="button" id="search-imdbid-btn" class="icon-btn" data-action="search" data-source="imdb" title="名称搜索">🔍</button>
                                     </div>
                                 </div>
                                 <div class="form-row">
@@ -291,8 +297,9 @@
                                     </div>
                                 </div>
                                 <div class="form-actions">
-                                    <button type="submit">保存更改</button>
-                                    <button type="button" id="back-to-library-from-edit-btn">返回</button>
+                                    <button type="submit" id="save-and-return-btn">保存后返回</button>
+                                    <button type="button" id="save-and-continue-btn">保存后继续</button>
+                                    <button type="button" id="back-to-library-from-edit-btn">返回库</button>
                                 </div>
                             </form>
                         </div>
@@ -516,47 +523,6 @@
                             </form>
                         </div>
                     </div>
-                    <div id="token-manager-view" class="content-view hidden">
-                        <div class="library-header">
-                            <h2>弹幕Token管理</h2>
-                            <button id="add-token-btn">添加Token</button>
-                        </div>
-                        <p>本项目参考了<a href="https://api.dandanplay.net/swagger/index.html" target="_blank">dandanplayapi</a>，同时增加了使用访问令牌管理弹幕api,支持<a href="https://t.me/yamby_release" target="_blank">yamby</a>、<a href="https://play.google.com/store/search?q=hills&c=apps" target="_blank">hills</a>、<a href="https://apps.microsoft.com/detail/9NB0H051M4V4" target="_blank">小幻影视</a>。</p>
-                        <div class="domain-config-section">
-                            <h3>自定义域名设置</h3>
-                            <p>设置后，复制按钮将自动拼接 "http(s)://域名(ip):端口(port)/api/Token值" 格式的完整URL。</p>
-                            <div class="form-row">
-                                <label for="custom-domain-input">自定义域名</label>
-                                <input type="text" id="custom-domain-input" placeholder="例如: https://danmu.example.com">
-                                <button id="save-domain-btn">保存域名</button>
-                            </div>
-                            <p id="domain-save-message" class="message"></p>
-                        </div>
-                        <div class="ua-filter-section">
-                            <h3>全局 User-Agent 过滤</h3>
-                            <p>对所有通过Token的访问请求进行UA过滤。模式为 "off" 时不过滤。</p>
-                            <div class="form-row">
-                                <label for="ua-filter-mode">过滤模式</label>
-                                <select id="ua-filter-mode">
-                                    <option value="off">关闭 (Off)</option>
-                                    <option value="blacklist">黑名单 (Blacklist)</option>
-                                    <option value="whitelist">白名单 (Whitelist)</option>
-                                </select>
-                                <button id="save-ua-mode-btn">保存模式</button>
-                                <button id="manage-ua-list-btn">管理名单</button>
-                            </div>
-                            <p id="ua-mode-save-message" class="message"></p>
-                        </div>
-                        <table id="token-table">
-                            <thead>
-                                <tr>
-                                    <th>名称</th><th>Token</th><th>状态</th><th>创建时间</th><th>有效期</th><th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                            </tbody>
-                        </table>
-                    </div>
                     <div id="add-token-view" class="content-view hidden">
                         <h2>添加新Token</h2>
                         <form id="add-token-form">
@@ -581,6 +547,112 @@
                                 <button type="button" id="back-to-tokens-from-add-btn">返回</button>
                             </div>
                         </form>
+                    </div>
+                    <div id="token-manager-view" class="content-view hidden">
+                        <h2>弹幕</h2>
+                        <div class="settings-sub-nav">
+                            <button class="sub-nav-btn active" data-subview="token-management-subview">Token管理</button>
+                            <button class="sub-nav-btn" data-subview="danmaku-output-subview">弹幕输出控制</button>
+                        </div>
+
+                        <div id="token-management-subview" class="settings-subview">
+                            <div class="library-header">
+                                <h3>Token管理</h3>
+                                <button id="add-token-btn">添加Token</button>
+                            </div>
+                            <p>本项目参考了<a href="https://api.dandanplay.net/swagger/index.html" target="_blank">dandanplayapi</a>，同时增加了使用访问令牌管理弹幕api,支持<a href="https://t.me/yamby_release" target="_blank">yamby</a>、<a href="https://play.google.com/store/search?q=hills&c=apps" target="_blank">hills</a>、<a href="https://apps.microsoft.com/detail/9NB0H051M4V4" target="_blank">小幻影视</a>。</p>
+                            <div class="domain-config-section">
+                                <h3>自定义域名设置</h3>
+                                <p>设置后，复制按钮将自动拼接 "http(s)://域名(ip):端口(port)/api/v1/Token值" 格式的完整URL。</p>
+                                <div class="form-row">
+                                    <label for="custom-domain-input">自定义域名</label>
+                                    <input type="text" id="custom-domain-input" placeholder="例如: https://danmu.example.com">
+                                    <button id="save-domain-btn">保存域名</button>
+                                </div>
+                                <p id="domain-save-message" class="message"></p>
+                            </div>
+                            <div class="ua-filter-section">
+                                <h3>全局 User-Agent 过滤</h3>
+                                <p>对所有通过Token的访问请求进行UA过滤。模式为 "off" 时不过滤。</p>
+                                <div class="form-row">
+                                    <label for="ua-filter-mode">过滤模式</label>
+                                    <select id="ua-filter-mode">
+                                        <option value="off">关闭 (Off)</option>
+                                        <option value="blacklist">黑名单 (Blacklist)</option>
+                                        <option value="whitelist">白名单 (Whitelist)</option>
+                                    </select>
+                                    <button id="save-ua-mode-btn">保存模式</button>
+                                    <button id="manage-ua-list-btn">管理名单</button>
+                                </div>
+                                <p id="ua-mode-save-message" class="message"></p>
+                            </div>
+                            <table id="token-table">
+                                <thead>
+                                    <tr><th>名称</th><th>Token</th><th>状态</th><th>创建时间</th><th>有效期</th><th>操作</th></tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+
+                        <div id="danmaku-output-subview" class="settings-subview hidden">
+                            <div class="form-card">
+                                <h3>弹幕输出控制</h3>
+                                <p>在这里调整弹幕API的输出行为。</p>
+                                <form id="danmaku-output-form">
+                                    <div class="form-row">
+                                        <label for="danmaku-limit-input">单源输出总数</label>
+                                        <input type="number" id="danmaku-limit-input" min="-1">
+                                    </div>
+                                    <p class="form-help-text">设置从单个数据源（或聚合后）返回的弹幕最大数量。-1 表示无限制。为防止客户端卡顿，建议设置一个合理的数值（如 3000-5000）。弹幕将从视频时长中均匀采样。</p>
+                                    <div class="form-row">
+                                        <label for="danmaku-aggregation-toggle">启用弹幕聚合</label>
+                                        <input type="checkbox" id="danmaku-aggregation-toggle">
+                                    </div>
+                                    <p class="form-help-text">开启后，当播放器请求关联弹幕时（withRelated=true），系统将聚合所有源的弹幕。关闭则只返回当前源的弹幕。</p>
+                                    <div class="form-actions"><button type="submit">保存设置</button></div>
+                                    <p id="danmaku-control-save-message" class="message"></p>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="external-api-view" class="content-view hidden">
+                        <h2>外部API控制</h2>
+                        <div class="settings-sub-nav">
+                            <button class="sub-nav-btn active" data-subview="external-api-key-subview">API密钥</button>
+                            <button class="sub-nav-btn" data-subview="external-api-logs-subview">访问日志</button>
+                            <button class="sub-nav-btn" data-subview="external-api-docs-subview">API文档</button>
+                        </div>
+
+                        <div id="external-api-key-subview" class="settings-subview">
+                            <div class="form-card">
+                                <h3>外部API密钥</h3>
+                                <p>此密钥用于所有 <code>/api/control/*</code> 接口的鉴权。请妥善保管，不要泄露。</p>
+                                <div class="form-row">
+                                    <label for="external-api-key-input">API Key</label>
+                                    <div class="input-with-icon">
+                                        <input type="text" id="external-api-key-input" readonly>
+                                        <button type="button" id="regenerate-external-key-btn" class="icon-btn" title="重新生成">🔄</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="external-api-logs-subview" class="settings-subview hidden">
+                            <h3>API访问日志</h3>
+                            <p>这里显示最近100条通过外部API的访问记录。</p>
+                            <table id="external-api-log-table">
+                                <thead><tr><th>访问时间</th><th>IP地址</th><th>端点</th><th>状态码</th><th>消息</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                        <div id="external-api-docs-subview" class="settings-subview hidden">
+                            <div class="api-docs-actions">
+                                <a href="/api/control/docs" target="_blank" class="action-btn-link">
+                                    <button>文档链接</button>
+                                </a>
+                            </div>
+                            <iframe id="swagger-ui-iframe" src="/api/control/docs"></iframe>
+                        </div>
                     </div>
                     <div id="sources-view" class="content-view hidden">
                         <div class="settings-sub-nav">
@@ -655,7 +727,7 @@
                             <button class="sub-nav-btn" data-subview="tmdb-settings-subview">TMDB配置</button>
                             <button class="sub-nav-btn" data-subview="douban-settings-subview">豆瓣配置</button>
                             <button class="sub-nav-btn" data-subview="tvdb-settings-subview">TVDB配置</button>
-                        </div>
+        </div>
 
                         <div id="account-settings-subview" class="settings-subview">
                             <div class="form-card">

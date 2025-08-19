@@ -83,6 +83,18 @@
     background-color: #e9ecef;
     border-left: 3px solid var(--primary-color);
 }
+.verified-icon {
+    font-size: 1.1em;
+    margin-left: 5px;
+    cursor: help;
+}
+
+/* 未验证的源显示为灰色 */
+#danmaku-sources-list li.unverified {
+    opacity: 0.6;
+    background-color: #f8f9fa;
+    cursor: not-allowed;
+}
 
 .status-icon {
     font-size: 1.2em;

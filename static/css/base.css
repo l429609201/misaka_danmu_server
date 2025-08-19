@@ -118,4 +118,14 @@ header {
     flex-grow: 1;
     padding: 20px;
     overflow-y: auto;
+    /* 新增：将主内容区设置为flex容器，以便其子视图可以填充高度 */
+    display: flex;
+    flex-direction: column;
+}
+
+.content-view {
+    /* 新增：让可见的内容视图填充剩余空间，并成为flex容器 */
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
 }

@@ -1,15 +1,15 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from datetime import datetime, timedelta
 import re
-
+from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
 from .. import crud, models, security
-from ..database import get_db_pool
+from ..database import get_db_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -18,8 +18,31 @@ router = APIRouter()
 # 使用一个简单的模块级缓存来存储TVDB的JWT令牌
 _tvdb_token_cache: Dict[str, Any] = {"token": None, "expires_at": datetime.utcnow()}
 
+async def _create_tvdb_client(session: AsyncSession) -> httpx.AsyncClient:
+    """Non-FastAPI dependent version of get_tvdb_client."""
+    proxy_url_task = crud.get_config_value(session, "proxy_url", "")
+    proxy_enabled_globally_task = crud.get_config_value(session, "proxy_enabled", "false")
+    metadata_settings_task = crud.get_all_metadata_source_settings(session)
 
-async def get_tvdb_token(pool, client: httpx.AsyncClient) -> str:
+    proxy_url, proxy_enabled_str, metadata_settings = await asyncio.gather(
+        proxy_url_task, proxy_enabled_globally_task, metadata_settings_task
+    )
+    proxy_enabled_globally = proxy_enabled_str.lower() == 'true'
+
+    provider_setting = next((s for s in metadata_settings if s['providerName'] == 'tvdb'), None)
+    use_proxy_for_this_provider = provider_setting.get('use_proxy', False) if provider_setting else False
+
+    proxy_to_use = proxy_url if proxy_enabled_globally and use_proxy_for_this_provider and proxy_url else None
+    
+    client = httpx.AsyncClient(base_url="https://api4.thetvdb.com/v4", timeout=20.0, proxy=proxy_to_use)
+    token = await get_tvdb_token(session, client)
+    client.headers.update(
+        {"Authorization": f"Bearer {token}", "User-Agent": "DanmuApiServer/1.0"}
+    )
+    return client
+
+
+async def get_tvdb_token(session: AsyncSession, client: httpx.AsyncClient) -> str:
     """获取一个有效的TVDB令牌，如果需要则刷新。"""
     global _tvdb_token_cache
     # 如果缓存中的token有效，则直接返回
@@ -27,10 +50,10 @@ async def get_tvdb_token(pool, client: httpx.AsyncClient) -> str:
         return _tvdb_token_cache["token"]
 
     logger.info("TVDB token 已过期或未找到，正在请求新的令牌。")
-    api_key = await crud.get_config_value(pool, "tvdb_api_key", "")
+    api_key = await crud.get_config_value(session, "tvdb_api_key", "")
 
     if not api_key:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="TVDB API Key 未配置。")
+        raise ValueError("TVDB API Key 未配置。")
     try:
         # TVDB V4 API 的登录端点
         response = await client.post("/login", json={"apikey": api_key})
@@ -47,35 +70,18 @@ async def get_tvdb_token(pool, client: httpx.AsyncClient) -> str:
         return token
     except Exception as e:
         logger.error(f"获取TVDB令牌失败: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="TVDB认证失败。")
+        raise ValueError("TVDB认证失败。")
 
 
 async def get_tvdb_client(
     current_user: models.User = Depends(security.get_current_user),
-    pool=Depends(get_db_pool),
+    session: AsyncSession = Depends(get_db_session),
 ) -> httpx.AsyncClient:
     """依赖项：获取一个经过认证的TVDB客户端。"""
-    # --- Start of new proxy logic ---
-    proxy_url_task = crud.get_config_value(pool, "proxy_url", "")
-    proxy_enabled_globally_task = crud.get_config_value(pool, "proxy_enabled", "false")
-    metadata_settings_task = crud.get_all_metadata_source_settings(pool)
-
-    proxy_url, proxy_enabled_str, metadata_settings = await asyncio.gather(
-        proxy_url_task, proxy_enabled_globally_task, metadata_settings_task
-    )
-    proxy_enabled_globally = proxy_enabled_str.lower() == 'true'
-
-    provider_setting = next((s for s in metadata_settings if s['provider_name'] == 'tvdb'), None)
-    use_proxy_for_this_provider = provider_setting.get('use_proxy', False) if provider_setting else False
-
-    proxy_to_use = proxy_url if proxy_enabled_globally and use_proxy_for_this_provider and proxy_url else None
-    # --- End of new proxy logic ---
-    client = httpx.AsyncClient(base_url="https://api4.thetvdb.com/v4", timeout=20.0, proxy=proxy_to_use)
-    token = await get_tvdb_token(pool, client)
-    client.headers.update(
-        {"Authorization": f"Bearer {token}", "User-Agent": "DanmuApiServer/1.0"}
-    )
-    return client
+    try:
+        return await _create_tvdb_client(session)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 # --- Pydantic Models for TVDB ---
@@ -93,6 +99,12 @@ class TvdbSearchResponse(BaseModel):
 class TvdbAlias(BaseModel):
     language: str
     name: str
+
+class TvdbApiSearchResult(BaseModel):
+    id: str
+    title: str
+    details: str
+    imageUrl: Optional[str] = None
 
 class TvdbRemoteId(BaseModel):
     id: str
@@ -115,7 +127,7 @@ class TvdbExtendedDetailsResponse(BaseModel):
     data: TvdbDetailsResponse
 
 # --- API Endpoints ---
-@router.get("/search", response_model=List[Dict[str, Any]], summary="搜索 TVDB 作品")
+@router.get("/search", response_model=List[TvdbApiSearchResult], summary="搜索 TVDB 作品")
 async def search_tvdb(
     keyword: str = Query(..., min_length=1),
     client: httpx.AsyncClient = Depends(get_tvdb_client),
@@ -142,23 +154,18 @@ async def search_tvdb(
                 details += f" / {item.overview[:100]}..."
 
             formatted_results.append(
-                {
-                    "id": item.tvdb_id,
-                    "title": item.name,
-                    "details": details,
-                    "image_url": item.image_url,
-                }
+                TvdbApiSearchResult(
+                    id=item.tvdb_id,
+                    title=item.name,
+                    details=details,
+                    imageUrl=item.image_url,
+                )
             )
         return formatted_results
     except Exception as e:
         logger.error(f"TVDB 搜索失败: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="TVDB 搜索失败。")
-
-
-@router.get("/details/{tvdb_id}", response_model=Dict[str, Any], summary="获取 TVDB 作品详情(扩展)")
-async def get_tvdb_details(
-    tvdb_id: str = Path(...), client: httpx.AsyncClient = Depends(get_tvdb_client)
-):
+async def get_tvdb_details_logic(tvdb_id: str, client: httpx.AsyncClient) -> "models.MetadataDetailsResponse":
     """获取指定 TVDB ID 的作品详情，主要用于提取别名和IMDb ID。"""
     try:
         response = await client.get(f"/series/{tvdb_id}/extended")
@@ -210,17 +217,60 @@ async def get_tvdb_details(
         if not name_cn:
             name_cn = details.name
         
-        return {
-            "id": str(details.id),
-            "tvdb_id": str(details.id),
-            "title": name_cn,  # 将中文名作为主要标题返回
-            "name_en": name_en,
-            "name_jp": name_jp,
-            "name_romaji": name_romaji,
-            "aliases_cn": list(dict.fromkeys(other_cn_aliases)),  # 去重
-            "imdb_id": imdb_id,
-            "tmdb_id": tmdb_id,
-        }
+        return models.MetadataDetailsResponse(
+            id=str(details.id),
+            tvdbId=str(details.id),
+            title=name_cn,
+            nameEn=name_en,
+            nameJp=name_jp,
+            nameRomaji=name_romaji,
+            aliasesCn=list(dict.fromkeys(other_cn_aliases)),
+            imdbId=imdb_id,
+            tmdbId=tmdb_id
+        )
     except Exception as e:
         logger.error(f"获取 TVDB 详情失败 (ID: {tvdb_id}): {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"获取 TVDB 详情失败 (ID: {tvdb_id})。")
+        raise ValueError(f"获取 TVDB 详情失败 (ID: {tvdb_id})。")
+
+@router.get("/details/{tvdb_id}", response_model=models.MetadataDetailsResponse, summary="获取 TVDB 作品详情(扩展)")
+async def get_tvdb_details(
+    tvdb_id: str = Path(...), client: httpx.AsyncClient = Depends(get_tvdb_client)
+):
+    """获取指定 TVDB ID 的作品详情，主要用于提取别名和IMDb ID。"""
+    try:
+        return await get_tvdb_details_logic(tvdb_id, client)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+async def search_tvdb_aliases(keyword: str, client: httpx.AsyncClient) -> Set[str]:
+    """从 TVDB 获取别名。"""
+    local_aliases: Set[str] = set()
+    try:
+        # Re-implementing the logic from the search_tvdb endpoint
+        search_response = await client.get("/search", params={"query": keyword})
+        search_response.raise_for_status()
+        search_results = TvdbSearchResponse.model_validate(search_response.json()).data
+
+        if not search_results:
+            return local_aliases
+
+        best_match_id = search_results[0].tvdb_id
+
+        # Re-implementing the logic from get_tvdb_details endpoint
+        details_response = await client.get(f"/series/{best_match_id}/extended")
+        details_response.raise_for_status() # type: ignore
+        details = TvdbExtendedDetailsResponse.model_validate(details_response.json()).data
+
+        # The main title from TVDB is often in English
+        if details.name:
+            local_aliases.add(details.name)
+
+        # Add Chinese name from translations if available
+        if details.translations and details.translations.get("zho"):
+            local_aliases.add(details.translations["zho"])
+
+        logger.info(f"TVDB辅助搜索成功，找到别名: {[a for a in local_aliases if a]}")
+    except Exception as e:
+        logger.warning(f"TVDB辅助搜索失败: {e}")
+
+    return {alias for alias in local_aliases if alias}

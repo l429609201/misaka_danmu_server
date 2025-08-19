@@ -1,23 +1,22 @@
 import logging
 from typing import Callable
 import asyncio
-
-import aiomysql
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud
 from .base import BaseJob
 from ..task_manager import TaskSuccess
-from ..api.ui import generic_import_task
+from ..tasks import generic_import_task
 
 
 class IncrementalRefreshJob(BaseJob):
     job_type = "incremental_refresh"
     job_name = "定时增量追更"
 
-    async def run(self, progress_callback: Callable):
+    async def run(self, session: AsyncSession, progress_callback: Callable):
         """定时任务的核心逻辑: 按最新分集ID+1 抓取新集"""
         await progress_callback(0, "正在获取所有数据源...")
-        source_ids = await crud.get_sources_with_incremental_refresh_enabled(self.pool)
+        source_ids = await crud.get_sources_with_incremental_refresh_enabled(session)
         total_sources = len(source_ids)
         if not total_sources:
             raise TaskSuccess("没有找到任何数据源，任务结束。")
@@ -26,7 +25,7 @@ class IncrementalRefreshJob(BaseJob):
         await progress_callback(5, f"找到 {total_sources} 个数据源，开始检查...")
 
         for i, source_id in enumerate(source_ids):
-            source_info = await crud.get_anime_source_info(self.pool, source_id)
+            source_info = await crud.get_anime_source_info(session, source_id)
             if not source_info:
                 self.logger.warning(f"无法找到数据源(id={source_id})的信息，跳过。")
                 continue
@@ -36,7 +35,7 @@ class IncrementalRefreshJob(BaseJob):
             await progress_callback(progress, f"正在检查: {anime_title} ({i+1}/{total_sources})")
 
             # 获取当前最新分集
-            episodes = await crud.get_episodes_for_source(self.pool, source_id)
+            episodes = await crud.get_episodes_for_source(session, source_id)
             latest_episode_index = max(ep['episode_index'] for ep in episodes) if episodes else 0
             
             next_episode_index = latest_episode_index + 1
@@ -48,22 +47,22 @@ class IncrementalRefreshJob(BaseJob):
                     provider=source_info["provider_name"], media_id=source_info["media_id"],
                     anime_title=anime_title, media_type=source_info["type"],
                     season=source_info.get("season", 1), current_episode_index=next_episode_index,
-                    image_url=None, douban_id=None, tmdb_id=source_info.get("tmdb_id"), 
-                    imdb_id=None, tvdb_id=None, progress_callback=lambda p, d: None, # type: ignore
-                    pool=self.pool, manager=self.scraper_manager, task_manager=self.task_manager
+                    image_url=None, douban_id=None, tmdb_id=source_info.get("tmdb_id"), imdb_id=None, tvdb_id=None,
+                    progress_callback=progress_callback,  # 修正：传递主任务的回调，而不是一个同步的lambda
+                    session=session, manager=self.scraper_manager, task_manager=self.task_manager,
                 )
             except TaskSuccess as e:
                 message = str(e)
                 if "未能获取到任何分集" in message:
                     # This is considered a "failure" for incremental refresh
-                    new_failure_count = await crud.increment_incremental_refresh_failures(self.pool, source_id)
+                    new_failure_count = await crud.increment_incremental_refresh_failures(session, source_id)
                     self.logger.warning(f"'{anime_title}' (源ID: {source_id}) 未找到新分集，失败次数: {new_failure_count}。")
                     if new_failure_count >= 15:
-                        await crud.disable_incremental_refresh(self.pool, source_id)
+                        await crud.disable_incremental_refresh(session, source_id)
                         self.logger.info(f"'{anime_title}' (源ID: {source_id}) 已连续15次未找到新分集，已自动取消追更。")
                 else:
                     # Any other success message means a new episode was found (even if with 0 comments)
-                    await crud.reset_incremental_refresh_failures(self.pool, source_id)
+                    await crud.reset_incremental_refresh_failures(session, source_id)
                     self.logger.info(f"为 '{anime_title}' (源ID: {source_id}) 的增量更新成功: {message}")
             except Exception as e:
                 self.logger.error(f"为 '{anime_title}' (源ID: {source_id}) 的增量更新失败: {e}", exc_info=True)

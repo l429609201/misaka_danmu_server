@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Callable
-import aiomysql
 import logging
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..task_manager import TaskManager
 from ..scraper_manager import ScraperManager
@@ -14,14 +14,14 @@ class BaseJob(ABC):
     job_type: str # 任务的唯一标识符, e.g., "incremental_refresh"
     job_name: str # 任务的默认显示名称, e.g., "TMDB自动映射与更新"
 
-    def __init__(self, pool: aiomysql.Pool, task_manager: TaskManager, scraper_manager: ScraperManager):
-        self.pool = pool
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: TaskManager, scraper_manager: ScraperManager):
+        self._session_factory = session_factory
         self.task_manager = task_manager
         self.scraper_manager = scraper_manager
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @abstractmethod
-    async def run(self, progress_callback: Callable):
+    async def run(self, session: AsyncSession, progress_callback: Callable):
         """
         执行任务的核心逻辑。
         progress_callback: 一个回调函数，用于报告进度 (progress: int, description: str)。

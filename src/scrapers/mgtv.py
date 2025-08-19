@@ -4,7 +4,7 @@ import time
 import re
 from typing import Any, Callable, Dict, List, Optional
 
-import aiomysql
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import httpx
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
@@ -145,6 +145,8 @@ class MgtvCommentSegmentResult(BaseModel):
 
 class MgtvScraper(BaseScraper):
     provider_name = "mgtv"
+    handled_domains = ["www.mgtv.com"]
+    referer = "https://www.mgtv.com/"
 
     # English keywords that often appear as standalone acronyms or words
     _ENG_JUNK = r'NC|OP|ED|SP|OVA|OAD|CM|PV|MV|BDMenu|Menu|Bonus|Recap|Teaser|Trailer|Preview|CD|Disc|Scan|Sample|Logo|Info|EDPV|SongSpot|BDSpot'
@@ -156,9 +158,8 @@ class MgtvScraper(BaseScraper):
         re.IGNORECASE
     )
 
-
-    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
-        super().__init__(pool, config_manager)
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager):
+        super().__init__(session_factory, config_manager)
         self.client = httpx.AsyncClient(
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -253,6 +254,11 @@ class MgtvScraper(BaseScraper):
         except Exception as e:
             self.logger.error(f"MGTV: 搜索 '{keyword}' 失败: {e}", exc_info=True)
             return []
+
+    async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
+        """(未实现) 从URL中提取作品信息。"""
+        self.logger.warning(f"从URL导入功能尚未为 {self.provider_name} 实现。")
+        raise NotImplementedError(f"从URL导入功能尚未为 {self.provider_name} 实现。")
 
     async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         self.logger.info(f"MGTV: 正在为 media_id={media_id} 获取分集列表...")
@@ -479,7 +485,7 @@ class MgtvScraper(BaseScraper):
             })
         return formatted_comments
 
-    async def get_ids_from_url(self, url: str) -> Optional[Dict[str, str]]:
+    async def get_id_from_url(self, url: str) -> Optional[Dict[str, str]]:
         """从芒果TV URL中提取 collection_id 和 video_id。"""
         match = re.search(r'/b/(\d+)/(\d+)\.html', url)
         if match:
@@ -488,3 +494,8 @@ class MgtvScraper(BaseScraper):
             return {"cid": cid, "vid": vid}
         self.logger.warning(f"MGTV: 无法从URL中解析出 cid 和 vid: {url}")
         return None
+
+    def format_episode_id_for_comments(self, provider_episode_id: Any) -> str:
+        if isinstance(provider_episode_id, dict):
+            return f"{provider_episode_id.get('cid')},{provider_episode_id.get('vid')}"
+        return str(provider_episode_id)

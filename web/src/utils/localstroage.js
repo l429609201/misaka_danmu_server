@@ -7,10 +7,17 @@ export function setStorage(key, data) {
 }
 
 export function getStorage(key) {
-  const value = localStorage.getItem(key)
-  if (!value) return {}
-
-  return JSON.parse(value)
+  try {
+    const value = localStorage.getItem(key)
+    // 如果值不存在（null）或为空字符串，返回默认空对象
+    if (value === null || value === '') {
+      return {}
+    }
+    return JSON.parse(value)
+  } catch (error) {
+    console.error('解析本地存储失败:', error)
+    return {}
+  }
 }
 
 export function clearStorage(key) {

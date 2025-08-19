@@ -45,18 +45,22 @@ class BilibiliInfoFilter(logging.Filter):
 
 # 新增：一个过滤器，用于翻译 apscheduler 的日志
 class ApschedulerLogTranslatorFilter(logging.Filter):
+    """一个用于翻译 apscheduler 日志的过滤器。"""
     def filter(self, record):
         if record.name.startswith('apscheduler'):
-            msg = record.getMessage()
-            if msg == 'Scheduler started':
+            # 直接检查原始消息格式字符串，而不是格式化后的消息，这样更可靠
+            if record.msg == 'Scheduler started':
                 record.msg = '调度器已启动'
+                record.args = () # 清空参数，因为新消息是完整的
                 return True
             
-            match = re.match(r'Added job "(.+?)" to job store "(.+?)"', msg)
-            if match:
-                job_id, store = match.groups()
+            # 检查添加任务的日志
+            if record.msg == 'Added job "%s" to job store "%s"' and len(record.args) == 2:
+                job_id, store = record.args
                 record.msg = f'已添加任务 "{job_id}" 到任务存储 "{store}"'
+                record.args = () # 清空参数
                 return True
+
         return True
 
 def setup_logging():

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 import uuid
 
-import aiomysql
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -10,7 +10,7 @@ from passlib.context import CryptContext
 
 from . import crud, models
 from .config import settings
-from .database import get_db_pool
+from .database import get_db_session
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/ui/auth/token")
@@ -23,7 +23,7 @@ def get_password_hash(password: str) -> str:
     """生成密码哈希"""
     return pwd_context.hash(password)
 
-async def _get_user_from_token(token: str, pool: aiomysql.Pool) -> models.User:
+async def _get_user_from_token(token: str, session: AsyncSession) -> models.User:
     """
     核心逻辑：解码JWT，验证其有效性，并获取当前用户。
     这是一个不带FastAPI依赖的辅助函数。
@@ -46,13 +46,13 @@ async def _get_user_from_token(token: str, pool: aiomysql.Pool) -> models.User:
         # 这将捕获过期的令牌、无效的签名等
         raise credentials_exception
     
-    user = await crud.get_user_by_username(pool, username=token_data.username)
+    user = await crud.get_user_by_username(session, username=token_data.username)
     if user is None:
         raise credentials_exception
 
     return models.User.model_validate(user)
 
-async def create_access_token(data: dict, pool: aiomysql.Pool, expires_delta: Optional[timedelta] = None):
+async def create_access_token(data: dict, session: AsyncSession, expires_delta: Optional[timedelta] = None):
     """创建JWT访问令牌"""
     to_encode = data.copy()
     
@@ -63,7 +63,7 @@ async def create_access_token(data: dict, pool: aiomysql.Pool, expires_delta: Op
         "jti": str(uuid.uuid4()), # JWT ID: 每个令牌的唯一标识符，可用于防止重放攻击
     })
 
-    expire_minutes_str = await crud.get_config_value(pool, 'jwt_expire_minutes', str(settings.jwt.access_token_expire_minutes))
+    expire_minutes_str = await crud.get_config_value(session, 'jwt_expire_minutes', str(settings.jwt.access_token_expire_minutes))
     expire_minutes = int(expire_minutes_str)
     # 如果有效期不为-1，则设置过期时间
     if expire_minutes != -1:
@@ -75,9 +75,9 @@ async def create_access_token(data: dict, pool: aiomysql.Pool, expires_delta: Op
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    pool: aiomysql.Pool = Depends(get_db_pool)
+    session: AsyncSession = Depends(get_db_session)
 ) -> models.User:
     """
     依赖项：解码JWT，验证其有效性，并获取当前用户。
     """
-    return await _get_user_from_token(token, pool)
+    return await _get_user_from_token(token, session)

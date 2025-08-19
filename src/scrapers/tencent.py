@@ -1,6 +1,5 @@
 import asyncio
 import httpx
-import aiomysql
 import re
 import logging
 import html
@@ -8,6 +7,7 @@ import json
 from typing import List, Dict, Any, Optional, Union, Callable
 from pydantic import BaseModel, Field, ValidationError
 from collections import defaultdict
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from datetime import datetime
 from ..config_manager import ConfigManager
 from .base import BaseScraper, get_season_from_title
@@ -86,9 +86,11 @@ class TencentScraper(BaseScraper):
     用于从腾讯视频抓取分集信息和弹幕的客户端。
     """
     provider_name = "tencent"
+    handled_domains = ["v.qq.com"]
+    referer = "https://v.qq.com/"
 
-    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
-        super().__init__(pool, config_manager)
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager):
+        super().__init__(session_factory, config_manager)
         # 修正：使用更健壮的正则表达式来过滤非正片内容
         # 合并了用户脚本中的关键词，并增加了对 "纯享版"、"会员版" 等常见衍生内容的过滤
         self._EPISODE_BLACKLIST_PATTERN = re.compile(
@@ -112,25 +114,17 @@ class TencentScraper(BaseScraper):
         """关闭HTTP客户端"""
         await self.client.aclose()
 
-    async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
-        """通过腾讯搜索API查找番剧。"""
-        # 修正：缓存键必须包含分集信息，以区分对同一标题的不同分集搜索
-        cache_key_suffix = f"_s{episode_info['season']}e{episode_info['episode']}" if episode_info else ""
-        cache_key = f"search_{self.provider_name}_{keyword}{cache_key_suffix}"
-        cached_results = await self._get_from_cache(cache_key)
-        if cached_results is not None:
-            self.logger.info(f"Tencent: 从缓存中命中搜索结果 '{keyword}{cache_key_suffix}'")
-            return [models.ProviderSearchInfo.model_validate(r) for r in cached_results]
-
+    async def _search_desktop_api(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """通过腾讯桌面搜索API查找番剧。"""
         url = "https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.HttpMobileRecall/MbSearchHttp"
         request_model = TencentSearchRequest(query=keyword)
         payload = request_model.model_dump(by_alias=True)
         results = []
         try:
-            self.logger.info(f"Tencent: 正在搜索 '{keyword}'...")
+            self.logger.info(f"Tencent (桌面API): 正在搜索 '{keyword}'...")
             response = await self.client.post(url, json=payload)
             if await self._should_log_responses():
-                scraper_responses_logger.debug(f"Tencent Search Response (keyword='{keyword}'): {response.text}")
+                scraper_responses_logger.debug(f"Tencent Desktop Search Response (keyword='{keyword}'): {response.text}")
 
             response.raise_for_status()
             response_json = response.json()
@@ -138,65 +132,152 @@ class TencentScraper(BaseScraper):
 
             if data.data and data.data.normal_list:
                 for item in data.data.normal_list.item_list:
-                    # 新增：检查 video_info 是否存在，因为API有时会返回null
-                    if not item.video_info:
-                        self.logger.debug(f"Tencent: 过滤掉一个条目，因为它缺少 'videoInfo'。")
-                        continue
-                    # 参考C#代码，增加对年份的过滤，可以有效排除很多不相关的结果（如：资讯、短视频等）
-                    if not item.video_info.year or item.video_info.year == 0:
-                        self.logger.debug(f"Tencent: 过滤掉结果 '{item.video_info.title}'，因为它缺少有效的年份信息。")
-                        continue
+                    if not item.video_info: continue
+                    if not item.video_info.year or item.video_info.year == 0: continue
 
                     video_info = item.video_info
-                    # 清理标题中的HTML高亮标签 (如 <em>)，并先进行HTML解码
                     unescaped_title = html.unescape(video_info.title)
                     cleaned_title = re.sub(r'<[^>]+>', '', unescaped_title)
 
-                    # 相似度检查：确保搜索词与结果标题相关。
-                    # 这是对 C# 中 .Distance() 方法的简化实现，只进行简单的包含检查。
-                    if keyword.lower() not in cleaned_title.lower():
-                        self.logger.debug(f"Tencent: 过滤掉结果 '{cleaned_title}'，因为它与搜索词 '{keyword}' 不直接相关。")
-                        continue
+                    if keyword.lower() not in cleaned_title.lower(): continue
 
-                    # 将腾讯的类型映射到我们内部的类型
                     media_type = "movie" if "电影" in video_info.type_name else "tv_series"
-
-                    # 新增：提取总集数
-                    episode_count = None
-                    if video_info.subject_doc:
-                        episode_count = video_info.subject_doc.video_num
-
-                    # 新增：如果搜索时指定了集数，则将其附加到结果中
+                    episode_count = video_info.subject_doc.video_num if video_info.subject_doc else None
                     current_episode = episode_info.get("episode") if episode_info else None
-
-                    # 在返回前统一冒号
                     final_title = cleaned_title.replace(":", "：")
 
                     provider_search_info = models.ProviderSearchInfo(
-                        provider=self.provider_name,
-                        mediaId=item.doc.id,
-                        title=final_title,
-                        type=media_type,
-                        season=get_season_from_title(final_title),
-                        year=video_info.year,
-                        imageUrl=video_info.img_url,
-                        episodeCount=episode_count,
-                        currentEpisodeIndex=current_episode
+                        provider=self.provider_name, mediaId=item.doc.id, title=final_title,
+                        type=media_type, season=get_season_from_title(final_title),
+                        year=video_info.year, imageUrl=video_info.img_url,
+                        episodeCount=episode_count, currentEpisodeIndex=current_episode
                     )
-                    self.logger.debug(f"Tencent: 创建的 ProviderSearchInfo: {provider_search_info.model_dump_json(indent=2)}")
                     results.append(provider_search_info)
         except httpx.HTTPStatusError as e:
-            self.logger.error(f"搜索请求失败: {e}")
+            self.logger.error(f"Tencent (桌面API): 搜索请求失败: {e}")
         except (ValidationError, KeyError) as e:
-            self.logger.error(f"解析搜索结果失败: {e}", exc_info=True)
-        
-        self.logger.info(f"Tencent: 搜索 '{keyword}' 完成，找到 {len(results)} 个有效结果。")
-        if results:
-            log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in results])
-            self.logger.info(f"Tencent: 搜索结果列表:\n{log_results}")
-        results_to_cache = [r.model_dump() for r in results]
-        await self._set_to_cache(cache_key, results_to_cache, 'search_ttl_seconds', 300)
+            self.logger.error(f"Tencent (桌面API): 解析搜索结果失败: {e}", exc_info=True)
         return results
+
+    async def _search_mobile_api(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """通过腾讯移动端搜索API查找番剧。"""
+        url = "https://pbaccess.video.qq.com/trpc.videosearch.mobile_search.HttpMobileRecall/MbSearchHttp"
+        request_model = TencentSearchRequest(query=keyword)
+        payload = request_model.model_dump(by_alias=True)
+        headers = self.base_headers.copy()
+        headers['User-Agent'] = 'live4iphoneRel/9.01.46 (iPhone; iOS 18.5; Scale/3.00)'
+        
+        results = []
+        try:
+            self.logger.info(f"Tencent (移动API): 正在搜索 '{keyword}'...")
+            response = await self.client.post(url, json=payload, headers=headers)
+            if await self._should_log_responses():
+                scraper_responses_logger.debug(f"Tencent Mobile Search Response (keyword='{keyword}'): {response.text}")
+
+            response.raise_for_status()
+            response_json = response.json()
+            data = TencentSearchResult.model_validate(response_json)
+
+            if data.data and data.data.normal_list:
+                for item in data.data.normal_list.item_list:
+                    if not item.video_info: continue
+                    if not item.video_info.year or item.video_info.year == 0: continue
+
+                    video_info = item.video_info
+                    unescaped_title = html.unescape(video_info.title)
+                    cleaned_title = re.sub(r'<[^>]+>', '', unescaped_title)
+
+                    if keyword.lower() not in cleaned_title.lower(): continue
+
+                    media_type = "movie" if "电影" in video_info.type_name else "tv_series"
+                    episode_count = video_info.subject_doc.video_num if video_info.subject_doc else None
+                    current_episode = episode_info.get("episode") if episode_info else None
+                    final_title = cleaned_title.replace(":", "：")
+
+                    provider_search_info = models.ProviderSearchInfo(
+                        provider=self.provider_name, mediaId=item.doc.id, title=final_title,
+                        type=media_type, season=get_season_from_title(final_title),
+                        year=video_info.year, imageUrl=video_info.img_url,
+                        episodeCount=episode_count, currentEpisodeIndex=current_episode
+                    )
+                    results.append(provider_search_info)
+        except httpx.HTTPStatusError as e:
+            self.logger.error(f"Tencent (移动API): 搜索请求失败: {e}")
+        except (ValidationError, KeyError) as e:
+            self.logger.error(f"Tencent (移动API): 解析搜索结果失败: {e}", exc_info=True)
+        return results
+
+    async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """并发执行桌面端和移动端搜索，并合并去重结果。"""
+        # 修正：缓存键必须包含分集信息，以区分对同一标题的不同分集搜索
+        cache_key_suffix = f"_s{episode_info['season']}e{episode_info['episode']}" if episode_info else ""
+        cache_key = f"search_{self.provider_name}_{keyword}{cache_key_suffix}"
+        cached_results = await self._get_from_cache(cache_key)
+        if cached_results is not None:
+            self.logger.info(f"Tencent (合并): 从缓存中命中搜索结果 '{keyword}{cache_key_suffix}'")
+            return [models.ProviderSearchInfo.model_validate(r) for r in cached_results]
+
+        desktop_task = self._search_desktop_api(keyword, episode_info)
+        mobile_task = self._search_mobile_api(keyword, episode_info)
+        
+        results_lists = await asyncio.gather(desktop_task, mobile_task, return_exceptions=True)
+        
+        all_results = []
+        for i, res_list in enumerate(results_lists):
+            api_name = "桌面API" if i == 0 else "移动API"
+            if isinstance(res_list, list):
+                all_results.extend(res_list)
+            elif isinstance(res_list, Exception):
+                self.logger.error(f"Tencent ({api_name}): 搜索子任务失败: {res_list}", exc_info=True)
+
+        # 基于 mediaId 去重
+        unique_results = list({item.mediaId: item for item in all_results}.values())
+
+        self.logger.info(f"Tencent (合并): 搜索 '{keyword}' 完成，找到 {len(unique_results)} 个唯一结果。")
+        if unique_results:
+            log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in unique_results])
+            self.logger.info(f"Tencent (合并): 搜索结果列表:\n{log_results}")
+
+        if unique_results:
+            results_to_cache = [r.model_dump() for r in unique_results]
+            await self._set_to_cache(cache_key, results_to_cache, 'search_ttl_seconds', 300)
+        return unique_results
+
+    async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
+        """从腾讯视频URL中提取作品信息。"""
+        self.logger.info(f"Tencent: 正在从URL提取信息: {url}")
+        cid_match = re.search(r'/cover/([^/]+?)(/|\.html|$)', url)
+        if not cid_match:
+            self.logger.warning(f"Tencent: 无法从URL中解析出cid: {url}")
+            return None
+        
+        cid = cid_match.group(1)
+        
+        try:
+            response = await self.client.get(url)
+            response.raise_for_status()
+            html_content = response.text
+
+            title_match = re.search(r'<title>(.*?)</title>', html_content)
+            title = title_match.group(1).split('-')[0].strip() if title_match else "未知标题"
+
+            # 尝试从页面JSON中获取更精确的信息
+            json_match = re.search(r'window\.video_next_list\s*=\s*({.*?});', html_content)
+            media_type = "tv_series" # 默认
+            if json_match:
+                try:
+                    data = json.loads(json_match.group(1))
+                    if data.get("type") == "1": media_type = "movie"
+                except json.JSONDecodeError:
+                    pass
+
+            return models.ProviderSearchInfo(
+                provider=self.provider_name, mediaId=cid, title=title, type=media_type, season=get_season_from_title(title)
+            )
+        except Exception as e:
+            self.logger.error(f"Tencent: 从URL '{url}' 提取信息失败: {e}", exc_info=True)
+            return None
+
     async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         """
         获取分集列表。
@@ -575,7 +656,7 @@ class TencentScraper(BaseScraper):
 
         return formatted_comments
 
-    async def get_vid_from_url(self, url: str) -> Optional[str]:
+    async def get_id_from_url(self, url: str) -> Optional[str]:
         """从腾讯视频URL中提取 vid。"""
         # 腾讯视频的URL格式多样，但通常vid是路径的最后一部分
         match = re.search(r'/([a-zA-Z0-9]+)\.html', url)

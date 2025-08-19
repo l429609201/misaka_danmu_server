@@ -2,6 +2,25 @@
    Edit Anime & Episode View Styles
    ========================================================================== */
 
+/* 使用网格布局以更好地利用宽屏空间 */
+#edit-anime-form {
+    display: grid;
+    /* 创建两列，但在窄屏上会自动变为单列 */
+    grid-template-columns: repeat(auto-fit, minmax(550px, 1fr));
+    gap: 15px 30px; /* 行间距15px, 列间距30px */
+    align-items: start; /* 垂直方向顶部对齐 */
+}
+
+/* 用于需要占据整行的表单项的工具类 */
+#edit-anime-form .form-row-full-width {
+    grid-column: 1 / -1;
+}
+
+/* 确保底部的操作按钮也占据整行 */
+#edit-anime-form .form-actions {
+    grid-column: 1 / -1;
+}
+
 /* --- Main Edit Form --- */
 
 #edit-anime-form input::placeholder {
@@ -68,6 +87,42 @@
 
 .input-with-icon .icon-btn:disabled:hover {
     background-color: #f5f7fa;
+}
+
+/* --- Input with multiple Icons --- */
+.input-with-icons {
+    display: flex;
+    align-items: stretch;
+    flex-grow: 1;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    overflow: hidden;
+}
+
+.input-with-icons input {
+    flex-grow: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    padding: 10px;
+    font-size: 16px;
+}
+
+.input-with-icons .icon-btn {
+    flex-shrink: 0;
+    width: 38px;
+    border: none;
+    border-left: 1px solid var(--border-color);
+    background-color: var(--secondary-color);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0;
+    transition: background-color 0.2s;
+}
+
+.input-with-icons .icon-btn:hover {
+    background-color: #e9ecef;
 }
 
 /* --- Input with Apply Button (for suggested aliases) --- */

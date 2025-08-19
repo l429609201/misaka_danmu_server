@@ -7,10 +7,10 @@ import html
 import json
 from urllib.parse import urlencode
 from typing import Any, Callable, Dict, List, Optional, Union
+
 from datetime import datetime
 from collections import defaultdict
-
-import aiomysql
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from .. import crud
 import httpx
 from pydantic import BaseModel, Field, ValidationError
@@ -154,6 +154,8 @@ class BuvidResponse(BaseModel):
 
 class BilibiliScraper(BaseScraper):
     provider_name = "bilibili"
+    handled_domains = ["www.bilibili.com", "b23.tv"]
+    referer = "https://www.bilibili.com/"
 
     # English keywords that often appear as standalone acronyms or words
     _ENG_JUNK = r'NC|OP|ED|SP|OVA|OAD|CM|PV|MV|BDMenu|Menu|Bonus|Recap|Teaser|Trailer|Preview|CD|Disc|Scan|Sample|Logo|Info|EDPV|SongSpot|BDSpot'
@@ -178,9 +180,8 @@ class BilibiliScraper(BaseScraper):
         61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
         36, 20, 34, 44, 52
     ]
-
-    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
-        super().__init__(pool, config_manager)
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager):
+        super().__init__(session_factory, config_manager)
         self.client = httpx.AsyncClient(
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -219,7 +220,8 @@ class BilibiliScraper(BaseScraper):
         """
         if not hasattr(self, '_config_loaded') or self._config_loaded is False or force_refresh:
             self.logger.debug("Bilibili: 正在从数据库加载Cookie...")
-            cookie_str = await crud.get_config_value(self.pool, "bilibili_cookie", "")
+            async with self._session_factory() as session:
+                cookie_str = await crud.get_config_value(session, "bilibili_cookie", "")
             
             self.client.cookies.clear()
 
@@ -301,7 +303,8 @@ class BilibiliScraper(BaseScraper):
             
             if "SESSDATA" in self.client.cookies:
                 cookie_string = "; ".join(all_cookies)
-                await crud.update_config_value(self.pool, "bilibili_cookie", cookie_string)
+                async with self._session_factory() as session:
+                    await crud.update_config_value(session, "bilibili_cookie", cookie_string)
                 self.logger.info("Bilibili: 新的登录Cookie已保存到数据库。")
                 self._config_loaded = False
             else:
@@ -324,13 +327,14 @@ class BilibiliScraper(BaseScraper):
             return await self.poll_login_status(qrcode_key)
         elif action_name == "logout":
             # 从数据库中清除cookie
-            await crud.update_config_value(self.pool, "bilibili_cookie", "")
+            async with self._session_factory() as session:
+                await crud.update_config_value(session, "bilibili_cookie", "")
             self._config_loaded = False  # 强制下次请求时重新加载配置
             return {"message": "注销成功"}
         else:
             return await super().execute_action(action_name, payload)
 
-    async def get_ids_from_url(self, url: str) -> Optional[Dict[str, int]]:
+    async def get_id_from_url(self, url: str) -> Optional[Dict[str, int]]:
         """
         从一个Bilibili视频URL中获取aid和cid。
         """
@@ -391,6 +395,11 @@ class BilibiliScraper(BaseScraper):
         except Exception as e:
             self.logger.error(f"Bilibili: 从URL {url} 获取或解析页面ID失败: {e}", exc_info=True)
             return None
+
+    def format_episode_id_for_comments(self, provider_episode_id: Any) -> str:
+        if isinstance(provider_episode_id, dict):
+            return f"{provider_episode_id.get('aid')},{provider_episode_id.get('cid')}"
+        return str(provider_episode_id)
 
     async def _get_wbi_mixin_key(self) -> str:
         """获取用于WBI签名的mixinKey，带缓存。"""
@@ -470,7 +479,8 @@ class BilibiliScraper(BaseScraper):
         if final_results:
             log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in final_results])
             self.logger.info(f"Bilibili: 搜索结果列表:\n{log_results}")
-        await self._set_to_cache(cache_key, [r.model_dump() for r in final_results], 'search_ttl_seconds', 300)
+        if final_results:
+            await self._set_to_cache(cache_key, [r.model_dump() for r in final_results], 'search_ttl_seconds', 300)
         return final_results
 
     async def _search_by_type(self, keyword: str, search_type: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
@@ -527,6 +537,57 @@ class BilibiliScraper(BaseScraper):
             self.logger.error(f"Bilibili: Search for type '{search_type}' failed: {e}", exc_info=True)
         
         return results
+
+    async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
+        """从B站URL中提取作品信息。"""
+        self.logger.info(f"Bilibili: 正在从URL提取信息: {url}")
+        await self._ensure_config_and_cookie()
+
+        # 尝试从URL中解析 season_id 或 bvid
+        ss_match = re.search(r'season/ss(\d+)', url)
+        ep_match = re.search(r'play/ep(\d+)', url)
+        bv_match = re.search(r'video/(BV[a-zA-Z0-9]+)', url)
+
+        media_info = None
+
+        if ss_match or ep_match:
+            # 处理番剧 (PGC)
+            season_id = None
+            if ss_match:
+                season_id = ss_match.group(1)
+            elif ep_match:
+                # 如果是分集链接，需要访问页面获取 season_id
+                try:
+                    page_res = await self._request_with_rate_limit("GET", url)
+                    page_res.raise_for_status()
+                    season_match_from_page = re.search(r'"season_id":(\d+)', page_res.text)
+                    if season_match_from_page:
+                        season_id = season_match_from_page.group(1)
+                except Exception as e:
+                    self.logger.error(f"Bilibili: 从ep链接获取season_id失败: {e}")
+            
+            if season_id:
+                api_url = f"https://api.bilibili.com/pgc/view/web/season?season_id={season_id}"
+                response = await self._request_with_rate_limit("GET", api_url)
+                response.raise_for_status()
+                data = response.json().get("result", {})
+                media_info = BiliSearchMedia.model_validate(data)
+
+        elif bv_match:
+            # 处理普通视频 (UGC)
+            bvid = bv_match.group(1)
+            api_url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
+            response = await self._request_with_rate_limit("GET", api_url)
+            response.raise_for_status()
+            data = response.json().get("data", {})
+            media_info = BiliSearchMedia(title=data.get("title"), bvid=bvid, cover=data.get("pic"))
+
+        if not media_info:
+            return None
+
+        # 将获取到的信息转换为 ProviderSearchInfo
+        return self._bili_media_to_provider_info(media_info)
+
 
     async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         if media_id.startswith("ss"):

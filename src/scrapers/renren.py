@@ -13,7 +13,7 @@ import uuid
 from typing import Any, Callable, Dict, List, Mapping, Optional
 from urllib.parse import urlencode, urlparse
 
-import aiomysql
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import httpx
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
@@ -201,9 +201,11 @@ class RrspDanmuItem(BaseModel):
 
 class RenrenScraper(BaseScraper):
     provider_name = "renren"
+    handled_domains = ["www.rrsp.com.cn"]
+    referer = "https://rrsp.com.cn/"
 
-    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
-        super().__init__(pool, config_manager)
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager):
+        super().__init__(session_factory, config_manager)
         self.client = httpx.AsyncClient(timeout=20.0, follow_redirects=True)
         self._api_lock = asyncio.Lock()
         self._last_request_time = 0.0
@@ -285,8 +287,19 @@ class RenrenScraper(BaseScraper):
             log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in results])
             self.logger.info(f"renren: 搜索结果列表:\n{log_results}")
 
-        await self._set_to_cache(cache_key, [r.model_dump() for r in results], 'search_ttl_seconds', 300)
+        if results:
+            await self._set_to_cache(cache_key, [r.model_dump() for r in results], 'search_ttl_seconds', 300)
         return results
+
+    async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
+        """(未实现) 从URL中提取作品信息。"""
+        self.logger.warning(f"从URL导入功能尚未为 {self.provider_name} 实现。")
+        raise NotImplementedError(f"从URL导入功能尚未为 {self.provider_name} 实现。")
+
+    async def get_id_from_url(self, url: str) -> Optional[str]:
+        """(未实现) 从URL中提取分集ID。"""
+        self.logger.warning(f"从URL手动导入分集功能尚未为 {self.provider_name} 实现。")
+        raise NotImplementedError(f"从URL手动导入分集功能尚未为 {self.provider_name} 实现。")
 
     async def _fetch_drama_detail(self, drama_id: str) -> Optional[RrspDramaDetailEnvelope]:
         url = f"{BASE_API}/m-station/drama/page"

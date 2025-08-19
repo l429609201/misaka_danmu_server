@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import pkgutil
 import inspect
 import logging
 from datetime import datetime
@@ -7,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Type
 from uuid import uuid4
 
-import aiomysql
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR, JobExecutionEvent
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -45,8 +46,8 @@ def cron_is_valid(cron: str, min_hours: int) -> bool:
 # --- Scheduler Manager ---
 
 class SchedulerManager:
-    def __init__(self, pool: aiomysql.Pool, task_manager: TaskManager, scraper_manager: ScraperManager):
-        self.pool = pool
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: TaskManager, scraper_manager: ScraperManager):
+        self._session_factory = session_factory
         self.task_manager = task_manager
         self.scraper_manager = scraper_manager
         self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
@@ -56,22 +57,22 @@ class SchedulerManager:
         """
         动态发现并加载 'jobs' 目录下的所有任务类。
         """
-        jobs_dir = Path(__file__).parent / "jobs"
-        for file in jobs_dir.glob("*.py"):
-            if file.name.startswith("_") or file.name == "base.py":
+        jobs_package_path = [str(Path(__file__).parent / "jobs")]
+        for finder, name, ispkg in pkgutil.iter_modules(jobs_package_path):
+            if name.startswith("_") or name == "base":
                 continue
 
-            module_name = f".jobs.{file.stem}"
             try:
-                module = importlib.import_module(module_name, package="src")
-                for name, obj in inspect.getmembers(module, inspect.isclass):
+                module_name = f"src.jobs.{name}"
+                module = importlib.import_module(module_name)
+                for class_name, obj in inspect.getmembers(module, inspect.isclass):
                     if issubclass(obj, BaseJob) and obj is not BaseJob:
                         if obj.job_type in self._job_classes:
                             logger.warning(f"发现重复的定时任务类型 '{obj.job_type}'。将被覆盖。")
                         self._job_classes[obj.job_type] = obj
-                        logger.info(f"定时任务 '{obj.job_name}' (类型: {obj.job_type}) 已加载。")
+                        logger.info(f"定时任务 '{obj.job_name}' (类型: {obj.job_type}, 来自模块 {name}) 已加载。")
             except Exception as e:
-                logger.error(f"从 {file.name} 加载定时任务失败: {e}")
+                logger.error(f"从模块 {name} 加载定时任务失败: {e}")
 
     def get_available_jobs(self) -> List[Dict[str, str]]:
         """获取所有已加载的可用任务类型及其名称。"""
@@ -82,8 +83,8 @@ class SchedulerManager:
         job_class = self._job_classes[job_type]
         
         async def runner():
-            job_instance = job_class(self.pool, self.task_manager, self.scraper_manager)
-            task_coro_factory = lambda callback: job_instance.run(callback)
+            job_instance = job_class(self._session_factory, self.task_manager, self.scraper_manager)
+            task_coro_factory = lambda session, callback: job_instance.run(session, callback)
             task_id, done_event = await self.task_manager.submit_task(task_coro_factory, job_instance.job_name)
             # The apscheduler job now waits for the actual task to complete.
             await done_event.wait()
@@ -107,7 +108,8 @@ class SchedulerManager:
             # 这比 job.last_run_time 更可靠，因为它直接来自刚刚发生的事件，
             # 并且能确保手动触发的任务也能正确记录运行时间。
             last_run_time = event.scheduled_run_time
-            await crud.update_scheduled_task_run_times(self.pool, job.id, last_run_time, job.next_run_time)
+            async with self._session_factory() as session:
+                await crud.update_scheduled_task_run_times(session, job.id, last_run_time, job.next_run_time)
             logger.info(f"已更新定时任务 '{job.name}' (ID: {job.id}) 的运行时间。")
 
     async def start(self):
@@ -122,21 +124,23 @@ class SchedulerManager:
         self.scheduler.shutdown()
 
     async def load_jobs_from_db(self):
-        tasks = await crud.get_scheduled_tasks(self.pool)
-        for task in tasks:
-            if task['job_type'] in self._job_classes:
-                try:
-                    runner = self._create_job_runner(task['job_type'])
-                    job = self.scheduler.add_job(runner, CronTrigger.from_crontab(task['cron_expression']), id=task['id'], name=task['name'], replace_existing=True)
-                    if not task['is_enabled']: self.scheduler.pause_job(task['id'])
-                    # When loading, the job object is new and has no last_run_time. We only need to update the next_run_time.
-                    await crud.update_scheduled_task_run_times(self.pool, job.id, task['last_run_at'], job.next_run_time)
-                except Exception as e:
-                    logger.error(f"加载定时任务 '{task['name']}' (ID: {task['id']}) 失败: {e}")
+        async with self._session_factory() as session:
+            tasks = await crud.get_scheduled_tasks(session)
+            for task in tasks:
+                if task['job_type'] in self._job_classes:
+                    try:
+                        runner = self._create_job_runner(task['job_type'])
+                        job = self.scheduler.add_job(runner, CronTrigger.from_crontab(task['cron_expression']), id=task['id'], name=task['name'], replace_existing=True)
+                        if not task['is_enabled']: self.scheduler.pause_job(task['id'])
+                        # When loading, the job object is new and has no last_run_time. We only need to update the next_run_time.
+                        await crud.update_scheduled_task_run_times(session, job.id, task['last_run_at'], job.next_run_time)
+                    except Exception as e:
+                        logger.error(f"加载定时任务 '{task['name']}' (ID: {task['id']}) 失败: {e}")
 
     async def get_all_tasks(self) -> List[Dict[str, Any]]:
         """从数据库获取所有定时任务的列表。"""
-        return await crud.get_scheduled_tasks(self.pool)
+        async with self._session_factory() as session:
+            return await crud.get_scheduled_tasks(session)
 
     async def add_task(self, name: str, job_type: str, cron: str, is_enabled: bool) -> Dict[str, Any]:
         if job_type not in self._job_classes:
@@ -146,41 +150,44 @@ class SchedulerManager:
             raise ValueError("定时增量更新任务的轮询间隔不得低于3小时。请使用如 '0 */3 * * *' (每3小时) 或更长的间隔。")
         
         # 新增：确保“定时追更”任务只能创建一个
-        if job_type == "incremental_refresh":
-            exists = await crud.check_scheduled_task_exists_by_type(self.pool, "incremental_refresh")
-            if exists:
-                raise ValueError("“定时追更”任务已存在，无法重复创建。")
+        async with self._session_factory() as session:
+            if job_type == "incremental_refresh":
+                exists = await crud.check_scheduled_task_exists_by_type(session, "incremental_refresh")
+                if exists:
+                    raise ValueError("“定时追更”任务已存在，无法重复创建。")
 
-        task_id = str(uuid4())
-        await crud.create_scheduled_task(self.pool, task_id, name, job_type, cron, is_enabled)
-        runner = self._create_job_runner(job_type)
-        job = self.scheduler.add_job(runner, CronTrigger.from_crontab(cron), id=task_id, name=name)
-        if not is_enabled: job.pause()        
-        await crud.update_scheduled_task_run_times(self.pool, task_id, None, job.next_run_time)
-        return await crud.get_scheduled_task(self.pool, task_id)
+            task_id = str(uuid4())
+            await crud.create_scheduled_task(session, task_id, name, job_type, cron, is_enabled)
+            runner = self._create_job_runner(job_type)
+            job = self.scheduler.add_job(runner, CronTrigger.from_crontab(cron), id=task_id, name=name)
+            if not is_enabled: job.pause()        
+            await crud.update_scheduled_task_run_times(session, task_id, None, job.next_run_time)
+            return await crud.get_scheduled_task(session, task_id)
 
     async def update_task(self, task_id: str, name: str, cron: str, is_enabled: bool) -> Optional[Dict[str, Any]]:
-        job = self.scheduler.get_job(task_id)
-        if not job: return None
+        async with self._session_factory() as session:
+            job = self.scheduler.get_job(task_id)
+            if not job: return None
 
-        task_info = await crud.get_scheduled_task(self.pool, task_id)
-        if not task_info: return None
-        job_type = task_info['job_type']
+            task_info = await crud.get_scheduled_task(session, task_id)
+            if not task_info: return None
+            job_type = task_info['job_type']
 
-        # 确保增量更新任务的轮询间隔不低于3小时
-        if job_type == "incremental_refresh" and not cron_is_valid(cron, 3):
-            raise ValueError("定时增量更新任务的轮询间隔不得低于3小时。请使用如 '0 */3 * * *' (每3小时) 或更长的间隔。")
-        await crud.update_scheduled_task(self.pool, task_id, name, cron, is_enabled)
-        job.modify(name=name)
-        job.reschedule(trigger=CronTrigger.from_crontab(cron))
-        if is_enabled: job.resume()
-        else: job.pause()
-        await crud.update_scheduled_task_run_times(self.pool, task_id, job.last_run_time, job.next_run_time)
-        return await crud.get_scheduled_task(self.pool, task_id)
+            # 确保增量更新任务的轮询间隔不低于3小时
+            if job_type == "incremental_refresh" and not cron_is_valid(cron, 3):
+                raise ValueError("定时增量更新任务的轮询间隔不得低于3小时。请使用如 '0 */3 * * *' (每3小时) 或更长的间隔。")
+            await crud.update_scheduled_task(session, task_id, name, cron, is_enabled)
+            job.modify(name=name)
+            job.reschedule(trigger=CronTrigger.from_crontab(cron))
+            if is_enabled: job.resume()
+            else: job.pause()
+            await crud.update_scheduled_task_run_times(session, task_id, task_info['last_run_at'], job.next_run_time)
+            return await crud.get_scheduled_task(session, task_id)
 
     async def delete_task(self, task_id: str):
         if self.scheduler.get_job(task_id): self.scheduler.remove_job(task_id)
-        await crud.delete_scheduled_task(self.pool, task_id)
+        async with self._session_factory() as session:
+            await crud.delete_scheduled_task(session, task_id)
 
     async def run_task_now(self, task_id: str):
         if job := self.scheduler.get_job(task_id):

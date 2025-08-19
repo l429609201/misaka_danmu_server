@@ -1,7 +1,6 @@
 import asyncio
-import base64
-import aiomysql
 import hashlib
+import base64
 import json
 import logging
 import re
@@ -9,6 +8,7 @@ import time
 from typing import Any, Dict, List, Optional, Union, Callable
 from collections import defaultdict
 from urllib.parse import urlencode
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -92,10 +92,12 @@ class YoukuRpcResult(BaseModel):
 
 class YoukuScraper(BaseScraper):
     provider_name = "youku"
+    handled_domains = ["v.youku.com"]
+    referer = "https://v.youku.com"
     _EPISODE_BLACKLIST_KEYWORDS = ["彩蛋", "加更", "走心", "解忧", "纯享"]
 
-    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
-        super().__init__(pool, config_manager)
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager):
+        super().__init__(session_factory, config_manager)
         # Regexes from C#
         self.year_reg = re.compile(r"[12][890][0-9][0-9]")
         self.unused_words_reg = re.compile(r"<[^>]+>|【.+?】")
@@ -177,9 +179,15 @@ class YoukuScraper(BaseScraper):
         if results:
             log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in results])
             self.logger.info(f"Youku: 搜索结果列表:\n{log_results}")
-        results_to_cache = [r.model_dump() for r in results]
-        await self._set_to_cache(cache_key, results_to_cache, 'search_ttl_seconds', 300)
+        if results:
+            results_to_cache = [r.model_dump() for r in results]
+            await self._set_to_cache(cache_key, results_to_cache, 'search_ttl_seconds', 300)
         return results
+
+    async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
+        """(未实现) 从URL中提取作品信息。"""
+        self.logger.warning(f"从URL导入功能尚未为 {self.provider_name} 实现。")
+        raise NotImplementedError(f"从URL导入功能尚未为 {self.provider_name} 实现。")
 
     async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         # 优酷的逻辑不区分电影和电视剧，都是从一个show_id获取列表，
@@ -328,9 +336,8 @@ class YoukuScraper(BaseScraper):
                 self.logger.error(f"Youku: 无法连接到 acs.youku.com 获取令牌 cookie。弹幕获取很可能会失败。错误: {e}")
         
         self._token = token_val.split("_")[0] if token_val else ""
-
-        if not self._cna or not self._token:
-            self.logger.warning(f"Youku: 未能获取到弹幕签名所需的全部 cookie。 cna: '{self._cna}', token: '{self._token}'")
+        if not self._token:
+            self.logger.warning("Youku: 未能获取到弹幕签名所需的 token cookie (_m_h5_tk)，弹幕获取可能会失败。")
 
     def _generate_msg_sign(self, msg_enc: str) -> str:
         s = msg_enc + "MkmC9SoIw6xCkSKHhJ7b5D2r51kBiREr"
@@ -444,7 +451,7 @@ class YoukuScraper(BaseScraper):
             formatted.append({"cid": str(c.id), "p": p_string, "m": c.content, "t": round(timestamp, 2)})
         return formatted
 
-    async def get_vid_from_url(self, url: str) -> Optional[str]:
+    async def get_id_from_url(self, url: str) -> Optional[str]:
         """从优酷视频URL中提取 vid。"""
         # 优酷的URL格式通常是 v.youku.com/v_show/id_XXXXXXXX.html
         # 修正：移除对 .html 后缀的强制要求，以兼容新版URL

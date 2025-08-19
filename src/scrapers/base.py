@@ -4,10 +4,10 @@ import asyncio
 import re
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Type
-
+from typing import Union
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-import aiomysql
 from .. import crud
 from .. import models
 from ..config_manager import ConfigManager
@@ -72,9 +72,8 @@ class BaseScraper(ABC):
     所有搜索源的抽象基类。
     定义了搜索媒体、获取分集和获取弹幕的通用接口。
     """
-
-    def __init__(self, pool: aiomysql.Pool, config_manager: ConfigManager):
-        self.pool = pool
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager):
+        self._session_factory = session_factory
         self.config_manager = config_manager
         self.logger = logging.getLogger(self.__class__.__name__)
         self.client: Optional[httpx.AsyncClient] = None
@@ -86,14 +85,15 @@ class BaseScraper(ABC):
         """
         proxy_url_task = self.config_manager.get("proxy_url", "")
         proxy_enabled_globally_task = self.config_manager.get("proxy_enabled", "false")
-        scraper_settings_task = crud.get_all_scraper_settings(self.pool)
 
-        proxy_url, proxy_enabled_str, scraper_settings = await asyncio.gather(
-            proxy_url_task, proxy_enabled_globally_task, scraper_settings_task
-        )
+        async with self._session_factory() as session:
+            scraper_settings_task = crud.get_all_scraper_settings(session)
+            proxy_url, proxy_enabled_str, scraper_settings = await asyncio.gather(
+                proxy_url_task, proxy_enabled_globally_task, scraper_settings_task
+            )
         proxy_enabled_globally = proxy_enabled_str.lower() == 'true'
 
-        provider_setting = next((s for s in scraper_settings if s['provider_name'] == self.provider_name), None)
+        provider_setting = next((s for s in scraper_settings if s['providerName'] == self.provider_name), None)
         use_proxy_for_this_provider = provider_setting.get('use_proxy', False) if provider_setting else False
 
         proxy_to_use = proxy_url if proxy_enabled_globally and use_proxy_for_this_provider and proxy_url else None
@@ -103,20 +103,28 @@ class BaseScraper(ABC):
 
     async def _get_from_cache(self, key: str) -> Optional[Any]:
         """从数据库缓存中获取数据。"""
-        return await crud.get_cache(self.pool, key)
+        async with self._session_factory() as session:
+            return await crud.get_cache(session, key)
 
     async def _set_to_cache(self, key: str, value: Any, config_key: str, default_ttl: int):
         """将数据存入数据库缓存，TTL从配置中读取。"""
         ttl_str = await self.config_manager.get(config_key, str(default_ttl))
         ttl = int(ttl_str)
         if ttl > 0:
-            await crud.set_cache(self.pool, key, value, ttl, provider=self.provider_name)
+            async with self._session_factory() as session:
+                await crud.set_cache(session, key, value, ttl, provider=self.provider_name)
 
     # 每个子类都必须覆盖这个类属性
     provider_name: str
 
     # (可选) 子类可以覆盖此字典来声明其可配置的字段
     configurable_fields: Dict[str, str] = {}
+
+    # (新增) 子类应覆盖此列表，声明它们可以处理的域名
+    handled_domains: List[str] = []
+
+    # (新增) 子类可以覆盖此属性，以提供一个默认的 Referer
+    referer: Optional[str] = None
 
     # (新增) 子类可以覆盖此属性，以表明其是否支持日志记录
     is_loggable: bool = True
@@ -135,18 +143,17 @@ class BaseScraper(ABC):
         获取并编译此源的自定义分集黑名单正则表达式。
         结果会被缓存以提高性能。
         """
-        if hasattr(self, '_blacklist_pattern_cache'):
-            return self._blacklist_pattern_cache
-
+        # 移除实例级别的缓存，直接依赖 ConfigManager 的缓存机制。
+        # ConfigManager 的缓存会在配置更新时被正确地失效。
         key = f"{self.provider_name}_episode_blacklist_regex"
         regex_str = await self.config_manager.get(key, "")
         if regex_str:
             try:
-                self._blacklist_pattern_cache = re.compile(regex_str, re.IGNORECASE)
-                return self._blacklist_pattern_cache
+                # 每次调用都重新编译，因为 ConfigManager 会缓存 regex_str，
+                # 这里的开销很小。
+                return re.compile(regex_str, re.IGNORECASE)
             except re.error as e:
-                self.logger.error(f"无效的黑名单正则表达式: {e}")
-        self._blacklist_pattern_cache = None
+                self.logger.error(f"无效的黑名单正则表达式: '{regex_str}' - {e}")
         return None
 
     async def execute_action(self, action_name: str, payload: Dict[str, Any]) -> Any:
@@ -167,6 +174,22 @@ class BaseScraper(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
+        """
+        (新增) 从一个作品的URL中提取信息，并返回一个 ProviderSearchInfo 对象。
+        这用于支持从URL直接导入整个作品。
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_id_from_url(self, url: str) -> Optional[Union[str, Dict[str, str]]]:
+        """
+        (新增) 统一的从URL解析ID的接口。
+        子类应重写此方法以支持从URL直接导入。
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         """
         获取给定媒体ID的所有分集。
@@ -182,6 +205,20 @@ class BaseScraper(ABC):
         返回的字典列表应与 crud.bulk_insert_comments 的期望格式兼容。
         """
         raise NotImplementedError
+
+    async def get_id_from_url(self, url: str) -> Optional[Union[str, Dict[str, str]]]:
+        """
+        (新增) 统一的从URL解析ID的接口。
+        子类应重写此方法以支持从URL直接导入。
+        """
+        return None
+
+    def format_episode_id_for_comments(self, provider_episode_id: Any) -> str:
+        """
+        (新增) 将 get_comments 所需的 episode_id 格式化为字符串。
+        大多数源直接返回字符串，但Bilibili和MGTV需要特殊处理。
+        """
+        return str(provider_episode_id)
 
     @abstractmethod
     async def close(self):
