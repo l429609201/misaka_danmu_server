@@ -73,8 +73,8 @@ class Settings(BaseSettings):
     log: LogConfig = LogConfig()
     douban: DoubanConfig = DoubanConfig()
     # 新增：环境标识和客户端配置
-    # environment: str = "production"
-    environment: str = "development"
+    environment: str = "production"
+    # environment: str = "development"
     client: ClientConfig = ClientConfig()
 
     class Config:
