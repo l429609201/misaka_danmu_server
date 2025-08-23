@@ -197,7 +197,12 @@ async def init_db_tables(app: FastAPI):
 
     engine = app.state.db_engine
     async with engine.begin() as conn:
-        # 在创建表之前运行迁移，以确保架构是最新的
-        await _run_migrations(conn)
+        # 1. 首先，确保所有基于模型的表都已创建。
+        # `create_all` 会安全地跳过已存在的表。
+        logger.info("正在同步数据库模型，创建新表...")
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("ORM 模型已同步到数据库。")
+        logger.info("数据库模型同步完成。")
+
+        # 2. 然后，在已存在的表结构上运行手动迁移。
+        await _run_migrations(conn)
+    logger.info("数据库初始化完成。")

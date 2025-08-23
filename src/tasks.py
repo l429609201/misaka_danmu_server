@@ -1,5 +1,6 @@
 import logging
 from typing import Callable, List, Optional
+import asyncio
 import re
 import traceback
 
@@ -12,7 +13,7 @@ from .rate_limiter import RateLimiter, RateLimitExceededError
 from .image_utils import download_image
 from .scraper_manager import ScraperManager
 from .metadata_manager import MetadataSourceManager
-from .task_manager import TaskManager, TaskSuccess
+from .task_manager import TaskManager, TaskSuccess, TaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -199,8 +200,9 @@ async def generic_import_task(
     total_comments_added = 0
     image_download_failed = False
     total_episodes = len(episodes)
-
-    for i, episode in enumerate(episodes):
+    i = 0
+    while i < total_episodes:
+        episode = episodes[i]
         logger.info(f"--- 开始处理分集 {i+1}/{total_episodes}: '{episode.title}' (ID: {episode.episodeId}) ---")
         base_progress = 10 + int((i / total_episodes) * 85)
         await progress_callback(base_progress, f"正在处理: {episode.title} ({i+1}/{total_episodes})")
@@ -214,15 +216,17 @@ async def generic_import_task(
             await rate_limiter.check(provider)
         except RateLimitExceededError as e:
             logger.warning(f"任务 '{normalized_title}' 因达到速率限制而暂停: {e}")
-            # 任务成功结束，但附带一条关于速率限制的消息
-            raise TaskSuccess(f"达到速率限制。请在 {e.retry_after_seconds:.0f} 秒后重试。")
+            # 任务因速率限制而自动暂停，并在等待后重试
+            await progress_callback(base_progress, f"速率受限，将在 {e.retry_after_seconds:.0f} 秒后自动重试...", status=TaskStatus.PAUSED)
+            await asyncio.sleep(e.retry_after_seconds)
+            continue # 重试当前分集
 
         comments = await scraper.get_comments(episode.episodeId, progress_callback=sub_progress_callback)
 
         if comments:
             # 2. 只有成功获取到弹幕后，才增加计数
             await rate_limiter.increment(provider)
-        if comments and anime_id is None: # type: ignore
+        if comments and anime_id is None:
             logger.info("首次成功获取弹幕，正在创建数据库主条目...")
             await progress_callback(base_progress + 1, "正在创建数据库主条目...")
 
@@ -240,14 +244,20 @@ async def generic_import_task(
 
         if anime_id and source_id:
             episode_db_id = await crud.create_episode_if_not_exists(session, anime_id, source_id, episode.episodeIndex, episode.title, episode.url, episode.episodeId)
-            if not comments:
+            if comments:
+                added_count = await crud.bulk_insert_comments(session, episode_db_id, comments)
+                total_comments_added += added_count
+                logger.info(f"分集 '{episode.title}' (DB ID: {episode_db_id}) 新增 {added_count} 条弹幕。")
+            else:
                 logger.info(f"分集 '{episode.title}' (DB ID: {episode_db_id}) 未找到弹幕，但已创建分集记录。")
-                continue
-            added_count = await crud.bulk_insert_comments(session, episode_db_id, comments)
-            total_comments_added += added_count
-            logger.info(f"分集 '{episode.title}' (DB ID: {episode_db_id}) 新增 {added_count} 条弹幕。")
+
+            # 新增：在每个分集处理完毕后提交一次数据库，以实现渐进式保存
+            await session.commit()
+            logger.info(f"分集 '{episode.title}' 的数据已提交到数据库。")
         else:
             logger.info(f"分集 '{episode.title}' 未找到弹幕，跳过创建主条目。")
+        
+        i += 1 # 成功处理完一个分集，移动到下一个
 
     final_message = ""
     if total_comments_added == 0:
@@ -256,7 +266,6 @@ async def generic_import_task(
         final_message = f"导入完成，共新增 {total_comments_added} 条弹幕。"
     if image_download_failed:
         final_message += " (警告：海报图片下载失败)"
-    await session.commit()
     raise TaskSuccess(final_message)
     
 async def edited_import_task(
@@ -279,14 +288,18 @@ async def edited_import_task(
     total_comments_added = 0
     image_download_failed = False
     total_episodes = len(episodes)
-
-    for i, episode in enumerate(episodes):
+    i = 0
+    while i < total_episodes:
+        episode = episodes[i]
         await progress_callback(10 + int((i / total_episodes) * 85), f"正在处理: {episode.title} ({i+1}/{total_episodes})")
+        base_progress = 10 + int((i / total_episodes) * 85)
         try:
             await rate_limiter.check(request_data.provider)
         except RateLimitExceededError as e:
             logger.warning(f"编辑后导入任务 '{normalized_title}' 因达到速率限制而暂停: {e}")
-            raise TaskSuccess(f"达到速率限制。请在 {e.retry_after_seconds:.0f} 秒后重试。")
+            await progress_callback(base_progress, f"速率受限，将在 {e.retry_after_seconds:.0f} 秒后自动重试...", status=TaskStatus.PAUSED)
+            await asyncio.sleep(e.retry_after_seconds)
+            continue
 
         comments = await scraper.get_comments(episode.episodeId)
 
@@ -318,6 +331,12 @@ async def edited_import_task(
             episode_db_id = await crud.create_episode_if_not_exists(session, anime_id, source_id, episode.episodeIndex, episode.title, episode.url, episode.episodeId)
             if comments:
                 total_comments_added += await crud.bulk_insert_comments(session, episode_db_id, comments)
+            
+            # 新增：在每个分集处理完毕后提交一次数据库
+            await session.commit()
+            logger.info(f"编辑后导入：分集 '{episode.title}' 的数据已提交。")
+        
+        i += 1
 
     final_message = ""
     if total_comments_added == 0:
@@ -326,7 +345,6 @@ async def edited_import_task(
         final_message = f"导入完成，共新增 {total_comments_added} 条弹幕。"
     if image_download_failed:
         final_message += " (警告：海报图片下载失败)"
-    await session.commit()
     raise TaskSuccess(final_message)
 
 async def full_refresh_task(sourceId: int, session: AsyncSession, manager: ScraperManager, task_manager: TaskManager, rate_limiter: RateLimiter, progress_callback: Callable):

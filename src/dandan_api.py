@@ -913,34 +913,29 @@ async def get_external_comments_from_url(
 async def _get_real_episode_id(
     session: AsyncSession,
     anime_id: int,
-    source_order: int,
+    source_order: int, # This is 1-based index
     episode_index: int
 ) -> Optional[int]:
     """
     根据复合信息（anime_id, source_order, episode_index）查找真实的数据库 episode.id。
+    此函数的逻辑必须与 crud.create_episode_if_not_exists 中生成ID的逻辑完全对应。
     """
-    # 1. 根据 source_order 找到 provider_name
-    provider_name_res = await session.execute(
-        select(orm_models.Scraper.providerName).where(orm_models.Scraper.displayOrder == source_order)
-    )
-    provider_name = provider_name_res.scalar_one_or_none()
-    if not provider_name:
-        return None
+    # 1. 获取该 anime 的所有 source_id，并按 id 排序，以复现ID生成时的顺序
+    source_ids_stmt = select(orm_models.AnimeSource.id).where(orm_models.AnimeSource.animeId == anime_id).order_by(orm_models.AnimeSource.id)
+    source_ids_res = await session.execute(source_ids_stmt)
+    source_ids = source_ids_res.scalars().all()
 
-    # 2. 根据 anime_id 和 provider_name 找到 source_id
-    source_id_res = await session.execute(
-        select(orm_models.AnimeSource.id).where(
-            orm_models.AnimeSource.animeId == anime_id,
-            orm_models.AnimeSource.providerName == provider_name
-        )
-    )
-    source_id = source_id_res.scalar_one_or_none()
-    if not source_id:
+    # 2. 使用 source_order (1-based) 作为索引找到目标 source_id
+    # source_order is 1-based, so we check against length and use index `source_order - 1`
+    if not source_ids or source_order > len(source_ids):
         return None
+    
+    target_source_id = source_ids[source_order - 1]
 
     # 3. 根据 source_id 和 episode_index 找到 episode.id
-    episode_id_res = await session.execute(select(orm_models.Episode.id).where(orm_models.Episode.sourceId == source_id, orm_models.Episode.episodeIndex == episode_index))
+    episode_id_res = await session.execute(select(orm_models.Episode.id).where(orm_models.Episode.sourceId == target_source_id, orm_models.Episode.episodeIndex == episode_index))
     return episode_id_res.scalar_one_or_none()
+
 @implementation_router.get(
     "/comment/{episodeId}",
     response_model=models.CommentResponse,

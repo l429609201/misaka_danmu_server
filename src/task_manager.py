@@ -138,7 +138,7 @@ class TaskManager:
 
     def _get_progress_callback(self, task: Task) -> Callable:
         """为特定任务创建一个可暂停的回调闭包。"""
-        async def pausable_callback(progress: int, description: str):
+        async def pausable_callback(progress: int, description: str, status: Optional[TaskStatus] = None):
             # 核心暂停逻辑：在每次更新进度前，检查暂停事件。
             # 如果事件被清除 (cleared)，.wait() 将会阻塞，直到事件被重新设置 (set)。
             await task.pause_event.wait()
@@ -148,7 +148,7 @@ class TaskManager:
             async def update_db():
                 async with self._session_factory() as session:
                     await crud.update_task_progress_in_history(
-                        session, task.task_id, TaskStatus.RUNNING, int(progress), description
+                        session, task.task_id, status or TaskStatus.RUNNING, int(progress), description
                     )
             # 这是一个“即发即忘”的调用，以避免阻塞正在运行的主任务
             asyncio.create_task(update_db())

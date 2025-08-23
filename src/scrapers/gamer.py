@@ -211,6 +211,10 @@ class GamerScraper(BaseScraper):
         if sn_match: return sn_match.group(1)
         return None
 
+    def format_episode_id_for_comments(self, provider_episode_id: Any) -> str:
+        """For Gamer, the episode ID is a simple string (sn), so no formatting is needed."""
+        return str(provider_episode_id)
+
     async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         await self._ensure_config()
         self.logger.info(f"Gamer: 正在为 media_id={media_id} 获取分集列表...")

@@ -590,7 +590,8 @@ async def bulk_insert_comments(session: AsyncSession, episode_id: int, comments:
         stmt = stmt.on_duplicate_key_update(cid=stmt.inserted.cid) # A no-op update to trigger IGNORE behavior
     elif dialect == 'postgresql':
         stmt = postgresql_insert(Comment).values(data_to_insert)
-        stmt = stmt.on_conflict_on_constraint('idx_episode_cid_unique').do_nothing()
+        # 修正：使用 on_conflict_do_nothing 并通过 index_elements 指定列，以提高兼容性
+        stmt = stmt.on_conflict_do_nothing(index_elements=['episode_id', 'cid'])
     else:
         # For other dialects, we might need a slower, row-by-row approach or raise an error.
         # For now, we focus on mysql and postgresql.
@@ -966,7 +967,9 @@ async def set_cache(session: AsyncSession, key: str, value: Any, ttl_seconds: in
         )
     elif dialect == 'postgresql':
         stmt = postgresql_insert(CacheData).values(values_to_insert)
-        stmt = stmt.on_conflict_on_constraint('cache_data_pkey').do_update(
+        # 修正：使用 on_conflict_do_update 并通过 index_elements 指定主键列，以提高兼容性
+        stmt = stmt.on_conflict_do_update(
+            index_elements=['cache_key'],
             set_={"cache_provider": stmt.excluded.cache_provider, "cache_value": stmt.excluded.cache_value, "expires_at": stmt.excluded.expires_at}
         )
     else:
@@ -984,7 +987,9 @@ async def update_config_value(session: AsyncSession, key: str, value: str):
         stmt = stmt.on_duplicate_key_update(config_value=stmt.inserted.config_value)
     elif dialect == 'postgresql':
         stmt = postgresql_insert(Config).values(values_to_insert)
-        stmt = stmt.on_conflict_on_constraint('config_pkey').do_update(
+        # 修正：使用 on_conflict_do_update 并通过 index_elements 指定主键列，以提高兼容性
+        stmt = stmt.on_conflict_do_update(
+            index_elements=['config_key'],
             set_={'config_value': stmt.excluded.config_value}
         )
     else:

@@ -954,7 +954,8 @@ async def update_scraper_config(
 
         # 2. 构建所有期望处理的配置键 (camelCase)
         expected_camel_keys = set()
-        def to_snake(camel_str):
+        # 修正：定义正确的 to_camel 辅助函数
+        def to_camel(snake_str):
             components = snake_str.split('_')
             return components[0] + ''.join(x.title() for x in components[1:])
 
@@ -1711,8 +1712,11 @@ async def incremental_refresh_task(sourceId: int, nextEpisodeIndex: int, session
 
 class ManualImportRequest(models.BaseModel):
     title: str
-    episode_index: int
+    episode_index: int = Field(..., alias="episodeIndex")
     url: str
+
+    class Config:
+        populate_by_name = True
 
 @router.post("/library/source/{source_id}/manual-import", status_code=status.HTTP_202_ACCEPTED, summary="手动导入单个分集弹幕")
 async def manual_import_episode(
