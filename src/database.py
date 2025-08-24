@@ -2,6 +2,7 @@ import secrets
 import string
 import logging
 from fastapi import FastAPI, Request
+from sqlalchemy.engine.url import URL
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import text
 from .config import settings
@@ -55,9 +56,24 @@ async def create_db_engine_and_session(app: FastAPI):
     """创建数据库引擎和会话工厂，并存储在 app.state 中"""
     db_type = settings.database.type.lower()
     if db_type == "mysql":
-        db_url = f"mysql+aiomysql://{settings.database.user}:{settings.database.password}@{settings.database.host}:{settings.database.port}/{settings.database.name}?charset=utf8mb4"
+        db_url = URL.create(
+            drivername="mysql+aiomysql",
+            username=settings.database.user,
+            password=settings.database.password,
+            host=settings.database.host,
+            port=settings.database.port,
+            database=settings.database.name,
+            query={"charset": "utf8mb4"},
+        )
     elif db_type == "postgresql":
-        db_url = f"postgresql+asyncpg://{settings.database.user}:{settings.database.password}@{settings.database.host}:{settings.database.port}/{settings.database.name}"
+        db_url = URL.create(
+            drivername="postgresql+asyncpg",
+            username=settings.database.user,
+            password=settings.database.password,
+            host=settings.database.host,
+            port=settings.database.port,
+            database=settings.database.name,
+        )
     else:
         raise ValueError(f"不支持的数据库类型: '{db_type}'。请使用 'mysql' 或 'postgresql'。")
     try:
@@ -89,12 +105,26 @@ async def _create_db_if_not_exists():
 
     if db_type == "mysql":
         # 创建一个不带数据库名称的连接URL
-        server_url = f"mysql+aiomysql://{settings.database.user}:{settings.database.password}@{settings.database.host}:{settings.database.port}?charset=utf8mb4"
+        server_url = URL.create(
+            drivername="mysql+aiomysql",
+            username=settings.database.user,
+            password=settings.database.password,
+            host=settings.database.host,
+            port=settings.database.port,
+            query={"charset": "utf8mb4"},
+        )
         check_sql = text(f"SHOW DATABASES LIKE '{db_name}'")
         create_sql = text(f"CREATE DATABASE `{db_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
     elif db_type == "postgresql":
         # 对于PostgreSQL，连接到默认的 'postgres' 数据库来执行创建操作
-        server_url = f"postgresql+asyncpg://{settings.database.user}:{settings.database.password}@{settings.database.host}:{settings.database.port}/postgres"
+        server_url = URL.create(
+            drivername="postgresql+asyncpg",
+            username=settings.database.user,
+            password=settings.database.password,
+            host=settings.database.host,
+            port=settings.database.port,
+            database="postgres",
+        )
         check_sql = text(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'")
         create_sql = text(f'CREATE DATABASE "{db_name}"')
     else:
