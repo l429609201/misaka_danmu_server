@@ -239,7 +239,9 @@ class RenrenScraper(BaseScraper):
 
     async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
         # cache key considers keyword and optional target episode
-        suffix = f"_s{episode_info['season']}e{episode_info['episode']}" if episode_info else ""
+        suffix = ""
+        if episode_info and episode_info.get("episode") is not None:
+            suffix = f"_s{episode_info.get('season')}e{episode_info.get('episode')}"
         cache_key = f"search_{self.provider_name}_{keyword}{suffix}"
         cached = await self._get_from_cache(cache_key)
         if cached is not None:

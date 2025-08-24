@@ -9,6 +9,7 @@ import {
   Modal,
   Switch,
   Tag,
+  Tooltip,
 } from 'antd'
 import { useEffect, useState, useRef } from 'react'
 import {
@@ -112,9 +113,11 @@ const SortableItem = ({
           ) : (
             <Tag color="red">未启用</Tag>
           )}
-          <div onClick={handleChangeStatus}>
-            <MyIcon icon="exchange" size={24} />
-          </div>
+          <Tooltip title="切换启用状态">
+            <div onClick={handleChangeStatus}>
+              <MyIcon icon="exchange" size={24} />
+            </div>
+          </Tooltip>
         </div>
       </div>
     </List.Item>

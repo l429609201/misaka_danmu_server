@@ -5,7 +5,7 @@ import re
 import traceback
 
 from thefuzz import fuzz
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, models, orm_models
@@ -30,28 +30,34 @@ async def delete_anime_task(animeId: int, session: AsyncSession, progress_callba
         # 1. 找到所有关联的源ID
         source_ids_res = await session.execute(select(orm_models.AnimeSource.id).where(orm_models.AnimeSource.animeId == animeId))
         source_ids = source_ids_res.scalars().all()
+        await progress_callback(10, f"找到 {len(source_ids)} 个关联数据源。")
 
         if source_ids:
             # 2. 找到所有关联的分集ID
-            await progress_callback(20, "正在查找关联数据...")
+            await progress_callback(20, "正在查找关联分集...")
             episode_ids_res = await session.execute(select(orm_models.Episode.id).where(orm_models.Episode.sourceId.in_(source_ids)))
             episode_ids = episode_ids_res.scalars().all()
+            await progress_callback(30, f"找到 {len(episode_ids)} 个关联分集。")
 
             if episode_ids:
                 # 3. 删除所有弹幕
-                await progress_callback(40, "正在删除弹幕...")
+                comment_count_res = await session.execute(
+                    select(func.count(orm_models.Comment.id)).where(orm_models.Comment.episodeId.in_(episode_ids))
+                )
+                comment_count = comment_count_res.scalar_one()
+                await progress_callback(40, f"正在删除 {comment_count} 条弹幕...")
                 await session.execute(delete(orm_models.Comment).where(orm_models.Comment.episodeId.in_(episode_ids)))
                 
                 # 4. 删除所有分集
-                await progress_callback(60, "正在删除分集...")
+                await progress_callback(60, f"正在删除 {len(episode_ids)} 个分集...")
                 await session.execute(delete(orm_models.Episode).where(orm_models.Episode.id.in_(episode_ids)))
 
             # 5. 删除所有源
-            await progress_callback(70, "正在删除数据源...")
+            await progress_callback(70, f"正在删除 {len(source_ids)} 个数据源...")
             await session.execute(delete(orm_models.AnimeSource).where(orm_models.AnimeSource.id.in_(source_ids)))
 
         # 6. 删除元数据和别名
-        await progress_callback(80, "正在删除元数据...")
+        await progress_callback(80, "正在删除元数据和别名...")
         await session.execute(delete(orm_models.AnimeMetadata).where(orm_models.AnimeMetadata.animeId == animeId))
         await session.execute(delete(orm_models.AnimeAlias).where(orm_models.AnimeAlias.animeId == animeId))
 
@@ -647,10 +653,33 @@ async def auto_search_and_import_task(
 
     # 1. 获取元数据和别名
     if search_type != "keyword":
+        # --- Start of fix for TMDB/TVDB mediaType ---
+        # 如果是TMDB或TVDB搜索，且没有提供mediaType，则根据有无季/集信息进行推断
+        # 同时，将内部使用的 'tv_series'/'movie' 转换为特定提供商需要的格式
+        provider_media_type = media_type
+        if search_type in ["tmdb", "tvdb"]:
+            # TVDB API v4 使用 'series' 和 'movies'
+            provider_specific_tv_type = "tv" if search_type == "tmdb" else "series"
+            provider_specific_movie_type = "movie" if search_type == "tmdb" else "movies"
+
+            if not media_type:
+                if payload.season is not None and payload.episode is not None:
+                    provider_media_type = provider_specific_tv_type
+                    media_type = "tv_series" # 更新内部使用的类型
+                    logger.info(f"{search_type.upper()} 搜索未提供 mediaType，根据季/集信息推断为 '{provider_specific_tv_type}'。")
+                else:
+                    provider_media_type = provider_specific_movie_type
+                    media_type = "movie" # 更新内部使用的类型
+                    logger.info(f"{search_type.upper()} 搜索未提供 mediaType 和季/集信息，默认推断为 '{provider_specific_movie_type}'。")
+            elif media_type == "tv_series":
+                provider_media_type = provider_specific_tv_type
+            elif media_type == "movie":
+                provider_media_type = provider_specific_movie_type
+        # --- End of fix ---
         try:
             await progress_callback(10, f"正在从 {search_type.upper()} 获取元数据...")
             details = await metadata_manager.get_details(
-                provider=search_type, item_id=search_term, user=user, mediaType=payload.mediaType
+                provider=search_type, item_id=search_term, user=user, mediaType=provider_media_type
             )
             
             if details:
@@ -664,6 +693,16 @@ async def auto_search_and_import_task(
                     details.tmdbId, details.bangumiId, details.doubanId,
                     details.tvdbId, details.imdbId
                 )
+                # 修正：从元数据源获取最准确的媒体类型
+                if details.type:
+                    media_type = details.type
+                
+                # 新增：从其他启用的元数据源获取更多别名，以提高搜索覆盖率
+                logger.info(f"正在为 '{main_title}' 从其他源获取更多别名...")
+                enriched_aliases = await metadata_manager.search_aliases_from_enabled_sources(main_title, user)
+                if enriched_aliases:
+                    aliases.update(enriched_aliases)
+                    logger.info(f"别名已扩充: {aliases}")
         except Exception as e:
             logger.error(f"从 {search_type.upper()} 获取元数据失败: {e}\n{traceback.format_exc()}")
             # Don't fail the whole task, just proceed with the original search term
@@ -730,7 +769,19 @@ async def auto_search_and_import_task(
     # 4. 选择最佳源
     ordered_settings = await crud.get_all_scraper_settings(session)
     provider_order = {s['providerName']: s['displayOrder'] for s in ordered_settings}
-    all_results.sort(key=lambda item: provider_order.get(item.provider, 999))
+    
+    # 修正：使用更智能的排序逻辑来选择最佳匹配
+    # 1. 媒体类型是否匹配
+    # 2. 标题相似度 (使用 a_main_title 确保与原始元数据标题比较)
+    # 3. 用户设置的源优先级
+    all_results.sort(
+        key=lambda item: (
+            1 if item.type == media_type else 0,  # 媒体类型匹配得1分，否则0分
+            fuzz.token_set_ratio(main_title, item.title), # 标题相似度得分
+            -provider_order.get(item.provider, 999) # 源优先级，取负数因为值越小优先级越高
+        ),
+        reverse=True # 按得分从高到低排序
+    )
     best_match = all_results[0]
 
     await progress_callback(80, f"选择最佳源: {best_match.provider}")

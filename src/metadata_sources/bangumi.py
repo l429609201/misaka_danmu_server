@@ -175,7 +175,7 @@ async def bangumi_auth_callback(request: Request, code: str = Query(...), state:
             token_response = await client.post("https://bgm.tv/oauth/access_token", data=payload)
             token_response.raise_for_status()
             token_data = token_response.json()
-            user_info_response = await client.get("/v0/me", headers={"Authorization": f"Bearer {token_data['access_token']}"})
+            user_info_response = await client.get("https://api.bgm.tv/v0/me", headers={"Authorization": f"Bearer {token_data['access_token']}"})
             user_info_response.raise_for_status()
             user_info = user_info_response.json()
         auth_to_save = {"bangumiUserId": user_info.get("id"), "nickname": user_info.get("nickname"), "avatarUrl": user_info.get("avatar", {}).get("large"), "accessToken": token_data.get("access_token"), "refreshToken": token_data.get("refresh_token"), "expiresAt": datetime.now(timezone.utc) + timedelta(seconds=token_data.get("expires_in", 0))}
@@ -332,4 +332,3 @@ class BangumiMetadataSource(BaseMetadataSource):
             return {"message": "注销成功"}
         else:
             return await super().execute_action(action_name, payload, user, request)
-

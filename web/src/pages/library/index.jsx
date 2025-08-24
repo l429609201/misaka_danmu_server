@@ -12,6 +12,7 @@ import {
   Select,
   Space,
   Table,
+  Tooltip,
 } from 'antd'
 import {
   deleteAnime,
@@ -205,37 +206,44 @@ export const Library = () => {
       render: (_, record) => {
         return (
           <Space>
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={async () => {
-                const res = await getAnimeDetail({
-                  animeId: record.animeId,
-                })
-                form.setFieldsValue({
-                  ...(res.data || {}),
-                  animeId: record.animeId,
-                })
-                setEditOpen(true)
-              }}
-            >
-              <MyIcon icon="edit" size={20}></MyIcon>
-            </span>
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={() => {
-                navigate(`/anime/${record.animeId}`)
-              }}
-            >
-              <MyIcon icon="book" size={20}></MyIcon>
-            </span>
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={() => {
-                handleDelete(record)
-              }}
-            >
-              <MyIcon icon="delete" size={20}></MyIcon>
-            </span>
+            <Tooltip title="编辑影视信息">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={async () => {
+                  const res = await getAnimeDetail({
+                    animeId: record.animeId,
+                  })
+                  form.setFieldsValue({
+                    ...(res.data || {}),
+                    animeId: record.animeId,
+                  })
+                  setEditOpen(true)
+                }}
+              >
+                <MyIcon icon="edit" size={20}></MyIcon>
+              </span>
+            </Tooltip>
+
+            <Tooltip title="详情">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={() => {
+                  navigate(`/anime/${record.animeId}`)
+                }}
+              >
+                <MyIcon icon="book" size={20}></MyIcon>
+              </span>
+            </Tooltip>
+            <Tooltip title="删除">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={() => {
+                  handleDelete(record)
+                }}
+              >
+                <MyIcon icon="delete" size={20}></MyIcon>
+              </span>
+            </Tooltip>
           </Space>
         )
       },

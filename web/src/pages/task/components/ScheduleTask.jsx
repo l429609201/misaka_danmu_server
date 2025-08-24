@@ -30,7 +30,7 @@ export const ScheduleTask = () => {
   const [availableJobTypes, setAvailableJobTypes] = useState([])
 
   const [form] = Form.useForm()
-  const editid = Form.useWatch('id', form)
+  const editid = Form.useWatch('taskId', form)
 
   const fetchData = async () => {
     try {
@@ -156,7 +156,7 @@ export const ScheduleTask = () => {
 
   const handleRun = async record => {
     try {
-      await runTask({ id: record.id })
+      await runTask({ id: record.taskId })
       message.success('任务已触发运行，请稍后刷新查看运行时间。')
     } catch (error) {
       message.error('任务触发失败，请稍后重试。')
@@ -165,16 +165,16 @@ export const ScheduleTask = () => {
 
   const handleAdd = async () => {
     const values = await form.validateFields()
-    if (!!values.id) {
+    if (!!values.taskId) {
       try {
         setConfirmLoading(true)
-        await editScheduledTask(values)
+        await editScheduledTask({ ...values, id: values.taskId })
         message.success('任务编辑成功。')
         form.resetFields()
         fetchData()
         setAddOpen(false)
       } catch (error) {
-        message.error('任务编辑失败，请稍后重试。')
+        message.error(error?.detail ?? '任务编辑失败，请稍后重试。')
       } finally {
         setConfirmLoading(false)
       }
@@ -186,7 +186,7 @@ export const ScheduleTask = () => {
         fetchData()
         setAddOpen(false)
       } catch (error) {
-        message.error('任务添加失败，请稍后重试。')
+        message.error(error?.detail ?? '任务添加失败，请稍后重试。')
       } finally {
         setConfirmLoading(false)
       }
@@ -202,11 +202,11 @@ export const ScheduleTask = () => {
       cancelText: '取消',
       onOk: async () => {
         try {
-          await deleteScheduledTask({ id: record.id })
+          await deleteScheduledTask({ id: record.taskId })
           message.success('任务删除成功。')
           fetchData()
         } catch (error) {
-          message.error('任务删除失败，请稍后重试。')
+          message.error(error?.detail ?? '任务删除失败，请稍后重试。')
         }
       },
     })
@@ -236,7 +236,7 @@ export const ScheduleTask = () => {
           size="small"
           dataSource={tasks}
           columns={columns}
-          rowKey={'id'}
+          rowKey={'taskId'}
           scroll={{ x: '100%' }}
         />
       </Card>
@@ -299,7 +299,7 @@ export const ScheduleTask = () => {
               ]}
             />
           </Form.Item>
-          <Form.Item name="id" label="id" hidden>
+          <Form.Item name="taskId" label="taskId" hidden>
             <Input disabled />
           </Form.Item>
         </Form>

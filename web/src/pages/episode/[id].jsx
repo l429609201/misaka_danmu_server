@@ -22,6 +22,7 @@ import {
   Modal,
   Space,
   Table,
+  Tooltip,
 } from 'antd'
 import dayjs from 'dayjs'
 import { MyIcon } from '@/components/MyIcon'
@@ -136,41 +137,49 @@ export const EpisodeDetail = () => {
       render: (_, record) => {
         return (
           <Space>
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={() => {
-                form.setFieldsValue({
-                  ...record,
-                  episodeId: record.episodeId,
-                  originalEpisodeIndex: record.episodeIndex,
-                })
-                setEditOpen(true)
-              }}
-            >
-              <MyIcon icon="edit" size={20} />
-            </span>
+            <Tooltip title="编辑分集信息">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={() => {
+                  form.setFieldsValue({
+                    ...record,
+                    episodeId: record.episodeId,
+                    originalEpisodeIndex: record.episodeIndex,
+                  })
+                  setEditOpen(true)
+                }}
+              >
+                <MyIcon icon="edit" size={20} />
+              </span>
+            </Tooltip>
 
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={() => handleRefresh(record)}
-            >
-              <MyIcon icon="refresh" size={20}></MyIcon>
-            </span>
+            <Tooltip title="刷新分集弹幕">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={() => handleRefresh(record)}
+              >
+                <MyIcon icon="refresh" size={20}></MyIcon>
+              </span>
+            </Tooltip>
 
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={() => {
-                navigate(`/comment/${record.episodeId}?episodeId=${id}`)
-              }}
-            >
-              <MyIcon icon="comment" size={20}></MyIcon>
-            </span>
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={() => deleteEpisodeSingle(record)}
-            >
-              <MyIcon icon="delete" size={20}></MyIcon>
-            </span>
+            <Tooltip title="弹幕详情">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={() => {
+                  navigate(`/comment/${record.episodeId}?episodeId=${id}`)
+                }}
+              >
+                <MyIcon icon="comment" size={20}></MyIcon>
+              </span>
+            </Tooltip>
+            <Tooltip title="删除">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={() => deleteEpisodeSingle(record)}
+              >
+                <MyIcon icon="delete" size={20}></MyIcon>
+              </span>
+            </Tooltip>
           </Space>
         )
       },

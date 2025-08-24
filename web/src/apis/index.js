@@ -206,10 +206,7 @@ export const getWebhookServices = () => api.get('/api/ui/webhooks/available')
 /** ---------------------------------------------- Bangumi  ----------------------------------------------*/
 /** 获取bangumi api配置 */
 export const getBangumiConfig = () => api.get('/api/ui/config/provider/bangumi')
-/** 设置bangumi api配置
- * bangumi_client_id
- * bangumi_client_secret
- */
+/** 设置bangumi api配置 */
 export const setBangumiConfig = data =>
   api.put('/api/ui/config/provider/bangumi', data)
 /** 获取授权信息 */

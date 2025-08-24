@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Set, Optional, Type
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from fastapi import HTTPException, status, Request
+from fastapi import HTTPException, status, Request, APIRouter
 
 from . import crud, models, orm_models
 from .config_manager import ConfigManager
@@ -39,30 +39,30 @@ class MetadataSourceManager:
         self._source_classes: Dict[str, Type[Any]] = {}
         # 从数据库缓存所有源的持久设置。
         self.source_settings: Dict[str, Dict[str, Any]] = {}
+        # 新增：为所有元数据源创建一个父级路由器
+        self.router = APIRouter()
 
-    async def initialize(self, app):
-        """在应用启动时加载并同步元数据源。"""
+    async def initialize(self):
+        """在应用启动时加载并同步元数据源，并构建其API路由。"""
         await self.load_and_sync_sources()
-        self.register_source_routers(app)
+        self._build_source_routers()
         logger.info("元数据源管理器已初始化。")
 
-    def register_source_routers(self, app):
+    def _build_source_routers(self):
         """
-        遍历所有已加载的源，并将其API路由注册到主应用中。
+        遍历所有已加载的源，并将其API路由注册到管理器的路由器中。
         """
-        from fastapi import APIRouter
         self.logger.info("正在注册元数据源提供的API路由...")
         for provider_name, source_instance in self.sources.items():
             # 检查源实例是否有 'api_router' 属性，并且它是一个 APIRouter
             if hasattr(source_instance, 'api_router') and isinstance(getattr(source_instance, 'api_router', None), APIRouter):
-                # 修正：将所有元数据源的路由挂载到 /api/metadata/ 下，以简化路由结构
-                prefix = f"/api/metadata/{provider_name}"
-                app.include_router(
+                # 将每个源的路由包含到管理器的父级路由中，使用提供商名称作为前缀
+                self.router.include_router(
                     source_instance.api_router,
-                    prefix=prefix,
+                    prefix=f"/{provider_name}",
                     tags=[f"Metadata - {provider_name.capitalize()}"]
                 )
-                self.logger.info(f"已为源 '{provider_name}' 挂载API路由，前缀: {prefix}")
+                self.logger.info(f"已为源 '{provider_name}' 添加API路由，子前缀: /{provider_name}")
 
     async def load_and_sync_sources(self):
         """动态发现、同步到数据库并加载元数据源插件。"""

@@ -25,6 +25,7 @@ import {
   Row,
   Space,
   Table,
+  Tooltip,
 } from 'antd'
 import { DANDAN_TYPE_DESC_MAPPING } from '../../configs'
 import { RoutePaths } from '../../general/RoutePaths'
@@ -298,101 +299,113 @@ export const AnimeDetail = () => {
       render: (_, record) => {
         return (
           <Space>
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={async () => {
-                try {
-                  await toggleSourceFavorite({
-                    sourceId: record.sourceId,
-                  })
-                  setSourceList(list => {
-                    return list.map(it => {
-                      if (it.sourceId === record.sourceId) {
-                        return {
-                          ...it,
-                          isFavorited: !it.isFavorited,
-                        }
-                      } else {
-                        return it
-                      }
+            <Tooltip title="精确标记源，请求弹幕时优先使用该源">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={async () => {
+                  try {
+                    await toggleSourceFavorite({
+                      sourceId: record.sourceId,
                     })
-                  })
-                } catch (error) {
-                  alert(`操作失败: ${error.message}`)
-                }
-              }}
-            >
-              {record.isFavorited ? (
+                    setSourceList(list => {
+                      return list.map(it => {
+                        if (it.sourceId === record.sourceId) {
+                          return {
+                            ...it,
+                            isFavorited: !it.isFavorited,
+                          }
+                        } else {
+                          return it
+                        }
+                      })
+                    })
+                  } catch (error) {
+                    alert(`操作失败: ${error.message}`)
+                  }
+                }}
+              >
+                {record.isFavorited ? (
+                  <MyIcon
+                    icon="favorites-fill"
+                    size={20}
+                    className="text-yellow-300"
+                  />
+                ) : (
+                  <MyIcon icon="favorites" size={20} />
+                )}
+              </span>
+            </Tooltip>
+            <Tooltip title="定时任务配合（任务管理器-定时任务-定时增量追更）使用，增量获取下一集">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={async () => {
+                  try {
+                    await toggleSourceIncremental({
+                      sourceId: record.sourceId,
+                    })
+                    setSourceList(list => {
+                      return list.map(it => {
+                        if (it.sourceId === record.sourceId) {
+                          return {
+                            ...it,
+                            incrementalRefreshEnabled:
+                              !it.incrementalRefreshEnabled,
+                          }
+                        } else {
+                          return it
+                        }
+                      })
+                    })
+                  } catch (error) {
+                    alert(`操作失败: ${error.message}`)
+                  }
+                }}
+              >
                 <MyIcon
-                  icon="favorites-fill"
+                  icon="clock"
                   size={20}
-                  className="text-yellow-300"
-                />
-              ) : (
-                <MyIcon icon="favorites" size={20} />
-              )}
-            </span>
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={async () => {
-                try {
-                  await toggleSourceIncremental({
-                    sourceId: record.sourceId,
-                  })
-                  setSourceList(list => {
-                    return list.map(it => {
-                      if (it.sourceId === record.sourceId) {
-                        return {
-                          ...it,
-                          incrementalRefreshEnabled:
-                            !it.incrementalRefreshEnabled,
-                        }
-                      } else {
-                        return it
-                      }
-                    })
-                  })
-                } catch (error) {
-                  alert(`操作失败: ${error.message}`)
-                }
-              }}
-            >
-              <MyIcon
-                icon="clock"
-                size={20}
-                className={classNames({
-                  'text-red-400': record.incrementalRefreshEnabled,
-                })}
-              ></MyIcon>
-            </span>
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={() => handleIncrementalUpdate(record)}
-            >
-              <MyIcon icon="zengliang" size={20}></MyIcon>
-            </span>
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={() => {
-                navigate(`/episode/${record.sourceId}?animeId=${id}`)
-              }}
-            >
-              <MyIcon icon="book" size={20}></MyIcon>
-            </span>
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={() => handleFullSourceUpdate(record)}
-            >
-              <MyIcon icon="refresh" size={20}></MyIcon>
-            </span>
-            <span
-              className="cursor-pointer hover:text-primary"
-              onClick={() => {
-                handleDeleteSingle(record)
-              }}
-            >
-              <MyIcon icon="delete" size={20}></MyIcon>
-            </span>
+                  className={classNames({
+                    'text-red-400': record.incrementalRefreshEnabled,
+                  })}
+                ></MyIcon>
+              </span>
+            </Tooltip>
+            <Tooltip title="增量获取下一集">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={() => handleIncrementalUpdate(record)}
+              >
+                <MyIcon icon="zengliang" size={20}></MyIcon>
+              </span>
+            </Tooltip>
+            <Tooltip title="分集列表">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={() => {
+                  navigate(`/episode/${record.sourceId}?animeId=${id}`)
+                }}
+              >
+                <MyIcon icon="book" size={20}></MyIcon>
+              </span>
+            </Tooltip>
+            <Tooltip title="执行全量更新(此操作会删除旧数据)">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={() => handleFullSourceUpdate(record)}
+              >
+                <MyIcon icon="refresh" size={20}></MyIcon>
+              </span>
+            </Tooltip>
+            <Tooltip title="删除数据源">
+              <span
+                className="cursor-pointer hover:text-primary"
+                onClick={() => {
+                  handleDeleteSingle(record)
+                }}
+              >
+                <MyIcon icon="delete" size={20}></MyIcon>
+              </span>
+            </Tooltip>
           </Space>
         )
       },

@@ -1186,7 +1186,7 @@ async def consume_oauth_state(session: AsyncSession, state: str) -> Optional[int
     result = await session.execute(stmt)
     state_obj = result.scalar_one_or_none()
     if state_obj:
-        user_id = state_obj.user_id
+        user_id = state_obj.userId
         await session.delete(state_obj)
         await session.commit()
         return user_id
