@@ -32,6 +32,8 @@ async def download_image(image_url: Optional[str], session: AsyncSession, scrape
     # --- Start of new proxy logic ---
     proxy_url = await crud.get_config_value(session, "proxyUrl", "")
     proxy_enabled_str = await crud.get_config_value(session, "proxyEnabled", "false")
+    ssl_verify_str = await crud.get_config_value(session, "proxySslVerify", "true")
+    ssl_verify = ssl_verify_str.lower() == 'true'
     proxy_enabled_globally = proxy_enabled_str.lower() == 'true'
     use_proxy_for_this_provider = False
 
@@ -81,7 +83,7 @@ async def download_image(image_url: Optional[str], session: AsyncSession, scrape
         elif 'hdslb.com' in image_url:
             client_headers["Referer"] = "https://www.bilibili.com/"
 
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, proxy=proxy_to_use, headers=client_headers) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, proxy=proxy_to_use, headers=client_headers, verify=ssl_verify) as client:
             response = await client.get(image_url)
             response.raise_for_status()
 

@@ -288,6 +288,8 @@ class BangumiMetadataSource(BaseMetadataSource):
                 # 获取全局代理设置
                 proxy_url = await crud.get_config_value(session, "proxy_url", "")
                 proxy_enabled_str = await crud.get_config_value(session, "proxy_enabled", "false")
+                ssl_verify_str = await crud.get_config_value(session, "proxySslVerify", "true")
+                ssl_verify = ssl_verify_str.lower() == 'true'
                 proxy_enabled_globally = proxy_enabled_str.lower() == 'true'
 
                 # 如果全局代理启用，则检查此源的代理设置
@@ -297,7 +299,7 @@ class BangumiMetadataSource(BaseMetadataSource):
                         proxy_to_use = proxy_url
                         self.logger.debug(f"Bangumi: 连接性检查将使用代理: {proxy_to_use}")
 
-            async with httpx.AsyncClient(timeout=10.0, proxy=proxy_to_use) as client:
+            async with httpx.AsyncClient(timeout=10.0, proxy=proxy_to_use, verify=ssl_verify) as client:
                 response = await client.get("https://api.bgm.tv/v0/ping")
                 return "连接成功" if response.status_code == 204 else f"连接失败 (状态码: {response.status_code})"
         except httpx.ProxyError as e:

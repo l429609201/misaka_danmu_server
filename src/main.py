@@ -66,6 +66,7 @@ async def lifespan(app: FastAPI):
         # 代理
         'proxyUrl': ('', '全局HTTP/HTTPS/SOCKS5代理地址。'),
         'proxyEnabled': ('false', '是否全局启用代理。'),
+        'proxySslVerify': ('true', '使用HTTPS代理时是否验证SSL证书。设为false可解决自签名证书问题。'),
         'jwtExpireMinutes': (settings.jwt.access_token_expire_minutes, 'JWT令牌的有效期（分钟）。-1 表示永不过期。'),
         # 元数据源
         'tmdbApiKey': ('', '用于访问 The Movie Database API 的密钥。'),

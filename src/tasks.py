@@ -663,7 +663,8 @@ async def auto_search_and_import_task(
             provider_specific_movie_type = "movie" if search_type == "tmdb" else "movies"
 
             if not media_type:
-                if payload.season is not None and payload.episode is not None:
+                # 修正：只要提供了季度信息，就应推断为电视剧
+                if payload.season is not None:
                     provider_media_type = provider_specific_tv_type
                     media_type = "tv_series" # 更新内部使用的类型
                     logger.info(f"{search_type.upper()} 搜索未提供 mediaType，根据季/集信息推断为 '{provider_specific_tv_type}'。")
@@ -694,7 +695,7 @@ async def auto_search_and_import_task(
                     details.tvdbId, details.imdbId
                 )
                 # 修正：从元数据源获取最准确的媒体类型
-                if details.type:
+                if hasattr(details, 'type') and details.type:
                     media_type = details.type
                 
                 # 新增：从其他启用的元数据源获取更多别名，以提高搜索覆盖率
