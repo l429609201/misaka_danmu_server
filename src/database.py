@@ -100,8 +100,9 @@ async def _create_db_if_not_exists():
     else:
         logger.warning(f"不支持为数据库类型 '{db_type}' 自动创建数据库。请确保数据库已手动创建。")
         return
-    
-    engine = create_async_engine(server_url, echo=False)
+
+    # 设置隔离级别以允许 DDL 语句
+    engine = create_async_engine(server_url, echo=False, isolation_level="AUTOCOMMIT")
     
     try:
         async with engine.connect() as conn:
@@ -109,8 +110,6 @@ async def _create_db_if_not_exists():
             result = await conn.execute(check_sql)
             if result.scalar_one_or_none() is None:
                 logger.info(f"数据库 '{db_name}' 不存在，正在创建...")
-                # 设置隔离级别以允许 DDL 语句
-                await conn.execution_options(isolation_level="AUTOCOMMIT")
                 await conn.execute(create_sql)
                 logger.info(f"数据库 '{db_name}' 创建成功。")
             else:

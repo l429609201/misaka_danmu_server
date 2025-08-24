@@ -148,7 +148,7 @@ class TokenAccessLog(Base):
     status: Mapped[str] = mapped_column(String(50))
     path: Mapped[Optional[str]] = mapped_column(String(512)) # type: ignore
 
-    __table_args__ = (Index('idx_token_id_time', 'token_id', 'access_time', mysql_length={'access_time': None}),)
+    __table_args__ = (Index('idx_token_id_time', 'token_id', 'access_time'),)
 
 class UaRule(Base):
     __tablename__ = "ua_rules"
@@ -225,7 +225,7 @@ class TaskHistory(Base):
     updatedAt: Mapped[datetime] = mapped_column("updated_at", TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), default=datetime.now)
     finishedAt: Mapped[Optional[datetime]] = mapped_column("finished_at", TIMESTAMP(timezone=True))
 
-    __table_args__ = (Index('idx_created_at', 'created_at', mysql_length={'created_at': None}),)
+    __table_args__ = (Index('idx_created_at', 'created_at'),)
 
 class ExternalApiLog(Base):
     __tablename__ = "external_api_logs"
