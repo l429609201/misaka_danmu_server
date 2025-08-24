@@ -174,9 +174,42 @@ class YoukuScraper(BaseScraper):
         return results
 
     async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
-        """(未实现) 从URL中提取作品信息。"""
-        self.logger.warning(f"从URL导入功能尚未为 {self.provider_name} 实现。")
-        raise NotImplementedError(f"从URL导入功能尚未为 {self.provider_name} 实现。")
+        """从优酷URL中提取作品信息。"""
+        self.logger.info(f"Youku: 正在从URL提取信息: {url}")
+        
+        try:
+            response = await self.client.get(url)
+            response.raise_for_status()
+            html_content = response.text
+
+            # 1. 从页面中解析 show_id
+            show_id_match = re.search(r'showid:"(\d+)"', html_content)
+            if not show_id_match:
+                self.logger.warning(f"Youku: 无法从页面HTML中解析出 show_id: {url}")
+                return None
+            show_id = show_id_match.group(1)
+
+            # 2. 从页面中解析标题
+            title_match = re.search(r'<title>(.*?)<\/title>', html_content)
+            title = title_match.group(1).split('-')[0].strip() if title_match else "未知标题"
+            cleaned_title = self.unused_words_reg.sub("", title).strip().replace(":", "：")
+
+            # 3. 从页面中解析封面图
+            image_match = re.search(r'<meta\s+property="og:image"\s+content="(.*?)"', html_content)
+            image_url = image_match.group(1) if image_match else None
+
+            # 4. 使用标题进行搜索，以获取更准确的元数据，然后通过show_id进行匹配
+            search_results = await self.search(keyword=cleaned_title)
+            best_match = next((r for r in search_results if r.mediaId == show_id), None)
+
+            if best_match:
+                return best_match
+            else:
+                # 如果搜索未找到，则基于已抓取的信息构建一个基础对象
+                return models.ProviderSearchInfo(provider=self.provider_name, mediaId=show_id, title=cleaned_title, type="tv_series", season=get_season_from_title(cleaned_title), imageUrl=image_url)
+        except Exception as e:
+            self.logger.error(f"Youku: 从URL '{url}' 提取信息失败: {e}", exc_info=True)
+            return None
 
     async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         # 优酷的逻辑不区分电影和电视剧，都是从一个show_id获取列表，

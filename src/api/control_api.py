@@ -1,19 +1,22 @@
 import logging
 import secrets
 import uuid
+import re
 from enum import Enum
 from typing import List, Optional, Dict, Any, Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, Path
 from fastapi.security import APIKeyQuery
+from thefuzz import fuzz
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import crud, models, tasks
+from .. import crud, models, tasks, utils
 from ..rate_limiter import RateLimiter
 from ..config_manager import ConfigManager
 from ..database import get_db_session
 from ..metadata_manager import MetadataSourceManager
+from ..scheduler import SchedulerManager
 from ..scraper_manager import ScraperManager
 from ..task_manager import TaskManager, TaskSuccess, TaskStatus
 
@@ -33,6 +36,10 @@ def get_metadata_manager(request: Request) -> MetadataSourceManager:
 def get_task_manager(request: Request) -> TaskManager:
     """依赖项：从应用状态获取任务管理器"""
     return request.app.state.task_manager
+
+def get_scheduler_manager(request: Request) -> SchedulerManager:
+    """依赖项：从应用状态获取定时任务调度器"""
+    return request.app.state.scheduler_manager
 
 def get_config_manager(request: Request) -> ConfigManager:
     """依赖项：从应用状态获取配置管理器"""
@@ -282,32 +289,46 @@ async def search_media(
             detail="A search is already in progress for this API key. Please wait for it to complete."
         )
     try:
-        try:
-            episode_info = None
-            if season is not None or episode is not None:
-                episode_info = {"season": season, "episode": episode}
+        # --- Start of WebUI Search Logic ---
+        episode_info = {"season": season, "episode": episode} if season is not None or episode is not None else None
+        all_results = await manager.search_all([keyword], episode_info=episode_info)
 
-            results = await manager.search_all([keyword], episode_info=episode_info)
-            
-            # 新增：如果指定了季度，则假定是电视剧搜索并进行过滤
-            if season is not None:
-                results = [r for r in results if r.type == 'tv_series']
-                logger.info(f"已将结果过滤为电视剧类型，剩余 {len(results)} 个结果。")
+        def normalize_for_filtering(title: str) -> str:
+            if not title: return ""
+            return re.sub(r'[\[【(（].*?[\]】)）]', '', title).lower().replace(" ", "").replace("：", ":").strip()
 
-            search_id = str(uuid.uuid4())
-            
-            # Add index to each result
-            indexed_results = [
-                ControlSearchResultItem(**r.model_dump(), resultIndex=i)
-                for i, r in enumerate(results)
-            ]
-            
-            # Cache the full results with the search_id. Use a short TTL.
-            await crud.set_cache(session, f"control_search_{search_id}", [r.model_dump() for r in results], 600) # 10 minutes TTL
-            
-            return ControlSearchResponse(searchId=search_id, results=indexed_results)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        normalized_search_title = normalize_for_filtering(keyword)
+        filtered_results = [item for item in all_results if fuzz.token_set_ratio(normalize_for_filtering(item.title), normalized_search_title) > 80]
+        logger.info(f"模糊标题过滤: 从 {len(all_results)} 个原始结果中，保留了 {len(filtered_results)} 个相关结果。")
+        results = filtered_results
+
+        def is_movie_by_title(title: str) -> bool:
+            if not title: return False
+            return any(kw in title.lower() for kw in ["剧场版", "劇場版", "movie", "映画"])
+
+        for item in results:
+            if item.type == 'tv_series' and is_movie_by_title(item.title):
+                item.type = 'movie'
+
+        if season:
+            original_count = len(results)
+            filtered_by_type = [item for item in results if item.type == 'tv_series']
+            results = [item for item in filtered_by_type if item.season == season]
+            logger.info(f"根据指定的季度 ({season}) 进行过滤，从 {original_count} 个结果中保留了 {len(results)} 个。")
+
+        source_settings = await crud.get_all_scraper_settings(session)
+        source_order_map = {s['providerName']: s['displayOrder'] for s in source_settings}
+
+        def sort_key(item: models.ProviderSearchInfo):
+            return (source_order_map.get(item.provider, 999), -fuzz.token_set_ratio(keyword, item.title))
+
+        sorted_results = sorted(results, key=sort_key)
+        # --- End of WebUI Search Logic ---
+
+        search_id = str(uuid.uuid4())
+        indexed_results = [ControlSearchResultItem(**r.model_dump(), resultIndex=i) for i, r in enumerate(sorted_results)]
+        await crud.set_cache(session, f"control_search_{search_id}", [r.model_dump() for r in sorted_results], 600)
+        return ControlSearchResponse(searchId=search_id, results=indexed_results)
     finally:
         await manager.release_search_lock(api_key)
 
@@ -817,4 +838,32 @@ async def resume_task(taskId: str, task_manager: TaskManager = Depends(get_task_
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="恢复任务失败，可能任务未被暂停。")
     return {"message": "任务已恢复。"}
 
+# --- 定时任务管理 ---
+scheduler_router = APIRouter(prefix="/scheduler", dependencies=[Depends(verify_api_key)])
+
+@scheduler_router.get("/tasks", response_model=List[Dict[str, Any]], summary="获取所有定时任务")
+async def list_scheduled_tasks(
+    scheduler_manager: SchedulerManager = Depends(get_scheduler_manager),
+):
+    """获取所有已配置的定时任务及其当前状态。"""
+    tasks = await scheduler_manager.get_all_tasks()
+    # 修正：将 'id' 键重命名为 'taskId' 以保持API一致性
+    return tasks
+
+@scheduler_router.get("/{taskId}/last_result", response_model=models.TaskInfo, summary="获取定时任务的最近一次运行结果")
+async def get_scheduled_task_last_result(
+    taskId: str = Path(..., description="定时任务的ID"),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """
+    获取指定定时任务的最近一次运行结果。
+    如果任务从未运行过，将返回 404 Not Found。
+    """
+    result = await crud.get_last_run_result_for_scheduled_task(session, taskId)
+    if not result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该定时任务的运行记录。")
+    return models.TaskInfo.model_validate(result)
+
+
 router.include_router(tasks_router)
+router.include_router(scheduler_router)

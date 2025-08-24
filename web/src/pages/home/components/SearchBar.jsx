@@ -61,7 +61,7 @@ export const SearchBar = () => {
       setLoading(true)
       setSearchHistory(history => {
         if (history.includes(values.keyword)) return history
-        return [...history, values.keyword]
+        return [values.keyword, ...history]
       })
 
       timer.current = window.setInterval(() => {

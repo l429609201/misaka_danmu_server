@@ -23,13 +23,14 @@ class TaskSuccess(Exception):
     pass
 
 class Task:
-    def __init__(self, task_id: str, title: str, coro_factory: Callable[[Callable], Coroutine]):
+    def __init__(self, task_id: str, title: str, coro_factory: Callable[[Callable], Coroutine], scheduled_task_id: Optional[str] = None):
         self.task_id = task_id
         self.title = title
         self.coro_factory: Callable[[AsyncSession, Callable], Coroutine] = coro_factory
         self.done_event = asyncio.Event()
         self.pause_event = asyncio.Event()
         self.running_coro_task: Optional[asyncio.Task] = None
+        self.scheduled_task_id = scheduled_task_id
         self.pause_event.set() # 默认为运行状态 (事件被设置)
 
 class TaskManager:
@@ -114,7 +115,7 @@ class TaskManager:
                 self._queue.task_done()
                 task.done_event.set()
 
-    async def submit_task(self, coro_factory: Callable[[AsyncSession, Callable], Coroutine], title: str) -> Tuple[str, asyncio.Event]:
+    async def submit_task(self, coro_factory: Callable[[AsyncSession, Callable], Coroutine], title: str, scheduled_task_id: Optional[str] = None) -> Tuple[str, asyncio.Event]:
         """提交一个新任务到队列，并在数据库中创建记录。返回任务ID和完成事件。"""
         async with self._lock:
             # 检查是否有同名任务正在排队或运行
@@ -125,11 +126,11 @@ class TaskManager:
             self._pending_titles.add(title)
 
         task_id = str(uuid4())
-        task = Task(task_id, title, coro_factory)
+        task = Task(task_id, title, coro_factory, scheduled_task_id=scheduled_task_id)
         
         async with self._session_factory() as session:
             await crud.create_task_in_history(
-                session, task_id, title, TaskStatus.PENDING, "等待执行..."
+                session, task_id, title, TaskStatus.PENDING, "等待执行...", scheduled_task_id=scheduled_task_id
             )
         
         await self._queue.put(task)

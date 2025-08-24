@@ -78,6 +78,7 @@ export const SearchResult = () => {
   const [activeItem, setActiveItem] = useState(null)
   const dragOverlayRef = useRef(null)
   const [editConfirmLoading, setEditConfirmLoading] = useState(false)
+  const [range, setRange] = useState([1, 1])
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -743,6 +744,41 @@ export const SearchResult = () => {
               }}
             >
               重整分集导入
+            </Button>
+          </div>
+        </div>
+        <div className="flex item-wrap md:flex-nowrap justify-between items-center gap-3 my-6">
+          <div className="shrink-0">集数区间:</div>
+          <div className="w-full flex items-center justify-between flex-wrap md:flex-nowrap gap-2">
+            <span>从</span>
+            <InputNumber
+              value={range[0]}
+              onChange={value => setRange(r => [value, r[1]])}
+              min={1}
+              max={range[1]}
+              step={1}
+            />
+            <span>到</span>
+            <InputNumber
+              value={range[1]}
+              onChange={value => setRange(r => [r[0], value])}
+              min={range[0]}
+              step={1}
+            />
+            <Button
+              type="primary"
+              block
+              onClick={() => {
+                console.log(range)
+                setEditEpisodeList(list => {
+                  return list.filter(
+                    it =>
+                      it.episodeIndex >= range[0] && it.episodeIndex <= range[1]
+                  )
+                })
+              }}
+            >
+              确认区间
             </Button>
           </div>
         </div>

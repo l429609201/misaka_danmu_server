@@ -201,9 +201,71 @@ class GamerScraper(BaseScraper):
             return []
 
     async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
-        """(未实现) 从URL中提取作品信息。"""
-        self.logger.warning(f"从URL导入功能尚未为 {self.provider_name} 实现。")
-        raise NotImplementedError(f"从URL导入功能尚未为 {self.provider_name} 实现。")
+        """从动画疯URL中提取作品信息。"""
+        await self._ensure_config()
+        self.logger.info(f"Gamer: 正在从URL提取信息: {url}")
+
+        sn_match = re.search(r"sn=(\d+)", url)
+        if not sn_match:
+            self.logger.warning(f"Gamer: 无法从URL中解析出sn号: {url}")
+            return None
+        
+        sn = sn_match.group(1)
+
+        try:
+            response = await self._request_with_retry("GET", url)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "lxml")
+        except Exception as e:
+            self.logger.error(f"Gamer: 访问URL失败 {url}: {e}", exc_info=True)
+            return None
+
+        # 检查是否是分集页面，如果是，则找到系列页面的链接
+        media_id = sn
+        if "animeVideo.php" in url:
+            back_to_list_link = soup.select_one(".v-info__title a[href*='animeRef.php']")
+            if back_to_list_link:
+                series_sn_match = re.search(r"sn=(\d+)", back_to_list_link['href'])
+                if series_sn_match:
+                    media_id = series_sn_match.group(1)
+                    self.logger.info(f"Gamer: 从分集页面 (sn={sn}) 找到系列ID: {media_id}")
+                    # 获取系列页面的内容
+                    series_url = f"https://ani.gamer.com.tw/animeRef.php?sn={media_id}"
+                    try:
+                        response = await self._request_with_retry("GET", series_url)
+                        response.raise_for_status()
+                        soup = BeautifulSoup(response.text, "lxml")
+                    except Exception as e:
+                        self.logger.error(f"Gamer: 访问系列页面失败 {series_url}: {e}", exc_info=True)
+                        return None
+                else:
+                    self.logger.warning(f"Gamer: 在分集页面上找到了返回链接，但无法解析出系列sn号。")
+                    return None
+        
+        try:
+            title_tag = soup.select_one(".anime_name h1")
+            if not title_tag:
+                self.logger.error(f"Gamer: 无法从系列页面 (sn={media_id}) 解析标题。")
+                return None
+            title_trad = title_tag.text.strip()
+            title_simp = self.cc_t2s.convert(title_trad)
+
+            image_url = None
+            img_tag = soup.select_one(".anime_info_pic img")
+            if img_tag:
+                image_url = img_tag.get("src")
+
+            episode_count = len(soup.select(".season a[href*='animeVideo.php']"))
+            media_type = "movie" if episode_count == 1 else "tv_series"
+
+            return models.ProviderSearchInfo(
+                provider=self.provider_name, mediaId=media_id, title=title_simp,
+                type=media_type, season=get_season_from_title(title_simp),
+                imageUrl=image_url, episodeCount=episode_count
+            )
+        except Exception as e:
+            self.logger.error(f"Gamer: 解析系列页面 (sn={media_id}) 时发生错误: {e}", exc_info=True)
+            return None
 
     async def get_id_from_url(self, url: str) -> Optional[str]:
         """从动画疯URL中提取sn号。"""

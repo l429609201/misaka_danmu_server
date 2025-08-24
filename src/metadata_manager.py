@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Set, Optional, Type
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Request
 
-from . import crud, models
+from . import crud, models, orm_models
 from .config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
@@ -40,10 +40,29 @@ class MetadataSourceManager:
         # 从数据库缓存所有源的持久设置。
         self.source_settings: Dict[str, Dict[str, Any]] = {}
 
-    async def initialize(self):
+    async def initialize(self, app):
         """在应用启动时加载并同步元数据源。"""
         await self.load_and_sync_sources()
+        self.register_source_routers(app)
         logger.info("元数据源管理器已初始化。")
+
+    def register_source_routers(self, app):
+        """
+        遍历所有已加载的源，并将其API路由注册到主应用中。
+        """
+        from fastapi import APIRouter
+        self.logger.info("正在注册元数据源提供的API路由...")
+        for provider_name, source_instance in self.sources.items():
+            # 检查源实例是否有 'api_router' 属性，并且它是一个 APIRouter
+            if hasattr(source_instance, 'api_router') and isinstance(getattr(source_instance, 'api_router', None), APIRouter):
+                # 修正：将所有元数据源的路由挂载到 /api/metadata/ 下，以简化路由结构
+                prefix = f"/api/metadata/{provider_name}"
+                app.include_router(
+                    source_instance.api_router,
+                    prefix=prefix,
+                    tags=[f"Metadata - {provider_name.capitalize()}"]
+                )
+                self.logger.info(f"已为源 '{provider_name}' 挂载API路由，前缀: {prefix}")
 
     async def load_and_sync_sources(self):
         """动态发现、同步到数据库并加载元数据源插件。"""
@@ -158,10 +177,10 @@ class MetadataSourceManager:
             return await source_instance.get_details(item_id, user, mediaType=mediaType)
         raise HTTPException(status_code=404, detail=f"未找到元数据源: {provider}")
 
-    async def execute_action(self, provider: str, action_name: str, payload: Dict, user: models.User) -> Any:
+    async def execute_action(self, provider: str, action_name: str, payload: Dict, user: models.User, request: Request) -> Any:
         """执行特定提供商的自定义操作。"""
         if source_instance := self.sources.get(provider):
-            return await source_instance.execute_action(action_name, payload, user)
+            return await source_instance.execute_action(action_name, payload, user, request=request)
         raise HTTPException(status_code=404, detail=f"未找到元数据源: {provider}")
 
     async def getProviderConfig(self, providerName: str) -> Dict[str, Any]:

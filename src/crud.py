@@ -573,32 +573,34 @@ async def bulk_insert_comments(session: AsyncSession, episode_id: int, comments:
     if not comments:
         return 0
 
-    # 1. 准备要插入的数据
-    data_to_insert = [
-        {"episodeId": episode_id, "cid": c['cid'], "p": c['p'], "m": c['m'], "t": c['t']}
-        for c in comments
-    ]
-
     # 2. 获取当前弹幕数量
     initial_count_stmt = select(func.count()).select_from(Comment).where(Comment.episodeId == episode_id)
     initial_count = (await session.execute(initial_count_stmt)).scalar_one()
 
-    # 3. 执行 upsert 操作
+    # 3. 分块执行 upsert 操作以避免参数数量超限
     dialect = session.bind.dialect.name
-    if dialect == 'mysql':
-        stmt = mysql_insert(Comment).values(data_to_insert)
-        stmt = stmt.on_duplicate_key_update(cid=stmt.inserted.cid) # A no-op update to trigger IGNORE behavior
-    elif dialect == 'postgresql':
-        stmt = postgresql_insert(Comment).values(data_to_insert)
-        # 修正：使用 on_conflict_do_nothing 并通过 index_elements 指定列，以提高兼容性
-        stmt = stmt.on_conflict_do_nothing(index_elements=['episode_id', 'cid'])
-    else:
-        # For other dialects, we might need a slower, row-by-row approach or raise an error.
-        # For now, we focus on mysql and postgresql.
-        raise NotImplementedError(f"批量插入弹幕功能尚未为数据库类型 '{dialect}' 实现。")
-    
-    await session.execute(stmt)
-    await session.flush() # 确保操作完成
+    # 每批插入5000条，每条5个字段，总参数为25000，低于PostgreSQL的32767限制
+    chunk_size = 5000
+
+    for i in range(0, len(comments), chunk_size):
+        chunk = comments[i:i + chunk_size]
+        data_to_insert = [
+            {"episodeId": episode_id, "cid": c['cid'], "p": c['p'], "m": c['m'], "t": c['t']}
+            for c in chunk
+        ]
+
+        if dialect == 'mysql':
+            stmt = mysql_insert(Comment).values(data_to_insert)
+            stmt = stmt.on_duplicate_key_update(cid=stmt.inserted.cid) # A no-op update to trigger IGNORE behavior
+        elif dialect == 'postgresql':
+            stmt = postgresql_insert(Comment).values(data_to_insert)
+            stmt = stmt.on_conflict_do_nothing(index_elements=['episode_id', 'cid'])
+        else:
+            raise NotImplementedError(f"批量插入弹幕功能尚未为数据库类型 '{dialect}' 实现。")
+        
+        await session.execute(stmt)
+
+    await session.flush() # 确保所有分块操作完成
 
     # 4. 重新计算总数并更新
     final_count_stmt = select(func.count()).select_from(Comment).where(Comment.episodeId == episode_id)
@@ -1277,7 +1279,7 @@ async def update_anime_aliases_if_empty(session: AsyncSession, anime_id: int, al
 
 async def get_scheduled_tasks(session: AsyncSession) -> List[Dict[str, Any]]:
     stmt = select(
-        ScheduledTask.id.label("id"),
+        ScheduledTask.taskId.label("taskId"),
         ScheduledTask.name.label("name"),
         ScheduledTask.jobType.label("jobType"),
         ScheduledTask.cronExpression.label("cronExpression"),
@@ -1288,26 +1290,26 @@ async def get_scheduled_tasks(session: AsyncSession) -> List[Dict[str, Any]]:
     result = await session.execute(stmt)
     return [dict(row) for row in result.mappings()]
 async def check_scheduled_task_exists_by_type(session: AsyncSession, job_type: str) -> bool:
-    stmt = select(ScheduledTask.id).where(ScheduledTask.jobType == job_type).limit(1)
+    stmt = select(ScheduledTask.taskId).where(ScheduledTask.jobType == job_type).limit(1)
     result = await session.execute(stmt)
     return result.scalar_one_or_none() is not None
 
 async def get_scheduled_task(session: AsyncSession, task_id: str) -> Optional[Dict[str, Any]]:
     stmt = select(
-        ScheduledTask.id.label("id"), 
+        ScheduledTask.taskId.label("taskId"), 
         ScheduledTask.name.label("name"),
         ScheduledTask.jobType.label("jobType"), 
         ScheduledTask.cronExpression.label("cronExpression"),
         ScheduledTask.isEnabled.label("isEnabled"),
         ScheduledTask.lastRunAt.label("lastRunAt"),
         ScheduledTask.nextRunAt.label("nextRunAt")
-    ).where(ScheduledTask.id == task_id)
+    ).where(ScheduledTask.taskId == task_id)
     result = await session.execute(stmt)
     row = result.mappings().first()
     return dict(row) if row else None
 
 async def create_scheduled_task(session: AsyncSession, task_id: str, name: str, job_type: str, cron: str, is_enabled: bool):
-    new_task = ScheduledTask(id=task_id, name=name, jobType=job_type, cronExpression=cron, isEnabled=is_enabled)
+    new_task = ScheduledTask(taskId=task_id, name=name, jobType=job_type, cronExpression=cron, isEnabled=is_enabled)
     session.add(new_task)
     await session.commit()
 
@@ -1326,42 +1328,57 @@ async def delete_scheduled_task(session: AsyncSession, task_id: str):
         await session.commit()
 
 async def update_scheduled_task_run_times(session: AsyncSession, task_id: str, last_run: Optional[datetime], next_run: Optional[datetime]):
-    await session.execute(update(ScheduledTask).where(ScheduledTask.id == task_id).values(lastRunAt=last_run, nextRunAt=next_run))
+    await session.execute(update(ScheduledTask).where(ScheduledTask.taskId == task_id).values(lastRunAt=last_run, nextRunAt=next_run))
     await session.commit()
 
 # --- Task History ---
 
-async def create_task_in_history(session: AsyncSession, task_id: str, title: str, status: str, description: str):
-    new_task = TaskHistory(id=task_id, title=title, status=status, description=description)
+async def create_task_in_history(
+    session: AsyncSession,
+    task_id: str,
+    title: str,
+    status: str,
+    description: str,
+    scheduled_task_id: Optional[str] = None
+):
+    new_task = TaskHistory(taskId=task_id, title=title, status=status, description=description, scheduledTaskId=scheduled_task_id)
     session.add(new_task)
     await session.commit()
 
 async def update_task_progress_in_history(session: AsyncSession, task_id: str, status: str, progress: int, description: str):
-    await session.execute(update(TaskHistory).where(TaskHistory.id == task_id).values(status=status, progress=progress, description=description))
+    await session.execute(update(TaskHistory).where(TaskHistory.taskId == task_id).values(status=status, progress=progress, description=description))
     await session.commit()
 
 async def finalize_task_in_history(session: AsyncSession, task_id: str, status: str, description: str):
-    await session.execute(update(TaskHistory).where(TaskHistory.id == task_id).values(status=status, description=description, progress=100, finishedAt=datetime.now(timezone.utc)))
+    await session.execute(update(TaskHistory).where(TaskHistory.taskId == task_id).values(status=status, description=description, progress=100, finishedAt=datetime.now(timezone.utc)))
     await session.commit()
 
 async def update_task_status(session: AsyncSession, task_id: str, status: str):
-    await session.execute(update(TaskHistory).where(TaskHistory.id == task_id).values(status=status))
+    await session.execute(update(TaskHistory).where(TaskHistory.taskId == task_id).values(status=status))
     await session.commit()
 
 async def get_tasks_from_history(session: AsyncSession, search_term: Optional[str], status_filter: str) -> List[Dict[str, Any]]:
-    stmt = select(TaskHistory)
+    # 修正：显式选择需要的列，以避免在旧的数据库模式上查询不存在的列（如 scheduled_task_id）
+    stmt = select(
+        TaskHistory.taskId,
+        TaskHistory.title,
+        TaskHistory.status,
+        TaskHistory.progress,
+        TaskHistory.description,
+        TaskHistory.createdAt
+    )
     if search_term:
         stmt = stmt.where(TaskHistory.title.like(f"%{search_term}%"))
     if status_filter == 'in_progress':
         stmt = stmt.where(TaskHistory.status.in_(['排队中', '运行中', '已暂停']))
     elif status_filter == 'completed':
         stmt = stmt.where(TaskHistory.status == '已完成')
-    
+
     stmt = stmt.order_by(TaskHistory.createdAt.desc()).limit(100)
     result = await session.execute(stmt)
     return [
-        {"taskId": t.id, "title": t.title, "status": t.status, "progress": t.progress, "description": t.description, "createdAt": t.createdAt}
-        for t in result.scalars()
+        {"taskId": row.taskId, "title": row.title, "status": row.status, "progress": row.progress, "description": row.description, "createdAt": row.createdAt}
+        for row in result.mappings()
     ]
 
 async def get_task_details_from_history(session: AsyncSession, task_id: str) -> Optional[Dict[str, Any]]:
@@ -1369,7 +1386,7 @@ async def get_task_details_from_history(session: AsyncSession, task_id: str) -> 
     task = await session.get(TaskHistory, task_id)
     if task:
         return {
-            "taskId": task.id,
+            "taskId": task.taskId,
             "title": task.title,
             "status": task.status,
             "progress": task.progress,
@@ -1381,7 +1398,7 @@ async def get_task_details_from_history(session: AsyncSession, task_id: str) -> 
 async def get_task_from_history_by_id(session: AsyncSession, task_id: str) -> Optional[Dict[str, Any]]:
     task = await session.get(TaskHistory, task_id)
     if task:
-        return {"id": task.id, "title": task.title, "status": task.status}
+        return {"taskId": task.taskId, "title": task.title, "status": task.status}
     return None
 
 async def delete_task_from_history(session: AsyncSession, task_id: str) -> bool:
@@ -1401,6 +1418,31 @@ async def mark_interrupted_tasks_as_failed(session: AsyncSession) -> int:
     result = await session.execute(stmt)
     await session.commit()
     return result.rowcount
+
+async def get_last_run_result_for_scheduled_task(session: AsyncSession, scheduled_task_id: str) -> Optional[Dict[str, Any]]:
+    """获取指定定时任务的最近一次运行结果。"""
+    stmt = (
+        select(TaskHistory)
+        .where(TaskHistory.scheduledTaskId == scheduled_task_id)
+        .order_by(TaskHistory.createdAt.desc())
+        .limit(1)
+    )
+    result = await session.execute(stmt)
+    task_run = result.scalar_one_or_none()
+    if not task_run:
+        return None
+    
+    # 返回一个与 models.TaskInfo 兼容的字典
+    return {
+        "taskId": task_run.taskId,
+        "title": task_run.title,
+        "status": task_run.status,
+        "progress": task_run.progress,
+        "description": task_run.description,
+        "createdAt": task_run.createdAt,
+        "updatedAt": task_run.updatedAt,
+        "finishedAt": task_run.finishedAt,
+    }
 
 # --- External API Logging ---
 

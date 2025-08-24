@@ -16,7 +16,7 @@ import httpx
 from ..rate_limiter import RateLimiter, RateLimitExceededError
 from ..config_manager import ConfigManager
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status, Response
 from fastapi.security import OAuth2PasswordRequestForm
 
 from .. import crud, models, orm_models, security, scraper_manager
@@ -154,6 +154,9 @@ async def search_anime_provider(
         filter_aliases.add(search_title)
         logger.info(f"所有辅助搜索完成，最终别名集大小: {len(filter_aliases)}")
 
+        # 新增：根据您的要求，打印最终的别名列表以供调试
+        logger.info(f"用于过滤的别名列表: {list(filter_aliases)}")
+
         logger.info(f"将使用解析后的标题 '{search_title}' 进行全网搜索...")
         all_results = await manager.search_all([search_title], episode_info=episode_info)
 
@@ -161,13 +164,23 @@ async def search_anime_provider(
             if not title: return ""
             title = re.sub(r'[\[【(（].*?[\]】)）]', '', title)
             return title.lower().replace(" ", "").replace("：", ":").strip()
+
+        # 修正：采用更智能的两阶段过滤策略
+        # 阶段1：基于原始搜索词进行初步、宽松的过滤，以确保所有相关系列（包括不同季度和剧场版）都被保留。
+        # 只有当用户明确指定季度时，我们才进行更严格的过滤。
         normalized_filter_aliases = {normalize_for_filtering(alias) for alias in filter_aliases if alias}
         filtered_results = []
         for item in all_results:
             normalized_item_title = normalize_for_filtering(item.title)
             if not normalized_item_title: continue
-            if any((alias in normalized_item_title) or (normalized_item_title in alias) for alias in normalized_filter_aliases):
+            
+            # 检查搜索结果是否与任何一个别名匹配
+            # token_set_ratio 擅长处理单词顺序不同和部分单词匹配的情况。
+            # 修正：使用 partial_ratio 来更好地匹配续作和外传 (e.g., "刀剑神域" vs "刀剑神域外传")
+            # 85 的阈值可以在保留强相关的同时，过滤掉大部分无关结果。
+            if any(fuzz.partial_ratio(normalized_item_title, alias) > 85 for alias in normalized_filter_aliases):
                 filtered_results.append(item)
+
         logger.info(f"别名过滤: 从 {len(all_results)} 个原始结果中，保留了 {len(filtered_results)} 个相关结果。")
         results = filtered_results
 
@@ -1036,12 +1049,13 @@ async def get_metadata_details_with_type(
 async def execute_metadata_action(
     provider: str,
     action_name: str,
-    payload: Dict[str, Any] = None,
+    request: Request,
+    payload: Optional[Dict[str, Any]] = Body(None),
     current_user: models.User = Depends(security.get_current_user),
     manager: MetadataSourceManager = Depends(get_metadata_manager)
 ):
     try:
-        return await manager.execute_action(provider, action_name, payload or {}, current_user)
+        return await manager.execute_action(provider, action_name, payload or {}, current_user, request=request)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

@@ -656,3 +656,7 @@ class TencentScraper(BaseScraper):
             return vid
         self.logger.warning(f"Tencent: 无法从URL中解析出 vid: {url}")
         return None
+
+    def format_episode_id_for_comments(self, provider_episode_id: Any) -> str:
+        """For Tencent, the episode ID is a simple string (vid), so no formatting is needed."""
+        return str(provider_episode_id)

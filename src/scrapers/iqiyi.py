@@ -256,6 +256,7 @@ class IqiyiScraper(BaseScraper):
         self.reg_video_info = re.compile(r'"videoInfo":(\{.+?\}),')
         self.cookies = {"pgv_pvid": "40b67e3b06027f3d","video_platform": "2","vversion_name": "8.2.95","video_bucketid": "4","video_omgid": "0a1ff6bc9407c0b1cff86ee5d359614d"}
         # 实体引用匹配正则
+        self.client: Optional[httpx.AsyncClient] = None
         self.entity_pattern = re.compile(r'&#[xX]?[0-9a-fA-F]+;')
 
         # XML 1.0规范允许的字符编码范围
@@ -362,6 +363,16 @@ class IqiyiScraper(BaseScraper):
 
         self.logger.debug(f"过滤前后长度变化: {original_len} → {len(xml_str)} (减少 {original_len - len(xml_str)})")
         return xml_str
+
+    async def _create_client(self, headers: Optional[Dict] = None, cookies: Optional[Dict] = None) -> httpx.AsyncClient:
+        """Helper to create a pre-configured httpx client."""
+        # This method can be expanded later to include proxy support from config
+        return httpx.AsyncClient(
+            headers=headers,
+            cookies=cookies,
+            timeout=20.0,
+            follow_redirects=True
+        )
 
     def _log_error_context(self, xml_str: str, line: int, col: int):
         """打印错误位置附近的XML内容"""
@@ -1221,7 +1232,7 @@ class IqiyiScraper(BaseScraper):
             return None
         
         link_id = link_id_match.group(1)
-        base_info = await self._get_video_base_info(link_id)
+        base_info = await self._get_legacy_video_base_info(link_id)
         if base_info and base_info.tv_id:
             self.logger.info(f"爱奇艺: 从URL {url} 解析到 tvid: {base_info.tv_id}")
             return str(base_info.tv_id)
@@ -1229,3 +1240,7 @@ class IqiyiScraper(BaseScraper):
         self.logger.warning(f"爱奇艺: 未能从 link_id '{link_id}' 获取到 tvid。")
         
         return None
+
+    def format_episode_id_for_comments(self, provider_episode_id: Any) -> str:
+        """For iqiyi, the episode ID is a simple string (tv_id), so no formatting is needed."""
+        return str(provider_episode_id)

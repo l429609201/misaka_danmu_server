@@ -192,7 +192,9 @@ export const Token = () => {
             <span
               className="cursor-pointer hover:text-primary"
               onClick={() => {
-                copy(`${domain || window.location.href}/api/v1/${record.token}`)
+                copy(
+                  `${domain || window.location.origin}/api/v1/${record.token}`
+                )
                 message.success('复制成功')
               }}
             >

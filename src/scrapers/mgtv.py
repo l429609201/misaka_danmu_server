@@ -256,9 +256,43 @@ class MgtvScraper(BaseScraper):
             return []
 
     async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
-        """(未实现) 从URL中提取作品信息。"""
-        self.logger.warning(f"从URL导入功能尚未为 {self.provider_name} 实现。")
-        raise NotImplementedError(f"从URL导入功能尚未为 {self.provider_name} 实现。")
+        """从芒果TV URL中提取作品信息。"""
+        self.logger.info(f"MGTV: 正在从URL提取信息: {url}")
+        
+        # 从URL中提取 collection_id
+        match = re.search(r'/b/(\d+)', url)
+        if not match:
+            self.logger.warning(f"MGTV: 无法从URL中解析出 collection_id: {url}")
+            return None
+        
+        collection_id = match.group(1)
+        series_url = f"https://www.mgtv.com/b/{collection_id}/"
+
+        try:
+            response = await self._request_with_rate_limit("GET", series_url)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "lxml")
+
+            title_tag = soup.select_one("h1.title")
+            if not title_tag:
+                self.logger.error(f"MGTV: 无法从系列页面 (collection_id={collection_id}) 解析标题。")
+                return None
+            
+            title = title_tag.text.strip()
+            image_url = soup.select_one("div.v-img img")["src"] if soup.select_one("div.v-img img") else None
+            
+            # 尝试通过计算分集链接数量来获取总集数
+            episode_count = len(soup.select(".episode-list-box a[href*='/b/']"))
+            media_type = "movie" if episode_count == 1 else "tv_series"
+
+            return models.ProviderSearchInfo(
+                provider=self.provider_name, mediaId=collection_id, title=title,
+                type=media_type, season=get_season_from_title(title),
+                imageUrl=image_url, episodeCount=episode_count if episode_count > 0 else None
+            )
+        except Exception as e:
+            self.logger.error(f"MGTV: 解析系列页面 (collection_id={collection_id}) 时发生错误: {e}", exc_info=True)
+            return None
 
     async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         self.logger.info(f"MGTV: 正在为 media_id={media_id} 获取分集列表...")

@@ -101,7 +101,7 @@ services:
       --explicit_defaults_for_timestamp=true
     healthcheck:
       #!!! 重要：-u和-p后不能有空格, 且密码需要与 MYSQL_PASSWORD 保持一致 !!! 这里启动检查的密码也要改
-      test: ["CMD-SHELL", "mysql -udanmuapi -pyour_strong_user_password -e 'SELECT 1' danmuapi"]
+      test: ["CMD-SHELL", "mysql -udanmuapi -p'your_strong_root_password' -e \"SELECT 1\" danmuapi"]
       interval: 5s
       timeout: 3s
       retries: 5

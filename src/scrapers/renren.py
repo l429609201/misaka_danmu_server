@@ -290,14 +290,68 @@ class RenrenScraper(BaseScraper):
         return results
 
     async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
-        """(未实现) 从URL中提取作品信息。"""
-        self.logger.warning(f"从URL导入功能尚未为 {self.provider_name} 实现。")
-        raise NotImplementedError(f"从URL导入功能尚未为 {self.provider_name} 实现。")
+        """从人人视频URL中提取作品信息。"""
+        self.logger.info(f"Renren: 正在从URL提取信息: {url}")
+        
+        # URL 格式: https://rrsp.com.cn/v/{dramaId} 或 /v/{dramaId}/{episodeSid}
+        match = re.search(r'/v/(\d+)', url)
+        if not match:
+            self.logger.warning(f"Renren: 无法从URL中解析出 dramaId: {url}")
+            return None
+        
+        drama_id = match.group(1)
+
+        try:
+            # 1. 获取剧集详情以获得准确的标题
+            detail_env = await self._fetch_drama_detail(drama_id)
+            if not detail_env or not detail_env.data:
+                self.logger.warning(f"Renren: 无法获取 dramaId={drama_id} 的详情。")
+                return None
+            
+            title = detail_env.data.dramaInfo.title
+            
+            # 2. 使用标题进行搜索，以获取包含封面和年份的完整信息
+            search_results = await self.search(keyword=title)
+            
+            # 3. 从搜索结果中找到与我们 drama_id 匹配的项
+            best_match = next((r for r in search_results if r.mediaId == drama_id), None)
+            
+            if not best_match:
+                self.logger.warning(f"Renren: 搜索 '{title}' 后未找到与 dramaId={drama_id} 匹配的结果。将使用详情API中的部分信息。")
+                # Fallback: create a partial ProviderSearchInfo
+                title_clean = re.sub(r"<[^>]+>", "", title).replace(":", "：")
+                episode_count = len(detail_env.data.episodeList)
+                media_type = "tv_series"
+                return models.ProviderSearchInfo(
+                    provider=self.provider_name, mediaId=drama_id, title=title_clean,
+                    type=media_type, season=get_season_from_title(title_clean),
+                    episodeCount=episode_count if episode_count > 0 else None
+                )
+
+            # 4. 如果搜索结果中没有集数，从详情中补充
+            if not best_match.episodeCount:
+                best_match.episodeCount = len(detail_env.data.episodeList)
+
+            return best_match
+
+        except Exception as e:
+            self.logger.error(f"Renren: 从URL提取信息时发生错误 (dramaId={drama_id}): {e}", exc_info=True)
+            return None
 
     async def get_id_from_url(self, url: str) -> Optional[str]:
-        """(未实现) 从URL中提取分集ID。"""
-        self.logger.warning(f"从URL手动导入分集功能尚未为 {self.provider_name} 实现。")
-        raise NotImplementedError(f"从URL手动导入分集功能尚未为 {self.provider_name} 实现。")
+        """从人人视频URL中提取分集ID (sid)。"""
+        # URL 格式: https://rrsp.com.cn/v/{dramaId}/{episodeSid}
+        match = re.search(r'/v/\d+/(\d+)', url)
+        if match:
+            sid = match.group(1)
+            self.logger.info(f"Renren: 从URL {url} 解析到 sid: {sid}")
+            return sid
+        self.logger.warning(f"Renren: 无法从URL中解析出 sid: {url}")
+        return None
+
+    def format_episode_id_for_comments(self, provider_episode_id: Any) -> str:
+        """For Renren, the episode ID is a simple string (sid), so no formatting is needed."""
+        return str(provider_episode_id)
 
     async def _fetch_drama_detail(self, drama_id: str) -> Optional[RrspDramaDetailEnvelope]:
         url = f"{BASE_API}/m-station/drama/page"

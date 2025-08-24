@@ -134,16 +134,29 @@ async def delete_bulk_episodes_task(episodeIds: List[int], session: AsyncSession
     """后台任务：批量删除多个分集。"""
     total = len(episodeIds)
     await progress_callback(5, f"准备删除 {total} 个分集...")
+    deleted_count = 0
     try:
-        # 1. 一次性删除所有关联的弹幕
-        await session.execute(delete(orm_models.Comment).where(orm_models.Comment.episodeId.in_(episodeIds)))
-        await progress_callback(50, "关联弹幕已删除，正在删除分集记录...")
+        for i, episode_id in enumerate(episodeIds):
+            progress = 5 + int(((i + 1) / total) * 90) if total > 0 else 95
+            await progress_callback(progress, f"正在删除分集 {i+1}/{total} (ID: {episode_id}) 的数据...")
 
-        # 2. 一次性删除所有分集
-        result = await session.execute(delete(orm_models.Episode).where(orm_models.Episode.id.in_(episodeIds)))
-        deleted_count = result.rowcount
-        
-        await session.commit()
+            # 为每个分集单独执行删除操作，以减小事务大小和锁定的时间
+            # 1. 删除关联的弹幕
+            await session.execute(delete(orm_models.Comment).where(orm_models.Comment.episodeId == episode_id))
+            
+            # 2. 删除分集本身
+            result = await session.execute(delete(orm_models.Episode).where(orm_models.Episode.id == episode_id))
+            
+            # 检查是否有行被删除
+            if result.rowcount > 0:
+                deleted_count += 1
+            
+            # 3. 为每个分集提交一次事务，以尽快释放锁
+            await session.commit()
+            
+            # 短暂休眠，以允许其他数据库操作有机会执行
+            await asyncio.sleep(0.1)
+
         raise TaskSuccess(f"批量删除完成，共处理 {total} 个，成功删除 {deleted_count} 个。")
     except TaskSuccess:
         # 显式地重新抛出 TaskSuccess，以确保它被 TaskManager 正确处理
@@ -565,11 +578,11 @@ async def manual_import_task(
     
     try:
         scraper = manager.get_scraper(providerName)
-        provider_episode_id = None
-        if hasattr(scraper, 'get_ids_from_url'): provider_episode_id = await scraper.get_ids_from_url(url)
-        elif hasattr(scraper, 'get_danmaku_id_from_url'): provider_episode_id = await scraper.get_danmaku_id_from_url(url)
-        elif hasattr(scraper, 'get_tvid_from_url'): provider_episode_id = await scraper.get_tvid_from_url(url)
-        elif hasattr(scraper, 'get_vid_from_url'): provider_episode_id = await scraper.get_vid_from_url(url)
+        # 修正：统一使用 get_id_from_url 方法，并检查其是否存在
+        if not hasattr(scraper, 'get_id_from_url'):
+            raise NotImplementedError(f"搜索源 '{providerName}' 不支持从URL手动导入。")
+
+        provider_episode_id = await scraper.get_id_from_url(url)
         
         if not provider_episode_id: raise ValueError(f"无法从URL '{url}' 中解析出有效的视频ID。")
 

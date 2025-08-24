@@ -87,16 +87,19 @@ class TmdbMetadataSource(BaseMetadataSource):
 
         try:
             async with await self._create_client() as client:
-                response = await client.get(f"/{mediaType}/{item_id}", params={"append_to_response": "alternative_titles,external_ids"})
+                # 1. Get main details in Chinese
+                response = await client.get(f"/{mediaType}/{item_id}", params={"append_to_response": "external_ids"})
                 if response.status_code == 404:
                     return None
                 response.raise_for_status()
                 details = response.json()
 
+                # 2. Get all aliases using the new comprehensive method
+                aliases = await self._fetch_and_structure_aliases(client, item_id, mediaType)
+                
                 image_base_url = await self._get_robust_image_base_url()
                 
-                aliases = self._parse_tmdb_details_for_aliases(details)
-                
+                # 3. Construct the response
                 return models.MetadataDetailsResponse(
                     id=str(details['id']),
                     tmdbId=str(details['id']),
@@ -114,31 +117,58 @@ class TmdbMetadataSource(BaseMetadataSource):
             # 捕获 _create_client 中的 API Key 未配置错误
             raise HTTPException(status_code=status.HTTP_412_PRECONDITION_FAILED, detail=str(e))
 
-    def _parse_tmdb_details_for_aliases(self, details: Dict[str, Any]) -> Dict[str, Any]:
-        name_en, name_jp, name_romaji, aliases_cn = None, None, None, []
-        original_title = details.get('original_name') or details.get('original_title')
-        original_language = details.get('original_language')
-        main_title_cn = details.get('name') or details.get('title')
+    async def _fetch_and_structure_aliases(self, client: httpx.AsyncClient, tmdb_id: str, media_type: str) -> Dict[str, Any]:
+        """
+        一个更全面的别名获取逻辑，结合了特定语言的详情获取和alternative_titles端点。
+        """
+        api_path = f"/{media_type}/{tmdb_id}"
+        name_en, name_jp, name_romaji = None, None, None
+        aliases_cn: set[str] = set()
 
-        if alt_titles := details.get('alternative_titles', {}).get('titles', []):
-            found_titles = {}
-            for alt_title in alt_titles:
-                iso_code = alt_title.get('iso_3166_1')
-                title = alt_title.get('title')
-                if iso_code in ["CN", "HK", "TW", "SG"]:
-                    aliases_cn.append(title)
-                elif iso_code == "JP":
-                    if alt_title.get('type') == "Romaji":
-                        if 'romaji' not in found_titles: found_titles['romaji'] = title
-                    elif not alt_title.get('type'):
-                        if 'jp' not in found_titles: found_titles['jp'] = title
-                elif iso_code in ["US", "GB"]:
-                    if 'en' not in found_titles: found_titles['en'] = title
-            name_en, name_jp, name_romaji = found_titles.get('en'), found_titles.get('jp'), found_titles.get('romaji')
+        # 1. 获取特定语言的主标题
+        try:
+            zh_res = await client.get(api_path, params={"language": "zh-CN"})
+            if zh_res.status_code == 200:
+                if title := zh_res.json().get('name') or zh_res.json().get('title'): aliases_cn.add(title)
+        except Exception as e:
+            self.logger.warning(f"获取 TMDB 中文标题失败 (ID: {tmdb_id}): {e}")
 
-        if not name_en and original_language == 'en': name_en = original_title
-        if not name_jp and original_language == 'ja': name_jp = original_title
-        if main_title_cn: aliases_cn.append(main_title_cn)
+        try:
+            en_res = await client.get(api_path, params={"language": "en-US"})
+            if en_res.status_code == 200:
+                name_en = en_res.json().get('name') or en_res.json().get('title')
+        except Exception as e:
+            self.logger.warning(f"获取 TMDB 英文标题失败 (ID: {tmdb_id}): {e}")
+
+        try:
+            ja_res = await client.get(api_path, params={"language": "ja-JP"})
+            if ja_res.status_code == 200:
+                name_jp = ja_res.json().get('name') or ja_res.json().get('title')
+        except Exception as e:
+            self.logger.warning(f"获取 TMDB 日文标题失败 (ID: {tmdb_id}): {e}")
+
+        # 2. 获取所有别名
+        try:
+            alt_res = await client.get(f"{api_path}/alternative_titles")
+            if alt_res.status_code == 200:
+                alt_titles_data = alt_res.json()
+                alt_titles = alt_titles_data.get("results") or alt_titles_data.get("titles", [])
+                for alt in alt_titles:
+                    iso_code = alt.get('iso_3166_1')
+                    title = alt.get('title')
+                    if not title: continue
+
+                    if iso_code in ["CN", "HK", "TW", "SG"]:
+                        aliases_cn.add(title)
+                    elif iso_code == "JP":
+                        if alt.get('type') == "Romaji":
+                            if not name_romaji: name_romaji = title
+                        else:
+                            if not name_jp: name_jp = title
+                    elif iso_code in ["US", "GB"]:
+                        if not name_en: name_en = title
+        except Exception as e:
+            self.logger.warning(f"获取 TMDB 别名失败 (ID: {tmdb_id}): {e}")
         
         return {
             "name_en": _clean_movie_title(name_en),
