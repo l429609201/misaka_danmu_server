@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from datetime import datetime
 from collections import defaultdict
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from ..utils import parse_search_keyword
 from .. import crud
 import httpx
 from pydantic import BaseModel, Field, ValidationError
@@ -463,12 +464,42 @@ class BilibiliScraper(BaseScraper):
         return params
 
     async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """
+        Performs a cached search for Bilibili content.
+        It caches the base results for a title and then filters them based on season.
+        """
         await self._ensure_config_and_cookie()
+        
+        parsed = parse_search_keyword(keyword)
+        search_title = parsed['title']
+        search_season = parsed['season']
 
+        cache_key = f"search_base_{self.provider_name}_{search_title}"
+        cached_results = await self._get_from_cache(cache_key)
+
+        if cached_results:
+            self.logger.info(f"Bilibili: 从缓存中命中基础搜索结果 (title='{search_title}')")
+            all_results = [models.ProviderSearchInfo.model_validate(r) for r in cached_results]
+        else:
+            self.logger.info(f"Bilibili: 缓存未命中，正在为标题 '{search_title}' 执行网络搜索...")
+            all_results = await self._perform_network_search(search_title, episode_info)
+            if all_results:
+                await self._set_to_cache(cache_key, [r.model_dump() for r in all_results], 'search_ttl_seconds', 3600)
+
+        if search_season is None:
+            return all_results
+
+        # Filter results by season
+        final_results = [item for item in all_results if item.season == search_season]
+        self.logger.info(f"Bilibili: 为 S{search_season} 过滤后，剩下 {len(final_results)} 个结果。")
+        return final_results
+
+    async def _perform_network_search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """Performs the actual network search for Bilibili."""
+        mixin_key = await self._get_wbi_mixin_key()
         search_types = ["media_bangumi", "media_ft"]
-        tasks = [self._search_by_type(keyword, search_type, episode_info) for search_type in search_types]
+        tasks = [self._search_by_type(keyword, search_type, mixin_key, episode_info) for search_type in search_types]
         results_from_all_types = await asyncio.gather(*tasks, return_exceptions=True)
-
         all_results = []
         for res in results_from_all_types:
             if isinstance(res, Exception):
@@ -478,19 +509,18 @@ class BilibiliScraper(BaseScraper):
         
         final_results = list({item.mediaId: item for item in all_results}.values())
 
-        self.logger.info(f"Bilibili: 搜索 '{keyword}' 完成，找到 {len(final_results)} 个有效结果。")
+        self.logger.info(f"Bilibili: 网络搜索 '{keyword}' 完成，找到 {len(final_results)} 个有效结果。")
         if final_results:
             log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in final_results])
             self.logger.info(f"Bilibili: 搜索结果列表:\n{log_results}")
         return final_results
 
-    async def _search_by_type(self, keyword: str, search_type: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+    async def _search_by_type(self, keyword: str, search_type: str, mixin_key: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
         """Helper function to search for a specific type on Bilibili."""
         self.logger.debug(f"Bilibili: Searching for type '{search_type}' with keyword '{keyword}'")
         
         search_params = {"keyword": keyword, "search_type": search_type}
         base_url = "https://api.bilibili.com/x/web-interface/wbi/search/type"
-        mixin_key = await self._get_wbi_mixin_key()
         signed_params = self._get_wbi_signed_params(search_params, mixin_key)
         url = f"{base_url}?{urlencode(signed_params)}"
         

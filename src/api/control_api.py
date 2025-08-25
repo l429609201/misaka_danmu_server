@@ -5,6 +5,7 @@ import re
 from enum import Enum
 from typing import List, Optional, Dict, Any, Callable
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, Path
 from fastapi.security import APIKeyQuery
 from thefuzz import fuzz
@@ -299,8 +300,12 @@ async def search_media(
         )
     try:
         # --- Start of WebUI Search Logic ---
-        episode_info = {"season": season, "episode": episode} if season is not None or episode is not None else None
-        all_results = await manager.search_all([keyword], episode_info=episode_info)
+        try:
+            episode_info = {"season": season, "episode": episode} if season is not None or episode is not None else None
+            all_results = await manager.search_all([keyword], episode_info=episode_info)
+        except httpx.RequestError as e:
+            logger.error(f"搜索媒体 '{keyword}' 时发生网络错误: {e}", exc_info=True)
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"搜索时发生网络错误: {e}")
 
         def normalize_for_filtering(title: str) -> str:
             if not title: return ""
@@ -426,7 +431,11 @@ async def get_episodes(
     item_to_fetch = cached_results[result_index]
     
     scraper = manager.get_scraper(item_to_fetch.provider)
-    return await scraper.get_episodes(item_to_fetch.mediaId, db_media_type=item_to_fetch.type)
+    try:
+        return await scraper.get_episodes(item_to_fetch.mediaId, db_media_type=item_to_fetch.type)
+    except httpx.RequestError as e:
+        logger.error(f"获取分集列表时发生网络错误 (provider={item_to_fetch.provider}, media_id={item_to_fetch.mediaId}): {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"从 {item_to_fetch.provider} 获取分集列表时发生网络错误: {e}")
 
 @router.post("/import/edited", status_code=status.HTTP_202_ACCEPTED, summary="导入编辑后的分集列表", response_model=ControlTaskResponse)
 async def edited_import(
@@ -511,9 +520,13 @@ async def url_import(
         raise HTTPException(status_code=400, detail="不支持的URL或视频源。")
 
     # This is the new method we need to implement for each scraper
-    media_info = await scraper.get_info_from_url(payload.url)
-    if not media_info:
-        raise HTTPException(status_code=404, detail="无法从提供的URL中获取有效的作品信息。")
+    try:
+        media_info = await scraper.get_info_from_url(payload.url)
+        if not media_info:
+            raise HTTPException(status_code=404, detail="无法从提供的URL中获取有效的作品信息。")
+    except httpx.RequestError as e:
+        logger.error(f"从URL '{payload.url}' 导入时发生网络错误: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"从URL导入时发生网络错误: {e}")
 
        # 获取指定分集的progress_callback
     final_title = payload.title or media_info.title

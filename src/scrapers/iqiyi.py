@@ -21,6 +21,7 @@ from lxml import etree
 
 from ..config_manager import ConfigManager
 from .. import models
+from ..utils import parse_search_keyword
 from .base import BaseScraper, get_season_from_title
 
 scraper_responses_logger = logging.getLogger("scraper_responses")
@@ -256,7 +257,15 @@ class IqiyiScraper(BaseScraper):
         self.reg_video_info = re.compile(r'"videoInfo":(\{.+?\}),')
         self.cookies = {"pgv_pvid": "40b67e3b06027f3d","video_platform": "2","vversion_name": "8.2.95","video_bucketid": "4","video_omgid": "0a1ff6bc9407c0b1cff86ee5d359614d"}
         # 实体引用匹配正则
-        self.client: Optional[httpx.AsyncClient] = None
+        self.client = httpx.AsyncClient(
+            headers={
+                "User-Agent": self.mobile_user_agent,
+                "Referer": "https://www.iqiyi.com/",
+            },
+            cookies=self.cookies,
+            timeout=30.0, # 增加默认超时时间
+            follow_redirects=True
+        )
         self.entity_pattern = re.compile(r'&#[xX]?[0-9a-fA-F]+;')
 
         # XML 1.0规范允许的字符编码范围
@@ -271,9 +280,7 @@ class IqiyiScraper(BaseScraper):
 
     async def close(self):
         """关闭HTTP客户端"""
-        if self.client:
-            await self.client.aclose()
-            self.client = None
+        await self.client.aclose()
 
     def _xor_operation(self, num: int) -> int:
         """实现JavaScript中的异或运算函数"""
@@ -326,64 +333,35 @@ class IqiyiScraper(BaseScraper):
         
         return md5_hash
 
-    async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
-        """
-        A wrapper for making requests that lazily initializes the client.
-        """
-        if self.client is None:
-            self.client = await self._create_client(
-                headers={
-                    "User-Agent": self.mobile_user_agent,
-                    "Referer": "https://www.iqiyi.com/",
-                },
-                cookies=self.cookies,
-            )
+    async def _request(self, method: str, url: str, **kwargs) -> httpx.Response: # type: ignore
         return await self.client.request(method, url, **kwargs)
-    def _filter_entities(self, xml_str: str) -> str:
-        """过滤XML中的无效实体引用和字符"""
-        original_len = len(xml_str)
 
-        def replace(match):
-            entity = match.group()
+    async def _request_with_retry(self, method: str, url: str, retries: int = 3, **kwargs) -> httpx.Response:
+        """
+        一个带有重试逻辑的请求包装器，用于处理网络超时等临时性错误。
+        """
+        last_exception = None
+        for attempt in range(retries):
             try:
-                if entity.startswith('&#x') or entity.startswith('&#X'):
-                    code = int(entity[3:-1], 16)
-                else:
-                    code = int(entity[2:-1])
-                return entity if code in self.valid_codes else ''
-            except:
-                return ''
-
-        xml_str = self.entity_pattern.sub(replace, xml_str)
-        xml_str = re.sub(
-            r'[^\x09\x0A\x0D\x20-\x7E\x80-\xFF\u0100-\uD7FF\uE000-\uFDCF\uFDE0-\uFFFD]',
-            '',
-            xml_str
-        )
-
-        self.logger.debug(f"过滤前后长度变化: {original_len} → {len(xml_str)} (减少 {original_len - len(xml_str)})")
-        return xml_str
-
-    async def _create_client(self, headers: Optional[Dict] = None, cookies: Optional[Dict] = None) -> httpx.AsyncClient:
-        """Helper to create a pre-configured httpx client."""
-        # This method can be expanded later to include proxy support from config
-        return httpx.AsyncClient(
-            headers=headers,
-            cookies=cookies,
-            timeout=20.0,
-            follow_redirects=True
-        )
-
-    def _log_error_context(self, xml_str: str, line: int, col: int):
-        """打印错误位置附近的XML内容"""
-        lines = xml_str.split('\n')
-        start = max(0, line - 3)
-        end = min(len(lines), line + 3)
-
-        self.logger.error(f"错误位置上下文（行{line}，列{col}）:")
-        for i in range(start, end):
-            prefix = "→ " if i == line - 1 else "  "
-            self.logger.error(f"{prefix}行{i + 1}: {lines[i][:100]}...")
+                response = await self._request(method, url, **kwargs)
+                response.raise_for_status()  # 检查 4xx/5xx 错误
+                return response
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError) as e:
+                last_exception = e
+                self.logger.warning(f"爱奇艺: 请求失败 (尝试 {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    backoff_time = 2 ** attempt  # 1s, 2s, 4s...
+                    self.logger.info(f"爱奇艺: 将在 {backoff_time} 秒后重试...")
+                    await asyncio.sleep(backoff_time)
+            except httpx.HTTPStatusError as e:
+                # 对于客户端/服务器错误，通常不重试
+                self.logger.error(f"爱奇艺: HTTP 状态错误: {e.response.status_code} for URL {e.request.url}")
+                raise  # 立即重新抛出
+        
+        # 如果所有重试都失败，则抛出最后的异常
+        if last_exception:
+            raise last_exception
+        raise Exception("请求在所有重试后失败，但没有捕获到特定的网络异常。")
 
     def _filter_entities(self, xml_str: str) -> str:
         """过滤XML中的无效实体引用和字符"""
@@ -507,7 +485,36 @@ class IqiyiScraper(BaseScraper):
         return results
 
     async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """
+        Performs a cached search for iQiyi content.
+        It caches the base results for a title and then filters them based on season.
+        """
+        parsed = parse_search_keyword(keyword)
+        search_title = parsed['title']
+        search_season = parsed['season']
 
+        cache_key = f"search_base_{self.provider_name}_{search_title}"
+        cached_results = await self._get_from_cache(cache_key)
+
+        if cached_results:
+            self.logger.info(f"爱奇艺: 从缓存中命中基础搜索结果 (title='{search_title}')")
+            all_results = [models.ProviderSearchInfo.model_validate(r) for r in cached_results]
+        else:
+            self.logger.info(f"爱奇艺: 缓存未命中，正在为标题 '{search_title}' 执行网络搜索...")
+            all_results = await self._perform_network_search(search_title, episode_info)
+            if all_results:
+                await self._set_to_cache(cache_key, [r.model_dump() for r in all_results], 'search_ttl_seconds', 3600)
+
+        if search_season is None:
+            return all_results
+
+        # Filter results by season
+        final_results = [item for item in all_results if item.season == search_season]
+        self.logger.info(f"爱奇艺: 为 S{search_season} 过滤后，剩下 {len(final_results)} 个结果。")
+        return final_results
+
+    async def _perform_network_search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """Performs the actual network search for iQiyi."""
         # 并行执行两个搜索API
         desktop_task = self._search_desktop_api(keyword, episode_info)
         mobile_task = self._search_mobile_api(keyword, episode_info)
@@ -525,10 +532,10 @@ class IqiyiScraper(BaseScraper):
         # 基于 mediaId 去重
         unique_results = list({item.mediaId: item for item in all_results}.values())
 
-        self.logger.info(f"爱奇艺 (合并): 搜索 '{keyword}' 完成，找到 {len(unique_results)} 个唯一结果。")
+        self.logger.info(f"爱奇艺 (合并): 网络搜索 '{keyword}' 完成，找到 {len(unique_results)} 个唯一结果。")
         if unique_results:
             log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in unique_results])
-            self.logger.info(f"爱奇艺 (合并): 搜索结果列表:\n{log_results}")
+            self.logger.info(f"爱奇艺 (合并): 网络搜索结果列表:\n{log_results}")
 
         return unique_results
 
@@ -1069,7 +1076,7 @@ class IqiyiScraper(BaseScraper):
 
         try:
             # 发送请求
-            response = await self._request("GET", url)
+            response = await self._request_with_retry("GET", url)
 
             # 处理状态码
             if response.status_code == 404:

@@ -94,11 +94,11 @@ services:
       TZ: "Asia/Shanghai"
     volumes:
       - ./mysql-data:/var/lib/mysql
-
     command:
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_general_ci
-      --explicit_defaults_for_timestamp=true
+      - '--character-set-server=utf8mb4'
+      - '--collation-server=utf8mb4_unicode_ci'
+      - '--expire_logs_days=3' # 自动清理超过3天的binlog日志
+      - '--binlog_expire_logs_seconds=259200' # 兼容MariaDB的等效设置 (3天)
     healthcheck:
       #!!! 重要：-u和-p后不能有空格, 且密码需要与 MYSQL_PASSWORD 保持一致 !!! 这里启动检查的密码也要改
       test: ["CMD-SHELL", "mysql -udanmuapi -p'your_strong_root_password' -e \"SELECT 1\" danmuapi"]

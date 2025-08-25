@@ -12,6 +12,7 @@ from fastapi import HTTPException, status, Request, APIRouter
 
 from . import crud, models, orm_models
 from .config_manager import ConfigManager
+from .scraper_manager import ScraperManager
 
 logger = logging.getLogger(__name__)
 import httpx
@@ -21,13 +22,14 @@ class MetadataSourceManager:
     此类发现、初始化并协调位于 `src/metadata_sources` 目录中的元数据源插件。
     """
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager, scraper_manager: ScraperManager):
         """
         初始化管理器。
 
         Args:
             session_factory: 用于数据库访问的异步会话工厂。
             config_manager: 应用的配置管理器。
+            scraper_manager: 应用的弹幕抓取器管理器。
         """
         self._session_factory = session_factory
         self._config_manager = config_manager
@@ -39,6 +41,7 @@ class MetadataSourceManager:
         self._source_classes: Dict[str, Type[Any]] = {}
         # 从数据库缓存所有源的持久设置。
         self.source_settings: Dict[str, Dict[str, Any]] = {}
+        self.scraper_manager = scraper_manager
         # 新增：为所有元数据源创建一个父级路由器
         self.router = APIRouter()
 
@@ -105,7 +108,7 @@ class MetadataSourceManager:
         self.source_settings = {s['providerName']: s for s in settings_list}
 
         for provider_name, source_class in self._source_classes.items():
-            self.sources[provider_name] = source_class(self._session_factory, self._config_manager)
+            self.sources[provider_name] = source_class(self._session_factory, self._config_manager, self.scraper_manager)
             self.logger.info(f"已加载元数据源 '{provider_name}'。")
 
     async def search_aliases_from_enabled_sources(self, keyword: str, user: models.User) -> Set[str]:
@@ -165,6 +168,30 @@ class MetadataSourceManager:
         
         return sorted(full_status_list, key=lambda x: x['displayOrder'])
 
+    async def get_failover_comments(self, title: str, season: int, episode_index: int, user: models.User) -> Optional[List[dict]]:
+        """
+        Iterates through enabled failover sources to find comments for a specific episode.
+        """
+        async with self._session_factory() as session:
+            enabled_sources_settings = await crud.get_enabled_failover_sources(session)
+        
+        for source_setting in enabled_sources_settings:
+            provider = source_setting['providerName']
+            if source_instance := self.sources.get(provider):
+                self.logger.info(f"Failover: Trying source '{provider}' for '{title}' S{season}E{episode_index}")
+                try:
+                    comments = await source_instance.get_comments_by_failover(title, season, episode_index, user)
+                    if comments:
+                        self.logger.info(f"Failover: Source '{provider}' successfully found {len(comments)} comments.")
+                        return comments
+                except Exception as e:
+                    self.logger.error(f"Failover source '{provider}' failed: {e}", exc_info=True)
+            else:
+                self.logger.warning(f"Enabled failover source '{provider}' was not loaded, skipping.")
+        
+        self.logger.info(f"Failover: No source could find comments for '{title}' S{season}E{episode_index}")
+        return None
+
     async def search(self, provider: str, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
         """从特定提供商搜索媒体。"""
         if source_instance := self.sources.get(provider):
@@ -193,7 +220,7 @@ class MetadataSourceManager:
         # 将提供商名称映射到其在数据库中的配置键
         config_keys_map = {
             "tmdb": ["tmdbApiKey", "tmdbApiBaseUrl", "tmdbImageBaseUrl"],
-            "bangumi": ["bangumiClientId", "bangumiClientSecret"],
+            "bangumi": ["bangumiClientId", "bangumiClientSecret", "bangumiToken"],
             "douban": ["doubanCookie"],
             "tvdb": ["tvdbApiKey"],
             "imdb": []  # IMDb 目前没有特定配置
@@ -209,6 +236,13 @@ class MetadataSourceManager:
         # 为单值配置提供特殊处理，以匹配前端期望的格式
         if providerName in ["douban", "tvdb"]:
             return {"value": next(iter(config_values.values()), "")}
+
+        # 新增：为Bangumi添加 authMode 字段，以明确告知前端当前应显示哪种模式
+        if providerName == "bangumi":
+            if config_values.get("bangumiToken"):
+                config_values["authMode"] = "token"
+            else:
+                config_values["authMode"] = "oauth"
 
         return config_values
 

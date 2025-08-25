@@ -9,6 +9,7 @@ from thefuzz import fuzz
 from .. import crud
 from ..rate_limiter import RateLimiter
 from ..scraper_manager import ScraperManager
+from ..metadata_manager import MetadataSourceManager
 from ..task_manager import TaskManager, TaskSuccess
 from ..tasks import generic_import_task
 from ..utils import parse_search_keyword
@@ -44,7 +45,8 @@ async def webhook_search_and_dispatch_task(
     progress_callback: Callable,
     session: AsyncSession,
     manager: ScraperManager,
-    task_manager: TaskManager,
+    task_manager: TaskManager, # type: ignore
+    metadata_manager: MetadataSourceManager,
     rate_limiter: RateLimiter
 ):
     """
@@ -65,7 +67,7 @@ async def webhook_search_and_dispatch_task(
             task_coro = lambda session, cb: generic_import_task(
                 provider=favorited_source['providerName'], mediaId=favorited_source['mediaId'], animeTitle=favorited_source['animeTitle'], year=year,
                 mediaType=favorited_source['mediaType'], season=season, currentEpisodeIndex=currentEpisodeIndex,
-                imageUrl=favorited_source['imageUrl'], doubanId=doubanId, tmdbId=tmdbId, imdbId=imdbId, tvdbId=tvdbId,
+                imageUrl=favorited_source['imageUrl'], doubanId=doubanId, tmdbId=tmdbId, imdbId=imdbId, tvdbId=tvdbId, metadata_manager=metadata_manager,
                 bangumiId=bangumiId, rate_limiter=rate_limiter,
                 progress_callback=cb, session=session, manager=manager,
                 task_manager=task_manager
@@ -126,7 +128,7 @@ async def webhook_search_and_dispatch_task(
         task_coro = lambda session, cb: generic_import_task(
             provider=best_match.provider, mediaId=best_match.mediaId, year=year,
             animeTitle=best_match.title, mediaType=best_match.type,
-            season=season, currentEpisodeIndex=best_match.currentEpisodeIndex, imageUrl=best_match.imageUrl,
+            season=season, currentEpisodeIndex=best_match.currentEpisodeIndex, imageUrl=best_match.imageUrl, metadata_manager=metadata_manager,
             doubanId=doubanId, tmdbId=tmdbId, imdbId=imdbId, tvdbId=tvdbId, bangumiId=bangumiId, rate_limiter=rate_limiter,
             progress_callback=cb, session=session, manager=manager,  # 修正：使用由TaskManager提供的session和cb
             task_manager=task_manager

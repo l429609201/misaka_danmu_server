@@ -72,6 +72,29 @@ async def _migrate_add_scheduled_task_id(conn, db_type, db_name):
         logger.info(f"成功添加列 'task_history.scheduled_task_id'。")
     logger.info(f"迁移任务 '{migration_id}' 检查完成。")
 
+async def _migrate_add_failover_enabled_to_metadata_sources(conn, db_type, db_name):
+    """
+    迁移任务: 确保 metadata_sources.is_failover_enabled 字段存在。
+    """
+    migration_id = "add_failover_enabled_to_metadata_sources"
+    logger.info(f"正在检查是否需要执行迁移: {migration_id}...")
+
+    if db_type == "mysql":
+        check_sql = text(f"SELECT 1 FROM information_schema.columns WHERE table_schema = '{db_name}' AND table_name = 'metadata_sources' AND column_name = 'is_failover_enabled'")
+        add_sql = text("ALTER TABLE metadata_sources ADD COLUMN `is_failover_enabled` BOOLEAN NOT NULL DEFAULT FALSE")
+    elif db_type == "postgresql":
+        check_sql = text("SELECT 1 FROM information_schema.columns WHERE table_name = 'metadata_sources' AND column_name = 'is_failover_enabled'")
+        add_sql = text('ALTER TABLE metadata_sources ADD COLUMN "is_failover_enabled" BOOLEAN NOT NULL DEFAULT FALSE')
+    else:
+        return
+
+    column_exists = (await conn.execute(check_sql)).scalar_one_or_none() is not None
+    if not column_exists:
+        logger.info(f"列 'metadata_sources.is_failover_enabled' 不存在。正在添加...")
+        await conn.execute(add_sql)
+        logger.info(f"成功添加列 'metadata_sources.is_failover_enabled'。")
+    logger.info(f"迁移任务 '{migration_id}' 检查完成。")
+
 async def _run_migrations(conn):
     """
     执行所有一次性的数据库架构迁移。
@@ -85,6 +108,7 @@ async def _run_migrations(conn):
 
     await _migrate_add_anime_year(conn, db_type, db_name)
     await _migrate_add_scheduled_task_id(conn, db_type, db_name)
+    await _migrate_add_failover_enabled_to_metadata_sources(conn, db_type, db_name)
 
 async def create_db_engine_and_session(app: FastAPI):
     """创建数据库引擎和会话工厂，并存储在 app.state 中"""

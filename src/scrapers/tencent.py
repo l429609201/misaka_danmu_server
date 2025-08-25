@@ -4,12 +4,13 @@ import re
 import logging
 import html
 import json
-from typing import List, Dict, Any, Optional, Union, Callable
-from pydantic import BaseModel, Field, ValidationError
+from typing import List, Dict, Any, Optional, Union, Callable, Tuple
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from collections import defaultdict
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from datetime import datetime
 from ..config_manager import ConfigManager
+from ..utils import parse_search_keyword
 from .base import BaseScraper, get_season_from_title
 from .. import models, crud
 
@@ -46,7 +47,8 @@ class TencentSearchVideoInfo(BaseModel):
     year: Optional[int] = None
     type_name: str = Field(alias="typeName")
     img_url: Optional[str] = Field(None, alias="imgUrl")
-    subject_doc: Optional[TencentSubjectDoc] = Field(None, alias="subjectDoc")
+    subject_doc: Optional[TencentSubjectDoc] = Field(None, alias="subjectDoc") # type: ignore
+    play_sites: Optional[List[Dict[str, Any]]] = Field(None, alias="playSites") # Added for filtering
 
 class TencentSearchDoc(BaseModel):
     id: str  # 这是 cid
@@ -63,6 +65,42 @@ class TencentSearchData(BaseModel):
 
 class TencentSearchResult(BaseModel):
     data: Optional[TencentSearchData] = None
+
+# --- Models for GetPageData API (New) ---
+
+class TencentEpisodeTabInfo(BaseModel):
+    begin: int
+    end: int
+    page_context: str = Field(alias="page_context")
+
+class TencentModuleParams(BaseModel):
+    tabs: Optional[str] = None # This is a JSON string
+
+class TencentItemParams(BaseModel):
+    vid: Optional[str] = None
+    title: str
+    is_trailer: str = Field("0", alias="is_trailer")
+    union_title: Optional[str] = None
+
+class TencentItemData(BaseModel):
+    item_params: Optional[TencentItemParams] = Field(None, alias="item_params")
+
+class TencentItemDataLists(BaseModel):
+    item_datas: List[TencentItemData] = Field(default_factory=list, alias="item_datas")
+
+class TencentModuleData(BaseModel):
+    module_params: Optional[TencentModuleParams] = Field(None, alias="module_params")
+    item_data_lists: Optional[TencentItemDataLists] = Field(None, alias="item_data_lists")
+
+class TencentModuleListData(BaseModel):
+    module_datas: List[TencentModuleData] = Field(default_factory=list, alias="module_datas")
+
+class TencentPageData(BaseModel):
+    module_list_datas: List[TencentModuleListData] = Field(default_factory=list, alias="module_list_datas")
+
+class TencentPageResult(BaseModel):
+    ret: int
+    data: Optional[TencentPageData] = None
 
 # --- 用于搜索API的请求模型 (参考C#代码) ---
 class TencentSearchRequest(BaseModel):
@@ -110,6 +148,39 @@ class TencentScraper(BaseScraper):
         # 此处通过 cookies 参数传入字典，httpx 会自动将其格式化为正确的 Cookie 请求头，效果与C#代码一致
         self.client = httpx.AsyncClient(headers=self.base_headers, cookies=self.cookies, timeout=20.0)
 
+        # 新增：用于分集获取的API端点
+        self.episodes_api_url = "https://pbaccess.video.qq.com/trpc.universal_backend_service.page_server_rpc.PageServer/GetPageData?video_appid=3000010&vversion_name=8.2.96&vversion_platform=2"
+
+
+    # Porting SKIP_KEYWORDS from JS
+    _SKIP_KEYWORDS = [
+        "拍摄花絮", "制作花絮", "幕后花絮", "未播花絮", "独家花絮", "花絮特辑",
+        "预告片", "先导预告", "终极预告", "正式预告", "官方预告",
+        "彩蛋片段", "删减片段", "未播片段", "番外彩蛋",
+        "精彩片段", "精彩看点", "精彩回顾", "精彩集锦", "看点解析", "看点预告",
+        "NG镜头", "NG花絮", "番外篇", "番外特辑",
+        "制作特辑", "拍摄特辑", "幕后特辑", "导演特辑", "演员特辑",
+        "片尾曲", "插曲", "主题曲", "背景音乐", "OST", "音乐MV", "歌曲MV",
+        "前季回顾", "剧情回顾", "往期回顾", "内容总结", "剧情盘点", "精选合集", "剪辑合集", "混剪视频",
+        "独家专访", "演员访谈", "导演访谈", "主创访谈", "媒体采访", "发布会采访",
+        "抢先看", "抢先版", "试看版", "短剧", "vlog"
+    ]
+
+    # Porting TITLE_MAPPING from JS
+    _TITLE_MAPPING = {
+        '斗破苍穹年番': '斗破苍穹 第5季'
+    }
+
+    def _apply_title_mapping(self, title: str) -> str:
+        """Ported from JS: applyTitleMapping."""
+        if not title:
+            return title
+        mapped_title = self._TITLE_MAPPING.get(title)
+        if mapped_title:
+            self.logger.debug(f"应用标题映射: '{title}' -> '{mapped_title}'")
+            return mapped_title
+        return title
+
     async def close(self):
         """关闭HTTP客户端"""
         await self.client.aclose()
@@ -132,32 +203,121 @@ class TencentScraper(BaseScraper):
 
             if data.data and data.data.normal_list:
                 for item in data.data.normal_list.item_list:
-                    if not item.video_info: continue
-                    if not item.video_info.year or item.video_info.year == 0: continue
-
-                    video_info = item.video_info
-                    unescaped_title = html.unescape(video_info.title)
-                    cleaned_title = re.sub(r'<[^>]+>', '', unescaped_title)
-
-                    if keyword.lower() not in cleaned_title.lower(): continue
-
-                    media_type = "movie" if "电影" in video_info.type_name else "tv_series"
-                    episode_count = video_info.subject_doc.video_num if video_info.subject_doc else None
-                    current_episode = episode_info.get("episode") if episode_info else None
-                    final_title = cleaned_title.replace(":", "：")
-
-                    provider_search_info = models.ProviderSearchInfo(
-                        provider=self.provider_name, mediaId=item.doc.id, title=final_title,
-                        type=media_type, season=get_season_from_title(final_title),
-                        year=video_info.year, imageUrl=video_info.img_url,
-                        episodeCount=episode_count, currentEpisodeIndex=current_episode
-                    )
-                    results.append(provider_search_info)
+                    # Apply filtering logic here
+                    filtered_item = self._filter_search_item(item, keyword)
+                    if filtered_item:
+                        results.append(filtered_item)
         except httpx.HTTPStatusError as e:
             self.logger.error(f"Tencent (桌面API): 搜索请求失败: {e}")
         except (ValidationError, KeyError) as e:
             self.logger.error(f"Tencent (桌面API): 解析搜索结果失败: {e}", exc_info=True)
         return results
+
+    def _should_skip_title(self, title: str) -> bool:
+        """Ported from JS: shouldSkipTitle."""
+        if not title:
+            return True
+        lower_title = title.lower()
+        return any(keyword.lower() in lower_title for keyword in self._SKIP_KEYWORDS)
+
+    def _filter_search_item(self, item: TencentSearchItem, keyword: str) -> Optional[models.ProviderSearchInfo]:
+        """
+        Ported from JS: processSearchItemQuick, focusing on filtering.
+        Processes a single search item and applies filtering rules.
+        """
+        if not item.video_info or not item.doc:
+            self.logger.debug("跳过无效项目: 缺少video_info或doc")
+            return None
+
+        video_info = item.video_info
+        vid = item.doc.id
+
+        # 关键修正：参考旧代码，过滤掉没有年份信息的条目。
+        # 这通常是无效的或非正片内容（如“安利向”、“二创合集”等）。
+        if not video_info.year or video_info.year == 0:
+            self.logger.debug(f"跳过无年份信息的项目: {video_info.title}")
+            return None
+
+        # Extract and clean title
+        title = video_info.title.replace('<em>', '').replace('</em>', '')
+        title = self._apply_title_mapping(title)
+
+        # Basic validation
+        if not title or not vid:
+            self.logger.debug(f"跳过无效项目: title={title}, vid={vid}")
+            return None
+
+        # Apply intelligent filtering based on keywords
+        if self._should_skip_title(title):
+            self.logger.debug(f"跳过不相关内容 (关键词过滤): {title}")
+            return None
+
+        # 内容类型过滤与映射
+        content_type = video_info.type_name
+        if "短剧" in content_type:
+            self.logger.debug(f"跳过短剧类型: {title}")
+            return None
+        
+        # 将腾讯的类型映射到系统内部标准类型
+        type_mapping = {
+            "电视剧": "tv_series", "动漫": "tv_series",
+            "电影": "movie",
+            "综艺": "tv_series", "综艺节目": "tv_series",
+        }
+        internal_media_type = type_mapping.get(content_type)
+
+        if not internal_media_type:
+            self.logger.debug(f"跳过不支持的内容类型: {content_type}")
+            return None
+
+        # Filter non-QQ platform content
+        if video_info.play_sites:
+            has_qq_site = any(site.get("enName") == 'qq' for site in video_info.play_sites)
+            if not has_qq_site:
+                self.logger.debug(f"跳过非腾讯视频内容: {title} (无qq平台)")
+                return None
+
+        # Filter movie-like non-formal content (e.g., documentaries, behind-the-scenes)
+        if content_type == "电影":
+            non_formal_keywords = ["纪录片", "花絮", "彩蛋", "幕后", "独家", "解说", "特辑", "探班", "拍摄", "制作", "导演", "记录", "回顾", "盘点", "混剪", "解析", "抢先"]
+            if any(kw in title for kw in non_formal_keywords):
+                self.logger.debug(f"检测到非正片电影内容，跳过处理: {title}")
+                return None
+        
+        # For TV series, check for normal episodes (JS logic)
+        # This part assumes video_info.play_sites might contain episodeInfoList,
+        # which is true for some Tencent API responses.
+        if content_type == "电视剧" and video_info.play_sites:
+            has_normal_episode = False
+            for site in video_info.play_sites:
+                if site.get("episodeInfoList"):
+                    for ep in site["episodeInfoList"]:
+                        ep_title = ep.get("title", "")
+                        if re.match(r"^\d+$", ep_title) or re.match(r"第\d+[集期]", ep_title):
+                            has_normal_episode = True
+                            break
+                if has_normal_episode:
+                    break
+            if not has_normal_episode:
+                self.logger.debug(f"检测到非正规电视剧集，跳过处理: {title}")
+                return None
+
+        # Extract other info
+        year = str(video_info.year) if video_info.year else None
+        cover_url = video_info.img_url
+
+        # Build ProviderSearchInfo
+        return models.ProviderSearchInfo(
+            provider=self.provider_name,
+            mediaId=vid,
+            title=title,
+            type=internal_media_type, # 使用映射后的标准类型
+            season=get_season_from_title(title),
+            year=int(year) if year else None,
+            imageUrl=cover_url,
+            episodeCount=video_info.subject_doc.video_num if video_info.subject_doc else None,
+            currentEpisodeIndex=None # This is a quick search, detailed episode info is fetched later
+        )
 
     async def _search_mobile_api(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
         """通过腾讯移动端搜索API查找番剧。"""
@@ -180,27 +340,10 @@ class TencentScraper(BaseScraper):
 
             if data.data and data.data.normal_list:
                 for item in data.data.normal_list.item_list:
-                    if not item.video_info: continue
-                    if not item.video_info.year or item.video_info.year == 0: continue
-
-                    video_info = item.video_info
-                    unescaped_title = html.unescape(video_info.title)
-                    cleaned_title = re.sub(r'<[^>]+>', '', unescaped_title)
-
-                    if keyword.lower() not in cleaned_title.lower(): continue
-
-                    media_type = "movie" if "电影" in video_info.type_name else "tv_series"
-                    episode_count = video_info.subject_doc.video_num if video_info.subject_doc else None
-                    current_episode = episode_info.get("episode") if episode_info else None
-                    final_title = cleaned_title.replace(":", "：")
-
-                    provider_search_info = models.ProviderSearchInfo(
-                        provider=self.provider_name, mediaId=item.doc.id, title=final_title,
-                        type=media_type, season=get_season_from_title(final_title),
-                        year=video_info.year, imageUrl=video_info.img_url,
-                        episodeCount=episode_count, currentEpisodeIndex=current_episode
-                    )
-                    results.append(provider_search_info)
+                    # Apply filtering logic here
+                    filtered_item = self._filter_search_item(item, keyword)
+                    if filtered_item:
+                        results.append(filtered_item)
         except httpx.HTTPStatusError as e:
             self.logger.error(f"Tencent (移动API): 搜索请求失败: {e}")
         except (ValidationError, KeyError) as e:
@@ -209,6 +352,35 @@ class TencentScraper(BaseScraper):
 
     async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
         """并发执行桌面端和移动端搜索，并合并去重结果。"""
+        # 智能缓存逻辑
+        parsed = parse_search_keyword(keyword)
+        search_title = parsed['title']
+        search_season = parsed['season']
+
+        cache_key = f"search_base_{self.provider_name}_{search_title}"
+        cached_results = await self._get_from_cache(cache_key)
+
+        if cached_results:
+            self.logger.info(f"Tencent: 从缓存中命中基础搜索结果 (title='{search_title}')")
+            all_results = [models.ProviderSearchInfo.model_validate(r) for r in cached_results]
+        else:
+            self.logger.info(f"Tencent: 缓存未命中，正在为标题 '{search_title}' 执行网络搜索...")
+            all_results = await self._perform_network_search(search_title, episode_info)
+            if all_results:
+                await self._set_to_cache(cache_key, [r.model_dump() for r in all_results], 'search_ttl_seconds', 3600)
+
+        if search_season is None:
+            return all_results
+
+        # Filter results by season
+        final_results = [item for item in all_results if item.season == search_season]
+        self.logger.info(f"Tencent: 为 S{search_season} 过滤后，剩下 {len(final_results)} 个结果。")
+        return final_results
+
+    async def _perform_network_search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """
+        实际执行网络搜索的内部方法。
+        """
 
         desktop_task = self._search_desktop_api(keyword, episode_info)
         mobile_task = self._search_mobile_api(keyword, episode_info)
@@ -226,7 +398,7 @@ class TencentScraper(BaseScraper):
         # 基于 mediaId 去重
         unique_results = list({item.mediaId: item for item in all_results}.values())
 
-        self.logger.info(f"Tencent (合并): 搜索 '{keyword}' 完成，找到 {len(unique_results)} 个唯一结果。")
+        self.logger.info(f"Tencent (合并): 网络搜索 '{keyword}' 完成，找到 {len(unique_results)} 个唯一结果。")
         if unique_results:
             log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in unique_results])
             self.logger.info(f"Tencent (合并): 搜索结果列表:\n{log_results}")
@@ -270,27 +442,27 @@ class TencentScraper(BaseScraper):
 
     async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         """
-        获取分集列表。
-        优先使用新的分页逻辑 (v2)，如果失败或未返回结果，则回退到旧的逻辑 (v1)。
+        获取分集列表，优先使用新的“分页卡片”策略。
         """
-        # 方案1 (主): 使用新的、更健壮的分页逻辑
-        # 修正：将过滤逻辑移入 _process_and_format_tencent_episodes，确保所有获取路径都经过处理
+        episodes = []
         try:
-            episodes_v2 = await self._get_episodes_v2(media_id, db_media_type)
-            if episodes_v2:
-                self.logger.info("Tencent: 已通过新版分页API成功获取分集。")
-                if target_episode_index:
-                    return [ep for ep in episodes_v2 if ep.episodeIndex == target_episode_index]
-                return episodes_v2
+            # 优先尝试新的“分页卡片”策略
+            episodes = await self._fetch_episodes_with_tabs(media_id, db_media_type)
+            if not episodes:
+                # 如果卡片策略失败，回退到通用的分页策略
+                self.logger.info(f"Tencent: 分页卡片策略未返回结果，回退到通用分页策略 (cid={media_id})")
+                episodes = await self._fetch_episodes_paginated(media_id, db_media_type)
         except Exception as e:
-            self.logger.warning(f"Tencent: 新版分页API获取分集失败，将尝试备用方案。错误: {e}", exc_info=True)
+            self.logger.error(f"Tencent: 获取分集列表时发生未知错误 (cid={media_id}): {e}", exc_info=True)
 
-        # 方案2 (备): 回退到旧的分页逻辑
-        self.logger.warning("Tencent: 新版API失败，正在回退到旧版分页API获取分集...")
-        episodes_v1 = await self._get_episodes_v1(media_id, db_media_type)
+        if not episodes:
+            # 方案2 (备): 回退到旧的分页逻辑
+            self.logger.warning("Tencent: 新版API失败，正在回退到旧版分页API获取分集...")
+            episodes = await self._get_episodes_v1(media_id, db_media_type)
+
         if target_episode_index:
-            return [ep for ep in episodes_v1 if ep.episodeIndex == target_episode_index]
-        return episodes_v1
+            return [ep for ep in episodes if ep.episodeIndex == target_episode_index]
+        return episodes
 
     def _get_episode_index_from_title(self, title: str) -> Optional[int]:
         """
@@ -306,76 +478,110 @@ class TencentScraper(BaseScraper):
                 return None
         return None
 
-    async def _get_episodes_v2(self, cid: str, db_media_type: Optional[str]) -> List[models.ProviderEpisodeInfo]:
-        """
-        新的分集获取逻辑，基于用户提供的脚本，具有更智能的分页策略。
-        """
-        cache_key = f"episodes_v2_{cid}"
-        cached_episodes = await self._get_from_cache(cache_key)
-        if cached_episodes is not None:
-            self.logger.info(f"Tencent (v2): 从缓存中命中分集列表 (cid={cid})")
-            return [models.ProviderEpisodeInfo.model_validate(e) for e in cached_episodes]
+    async def _get_episode_tabs_info(self, cid: str) -> Optional[List[TencentEpisodeTabInfo]]:
+        """获取分集列表的分页卡片信息。"""
+        payload = {
+            "page_params": {
+                "req_from": "web_vsite", "page_id": "vsite_episode_list", "page_type": "detail_operation",
+                "id_type": "1", "page_size": "", "cid": cid, "vid": "", "lid": "", "page_num": "",
+                "page_context": f"cid={cid}&detail_page_type=1&req_from=web_vsite&req_from_second_type=&req_type=0",
+                "detail_page_type": "1"
+            }
+        }
+        response = await self.client.post(self.episodes_api_url, json=payload)
+        response.raise_for_status()
+        result = TencentPageResult.model_validate(response.json())
 
-        url = "https://pbaccess.video.qq.com/trpc.universal_backend_service.page_server_rpc.PageServer/GetPageData?video_appid=3000010&vplatform=2"
+        if result.data and result.data.module_list_datas:
+            module_data = result.data.module_list_datas[0]
+            if module_data.module_datas and module_data.module_datas[0].module_params:
+                tabs_str = module_data.module_datas[0].module_params.tabs
+                if tabs_str:
+                    return [TencentEpisodeTabInfo.model_validate(t) for t in json.loads(tabs_str)]
+        return None
+
+    async def _fetch_episodes_by_tab(self, cid: str, tab: TencentEpisodeTabInfo) -> List[TencentEpisode]:
+        """根据单个分页卡片信息获取分集。"""
+        payload = {
+            "page_params": {
+                "req_from": "web_vsite", "page_id": "vsite_episode_list", "page_type": "detail_operation",
+                "id_type": "1", "page_size": "", "cid": cid, "vid": "", "lid": "", "page_num": "",
+                "page_context": tab.page_context, "detail_page_type": "1"
+            }
+        }
+        response = await self.client.post(self.episodes_api_url, json=payload)
+        response.raise_for_status()
+        result = TencentPageResult.model_validate(response.json())
+        
+        episodes = []
+        if result.data and result.data.module_list_datas:
+            module_data = result.data.module_list_datas[0]
+            if module_data.module_datas and module_data.module_datas[0].item_data_lists:
+                for item in module_data.module_datas[0].item_data_lists.item_datas:
+                    if item.item_params and item.item_params.vid:
+                        episodes.append(TencentEpisode.model_validate(item.item_params.model_dump()))
+        return episodes
+
+    async def _fetch_episodes_with_tabs(self, cid: str, db_media_type: Optional[str]) -> List[models.ProviderEpisodeInfo]:
+        """主策略：使用分页卡片获取所有分集。"""
+        tabs = await self._get_episode_tabs_info(cid)
+        if not tabs:
+            return []
+
+        self.logger.info(f"Tencent: 找到 {len(tabs)} 个分集卡片，开始并发获取...")
         all_episodes: Dict[str, TencentEpisode] = {}
         
+        tasks = [self._fetch_episodes_by_tab(cid, tab) for tab in tabs]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for res in results:
+            if isinstance(res, list):
+                for ep in res:
+                    all_episodes[ep.vid] = ep
+            elif isinstance(res, Exception):
+                self.logger.error(f"获取分集卡片时出错: {res}")
+
+        return await self._process_and_format_tencent_episodes(list(all_episodes.values()), db_media_type, cid)
+
+    async def _fetch_episodes_paginated(self, cid: str, db_media_type: Optional[str]) -> List[models.ProviderEpisodeInfo]:
+        """备用策略：通用的分页获取逻辑。"""
+        all_episodes: Dict[str, TencentEpisode] = {}
+        max_pages = 15 if db_media_type == 'tv_series' else 5
         items_per_page = 30
-        # 根据内容类型设置不同的最大页数，以应对《仙逆》等长篇动漫
-        max_pages = 4
-        if db_media_type == 'tv_series':
-            max_pages = 15 # 动漫等长剧集可以尝试更多页
-        
-        self.logger.info(f"开始为 cid='{cid}' 获取分集列表 (v2)...")
-        
+
         for page_num in range(max_pages):
-            page_context = f"cid={cid}&detail_page_type=1&id_type=1&is_skp_style=false&lid=&mvl_strategy_id=&order=&req_from=web_vsite&req_from_second_type=detail_operation&req_type=0&should_apply_tab_in_player=false&should_apply_tab_in_sub_page=false&show_all_episode=false&tab_data_key=lid%3D%26cid%3D{cid}&un_strategy_id=ea35cb94195c48c091172a047da3e761"
             payload = {
                 "page_params": {
                     "cid": cid, "page_type": "detail_operation", "page_id": "vsite_episode_list_search",
                     "id_type": "1", "page_size": str(items_per_page), "lid": "", "req_from": "web_vsite",
-                    "page_context": page_context, "page_num": str(page_num)
+                    "page_context": f"cid={cid}&req_from=web_vsite", "page_num": str(page_num)
                 }
             }
-            
-            try:
-                self.logger.debug(f"请求分集列表 (cid={cid}), Page={page_num}")
-                response = await self.client.post(url, json=payload)
-                response.raise_for_status()
-                data = response.json()
+            response = await self.client.post(self.episodes_api_url, json=payload)
+            response.raise_for_status()
+            result = TencentPageResult.model_validate(response.json())
 
-                module_list_datas = data.get("data", {}).get("module_list_datas", [])
-                new_episodes_this_page = 0
-                for module_data in module_list_datas:
-                    for module in module_data.get("module_datas", []):
-                        items = module.get("item_data_lists", {}).get("item_datas", [])
-                        for item in items:
-                            params = item.get("item_params", {})
-                            if not params.get("vid"): continue
-                            episode = TencentEpisode.model_validate(params)
-                            if episode.vid not in all_episodes:
-                                all_episodes[episode.vid] = episode
-                                new_episodes_this_page += 1
-                
-                self.logger.info(f"cid='{cid}': 第 {page_num + 1} 页找到 {new_episodes_this_page} 个新分集。")
-                if new_episodes_this_page == 0 and page_num > 0:
-                    self.logger.info(f"cid='{cid}': 第 {page_num + 1} 页未找到新分集，停止分页。")
-                    break
-                
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                self.logger.error(f"获取第 {page_num + 1} 页分集时出错: {e}")
+            new_episodes_this_page = 0
+            if result.data and result.data.module_list_datas:
+                module_data = result.data.module_list_datas[0]
+                if module_data.module_datas and module_data.module_datas[0].item_data_lists:
+                    for item in module_data.module_datas[0].item_data_lists.item_datas:
+                        if item.item_params and item.item_params.vid and item.item_params.vid not in all_episodes:
+                            all_episodes[item.item_params.vid] = TencentEpisode.model_validate(item.item_params.model_dump())
+                            new_episodes_this_page += 1
+            
+            if new_episodes_this_page == 0 and page_num > 0:
                 break
-        
-        final_episodes = await self._process_and_format_tencent_episodes(list(all_episodes.values()), db_media_type)
-        await self._set_to_cache(cache_key, [e.model_dump() for e in final_episodes], 'episodes_ttl_seconds', 1800)
-        return final_episodes
+            await asyncio.sleep(0.3)
+
+        return await self._process_and_format_tencent_episodes(list(all_episodes.values()), db_media_type, cid)
 
     async def _get_episodes_v1(self, media_id: str, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         """旧版分集获取逻辑，作为备用方案。"""
         tencent_episodes = await self._internal_get_episodes_v1(media_id)
-        return await self._process_and_format_tencent_episodes(tencent_episodes, db_media_type)
+        return await self._process_and_format_tencent_episodes(tencent_episodes, db_media_type, media_id)
 
-    async def _process_and_format_tencent_episodes(self, tencent_episodes: List[TencentEpisode], db_media_type: Optional[str]) -> List[models.ProviderEpisodeInfo]:
+    async def _process_and_format_tencent_episodes(self, tencent_episodes: List[TencentEpisode], db_media_type: Optional[str], cid: str) -> List[models.ProviderEpisodeInfo]:
         """
         将原始腾讯分集列表处理并格式化为通用格式。
         新增：过滤非正片内容，并为综艺和普通剧集应用不同的排序和重编号逻辑。
@@ -392,7 +598,7 @@ class TencentScraper(BaseScraper):
 
         # 2. 判断是否为综艺节目
         is_variety_show = False
-        if db_media_type == 'tv_series' and any("期" in (ep.union_title or ep.title) for ep in pre_filtered):
+        if db_media_type == 'tv_series' and any("期" in (ep.union_title or ep.title) for ep in pre_filtered if ep.union_title or ep.title):
             is_variety_show = True
 
         # 3. 根据类型进行处理
@@ -443,7 +649,7 @@ class TencentScraper(BaseScraper):
                 episodeId=ep.vid,
                 title=display_title,
                 episodeIndex=i + 1, # 关键：使用连续索引
-                url=f"https://v.qq.com/x/cover/{ep.vid}.html"
+                url=f"https://v.qq.com/x/cover/{cid}/{ep.vid}.html"
             ))
 
         return final_episodes

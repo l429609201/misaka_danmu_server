@@ -3,77 +3,95 @@ from typing import Callable, List, Optional
 import asyncio
 import re
 import traceback
+from datetime import datetime, timedelta, timezone
 
 from thefuzz import fuzz
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import OperationalError
 
 from . import crud, models, orm_models
 from .rate_limiter import RateLimiter, RateLimitExceededError
 from .image_utils import download_image
+from .config import settings
 from .scraper_manager import ScraperManager
 from .metadata_manager import MetadataSourceManager
+from .utils import parse_search_keyword
 from .task_manager import TaskManager, TaskSuccess, TaskStatus
+from sqlalchemy.exc import OperationalError
 
 logger = logging.getLogger(__name__)
 
 
 async def delete_anime_task(animeId: int, session: AsyncSession, progress_callback: Callable):
     """Background task to delete an anime and all its related data."""
-    await progress_callback(0, "开始删除...")
-    try:
-        # 检查作品是否存在
-        anime_exists = await session.get(orm_models.Anime, animeId)
-        if not anime_exists:
-            raise TaskSuccess("作品未找到，无需删除。")
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            await progress_callback(0, f"开始删除 (尝试 {attempt + 1}/{max_retries})...")
+            
+            # 检查作品是否存在
+            anime_exists = await session.get(orm_models.Anime, animeId)
+            if not anime_exists:
+                raise TaskSuccess("作品未找到，无需删除。")
 
-        # 1. 找到所有关联的源ID
-        source_ids_res = await session.execute(select(orm_models.AnimeSource.id).where(orm_models.AnimeSource.animeId == animeId))
-        source_ids = source_ids_res.scalars().all()
-        await progress_callback(10, f"找到 {len(source_ids)} 个关联数据源。")
+            # 1. 找到所有关联的源ID
+            source_ids_res = await session.execute(select(orm_models.AnimeSource.id).where(orm_models.AnimeSource.animeId == animeId))
+            source_ids = source_ids_res.scalars().all()
+            await progress_callback(10, f"找到 {len(source_ids)} 个关联数据源。")
 
-        if source_ids:
-            # 2. 找到所有关联的分集ID
-            await progress_callback(20, "正在查找关联分集...")
-            episode_ids_res = await session.execute(select(orm_models.Episode.id).where(orm_models.Episode.sourceId.in_(source_ids)))
-            episode_ids = episode_ids_res.scalars().all()
-            await progress_callback(30, f"找到 {len(episode_ids)} 个关联分集。")
+            if source_ids:
+                # 2. 找到所有关联的分集ID
+                await progress_callback(20, "正在查找关联分集...")
+                episode_ids_res = await session.execute(select(orm_models.Episode.id).where(orm_models.Episode.sourceId.in_(source_ids)))
+                episode_ids = episode_ids_res.scalars().all()
+                await progress_callback(30, f"找到 {len(episode_ids)} 个关联分集。")
 
-            if episode_ids:
-                # 3. 删除所有弹幕
-                comment_count_res = await session.execute(
-                    select(func.count(orm_models.Comment.id)).where(orm_models.Comment.episodeId.in_(episode_ids))
-                )
-                comment_count = comment_count_res.scalar_one()
-                await progress_callback(40, f"正在删除 {comment_count} 条弹幕...")
-                await session.execute(delete(orm_models.Comment).where(orm_models.Comment.episodeId.in_(episode_ids)))
-                
-                # 4. 删除所有分集
-                await progress_callback(60, f"正在删除 {len(episode_ids)} 个分集...")
-                await session.execute(delete(orm_models.Episode).where(orm_models.Episode.id.in_(episode_ids)))
+                if episode_ids:
+                    # 3. 删除所有弹幕
+                    comment_count_res = await session.execute(
+                        select(func.count(orm_models.Comment.id)).where(orm_models.Comment.episodeId.in_(episode_ids))
+                    )
+                    comment_count = comment_count_res.scalar_one()
+                    await progress_callback(40, f"正在删除 {comment_count} 条弹幕...")
+                    await session.execute(delete(orm_models.Comment).where(orm_models.Comment.episodeId.in_(episode_ids)))
+                    
+                    # 4. 删除所有分集
+                    await progress_callback(60, f"正在删除 {len(episode_ids)} 个分集...")
+                    await session.execute(delete(orm_models.Episode).where(orm_models.Episode.id.in_(episode_ids)))
 
-            # 5. 删除所有源
-            await progress_callback(70, f"正在删除 {len(source_ids)} 个数据源...")
-            await session.execute(delete(orm_models.AnimeSource).where(orm_models.AnimeSource.id.in_(source_ids)))
+                # 5. 删除所有源
+                await progress_callback(70, f"正在删除 {len(source_ids)} 个数据源...")
+                await session.execute(delete(orm_models.AnimeSource).where(orm_models.AnimeSource.id.in_(source_ids)))
 
-        # 6. 删除元数据和别名
-        await progress_callback(80, "正在删除元数据和别名...")
-        await session.execute(delete(orm_models.AnimeMetadata).where(orm_models.AnimeMetadata.animeId == animeId))
-        await session.execute(delete(orm_models.AnimeAlias).where(orm_models.AnimeAlias.animeId == animeId))
+            # 6. 删除元数据和别名
+            await progress_callback(80, "正在删除元数据和别名...")
+            await session.execute(delete(orm_models.AnimeMetadata).where(orm_models.AnimeMetadata.animeId == animeId))
+            await session.execute(delete(orm_models.AnimeAlias).where(orm_models.AnimeAlias.animeId == animeId))
 
-        # 7. 删除作品本身
-        await progress_callback(90, "正在删除主作品记录...")
-        await session.delete(anime_exists)
-        
-        await session.commit()
-        raise TaskSuccess("删除成功。")
-    except TaskSuccess:
-        # 显式地重新抛出 TaskSuccess，以确保它被 TaskManager 正确处理
-        raise
-    except Exception as e:
-        await session.rollback()
-        logger.error(f"删除作品任务 (ID: {animeId}) 失败: {e}", exc_info=True)
-        raise
+            # 7. 删除作品本身
+            await progress_callback(90, "正在删除主作品记录...")
+            await session.delete(anime_exists)
+            
+            await session.commit()
+            raise TaskSuccess("删除成功。")
+        except OperationalError as e:
+            await session.rollback()
+            if "Lock wait timeout exceeded" in str(e) and attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 1) # 2, 4, 8 seconds
+                logger.warning(f"删除作品时遇到锁超时，将在 {wait_time} 秒后重试...")
+                await progress_callback(0, f"数据库锁定，将在 {wait_time} 秒后重试...")
+                await asyncio.sleep(wait_time)
+                continue # Retry the loop
+            else:
+                logger.error(f"删除作品任务 (ID: {animeId}) 失败: {e}", exc_info=True)
+                raise # Re-raise if it's not a lock error or retries are exhausted
+        except TaskSuccess:
+            raise # Propagate success exception
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"删除作品任务 (ID: {animeId}) 失败: {e}", exc_info=True)
+            raise
 
 async def delete_source_task(sourceId: int, session: AsyncSession, progress_callback: Callable):
     """Background task to delete a source and all its related data."""
@@ -182,6 +200,7 @@ async def generic_import_task(
     currentEpisodeIndex: Optional[int],
     imageUrl: Optional[str],
     doubanId: Optional[str],
+    metadata_manager: MetadataSourceManager,
     tmdbId: Optional[str],
     imdbId: Optional[str],
     tvdbId: Optional[str],
@@ -197,6 +216,12 @@ async def generic_import_task(
     """
     # 重构导入逻辑以避免创建空条目
     scraper = manager.get_scraper(provider)
+
+    # 修正：在创建作品前，再次从标题中解析季和集，以确保数据一致性
+    parsed_info = parse_search_keyword(animeTitle)
+    title_to_use = parsed_info["title"]
+    # 优先使用从标题解析出的季度，如果解析不出，则回退到传入的 season 参数
+    season_to_use = parsed_info["season"] if parsed_info["season"] is not None else season
     normalized_title = animeTitle.replace(":", "：")
 
     await progress_callback(10, "正在获取分集列表...")
@@ -206,9 +231,42 @@ async def generic_import_task(
         db_media_type=mediaType
     )
     if not episodes:
-        msg = f"未能找到第 {currentEpisodeIndex} 集。" if currentEpisodeIndex else "未能获取到任何分集。"
-        logger.warning(f"任务终止: {msg} (provider='{provider}', media_id='{mediaId}')")
-        raise TaskSuccess(msg)
+        # --- FAILOVER LOGIC ---
+        logger.info(f"主源 '{provider}' 未能找到分集，尝试故障转移...")
+        await progress_callback(15, "主源未找到分集，尝试故障转移...")
+        
+        user = models.User(id=1, username="scheduled_task") # Create a dummy user for metadata calls
+        
+        comments = await metadata_manager.get_failover_comments(
+            title=animeTitle,
+            season=season,
+            episode_index=currentEpisodeIndex,
+            user=user
+        )
+        
+        if comments:
+            logger.info(f"故障转移成功，找到 {len(comments)} 条弹幕。正在保存...")
+            await progress_callback(20, f"故障转移成功，找到 {len(comments)} 条弹幕。")
+            
+            local_image_path = await download_image(imageUrl, session, manager, provider)
+            image_download_failed = bool(imageUrl and not local_image_path)
+            
+            anime_id = await crud.get_or_create_anime(session, title_to_use, mediaType, season_to_use, imageUrl, local_image_path, year)
+            await crud.update_metadata_if_empty(session, anime_id, tmdbId, imdbId, tvdbId, doubanId, bangumiId)
+            source_id = await crud.link_source_to_anime(session, anime_id, provider, mediaId)
+            
+            episode_title = f"第 {currentEpisodeIndex} 集"
+            episode_db_id = await crud.create_episode_if_not_exists(session, anime_id, source_id, currentEpisodeIndex, episode_title, None, "failover")
+            
+            added_count = await crud.bulk_insert_comments(session, episode_db_id, comments)
+            await session.commit()
+            
+            final_message = f"通过故障转移导入完成，共新增 {added_count} 条弹幕。" + (" (警告：海报图片下载失败)" if image_download_failed else "")
+            raise TaskSuccess(final_message)
+        else:
+            msg = f"未能找到第 {currentEpisodeIndex} 集。" if currentEpisodeIndex else "未能获取到任何分集。"
+            logger.warning(f"任务终止: {msg} (provider='{provider}', media_id='{mediaId}')")
+            raise TaskSuccess(msg)
 
     if mediaType == "movie" and episodes:
         logger.info(f"检测到媒体类型为电影，将只处理第一个分集 '{episodes[0].title}'。")
@@ -292,7 +350,8 @@ async def edited_import_task(
     progress_callback: Callable,
     session: AsyncSession,
     manager: ScraperManager,
-    rate_limiter: RateLimiter
+    rate_limiter: RateLimiter,
+    metadata_manager: MetadataSourceManager
 ):
     """后台任务：处理编辑后的导入请求。"""
     scraper = manager.get_scraper(request_data.provider)
@@ -301,6 +360,12 @@ async def edited_import_task(
     episodes = request_data.episodes
     if not episodes:
         raise TaskSuccess("没有提供任何分集，任务结束。")
+
+    # 新增：从标题中解析季和集，以确保数据一致性
+    parsed_info = parse_search_keyword(normalized_title)
+    title_to_use = parsed_info["title"]
+    season_to_use = parsed_info["season"] if parsed_info["season"] is not None else request_data.season
+
 
     anime_id: Optional[int] = None
     source_id: Optional[int] = None
@@ -329,10 +394,9 @@ async def edited_import_task(
             if request_data.imageUrl and not local_image_path:
                 image_download_failed = True
             
-            # 修正：不再通过修改标题来区分同年份的作品，而是直接依赖 crud.get_or_create_anime 来处理唯一性。
-            title_to_use = normalized_title
             anime_id = await crud.get_or_create_anime(
-                session, title_to_use, request_data.mediaType, request_data.season, 
+                session, title_to_use, request_data.mediaType,
+                season_to_use,
                 request_data.imageUrl, local_image_path, request_data.year
             )
             await crud.update_metadata_if_empty(
@@ -366,39 +430,66 @@ async def edited_import_task(
         final_message += " (警告：海报图片下载失败)"
     raise TaskSuccess(final_message)
 
-async def full_refresh_task(sourceId: int, session: AsyncSession, manager: ScraperManager, task_manager: TaskManager, rate_limiter: RateLimiter, progress_callback: Callable):
+async def full_refresh_task(sourceId: int, session: AsyncSession, scraper_manager: ScraperManager, task_manager: TaskManager, rate_limiter: RateLimiter, metadata_manager: MetadataSourceManager, progress_callback: Callable):
     """
-    后台任务：全量刷新一个已存在的番剧。
+    后台任务：全量刷新一个已存在的番剧，采用先获取后删除的安全策略。
     """
     logger.info(f"开始刷新源 ID: {sourceId}")
     source_info = await crud.get_anime_source_info(session, sourceId)
     if not source_info:
         await progress_callback(100, "失败: 找不到源信息")
         logger.error(f"刷新失败：在数据库中找不到源 ID: {sourceId}")
-        return
+        raise TaskSuccess("刷新失败: 找不到源信息")
+
+    scraper = scraper_manager.get_scraper(source_info["providerName"])
+
+    # 步骤 1: 获取所有新数据，但不写入数据库
+    await progress_callback(10, "正在获取新分集列表...")
+    new_episodes = await scraper.get_episodes(source_info["mediaId"])
+    if not new_episodes:
+        raise TaskSuccess("刷新失败：未能从源获取任何分集信息。旧数据已保留。")
+
+    await progress_callback(20, f"获取到 {len(new_episodes)} 个新分集，正在获取弹幕...")
     
-    anime_id = source_info["animeId"]
-    # 1. 清空旧数据
-    await progress_callback(10, "正在清空旧数据...")
-    await crud.clear_source_data(session, sourceId)
-    logger.info(f"已清空源 ID: {sourceId} 的旧分集和弹幕。") # image_url 在这里不会被传递，因为刷新时我们不希望覆盖已有的海报
-    # 2. 重新执行通用导入逻辑
-    await generic_import_task(
-        provider=source_info["providerName"],
-        mediaId=source_info["mediaId"],
-        animeTitle=source_info["title"],
-        mediaType=source_info["type"],
-        season=source_info.get("season", 1),
-        year=source_info.get("year"), # 从源信息中获取年份
-        currentEpisodeIndex=None,
-        imageUrl=None,
-        doubanId=None, tmdbId=source_info.get("tmdbId"),
-        imdbId=None, tvdbId=None, bangumiId=source_info.get("bangumiId"),
-        progress_callback=progress_callback,
-        session=session,
-        manager=manager,
-        task_manager=task_manager,
-        rate_limiter=rate_limiter)
+    new_data_package = []
+    total_comments_fetched = 0
+    total_episodes = len(new_episodes)
+
+    for i, episode in enumerate(new_episodes):
+        base_progress = 20 + int((i / total_episodes) * 70) if total_episodes > 0 else 90
+        
+        async def sub_progress_callback(danmaku_progress: int, danmaku_description: str):
+            current_sub_progress = (danmaku_progress / 100) * (70 / total_episodes)
+            await progress_callback(base_progress + current_sub_progress, f"处理: {episode.title} - {danmaku_description}")
+
+        comments = await scraper.get_comments(episode.episodeId, progress_callback=sub_progress_callback)
+        new_data_package.append((episode, comments))
+        if comments:
+            total_comments_fetched += len(comments)
+
+    if total_comments_fetched == 0:
+        raise TaskSuccess("刷新完成，但未找到任何新弹幕。旧数据已保留。")
+
+    # 步骤 2: 数据获取成功，现在在一个事务中执行清空和写入操作
+    await progress_callback(95, "数据获取成功，正在清空旧数据并写入新数据...")
+    try:
+        await crud.clear_source_data(session, sourceId)
+        
+        for episode_info, comments in new_data_package:
+            episode_db_id = await crud.create_episode_if_not_exists(
+                session, source_info["animeId"], sourceId, 
+                episode_info.episodeIndex, episode_info.title, 
+                episode_info.url, episode_info.episodeId
+            )
+            if comments:
+                await crud.bulk_insert_comments(session, episode_db_id, comments)
+        
+        await session.commit()
+        raise TaskSuccess(f"全量刷新完成，共导入 {len(new_episodes)} 个分集，{total_comments_fetched} 条弹幕。")
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"全量刷新源 {sourceId} 时数据库写入失败: {e}", exc_info=True)
+        raise
 
 async def delete_bulk_sources_task(sourceIds: List[int], session: AsyncSession, progress_callback: Callable):
     """Background task to delete multiple sources."""
@@ -548,7 +639,7 @@ async def reorder_episodes_task(sourceId: int, session: AsyncSession, progress_c
         logger.error(f"重整分集任务 (源ID: {sourceId}) 失败: {e}", exc_info=True)
         raise
 
-async def incremental_refresh_task(sourceId: int, nextEpisodeIndex: int, session: AsyncSession, manager: ScraperManager, task_manager: TaskManager, rate_limiter: RateLimiter, progress_callback: Callable, animeTitle: str):
+async def incremental_refresh_task(sourceId: int, nextEpisodeIndex: int, session: AsyncSession, manager: ScraperManager, task_manager: TaskManager, rate_limiter: RateLimiter, metadata_manager: MetadataSourceManager, progress_callback: Callable, animeTitle: str):
     """后台任务：增量刷新一个已存在的番剧。"""
     logger.info(f"开始增量刷新源 ID: {sourceId}，尝试获取第{nextEpisodeIndex}集")
     source_info = await crud.get_anime_source_info(session, sourceId)
@@ -563,7 +654,7 @@ async def incremental_refresh_task(sourceId: int, nextEpisodeIndex: int, session
             animeTitle=animeTitle, mediaType=source_info["type"],
             season=source_info.get("season", 1), year=source_info.get("year"),
             currentEpisodeIndex=nextEpisodeIndex, imageUrl=None,
-            doubanId=None, tmdbId=source_info.get("tmdbId"),
+            doubanId=None, tmdbId=source_info.get("tmdbId"), metadata_manager=metadata_manager,
             imdbId=None, tvdbId=None, bangumiId=source_info.get("bangumiId"),
             progress_callback=progress_callback,
             session=session,
@@ -732,6 +823,7 @@ async def auto_search_and_import_task(
                 provider=source_to_use['providerName'], mediaId=source_to_use['mediaId'],
                 animeTitle=main_title, mediaType=media_type, season=season,
                 year=source_to_use.get('year'), currentEpisodeIndex=payload.episode, imageUrl=image_url,
+                metadata_manager=metadata_manager,
                 doubanId=douban_id, tmdbId=tmdb_id, imdbId=imdb_id, tvdbId=tvdb_id, bangumiId=bangumi_id,
                 progress_callback=cb, session=s, manager=scraper_manager, task_manager=task_manager,
                 rate_limiter=rate_limiter
@@ -789,6 +881,7 @@ async def auto_search_and_import_task(
     task_coro = lambda s, cb: generic_import_task(
         provider=best_match.provider, mediaId=best_match.mediaId,
         animeTitle=main_title, mediaType=media_type, season=season, year=best_match.year,
+        metadata_manager=metadata_manager,
         currentEpisodeIndex=payload.episode, imageUrl=image_url,
         doubanId=douban_id, tmdbId=tmdb_id, imdbId=imdb_id, tvdbId=tvdb_id, bangumiId=bangumi_id,
         progress_callback=cb, session=s, manager=scraper_manager, task_manager=task_manager,
@@ -796,3 +889,81 @@ async def auto_search_and_import_task(
     )
     await task_manager.submit_task(task_coro, f"自动导入 (新): {main_title}")
     raise TaskSuccess("已为最佳匹配源创建导入任务。")
+async def database_maintenance_task(session: AsyncSession, progress_callback: Callable):
+    """
+    执行数据库维护的核心任务：清理旧日志和优化表。
+    """
+    logger.info("开始执行数据库维护任务...")
+    
+    # --- 1. 应用日志清理 ---
+    await progress_callback(10, "正在清理旧日志...")
+    
+    try:
+        # 日志保留天数，默认为30天。
+        retention_days_str = await crud.get_config_value(session, "logRetentionDays", "3")
+        retention_days = int(retention_days_str)
+    except (ValueError, TypeError):
+        retention_days = 3
+    
+    if retention_days > 0:
+        logger.info(f"将清理 {retention_days} 天前的日志记录。")
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        
+        tables_to_prune = {
+            "任务历史": (orm_models.TaskHistory, orm_models.TaskHistory.createdAt),
+            "Token访问日志": (orm_models.TokenAccessLog, orm_models.TokenAccessLog.accessTime),
+            "外部API访问日志": (orm_models.ExternalApiLog, orm_models.ExternalApiLog.accessTime),
+        }
+        
+        total_deleted = 0
+        for name, (model, date_column) in tables_to_prune.items():
+            deleted_count = await crud.prune_logs(session, model, date_column, cutoff_date)
+            if deleted_count > 0:
+                logger.info(f"从 {name} 表中删除了 {deleted_count} 条旧记录。")
+            total_deleted += deleted_count
+        await progress_callback(40, f"应用日志清理完成，共删除 {total_deleted} 条记录。")
+    else:
+        logger.info("日志保留天数设为0或无效，跳过清理。")
+        await progress_callback(40, "日志保留天数设为0，跳过清理。")
+
+    # --- 2. Binlog 清理 (仅MySQL) ---
+    db_type = settings.database.type.lower()
+    if db_type == "mysql":
+        await progress_callback(50, "正在清理 MySQL Binlog...")
+        try:
+            # 用户指定清理3天前的日志
+            binlog_cleanup_message = await crud.purge_binary_logs(session, days=3)
+            logger.info(binlog_cleanup_message)
+            await progress_callback(60, binlog_cleanup_message)
+        except OperationalError as e:
+            # 检查是否是权限不足的错误 (MySQL error code 1227)
+            if e.orig and hasattr(e.orig, 'args') and len(e.orig.args) > 0 and e.orig.args[0] == 1227:
+                binlog_cleanup_message = "Binlog 清理失败: 数据库用户缺少 SUPER 或 BINLOG_ADMIN 权限。此为正常现象，可安全忽略。"
+                logger.warning(binlog_cleanup_message)
+                await progress_callback(60, binlog_cleanup_message)
+            else:
+                # 其他操作错误，仍然记录详细信息
+                binlog_cleanup_message = f"Binlog 清理失败: {e}"
+                logger.error(binlog_cleanup_message, exc_info=True)
+                await progress_callback(60, binlog_cleanup_message)
+        except Exception as e:
+            # 记录错误，但不中断任务
+            binlog_cleanup_message = f"Binlog 清理失败: {e}"
+            logger.error(binlog_cleanup_message, exc_info=True)
+            await progress_callback(60, binlog_cleanup_message)
+
+    # --- 3. 数据库表优化 ---
+    await progress_callback(70, "正在执行数据库表优化...")
+    
+    try:
+        optimization_message = await crud.optimize_database(session, db_type)
+        logger.info(f"数据库优化结果: {optimization_message}")
+    except Exception as e:
+        optimization_message = f"数据库优化失败: {e}"
+        logger.error(optimization_message, exc_info=True)
+        # 即使优化失败，也不应导致整个任务失败，仅记录错误
+
+    await progress_callback(90, optimization_message)
+
+    final_message = f"数据库维护完成。{optimization_message}"
+    raise TaskSuccess(final_message)

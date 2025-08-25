@@ -6,15 +6,19 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Type
 
 from sqlalchemy import select, func, delete, update, and_, or_, text, distinct, case
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload, joinedload, aliased
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import selectinload, joinedload, aliased, DeclarativeBase
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.sql.elements import ColumnElement
 
 from . import models
 from .orm_models import (
     Anime, AnimeSource, Episode, Comment, User, Scraper, AnimeMetadata, Config, CacheData, ApiToken, TokenAccessLog, UaRule, BangumiAuth, OauthState, AnimeAlias, TmdbEpisodeMapping, ScheduledTask, TaskHistory, MetadataSource, ExternalApiLog
 , RateLimitState)
+from .config import settings
+
+logger = logging.getLogger(__name__)
 
 # --- Anime & Library ---
 
@@ -907,17 +911,19 @@ async def get_all_metadata_source_settings(session: AsyncSession) -> List[Dict[s
     stmt = select(MetadataSource).order_by(MetadataSource.displayOrder)
     result = await session.execute(stmt)
     return [
-        {"providerName": s.providerName, "isEnabled": s.isEnabled, "isAuxSearchEnabled": s.isAuxSearchEnabled, "displayOrder": s.displayOrder, "useProxy": s.useProxy}
+        {"providerName": s.providerName, "isEnabled": s.isEnabled, "isAuxSearchEnabled": s.isAuxSearchEnabled, "displayOrder": s.displayOrder, "useProxy": s.useProxy, "isFailoverEnabled": s.isFailoverEnabled}
         for s in result.scalars()
     ]
 
 async def update_metadata_sources_settings(session: AsyncSession, settings: List['models.MetadataSourceSettingUpdate']):
     for s in settings:
         is_aux_enabled = True if s.providerName == 'tmdb' else s.isAuxSearchEnabled
+        # 新增：确保 isFailoverEnabled 字段被正确处理
+        is_failover_enabled = s.isFailoverEnabled if hasattr(s, 'isFailoverEnabled') else False
         await session.execute(
             update(MetadataSource)
             .where(MetadataSource.providerName == s.providerName)
-            .values(isAuxSearchEnabled=is_aux_enabled, displayOrder=s.displayOrder, useProxy=s.useProxy)
+            .values(isAuxSearchEnabled=is_aux_enabled, displayOrder=s.displayOrder, useProxy=s.useProxy, isFailoverEnabled=is_failover_enabled)
         )
     await session.commit()
 
@@ -930,7 +936,20 @@ async def get_enabled_aux_metadata_sources(session: AsyncSession) -> List[Dict[s
     )
     result = await session.execute(stmt)
     return [
-        {"providerName": s.providerName, "isEnabled": s.isEnabled, "isAuxSearchEnabled": s.isAuxSearchEnabled, "displayOrder": s.displayOrder, "useProxy": s.useProxy}
+        {"providerName": s.providerName, "isEnabled": s.isEnabled, "isAuxSearchEnabled": s.isAuxSearchEnabled, "displayOrder": s.displayOrder, "useProxy": s.useProxy, "isFailoverEnabled": s.isFailoverEnabled}
+        for s in result.scalars()
+    ]
+
+async def get_enabled_failover_sources(session: AsyncSession) -> List[Dict[str, Any]]:
+    """获取所有已启用故障转移的元数据源。"""
+    stmt = (
+        select(MetadataSource)
+        .where(MetadataSource.isFailoverEnabled == True)
+        .order_by(MetadataSource.displayOrder)
+    )
+    result = await session.execute(stmt)
+    return [
+        {"providerName": s.providerName, "isEnabled": s.isEnabled, "isAuxSearchEnabled": s.isAuxSearchEnabled, "displayOrder": s.displayOrder, "useProxy": s.useProxy, "isFailoverEnabled": s.isFailoverEnabled}
         for s in result.scalars()
     ]
 
@@ -1084,7 +1103,9 @@ async def validate_api_token(session: AsyncSession, token: str) -> Optional[Dict
     token_info = result.scalar_one_or_none()
     if not token_info:
         return None
-    if token_info.expiresAt and token_info.expiresAt.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+    # 修正：使用带时区的当前时间进行比较，以避免 naive 和 aware datetime 的比较错误
+    now_utc = datetime.now(timezone.utc)
+    if token_info.expiresAt and token_info.expiresAt < now_utc:
         return None
     return {"id": token_info.id, "expires_at": token_info.expiresAt}
 
@@ -1521,3 +1542,51 @@ async def increment_rate_limit_count(session: AsyncSession, provider_name: str):
     """为指定的提供商增加请求计数。如果状态不存在，则会创建它。"""
     state = await get_or_create_rate_limit_state(session, provider_name)
     state.requestCount += 1
+
+# --- Database Maintenance ---
+
+async def prune_logs(session: AsyncSession, model: type[DeclarativeBase], date_column: ColumnElement, cutoff_date: datetime) -> int:
+    """通用函数，用于删除指定模型中早于截止日期的记录。"""
+    stmt = delete(model).where(date_column < cutoff_date)
+    result = await session.execute(stmt)
+    # 提交由调用方（任务）处理
+    return result.rowcount
+
+async def optimize_database(session: AsyncSession, db_type: str) -> str:
+    """根据数据库类型执行表优化。"""
+    tables_to_optimize = ["comment", "task_history", "token_access_logs", "external_api_logs"]
+    
+    if db_type == "mysql":
+        logger.info("检测到 MySQL，正在执行 OPTIMIZE TABLE...")
+        await session.execute(text(f"OPTIMIZE TABLE {', '.join(tables_to_optimize)};"))
+        # 提交由调用方（任务）处理
+        return "OPTIMIZE TABLE 执行成功。"
+    
+    elif db_type == "postgresql":
+        logger.info("检测到 PostgreSQL，正在执行 VACUUM...")
+        # VACUUM 不能在事务块内运行。我们创建一个具有自动提交功能的新引擎来执行此特定操作。
+        db_url = f"postgresql+asyncpg://{settings.database.user}:{settings.database.password}@{settings.database.host}:{settings.database.port}/{settings.database.name}"
+        auto_commit_engine = create_async_engine(db_url, isolation_level="AUTOCOMMIT")
+        try:
+            async with auto_commit_engine.connect() as connection:
+                await connection.execute(text("VACUUM;"))
+            return "VACUUM 执行成功。"
+        finally:
+            await auto_commit_engine.dispose()
+            
+    else:
+        message = f"不支持的数据库类型 '{db_type}'，跳过优化。"
+        logger.warning(message)
+        return message
+
+async def purge_binary_logs(session: AsyncSession, days: int) -> str:
+    """
+    执行 PURGE BINARY LOGS 命令来清理早于指定天数的 binlog 文件。
+    警告：这是一个高风险操作，需要 SUPER 或 REPLICATION_CLIENT 权限。
+    """
+    logger.info(f"准备执行 PURGE BINARY LOGS BEFORE NOW() - INTERVAL {days} DAY...")
+    await session.execute(text(f"PURGE BINARY LOGS BEFORE NOW() - INTERVAL {days} DAY"))
+    # 这个操作不需要 commit，因为它不是DML
+    msg = f"成功执行 PURGE BINARY LOGS，清除了 {days} 天前的日志。"
+    logger.info(msg)
+    return msg

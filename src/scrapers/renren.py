@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from ..config_manager import ConfigManager
 from .. import models
+from ..utils import parse_search_keyword
 from .base import BaseScraper, get_season_from_title
 
 scraper_responses_logger = logging.getLogger("scraper_responses")
@@ -223,30 +224,45 @@ class RenrenScraper(BaseScraper):
         await self.client.aclose()
 
     async def _request(self, method: str, url: str, *, params: Optional[Dict[str, Any]] = None) -> httpx.Response:
-        async with self._api_lock:
-            now = time.time()
-            dt = now - self._last_request_time
-            if dt < self._min_interval:
-                await asyncio.sleep(self._min_interval - dt)
-            # 每次请求使用全新的 deviceId，并按提供的签名规则构造请求头
-            device_id = self._generate_device_id()
-            headers = build_signed_headers(method=method, url=url, params=params or {}, device_id=device_id)
-            resp = await self.client.request(method, url, params=params, headers=headers)
-            if await self._should_log_responses():
-                scraper_responses_logger.debug(f"Renren Response ({method} {url}): status={resp.status_code}, text={resp.text}")
-            self._last_request_time = time.time()
-            return resp
+        # This method is now a simple wrapper, the rate limiting and signing is handled in _perform_network_search
+        device_id = self._generate_device_id()
+        headers = build_signed_headers(method=method, url=url, params=params or {}, device_id=device_id)
+        resp = await self.client.request(method, url, params=params, headers=headers)
+        if await self._should_log_responses():
+            scraper_responses_logger.debug(f"Renren Response ({method} {url}): status={resp.status_code}, text={resp.text}")
+        return resp
 
     async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
-        # cache key considers keyword and optional target episode
-        suffix = ""
-        if episode_info and episode_info.get("episode") is not None:
-            suffix = f"_s{episode_info.get('season')}e{episode_info.get('episode')}"
-        cache_key = f"search_{self.provider_name}_{keyword}{suffix}"
-        cached = await self._get_from_cache(cache_key)
-        if cached is not None:
-            return [models.ProviderSearchInfo.model_validate(x) for x in cached]
+        """
+        Performs a cached search for Renren content.
+        It caches the base results for a title and then filters them based on season.
+        """
+        parsed = parse_search_keyword(keyword)
+        search_title = parsed['title']
+        search_season = parsed['season']
 
+        cache_key = f"search_base_{self.provider_name}_{search_title}"
+        cached_results = await self._get_from_cache(cache_key)
+
+        if cached_results:
+            self.logger.info(f"renren: 从缓存中命中基础搜索结果 (title='{search_title}')")
+            all_results = [models.ProviderSearchInfo.model_validate(r) for r in cached_results]
+        else:
+            self.logger.info(f"renren: 缓存未命中，正在为标题 '{search_title}' 执行网络搜索...")
+            all_results = await self._perform_network_search(search_title, episode_info)
+            if all_results:
+                await self._set_to_cache(cache_key, [r.model_dump() for r in all_results], 'search_ttl_seconds', 3600)
+
+        if search_season is None:
+            return all_results
+
+        # Filter results by season
+        final_results = [item for item in all_results if item.season == search_season]
+        self.logger.info(f"renren: 为 S{search_season} 过滤后，剩下 {len(final_results)} 个结果。")
+        return final_results
+
+    async def _perform_network_search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """Performs the actual network search for Renren."""
         url = f"{BASE_API}/m-station/search/drama"
         params = {
             "keywords": keyword,
@@ -258,7 +274,15 @@ class RenrenScraper(BaseScraper):
 
         results: List[models.ProviderSearchInfo] = []
         try:
-            resp = await self._request("GET", url, params=params)
+            async with self._api_lock:
+                now = time.time()
+                dt = now - self._last_request_time
+                if dt < self._min_interval:
+                    await asyncio.sleep(self._min_interval - dt)
+                
+                resp = await self._request("GET", url, params=params)
+                self._last_request_time = time.time()
+
             resp.raise_for_status()
             decoded = auto_decode(resp.text)
             data = RrspSearchResult.model_validate(decoded)
@@ -281,10 +305,9 @@ class RenrenScraper(BaseScraper):
                     currentEpisodeIndex=episode_info.get("episode") if episode_info else None,
                 ))
         except Exception as e:
-            self.logger.error(f"renren: 搜索 '{keyword}' 失败: {e}", exc_info=True)
+            self.logger.error(f"renren: 网络搜索 '{keyword}' 失败: {e}", exc_info=True)
 
-
-        self.logger.info(f"renren: 搜索 '{keyword}' 完成，找到 {len(results)} 个结果。")
+        self.logger.info(f"renren: 网络搜索 '{keyword}' 完成，找到 {len(results)} 个结果。")
         if results:
             log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in results])
             self.logger.info(f"renren: 搜索结果列表:\n{log_results}")

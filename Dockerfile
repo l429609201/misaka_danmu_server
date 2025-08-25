@@ -47,7 +47,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制应用代码
 COPY src/ ./src/
-COPY static/ ./static/
+#COPY static/ ./static/
 COPY config/ ./config/
 COPY exec.sh /exec.sh
 COPY run.sh /run.sh

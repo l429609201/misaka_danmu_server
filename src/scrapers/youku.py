@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from ..config_manager import ConfigManager
 from .. import models
+from ..utils import parse_search_keyword
 from .base import BaseScraper, get_season_from_title
 
 scraper_responses_logger = logging.getLogger("scraper_responses")
@@ -116,8 +117,37 @@ class YoukuScraper(BaseScraper):
         await self.client.aclose()
 
     async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
-        self.logger.info(f"Youku: 正在搜索 '{keyword}'...")
+        """
+        Performs a cached search for Youku content.
+        It caches the base results for a title and then filters them based on season.
+        """
+        parsed = parse_search_keyword(keyword)
+        search_title = parsed['title']
+        search_season = parsed['season']
 
+        cache_key = f"search_base_{self.provider_name}_{search_title}"
+        cached_results = await self._get_from_cache(cache_key)
+
+        if cached_results:
+            self.logger.info(f"Youku: 从缓存中命中基础搜索结果 (title='{search_title}')")
+            all_results = [models.ProviderSearchInfo.model_validate(r) for r in cached_results]
+        else:
+            self.logger.info(f"Youku: 缓存未命中，正在为标题 '{search_title}' 执行网络搜索...")
+            all_results = await self._perform_network_search(search_title, episode_info)
+            if all_results:
+                await self._set_to_cache(cache_key, [r.model_dump() for r in all_results], 'search_ttl_seconds', 3600)
+
+        if search_season is None:
+            return all_results
+
+        # Filter results by season
+        final_results = [item for item in all_results if item.season == search_season]
+        self.logger.info(f"Youku: 为 S{search_season} 过滤后，剩下 {len(final_results)} 个结果。")
+        return final_results
+
+    async def _perform_network_search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """Performs the actual network search for Youku."""
+        self.logger.info(f"Youku: 正在为 '{keyword}' 执行网络搜索...")
         ua_encoded = urlencode({"userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"})
         keyword_encoded = urlencode({"keyword": keyword})
         url = f"https://search.youku.com/api/search?{keyword_encoded}&{ua_encoded}&site=1&categories=0&ftype=0&ob=0&pg=1"
@@ -165,9 +195,9 @@ class YoukuScraper(BaseScraper):
                 results.append(provider_search_info)
 
         except Exception as e:
-            self.logger.error(f"Youku search failed for '{keyword}': {e}", exc_info=True)
+            self.logger.error(f"Youku: 网络搜索 '{keyword}' 失败: {e}", exc_info=True)
 
-        self.logger.info(f"Youku: 搜索 '{keyword}' 完成，找到 {len(results)} 个有效结果。")
+        self.logger.info(f"Youku: 网络搜索 '{keyword}' 完成，找到 {len(results)} 个有效结果。")
         if results:
             log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in results])
             self.logger.info(f"Youku: 搜索结果列表:\n{log_results}")

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+import json
 import re
 from typing import Any, Callable, Dict, List, Optional
 
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from ..config_manager import ConfigManager
 from .. import models, crud
+from ..utils import parse_search_keyword
 from .base import BaseScraper, get_season_from_title
 
 scraper_responses_logger = logging.getLogger("scraper_responses")
@@ -191,7 +193,37 @@ class MgtvScraper(BaseScraper):
         await self.client.aclose()
 
     async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
-        self.logger.info(f"MGTV: 正在搜索 '{keyword}'...")
+        """
+        Performs a cached search for Mgtv content.
+        It caches the base results for a title and then filters them based on season.
+        """
+        parsed = parse_search_keyword(keyword)
+        search_title = parsed['title']
+        search_season = parsed['season']
+
+        cache_key = f"search_base_{self.provider_name}_{search_title}"
+        cached_results = await self._get_from_cache(cache_key)
+
+        if cached_results:
+            self.logger.info(f"MGTV: 从缓存中命中基础搜索结果 (title='{search_title}')")
+            all_results = [models.ProviderSearchInfo.model_validate(r) for r in cached_results]
+        else:
+            self.logger.info(f"MGTV: 缓存未命中，正在为标题 '{search_title}' 执行网络搜索...")
+            all_results = await self._perform_network_search(search_title, episode_info)
+            if all_results:
+                await self._set_to_cache(cache_key, [r.model_dump() for r in all_results], 'search_ttl_seconds', 3600)
+
+        if search_season is None:
+            return all_results
+
+        # Filter results by season
+        final_results = [item for item in all_results if item.season == search_season]
+        self.logger.info(f"MGTV: 为 S{search_season} 过滤后，剩下 {len(final_results)} 个结果。")
+        return final_results
+
+    async def _perform_network_search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+        """Performs the actual network search for Mgtv."""
+        self.logger.info(f"MGTV: 正在为 '{keyword}' 执行网络搜索...")
         url = f"https://mobileso.bz.mgtv.com/msite/search/v2?q={keyword}&pc=30&pn=1&sort=-99&ty=0&du=0&pt=0&corr=1&abroad=0&_support=10000000000000000"
         
         try:
@@ -241,9 +273,8 @@ class MgtvScraper(BaseScraper):
                         except ValidationError:
                             # 安全地跳过不符合我们期望结构的项目（如广告、按钮等）
                             self.logger.debug(f"MGTV: 跳过一个不符合预期的搜索结果项: {item_dict}")
-                            continue
-            
-            self.logger.info(f"MGTV: 搜索 '{keyword}' 完成，找到 {len(results)} 个结果。")
+                            continue            
+            self.logger.info(f"MGTV: 网络搜索 '{keyword}' 完成，找到 {len(results)} 个结果。")
             if results:
                 log_results = "\n".join([f"  - {r.title} (ID: {r.mediaId}, 类型: {r.type}, 年份: {r.year or 'N/A'})" for r in results])
                 self.logger.info(f"MGTV: 搜索结果列表:\n{log_results}")

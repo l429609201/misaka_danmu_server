@@ -97,6 +97,7 @@ class EmbyWebhook(BaseWebhook):
             webhookSource='emby',
             progress_callback=callback,
             session=session,
+            metadata_manager=self.metadata_manager,
             manager=self.scraper_manager, # type: ignore
             task_manager=self.task_manager,
             rate_limiter=self.rate_limiter

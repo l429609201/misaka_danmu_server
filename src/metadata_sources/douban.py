@@ -27,8 +27,8 @@ class DoubanJsonSearchResponse(BaseModel):
     subjects: List[DoubanJsonSearchSubject]
 
 # --- Main Metadata Source Class ---
-class DoubanMetadataSource(BaseMetadataSource):
-    provider_name = "douban"
+class DoubanMetadataSource(BaseMetadataSource): # type: ignore
+    provider_name = "douban" # type: ignore
 
     async def _create_client(self) -> httpx.AsyncClient:
         """Creates an httpx.AsyncClient with Douban cookie and proxy settings."""
