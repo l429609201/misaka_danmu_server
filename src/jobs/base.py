@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ..task_manager import TaskManager
 from ..scraper_manager import ScraperManager
 from ..rate_limiter import RateLimiter
+from ..metadata_manager import MetadataSourceManager
 
 class BaseJob(ABC):
     """
@@ -15,11 +16,12 @@ class BaseJob(ABC):
     job_type: str # 任务的唯一标识符, e.g., "incremental_refresh"
     job_name: str # 任务的默认显示名称, e.g., "TMDB自动映射与更新"
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: TaskManager, scraper_manager: ScraperManager, rate_limiter: RateLimiter):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: TaskManager, scraper_manager: ScraperManager, rate_limiter: RateLimiter, metadata_manager: MetadataSourceManager):
         self._session_factory = session_factory
         self.task_manager = task_manager
         self.scraper_manager = scraper_manager
         self.rate_limiter = rate_limiter
+        self.metadata_manager = metadata_manager
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @abstractmethod
