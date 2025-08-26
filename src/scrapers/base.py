@@ -132,12 +132,11 @@ class BaseScraper(ABC):
     rate_limit_quota: Optional[int] = None # 新增：特定源的配额
     
     async def _should_log_responses(self) -> bool:
-        """检查数据库以确定是否应为此爬虫记录原始响应。"""
+        """动态检查是否应记录原始响应，确保配置实时生效。"""
         if not self.is_loggable:
             return False
-
-        config_key = f"scraper_{self.provider_name}_log_responses"
-        is_enabled_str = await self.config_manager.get(config_key, "false")
+        
+        is_enabled_str = await self.config_manager.get("logRawResponses", "false")
         return is_enabled_str.lower() == 'true'
 
     async def get_episode_blacklist_pattern(self) -> Optional[re.Pattern]:

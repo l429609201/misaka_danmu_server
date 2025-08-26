@@ -23,13 +23,6 @@ class GamerScraper(BaseScraper):
     handled_domains = ["ani.gamer.com.tw"]
     referer = "https://ani.gamer.com.tw/"
 
-    # --- 硬编码配置 ---
-    # 在这里直接写入您的配置值。
-    # 如果您不希望硬编码某个值，可以将其设为 "" 或 None。
-    _HARDCODED_COOKIE = "your_gamer_cookie_here"
-    _HARDCODED_USER_AGENT = "your_custom_user_agent_here"
-    # --------------------
-
     _EPISODE_BLACKLIST_PATTERN = re.compile(r"加更|走心|解忧|纯享", re.IGNORECASE)
     def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager):
         super().__init__(session_factory, config_manager)
@@ -40,23 +33,25 @@ class GamerScraper(BaseScraper):
             timeout=20.0,
             follow_redirects=True
         )
-        self._cookie = ""
-        self._config_loaded = False
 
     async def _ensure_config(self):
-        """加载硬编码的Cookie和User-Agent。"""
-        if self._config_loaded:
-            return
-        
-        if self._HARDCODED_COOKIE:
-            self.client.headers["Cookie"] = self._HARDCODED_COOKIE
-            self.logger.info("Gamer: 已加载硬编码的 Cookie。")
-        
-        if self._HARDCODED_USER_AGENT:
-            self.client.headers["User-Agent"] = self._HARDCODED_USER_AGENT
-            self.logger.info("Gamer: 已加载硬编码的 User-Agent。")
-        
-        self._config_loaded = True
+        """
+        实时从数据库加载并应用Cookie和User-Agent配置。
+        此方法在每次请求前调用，以确保配置实时生效。
+        """
+        cookie = await self.config_manager.get("gamerCookie", "")
+        user_agent = await self.config_manager.get("gamerUserAgent", "")
+
+        if cookie:
+            self.client.headers["Cookie"] = cookie
+        elif "Cookie" in self.client.headers:
+            del self.client.headers["Cookie"]
+
+        if user_agent:
+            self.client.headers["User-Agent"] = user_agent
+        else:
+            # 如果数据库中没有，则恢复为默认值
+            self.client.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
         """一个简单的请求包装器。"""

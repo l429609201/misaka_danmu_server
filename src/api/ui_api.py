@@ -430,15 +430,12 @@ async def get_source_details(
     return models.SourceDetailsResponse.model_validate(source_info)
 
 class ReassociationRequest(models.BaseModel):
-    targetAnimeId: int = Field(..., alias="target_anime_id")
-
-    class Config:
-        populate_by_name = True
+    targetAnimeId: int
 
 @router.post("/library/anime/{sourceAnimeId}/reassociate", status_code=status.HTTP_204_NO_CONTENT, summary="重新关联作品的数据源")
 async def reassociate_anime_sources(
     sourceAnimeId: int,
-    request_data: ReassociationRequest,
+    request_data: ReassociationRequest = Body(...),
     current_user: models.User = Depends(security.get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
@@ -765,13 +762,16 @@ async def get_metadata_source_settings(
 async def update_metadata_source_settings(
     settings: List[models.MetadataSourceSettingUpdate],
     current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    session: AsyncSession = Depends(get_db_session),
+    manager: MetadataSourceManager = Depends(get_metadata_manager)
 ):
     """批量更新元数据源的启用状态、辅助搜索状态和显示顺序。"""
     # 修正：恢复使用专用的 `metadata_sources` 表来存储设置，
     # 这将调用 `crud.py` 中正确的函数，并解决之前遇到的状态保存问题。
     await crud.update_metadata_sources_settings(session, settings)
-    logger.info(f"用户 '{current_user.username}' 更新了元数据源设置。")
+    # 新增：触发 MetadataSourceManager 重新加载设置，以使更改立即生效。
+    await manager.load_and_sync_sources()
+    logger.info(f"用户 '{current_user.username}' 更新了元数据源设置，已重新加载。")
 
 @router.put("/scrapers", status_code=status.HTTP_204_NO_CONTENT, summary="更新搜索源的设置")
 async def update_scraper_settings(

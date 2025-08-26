@@ -9,22 +9,22 @@
   "description": "一个功能强大的自托管弹幕（Danmaku）聚合与管理服务，兼容 dandanplay API 规范。",
   "icons": [
     {
-      "src": "pwa-48x48.png",
+      "src": "images/pwa-48x48.png",
       "type": "image/png",
       "sizes": "48x48"
     },
     {
-      "src": "pwa-96x96.png",
+      "src": "images/pwa-96x96.png",
       "type": "image/png",
       "sizes": "96x96"
     },
     {
-      "src": "pwa-192x192.png",
+      "src": "images/pwa-192x192.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "pwa-512x512.png",
+      "src": "images/pwa-512x512.png",
       "type": "image/png",
       "sizes": "512x512"
     }

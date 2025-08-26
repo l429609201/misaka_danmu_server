@@ -88,16 +88,23 @@ async def lifespan(app: FastAPI):
     }
     await app.state.config_manager.register_defaults(default_configs)
 
-    app.state.scraper_manager = ScraperManager(session_factory, app.state.config_manager)
+    # --- 新的初始化顺序以解决循环依赖 ---
+    # 1. 初始化元数据管理器，但暂时不传入 scraper_manager
+    app.state.metadata_manager = MetadataSourceManager(session_factory, app.state.config_manager, None) # type: ignore
+
+    # 2. 初始化搜索源管理器，并传入元数据管理器
+    app.state.scraper_manager = ScraperManager(session_factory, app.state.config_manager, app.state.metadata_manager)
+
+    # 3. 将 scraper_manager 实例回填到 metadata_manager 中
+    app.state.metadata_manager.scraper_manager = app.state.scraper_manager
+
+    # 4. 现在可以安全地初始化所有管理器
     await app.state.scraper_manager.initialize()
+    await app.state.metadata_manager.initialize()
+
+    # 5. 初始化其他依赖于上述管理器的组件
     app.state.rate_limiter = RateLimiter(session_factory, app.state.config_manager, app.state.scraper_manager)
 
-    # 新增：初始化元数据源管理器
-    app.state.metadata_manager = MetadataSourceManager(session_factory, app.state.config_manager, app.state.scraper_manager)
-    await app.state.metadata_manager.initialize()
-    # 新增：在主应用中显式挂载元数据管理器的路由
-    # 这使得路由结构更清晰，并解决了潜在的冲突问题
-    # 必须在管理器初始化之后挂载，以确保其内部路由已构建
     app.include_router(app.state.metadata_manager.router, prefix="/api/metadata")
 
 
@@ -128,6 +135,8 @@ async def lifespan(app: FastAPI):
         app.mount("/assets", StaticFiles(directory="web/dist/assets"), name="assets")
         # 修正：挂载前端的静态图片 (如 logo)，使其指向正确的 'web/dist/images' 目录
         app.mount("/images", StaticFiles(directory="web/dist/images"), name="images")
+        # pwa挂载
+        #app.mount("/manifest.json", StaticFiles(directory="web/dist/manifest.json"), name="manifest")
         # 挂载用户缓存的图片 (如海报)
         app.mount("/data/images", StaticFiles(directory="config/image"), name="cached_images")
         # 然后，为所有其他路径提供 index.html 以支持前端路由

@@ -158,21 +158,19 @@ export const SearchResult = () => {
     try {
       if (loading) return
       setLoading(true)
-      const res = await importDanmu(
-        JSON.stringify({
-          provider: item.provider,
-          mediaId: item.mediaId,
-          animeTitle: item.title,
-          type: item.type,
-          // 关键修正：如果用户搜索时指定了季度，则优先使用该季度
-          // 否则，使用从单个结果中解析出的季度
-          season: searchSeason !== null ? searchSeason : item.season,
-          year: item.year, // 新增年份
-          imageUrl: item.imageUrl,
-          doubanId: item.doubanId,
-          currentEpisodeIndex: item.currentEpisodeIndex,
-        })
-      )
+      const res = await importDanmu({
+        provider: item.provider,
+        mediaId: item.mediaId,
+        animeTitle: item.title,
+        type: item.type,
+        // 关键修正：如果用户搜索时指定了季度，则优先使用该季度
+        // 否则，使用从单个结果中解析出的季度
+        season: searchSeason ?? item.season,
+        year: item.year, // 新增年份
+        imageUrl: item.imageUrl,
+        doubanId: item.doubanId,
+        currentEpisodeIndex: item.currentEpisodeIndex,
+      })
       message.success(res.data.message || '导入成功')
     } catch (error) {
       message.error(`提交导入任务失败: ${error.detail || error}`)

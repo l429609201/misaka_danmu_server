@@ -438,7 +438,7 @@ async def get_token_from_path(
     log_path = re.sub(r'^/api/v1/[^/]+', '', request_path) # 从路径中移除 /api/v1/{token} 部分
 
     token_info = await crud.validate_api_token(session, token)
-    if not token_info:
+    if not token_info: 
         # 尝试记录失败的访问
         token_record = await crud.get_api_token_by_token_str(session, token)
         if token_record:

@@ -184,7 +184,7 @@ async def search_episodes_in_library(session: AsyncSession, anime_title: str, ep
             Anime.imageUrl.label("imageUrl"),
             Anime.createdAt.label("startDate"),
             Episode.id.label("episodeId"),
-            func.if_(Anime.type == 'movie', func.concat(Scraper.providerName, ' 源'), Episode.title).label("episodeTitle"),
+            case((Anime.type == 'movie', func.concat(Scraper.providerName, ' 源')), else_=Episode.title).label("episodeTitle"),
             AnimeAlias.nameEn,
             AnimeAlias.nameJp,
             AnimeAlias.nameRomaji,
@@ -314,12 +314,15 @@ async def search_animes_for_dandan(session: AsyncSession, keyword: str) -> List[
 
 async def find_animes_for_matching(session: AsyncSession, title: str) -> List[Dict[str, Any]]:
     """为匹配流程查找可能的番剧，并返回其核心ID以供TMDB映射使用。"""
+    title_len_expr = func.length(Anime.title)
     stmt = (
         select(
             Anime.id.label("animeId"),
             AnimeMetadata.tmdbId,
             AnimeMetadata.tmdbEpisodeGroupId,
-            Anime.title
+            Anime.title,
+            # 修正：将用于排序的列添加到 SELECT 列表中，以兼容 PostgreSQL 的 DISTINCT 规则
+            title_len_expr.label("title_length")
         )
         .join(AnimeMetadata, Anime.id == AnimeMetadata.animeId, isouter=True)
         .join(AnimeAlias, Anime.id == AnimeAlias.animeId, isouter=True)
@@ -331,7 +334,7 @@ async def find_animes_for_matching(session: AsyncSession, title: str) -> List[Di
         for col in [Anime.title, AnimeAlias.nameEn, AnimeAlias.nameJp, AnimeAlias.nameRomaji,
                     AnimeAlias.aliasCn1, AnimeAlias.aliasCn2, AnimeAlias.aliasCn3]
     ]
-    stmt = stmt.where(or_(*like_conditions)).distinct().order_by(func.length(Anime.title)).limit(5)
+    stmt = stmt.where(or_(*like_conditions)).distinct().order_by(title_len_expr).limit(5)
     
     result = await session.execute(stmt)
     return [dict(row) for row in result.mappings()]
@@ -459,6 +462,12 @@ async def link_source_to_anime(session: AsyncSession, anime_id: int, provider_na
     session.add(new_source)
     await session.flush() # 使用 flush 获取新ID，但不提交事务
     return new_source.id
+
+async def update_source_media_id(session: AsyncSession, source_id: int, new_media_id: str):
+    """更新指定源的 mediaId。"""
+    stmt = update(AnimeSource).where(AnimeSource.id == source_id).values(mediaId=new_media_id)
+    await session.execute(stmt)
+    # 注意：这里不 commit，由调用方（任务）来决定何时提交事务
 
 async def update_metadata_if_empty(session: AsyncSession, anime_id: int, tmdbId: Optional[str], imdbId: Optional[str], tvdbId: Optional[str], doubanId: Optional[str], bangumiId: Optional[str] = None, tmdbEpisodeGroupId: Optional[str] = None):
     """仅当字段为空时，才更新番剧的元数据ID。"""
@@ -745,13 +754,17 @@ async def delete_episode(session: AsyncSession, episode_id: int) -> bool:
     return False
 
 async def reassociate_anime_sources(session: AsyncSession, source_anime_id: int, target_anime_id: int) -> bool:
+    if source_anime_id == target_anime_id:
+        return False # 不能将一个作品与它自己合并
+
     source_anime = await session.get(Anime, source_anime_id, options=[selectinload(Anime.sources)])
     target_anime = await session.get(Anime, target_anime_id)
     if not source_anime or not target_anime:
         return False
 
-    for src in source_anime.sources:
-        # Check for duplicates
+    # 修正：遍历源列表的副本，以避免在迭代时修改集合
+    for src in list(source_anime.sources):
+        # 检查目标作品上是否已存在重复的数据源
         existing_target_source = await session.execute(
             select(AnimeSource).where(
                 AnimeSource.animeId == target_anime_id,
@@ -760,9 +773,9 @@ async def reassociate_anime_sources(session: AsyncSession, source_anime_id: int,
             )
         )
         if existing_target_source.scalar_one_or_none():
-            await session.delete(src) # Delete the duplicate from the source anime
+            await session.delete(src) # 如果目标已存在，则直接删除此重复源
         else:
-            src.animeId = target_anime_id
+            src.animeId = target_anime_id # 否则，将其关联到目标作品
     
     await session.delete(source_anime)
     await session.commit()
@@ -953,6 +966,19 @@ async def get_enabled_failover_sources(session: AsyncSession) -> List[Dict[str, 
         for s in result.scalars()
     ]
 
+async def get_enabled_failover_sources(session: AsyncSession) -> List[Dict[str, Any]]:
+    """获取所有已启用故障转移的元数据源。"""
+    stmt = (
+        select(MetadataSource)
+        .where(MetadataSource.isFailoverEnabled == True)
+        .order_by(MetadataSource.displayOrder)
+    )
+    result = await session.execute(stmt)
+    return [
+        {"providerName": s.providerName, "isEnabled": s.isEnabled, "isAuxSearchEnabled": s.isAuxSearchEnabled, "displayOrder": s.displayOrder, "useProxy": s.useProxy, "isFailoverEnabled": s.isFailoverEnabled}
+        for s in result.scalars()
+    ]
+
 # --- Config & Cache ---
 
 async def get_config_value(session: AsyncSession, key: str, default: str) -> str:
@@ -1104,10 +1130,12 @@ async def validate_api_token(session: AsyncSession, token: str) -> Optional[Dict
     if not token_info:
         return None
     # 修正：使用带时区的当前时间进行比较，以避免 naive 和 aware datetime 的比较错误
-    now_utc = datetime.now(timezone.utc)
-    if token_info.expiresAt and token_info.expiresAt < now_utc:
-        return None
-    return {"id": token_info.id, "expires_at": token_info.expiresAt}
+    if token_info.expiresAt:
+        # 关键修复：将从数据库读取的 naive datetime 对象转换为 aware datetime 对象
+        expires_at_aware = token_info.expiresAt.replace(tzinfo=timezone.utc)
+        if expires_at_aware < datetime.now(timezone.utc):
+            return None # Token 已过期
+    return {"id": token_info.id, "expiresAt": token_info.expiresAt}
 
 # --- UA Filter and Log Services ---
 

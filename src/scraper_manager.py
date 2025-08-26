@@ -5,7 +5,7 @@ import inspect
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Type
+from typing import Dict, List, Optional, Any, Type, TYPE_CHECKING
 from urllib.parse import urlparse
 from cryptography.hazmat.primitives import hashes, serialization, asymmetric
 
@@ -14,8 +14,11 @@ from .config_manager import ConfigManager
 from .models import ProviderSearchInfo
 from . import crud
 
+if TYPE_CHECKING:
+    from .metadata_manager import MetadataSourceManager
+
 class ScraperManager:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager, metadata_manager: "MetadataSourceManager"):
         self.scrapers: Dict[str, BaseScraper] = {}
         self._scraper_classes: Dict[str, Type[BaseScraper]] = {}
         self.scraper_settings: Dict[str, Dict[str, Any]] = {}
@@ -27,6 +30,7 @@ class ScraperManager:
         self._verified_scrapers: set[str] = set()
         self._verification_enabled: bool = False
         self.config_manager = config_manager
+        self.metadata_manager = metadata_manager
         # 注意：加载逻辑现在是异步的，将在应用启动时调用
 
     async def acquire_search_lock(self, api_key: str) -> bool:
@@ -259,6 +263,26 @@ class ScraperManager:
                 logging.getLogger(__name__).error(f"顺序搜索时，提供方 '{provider_name}' 发生错误: {e}", exc_info=True)
         
         return None, None
+
+    async def search(self, provider: str, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[ProviderSearchInfo]:
+        """
+        在指定的搜索源上搜索，如果失败则尝试故障转移。
+        """
+        scraper = self.get_scraper(provider)
+        results = await scraper.search(keyword, episode_info)
+        
+        # 如果主搜索源没有结果，则尝试故障转移
+        if not results and self.metadata_manager:
+            logging.getLogger(__name__).info(f"主搜索源 '{provider}' 未找到结果，正在尝试使用元数据源进行故障转移...")
+            try:
+                failover_results = await self.metadata_manager.supplement_search_result(provider, keyword, episode_info)
+                if failover_results:
+                    logging.getLogger(__name__).info(f"通过故障转移找到 {len(failover_results)} 个结果。")
+                    return failover_results
+            except Exception as e:
+                logging.getLogger(__name__).error(f"搜索故障转移过程中发生错误: {e}", exc_info=True)
+        
+        return results
 
     async def close_all(self):
         """关闭所有搜索源的客户端。"""

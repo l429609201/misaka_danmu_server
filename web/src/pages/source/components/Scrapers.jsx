@@ -252,9 +252,7 @@ export const Scrapers = () => {
     const setNameCapitalize = `${item.providerName.charAt(0).toUpperCase()}${item.providerName.slice(1)}`
     form.setFieldsValue({
       [`scraper${setNameCapitalize}LogResponses`]:
-        res.data?.[`scraper${setNameCapitalize}LogResponses`] === 'true'
-          ? true
-          : false,
+        res.data?.[`scraper${setNameCapitalize}LogResponses`] ?? false,
       [`${item.providerName}EpisodeBlacklistRegex`]:
         res.data?.[`${item.providerName}EpisodeBlacklistRegex`] || '',
       [`${item.providerName}Cookie`]:
@@ -270,13 +268,11 @@ export const Scrapers = () => {
       setConfirmLoading(true)
       const values = await form.validateFields()
       const setNameCapitalize = `${setname.charAt(0).toUpperCase()}${setname.slice(1)}`
-      const status =
-        values[`scraper${setNameCapitalize}LogResponses`] === 'on'
-          ? 'true'
-          : values[`scraper${setNameCapitalize}LogResponses`]?.toString()
+
       await setSingleScraper({
         ...values,
-        [`scraper${setNameCapitalize}LogResponses`]: status,
+        [`scraper${setNameCapitalize}LogResponses`]:
+          values[`scraper${setNameCapitalize}LogResponses`],
         name: setname,
       })
       message.success('保存成功')

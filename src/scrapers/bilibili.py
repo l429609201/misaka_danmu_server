@@ -212,36 +212,31 @@ class BilibiliScraper(BaseScraper):
     async def close(self):
         await self.client.aclose()
 
-    async def _ensure_config_and_cookie(self, force_refresh: bool = False):
+    async def _ensure_config_and_cookie(self):
         """
-        确保客户端的Cookie已从数据库加载，实现双模操作。
-        - 如果数据库中有Cookie（用户已登录），则加载并使用认证会话。
-        - 如果数据库中没有Cookie（用户未登录），则自动获取一个临时的、非认证的Cookie（buvid3）以执行公共API操作。
-        这确保了即使用户不登录，也能保留原有的基本功能。
+        实时从数据库加载并应用Cookie，确保配置实时生效。
+        此方法在每次请求前调用。它支持两种模式：
+        - 使用数据库中配置的完整Cookie进行认证请求。
+        - 在未配置时自动获取临时的buvid3进行公共API请求。
         """
-        if not hasattr(self, '_config_loaded') or self._config_loaded is False or force_refresh:
-            self.logger.debug("Bilibili: 正在从数据库加载Cookie...")
-            async with self._session_factory() as session:
-                cookie_str = await crud.get_config_value(session, "bilibiliCookie", "")
-            
-            self.client.cookies.clear()
+        self.logger.debug("Bilibili: 正在从数据库加载Cookie...")
+        cookie_str = await self.config_manager.get("bilibiliCookie", "")
+        
+        self.client.cookies.clear()
 
-            if cookie_str:
-                # 模式1: 用户已登录。解析并设置从数据库加载的完整Cookie。
-                cookie_parts = [c.strip().split('=', 1) for c in cookie_str.split(';')]
-                for parts in cookie_parts:
-                    if len(parts) == 2:
-                        self.client.cookies.set(parts[0], parts[1], domain=".bilibili.com")
-                self.logger.info("Bilibili: 已成功从数据库加载Cookie。")
-            else:
-                self.logger.info("Bilibili: 数据库中未找到Cookie。")
-           
-            # 如果加载后仍然没有buvid3（例如，数据库为空或cookie不完整），则获取一个临时的
-            # 这是非登录模式的核心。
-            if "buvid3" not in self.client.cookies:
-                await self._get_temp_buvid3()
-
-            self._config_loaded = True
+        if cookie_str:
+            # 模式1: 用户已登录。解析并设置从数据库加载的完整Cookie。
+            cookie_parts = [c.strip().split('=', 1) for c in cookie_str.split(';')]
+            for parts in cookie_parts:
+                if len(parts) == 2:
+                    self.client.cookies.set(parts[0], parts[1], domain=".bilibili.com")
+            self.logger.info("Bilibili: 已成功从数据库加载Cookie。")
+        else:
+            self.logger.info("Bilibili: 数据库中未找到Cookie。")
+       
+        # 如果加载后仍然没有buvid3（例如，数据库为空或cookie不完整），则获取一个临时的
+        if "buvid3" not in self.client.cookies:
+            await self._get_temp_buvid3()
 
     async def _get_temp_buvid3(self):
         """
@@ -314,12 +309,8 @@ class BilibiliScraper(BaseScraper):
             
             if "SESSDATA" in self.client.cookies:
                 cookie_string = "; ".join(all_cookies)
-                async with self._session_factory() as session:
-                    await crud.update_config_value(session, "bilibiliCookie", cookie_string)
-                    await session.commit()
+                await self.config_manager.setValue("bilibiliCookie", cookie_string)
                 self.logger.info("Bilibili: 新的登录Cookie已保存到数据库。")
-                # 新增：强制刷新配置和cookie，以立即应用新的登录状态
-                await self._ensure_config_and_cookie(force_refresh=True)
             else:
                 self.logger.error("Bilibili: 登录轮询成功，但响应中未找到SESSDATA。")
 
@@ -339,10 +330,7 @@ class BilibiliScraper(BaseScraper):
                 raise ValueError("轮询登录状态需要 'qrcodeKey'。")
             return await self.poll_login_status(qrcodeKey)
         elif action_name == "logout":
-            # 从数据库中清除cookie
-            async with self._session_factory() as session:
-                await crud.update_config_value(session, "bilibiliCookie", "")
-            self._config_loaded = False  # 强制下次请求时重新加载配置
+            await self.config_manager.setValue("bilibiliCookie", "")
             return {"message": "注销成功"}
         else:
             return await super().execute_action(action_name, payload)
@@ -569,6 +557,47 @@ class BilibiliScraper(BaseScraper):
         
         return results
 
+    def _bili_media_to_provider_info(self, item: BiliSearchMedia) -> Optional[models.ProviderSearchInfo]:
+        """
+        一个辅助函数，用于将Bilibili的媒体对象转换为通用的 ProviderSearchInfo 模型。
+        """
+        if not item:
+            return None
+
+        if self._JUNK_TITLE_PATTERN.search(item.title):
+            self.logger.debug(f"Bilibili: Filtering out junk title from media object: '{item.title}'")
+            return None
+
+        media_id = f"ss{item.season_id}" if item.season_id else f"bv{item.bvid}" if item.bvid else ""
+        if not media_id:
+            return None
+
+        media_type = "movie" if item.season_type_name == "电影" else "tv_series"
+        
+        year = None
+        try:
+            if item.pubdate:
+                if isinstance(item.pubdate, int): year = datetime.fromtimestamp(item.pubdate).year
+                elif isinstance(item.pubdate, str) and len(item.pubdate) >= 4: year = int(item.pubdate[:4])
+            elif item.pubtime: year = datetime.fromtimestamp(item.pubtime).year
+        except (ValueError, TypeError, OSError):
+            pass
+
+        unescaped_title = html.unescape(item.title)
+        cleaned_title = re.sub(r'<[^>]+>', '', unescaped_title).replace(":", "：")
+        
+        return models.ProviderSearchInfo(
+            provider=self.provider_name,
+            mediaId=media_id,
+            title=cleaned_title,
+            type=media_type,
+            season=get_season_from_title(cleaned_title),
+            year=year,
+            imageUrl=item.cover,
+            episodeCount=item.ep_size,
+            currentEpisodeIndex=None # This is not available in this context
+        )
+
     async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
         """从B站URL中提取作品信息。"""
         self.logger.info(f"Bilibili: 正在从URL提取信息: {url}")
@@ -615,10 +644,7 @@ class BilibiliScraper(BaseScraper):
 
         if not media_info:
             return None
-
-        # 将获取到的信息转换为 ProviderSearchInfo
         return self._bili_media_to_provider_info(media_info)
-
 
     async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
         if media_id.startswith("ss"):
@@ -800,7 +826,11 @@ class BilibiliScraper(BaseScraper):
 
         formatted = []
         for c in processed_comments:
+            # Sanitize content to remove null characters, which are invalid in PostgreSQL's TEXT type.
+            sanitized_content = c.content.replace('\x00', '')
+            if not sanitized_content: # Skip if the comment is empty after sanitization
+                continue
             timestamp = c.progress / 1000.0
             p_string = f"{timestamp:.3f},{c.mode},{c.color},[{self.provider_name}]"
-            formatted.append({"cid": str(c.id), "p": p_string, "m": c.content, "t": round(timestamp, 2)})
+            formatted.append({"cid": str(c.id), "p": p_string, "m": sanitized_content, "t": round(timestamp, 2)})
         return formatted
