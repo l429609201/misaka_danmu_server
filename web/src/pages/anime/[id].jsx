@@ -45,6 +45,7 @@ export const AnimeDetail = () => {
   const [editOpen, setEditOpen] = useState(false)
   const [keyword, setKeyword] = useState('')
   const [selectedRows, setSelectedRows] = useState([])
+  const [libraryPageSisze, setLibraryPageSisze] = useState(10)
 
   const navigate = useNavigate()
 
@@ -436,15 +437,13 @@ export const AnimeDetail = () => {
         items={[
           {
             title: (
-              <Link>
+              <Link to="/">
                 <HomeOutlined />
               </Link>
             ),
-            onClick: () => navigate('/'),
           },
           {
-            title: <Link>弹幕库</Link>,
-            onClick: () => navigate('/library'),
+            title: <Link to="/library">弹幕库</Link>,
           },
           {
             title: animeDetail.title,
@@ -533,7 +532,10 @@ export const AnimeDetail = () => {
           size="large"
           dataSource={renderList}
           pagination={{
-            pageSize: 10,
+            pageSize: libraryPageSisze,
+            onShowSizeChange: (_, size) => {
+              setLibraryPageSisze(size)
+            },
           }}
           renderItem={(item, index) => {
             return (

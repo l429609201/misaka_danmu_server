@@ -46,7 +46,7 @@ export const RateLimitPanel = () => {
         </Typography>
         {status && (
           <>
-            <Card type="inner" title="全局限制" className="mb-6">
+            <Card type="inner" title="全局限制" className="!mb-6">
               <Row gutter={[16, 16]} align="middle">
                 <Col xs={24} sm={12} md={8}>
                   <Statistic
@@ -62,7 +62,7 @@ export const RateLimitPanel = () => {
                   />
                 </Col>
                 <Col xs={24} sm={24} md={8}>
-                  <Statistic.Countdown
+                  <Statistic.Timer
                     title="重置倒计时"
                     value={Date.now() + status.secondsUntilReset * 1000}
                     format="HH:mm:ss"
@@ -83,11 +83,16 @@ export const RateLimitPanel = () => {
             <Card type="inner" title="各源配额使用情况">
               <Table
                 columns={[
-                  { title: '搜索源', dataIndex: 'providerName', key: 'providerName' },
+                  {
+                    title: '搜索源',
+                    dataIndex: 'providerName',
+                    key: 'providerName',
+                  },
                   {
                     title: '使用情况 (已用 / 配额)',
                     key: 'usage',
-                    render: (_, record) => `${record.requestCount} / ${record.quota}`,
+                    render: (_, record) =>
+                      `${record.requestCount} / ${record.quota}`,
                   },
                 ]}
                 dataSource={status.providers}

@@ -384,8 +384,7 @@ async def edit_anime_info(
             await metadata_manager.update_tmdb_mappings(
                 tmdb_tv_id=int(update_data.tmdbId),
                 group_id=update_data.tmdbEpisodeGroupId,
-                user=current_user,
-                session=session
+                user=current_user
             )
         except Exception as e:
             # 仅记录错误，不中断主流程，因为核心信息已保存

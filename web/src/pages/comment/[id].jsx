@@ -47,18 +47,16 @@ export const CommentDetail = () => {
         items={[
           {
             title: (
-              <Link>
+              <Link to="/">
                 <HomeOutlined />
               </Link>
             ),
-            onClick: () => navigate('/'),
           },
           {
-            title: <Link>弹幕库</Link>,
-            onClick: () => navigate('/library'),
+            title: <Link to="/library">弹幕库</Link>,
           },
           {
-            title: <Link>分集列表</Link>,
+            title: <Link to="javascript:void(0)">分集列表</Link>,
             onClick: () => navigate(-1),
           },
           {

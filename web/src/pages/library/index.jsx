@@ -64,6 +64,7 @@ export const Library = () => {
   const [renderData, setRenderData] = useState([])
   const [keyword, setKeyword] = useState('')
   const navigate = useNavigate()
+  const [libraryPageSize, setLibraryPageSize] = useState(50)
 
   const [form] = Form.useForm()
   const [editOpen, setEditOpen] = useState(false)
@@ -329,7 +330,7 @@ export const Library = () => {
 
   const handleSearchAsId = async ({ source, currentId, mediaType }) => {
     try {
-      if (searchAsIdLoading) return
+      if (searchAsIdLoading || !currentId) return
       setSearchAsIdLoading(true)
       const res = await getAnimeInfoAsSource({ source, currentId, mediaType })
       applySearchSelectionData({
@@ -597,10 +598,13 @@ export const Library = () => {
             pagination={
               renderData?.length > 50
                 ? {
-                    pageSize: 50,
+                    pageSize: libraryPageSize,
                     showTotal: total => `共 ${total} 条数据`,
                     showSizeChanger: true,
                     showQuickJumper: true,
+                    onShowSizeChange: (_, size) => {
+                      setLibraryPageSize(size)
+                    },
                   }
                 : null
             }
@@ -694,21 +698,25 @@ export const Library = () => {
             <Input.Search
               placeholder="例如：1396"
               allowClear
-              enterButton="Search"
+              enterButton="搜索"
               suffix={
-                <span
-                  className="cursor-pointer opacity-80 transition-all hover:opacity-100"
-                  onClick={() => {
-                    handleSearchAsId({
-                      source: 'tmdb',
-                      currentId: tmdbId,
-                      mediaType:
-                        type === DANDAN_TYPE_MAPPING.tvseries ? 'tv' : 'movie',
-                    })
-                  }}
-                >
-                  <MyIcon icon="jingzhun" size={20} />
-                </span>
+                <Tooltip title="ID直搜">
+                  <span
+                    className="cursor-pointer opacity-80 transition-all hover:opacity-100"
+                    onClick={() => {
+                      handleSearchAsId({
+                        source: 'tmdb',
+                        currentId: tmdbId,
+                        mediaType:
+                          type === DANDAN_TYPE_MAPPING.tvseries
+                            ? 'tv'
+                            : 'movie',
+                      })
+                    }}
+                  >
+                    <MyIcon icon="jingzhun" size={20} />
+                  </span>
+                </Tooltip>
               }
               loading={searchTmdbLoading}
               onSearch={() => {
@@ -720,7 +728,7 @@ export const Library = () => {
             <Input.Search
               placeholder="TMDB Episode Group Id"
               allowClear
-              enterButton="Search"
+              enterButton="搜索"
               loading={searchEgidLoading}
               onSearch={() => {
                 onEgidSearch()
@@ -732,19 +740,21 @@ export const Library = () => {
             <Input.Search
               placeholder="例如：296100"
               allowClear
-              enterButton="Search"
+              enterButton="搜索"
               suffix={
-                <span
-                  className="cursor-pointer opacity-80 transition-all hover:opacity-100"
-                  onClick={() => {
-                    handleSearchAsId({
-                      source: 'bangumi',
-                      currentId: bangumiId,
-                    })
-                  }}
-                >
-                  <MyIcon icon="jingzhun" size={20} />
-                </span>
+                <Tooltip title="ID直搜">
+                  <span
+                    className="cursor-pointer opacity-80 transition-all hover:opacity-100"
+                    onClick={() => {
+                      handleSearchAsId({
+                        source: 'bangumi',
+                        currentId: bangumiId,
+                      })
+                    }}
+                  >
+                    <MyIcon icon="jingzhun" size={20} />
+                  </span>
+                </Tooltip>
               }
               loading={searchBgmLoading}
               onSearch={() => {
@@ -756,23 +766,25 @@ export const Library = () => {
             <Input.Search
               placeholder="例如：364093"
               allowClear
-              enterButton="Search"
+              enterButton="搜索"
               suffix={
-                <span
-                  className="cursor-pointer opacity-80 transition-all hover:opacity-100"
-                  onClick={() => {
-                    handleSearchAsId({
-                      source: 'tvdb',
-                      mediaType:
-                        type === DANDAN_TYPE_MAPPING.tvseries
-                          ? 'series'
-                          : 'movie',
-                      currentId: tvdbId,
-                    })
-                  }}
-                >
-                  <MyIcon icon="jingzhun" size={20} />
-                </span>
+                <Tooltip title="ID直搜">
+                  <span
+                    className="cursor-pointer opacity-80 transition-all hover:opacity-100"
+                    onClick={() => {
+                      handleSearchAsId({
+                        source: 'tvdb',
+                        mediaType:
+                          type === DANDAN_TYPE_MAPPING.tvseries
+                            ? 'series'
+                            : 'movie',
+                        currentId: tvdbId,
+                      })
+                    }}
+                  >
+                    <MyIcon icon="jingzhun" size={20} />
+                  </span>
+                </Tooltip>
               }
               loading={searchTvdbLoading}
               onSearch={() => {
@@ -784,23 +796,25 @@ export const Library = () => {
             <Input.Search
               placeholder="例如：35297708"
               allowClear
-              enterButton="Search"
+              enterButton="搜索"
               suffix={
-                <span
-                  className="cursor-pointer opacity-80 transition-all hover:opacity-100"
-                  onClick={() => {
-                    handleSearchAsId({
-                      source: 'douban',
-                      mediaType:
-                        type === DANDAN_TYPE_MAPPING.tvseries
-                          ? 'series'
-                          : 'movie',
-                      currentId: doubanId,
-                    })
-                  }}
-                >
-                  <MyIcon icon="jingzhun" size={20} />
-                </span>
+                <Tooltip title="ID直搜">
+                  <span
+                    className="cursor-pointer opacity-80 transition-all hover:opacity-100"
+                    onClick={() => {
+                      handleSearchAsId({
+                        source: 'douban',
+                        mediaType:
+                          type === DANDAN_TYPE_MAPPING.tvseries
+                            ? 'series'
+                            : 'movie',
+                        currentId: doubanId,
+                      })
+                    }}
+                  >
+                    <MyIcon icon="jingzhun" size={20} />
+                  </span>
+                </Tooltip>
               }
               loading={searchDoubanLoading}
               onSearch={() => {
@@ -812,23 +826,25 @@ export const Library = () => {
             <Input.Search
               placeholder="例如：tt9140554"
               allowClear
-              enterButton="Search"
+              enterButton="搜索"
               suffix={
-                <span
-                  className="cursor-pointer opacity-80 transition-all hover:opacity-100"
-                  onClick={() => {
-                    handleSearchAsId({
-                      source: 'imdb',
-                      mediaType:
-                        type === DANDAN_TYPE_MAPPING.tvseries
-                          ? 'series'
-                          : 'movie',
-                      currentId: imdbId,
-                    })
-                  }}
-                >
-                  <MyIcon icon="jingzhun" size={20} />
-                </span>
+                <Tooltip title="ID直搜">
+                  <span
+                    className="cursor-pointer opacity-80 transition-all hover:opacity-100"
+                    onClick={() => {
+                      handleSearchAsId({
+                        source: 'imdb',
+                        mediaType:
+                          type === DANDAN_TYPE_MAPPING.tvseries
+                            ? 'series'
+                            : 'movie',
+                        currentId: imdbId,
+                      })
+                    }}
+                  >
+                    <MyIcon icon="jingzhun" size={20} />
+                  </span>
+                </Tooltip>
               }
               loading={searchImdbLoading}
               onSearch={() => {
@@ -894,6 +910,7 @@ export const Library = () => {
           dataSource={tmdbResult}
           pagination={{
             pageSize: 4,
+            showSizeChanger: false,
           }}
           renderItem={(item, index) => {
             return (
@@ -949,6 +966,7 @@ export const Library = () => {
           dataSource={imdbResult}
           pagination={{
             pageSize: 4,
+            showSizeChanger: false,
           }}
           renderItem={(item, index) => {
             return (
@@ -1003,6 +1021,7 @@ export const Library = () => {
           dataSource={tvdbResult}
           pagination={{
             pageSize: 4,
+            showSizeChanger: false,
           }}
           renderItem={(item, index) => {
             return (
@@ -1057,6 +1076,7 @@ export const Library = () => {
           dataSource={egidResult}
           pagination={{
             pageSize: 4,
+            showSizeChanger: false,
           }}
           renderItem={(item, index) => {
             return (
@@ -1109,6 +1129,7 @@ export const Library = () => {
           dataSource={allEpisode?.groups || []}
           pagination={{
             pageSize: 4,
+            showSizeChanger: false,
           }}
           renderItem={(item, index) => {
             return (
@@ -1144,6 +1165,7 @@ export const Library = () => {
           dataSource={bgmResult}
           pagination={{
             pageSize: 4,
+            showSizeChanger: false,
           }}
           renderItem={(item, index) => {
             return (
@@ -1198,6 +1220,7 @@ export const Library = () => {
           dataSource={doubanResult}
           pagination={{
             pageSize: 4,
+            showSizeChanger: false,
           }}
           renderItem={(item, index) => {
             return (

@@ -394,25 +394,22 @@ export const EpisodeDetail = () => {
         items={[
           {
             title: (
-              <Link>
+              <Link to="/">
                 <HomeOutlined />
               </Link>
             ),
-            onClick: () => navigate('/'),
           },
           {
-            title: <Link>弹幕库</Link>,
-            onClick: () => navigate('/library'),
+            title: <Link to="/library">弹幕库</Link>,
           },
           {
             title: (
-              <Link>
+              <Link to={`/anime/${animeId}`}>
                 {animeDetail.title?.length > 10
                   ? animeDetail.title.slice(0, 10) + '...'
                   : animeDetail.title}
               </Link>
             ),
-            onClick: () => navigate(`/anime/${animeId}`),
           },
           {
             title: '分集列表',

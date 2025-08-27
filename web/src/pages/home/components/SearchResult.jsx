@@ -79,6 +79,7 @@ export const SearchResult = () => {
   const dragOverlayRef = useRef(null)
   const [editConfirmLoading, setEditConfirmLoading] = useState(false)
   const [range, setRange] = useState([1, 1])
+  const [episodePageSize, setEpisodePageSize] = useState(10)
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -440,6 +441,7 @@ export const SearchResult = () => {
                     : '全选'}
                 </Button>
                 <Checkbox.Group
+                  className="shrink-0"
                   options={[
                     {
                       label: '电影/剧场版',
@@ -453,7 +455,7 @@ export const SearchResult = () => {
                   value={checkedList}
                   onChange={onTypeChange}
                 />
-                <div className="w-40">
+                <div className="w-full md:w-40">
                   <Input
                     placeholder="在结果中过滤标题"
                     onChange={e => setKeyword(e.target.value)}
@@ -499,23 +501,30 @@ export const SearchResult = () => {
                             })
                           }
                         >
-                          <div className="shrink-0 mr-3 w-6 h-6 border-2 border-base-text rounded-full flex items-center justify-center">
-                            {isActive && (
-                              <CheckOutlined className="font-base font-bold" />
-                            )}
-                          </div>
-                          <img width={60} alt="logo" src={item.imageUrl} />
+                          <Checkbox checked={isActive} />
+                          <img
+                            width={60}
+                            alt="logo"
+                            src={item.imageUrl}
+                            className="ml-3"
+                          />
                           <div className="ml-4">
                             <div className="text-xl font-bold mb-3">
                               {item.title}
                             </div>
                             <div className="flex items-center flex-wrap gap-2">
-                              <Tag color="magenta">源：{item.provider}</Tag>
-                              <Tag color="red">
-                                类型：{DANDAN_TYPE_DESC_MAPPING[item.type]}
+                              <Tag color="magenta">
+                                源：{item.provider ?? '未知'}
                               </Tag>
-                              <Tag color="volcano">年份：{item.year}</Tag>
-                              <Tag color="orange">季度：{item.season}</Tag>
+                              <Tag color="red">
+                                {DANDAN_TYPE_DESC_MAPPING[item.type]}
+                              </Tag>
+                              <Tag color="volcano">
+                                年份：{item.year ?? '未知'}
+                              </Tag>
+                              <Tag color="orange">
+                                季度：{item.season ?? '未知'}
+                              </Tag>
                               <Tag color="gold">
                                 总集数：{item.episodeCount ?? 0}
                               </Tag>
@@ -628,7 +637,7 @@ export const SearchResult = () => {
                 <Input.Search
                   placeholder="请输入最终导入名称"
                   allowClear
-                  enterButton="Search"
+                  enterButton="搜索"
                   loading={searchTmdbLoading}
                   onSearch={onTmdbSearch}
                 />
@@ -652,6 +661,7 @@ export const SearchResult = () => {
           dataSource={tmdbList}
           pagination={{
             pageSize: 4,
+            showSizeChanger: false,
           }}
           renderItem={(item, index) => {
             return (
@@ -660,8 +670,15 @@ export const SearchResult = () => {
                   <div className="flex items-center justify-start">
                     <img width={60} alt="logo" src={item.imageUrl} />
                     <div className="ml-4">
-                      <div className="text-xl font-bold mb-3">{item.name}</div>
+                      <div className="text-xl font-bold mb-3">
+                        {item.title || item.name}
+                      </div>
                       <div>ID: {item.id}</div>
+                      {!!item.details && (
+                        <div className="text-sm mt-2 line-clamp-4">
+                          {item.details}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div>
@@ -802,6 +819,12 @@ export const SearchResult = () => {
               <List
                 itemLayout="vertical"
                 size="large"
+                pagination={{
+                  pageSize: episodePageSize,
+                  onShowSizeChange: (_, size) => {
+                    setEpisodePageSize(size)
+                  },
+                }}
                 dataSource={editEpisodeList}
                 renderItem={(item, index) => (
                   <SortableItem

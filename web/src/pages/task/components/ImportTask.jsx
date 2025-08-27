@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
   Card,
+  Checkbox,
   Empty,
   Input,
   List,
@@ -268,7 +269,7 @@ export const ImportTask = () => {
         <div className="flex items-center justify-center gap-4 py-3 text-base font-semibold">
           <div
             className={classNames('cursor-pointer px-3 py-1 rounded-full', {
-              'bg-primary': status === 'all',
+              'bg-primary text-white': status === 'all',
             })}
             onClick={() => {
               navigate(`/task?search=${search}&status=all`, {
@@ -280,7 +281,7 @@ export const ImportTask = () => {
           </div>
           <div
             className={classNames('cursor-pointer px-3 py-1 rounded-full', {
-              'bg-primary': status === 'completed',
+              'bg-primary text-white': status === 'completed',
             })}
             onClick={() => {
               navigate(`/task?search=${search}&status=completed`, {
@@ -292,7 +293,7 @@ export const ImportTask = () => {
           </div>
           <div
             className={classNames('cursor-pointer px-3 py-1 rounded-full', {
-              'bg-primary': status === 'in_progress',
+              'bg-primary text-white': status === 'in_progress',
             })}
             onClick={() => {
               navigate(`/task?search=${search}&status=in_progress`, {
@@ -320,6 +321,7 @@ export const ImportTask = () => {
                     extra={
                       <>
                         <Tag
+                          className="!mb-3"
                           color={item.status.includes('失败') ? 'red' : 'green'}
                         >
                           {item.status}
@@ -340,10 +342,12 @@ export const ImportTask = () => {
                       })}
                     >
                       {isActive && (
-                        <div className="w-6 h-6 border-2 border-base-text rounded-full flex items-center justify-center absolute top-1/2 left-0 transform -translate-y-1/2">
-                          <CheckOutlined className="font-base font-bold" />
-                        </div>
+                        <Checkbox
+                          checked={isActive}
+                          className="absolute top-1/2 left-0 transform -translate-y-1/2"
+                        />
                       )}
+
                       <div className="text-base mb-1">{item.title}</div>
                       <div className="mb-2">{item.description}</div>
                       <Progress

@@ -135,7 +135,14 @@ async def create_db_engine_and_session(app: FastAPI):
     else:
         raise ValueError(f"不支持的数据库类型: '{db_type}'。请使用 'mysql' 或 'postgresql'。")
     try:
-        engine = create_async_engine(db_url, echo=False, pool_recycle=3600)
+        engine = create_async_engine(
+            db_url,
+            echo=False,
+            pool_recycle=3600,
+            pool_size=10,
+            max_overflow=20,
+            pool_timeout=30
+        )
         app.state.db_engine = engine
         app.state.db_session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
         logger.info("数据库引擎和会话工厂创建成功。")

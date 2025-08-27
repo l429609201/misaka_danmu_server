@@ -6,7 +6,7 @@ import { isMobileAtom, userinfoAtom } from '../../store/index.js'
 import DarkModeToggle from '@/components/DarkModeToggle.jsx'
 import { MyIcon } from '@/components/MyIcon'
 import classNames from 'classnames'
-import { Dropdown } from 'antd'
+import { Dropdown, Tag } from 'antd'
 import { logout } from '../apis/index.js'
 import Cookies from 'js-cookie'
 
@@ -19,7 +19,7 @@ const navItems = [
   { key: RoutePaths.CONTROL, label: '外部控制', icon: 'controlapi' },
   { key: RoutePaths.SETTING, label: '设置', icon: 'setting' },
 ]
-const version = 'v1.1.5'
+const version = 'v1.1.6'
 
 export const Header = () => {
   const [isMobile, setIsMobile] = useAtom(isMobileAtom)
@@ -51,15 +51,14 @@ export const Header = () => {
       {isMobile ? (
         <>
           <div className="fixed top-0 left-0 w-full z-50 py-2 bg-base-bg">
-            <div className="flex justify-between items-center px-2">
-              <div
-                className="flex items-center justify-start gap-2"
-                onClick={() => navigate(RoutePaths.HOME)}
-              >
-                <img src="/images/logo.png" className="h-6 cursor-pointer" />
-                <span className="text-sm">{version}</span>
+            <div className="flex justify-start items-center px-4 md:px-8">
+              <div onClick={() => navigate(RoutePaths.HOME)}>
+                <img src="/images/logo.png" className="h-8 cursor-pointer" />
               </div>
-              <DarkModeToggle />
+              <div className="flex items-center justify-center gap-2 ml-auto">
+                <Tag>{version}</Tag>
+                <DarkModeToggle />
+              </div>
             </div>
           </div>
           <MobileHeader activeKey={activeKey} />
@@ -175,20 +174,16 @@ const DesktopHeader = ({ activeKey }) => {
   }
   return (
     <div className="fixed top-0 left-0 w-full shadow-box z-50 py-2 bg-base-bg">
-      <div className="flex justify-between items-center max-w-[1200px] mx-auto w-full px-6">
-        <div
-          className="flex items-center justify-start gap-2"
-          onClick={() => navigate(RoutePaths.HOME)}
-        >
+      <div className="flex justify-start items-center max-w-[1200px] mx-auto w-full px-6 gap-4">
+        <div onClick={() => navigate(RoutePaths.HOME)}>
           <img src="/images/logo.png" className="h-12 cursor-pointer" />
-          <span className="text-sm">{version}</span>
         </div>
         <div className="flex items-center justify-center">
           {navItems.map(it => (
             <div
               key={it.key}
               className={classNames(
-                'text-lg font-semibold cursor-pointer mx-4',
+                'text-base font-semibold cursor-pointer mx-3',
                 {
                   'text-primary': activeKey === it.key,
                 }
@@ -199,7 +194,8 @@ const DesktopHeader = ({ activeKey }) => {
             </div>
           ))}
         </div>
-        <div className="flex items-center justify-center gap-6">
+        <div className="flex items-center justify-center gap-6 ml-auto">
+          <Tag>{version}</Tag>
           <Dropdown
             menu={{
               items: [

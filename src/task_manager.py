@@ -2,6 +2,7 @@ import asyncio
 import logging
 import traceback
 from enum import Enum
+import time
 from typing import Any, Callable, Coroutine, Dict, List, Tuple, Optional
 from uuid import uuid4, UUID
 
@@ -31,6 +32,8 @@ class Task:
         self.pause_event = asyncio.Event()
         self.running_coro_task: Optional[asyncio.Task] = None
         self.scheduled_task_id = scheduled_task_id
+        self.last_update_time: float = 0.0
+        self.update_lock = asyncio.Lock()
         self.pause_event.set() # 默认为运行状态 (事件被设置)
 
 class TaskManager:
@@ -104,8 +107,8 @@ class TaskManager:
                     await crud.finalize_task_in_history(
                         final_session, task.task_id, TaskStatus.FAILED, "任务已被用户取消"
                     )
-            except Exception:
-                error_message = "任务执行失败"
+            except Exception as e:
+                error_message = f"任务执行失败 - {e}"
                 async with self._session_factory() as final_session:
                     await crud.finalize_task_in_history(
                         final_session, task.task_id, TaskStatus.FAILED, error_message
@@ -138,21 +141,33 @@ class TaskManager:
         return task_id, task.done_event
 
     def _get_progress_callback(self, task: Task) -> Callable:
-        """为特定任务创建一个可暂停的回调闭包。"""
+        """为特定任务创建一个可暂停且带节流的回调闭包。"""
         async def pausable_callback(progress: int, description: str, status: Optional[TaskStatus] = None):
             # 核心暂停逻辑：在每次更新进度前，检查暂停事件。
             # 如果事件被清除 (cleared)，.wait() 将会阻塞，直到事件被重新设置 (set)。
             await task.pause_event.wait()
 
-            # 修正：创建一个新的异步函数，它使用自己的会话来更新数据库，
-            # 从而将进度更新与主任务的数据库操作完全隔离。
-            async def update_db():
+            now = time.time()
+            # 节流逻辑：只在状态改变、首次、完成或距离上次更新超过0.5秒时才更新数据库
+            is_status_change = status is not None
+            force_update = progress == 0 or progress >= 100 or is_status_change
+            
+            # 使用锁来防止并发更新 last_update_time
+            async with task.update_lock:
+                if not force_update and (now - task.last_update_time < 0.5):
+                    return
+                task.last_update_time = now
+
+            # 数据库更新现在是同步的（在回调的协程内），但由于节流，它不会频繁发生。
+            # 这避免了创建大量并发任务，从而保护了数据库连接池。
+            try:
                 async with self._session_factory() as session:
                     await crud.update_task_progress_in_history(
                         session, task.task_id, status or TaskStatus.RUNNING, int(progress), description
                     )
-            # 这是一个“即发即忘”的调用，以避免阻塞正在运行的主任务
-            asyncio.create_task(update_db())
+            except Exception as e:
+                self.logger.error(f"任务进度更新失败 (ID: {task.task_id}): {e}", exc_info=False)
+
         return pausable_callback
 
     async def cancel_pending_task(self, task_id: str) -> bool:

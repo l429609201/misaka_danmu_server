@@ -75,9 +75,11 @@ const SortableItem = ({ item, index, handleChangeStatus }) => {
             <Tag color="red">未启用</Tag>
           )}
           {item.providerName !== 'tmdb' ? (
-            <div onClick={handleChangeStatus}>
-              <MyIcon icon="exchange" size={24} />
-            </div>
+            <Tooltip title="切换启用状态">
+              <div onClick={handleChangeStatus}>
+                <MyIcon icon="exchange" size={24} />
+              </div>
+            </Tooltip>
           ) : (
             <div className="w-6"></div>
           )}

@@ -11,28 +11,75 @@
   --color-base-hover: var(--color-hover);
   --color-primary: var(--color-primary);
   --color-primary-dark: var(--color-primary-dark);
+  --color-secondary: var(--color-secondary);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-error: var(--color-error);
+  --color-border: var(--color-border);
 }
 
-/* 定义基础变量（浅色模式） */
+/* 定义基础变量（浅色模式 - 二次元风格） */
 :root {
-  --color-bg: #f3f4f6; /* gray-100 */
-  --color-text: #111827; /* gray-900 */
-  --color-card: #ffffff; /* white */
-  --color-header: #ffffff; /* white */
-  --color-hover: #e5e7eb; /* gray-200 */
-  --color-primary: #3b82f6; /* blue-500 */
-  --color-primary-dark: #2563eb; /* blue-600 */
+  /* 背景色 */
+  --color-bg: #fff9fb; /* 与Antd的colorBgBase匹配 */
+  --color-card: #ffffff; /* 与Antd的colorBgContainer匹配 */
+  --color-header: #ffffff;
+  --color-hover: #fff0f5; /* 与Antd的colorBgElevated匹配 */
+
+  /* 文本色 */
+  --color-text: #333333; /* 与Antd的colorTextBase匹配 */
+  --color-text-secondary: #666666; /* 与Antd的colorTextSecondary匹配 */
+
+  /* 主题色 */
+  --color-primary: #ff6b9b; /* 与Antd的colorPrimary匹配 */
+  --color-primary-dark: #ff528a; /* 与Antd的colorPrimaryHover匹配 */
+  --color-secondary: #64b5f6; /* 与Antd的colorInfo匹配 */
+
+  /* 功能色 */
+  --color-success: #7fe5c1;
+  --color-warning: #ffd166;
+  --color-error: #ff5252;
+
+  /* 边框色 */
+  --color-border: #ffd9e5; /* 与Antd的colorBorder匹配 */
 }
 
-/* 暗黑模式变量 */
+/* 暗黑模式变量（二次元风格） */
 .dark {
-  --color-bg: #111827; /* gray-900 */
-  --color-text: #f3f4f6; /* gray-100 */
-  --color-card: #1f2937; /* gray-800 */
-  --color-header: #1f2937; /* gray-800 */
-  --color-hover: #374151; /* gray-700 */
-  --color-primary: #60a5fa; /* blue-400 */
-  --color-primary-dark: #3b82f6; /* blue-500 */
+  /* 背景色 */
+  --color-bg: #0f172a; /* 与更新后的Antd colorBgBase匹配 */
+  --color-card: #1e293b; /* 与更新后的Antd colorBgContainer匹配 */
+  --color-header: #1e293b;
+  --color-hover: #273449; /* 与更新后的Antd colorBgElevated匹配 */
+
+  /* 文本色 */
+  --color-text: #f8fafc; /* 与Antd的colorTextBase匹配 */
+  --color-text-secondary: #e2e8f0; /* 与Antd的colorTextSecondary匹配 */
+
+  /* 主题色 */
+  --color-primary: #ff6b9b; /* 保持粉色主色调 */
+  --color-primary-dark: #ff528a;
+  --color-secondary: #7dcfff; /* 与Antd的colorInfo匹配 */
+
+  /* 功能色 */
+  --color-success: #5fd2a8;
+  --color-warning: #ffc850;
+  --color-error: #ff5252;
+
+  /* 边框色 */
+  --color-border: #334155; /* 与更新后的Antd colorBorder匹配 */
+}
+
+@font-face {
+  font-family: 'MyNunito';
+  src: url('styles/Nunito-Light.ttf') format('truetype');
+}
+
+/* 字体设置 - 更圆润的字体符合二次元风格 */
+@layer base {
+  html {
+    font-family: 'MyNunito', 'Nunito', 'Comic Sans MS', sans-serif;
+  }
 }
 
 /* 动画配置 */
@@ -62,20 +109,64 @@
     animation: opacity-out 0.2s;
   }
   .shadow-box {
-    box-shadow: 0px 48px 64px rgba(0, 0, 0, 0.16);
+    box-shadow: 0px 4px 16px rgba(255, 107, 155, 0.12);
   }
 }
 
+/* 基础样式 */
 html {
   background-color: var(--color-bg);
   color: var(--color-text);
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
 }
 
-/* reset */
+/* body {
+  position: relative;
+}
+
+body:before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: url('/images/bg.jpg');
+  background-size: cover;
+  background-position: center;
+
+  filter: blur(16px);
+  -webkit-filter: blur(16px);
+
+  transform: scale(1.02);
+
+  z-index: -1;
+} */
+
+/* 与Ant Design组件的样式统一 */
+.ant-card-body.ant-card-body {
+  padding: 16px;
+}
+.ant-card-head.ant-card-head {
+  padding: 0 16px;
+}
 .ant-list-item.ant-list-item {
   padding-left: 0;
   padding-right: 0;
 }
 .ant-list-item-extra.ant-list-item-extra {
   margin: 0 !important;
+}
+
+/* 链接样式 */
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--color-primary-dark);
 }

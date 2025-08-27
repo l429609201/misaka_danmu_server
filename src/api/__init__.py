@@ -12,7 +12,6 @@ api_router.include_router(ui_router, prefix="/ui", tags=["Web UI API"], include_
 api_router.include_router(auth_router, prefix="/ui/auth", tags=["Auth"], include_in_schema=False)
 
 api_router.include_router(webhook_router, prefix="/webhook", tags=["Webhook"], include_in_schema=False)
-api_router.include_router(control_router, prefix="/control", tags=["External Control API"])
 
 # 注意：dandan_router 在 main.py 中被单独处理，因为它的路径结构
 # (/api/v1/{token}) 与其他嵌套在 /api 前缀下的路由 (例如 /api/ui, /api/tmdb) 不同，

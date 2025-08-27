@@ -52,7 +52,7 @@ export const Douban = () => {
             rules={[{ required: true, message: '请输入豆瓣 Cookie' }]}
             className="mb-6"
           >
-            <Input.TextArea />
+            <Input.TextArea rows={8} />
           </Form.Item>
 
           <Form.Item>

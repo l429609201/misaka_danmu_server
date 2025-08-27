@@ -352,6 +352,7 @@ async def direct_import(
     session: AsyncSession = Depends(get_db_session),
     task_manager: TaskManager = Depends(get_task_manager),
     manager: ScraperManager = Depends(get_scraper_manager),
+    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
     api_key: str = Depends(verify_api_key),
 ):
@@ -389,7 +390,7 @@ async def direct_import(
             currentEpisodeIndex=item_to_import.currentEpisodeIndex,
             imageUrl=item_to_import.imageUrl, 
             year=item_to_import.year, doubanId=payload.doubanId,
-            tmdbId=payload.tmdbId, imdbId=payload.imdbId,
+            metadata_manager=metadata_manager, tmdbId=payload.tmdbId, imdbId=payload.imdbId,
             tvdbId=payload.tvdbId, bangumiId=payload.bangumiId,
             progress_callback=cb, session=session, manager=manager, task_manager=task_manager,
             rate_limiter=rate_limiter
@@ -504,6 +505,7 @@ async def url_import(
     payload: ControlUrlImportRequest,
     task_manager: TaskManager = Depends(get_task_manager),
     manager: ScraperManager = Depends(get_scraper_manager),
+    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
     api_key: str = Depends(verify_api_key),
 ):
@@ -543,7 +545,7 @@ async def url_import(
             season=final_season,
             year=media_info.year,
             imageUrl=media_info.imageUrl,
-            doubanId=payload.doubanId, tmdbId=payload.tmdbId, imdbId=payload.imdbId,
+            doubanId=payload.doubanId, metadata_manager=metadata_manager, tmdbId=payload.tmdbId, imdbId=payload.imdbId,
             tvdbId=payload.tvdbId, bangumiId=payload.bangumiId, rate_limiter=rate_limiter,
             progress_callback=cb, session=session, manager=manager, task_manager=task_manager
         )

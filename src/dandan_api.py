@@ -6,6 +6,7 @@ from typing import List, Optional, Dict, Any
 from typing import Callable
 from datetime import datetime
 from opencc import OpenCC
+from thefuzz import fuzz
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -691,7 +692,7 @@ async def match_single_file(
 ):
     """
     通过文件名匹配弹幕库。此接口不使用文件Hash。
-    优先使用 TMDB 映射进行精确匹配，失败则回退到标题模糊搜索。
+    优先进行库内直接匹配，失败后回退到TMDB剧集组映射。
     """
     logger.info(f"收到 /match 请求, 文件名: '{request.fileName}'")
     parsed_info = _parse_filename_for_match(request.fileName)
@@ -701,7 +702,76 @@ async def match_single_file(
         logger.info(f"发送 /match 响应 (解析失败): {response.model_dump_json(indent=2)}")
         return response
 
-    # --- 步骤 1: 尝试 TMDB 精确匹配 ---
+    # --- 步骤 1: 优先进行库内直接搜索 ---
+    logger.info("正在进行库内直接搜索...")
+    results = await crud.search_episodes_in_library(
+        session, parsed_info["title"], parsed_info["episode"], parsed_info.get("season")
+    )
+    logger.info(f"直接搜索为 '{parsed_info['title']}' (季:{parsed_info.get('season')} 集:{parsed_info.get('episode')}) 找到 {len(results)} 条记录")
+    
+    if results:
+        # 对结果进行严格的标题过滤，避免模糊匹配带来的问题
+        normalized_search_title = parsed_info["title"].replace("：", ":").replace(" ", "")
+        exact_matches = []
+        for r in results:
+            all_titles_to_check = [
+                r.get('animeTitle'), r.get('nameEn'), r.get('nameJp'), r.get('nameRomaji'),
+                r.get('aliasCn1'), r.get('aliasCn2'), r.get('aliasCn3'),
+            ]
+            aliases_to_check = {t for t in all_titles_to_check if t}
+            if any(fuzz.partial_ratio(alias, parsed_info["title"]) > 85 for alias in aliases_to_check):
+                exact_matches.append(r)
+
+        if len(exact_matches) < len(results):
+            logger.info(f"过滤掉 {len(results) - len(exact_matches)} 条模糊匹配的结果。")
+            results = exact_matches
+
+        if results:
+            # 优先处理被精确标记的源
+            favorited_results = [r for r in results if r.get('isFavorited')]
+            if favorited_results:
+                res = favorited_results[0]
+                dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
+                dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
+                match = DandanMatchInfo(
+                    episodeId=res['episodeId'], animeId=res['animeId'], animeTitle=res['animeTitle'],
+                    episodeTitle=res['episodeTitle'], type=dandan_type, typeDescription=dandan_type_desc,
+                )
+                response = DandanMatchResponse(isMatched=True, matches=[match])
+                logger.info(f"发送 /match 响应 (精确标记匹配): {response.model_dump_json(indent=2)}")
+                return response
+
+            # 如果没有精确标记，检查所有匹配项是否都指向同一个番剧ID
+            first_animeId = results[0]['animeId']
+            all_from_same_anime = all(res['animeId'] == first_animeId for res in results)
+
+            if all_from_same_anime:
+                res = results[0]
+                dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
+                dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
+                match = DandanMatchInfo(
+                    episodeId=res['episodeId'], animeId=res['animeId'], animeTitle=res['animeTitle'],
+                    episodeTitle=res['episodeTitle'], type=dandan_type, typeDescription=dandan_type_desc,
+                )
+                response = DandanMatchResponse(isMatched=True, matches=[match])
+                logger.info(f"发送 /match 响应 (单一作品匹配): {response.model_dump_json(indent=2)}")
+                return response
+
+            # 如果匹配到了多个不同的番剧，则返回所有结果让用户选择
+            matches = []
+            for res in results:
+                dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
+                dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
+                matches.append(DandanMatchInfo(
+                    episodeId=res['episodeId'], animeId=res['animeId'], animeTitle=res['animeTitle'],
+                    episodeTitle=res['episodeTitle'], type=dandan_type, typeDescription=dandan_type_desc,
+                ))
+            response = DandanMatchResponse(isMatched=False, matches=matches)
+            logger.info(f"发送 /match 响应 (多个匹配): {response.model_dump_json(indent=2)}")
+            return response
+
+    # --- 步骤 2: 如果直接搜索无果，则回退到 TMDB 映射 ---
+    logger.info("直接搜索未找到精确匹配，回退到 TMDB 映射匹配。")
     potential_animes = await crud.find_animes_for_matching(session, parsed_info["title"])
     logger.info(f"为标题 '{parsed_info['title']}' 找到 {len(potential_animes)} 个可能的库内作品进行TMDB匹配。")
 
@@ -717,7 +787,6 @@ async def match_single_file(
             )
             if tmdb_results:
                 logger.info(f"TMDB 映射匹配成功，找到 {len(tmdb_results)} 个结果。")
-                # TMDB 映射是高置信度的，直接取第一个结果（已按收藏和源排序）
                 res = tmdb_results[0]
                 dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
                 dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
@@ -729,104 +798,9 @@ async def match_single_file(
                 logger.info(f"发送 /match 响应 (TMDB 映射匹配): {response.model_dump_json(indent=2)}")
                 return response
 
-    # --- 步骤 2: 回退到旧的模糊搜索逻辑 ---
-    logger.info("TMDB 映射匹配失败或无可用映射，回退到标题模糊搜索。")
-    results = await crud.search_episodes_in_library(
-        session, parsed_info["title"], parsed_info["episode"], parsed_info.get("season")
-    )
-    logger.info(f"模糊搜索为 '{parsed_info['title']}' (季:{parsed_info.get('season')} 集:{parsed_info.get('episode')}) 找到 {len(results)} 条记录")
-    
-    # 新增：对结果进行严格的标题过滤，避免模糊匹配带来的问题
-    normalized_search_title = parsed_info["title"].replace("：", ":").replace(" ", "")
-    if normalized_search_title:
-        exact_matches = []
-        for r in results:
-            # 将主标题和所有别名都收集起来进行检查
-            all_titles_to_check = [
-                r.get('animeTitle'),
-                r.get('nameEn'),
-                r.get('nameJp'),
-                r.get('nameRomaji'),
-                r.get('aliasCn1'),
-                r.get('aliasCn2'),
-                r.get('aliasCn3'),
-            ]
-            # 规范化并移除空值
-            normalized_aliases = {
-                t.replace("：", ":").replace(" ", "") for t in all_titles_to_check if t
-            }
-            
-            # 检查搜索词是否是任何一个标题/别名的子串
-            if any(normalized_search_title in alias for alias in normalized_aliases):
-                exact_matches.append(r)
-
-        if len(exact_matches) < len(results):
-            logger.info(f"过滤掉 {len(results) - len(exact_matches)} 条模糊匹配的结果。")
-            results = exact_matches
-
-    if not results:
-        response = DandanMatchResponse(isMatched=False, matches=[])
-        logger.info(f"发送 /match 响应 (无精确匹配): {response.model_dump_json(indent=2)}")
-        return response
-
-    # 优先处理被精确标记的源
-    favorited_results = [r for r in results if r.get('isFavorited')]
-    if favorited_results:
-        res = favorited_results[0]
-        dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
-        dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
-
-        match = DandanMatchInfo(
-            episodeId=res['episodeId'],
-            animeId=res['animeId'],
-            animeTitle=res['animeTitle'],
-            episodeTitle=res['episodeTitle'],
-            type=dandan_type,
-            typeDescription=dandan_type_desc,
-        )
-        response = DandanMatchResponse(isMatched=True, matches=[match])
-        logger.info(f"发送 /match 响应 (精确标记匹配): {response.model_dump_json(indent=2)}")
-        return response
-
-    # 如果没有精确标记，检查所有匹配项是否都指向同一个番剧ID
-    first_animeId = results[0]['animeId']
-    all_from_same_anime = all(res['animeId'] == first_animeId for res in results)
-
-    if all_from_same_anime:
-        # 结果已由数据库按 标题长度和源顺序 排序，直接取第一个
-        res = results[0]
-        dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
-        dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
-
-        match = DandanMatchInfo(
-            episodeId=res['episodeId'],
-            animeId=res['animeId'],
-            animeTitle=res['animeTitle'],
-            episodeTitle=res['episodeTitle'],
-            type=dandan_type,
-            typeDescription=dandan_type_desc,
-        )
-        response = DandanMatchResponse(isMatched=True, matches=[match])
-        logger.info(f"发送 /match 响应 (单一作品匹配): {response.model_dump_json(indent=2)}")
-        return response
-
-    # 如果匹配到了多个不同的番剧，则返回所有结果让用户选择
-    matches = []
-    for res in results:
-        dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
-        dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
-
-        matches.append(DandanMatchInfo(
-            episodeId=res['episodeId'],
-            animeId=res['animeId'],
-            animeTitle=res['animeTitle'],
-            episodeTitle=res['episodeTitle'],
-            type=dandan_type,
-            typeDescription=dandan_type_desc,
-        ))
-
-    response = DandanMatchResponse(isMatched=False, matches=matches)
-    logger.info(f"发送 /match 响应 (多个匹配): {response.model_dump_json(indent=2)}")
+    # --- 步骤 3: 如果所有方法都失败 ---
+    response = DandanMatchResponse(isMatched=False, matches=[])
+    logger.info(f"发送 /match 响应 (所有方法均未匹配): {response.model_dump_json(indent=2)}")
     return response
 
 

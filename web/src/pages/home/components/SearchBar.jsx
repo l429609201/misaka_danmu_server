@@ -61,7 +61,7 @@ export const SearchBar = () => {
       setLoading(true)
       setSearchHistory(history => {
         if (history.includes(values.keyword)) return history
-        return [values.keyword, ...history]
+        return [values.keyword, ...history].slice(0, 10)
       })
 
       timer.current = window.setInterval(() => {
@@ -180,7 +180,11 @@ export const SearchBar = () => {
           )}
           <Row gutter={12} className="mb-5 md:mb-0">
             <Col md={6} xs={24}>
-              <Form.Item>
+              <Form.Item
+                style={{
+                  marginBottom: 0,
+                }}
+              >
                 <Checkbox
                   checked={exactSearch}
                   onChange={e => setExactSearch(e.target.checked)}
@@ -235,7 +239,7 @@ export const SearchBar = () => {
           </Row>
         </Form>
         {!!searchHistory.length && (
-          <div className="flex items-center justify-start flex-wrap gap-2">
+          <div className="flex items-center justify-start flex-wrap gap-2 mt-4">
             {searchHistory.map((it, index) => {
               return (
                 <span

@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Set, cast
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
-from .. import crud, models
+from .. import crud, models, utils
 from .base import BaseMetadataSource
 
 from fastapi import HTTPException, status
@@ -217,12 +217,13 @@ class TmdbMetadataSource(BaseMetadataSource):
         except Exception as e:
             return f"连接失败: {e}"
 
-    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: models.User) -> Any:
+    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: models.User, request: Any) -> Any:
         try:
             async with await self._create_client() as client:
                 if action_name == "get_episode_groups":
                     tmdb_id = payload.get("tmdbId")
-                    if not tmdb_id: raise ValueError("缺少 tmdbId")
+                    if not tmdb_id:
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少 tmdbId")
                     response = await client.get(f"/tv/{tmdb_id}/episode_groups")
                     response.raise_for_status()
                     raw_results = response.json().get("results", [])
@@ -242,17 +243,20 @@ class TmdbMetadataSource(BaseMetadataSource):
                 elif action_name == "get_all_episodes":
                     egid = payload.get("egid")
                     tmdb_id = payload.get("tmdbId")
-                    if not egid or not tmdb_id: raise ValueError("缺少 egid 或 tmdbId")
+                    if not egid or not tmdb_id:
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少 egid 或 tmdbId")
                     response = await client.get(f"/tv/episode_group/{egid}", params={"language": "zh-CN"})
                     response.raise_for_status()
                     return response.json()
                 elif action_name == "update_mappings":
                     tmdb_id = payload.get("tmdbId")
                     group_id = payload.get("groupId")
-                    if not tmdb_id or not group_id: raise ValueError("缺少 tmdbId 或 groupId")
+                    if not tmdb_id or not group_id:
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少 tmdbId 或 groupId")
                     await self.update_tmdb_mappings(int(tmdb_id), group_id, user)
                     return {"message": "映射更新成功"}
-                return await super().execute_action(action_name, payload, user)
+                
+                raise NotImplementedError(f"操作 '{action_name}' 在 {self.provider_name} 中未实现。")
         except ValueError as e:
             # 捕获 _create_client 中的 API Key 未配置错误
             raise HTTPException(status_code=status.HTTP_412_PRECONDITION_FAILED, detail=str(e))
@@ -267,7 +271,9 @@ class TmdbMetadataSource(BaseMetadataSource):
             # 1. 获取剧集组详情
             response = await client.get(f"/tv/episode_group/{group_id}", params={"language": "zh-CN"})
             response.raise_for_status()
-            group_details = models.TMDBEpisodeGroupDetails.model_validate(response.json())
+            api_data = response.json()
+            camel_case_data = utils.convert_keys_to_camel(api_data)
+            group_details = models.TMDBEpisodeGroupDetails.model_validate(camel_case_data)
 
             # 2. (可选) 丰富分集信息，例如获取日文标题和图片
             # This part can be extended if needed. For now, we focus on mapping.
