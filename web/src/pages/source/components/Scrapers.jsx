@@ -42,8 +42,6 @@ import { CSS } from '@dnd-kit/utilities'
 import { QRCodeCanvas } from 'qrcode.react'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store'
-import { useModal } from '../../../ModalContext'
-import { useMessage } from '../../../MessageContext'
 
 const SortableItem = ({
   item,
@@ -149,9 +147,6 @@ export const Scrapers = () => {
   /** 扫码登录轮训 */
   const timer = useRef(0)
 
-  const modalApi = useModal()
-  const messageApi = useMessage()
-
   const sensors = useSensors(
     useSensor(MouseSensor, {
       activationConstraint: {
@@ -215,7 +210,7 @@ export const Scrapers = () => {
       console.log(updatedList, 'updatedList')
       setList(updatedList)
       setScrapers(updatedList)
-      messageApi.success(
+      message.success(
         `已更新排序，${movedItem.providerName} 移动到位置 ${overIndex + 1}`
       )
     }
@@ -280,10 +275,10 @@ export const Scrapers = () => {
           values[`scraper${setNameCapitalize}LogResponses`],
         name: setname,
       })
-      messageApi.success('保存成功')
+      message.success('保存成功')
     } catch (error) {
       console.error(error)
-      messageApi.error('保存失败')
+      message.error('保存失败')
     } finally {
       setConfirmLoading(false)
       setOpen(false)
@@ -332,7 +327,7 @@ export const Scrapers = () => {
       startBiliLoginPoll(res.data)
       setBiliQrcodeStatus('')
     } catch (error) {
-      messageApi.error('获取二维码失败')
+      message.error('获取二维码失败')
     } finally {
       setBiliQrcodeLoading(false)
     }
@@ -345,7 +340,7 @@ export const Scrapers = () => {
   }
 
   const handleBiliLogout = () => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '清除缓存',
       zIndex: 1002,
       content: <div>确定要注销当前的Bilibili登录吗？</div>,

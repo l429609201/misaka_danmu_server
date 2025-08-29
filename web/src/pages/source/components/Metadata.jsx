@@ -18,7 +18,6 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { ContainerOutlined } from '@ant-design/icons'
-import { useMessage } from '../../../MessageContext'
 
 const SortableItem = ({ item, index, handleChangeStatus }) => {
   const {
@@ -96,8 +95,6 @@ export const Metadata = () => {
   const [activeItem, setActiveItem] = useState(null)
   const dragOverlayRef = useRef(null)
 
-  const messageApi = useMessage()
-
   const sensors = useSensors(
     useSensor(MouseSensor, {
       activationConstraint: {
@@ -155,7 +152,7 @@ export const Metadata = () => {
       console.log(updatedList, 'updatedList')
       setList(updatedList)
       setMetaData(updatedList)
-      messageApi.success(
+      message.success(
         `已更新排序，${movedItem.providerName} 移动到位置 ${overIndex + 1}`
       )
     }

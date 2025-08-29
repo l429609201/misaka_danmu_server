@@ -21,8 +21,6 @@ import {
 } from '../../../apis'
 import { MyIcon } from '@/components/MyIcon.jsx'
 import dayjs from 'dayjs'
-import { useModal } from '../../../ModalContext'
-import { useMessage } from '../../../MessageContext'
 
 export const ScheduleTask = () => {
   const [loading, setLoading] = useState(true)
@@ -33,8 +31,6 @@ export const ScheduleTask = () => {
 
   const [form] = Form.useForm()
   const editid = Form.useWatch('taskId', form)
-  const modalApi = useModal()
-  const messageApi = useMessage()
 
   const fetchData = async () => {
     try {
@@ -46,7 +42,7 @@ export const ScheduleTask = () => {
       setTasks(tasksRes.data || [])
       setAvailableJobTypes(jobsRes.data || [])
     } catch (error) {
-      messageApi.error('获取定时任务信息失败')
+      message.error('获取定时任务信息失败')
     } finally {
       setLoading(false)
     }
@@ -161,9 +157,9 @@ export const ScheduleTask = () => {
   const handleRun = async record => {
     try {
       await runTask({ id: record.taskId })
-      messageApi.success('任务已触发运行，请稍后刷新查看运行时间。')
+      message.success('任务已触发运行，请稍后刷新查看运行时间。')
     } catch (error) {
-      messageApi.error('任务触发失败，请稍后重试。')
+      message.error('任务触发失败，请稍后重试。')
     }
   }
 
@@ -173,24 +169,24 @@ export const ScheduleTask = () => {
       try {
         setConfirmLoading(true)
         await editScheduledTask({ ...values, id: values.taskId })
-        messageApi.success('任务编辑成功。')
+        message.success('任务编辑成功。')
         form.resetFields()
         fetchData()
         setAddOpen(false)
       } catch (error) {
-        messageApi.error(error?.detail ?? '任务编辑失败，请稍后重试。')
+        message.error(error?.detail ?? '任务编辑失败，请稍后重试。')
       } finally {
         setConfirmLoading(false)
       }
     } else {
       try {
         await addScheduledTask(values)
-        messageApi.success('任务添加成功。')
+        message.success('任务添加成功。')
         form.resetFields()
         fetchData()
         setAddOpen(false)
       } catch (error) {
-        messageApi.error(error?.detail ?? '任务添加失败，请稍后重试。')
+        message.error(error?.detail ?? '任务添加失败，请稍后重试。')
       } finally {
         setConfirmLoading(false)
       }
@@ -198,7 +194,7 @@ export const ScheduleTask = () => {
   }
 
   const handleDelete = async record => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '删除任务',
       zIndex: 1002,
       content: <div>确定要删除这个定时任务吗？</div>,
@@ -207,10 +203,10 @@ export const ScheduleTask = () => {
       onOk: async () => {
         try {
           await deleteScheduledTask({ id: record.taskId })
-          messageApi.success('任务删除成功。')
+          message.success('任务删除成功。')
           fetchData()
         } catch (error) {
-          messageApi.error(error?.detail ?? '任务删除失败，请稍后重试。')
+          message.error(error?.detail ?? '任务删除失败，请稍后重试。')
         }
       },
     })

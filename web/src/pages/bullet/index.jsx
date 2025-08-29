@@ -1,16 +1,13 @@
+import { useState } from 'react'
 import { Tabs } from 'antd'
 import { TokenManage } from './components/TokenManage'
 import { OutputManage } from './components/OutputManage'
-import { useNavigate, useSearchParams } from 'react-router-dom'
 
 export const Bullet = () => {
-  const [searchParams] = useSearchParams()
-  const key = searchParams.get('key') || 'token'
-  const navigate = useNavigate()
-
+  const [activeKey, setActiveKey] = useState('token')
   return (
     <Tabs
-      defaultActiveKey={key}
+      defaultActiveKey={activeKey}
       items={[
         {
           label: 'Token管理',
@@ -23,11 +20,7 @@ export const Bullet = () => {
           children: <OutputManage />,
         },
       ]}
-      onChange={key => {
-        navigate(`/bullet?key=${key}`, {
-          replace: true,
-        })
-      }}
+      onChange={key => setActiveKey(key)}
     />
   )
 }
