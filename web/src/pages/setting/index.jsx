@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Tabs } from 'antd'
 import { Security } from './components/Security'
 import { Webhook } from './components/Webhook'
@@ -7,12 +6,16 @@ import { TMDB } from './components/TMDB'
 import { Douban } from './components/Douban'
 import { TVDB } from './components/TVDB'
 import { Proxy } from './components/Proxy'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 export const Setting = () => {
-  const [activeKey, setActiveKey] = useState('security')
+  const [searchParams] = useSearchParams()
+  const key = searchParams.get('key') || 'security'
+  const navigate = useNavigate()
+
   return (
     <Tabs
-      defaultActiveKey={activeKey}
+      defaultActiveKey={key}
       items={[
         {
           label: '账户安全',
@@ -50,7 +53,11 @@ export const Setting = () => {
           children: <TVDB />,
         },
       ]}
-      onChange={key => setActiveKey(key)}
+      onChange={key => {
+        navigate(`/setting?key=${key}`, {
+          replace: true,
+        })
+      }}
     />
   )
 }

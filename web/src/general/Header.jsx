@@ -14,7 +14,7 @@ const navItems = [
   { key: RoutePaths.HOME, label: '首页', icon: 'home' },
   { key: RoutePaths.LIBRARY, label: '弹幕库', icon: 'tvlibrary' },
   { key: RoutePaths.TASK, label: '任务管理器', icon: 'renwu' },
-  { key: RoutePaths.BULLET, label: '弹幕', icon: 'danmukaiqi' },
+  { key: RoutePaths.BULLET, label: '弹幕', icon: 'danmu' },
   { key: RoutePaths.SOURCE, label: '搜索源', icon: 'yuan' },
   { key: RoutePaths.CONTROL, label: '外部控制', icon: 'controlapi' },
   { key: RoutePaths.SETTING, label: '设置', icon: 'setting' },
@@ -100,7 +100,7 @@ const MobileHeader = ({ activeKey }) => {
                 }}
               >
                 <div>
-                  <MyIcon icon={it.icon} size={32} />
+                  <MyIcon icon={it.icon} size={26} />
                 </div>
                 <div>{it.label}</div>
               </div>

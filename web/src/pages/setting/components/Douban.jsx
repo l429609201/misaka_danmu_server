@@ -1,11 +1,13 @@
 import { Button, Card, Form, Input, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { getDoubanConfig, setDoubanConfig } from '../../../apis'
+import { useMessage } from '../../../MessageContext'
 
 export const Douban = () => {
   const [loading, setLoading] = useState(true)
   const [form] = Form.useForm()
   const [isSaveLoading, setIsSaveLoading] = useState(false)
+  const messageApi = useMessage()
 
   useEffect(() => {
     setLoading(true)
@@ -26,9 +28,9 @@ export const Douban = () => {
         value: values.cookie,
       })
       setIsSaveLoading(false)
-      message.success('保存成功')
+      messageApi.success('保存成功')
     } catch (error) {
-      message.error('保存失败')
+      messageApi.error('保存失败')
     } finally {
       setIsSaveLoading(false)
     }

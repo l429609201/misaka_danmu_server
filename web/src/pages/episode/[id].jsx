@@ -28,6 +28,8 @@ import dayjs from 'dayjs'
 import { MyIcon } from '@/components/MyIcon'
 import { HomeOutlined } from '@ant-design/icons'
 import { RoutePaths } from '../../general/RoutePaths'
+import { useModal } from '../../ModalContext'
+import { useMessage } from '../../MessageContext'
 
 export const EpisodeDetail = () => {
   const { id } = useParams()
@@ -46,6 +48,9 @@ export const EpisodeDetail = () => {
   const [resetOpen, setResetOpen] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [resetInfo, setResetInfo] = useState({})
+
+  const modalApi = useModal()
+  const messageApi = useMessage()
 
   const getDetail = async () => {
     setLoading(true)
@@ -208,7 +213,7 @@ export const EpisodeDetail = () => {
   ]
 
   const handleBatchDelete = () => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '删除分集',
       zIndex: 1002,
       content: (
@@ -227,14 +232,14 @@ export const EpisodeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          message.error(`提交批量删除任务失败:${error.message}`)
+          messageApi.error(`提交批量删除任务失败:${error.message}`)
         }
       },
     })
   }
 
   const deleteEpisodeSingle = record => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '删除分集',
       zIndex: 1002,
       content: (
@@ -253,14 +258,14 @@ export const EpisodeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          message.error(`提交删除任务失败:${error.message}`)
+          messageApi.error(`提交删除任务失败:${error.message}`)
         }
       },
     })
   }
 
   const handleRefresh = record => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '刷新分集',
       zIndex: 1002,
       content: <div>您确定要刷新分集 '{record.title}' 的弹幕吗？</div>,
@@ -271,16 +276,16 @@ export const EpisodeDetail = () => {
           const res = await refreshEpisodeDanmaku({
             id: record.episodeId,
           })
-          message.success(res.message || '刷新任务已开始。')
+          messageApi.success(res.message || '刷新任务已开始。')
         } catch (error) {
-          message.error(`启动刷新任务失败:${error.message}`)
+          messageApi.error(`启动刷新任务失败:${error.message}`)
         }
       },
     })
   }
 
   const goTask = res => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '提示',
       zIndex: 1002,
       content: (
@@ -322,10 +327,10 @@ export const EpisodeDetail = () => {
       }
       getDetail()
       form.resetFields()
-      message.success('分集信息更新成功！')
+      messageApi.success('分集信息更新成功！')
     } catch (error) {
       console.log(error)
-      message.error(`更新失败: ${error.message || error?.detail || error}`)
+      messageApi.error(`更新失败: ${error.message || error?.detail || error}`)
     } finally {
       setConfirmLoading(false)
       setEditOpen(false)
@@ -333,7 +338,7 @@ export const EpisodeDetail = () => {
   }
 
   const handleResetEpisode = () => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '重整集数',
       zIndex: 1002,
       content: (
@@ -353,7 +358,7 @@ export const EpisodeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          message.error(`提交重整任务失败:${error.message}`)
+          messageApi.error(`提交重整任务失败:${error.message}`)
         }
       },
     })
@@ -370,9 +375,9 @@ export const EpisodeDetail = () => {
       await resetEpisode({
         sourceId: Number(id),
       })
-      message.success('已提交：批量删除 + 重整集数 两个任务。')
+      messageApi.success('已提交：批量删除 + 重整集数 两个任务。')
     } catch (error) {
-      message.error(`提交任务失败: ${error.message}`)
+      messageApi.error(`提交任务失败: ${error.message}`)
     } finally {
       setResetInfo({})
       setResetOpen(false)
@@ -435,7 +440,7 @@ export const EpisodeDetail = () => {
                   .map(ep => Number(ep.commentCount))
                   .filter(n => Number.isFinite(n) && n >= 0)
                 if (validCounts.length === 0) {
-                  message.error('所有分集的弹幕数不可用。')
+                  messageApi.error('所有分集的弹幕数不可用。')
                   return
                 }
                 const average =
@@ -448,7 +453,7 @@ export const EpisodeDetail = () => {
                 )
 
                 if (toDelete.length === 0) {
-                  message.error(
+                  messageApi.error(
                     `未找到低于平均值 (${average.toFixed(2)}) 的分集。`
                   )
                   return

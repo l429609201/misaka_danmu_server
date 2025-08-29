@@ -25,6 +25,8 @@ import {
   KeyOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { useModal } from '../../../ModalContext'
+import { useMessage } from '../../../MessageContext'
 
 export const Bangumi = () => {
   const [form] = Form.useForm()
@@ -35,6 +37,9 @@ export const Bangumi = () => {
   const [authInfo, setAuthInfo] = useState({})
   const [authMode, setAuthMode] = useState('token') // 'token' or 'oauth'
   const oauthPopup = useRef()
+
+  const modalApi = useModal()
+  const messageApi = useMessage()
 
   const getConfig = async () => {
     const res = await getBangumiConfig()
@@ -77,16 +82,16 @@ export const Bangumi = () => {
       }
       await setBangumiConfig(values)
       setIsSaveLoading(false)
-      message.success('保存成功')
+      messageApi.success('保存成功')
     } catch (error) {
-      message.error('保存失败')
+      messageApi.error('保存失败')
     } finally {
       setIsSaveLoading(false)
     }
   }
 
   const handleLogout = () => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '注销',
       zIndex: 1002,
       content: <div>确定要注销Bangumi授权吗？</div>,
@@ -263,8 +268,7 @@ export const Bangumi = () => {
                   {dayjs(authInfo.authorizedAt).format('YYYY-MM-DD HH:mm')}
                 </div>
                 <div className="text-xs text-gray-400 dark:text-gray-500">
-                  过期于:{' '}
-                  {dayjs(authInfo.expiresAt).format('YYYY-MM-DD HH:mm')}
+                  过期于: {dayjs(authInfo.expiresAt).format('YYYY-MM-DD HH:mm')}
                 </div>
               </div>
             </div>

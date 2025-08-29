@@ -35,6 +35,8 @@ import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 import { RoutePaths } from '../../general/RoutePaths'
 import { padStart } from 'lodash'
+import { useModal } from '../../ModalContext'
+import { useMessage } from '../../MessageContext'
 
 const ApplyField = ({ name, label, fetchedValue, form }) => {
   const currentValue = Form.useWatch(name, form)
@@ -79,6 +81,9 @@ export const Library = () => {
   const animeId = Form.useWatch('animeId', form)
   const imageUrl = Form.useWatch('imageUrl', form)
   const [fetchedMetadata, setFetchedMetadata] = useState(null)
+
+  const modalApi = useModal()
+  const messageApi = useMessage()
 
   const getList = async () => {
     try {
@@ -252,7 +257,7 @@ export const Library = () => {
   ]
 
   const handleDelete = async record => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '删除',
       zIndex: 1002,
       content: (
@@ -269,14 +274,14 @@ export const Library = () => {
           const res = await deleteAnime({ animeId: record.animeId })
           goTask(res)
         } catch (error) {
-          message.error('提交删除任务失败')
+          messageApi.error('提交删除任务失败')
         }
       },
     })
   }
 
   const goTask = res => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '提示',
       zIndex: 1002,
       content: (
@@ -309,9 +314,9 @@ export const Library = () => {
         tvdbId: values.tvdbId ? `${values.tvdbId}` : null,
       })
       getList()
-      message.success('信息更新成功')
+      messageApi.success('信息更新成功')
     } catch (error) {
-      message.error(error.detail || '编辑失败')
+      messageApi.error(error.detail || '编辑失败')
     } finally {
       setConfirmLoading(false)
       setEditOpen(false)
@@ -337,11 +342,13 @@ export const Library = () => {
         data: res.data,
         source,
       })
-      message.success(
+      messageApi.success(
         `${source.toUpperCase()} 信息获取成功，请检查并应用建议的别名。`
       )
     } catch (error) {
-      message.error(`获取 ${source.toUpperCase()} 详情失败: ${error.message}`)
+      messageApi.error(
+        `获取 ${source.toUpperCase()} 详情失败: ${error.message}`
+      )
     } finally {
       setSearchAsIdLoading(false)
     }
@@ -425,10 +432,10 @@ export const Library = () => {
         setTmdbResult(res?.data || [])
         setTmdbOpen(true)
       } else {
-        message.error('没有找到相关内容')
+        messageApi.error('没有找到相关内容')
       }
     } catch (error) {
-      message.error(`TMDB搜索失败:${error.message}`)
+      messageApi.error(`TMDB搜索失败:${error.message}`)
     } finally {
       setSearchTmdbLoading(false)
     }
@@ -449,10 +456,10 @@ export const Library = () => {
         setTvdbResult(res?.data || [])
         setTvdbOpen(true)
       } else {
-        message.error('没有找到相关内容')
+        messageApi.error('没有找到相关内容')
       }
     } catch (error) {
-      message.error(`TVDB搜索失败:${error.message}`)
+      messageApi.error(`TVDB搜索失败:${error.message}`)
     } finally {
       setSearchTvdbLoading(false)
     }
@@ -472,10 +479,10 @@ export const Library = () => {
         setDoubanResult(res?.data || [])
         setDoubanOpen(true)
       } else {
-        message.error('没有找到相关内容')
+        messageApi.error('没有找到相关内容')
       }
     } catch (error) {
-      message.error(`豆瓣搜索失败:${error.message}`)
+      messageApi.error(`豆瓣搜索失败:${error.message}`)
     } finally {
       setSearchDoubanLoading(false)
     }
@@ -496,10 +503,10 @@ export const Library = () => {
         setImdbResult(res?.data || [])
         setImdbOpen(true)
       } else {
-        message.error('没有找到相关内容')
+        messageApi.error('没有找到相关内容')
       }
     } catch (error) {
-      message.error(
+      messageApi.error(
         error.detail || `IMDB搜索失败: ${error.message || '未知错误'}`
       )
     } finally {
@@ -526,10 +533,10 @@ export const Library = () => {
         setEgidResult(res?.data || [])
         setEgidOpen(true)
       } else {
-        message.error('没有找到相关内容')
+        messageApi.error('没有找到相关内容')
       }
     } catch (error) {
-      message.error(`剧集组搜索失败:${error.message}`)
+      messageApi.error(`剧集组搜索失败:${error.message}`)
     } finally {
       setSearchEgidLoading(false)
     }
@@ -547,10 +554,10 @@ export const Library = () => {
         setAllEpisode(res?.data || {})
         setEpisodeOpen(true)
       } else {
-        message.error('没有找到相关分集')
+        messageApi.error('没有找到相关分集')
       }
     } catch (error) {
-      message.error('没有找到相关分集')
+      messageApi.error('没有找到相关分集')
     } finally {
       setSearchAllEpisodeLoading(false)
     }
@@ -570,10 +577,10 @@ export const Library = () => {
         setBgmResult(res?.data || [])
         setBgmOpen(true)
       } else {
-        message.error('没有找到相关内容')
+        messageApi.error('没有找到相关内容')
       }
     } catch (error) {
-      message.error(`BGM搜索失败:${error.message}`)
+      messageApi.error(`BGM搜索失败:${error.message}`)
     } finally {
       setSearchBgmLoading(false)
     }
@@ -683,9 +690,9 @@ export const Library = () => {
                         animeId,
                         imageUrl: imageUrl,
                       })
-                      message.success('海报已刷新并缓存成功！')
+                      messageApi.success('海报已刷新并缓存成功！')
                     } catch (error) {
-                      message.error(`刷新海报失败: ${error.message}`)
+                      messageApi.error(`刷新海报失败: ${error.message}`)
                     }
                   }}
                 >
@@ -911,6 +918,7 @@ export const Library = () => {
           pagination={{
             pageSize: 4,
             showSizeChanger: false,
+            hideOnSinglePage: true,
           }}
           renderItem={(item, index) => {
             return (
@@ -967,6 +975,7 @@ export const Library = () => {
           pagination={{
             pageSize: 4,
             showSizeChanger: false,
+            hideOnSinglePage: true,
           }}
           renderItem={(item, index) => {
             return (
@@ -1022,6 +1031,7 @@ export const Library = () => {
           pagination={{
             pageSize: 4,
             showSizeChanger: false,
+            hideOnSinglePage: true,
           }}
           renderItem={(item, index) => {
             return (
@@ -1077,6 +1087,7 @@ export const Library = () => {
           pagination={{
             pageSize: 4,
             showSizeChanger: false,
+            hideOnSinglePage: true,
           }}
           renderItem={(item, index) => {
             return (
@@ -1130,6 +1141,7 @@ export const Library = () => {
           pagination={{
             pageSize: 4,
             showSizeChanger: false,
+            hideOnSinglePage: true,
           }}
           renderItem={(item, index) => {
             return (
@@ -1166,6 +1178,7 @@ export const Library = () => {
           pagination={{
             pageSize: 4,
             showSizeChanger: false,
+            hideOnSinglePage: true,
           }}
           renderItem={(item, index) => {
             return (
@@ -1221,6 +1234,7 @@ export const Library = () => {
           pagination={{
             pageSize: 4,
             showSizeChanger: false,
+            hideOnSinglePage: true,
           }}
           renderItem={(item, index) => {
             return (

@@ -6,12 +6,15 @@ import {
   setDanmuOutputTotal,
 } from '../../../apis'
 import { useEffect, useState } from 'react'
+import { useMessage } from '../../../MessageContext'
 
 export const OutputManage = () => {
   const [loading, setLoading] = useState(false)
   const [limit, setLimit] = useState('-1')
   const [enable, setEnable] = useState(false)
   const [saveLoading, setSaveLoading] = useState(false)
+
+  const messageApi = useMessage()
 
   const getConfig = async () => {
     setLoading(true)
@@ -24,7 +27,7 @@ export const OutputManage = () => {
       setEnable(enableRes.data?.value === 'true' ? true : false)
     } catch (e) {
       console.log(e)
-      message.error('获取配置失败')
+      messageApi.error('获取配置失败')
     } finally {
       setLoading(false)
     }
@@ -37,9 +40,9 @@ export const OutputManage = () => {
         setDanmuOutputTotal({ value: `${limit}` }),
         setDanmuOutputAggregation({ value: enable ? 'true' : 'false' }),
       ])
-      message.success('保存成功')
+      messageApi.success('保存成功')
     } catch (e) {
-      message.error('保存失败')
+      messageApi.error('保存失败')
     } finally {
       setSaveLoading(false)
     }

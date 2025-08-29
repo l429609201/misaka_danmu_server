@@ -34,6 +34,8 @@ import { MyIcon } from '@/components/MyIcon'
 import classNames from 'classnames'
 import { padStart } from 'lodash'
 import { HomeOutlined } from '@ant-design/icons'
+import { useModal } from '../../ModalContext'
+import { useMessage } from '../../MessageContext'
 
 export const AnimeDetail = () => {
   const { id } = useParams()
@@ -48,6 +50,8 @@ export const AnimeDetail = () => {
   const [libraryPageSisze, setLibraryPageSisze] = useState(10)
 
   const navigate = useNavigate()
+  const modalApi = useModal()
+  const messageApi = useMessage()
 
   console.log(sourceList, 'sourceList')
 
@@ -85,7 +89,7 @@ export const AnimeDetail = () => {
       setRenderList(list)
       setEditOpen(true)
     } catch (error) {
-      message.error('获取数据源失败')
+      messageApi.error('获取数据源失败')
     }
   }
 
@@ -94,7 +98,7 @@ export const AnimeDetail = () => {
   }, [keyword, libraryList])
 
   const handleConfirmSource = item => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '关联数据源',
       zIndex: 1002,
       content: (
@@ -113,18 +117,18 @@ export const AnimeDetail = () => {
             sourceAnimeId: animeDetail.animeId,
             targetAnimeId: item.animeId,
           })
-          message.success('关联成功')
+          messageApi.success('关联成功')
           setEditOpen(false)
           navigate(RoutePaths.LIBRARY)
         } catch (error) {
-          message.error(`关联失败:${error.message}`)
+          messageApi.error(`关联失败:${error.message}`)
         }
       },
     })
   }
 
   const handleBatchDelete = () => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '删除数据源',
       zIndex: 1002,
       content: (
@@ -143,14 +147,14 @@ export const AnimeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          message.error(`提交批量删除任务失败:${error.message}`)
+          messageApi.error(`提交批量删除任务失败:${error.message}`)
         }
       },
     })
   }
 
   const handleDeleteSingle = record => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '删除数据源',
       zIndex: 1002,
       content: (
@@ -169,14 +173,14 @@ export const AnimeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          message.error(`提交删除任务失败:${error.message}`)
+          messageApi.error(`提交删除任务失败:${error.message}`)
         }
       },
     })
   }
 
   const handleIncrementalUpdate = record => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '增量刷新',
       zIndex: 1002,
       content: (
@@ -195,14 +199,14 @@ export const AnimeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          message.error(`启动增量更新任务失败: ${error.message}`)
+          messageApi.error(`启动增量更新任务失败: ${error.message}`)
         }
       },
     })
   }
 
   const handleFullSourceUpdate = record => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '全量刷新',
       zIndex: 1002,
       content: (
@@ -217,14 +221,14 @@ export const AnimeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          message.error(`启动刷新任务失败: ${error.message}`)
+          messageApi.error(`启动刷新任务失败: ${error.message}`)
         }
       },
     })
   }
 
   const goTask = res => {
-    Modal.confirm({
+    modalApi.confirm({
       title: '提示',
       zIndex: 1002,
       content: (
@@ -536,6 +540,7 @@ export const AnimeDetail = () => {
             onShowSizeChange: (_, size) => {
               setLibraryPageSisze(size)
             },
+            hideOnSinglePage: true,
           }}
           renderItem={(item, index) => {
             return (

@@ -1,10 +1,12 @@
 import { Button, Card, Input, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { getCustomDomain, setCustomDomain } from '../../../apis'
+import { useMessage } from '../../../MessageContext'
 
 export const Domain = () => {
   const [loading, setLoading] = useState(false)
   const [domain, setDomain] = useState('')
+  const messageApi = useMessage()
 
   useEffect(() => {
     setLoading(true)
@@ -20,9 +22,9 @@ export const Domain = () => {
   const handleEdit = async () => {
     try {
       await setCustomDomain({ value: domain })
-      message.success('保存成功')
+      messageApi.success('保存成功')
     } catch (error) {
-      message.error('保存失败')
+      messageApi.error('保存失败')
     }
   }
 

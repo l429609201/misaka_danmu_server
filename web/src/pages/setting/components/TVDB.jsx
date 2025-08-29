@@ -6,12 +6,14 @@ import {
   EyeOutlined,
   LockOutlined,
 } from '@ant-design/icons'
+import { useMessage } from '../../../MessageContext'
 
 export const TVDB = () => {
   const [loading, setLoading] = useState(true)
   const [form] = Form.useForm()
   const [showPassword, setShowPassword] = useState(false)
   const [isSaveLoading, setIsSaveLoading] = useState(false)
+  const messageApi = useMessage()
 
   useEffect(() => {
     setLoading(true)
@@ -32,9 +34,9 @@ export const TVDB = () => {
         value: values.tvdbApiKey,
       })
       setIsSaveLoading(false)
-      message.success('保存成功')
+      messageApi.success('保存成功')
     } catch (error) {
-      message.error('保存失败')
+      messageApi.error('保存失败')
     } finally {
       setIsSaveLoading(false)
     }
