@@ -9,14 +9,12 @@ import {
 } from '../../../apis'
 import { CopyOutlined, ReloadOutlined } from '@ant-design/icons'
 import copy from 'copy-to-clipboard'
-import { useMessage } from '../../../MessageContext'
 
 export const Webhook = () => {
   const [isLoading, setLoading] = useState(true)
   const [apiKey, setApiKey] = useState('')
   const [domain, setDomain] = useState('')
   const [services, setServices] = useState([])
-  const messageApi = useMessage()
 
   const getApiKey = async () => {
     const res = await getWebhookApikey()
@@ -56,9 +54,9 @@ export const Webhook = () => {
   const onSaveDoamin = async () => {
     try {
       await setWebhookDomain({ value: domain })
-      messageApi.success('保存成功')
+      message.success('保存成功')
     } catch (error) {
-      messageApi.error('保存失败')
+      message.error('保存失败')
     }
   }
 

@@ -66,7 +66,6 @@ export const RateLimitPanel = () => {
                     title="重置倒计时"
                     value={Date.now() + status.secondsUntilReset * 1000}
                     format="HH:mm:ss"
-                    type="countdown"
                   />
                 </Col>
                 <Col span={24}>

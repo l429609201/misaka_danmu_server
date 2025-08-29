@@ -9,14 +9,12 @@ import {
 import { login } from '../../apis'
 import { useNavigate } from 'react-router-dom'
 import Cookies from 'js-cookie'
-import { useMessage } from '../../MessageContext'
 
 export const Login = () => {
   const [form] = Form.useForm()
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const navigate = useNavigate()
-  const messageApi = useMessage()
 
   // 处理登录逻辑
   const handleLogin = async values => {
@@ -26,14 +24,14 @@ export const Login = () => {
 
       if (res.data.accessToken) {
         Cookies.set('token', res.data.accessToken, { expires: 7 })
-        messageApi.success('登录成功！')
+        message.success('登录成功！')
         navigate('/')
       } else {
-        messageApi.error('登录失败，请检查用户名或密码')
+        message.error('登录失败，请检查用户名或密码')
       }
     } catch (error) {
       console.error('登录失败:', error)
-      messageApi.error('登录失败，请检查用户名或密码')
+      message.error('登录失败，请检查用户名或密码')
     } finally {
       setIsLoading(false)
     }

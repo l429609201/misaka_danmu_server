@@ -20,8 +20,6 @@ import {
 } from '../../../apis'
 import dayjs from 'dayjs'
 import { MyIcon } from '@/components/MyIcon.jsx'
-import { useModal } from '../../../ModalContext'
-import { useMessage } from '../../../MessageContext'
 
 export const Ua = () => {
   const [loading, setLoading] = useState(false)
@@ -31,8 +29,6 @@ export const Ua = () => {
   const [uaRules, setUaRules] = useState([])
   const [uakeyword, setUakeyword] = useState('')
   const [addLoading, setAddLoading] = useState(false)
-  const modalApi = useModal()
-  const messageApi = useMessage()
 
   const columns = [
     {
@@ -85,14 +81,14 @@ export const Ua = () => {
   const handleEdit = async () => {
     try {
       await setUaMode({ value: mode })
-      messageApi.success('保存成功')
+      message.success('保存成功')
     } catch (error) {
-      messageApi.error('保存失败')
+      message.error('保存失败')
     }
   }
 
   const handleDelete = async record => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '删除',
       zIndex: 1002,
       content: <div>您确定要删除{record.uaString}吗？</div>,
@@ -104,10 +100,10 @@ export const Ua = () => {
             id: record.id,
           })
           handleList()
-          messageApi.success('删除成功')
+          message.success('删除成功')
         } catch (error) {
           console.error(error)
-          messageApi.error('删除失败')
+          message.error('删除失败')
         }
       },
     })
@@ -117,7 +113,7 @@ export const Ua = () => {
     try {
       if (addLoading) return
       if (!uakeyword) {
-        messageApi.error('请输入UA关键词')
+        message.error('请输入UA关键词')
         return
       }
       setAddLoading(true)
@@ -125,7 +121,7 @@ export const Ua = () => {
         uaString: uakeyword,
       })
     } catch (error) {
-      messageApi.error('添加失败')
+      message.error('添加失败')
     } finally {
       setUakeyword('')
       handleList()
@@ -139,7 +135,7 @@ export const Ua = () => {
       setUaRules(res.data)
       setOpen(true)
     } catch (error) {
-      messageApi.error('获取失败')
+      message.error('获取失败')
     }
   }
 

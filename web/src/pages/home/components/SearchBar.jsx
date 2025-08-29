@@ -14,6 +14,7 @@ import {
   Row,
   Tag,
 } from 'antd'
+import { parseSearchKeyword } from '../../../utils'
 import { useAtom, useAtomValue } from 'jotai'
 import {
   isMobileAtom,
@@ -21,8 +22,6 @@ import {
   searchHistoryAtom,
   searchLoadingAtom,
 } from '../../../../store'
-import { useModal } from '../../../ModalContext'
-import { useMessage } from '../../../MessageContext'
 
 export const SearchBar = () => {
   const [loading, setLoading] = useAtom(searchLoadingAtom)
@@ -40,15 +39,13 @@ export const SearchBar = () => {
   //开启精确搜索
   const [exactSearch, setExactSearch] = useState(false)
 
-  const [, setLastSearchResultData] = useAtom(lastSearchResultAtom)
-
-  const modalApi = useModal()
-  const messageApi = useMessage()
+  const [lastSearchResultData, setLastSearchResultData] =
+    useAtom(lastSearchResultAtom)
 
   const onInsert = () => {
     if (!season) {
-      messageApi.destroy()
-      messageApi.error('请输入季数')
+      message.destroy()
+      message.error('请输入季数')
       return
     }
     let formatted = ` S${String(season).padStart(2, '0')}`
@@ -102,7 +99,7 @@ export const SearchBar = () => {
   }
 
   const onClearCache = () => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '清除缓存',
       zIndex: 1002,
       content: (
@@ -118,11 +115,11 @@ export const SearchBar = () => {
         try {
           setCacheLoading(true)
           const res = await clearSearchCache()
-          messageApi.destroy()
-          messageApi.success(res.data.message || '缓存已成功清除！')
+          message.destroy()
+          message.success(res.data.message || '缓存已成功清除！')
         } catch (err) {
-          messageApi.destroy()
-          messageApi.error(`清除缓存失败: ${error.message || error}`)
+          message.destroy()
+          message.error(`清除缓存失败: ${error.message || error}`)
         } finally {
           setCacheLoading(false)
         }

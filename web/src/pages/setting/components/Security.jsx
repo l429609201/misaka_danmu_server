@@ -6,7 +6,6 @@ import {
 import { Button, Card, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { changePassword } from '../../../apis'
-import { useMessage } from '../../../MessageContext'
 
 export const Security = () => {
   const [form] = Form.useForm()
@@ -14,7 +13,6 @@ export const Security = () => {
   const [showPassword2, setShowPassword2] = useState(false)
   const [showPassword3, setShowPassword3] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const messageApi = useMessage()
 
   const onSave = async () => {
     try {
@@ -22,9 +20,9 @@ export const Security = () => {
       const values = await form.validateFields()
       await changePassword(values)
       form.resetFields()
-      messageApi.success('修改成功')
+      message.success('修改成功')
     } catch (error) {
-      messageApi.error('修改失败')
+      message.error('修改失败')
     } finally {
       setIsLoading(false)
     }
