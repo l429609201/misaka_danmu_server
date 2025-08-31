@@ -1,5 +1,4 @@
 import {
-  CopyOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
   LockOutlined,
@@ -8,18 +7,12 @@ import {
 import { Button, Card, Input, message, Modal, Space } from 'antd'
 import { useEffect, useState } from 'react'
 import { getControlApiKey, refreshControlApiKey } from '../../../apis'
-import { useModal } from '../../../ModalContext'
-import { useMessage } from '../../../MessageContext'
-import copy from 'copy-to-clipboard'
 
 export const ApiKey = () => {
   const [apikey, setApikey] = useState('')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [showKey, setShowkey] = useState(false)
-
-  const modalApi = useModal()
-  const messageApi = useMessage()
 
   useEffect(() => {
     setLoading(true)
@@ -33,7 +26,7 @@ export const ApiKey = () => {
   }, [])
 
   const onRefresh = () => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '刷新API key',
       zIndex: 1002,
       content: <div>您确定要重新生成外部API密钥吗？旧的密钥将立即失效。</div>,
@@ -44,9 +37,9 @@ export const ApiKey = () => {
           setRefreshing(true)
           const res = await refreshControlApiKey()
           setApikey(res.data.value ?? '')
-          messageApi.success('新的API密钥已生成！')
+          message.success('新的API密钥已生成！')
         } catch (error) {
-          messageApi.error(`生成失败: ${error.message}`)
+          message.error(`生成失败: ${error.message}`)
         } finally {
           setRefreshing(false)
         }
@@ -56,7 +49,7 @@ export const ApiKey = () => {
 
   return (
     <div className="my-6">
-      <Card title="外部API密钥" loading={loading}>
+      <Card title="外部API密钥">
         <div className="mb-4">
           此密钥用于所有 /api/control/* 接口的鉴权。请妥善保管，不要泄露。
         </div>
@@ -77,16 +70,6 @@ export const ApiKey = () => {
                 readOnly
                 block
                 value={apikey}
-              />
-
-              <Button
-                loading={refreshing}
-                type="primary"
-                icon={<CopyOutlined />}
-                onClick={() => {
-                  copy(apikey)
-                  messageApi.success('复制成功')
-                }}
               />
               <Button
                 loading={refreshing}

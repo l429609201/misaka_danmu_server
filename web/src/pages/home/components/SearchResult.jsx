@@ -51,8 +51,6 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useModal } from '../../../ModalContext'
-import { useMessage } from '../../../MessageContext'
 
 const IMPORT_MODE = [
   {
@@ -77,9 +75,6 @@ export const SearchResult = () => {
   const [lastSearchResultData] = useAtom(lastSearchResultAtom)
 
   const [selectList, setSelectList] = useState([])
-
-  const modalApi = useModal()
-  const messageApi = useMessage()
 
   /** 编辑导入相关 */
   const [editImportOpen, setEditImportOpen] = useState(false)
@@ -200,9 +195,9 @@ export const SearchResult = () => {
         doubanId: item.doubanId,
         currentEpisodeIndex: item.currentEpisodeIndex,
       })
-      messageApi.success(res.data.message || '导入成功')
+      message.success(res.data.message || '导入成功')
     } catch (error) {
-      messageApi.error(`提交导入任务失败: ${error.detail || error}`)
+      message.error(`提交导入任务失败: ${error.detail || error}`)
     } finally {
       setLoading(false)
     }
@@ -229,9 +224,9 @@ export const SearchResult = () => {
           episodes: editEpisodeList ?? [],
         })
       )
-      messageApi.success(res.data?.message || '编辑导入任务已提交。')
+      message.success(res.data?.message || '编辑导入任务已提交。')
     } catch (error) {
-      messageApi.error(`提交导入任务失败: ${error.message}`)
+      message.error(`提交导入任务失败: ${error.message}`)
     } finally {
       setEditConfirmLoading(false)
       setEditImportOpen(false)
@@ -245,14 +240,14 @@ export const SearchResult = () => {
     let tmdbparams = {}
     if (importMode === 'merge') {
       if (!title) {
-        messageApi.error('最终导入名称不能为空。')
+        message.error('最终导入名称不能为空。')
         return
       }
       tmdbparams = {
         tmdbId: `${tmdbid}`,
       }
     }
-    modalApi.confirm({
+    Modal.confirm({
       title: '批量导入',
       zIndex: 1002,
       content: (
@@ -285,7 +280,7 @@ export const SearchResult = () => {
               )
             })
           )
-          messageApi.success('批量导入任务已提交，请在任务管理器中查看进度。')
+          message.success('批量导入任务已提交，请在任务管理器中查看进度。')
           setSelectList([])
           setConfirmLoading(false)
           setBatchOpen(false)
@@ -313,10 +308,10 @@ export const SearchResult = () => {
         setTmdbResult(res?.data || [])
         setTmdbOpen(true)
       } else {
-        messageApi.error('没有找到相关内容')
+        message.error('没有找到相关内容')
       }
     } catch (error) {
-      messageApi.error('TMDB搜索失败')
+      message.error('TMDB搜索失败')
     } finally {
       setSearchTmdbLoading(false)
     }
@@ -493,21 +488,11 @@ export const SearchResult = () => {
                   className="shrink-0"
                   options={[
                     {
-                      label: (
-                        <>
-                          <MyIcon icon="movie" size={16} className="mr-1" />
-                          电影/剧场版
-                        </>
-                      ),
+                      label: '电影/剧场版',
                       value: DANDAN_TYPE_MAPPING.movie,
                     },
                     {
-                      label: (
-                        <>
-                          <MyIcon icon="tv" size={16} className="mr-1" />
-                          电视节目
-                        </>
-                      ),
+                      label: '电视节目',
                       value: DANDAN_TYPE_MAPPING.tvseries,
                     },
                   ]}
@@ -545,7 +530,7 @@ export const SearchResult = () => {
                 type="primary"
                 onClick={() => {
                   if (selectList.length === 0) {
-                    messageApi.error('请选择要导入的媒体')
+                    message.error('请选择要导入的媒体')
                     return
                   }
 
@@ -587,19 +572,13 @@ export const SearchResult = () => {
                           <div className="ml-4">
                             <div className="text-xl font-bold mb-3">
                               {item.title}
-                              {item.type === 'movie' ? (
-                                <MyIcon
-                                  icon="movie"
-                                  size={20}
-                                  className="ml-2"
-                                />
-                              ) : (
-                                <MyIcon icon="tv" size={20} className="ml-2" />
-                              )}
                             </div>
                             <div className="flex items-center flex-wrap gap-2">
                               <Tag color="magenta">
                                 源：{item.provider ?? '未知'}
+                              </Tag>
+                              <Tag color="red">
+                                {DANDAN_TYPE_DESC_MAPPING[item.type]}
                               </Tag>
                               <Tag color="volcano">
                                 年份：{item.year ?? '未知'}
@@ -683,19 +662,15 @@ export const SearchResult = () => {
                   key={index}
                   className="my-3 p-2 rounded-xl border-gray-300/45 border"
                 >
-                  <div className="text-xl font-bold mb-2">
-                    {item.title}
-                    {item.type === 'movie' ? (
-                      <MyIcon icon="movie" size={20} className="ml-2" />
-                    ) : (
-                      <MyIcon icon="tv" size={20} className="ml-2" />
-                    )}
-                  </div>
+                  <div className="text-xl font-bold mb-2">{item.title}</div>
                   <div className="flex items-center flex-wrap gap-2">
-                    <Tag color="magenta">源：{item.provider ?? '未知'}</Tag>
-                    <Tag color="volcano">年份：{item.year ?? '未知'}</Tag>
-                    <Tag color="orange">季度：{item.season ?? '未知'}</Tag>
-                    <Tag color="gold">总集数：{item.episodeCount ?? 0}</Tag>
+                    <Tag color="magenta">源：{item.provider}</Tag>
+                    <Tag color="red">
+                      类型：{DANDAN_TYPE_DESC_MAPPING[item.type]}
+                    </Tag>
+                    <Tag color="volcano">年份：{item.year}</Tag>
+                    <Tag color="orange">季度：{item.season}</Tag>
+                    <Tag color="gold">总集数：{item.episodeCount}</Tag>
                   </div>
                 </div>
               )
@@ -748,7 +723,6 @@ export const SearchResult = () => {
           pagination={{
             pageSize: 4,
             showSizeChanger: false,
-            hideOnSinglePage: true,
           }}
           renderItem={(item, index) => {
             return (
@@ -820,7 +794,7 @@ export const SearchResult = () => {
                     season: editItem.season ?? 1,
                   })
                   if (!res.data?.length) {
-                    messageApi.error(
+                    message.error(
                       `在弹幕库中未找到作品 "${editAnimeTitle || editItem.title}" 或该作品没有任何分集。`
                     )
                     return
@@ -837,11 +811,11 @@ export const SearchResult = () => {
                     )
                   }, 0)
 
-                  messageApi.success(
+                  message.success(
                     `重整完成！根据库内记录，移除了 ${removedCount} 个已存在的分集。`
                   )
                 } catch (error) {
-                  messageApi.error(`查询已存在分集失败: ${error.message}`)
+                  message.error(`查询已存在分集失败: ${error.message}`)
                 }
               }}
             >
@@ -911,7 +885,6 @@ export const SearchResult = () => {
                   onShowSizeChange: (_, size) => {
                     setEpisodePageSize(size)
                   },
-                  hideOnSinglePage: true,
                 }}
                 dataSource={editEpisodeList}
                 renderItem={(item, index) => (

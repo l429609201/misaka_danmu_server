@@ -12,14 +12,12 @@ import {
 } from 'antd'
 import { useEffect, useState } from 'react'
 import { getProxyConfig, setProxyConfig } from '../../../apis'
-import { useMessage } from '../../../MessageContext'
 
 export const Proxy = () => {
   const [proxyEnabled, setProxyEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [form] = Form.useForm()
   const [isSaveLoading, setIsSaveLoading] = useState(false)
-  const messageApi = useMessage()
 
   useEffect(() => {
     getProxyConfig()
@@ -39,9 +37,9 @@ export const Proxy = () => {
       setProxyEnabled(values.proxyEnabled)
       await setProxyConfig(values)
       setIsSaveLoading(false)
-      messageApi.success('保存成功')
+      message.success('保存成功')
     } catch (error) {
-      messageApi.error('保存失败')
+      message.error('保存失败')
     } finally {
       setIsSaveLoading(false)
     }

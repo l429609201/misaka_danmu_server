@@ -1,18 +1,15 @@
+import { useState } from 'react'
 import { Tabs } from 'antd'
 import { Scrapers } from './components/Scrapers'
 import { Metadata } from './components/Metadata'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { GlobalFilter } from './components/GlobalFilter'
 
-
 export const Source = () => {
-  const [searchParams] = useSearchParams()
-  const key = searchParams.get('key') || 'scrapers'
-  const navigate = useNavigate()
-
+  const [activeKey, setActiveKey] = useState('scrapers')
   return (
     <Tabs
-      defaultActiveKey={key}
+      defaultActiveKey={activeKey}
       items={[
         {
           label: '弹幕搜索源',
@@ -30,11 +27,7 @@ export const Source = () => {
           children: <GlobalFilter />,
         },
       ]}
-      onChange={key => {
-        navigate(`/source?key=${key}`, {
-          replace: true,
-        })
-      }}
+      onChange={key => setActiveKey(key)}
     />
   )
 }

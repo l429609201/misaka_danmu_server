@@ -1,18 +1,14 @@
+import { useState } from 'react'
 import { ImportTask } from './components/ImportTask'
 import { ScheduleTask } from './components/ScheduleTask'
 import { RateLimitPanel } from './components/RateLimitPanel'
 import { Tabs } from 'antd'
-import { useNavigate, useSearchParams } from 'react-router-dom'
 
 export const Task = () => {
-  const [searchParams] = useSearchParams()
-  const key = searchParams.get('key') || 'task'
-
-  const navigate = useNavigate()
-
+  const [activeKey, setActiveKey] = useState('task')
   return (
     <Tabs
-      defaultActiveKey={key}
+      defaultActiveKey={activeKey}
       items={[
         {
           label: '进行中任务',
@@ -30,11 +26,7 @@ export const Task = () => {
           children: <RateLimitPanel />,
         },
       ]}
-      onChange={key => {
-        navigate(`/task?key=${key}`, {
-          replace: true,
-        })
-      }}
+      onChange={key => setActiveKey(key)}
     />
   )
 }

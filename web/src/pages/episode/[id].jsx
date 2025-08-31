@@ -250,7 +250,7 @@ export const EpisodeDetail = () => {
   ]
 
   const handleBatchDelete = () => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '删除分集',
       zIndex: 1002,
       content: (
@@ -269,14 +269,14 @@ export const EpisodeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          messageApi.error(`提交批量删除任务失败:${error.message}`)
+          message.error(`提交批量删除任务失败:${error.message}`)
         }
       },
     })
   }
 
   const deleteEpisodeSingle = record => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '删除分集',
       zIndex: 1002,
       content: (
@@ -295,14 +295,14 @@ export const EpisodeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          messageApi.error(`提交删除任务失败:${error.message}`)
+          message.error(`提交删除任务失败:${error.message}`)
         }
       },
     })
   }
 
   const handleRefresh = record => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '刷新分集',
       zIndex: 1002,
       content: <div>您确定要刷新分集 '{record.title}' 的弹幕吗？</div>,
@@ -313,16 +313,16 @@ export const EpisodeDetail = () => {
           const res = await refreshEpisodeDanmaku({
             id: record.episodeId,
           })
-          messageApi.success(res.message || '刷新任务已开始。')
+          message.success(res.message || '刷新任务已开始。')
         } catch (error) {
-          messageApi.error(`启动刷新任务失败:${error.message}`)
+          message.error(`启动刷新任务失败:${error.message}`)
         }
       },
     })
   }
 
   const goTask = res => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '提示',
       zIndex: 1002,
       content: (
@@ -369,7 +369,7 @@ export const EpisodeDetail = () => {
       messageApi.success('分集信息更新成功！')
     } catch (error) {
       console.log(error)
-      messageApi.error(`更新失败: ${error.message || error?.detail || error}`)
+      message.error(`更新失败: ${error.message || error?.detail || error}`)
     } finally {
       setConfirmLoading(false)
       setEditOpen(false)
@@ -377,7 +377,7 @@ export const EpisodeDetail = () => {
   }
 
   const handleResetEpisode = () => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '重整集数',
       zIndex: 1002,
       content: (
@@ -397,7 +397,7 @@ export const EpisodeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          messageApi.error(`提交重整任务失败:${error.message}`)
+          message.error(`提交重整任务失败:${error.message}`)
         }
       },
     })
@@ -414,9 +414,9 @@ export const EpisodeDetail = () => {
       await resetEpisode({
         sourceId: Number(id),
       })
-      messageApi.success('已提交：批量删除 + 重整集数 两个任务。')
+      message.success('已提交：批量删除 + 重整集数 两个任务。')
     } catch (error) {
-      messageApi.error(`提交任务失败: ${error.message}`)
+      message.error(`提交任务失败: ${error.message}`)
     } finally {
       setResetInfo({})
       setResetOpen(false)
@@ -527,7 +527,7 @@ export const EpisodeDetail = () => {
                   .map(ep => Number(ep.commentCount))
                   .filter(n => Number.isFinite(n) && n >= 0)
                 if (validCounts.length === 0) {
-                  messageApi.error('所有分集的弹幕数不可用。')
+                  message.error('所有分集的弹幕数不可用。')
                   return
                 }
                 const average =
@@ -540,7 +540,7 @@ export const EpisodeDetail = () => {
                 )
 
                 if (toDelete.length === 0) {
-                  messageApi.error(
+                  message.error(
                     `未找到低于平均值 (${average.toFixed(2)}) 的分集。`
                   )
                   return

@@ -53,8 +53,6 @@ export const AnimeDetail = () => {
   const [isAddSourceModalOpen, setIsAddSourceModalOpen] = useState(false)
 
   const navigate = useNavigate()
-  const modalApi = useModal()
-  const messageApi = useMessage()
 
   console.log(sourceList, 'sourceList')
 
@@ -97,7 +95,7 @@ export const AnimeDetail = () => {
       setRenderList(list)
       setEditOpen(true)
     } catch (error) {
-      messageApi.error('获取数据源失败')
+      message.error('获取数据源失败')
     }
   }
 
@@ -106,7 +104,7 @@ export const AnimeDetail = () => {
   }, [keyword, libraryList])
 
   const handleConfirmSource = item => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '关联数据源',
       zIndex: 1002,
       content: (
@@ -125,18 +123,18 @@ export const AnimeDetail = () => {
             sourceAnimeId: animeDetail.animeId,
             targetAnimeId: item.animeId,
           })
-          messageApi.success('关联成功')
+          message.success('关联成功')
           setEditOpen(false)
           navigate(RoutePaths.LIBRARY)
         } catch (error) {
-          messageApi.error(`关联失败:${error.message}`)
+          message.error(`关联失败:${error.message}`)
         }
       },
     })
   }
 
   const handleBatchDelete = () => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '删除数据源',
       zIndex: 1002,
       content: (
@@ -155,14 +153,14 @@ export const AnimeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          messageApi.error(`提交批量删除任务失败:${error.message}`)
+          message.error(`提交批量删除任务失败:${error.message}`)
         }
       },
     })
   }
 
   const handleDeleteSingle = record => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '删除数据源',
       zIndex: 1002,
       content: (
@@ -181,14 +179,14 @@ export const AnimeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          messageApi.error(`提交删除任务失败:${error.message}`)
+          message.error(`提交删除任务失败:${error.message}`)
         }
       },
     })
   }
 
   const handleIncrementalUpdate = record => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '增量刷新',
       zIndex: 1002,
       content: (
@@ -207,14 +205,14 @@ export const AnimeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          messageApi.error(`启动增量更新任务失败: ${error.message}`)
+          message.error(`启动增量更新任务失败: ${error.message}`)
         }
       },
     })
   }
 
   const handleFullSourceUpdate = record => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '全量刷新',
       zIndex: 1002,
       content: (
@@ -229,14 +227,14 @@ export const AnimeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          messageApi.error(`启动刷新任务失败: ${error.message}`)
+          message.error(`启动刷新任务失败: ${error.message}`)
         }
       },
     })
   }
 
   const goTask = res => {
-    modalApi.confirm({
+    Modal.confirm({
       title: '提示',
       zIndex: 1002,
       content: (
@@ -566,7 +564,6 @@ export const AnimeDetail = () => {
             onShowSizeChange: (_, size) => {
               setLibraryPageSisze(size)
             },
-            hideOnSinglePage: true,
           }}
           renderItem={(item, index) => {
             return (
