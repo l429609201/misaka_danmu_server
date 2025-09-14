@@ -28,7 +28,7 @@ class RateLimiter:
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.enabled: bool = True
-        self.global_limit: int = 50
+        self.global_limit: int = 500
         self.global_period: str = "hour"
 
         try:
