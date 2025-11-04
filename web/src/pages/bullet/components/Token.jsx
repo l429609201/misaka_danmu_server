@@ -18,7 +18,6 @@ import {
   addToken,
   deleteToken,
   editToken,
-  getCustomDomain,
   getTokenList,
   getTokenLog,
   resetTokenCounter,
@@ -31,7 +30,7 @@ import { EyeInvisibleOutlined, EyeTwoTone } from '@ant-design/icons'
 import { useModal } from '../../../ModalContext'
 import { useMessage } from '../../../MessageContext'
 
-export const Token = () => {
+export const Token = ({ domain: propDomain }) => {
   const [loading, setLoading] = useState(false)
   const [tokenList, setTokenList] = useState([])
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -41,19 +40,20 @@ export const Token = () => {
   const [form] = Form.useForm()
   const [tokenLogs, setTokenLogs] = useState([])
   const [logsOpen, setLogsOpen] = useState(false)
-  const [domain, setDomain] = useState('')
+  const [domain, setDomain] = useState(propDomain || '')
   const modalApi = useModal()
   const messageApi = useMessage()
+
+  // 监听 prop 变化，更新本地状态
+  useEffect(() => {
+    setDomain(propDomain || '')
+  }, [propDomain])
 
   const getTokens = async () => {
     try {
       setLoading(true)
-      const [tokenRes, domainRes] = await Promise.all([
-        getTokenList(),
-        getCustomDomain(),
-      ])
+      const tokenRes = await getTokenList()
       setTokenList(tokenRes.data)
-      setDomain(domainRes.data?.value ?? '')
     } catch (error) {
       console.error(error)
     } finally {
