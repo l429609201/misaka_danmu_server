@@ -1,12 +1,29 @@
 import { Domain } from './Domain'
 import { Token } from './Token'
 import { Ua } from './Ua'
+import { useState, useEffect } from 'react'
+import { getCustomDomain } from '../../../apis'
 
 export const TokenManage = () => {
+  const [domain, setDomain] = useState('')
+
+  useEffect(() => {
+    // 初始加载域名
+    getCustomDomain().then(res => {
+      setDomain(res.data?.value ?? '')
+    }).catch(err => {
+      console.error('获取自定义域名失败:', err)
+    })
+  }, [])
+
+  const handleDomainChange = (newDomain) => {
+    setDomain(newDomain)
+  }
+
   return (
     <>
-      <Token />
-      <Domain />
+      <Token domain={domain} />
+      <Domain domain={domain} onDomainChange={handleDomainChange} />
       <Ua />
       <p>
         本项目参考了
