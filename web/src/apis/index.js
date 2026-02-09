@@ -949,3 +949,15 @@ export const getSourceEpisodesForSplit = (sourceId) =>
 /** 拆分数据源 */
 export const splitSource = (animeId, data) =>
   api.post(`/api/ui/library/anime/${animeId}/split-source`, JSON.stringify(data))
+
+
+// ========== 海报搜索 ==========
+
+/** 查找作品的本地海报路径 */
+export const getLocalImage = (params) => api.get('/api/ui/poster/local-image', params)
+
+/** 下载网络海报到本地缓存 */
+export const downloadPosterToLocal = (data) => api.post('/api/ui/poster/download-to-local', data)
+
+/** 从 Fanart.tv 搜索海报 */
+export const searchFanartPosters = (params) => api.get('/api/ui/poster/fanart', params)

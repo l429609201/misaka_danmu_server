@@ -7,7 +7,7 @@ from src.api.ui import (
     anime, source, episode, search, import_api, task,
     token, config_extra, settings, scheduled_task, webhook, system, auth_extra,
     local_danmaku, scraper_resources, parameters, danmaku_storage, backup, danmaku_edit,
-    local_episode_group
+    local_episode_group, poster
 )
 
 # This router aggregates all non-dandanplay API endpoints.
@@ -53,6 +53,9 @@ api_router.include_router(danmaku_edit.router, prefix="/ui", tags=["Danmaku Edit
 
 # 本地剧集组端点
 api_router.include_router(local_episode_group.router, prefix="/ui", tags=["Local Episode Group"], include_in_schema=False)
+
+# 海报搜索端点
+api_router.include_router(poster.router, prefix="/ui", tags=["Poster"], include_in_schema=False)
 
 api_router.include_router(webhook_router, prefix="/webhook", tags=["Webhook"], include_in_schema=False)
 

@@ -1,13 +1,34 @@
-import React, { useEffect } from 'react';
-import { Modal, Form, Input, InputNumber, Select, message } from 'antd';
-import { updateMediaItem, updateLocalItem } from '../../../apis';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Modal, Form, Input, InputNumber, Select, Button, Space, Image, message, Tooltip } from 'antd';
+import { SearchOutlined, LinkOutlined, EyeOutlined } from '@ant-design/icons';
+import { updateMediaItem, updateLocalItem, getLocalImage, downloadPosterToLocal } from '../../../apis';
+import PosterSearchModal from './PosterSearchModal';
 
 const { Option } = Select;
 
 const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) => {
   const [form] = Form.useForm();
-  const [loading, setLoading] = React.useState(false);
-  const [mediaType, setMediaType] = React.useState('tv_series');
+  const [loading, setLoading] = useState(false);
+  const [mediaType, setMediaType] = useState('tv_series');
+  const [posterSearchVisible, setPosterSearchVisible] = useState(false);
+  const [localImagePath, setLocalImagePath] = useState(null);
+  const [localImageAnimeId, setLocalImageAnimeId] = useState(null);
+  const [downloadingLocal, setDownloadingLocal] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(false);
+
+  // 加载本地海报信息
+  const loadLocalImage = useCallback(async (title, season, year) => {
+    if (!title) return;
+    try {
+      const res = await getLocalImage({ title, season: season || 1, year: year || undefined });
+      const data = res?.data;
+      setLocalImagePath(data?.localImagePath || null);
+      setLocalImageAnimeId(data?.animeId || null);
+    } catch {
+      setLocalImagePath(null);
+      setLocalImageAnimeId(null);
+    }
+  }, []);
 
   useEffect(() => {
     if (visible && item) {
@@ -24,15 +45,19 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
         filePath: item.filePath,
       });
       setMediaType(item.mediaType);
+      loadLocalImage(item.title, item.season, item.year);
     }
-  }, [visible, item, form]);
+    if (!visible) {
+      setLocalImagePath(null);
+      setLocalImageAnimeId(null);
+    }
+  }, [visible, item, form, loadLocalImage]);
 
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
       setLoading(true);
 
-      // 根据isLocal选择不同的API
       if (isLocal) {
         await updateLocalItem(item.id, values);
       } else {
@@ -51,7 +76,48 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
     }
   };
 
+  // 海报搜索选中回调
+  const handlePosterSelect = (posterUrl) => {
+    form.setFieldsValue({ posterUrl });
+    message.success('已填入海报URL');
+  };
+
+  // URL直搜：下载网络图片到本地
+  const handleDownloadToLocal = async () => {
+    const posterUrl = form.getFieldValue('posterUrl');
+    if (!posterUrl) {
+      message.warning('请先填写海报URL');
+      return;
+    }
+    const title = form.getFieldValue('title');
+    const season = form.getFieldValue('season');
+    const year = form.getFieldValue('year');
+
+    setDownloadingLocal(true);
+    try {
+      const res = await downloadPosterToLocal({
+        imageUrl: posterUrl,
+        title: title || '',
+        season: season || 1,
+        year: year || undefined,
+      });
+      const data = res?.data;
+      if (data?.localImagePath) {
+        setLocalImagePath(data.localImagePath);
+        setLocalImageAnimeId(data.animeId);
+        message.success('海报已下载到本地');
+      } else {
+        message.error('下载失败');
+      }
+    } catch (error) {
+      message.error('下载失败: ' + (error?.response?.data?.detail || error.message || '未知错误'));
+    } finally {
+      setDownloadingLocal(false);
+    }
+  };
+
   return (
+    <>
     <Modal
       title="编辑媒体项"
       open={visible}
@@ -141,11 +207,43 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
           <Input placeholder="例如: tt1234567" />
         </Form.Item>
 
-        <Form.Item
-          label="海报URL"
-          name="posterUrl"
-        >
-          <Input placeholder="https://..." />
+        <Form.Item label="海报URL">
+          <Space.Compact style={{ width: '100%' }}>
+            <Form.Item name="posterUrl" noStyle>
+              <Input placeholder="https://..." style={{ flex: 1 }} />
+            </Form.Item>
+            <Tooltip title="搜索海报">
+              <Button
+                icon={<SearchOutlined />}
+                onClick={() => setPosterSearchVisible(true)}
+              />
+            </Tooltip>
+            <Tooltip title="URL直搜（下载到本地）">
+              <Button
+                icon={<LinkOutlined />}
+                loading={downloadingLocal}
+                onClick={handleDownloadToLocal}
+              />
+            </Tooltip>
+          </Space.Compact>
+        </Form.Item>
+
+        {/* 本地海报行 */}
+        <Form.Item label="本地海报">
+          <Space style={{ width: '100%' }}>
+            <Input
+              value={localImagePath || '暂无'}
+              readOnly
+              style={{ flex: 1, minWidth: 300, color: localImagePath ? undefined : 'var(--text-tertiary, #999)' }}
+            />
+            <Tooltip title="预览海报">
+              <Button
+                icon={<EyeOutlined />}
+                disabled={!localImagePath}
+                onClick={() => setPreviewVisible(true)}
+              />
+            </Tooltip>
+          </Space>
         </Form.Item>
 
         {isLocal && (
@@ -159,6 +257,30 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
         )}
       </Form>
     </Modal>
+
+    {/* 海报搜索弹窗 */}
+    <PosterSearchModal
+      visible={posterSearchVisible}
+      onClose={() => setPosterSearchVisible(false)}
+      onSelect={handlePosterSelect}
+      defaultKeyword={form.getFieldValue('title') || item?.title || ''}
+      tmdbId={form.getFieldValue('tmdbId') || item?.tmdbId}
+      tvdbId={form.getFieldValue('tvdbId') || item?.tvdbId}
+      mediaType={form.getFieldValue('mediaType') || item?.mediaType}
+    />
+
+    {/* 本地海报预览 */}
+    {previewVisible && localImagePath && (
+      <Image
+        style={{ display: 'none' }}
+        preview={{
+          visible: previewVisible,
+          src: localImagePath,
+          onVisibleChange: (vis) => setPreviewVisible(vis),
+        }}
+      />
+    )}
+    </>
   );
 };
 
