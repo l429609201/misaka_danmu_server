@@ -185,6 +185,15 @@ class TmdbAutoMapJob(BaseJob):
                             except Exception as e:
                                 self.logger.warning(f"AI标准化失败: {e}, 使用原标题搜索")
 
+                        # 后备：如果AI未启用或AI未识别到季度，尝试用正则提取季度信息并清理标题
+                        if recognized_season is None:
+                            from src.utils import parse_search_keyword
+                            parsed = parse_search_keyword(search_title)
+                            if parsed.get("season") is not None:
+                                recognized_season = parsed["season"]
+                                search_title = parsed["title"]
+                                self.logger.info(f"正则提取季度: '{title}' → '{search_title}' (season={recognized_season})")
+
                         # 根据类型选择mediaType
                         media_type = "movie" if search_type == "movie" else "tv"
 

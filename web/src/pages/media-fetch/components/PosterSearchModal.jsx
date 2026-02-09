@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, Input, Button, List, Tag, Image, Space, Spin, message, Empty, Tooltip } from 'antd';
 import { SearchOutlined, CheckOutlined } from '@ant-design/icons';
+import { useAtomValue } from 'jotai';
+import { isMobileAtom } from '../../../../store/index.js';
 import {
   getTmdbSearch, getDoubanSearch, getBgmSearch,
   getTvdbSearch, getImdbSearch, searchFanartPosters
@@ -15,6 +17,7 @@ const PosterSearchModal = ({ visible, onClose, onSelect, defaultKeyword, tmdbId,
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sourceStatus, setSourceStatus] = useState({});
+  const isMobile = useAtomValue(isMobileAtom);
 
   useEffect(() => {
     if (visible && defaultKeyword) {
@@ -145,7 +148,7 @@ const PosterSearchModal = ({ visible, onClose, onSelect, defaultKeyword, tmdbId,
       open={visible}
       onCancel={onClose}
       footer={null}
-      width={700}
+      width={isMobile ? '95vw' : 700}
       destroyOnClose
     >
       <Space.Compact style={{ width: '100%', marginBottom: 16 }}>
@@ -175,7 +178,7 @@ const PosterSearchModal = ({ visible, onClose, onSelect, defaultKeyword, tmdbId,
       )}
 
       {/* 搜索结果列表 */}
-      <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+      <div style={{ maxHeight: isMobile ? '60vh' : 500, overflowY: 'auto' }}>
         {loading && results.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40 }}><Spin tip="搜索中..." /></div>
         ) : results.length === 0 && Object.keys(sourceStatus).length > 0 ? (
@@ -184,45 +187,47 @@ const PosterSearchModal = ({ visible, onClose, onSelect, defaultKeyword, tmdbId,
           <List
             dataSource={results}
             renderItem={(item, index) => (
-              <List.Item
-                key={`${item.source}-${index}`}
-                actions={[
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<CheckOutlined />}
-                    onClick={() => handleSelect(item)}
-                  >
-                    使用此海报
-                  </Button>
-                ]}
-              >
-                <List.Item.Meta
-                  avatar={
+              <List.Item key={`${item.source}-${index}`} style={{ padding: '8px 0' }}>
+                <div style={{ display: 'flex', gap: isMobile ? 8 : 12, width: '100%', alignItems: 'flex-start' }}>
+                  {/* 缩略图 */}
+                  <div style={{ flexShrink: 0 }}>
                     <Image
                       src={item.url}
-                      width={60}
-                      height={85}
+                      width={isMobile ? 48 : 60}
+                      height={isMobile ? 68 : 85}
                       style={{ objectFit: 'cover', borderRadius: 4 }}
                       preview={true}
                       fallback="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iODUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjYwIiBoZWlnaHQ9Ijg1IiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iMzAiIHk9IjQ1IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjYmZiZmJmIiBmb250LXNpemU9IjEyIj7ml6Dlm748L3RleHQ+PC9zdmc+"
                     />
-                  }
-                  title={
-                    <Space>
-                      <span>{item.title}</span>
-                      {item.year && <span style={{ color: 'var(--text-secondary, #999)' }}>({item.year})</span>}
-                      <Tag color={sourceColors[item.source] || 'default'}>{item.source}</Tag>
-                    </Space>
-                  }
-                  description={
+                  </div>
+                  {/* 信息区 */}
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontWeight: 500, fontSize: isMobile ? 13 : 14 }}>{item.title}</span>
+                      {item.year && <span style={{ color: 'var(--text-secondary, #999)', fontSize: 12 }}>({item.year})</span>}
+                      <Tag color={sourceColors[item.source] || 'default'} style={{ marginRight: 0 }}>{item.source}</Tag>
+                    </div>
                     <Tooltip title={item.url}>
-                      <span style={{ fontSize: 12, color: 'var(--text-tertiary, #bbb)' }}>
-                        {item.url?.length > 60 ? item.url.substring(0, 60) + '...' : item.url}
-                      </span>
+                      <div style={{
+                        fontSize: 12, color: 'var(--text-tertiary, #bbb)',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                      }}>
+                        {item.url}
+                      </div>
                     </Tooltip>
-                  }
-                />
+                    {/* 按钮 */}
+                    <div style={{ marginTop: 4 }}>
+                      <Button
+                        type="primary"
+                        size="small"
+                        icon={<CheckOutlined />}
+                        onClick={() => handleSelect(item)}
+                      >
+                        使用此海报
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               </List.Item>
             )}
           />
