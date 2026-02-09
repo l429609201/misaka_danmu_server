@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, orm_models, models, ConfigManager
 from src.rate_limiter import RateLimiter, RateLimitExceededError
-from src.services import ScraperManager, MetadataSourceManager, TaskManager, TaskSuccess, TaskPauseForRateLimit, TitleRecognitionManager
+from src.services import ScraperManager, MetadataSourceManager, TaskManager, TaskSuccess, TitleRecognitionManager
 from .delete import delete_danmaku_file
 from .utils import generate_episode_range_string
 
@@ -86,73 +86,81 @@ async def full_refresh_task(sourceId: int, session: AsyncSession, scraper_manage
                 failed_details[episode_index] = "缺少源站分集ID"
                 continue
 
-            try:
-                # 创建虚拟分集对象用于下载
-                virtual_episode = ProviderEpisodeInfo(
-                    provider=provider_name,
-                    episodeIndex=episode_index,
-                    title=episode.title or f"第{episode_index}集",
-                    episodeId=provider_episode_id,
-                    url=episode.sourceUrl or ""
-                )
+            while True:  # 流控重试循环
+                try:
+                    # 先在外层检查流控（_download_episode_comments_concurrent 内部的
+                    # except Exception 会吞掉 RateLimitExceededError，导致流控错误
+                    # 被当成"无弹幕"静默跳过。在外层显式检查可以让 except
+                    # RateLimitExceededError 正确捕获并原地等待重试）
+                    await rate_limiter.check(scraper.provider_name)
 
-                # 使用并发下载获取弹幕
-                download_results = await _download_episode_comments_concurrent(
-                    scraper, [virtual_episode], rate_limiter,
-                    lambda p, d: progress_callback(progress, d)  # 子进度回调
-                )
-
-                # 提取弹幕数据
-                comments = None
-                if download_results and len(download_results) > 0:
-                    _, comments = download_results[0]
-
-                if not comments or len(comments) == 0:
-                    logger.warning(f"分集 {episode_id} (第{episode_index}集) 未获取到弹幕")
-                    await crud.update_episode_fetch_time(session, episode_id)
-                    skipped_indices.append(episode_index)
-                    continue
-
-                # 智能刷新：比较弹幕数量，只有新弹幕更多才覆盖
-                existing_count = episode.commentCount or 0
-                new_count = len(comments)
-
-                if new_count > existing_count:
-                    # 新弹幕更多，保存
-                    added_count = await crud.save_danmaku_for_episode(
-                        session, episode_id, comments, config_manager
+                    # 创建虚拟分集对象用于下载
+                    virtual_episode = ProviderEpisodeInfo(
+                        provider=provider_name,
+                        episodeIndex=episode_index,
+                        title=episode.title or f"第{episode_index}集",
+                        episodeId=provider_episode_id,
+                        url=episode.sourceUrl or ""
                     )
-                    total_comments_added += added_count
-                    successful_indices.append(episode_index)
-                    logger.info(f"分集 {episode_id} (第{episode_index}集) 刷新成功: {existing_count} -> {new_count} 条弹幕")
-                else:
-                    # 新弹幕不比旧的多，跳过
-                    await crud.update_episode_fetch_time(session, episode_id)
-                    skipped_indices.append(episode_index)
-                    logger.info(f"分集 {episode_id} (第{episode_index}集) 跳过: 新弹幕({new_count}) <= 旧弹幕({existing_count})")
 
-                await session.commit()
+                    # 使用并发下载获取弹幕
+                    download_results = await _download_episode_comments_concurrent(
+                        scraper, [virtual_episode], rate_limiter,
+                        lambda p, d: progress_callback(progress, d)  # 子进度回调
+                    )
 
-                # 短暂休眠，避免请求过快
-                await asyncio.sleep(0.1)
+                    # 提取弹幕数据
+                    comments = None
+                    if download_results and len(download_results) > 0:
+                        _, comments = download_results[0]
 
-            except RateLimitExceededError as e:
-                # 流控错误，暂停任务等待恢复
-                logger.warning(f"分集 {episode_id} (第{episode_index}集) 触发流控: {e}")
-                failed_count += 1
-                failed_details[episode_index] = f"流控限制: {e}"
-                # 抛出暂停异常，让任务管理器处理
-                raise TaskPauseForRateLimit(str(e))
+                    if not comments or len(comments) == 0:
+                        logger.warning(f"分集 {episode_id} (第{episode_index}集) 未获取到弹幕")
+                        await crud.update_episode_fetch_time(session, episode_id)
+                        skipped_indices.append(episode_index)
+                        break  # 跳出 while，进入下一集
 
-            except Exception as e:
-                logger.error(f"分集 {episode_id} (第{episode_index}集) 刷新失败: {e}", exc_info=True)
-                failed_count += 1
-                # 提取简短的错误信息
-                error_msg = str(e)
-                if len(error_msg) > 50:
-                    error_msg = error_msg[:50] + "..."
-                failed_details[episode_index] = error_msg
-                continue
+                    # 智能刷新：比较弹幕数量，只有新弹幕更多才覆盖
+                    existing_count = episode.commentCount or 0
+                    new_count = len(comments)
+
+                    if new_count > existing_count:
+                        # 新弹幕更多，保存
+                        added_count = await crud.save_danmaku_for_episode(
+                            session, episode_id, comments, config_manager
+                        )
+                        total_comments_added += added_count
+                        successful_indices.append(episode_index)
+                        logger.info(f"分集 {episode_id} (第{episode_index}集) 刷新成功: {existing_count} -> {new_count} 条弹幕")
+                    else:
+                        # 新弹幕不比旧的多，跳过
+                        await crud.update_episode_fetch_time(session, episode_id)
+                        skipped_indices.append(episode_index)
+                        logger.info(f"分集 {episode_id} (第{episode_index}集) 跳过: 新弹幕({new_count}) <= 旧弹幕({existing_count})")
+
+                    await session.commit()
+
+                    # 短暂休眠，避免请求过快
+                    await asyncio.sleep(0.1)
+                    break  # 成功处理，跳出 while，进入下一集
+
+                except RateLimitExceededError as e:
+                    # 流控错误，原地等待后重试当前分集
+                    wait_seconds = e.retry_after_seconds
+                    logger.info(f"分集 {episode_id} (第{episode_index}集) 触发流控，原地等待 {wait_seconds:.0f} 秒后重试...")
+                    await progress_callback(progress, f"流控等待中，{wait_seconds:.0f} 秒后继续 ({idx+1}/{total_episodes})...")
+                    await asyncio.sleep(wait_seconds + 1)
+                    continue  # 重试当前分集
+
+                except Exception as e:
+                    logger.error(f"分集 {episode_id} (第{episode_index}集) 刷新失败: {e}", exc_info=True)
+                    failed_count += 1
+                    # 提取简短的错误信息
+                    error_msg = str(e)
+                    if len(error_msg) > 50:
+                        error_msg = error_msg[:50] + "..."
+                    failed_details[episode_index] = error_msg
+                    break  # 失败，跳出 while，进入下一集
 
         # 步骤 3: 构造最终的成功消息
         await progress_callback(98, "正在生成刷新报告...")
@@ -176,8 +184,6 @@ async def full_refresh_task(sourceId: int, session: AsyncSession, scraper_manage
         raise TaskSuccess(final_message)
 
     except TaskSuccess:
-        raise
-    except TaskPauseForRateLimit:
         raise
     except Exception as e:
         await session.rollback()
@@ -337,35 +343,40 @@ async def refresh_bulk_episodes_task(episodeIds: List[int], session: AsyncSessio
 
                 scraper = manager.get_scraper(provider_name)
 
-                # 2. 检查流控
-                try:
-                    await rate_limiter.check(provider_name)
-                except RuntimeError as e:
-                    # 配置错误（如速率限制配置验证失败），跳过当前分集
-                    if "配置验证失败" in str(e):
-                        logger.error(f"配置错误，跳过分集 {episode_id}: {str(e)}")
+                # 2. 检查流控（原地等待重试，避免任务被踢到队列末尾）
+                rate_check_passed = False
+                while True:
+                    try:
+                        await rate_limiter.check(provider_name)
+                        rate_check_passed = True
+                        break  # 通过流控检查
+                    except RuntimeError as e:
+                        # 配置错误（如速率限制配置验证失败），跳过当前分集
+                        if "配置验证失败" in str(e):
+                            logger.error(f"配置错误，跳过分集 {episode_id}: {str(e)}")
+                        else:
+                            logger.error(f"运行时错误，跳过分集 {episode_id}: {str(e)}")
                         failed_episodes.append((episode_index, episode_id))
-                        continue
-                    # 其他 RuntimeError 也应该跳过
-                    logger.error(f"运行时错误，跳过分集 {episode_id}: {str(e)}")
-                    failed_episodes.append((episode_index, episode_id))
-                    continue
-                except RateLimitExceededError as e:
-                    # 判断是全局配额满还是单源配额满
-                    error_msg = str(e)
-                    if "全局速率限制" in error_msg or "__global__" in error_msg:
-                        # 全局配额满，暂停整个任务
-                        logger.warning(f"批量刷新遇到全局速率限制: {e}")
-                        raise TaskPauseForRateLimit(
-                            retry_after_seconds=e.retry_after_seconds,
-                            message=f"全局速率受限，将在 {e.retry_after_seconds:.0f} 秒后自动重试..."
-                        )
-                    else:
-                        # 单源配额满，标记该源并跳过当前分集
-                        rate_limited_providers.add(provider_name)
-                        logger.warning(f"源 '{provider_name}' 配额已满，跳过分集 {episode_id} (第{episode_index}集): {e}")
-                        failed_episodes.append((episode_index, episode_id))
-                        continue
+                        break
+                    except RateLimitExceededError as e:
+                        # 判断是全局配额满还是单源配额满
+                        error_msg = str(e)
+                        if "全局速率限制" in error_msg or "__global__" in error_msg:
+                            # 全局配额满，原地等待后重试
+                            wait_seconds = e.retry_after_seconds
+                            logger.info(f"批量刷新遇到全局速率限制，原地等待 {wait_seconds:.0f} 秒后继续...")
+                            await progress_callback(progress, f"全局流控等待中，{wait_seconds:.0f} 秒后继续 ({i+1}/{total})...")
+                            await asyncio.sleep(wait_seconds + 1)
+                            continue  # 重试流控检查
+                        else:
+                            # 单源配额满，标记该源并跳过当前分集
+                            rate_limited_providers.add(provider_name)
+                            logger.warning(f"源 '{provider_name}' 配额已满，跳过分集 {episode_id} (第{episode_index}集): {e}")
+                            failed_episodes.append((episode_index, episode_id))
+                            break
+
+                if not rate_check_passed:
+                    continue  # 流控检查未通过，跳过当前分集
 
                 # 3. 下载弹幕
                 virtual_episode = ProviderEpisodeInfo(
