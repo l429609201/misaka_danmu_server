@@ -19,8 +19,9 @@ import {
   Collapse,
   Typography,
   Dropdown,
+  Image,
 } from 'antd'
-import { QuestionCircleOutlined, MenuOutlined, FolderOpenOutlined } from '@ant-design/icons'
+import { QuestionCircleOutlined, MenuOutlined, FolderOpenOutlined, SearchOutlined, LinkOutlined, EyeOutlined } from '@ant-design/icons'
 import {
   createAnimeEntry,
   deleteAnime,
@@ -41,6 +42,7 @@ import {
   setAnimeDetail,
   toggleSourceFavorite,
   toggleSourceIncremental,
+  downloadPosterToLocal,
 } from '../../apis'
 import { MyIcon } from '@/components/MyIcon'
 import { DANDAN_TYPE_DESC_MAPPING, DANDAN_TYPE_MAPPING } from '../../configs'
@@ -54,6 +56,7 @@ import { useModal } from '../../ModalContext'
 import { useMessage } from '../../MessageContext'
 import { ResponsiveTable } from '@/components/ResponsiveTable'
 import DirectoryBrowser from '../media-fetch/components/DirectoryBrowser'
+import PosterSearchModal from '../media-fetch/components/PosterSearchModal'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../store/index.js'
 import { useDefaultPageSize } from '../../hooks/useDefaultPageSize'
@@ -121,6 +124,12 @@ export const Library = () => {
   const imageUrl = Form.useWatch('imageUrl', form)
   const egidValue = Form.useWatch('tmdbEpisodeGroupId', form)
   const [fetchedMetadata, setFetchedMetadata] = useState(null)
+
+  // 海报搜索与本地海报状态
+  const [posterSearchVisible, setPosterSearchVisible] = useState(false)
+  const [localImagePath, setLocalImagePath] = useState(null)
+  const [downloadingLocal, setDownloadingLocal] = useState(false)
+  const [previewVisible, setPreviewVisible] = useState(false)
 
   const modalApi = useModal()
   const messageApi = useMessage()
@@ -306,6 +315,7 @@ export const Library = () => {
                     ...(res.data || {}),
                     animeId: record.animeId,
                   })
+                  setLocalImagePath(res.data?.localImagePath || null)
                   setEditOpen(true)
                 }}
               >
@@ -1193,6 +1203,7 @@ export const Library = () => {
                       ...(res.data || {}),
                       animeId: record.animeId,
                     })
+                    setLocalImagePath(res.data?.localImagePath || null)
                     setEditOpen(true)
                   }}
                 >
@@ -1263,6 +1274,7 @@ export const Library = () => {
         onCancel={() => {
           setEditOpen(false)
           setFetchedMetadata(null)
+          setLocalImagePath(null)
         }}
         zIndex={100}
       >
@@ -1307,27 +1319,62 @@ export const Library = () => {
               placeholder="请输入发行年份"
             />
           </Form.Item>
-          <Form.Item name="imageUrl" label="海报URL">
-            <Input
-              addonAfter={
-                <div
-                  className="cursor-pointer"
+          <Form.Item label="海报URL">
+            <Space.Compact style={{ width: '100%' }}>
+              <Form.Item name="imageUrl" noStyle>
+                <Input placeholder="https://..." style={{ flex: 1 }} />
+              </Form.Item>
+              <Tooltip title="搜索海报">
+                <Button
+                  icon={<SearchOutlined />}
+                  onClick={() => setPosterSearchVisible(true)}
+                />
+              </Tooltip>
+              <Tooltip title="URL直搜（下载到本地）">
+                <Button
+                  icon={<LinkOutlined />}
+                  loading={downloadingLocal}
+                  onClick={async () => {
+                    if (!imageUrl) {
+                      messageApi.warning('请先填写海报URL')
+                      return
+                    }
+                    setDownloadingLocal(true)
+                    try {
+                      const res = await downloadPosterToLocal({
+                        imageUrl,
+                        title: title || '',
+                        season: form.getFieldValue('season') || 1,
+                        year: form.getFieldValue('year') || undefined,
+                      })
+                      if (res?.data?.localImagePath) {
+                        setLocalImagePath(res.data.localImagePath)
+                        messageApi.success('海报已下载到本地')
+                      } else {
+                        messageApi.error('下载失败')
+                      }
+                    } catch (error) {
+                      messageApi.error(`下载失败: ${error?.response?.data?.detail || error.message}`)
+                    } finally {
+                      setDownloadingLocal(false)
+                    }
+                  }}
+                />
+              </Tooltip>
+              <Tooltip title="刷新海报缓存">
+                <Button
+                  icon={<MyIcon icon="refresh" size={16} />}
                   onClick={async () => {
                     try {
-                      await refreshPoster({
-                        animeId,
-                        imageUrl: imageUrl,
-                      })
+                      await refreshPoster({ animeId, imageUrl })
                       messageApi.success('海报已刷新并缓存成功！')
                     } catch (error) {
                       messageApi.error(`刷新海报失败: ${error.message}`)
                     }
                   }}
-                >
-                  <MyIcon icon="refresh" size={20} />
-                </div>
-              }
-            />
+                />
+              </Tooltip>
+            </Space.Compact>
           </Form.Item>
           {!!fetchedMetadata?.imageUrl &&
             fetchedMetadata?.imageUrl !== imageUrl && (
@@ -1344,6 +1391,24 @@ export const Library = () => {
                 </Button>
               </Form.Item>
             )}
+
+          {/* 本地海报行 */}
+          <Form.Item label="本地海报">
+            <Space style={{ width: '100%' }}>
+              <Input
+                value={localImagePath || '暂无'}
+                readOnly
+                style={{ flex: 1, minWidth: 300, color: localImagePath ? undefined : 'var(--text-tertiary, #999)' }}
+              />
+              <Tooltip title="预览海报">
+                <Button
+                  icon={<EyeOutlined />}
+                  disabled={!localImagePath}
+                  onClick={() => setPreviewVisible(true)}
+                />
+              </Tooltip>
+            </Space>
+          </Form.Item>
 
           <Form.Item name="tmdbId" label="TMDB ID">
             <Input.Search
@@ -2299,6 +2364,32 @@ export const Library = () => {
           </div>
         )}
       </Modal>
+
+      {/* 海报搜索弹窗 */}
+      <PosterSearchModal
+        visible={posterSearchVisible}
+        onClose={() => setPosterSearchVisible(false)}
+        onSelect={(posterUrl) => {
+          form.setFieldsValue({ imageUrl: posterUrl })
+          messageApi.success('已填入海报URL')
+        }}
+        defaultKeyword={title || ''}
+        tmdbId={tmdbId}
+        tvdbId={tvdbId}
+        mediaType={type === 'movie' ? 'movie' : 'tv'}
+      />
+
+      {/* 本地海报预览 */}
+      {previewVisible && localImagePath && (
+        <Image
+          style={{ display: 'none' }}
+          preview={{
+            visible: previewVisible,
+            src: localImagePath,
+            onVisibleChange: (vis) => setPreviewVisible(vis),
+          }}
+        />
+      )}
     </div>
   )
 }
