@@ -343,6 +343,20 @@ class TmdbAutoMapJob(BaseJob):
                         "aliases_cn": details.aliasesCn
                     }
 
+                # 步骤 3.5: 如果识别到季度>=2，为中文别名追加季度后缀
+                # 无论是否开启剧集组刮削，都需要确保别名与标题中的季度信息一致
+                if recognized_season is not None and recognized_season >= 2 and aliases_to_update:
+                    season_suffix = f" 第{recognized_season}季"
+                    if aliases_to_update.get("aliases_cn"):
+                        updated_cn_aliases = []
+                        for cn_alias in aliases_to_update["aliases_cn"]:
+                            if cn_alias and not cn_alias.endswith(season_suffix):
+                                updated_cn_aliases.append(cn_alias + season_suffix)
+                            else:
+                                updated_cn_aliases.append(cn_alias)
+                        aliases_to_update["aliases_cn"] = updated_cn_aliases
+                        self.logger.info(f"为 '{title}' 的中文别名追加季度后缀: {season_suffix}")
+
                 # 步骤 4: 智能季度匹配 - 两级查找逻辑 (仅适用于TV系列)
                 # 第一级: 使用seasons信息进行匹配(方案A)
                 # 第二级: 使用"Seasons"剧集组进行匹配(方案C)
@@ -350,13 +364,13 @@ class TmdbAutoMapJob(BaseJob):
                 # 电影类型或未开启剧集组刮削时，跳过剧集组处理，直接更新别名
                 if show.get('type') == 'movie' or not enable_episode_group:
                     skip_reason = "电影类型" if show.get('type') == 'movie' else "未开启剧集组刮削"
-                    self.logger.info(f"'{title}' {skip_reason},跳过剧集组处理。")
+                    self.logger.info(f"'{title}' {skip_reason}，跳过剧集组处理。")
                     # 更新别名到数据库
                     if aliases_to_update and any(aliases_to_update.values()):
                         updated_fields = await crud.update_anime_aliases_if_empty(session, anime_id, aliases_to_update, force_update=force_update)
                         if updated_fields:
                             mode_str = "(AI修正模式)" if force_update else ""
-                            self.logger.info(f"为电影 '{title}' 更新了别名{mode_str}: {', '.join(updated_fields)}")
+                            self.logger.info(f"为 '{title}' 更新了别名{mode_str}: {', '.join(updated_fields)}")
                     await session.commit()
                     processed_count += 1
                     continue
