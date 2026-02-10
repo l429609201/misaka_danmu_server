@@ -279,6 +279,15 @@ class TmdbAutoMapJob(BaseJob):
                         self.logger.error(f"搜索 '{title}' 时发生错误: {e}")
                         continue
 
+                # 步骤 1.5: 对于已有TMDB ID的作品，也需要识别季度信息
+                # （搜索分支内的AI识别和正则提取只在没有TMDB ID时执行）
+                if recognized_season is None:
+                    from src.utils import parse_search_keyword
+                    parsed = parse_search_keyword(title)
+                    if parsed.get("season") is not None:
+                        recognized_season = parsed["season"]
+                        self.logger.info(f"正则提取季度(已有TMDB ID): '{title}' → season={recognized_season}")
+
                 # 步骤 2: 获取媒体详情，包括别名
                 # 根据作品类型决定mediaType参数
                 media_type_for_details = "movie" if search_type == "movie" else "tv"
