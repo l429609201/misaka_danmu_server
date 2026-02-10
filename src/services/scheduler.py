@@ -124,6 +124,7 @@ class SchedulerManager:
                 task_info = await crud.get_scheduled_task(session, scheduled_task_id)
                 if task_info:
                     task_config = task_info.get('taskConfig', {})
+            logger.info(f"定时任务 '{scheduled_task_id}' (类型: {job_type}) 读取到 taskConfig: {task_config}")
 
             # 修正：智能地将依赖项传递给任务的构造函数
             # 这使得像 TmdbAutoMapJob 这样的任务可以选择不接收 rate_limiter
