@@ -138,7 +138,9 @@ async def update_scheduled_task(
         task.name = name
         task.cronExpression = cron
         task.isEnabled = is_enabled
-        task.taskConfig = json.dumps(task_config or {}, ensure_ascii=False)
+        serialized_config = json.dumps(task_config or {}, ensure_ascii=False)
+        logger.info(f"[调试] CRUD update_scheduled_task '{task_id}' - task_config 入参: {task_config}, 序列化后: {serialized_config}")
+        task.taskConfig = serialized_config
 
     await session.commit()
     return True
