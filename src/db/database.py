@@ -135,6 +135,7 @@ async def create_db_engine_and_session(app: FastAPI):
         db_type = settings.database.type.lower()
         engine_args = {
             "echo": False,
+            "pool_pre_ping": True,
             "pool_recycle": 3600,
             "pool_size": 20,
             "max_overflow": 40,
