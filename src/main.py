@@ -17,7 +17,7 @@ from sqlalchemy import text
 # 内部模块导入 - 使用聚合式导入
 from src.core import settings
 from src.core.default_configs import get_default_configs
-from src.db import crud, orm_models, init_db_tables, close_db_engine, create_initial_admin_user, get_db_type
+from src.db import crud, orm_models, init_db_tables, close_db_engine, create_initial_admin_user, get_db_type, DatabaseStartupError
 from src.db import ConfigManager, CacheManager  # 管理器从 db 层导入
 from src.services import (
     TaskManager, MetadataSourceManager, ScraperManager, WebhookManager,
@@ -97,7 +97,11 @@ async def lifespan(app: FastAPI):
     _ensure_required_directories()
 
     # init_db_tables 现在处理数据库创建、引擎和会话工厂的创建
-    await init_db_tables(app)
+    try:
+        await init_db_tables(app)
+    except DatabaseStartupError:
+        import os
+        os._exit(1)
     session_factory = app.state.db_session_factory
 
     # 新增：在启动时清理任何未完成的任务

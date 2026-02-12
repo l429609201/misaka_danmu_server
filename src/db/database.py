@@ -13,6 +13,11 @@ from .migrations import run_migrations
 # 使用模块级日志记录器
 logger = logging.getLogger(__name__)
 
+
+class DatabaseStartupError(Exception):
+    """数据库启动失败异常，用于在 lifespan 中捕获并干净退出"""
+    pass
+
 # 全局 session_factory，在应用启动时设置
 _global_session_factory = None
 
@@ -151,10 +156,8 @@ async def create_db_engine_and_session(app: FastAPI):
 
         logger.info("数据库引擎和会话工厂创建成功。")
     except Exception as e:
-        # 修正：调用标准化的错误日志函数，并提供更精确的上下文
         _log_db_connection_error(f"连接目标数据库 '{settings.database.name}'", e)
-        import sys
-        sys.exit(1)  # 直接退出，避免显示Traceback
+        raise DatabaseStartupError("数据库连接失败") from None
 
 async def _create_db_if_not_exists():
     """如果数据库不存在，则使用 SQLAlchemy 引擎创建它。"""
@@ -192,10 +195,8 @@ async def _create_db_if_not_exists():
             else:
                 logger.info(f"数据库 '{db_name}' 已存在，跳过创建。")
     except Exception as e:
-        # 修正：调用标准化的错误日志函数，并提供更精确的上下文
         _log_db_connection_error("检查或创建数据库时连接服务器", e)
-        import sys
-        sys.exit(1)  # 直接退出，避免显示Traceback
+        raise DatabaseStartupError("数据库连接失败") from None
     finally:
         await engine.dispose()
 

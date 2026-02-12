@@ -18,6 +18,7 @@ from .database import (
     init_db_tables,
     close_db_engine,
     create_initial_admin_user,
+    DatabaseStartupError,
 )
 
 # Pydantic 模型
