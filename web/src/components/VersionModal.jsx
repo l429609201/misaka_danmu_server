@@ -278,7 +278,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
                   <CloudServerOutlined />
                   <span>{dockerStats.containerName || '容器状态'}</span>
                   <Tag color={dockerStats.status === 'running' ? 'success' : 'warning'} className="!ml-2">
-                    {dockerStats.status}
+                    {{ running: '运行中', exited: '已停止', paused: '已暂停', restarting: '重启中', created: '已创建', dead: '已终止' }[dockerStats.status] || dockerStats.status}
                   </Tag>
                 </div>
               }
