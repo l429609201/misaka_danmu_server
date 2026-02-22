@@ -1,5 +1,7 @@
 import { Empty, Spin, Tabs } from 'antd'
 import { useState, useEffect } from 'react'
+import { useAtomValue } from 'jotai'
+import { isMobileAtom } from '../../../../store'
 import {
   getConfigSchema,
   getGithubToken,
@@ -32,6 +34,7 @@ const CUSTOM_COMPONENT_TYPES = {
 export const Parameters = () => {
   const [schema, setSchema] = useState([])
   const [loading, setLoading] = useState(true)
+  const isMobile = useAtomValue(isMobileAtom)
 
   useEffect(() => {
     loadSchema()
@@ -99,7 +102,7 @@ export const Parameters = () => {
       key: group.key,
       label: group.label,
       children: (
-        <div className="py-2">
+        <div className="py-2 pb-4">
           {group.items?.map((item) => (
             <GenericConfigItem key={item.key} config={enrichConfig(item)} />
           ))}
@@ -114,7 +117,7 @@ export const Parameters = () => {
     <Tabs
       defaultActiveKey={schema[0]?.key}
       items={tabItems}
-      tabPosition="left"
+      tabPosition={isMobile ? 'top' : 'left'}
       className="parameters-tabs"
     />
   )

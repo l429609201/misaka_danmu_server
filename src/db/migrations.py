@@ -651,6 +651,31 @@ async def _drop_force_scrape_column_v1(conn: AsyncConnection, db_type: str):
     logger.info("已删除 scheduled_tasks 表的 force_scrape 列")
 
 
+# 所有迁移任务的 ID 列表（新增迁移时需同步更新此列表）
+ALL_MIGRATION_IDS = [
+    "migrate_clear_rate_limit_state_v1",
+    "rollback_to_original_types_v1",
+    "fix_api_tokens_id_autoincrement_v2",
+    "rename_duplicate_idx_created_at_v1",
+    "fix_title_recognition_id_autoincrement_v1",
+    "migrate_docker_image_name_v1",
+    "drop_force_scrape_column_v1",
+]
+
+
+async def mark_all_migrations_done(conn: AsyncConnection):
+    """
+    将所有迁移标记为已完成（用于全新数据库初始化场景）。
+
+    全新数据库由 create_all 直接按 ORM 模型创建，表结构已经是最新的，
+    不需要执行任何迁移。但需要设置标志位，避免下次启动时误执行迁移。
+    """
+    for migration_id in ALL_MIGRATION_IDS:
+        if not await _check_migration_flag(conn, migration_id):
+            await _set_migration_flag(conn, migration_id)
+    logger.info(f"全新数据库：已标记 {len(ALL_MIGRATION_IDS)} 个迁移为已完成，跳过实际执行。")
+
+
 async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
     """
     按顺序执行所有数据库架构迁移。

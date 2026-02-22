@@ -5,7 +5,7 @@ import logging
 from typing import List, Optional
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -93,10 +93,20 @@ async def create_backup_now(
 @router.get("/download/{filename}", summary="下载备份文件")
 async def download_backup(
     filename: str,
-    current_user: models.User = Depends(security.get_current_user),
+    request: Request,
+    token: Optional[str] = Query(None, description="JWT token（用于 window.open 等无法携带 Header 的场景）"),
+    header_token: Optional[str] = Depends(security.oauth2_scheme_optional),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """下载指定的备份文件"""
+    """下载指定的备份文件，支持 query parameter 传递 token"""
+    # query parameter 优先（window.open 场景），否则用 header
+    final_token = token or header_token
+    current_user = await security.get_current_user(
+        request=request,
+        token=final_token,
+        session=session,
+    )
+    _ = current_user
     # 安全检查
     if not filename.startswith("danmuapi_backup_") or not filename.endswith(".json.gz"):
         raise HTTPException(status_code=400, detail="无效的备份文件名")

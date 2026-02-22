@@ -48,14 +48,21 @@ DANMAKU_BASE_DIR = CONFIG_DIR / "danmaku"
 
 
 def get_fs_path_from_web_path(web_path: str) -> Optional[Path]:
-    """将web路径转换为文件系统路径"""
+    """将web路径转换为文件系统路径
+
+    支持两种路径格式:
+    1. Docker 标准路径: /app/config/danmaku/xxx/yyy.xml → {CONFIG_DIR}/danmaku/xxx/yyy.xml
+    2. 自定义绝对路径: /opt/xxx/yyy.xml → /opt/xxx/yyy.xml (直接使用)
+    """
     if not web_path:
         return None
-    # web_path 格式: /app/config/danmaku/xxx/yyy.xml
-    # 实际路径: {config_path}/danmaku/xxx/yyy.xml
+    # Docker 标准路径格式
     if web_path.startswith("/app/config/"):
         relative_path = web_path[len("/app/config/"):]
         return CONFIG_DIR / relative_path
+    # 自定义绝对路径（Linux 或 Windows）
+    if web_path.startswith("/") or (len(web_path) >= 2 and web_path[1] == ':'):
+        return Path(web_path)
     return None
 
 
@@ -282,9 +289,8 @@ async def preview_rename_danmaku(
                 else:
                     new_name = old_name
 
-                # 构建新路径
-                dir_path = old_path.rsplit('/', 1)[0] if '/' in old_path else ''
-                new_path = f"{dir_path}/{new_name}" if dir_path else new_name
+                # 构建新路径 - 使用 Path 确保分隔符一致
+                new_path = str(Path(old_path).parent / new_name)
 
                 results["totalCount"] += 1
                 results["previewItems"].append({
@@ -508,9 +514,8 @@ async def preview_apply_template(
         base_dir = "/app/config/danmaku"
         template = "${animeId}/${episodeId}"
 
-    # 转换base_dir为web路径格式
-    if not base_dir.startswith("/app/config/"):
-        base_dir = "/app/config/" + base_dir.lstrip("/")
+    # 保持 base_dir 原样，不再强制转换为 /app/config/ 格式
+    # 自定义路径（如 /opt/xxx）应保持原样
 
     for anime_id in anime_ids:
         episodes = await get_episodes_for_anime(session, anime_id)
@@ -554,10 +559,8 @@ async def preview_apply_template(
                 # 清理非法字符
                 relative_path = re.sub(r'[<>:"|?*]', '_', relative_path)
 
-                # 确保路径拼接不会出现双斜杠
-                base_dir_clean = base_dir.rstrip('/')
-                relative_path_clean = relative_path.lstrip('/')
-                new_path = f"{base_dir_clean}/{relative_path_clean}.xml"
+                # 使用 Path 拼接确保路径分隔符与操作系统一致
+                new_path = str(Path(base_dir) / f"{relative_path.lstrip('/')}.xml")
 
                 results["totalCount"] += 1
                 results["previewItems"].append({

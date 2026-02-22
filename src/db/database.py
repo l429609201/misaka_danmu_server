@@ -254,10 +254,25 @@ async def create_initial_admin_user(app: FastAPI):
     print(f"=== 请使用以下随机生成的密码登录: {admin_pass} ".ljust(56) + "===")
     print("="*60 + "\n")
 
+async def _is_fresh_database(engine) -> bool:
+    """
+    检测是否为全新的空数据库（没有任何应用表）。
+    通过检查核心表 'config' 是否存在来判断。
+    """
+    db_type = get_db_type()
+    async with engine.connect() as conn:
+        if db_type == "mysql":
+            sql = text("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'config'")
+        else:  # postgresql
+            sql = text("SELECT 1 FROM information_schema.tables WHERE table_name = 'config'")
+        result = await conn.execute(sql)
+        return result.scalar_one_or_none() is None
+
+
 async def init_db_tables(app: FastAPI):
     """初始化数据库和表"""
     from .db_maintainer import sync_database_schema
-    from .migrations import run_migrations
+    from .migrations import run_migrations, mark_all_migrations_done
 
     # 1. 确保数据库存在
     await _create_db_if_not_exists()
@@ -265,15 +280,27 @@ async def init_db_tables(app: FastAPI):
     # 2. 创建数据库引擎和会话工厂
     await create_db_engine_and_session(app)
 
-    # 3. 创建所有表（基于 ORM 模型）
     engine = app.state.db_engine
+
+    # 3. 检测是否为全新数据库（在 create_all 之前检查）
+    is_fresh = await _is_fresh_database(engine)
+
+    # 4. 创建所有表（基于 ORM 模型）
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # 4. 同步数据库结构（自动检测并补充缺失的字段）
-    async with engine.begin() as conn:
-        await sync_database_schema(conn, settings.database.type.lower())
+    if is_fresh:
+        # 全新数据库：create_all 已按 ORM 模型正确创建所有表，
+        # 无需同步字段或执行迁移，只需标记所有迁移为已完成
+        logger.info("检测到全新数据库，跳过结构同步和历史迁移。")
+        async with engine.begin() as conn:
+            await mark_all_migrations_done(conn)
+    else:
+        # 已有数据库：执行正常的同步和迁移流程
+        # 5. 同步数据库结构（自动检测并补充缺失的字段）
+        async with engine.begin() as conn:
+            await sync_database_schema(conn, settings.database.type.lower())
 
-    # 5. 执行数据库迁移任务
-    async with engine.begin() as conn:
-        await run_migrations(conn, settings.database.type.lower(), settings.database.name)
+        # 6. 执行数据库迁移任务
+        async with engine.begin() as conn:
+            await run_migrations(conn, settings.database.type.lower(), settings.database.name)

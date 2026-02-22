@@ -244,6 +244,7 @@ async def search_anime_provider(
             ]
             timer.step_end(details=f"{len(all_results)}个结果", sub_steps=source_timing_sub_steps)
             logger.info(f"直接搜索完成，找到 {len(all_results)} 个原始结果。")
+            results = all_results
             filter_aliases = set(search_titles)  # 使用所有搜索标题作为过滤别名
         else:
             # 检查是否有启用的弹幕源 - 在辅助搜索之前先检查

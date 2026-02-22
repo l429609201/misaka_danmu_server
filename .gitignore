@@ -19,5 +19,7 @@ src/rate_limiter.py
 .vscode/settings.json
 generator_config.ini
 src/scrapers/*
-!src/scrapers/base.py
+config/*
+!config/config.yml
 .augment/rules/rule-name.md
+

@@ -3,6 +3,8 @@ import { Button, Input, InputNumber, Switch, Select, Tag } from 'antd'
 import { CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons'
 import { getConfig, setConfig } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
+import { useAtomValue } from 'jotai'
+import { isMobileAtom } from '../../../../store'
 
 /**
  * 通用配置项组件
@@ -14,6 +16,7 @@ export const GenericConfigItem = ({ config }) => {
   const [saving, setSaving] = useState(false)
   const [verifyInfo, setVerifyInfo] = useState(null)
   const messageApi = useMessage()
+  const isMobile = useAtomValue(isMobileAtom)
 
   // 加载配置值
   useEffect(() => {
@@ -182,21 +185,45 @@ export const GenericConfigItem = ({ config }) => {
     }
   }
 
+  const isBoolean = config.type === 'boolean'
+
   return (
-    <div className="mb-6">
+    <div className={isMobile ? 'mb-4' : 'mb-6'}>
       <div className="mb-1 font-medium">{config.label}</div>
       {config.description && (
         <div className="text-sm text-gray-500 mb-2">{config.description}</div>
       )}
-      <div className="flex items-start gap-2">
-        <div className="flex-1">
+      {isBoolean ? (
+        // 开关类型：始终横排，开关在左，保存按钮在右
+        <div className="flex items-center justify-between">
           {renderInput()}
-          {renderVerifyInfo()}
+          <Button type="primary" onClick={handleSave} loading={saving}>
+            保存
+          </Button>
         </div>
-        <Button type="primary" onClick={handleSave} loading={saving}>
-          保存
-        </Button>
-      </div>
+      ) : isMobile ? (
+        // 手机端非开关类型：竖排
+        <div className="flex flex-col gap-8">
+          <div>
+            {renderInput()}
+            {renderVerifyInfo()}
+          </div>
+          <Button type="primary" onClick={handleSave} loading={saving} block>
+            保存
+          </Button>
+        </div>
+      ) : (
+        // PC端非开关类型：横排
+        <div className="flex items-start gap-2">
+          <div className="flex-1">
+            {renderInput()}
+            {renderVerifyInfo()}
+          </div>
+          <Button type="primary" onClick={handleSave} loading={saving}>
+            保存
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

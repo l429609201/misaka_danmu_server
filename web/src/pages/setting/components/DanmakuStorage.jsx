@@ -493,7 +493,9 @@ const DanmakuStorage = () => {
     });
     const movieDir = movieDanmakuDirectoryPath.replace(/[\/\\]+$/, '');
     const movieFilename = moviePreview.replace(/^[\/\\]+/, '');
-    const movieFullPath = `${movieDir}/${movieFilename}${movieFilename.endsWith('.xml') ? '' : '.xml'}`;
+    // 检测目录路径使用的分隔符，保持一致
+    const sep = movieDir.includes('\\') ? '\\' : '/';
+    const movieFullPath = `${movieDir}${sep}${movieFilename.replace(/[\/\\]/g, sep)}${movieFilename.endsWith('.xml') ? '' : '.xml'}`;
     setMoviePreviewPath(movieFullPath);
 
     // 生成电视预览
@@ -512,7 +514,8 @@ const DanmakuStorage = () => {
     });
     const tvDir = tvDanmakuDirectoryPath.replace(/[\/\\]+$/, '');
     const tvFilename = tvPreview.replace(/^[\/\\]+/, '');
-    const tvFullPath = `${tvDir}/${tvFilename}${tvFilename.endsWith('.xml') ? '' : '.xml'}`;
+    const tvSep = tvDir.includes('\\') ? '\\' : '/';
+    const tvFullPath = `${tvDir}${tvSep}${tvFilename.replace(/[\/\\]/g, tvSep)}${tvFilename.endsWith('.xml') ? '' : '.xml'}`;
     setTvPreviewPath(tvFullPath);
   };
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Button, Table, Space, Tag, Modal, Input, Alert, Spin, Popconfirm, message } from 'antd'
+import { Button, Table, Space, Tag, Modal, Input, Alert, Spin, Popconfirm, Card, Empty, message } from 'antd'
+import Cookies from 'js-cookie'
 import {
   CloudDownloadOutlined,
   DeleteOutlined,
@@ -11,6 +12,8 @@ import {
   UploadOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
+import { useAtomValue } from 'jotai'
+import { isMobileAtom } from '../../../../store'
 import {
   getBackupList,
   createBackup,
@@ -28,6 +31,7 @@ import {
  */
 export const DatabaseBackupManager = () => {
   const navigate = useNavigate()
+  const isMobile = useAtomValue(isMobileAtom)
   const [backups, setBackups] = useState([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -105,7 +109,9 @@ export const DatabaseBackupManager = () => {
   }
 
   const handleDownload = (filename) => {
-    window.open(downloadBackup(filename), '_blank')
+    const token = Cookies.get('danmu_token')
+    const url = downloadBackup(filename)
+    window.open(token ? `${url}?token=${encodeURIComponent(token)}` : url, '_blank')
   }
 
   const openRestoreModal = (record) => {
@@ -255,9 +261,9 @@ export const DatabaseBackupManager = () => {
 
   return (
     <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-      <div className="flex items-center justify-between mb-4">
+      <div className={`flex ${isMobile ? 'flex-col gap-3' : 'items-center justify-between'} mb-4`}>
         <h3 className="text-base font-medium">📦 数据库备份管理</h3>
-        <Space>
+        <Space wrap>
           <Button
             icon={<UploadOutlined />}
             onClick={openUploadModal}
@@ -278,19 +284,21 @@ export const DatabaseBackupManager = () => {
       {/* 定时任务状态 */}
       <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: 'var(--color-hover)' }}>
         {jobStatus?.exists ? (
-          <div className="flex items-center gap-2">
-            <ClockCircleOutlined className="text-blue-500" />
-            <span>定时备份:</span>
-            {jobStatus.enabled ? (
-              <>
+          <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center gap-2'}`}>
+            <div className="flex items-center gap-2">
+              <ClockCircleOutlined className="text-blue-500" />
+              <span>定时备份:</span>
+              {jobStatus.enabled ? (
                 <Tag icon={<CheckCircleOutlined />} color="success">已启用</Tag>
-                <span className="text-gray-500 dark:text-gray-400">
-                  执行周期: {jobStatus.cron_expression}
-                  {jobStatus.next_run_time && ` | 下次执行: ${formatDate(jobStatus.next_run_time)}`}
-                </span>
-              </>
-            ) : (
-              <Tag color="default">已暂停</Tag>
+              ) : (
+                <Tag color="default">已暂停</Tag>
+              )}
+            </div>
+            {jobStatus.enabled && (
+              <span className="text-gray-500 dark:text-gray-400 text-sm">
+                执行周期: {jobStatus.cron_expression}
+                {jobStatus.next_run_time && ` | 下次执行: ${formatDate(jobStatus.next_run_time)}`}
+              </span>
             )}
             <Button type="link" size="small" onClick={goToScheduledTasks}>
               前往配置 →
@@ -309,15 +317,62 @@ export const DatabaseBackupManager = () => {
 
       {/* 备份列表 */}
       <Spin spinning={loading}>
-        <Table
-          rowKey="filename"
-          columns={columns}
-          dataSource={backups}
-          rowSelection={rowSelection}
-          size="small"
-          pagination={false}
-          locale={{ emptyText: '暂无备份文件' }}
-        />
+        {isMobile ? (
+          backups.length === 0 ? (
+            <Empty description="暂无备份文件" />
+          ) : (
+            <div className="space-y-3">
+              {backups.map((record) => (
+                <Card key={record.filename} size="small" className="shadow-sm">
+                  <div className="space-y-2">
+                    <div className="font-medium text-sm break-all">{record.filename}</div>
+                    <div className="flex items-center gap-3 text-xs text-gray-500">
+                      {record.db_type && <Tag color="blue" className="!text-xs">{record.db_type.toUpperCase()}</Tag>}
+                      <span>{formatSize(record.size)}</span>
+                      <span>{formatDate(record.created_at)}</span>
+                    </div>
+                    <div className="flex gap-2 pt-1 border-t border-gray-100 dark:border-gray-700">
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<CloudDownloadOutlined />}
+                        onClick={() => handleDownload(record.filename)}
+                      >
+                        下载
+                      </Button>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        onClick={() => openRestoreModal(record)}
+                      >
+                        还原
+                      </Button>
+                      <Popconfirm
+                        title="确定删除此备份？"
+                        onConfirm={() => handleDelete(record.filename)}
+                      >
+                        <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                          删除
+                        </Button>
+                      </Popconfirm>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )
+        ) : (
+          <Table
+            rowKey="filename"
+            columns={columns}
+            dataSource={backups}
+            rowSelection={rowSelection}
+            size="small"
+            pagination={false}
+            locale={{ emptyText: '暂无备份文件' }}
+          />
+        )}
       </Spin>
 
       {/* 批量操作 */}
