@@ -4,6 +4,7 @@ import { Proxy } from './components/Proxy'
 import { Parameters } from './components/Parameters'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Recognition } from './components/Recognition'
+import { Notification } from './components/Notification'
 import AutoMatchSetting from './components/AutoMatchSetting'
 import { MobileTabs } from '@/components/MobileTabs'
 import { useAtomValue } from 'jotai'
@@ -30,6 +31,11 @@ export const Setting = () => {
       label: 'Webhook',
       key: 'webhook',
       children: <Webhook />,
+    },
+    {
+      label: '通知与交互',
+      key: 'notification',
+      children: <Notification />,
     },
     {
       label: '识别词配置',

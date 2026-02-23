@@ -31,7 +31,8 @@ async def save_tmdb_episode_group_mappings(session: AsyncSession, tmdb_tv_id: in
                     tmdbTvId=tmdb_tv_id, tmdbEpisodeGroupId=group_id, tmdbEpisodeId=episode.id,
                     tmdbSeasonNumber=episode.seasonNumber, tmdbEpisodeNumber=episode.episodeNumber,
                     customSeasonNumber=custom_season_group.order, customEpisodeNumber=custom_episode_index + 1,
-                    absoluteEpisodeNumber=episode.episodeNumber
+                    absoluteEpisodeNumber=episode.episodeNumber,
+                    episodeName=episode.name
                 )
             )
     if mappings_to_insert:
@@ -72,7 +73,7 @@ async def get_episode_group_mappings(session: AsyncSession, group_id: str) -> Op
             "seasonNumber": m.tmdbSeasonNumber,
             "episodeNumber": m.tmdbEpisodeNumber,
             "order": m.customEpisodeNumber - 1,  # customEpisodeNumber 从1开始，order从0开始
-            "name": "",
+            "name": m.episodeName or "",
         })
 
     groups = sorted(groups_dict.values(), key=lambda g: g["order"])

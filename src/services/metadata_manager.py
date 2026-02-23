@@ -139,8 +139,8 @@ class MetadataSourceManager:
         if _is_docker_environment():
             sources_package_path = [str(Path("/app/src/metadata_sources"))]
         else:
-            # 源码运行环境，使用相对路径
-            sources_package_path = [str(Path(__file__).parent / "metadata_sources")]
+            # 源码运行环境：__file__ 在 src/services/ 下，需要往上一级到 src/，再拼 metadata_sources
+            sources_package_path = [str(Path(__file__).parent.parent / "metadata_sources")]
         for finder, name, ispkg in pkgutil.iter_modules(sources_package_path):
             if name.startswith("_") or name == "base":
                 continue

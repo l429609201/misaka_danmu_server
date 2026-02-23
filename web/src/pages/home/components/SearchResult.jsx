@@ -331,20 +331,14 @@ export const SearchResult = () => {
 
   // 当没有过滤条件且有新数据时，更新可用的年份和来源列表
   useEffect(() => {
-    // 只有在没有任何过滤条件时，才更新可用列表
-    if (yearFilter === 'all' && providerFilter === 'all' && typeFilter === 'all' && !keyword) {
-      if (lastSearchResultData.results?.length) {
-        const yearSet = new Set()
-        const providerSet = new Set()
-        lastSearchResultData.results.forEach(item => {
-          if (item.year) yearSet.add(item.year)
-          if (item.provider) providerSet.add(item.provider)
-        })
-        setAvailableYears(Array.from(yearSet).sort((a, b) => b - a))
-        setAvailableProviders(Array.from(providerSet).sort())
-      }
+    // 优先使用后端返回的全量过滤元数据
+    if (lastSearchResultData.available_years?.length) {
+      setAvailableYears(lastSearchResultData.available_years)
     }
-  }, [lastSearchResultData.results, yearFilter, providerFilter, typeFilter, keyword])
+    if (lastSearchResultData.available_providers?.length) {
+      setAvailableProviders(lastSearchResultData.available_providers)
+    }
+  }, [lastSearchResultData.available_years, lastSearchResultData.available_providers])
 
   // 使用保存的可用列表，而不是从当前过滤后的数据中提取
   const years = availableYears

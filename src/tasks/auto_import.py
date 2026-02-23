@@ -12,7 +12,8 @@ from src.services import ScraperManager, MetadataSourceManager, TaskManager, Tas
 from src.rate_limiter import RateLimiter
 from src.utils import (
     ai_type_and_season_mapping_and_correction,
-    SearchTimer, SEARCH_TYPE_CONTROL_AUTO_IMPORT
+    SearchTimer, SEARCH_TYPE_CONTROL_AUTO_IMPORT,
+    is_movie_by_title,
 )
 
 logger = logging.getLogger(__name__)
@@ -548,14 +549,6 @@ async def auto_search_and_import_task(
                 logger.info("○ 全自动导入 统一AI映射: 电影类型,跳过")
 
         # 根据标题关键词修正媒体类型（与 WebUI 一致）
-        def is_movie_by_title(title: str) -> bool:
-            if not title:
-                return False
-            # 关键词列表，不区分大小写
-            movie_keywords = ["剧场版", "劇場版", "movie", "映画"]
-            title_lower = title.lower()
-            return any(keyword in title_lower for keyword in movie_keywords)
-
         for item in all_results:
             if item.type == "tv_series" and is_movie_by_title(item.title):
                 logger.info(

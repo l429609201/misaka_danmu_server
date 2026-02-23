@@ -26,6 +26,7 @@ class WebhookManager:
         self.config_manager = config_manager
         self.title_recognition_manager = title_recognition_manager
         self.ai_matcher_manager = ai_matcher_manager
+        self.notification_service = None  # 由 main.py 注入
         self._handlers: Dict[str, Type[BaseWebhook]] = {}
         self._load_handlers()
 
@@ -76,7 +77,9 @@ class WebhookManager:
         handler_class = self._handlers.get(webhook_type)
         if not handler_class:
             raise ValueError(f"未找到类型为 '{webhook_type}' 的 Webhook 处理器")
-        return handler_class(self._session_factory, self.task_manager, self.scraper_manager, self.rate_limiter, self.metadata_manager, self.config_manager, self.title_recognition_manager, self.ai_matcher_manager)
+        instance = handler_class(self._session_factory, self.task_manager, self.scraper_manager, self.rate_limiter, self.metadata_manager, self.config_manager, self.title_recognition_manager, self.ai_matcher_manager)
+        instance.notification_service = self.notification_service
+        return instance
 
     def get_available_handlers(self) -> List[str]:
         """返回所有成功加载的 webhook 处理器类型（即文件名）的列表。"""

@@ -251,6 +251,15 @@ from .external_log import (
     get_external_api_logs,
 )
 
+# Notification模块
+from .notification import (
+    get_all_notification_channels,
+    get_notification_channel_by_id,
+    create_notification_channel,
+    update_notification_channel,
+    delete_notification_channel,
+)
+
 # Utility模块
 from .utility import (
     _is_docker_environment,
@@ -274,9 +283,6 @@ from .utility import (
     finalize_task_in_history,
     update_task_progress_in_history,
     update_scheduled_task_run_times,
-    get_scheduled_task,
-    get_scheduled_task_id_by_type,
-    check_scheduled_task_exists_by_type,
 )
 
 __all__ = [
@@ -469,6 +475,12 @@ __all__ = [
     'create_external_api_log',
     'update_external_api_log_response',
     'get_external_api_logs',
+    # Notification
+    'get_all_notification_channels',
+    'get_notification_channel_by_id',
+    'create_notification_channel',
+    'update_notification_channel',
+    'delete_notification_channel',
     # Utility
     '_is_docker_environment',
     '_get_base_dir',
@@ -490,7 +502,6 @@ __all__ = [
     'finalize_task_in_history',
     'update_task_progress_in_history',
     'update_scheduled_task_run_times',
-    'get_scheduled_task',
     'get_scheduled_task_id_by_type',
     'check_scheduled_task_exists_by_type',
 ]

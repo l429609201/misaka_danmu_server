@@ -20,7 +20,7 @@ from src.core import get_now
 from src.services import ScraperManager, TaskManager, MetadataSourceManager, unified_search, convert_to_chinese_title
 from src.utils import (
     SearchTimer, SEARCH_TYPE_CONTROL_SEARCH, SubStepTiming,
-    ai_type_and_season_mapping_and_correction
+    ai_type_and_season_mapping_and_correction, is_movie_by_title,
 )
 from src.rate_limiter import RateLimiter
 from src.ai import AIMatcherManager
@@ -35,7 +35,7 @@ from .dependencies import (
     verify_api_key, get_scraper_manager, get_metadata_manager,
     get_task_manager, get_config_manager, get_rate_limiter,
     get_ai_matcher_manager, get_title_recognition_manager,
-    _normalize_for_filtering, _is_movie_by_title
+    _normalize_for_filtering,
 )
 
 logger = logging.getLogger(__name__)
@@ -318,7 +318,7 @@ async def search_media(
         logger.info(f"搜索完成，共 {len(results)} 个结果")
 
         for item in results:
-            if item.type == 'tv_series' and _is_movie_by_title(item.title):
+            if item.type == 'tv_series' and is_movie_by_title(item.title):
                 item.type = 'movie'
 
             # 修正：如果用户指定了集数，则设置 currentEpisodeIndex

@@ -18,19 +18,11 @@ from src.core import get_app_timezone, get_now
 from src.security import get_current_user
 from src.core import settings
 from src.utils import parse_search_keyword
+from src.utils import clean_movie_title as _clean_movie_title
 from src.services import ScraperManager
 from .base import BaseMetadataSource
 
 logger = logging.getLogger(__name__)
-
-def _clean_movie_title(title: Optional[str]) -> Optional[str]:
-    if not title: return None
-    phrases_to_remove = ["劇場版", "the movie"]
-    cleaned_title = title
-    for phrase in phrases_to_remove:
-        cleaned_title = re.sub(r'\s*' + re.escape(phrase) + r'\s*:?', '', cleaned_title, flags=re.IGNORECASE)
-    cleaned_title = re.sub(r'\s{2,}', ' ', cleaned_title).strip().strip(':- ')
-    return cleaned_title
 
 class InfoboxItem(BaseModel):
     key: str

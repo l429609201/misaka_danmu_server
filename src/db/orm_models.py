@@ -237,6 +237,7 @@ class TmdbEpisodeMapping(Base):
     customSeasonNumber: Mapped[int] = mapped_column("custom_season_number", Integer)
     customEpisodeNumber: Mapped[int] = mapped_column("custom_episode_number", Integer)
     absoluteEpisodeNumber: Mapped[int] = mapped_column("absolute_episode_number", Integer)
+    episodeName: Mapped[Optional[str]] = mapped_column("episode_name", String(500))
 
     __table_args__ = (
         UniqueConstraint('tmdb_episode_group_id', 'tmdb_episode_id', name='idx_group_episode_unique'),
@@ -429,3 +430,18 @@ class AIMetricsLog(Base):
         Index('idx_ai_metrics_method', 'method'),
         Index('idx_ai_metrics_success', 'success'),
     )
+
+
+class NotificationChannel(Base):
+    """通知渠道实例"""
+    __tablename__ = "notification_channels"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(500))                                      # 显示名称
+    channelType: Mapped[str] = mapped_column("channel_type", String(100))               # 渠道类型: telegram / bark / ...
+    isEnabled: Mapped[bool] = mapped_column("is_enabled", Boolean, default=True)
+    useProxy: Mapped[bool] = mapped_column("use_proxy", Boolean, default=False)        # 是否使用代理
+    config: Mapped[Optional[str]] = mapped_column(TEXT, default="{}")                   # JSON - 渠道专属配置
+    eventsConfig: Mapped[Optional[str]] = mapped_column("events_config", TEXT, default="{}")  # JSON - 事件订阅
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now)
+    updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime, default=get_now, onupdate=get_now)

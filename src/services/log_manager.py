@@ -282,6 +282,28 @@ def setup_logging():
     webhook_logger.addHandler(webhook_handler)
     logging.info("专用的 Webhook 原始请求日志已初始化，将输出到 %s", webhook_log_file)
 
+    # --- 新增：为 Bot 原始交互设置一个专用的日志记录器 ---
+    bot_log_file = log_dir / "bot_raw.log"
+
+    if bot_log_file.exists():
+        try:
+            with open(bot_log_file, 'w', encoding='utf-8') as f:
+                f.truncate(0)
+            logging.info(f"已清空旧的 Bot 原始交互日志: {bot_log_file}")
+        except IOError as e:
+            logging.error(f"清空 Bot 原始交互日志失败: {e}")
+
+    bot_raw_logger = logging.getLogger("bot_raw")
+    bot_raw_logger.setLevel(logging.DEBUG)
+    bot_raw_logger.propagate = False
+
+    bot_raw_handler = logging.handlers.RotatingFileHandler(
+        bot_log_file, maxBytes=10*1024*1024, backupCount=3, encoding='utf-8'
+    )
+    bot_raw_handler.setFormatter(logging.Formatter('[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+    bot_raw_logger.addHandler(bot_raw_handler)
+    logging.info("专用的 Bot 原始交互日志已初始化，将输出到 %s", bot_log_file)
+
 def get_logs() -> List[str]:
     """返回为API存储的所有日志条目列表。"""
     return list(_logs_deque)

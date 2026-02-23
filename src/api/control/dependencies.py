@@ -32,12 +32,6 @@ def _normalize_for_filtering(title: str) -> str:
     return title.lower().replace(" ", "").replace("：", ":").strip()
 
 
-def _is_movie_by_title(title: str) -> bool:
-    """Checks if a title likely represents a movie based on keywords."""
-    if not title:
-        return False
-    return any(kw in title.lower() for kw in ["剧场版", "劇場版", "movie", "映画"])
-
 
 # --- 依赖项函数 ---
 

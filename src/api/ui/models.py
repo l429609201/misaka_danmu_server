@@ -24,6 +24,10 @@ class UIProviderSearchResponse(BaseModel):
     total: int = Field(0, description="总结果数")
     page: int = Field(1, description="当前页码")
     pageSize: int = Field(10, description="每页数量")
+    # 过滤元数据 - 从全量结果中提取，不受分页影响
+    available_years: List[int] = Field(default_factory=list, description="所有可用的年份列表")
+    available_providers: List[str] = Field(default_factory=list, description="所有可用的来源列表")
+    available_types: List[str] = Field(default_factory=list, description="所有可用的类型列表")
 
 
 class RefreshPosterRequest(BaseModel):

@@ -22,7 +22,8 @@ from src.db import ConfigManager, CacheManager  # 管理器从 db 层导入
 from src.services import (
     TaskManager, MetadataSourceManager, ScraperManager, WebhookManager,
     SchedulerManager, TitleRecognitionManager, MediaServerManager,
-    TransportManager, setup_logging
+    TransportManager, setup_logging,
+    NotificationService, NotificationManager,
 )
 from src.utils import InternalPollingManager, init_proxy_middleware
 from src.api import api_router, control_router
@@ -261,8 +262,35 @@ async def lifespan(app: FastAPI):
     app.state.internal_polling = InternalPollingManager(app)
     await app.state.internal_polling.start()
 
+    # 初始化通知服务
+    app.state.notification_service = NotificationService(session_factory)
+    app.state.notification_service.set_dependencies(
+        scraper_manager=app.state.scraper_manager,
+        metadata_manager=app.state.metadata_manager,
+        task_manager=app.state.task_manager,
+        scheduler_manager=app.state.scheduler_manager,
+        config_manager=app.state.config_manager,
+        rate_limiter=app.state.rate_limiter,
+        title_recognition_manager=app.state.title_recognition_manager,
+        ai_matcher_manager=app.state.ai_matcher_manager,
+    )
+    app.state.notification_manager = NotificationManager(session_factory, app.state.notification_service)
+    await app.state.notification_manager.initialize()
+    app.state.notification_service.notification_manager = app.state.notification_manager
+    await app.state.notification_manager.start_channels()
+
+    # 将通知服务注入 TaskManager 和 WebhookManager
+    app.state.task_manager.set_notification_service(app.state.notification_service)
+    app.state.webhook_manager.notification_service = app.state.notification_service
+
     total_time = time.time() - startup_start
     logger.info(f"应用启动完成，总耗时 {total_time:.2f} 秒")
+
+    # 发射系统启动通知
+    try:
+        await app.state.notification_service.emit_event("system_start", {})
+    except Exception as e:
+        logger.error(f"发射 system_start 事件失败: {e}")
 
     # --- 前端服务 ---
     # 在所有API路由注册完毕后，再挂载前端服务，以确保API路由优先匹配。
@@ -317,6 +345,8 @@ async def lifespan(app: FastAPI):
     # 新增：在关闭时也关闭元数据管理器
     if hasattr(app.state, "metadata_manager"):
         await app.state.metadata_manager.close_all()
+    if hasattr(app.state, "notification_manager"):
+        await app.state.notification_manager.stop_channels()
     if hasattr(app.state, "media_server_manager"):
         await app.state.media_server_manager.close_all()
     if hasattr(app.state, "scheduler_manager"):

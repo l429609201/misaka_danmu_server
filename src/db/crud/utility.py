@@ -396,32 +396,6 @@ async def update_scheduled_task_run_times(session: AsyncSession, task_id: str, l
     await session.commit()
 
 # --- Task History ---
-
-
-async def get_scheduled_task(session: AsyncSession, task_id: str) -> Optional[Dict[str, Any]]:
-    stmt = select(
-        ScheduledTask.taskId.label("taskId"), 
-        ScheduledTask.name.label("name"),
-        ScheduledTask.jobType.label("jobType"), 
-        ScheduledTask.cronExpression.label("cronExpression"),
-        ScheduledTask.isEnabled.label("isEnabled"),
-        ScheduledTask.lastRunAt.label("lastRunAt"),
-        ScheduledTask.nextRunAt.label("nextRunAt")
-    ).where(ScheduledTask.taskId == task_id)
-    result = await session.execute(stmt)
-    row = result.mappings().first()
-    return dict(row) if row else None
-
-
-async def get_scheduled_task_id_by_type(session: AsyncSession, job_type: str) -> Optional[str]:
-    """获取指定类型的定时任务ID。"""
-    stmt = select(ScheduledTask.taskId).where(ScheduledTask.jobType == job_type).limit(1)
-    result = await session.execute(stmt)
-    return result.scalar_one_or_none()
-
-
-async def check_scheduled_task_exists_by_type(session: AsyncSession, job_type: str) -> bool:
-    stmt = select(ScheduledTask.taskId).where(ScheduledTask.jobType == job_type).limit(1)
-    result = await session.execute(stmt)
-    return result.scalar_one_or_none() is not None
+# 注意: get_scheduled_task, get_scheduled_task_id_by_type, check_scheduled_task_exists_by_type
+# 已统一迁移至 task.py，此处不再重复定义
 
