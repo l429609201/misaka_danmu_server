@@ -183,7 +183,7 @@ def setup_logging():
     
     # --- 专用日志记录器配置 ---
     # 定义所有专用日志: (logger名称, 文件名, 描述, 日志级别, 格式, maxBytes)
-    _P = "           - "  # 子项缩进前缀
+    _P = "  - "  # 子项缩进前缀
     _specialized_loggers = [
         ("scraper_responses", "scraper_responses.log", "搜索源响应",
          logging.DEBUG, '[%(asctime)s] [%(name)s] - %(message)s', 10*1024*1024),

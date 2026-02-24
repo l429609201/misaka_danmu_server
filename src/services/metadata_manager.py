@@ -172,7 +172,7 @@ class MetadataSourceManager:
             self.sources[provider_name] = source_class(self._session_factory, self._config_manager, self.scraper_manager, self.cache_manager)
 
         # 汇总输出
-        _P = "           - "
+        _P = "  - "
         log_lines = [f"已加载 {len(self.sources)} 个元数据源"]
         for pn in sorted(self.sources.keys()):
             log_lines.append(f"{_P}{pn}")

@@ -52,7 +52,7 @@ class NotificationManager:
                 await self._load_channel(ch_data)
 
         # 汇总输出
-        _P = "           - "
+        _P = "  - "
         enabled_count = len(self.channels)
         type_count = len(self._channel_classes)
         log_lines = [f"通知渠道已初始化 (可用类型: {type_count}, 已启用实例: {enabled_count})"]

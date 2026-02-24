@@ -302,7 +302,7 @@ class ScraperManager:
 
         # 汇总输出（按顺序排列）
         scraper_items.sort(key=lambda x: x[0])
-        _P = "           - "
+        _P = "  - "
         total = enabled_count + disabled_count
         log_lines = [f"已加载 {total} 个搜索源 (已启用: {enabled_count}, 已禁用: {disabled_count})"]
         for order, name in scraper_items:

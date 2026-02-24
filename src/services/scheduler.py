@@ -100,7 +100,7 @@ class SchedulerManager:
                 logger.error(f"从模块 {name} 加载定时任务失败: {e}")
 
         # 汇总输出
-        _P = "           - "
+        _P = "  - "
         log_lines = [f"已加载 {len(self._job_classes)} 个定时任务类型"]
         for job_type in sorted(self._job_classes.keys()):
             log_lines.append(f"{_P}{job_type}")

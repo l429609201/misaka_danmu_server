@@ -105,7 +105,7 @@ class InternalPollingManager:
             )
 
         # 汇总输出
-        _P = "           - "
+        _P = "  - "
         log_lines = [f"已启动 {len(self._polling_tasks)} 个内置轮询任务"]
         for name, task_info in self._polling_tasks.items():
             log_lines.append(f"{_P}{name} (间隔: {task_info.default_interval}分钟)")
