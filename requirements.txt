@@ -43,3 +43,5 @@ openai>=1.0.0  # 支持OpenAI兼容接口: DeepSeek, OpenAI, SiliconFlow
 google-genai  # Google Gemini 官方 SDK (新版)
 # Docker 容器管理功能依赖
 docker>=6.0.0  # Docker SDK for Python
+# Telegram 通知渠道
+pyTelegramBotAPI

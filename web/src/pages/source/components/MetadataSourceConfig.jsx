@@ -116,7 +116,10 @@ export function BangumiConfig({ form }) {
         return
       }
 
-      const res = await getBangumiAuthUrl()
+      // ani-rss 模式：前端用 location.origin 生成 redirect_uri
+      const redirectUri = `${window.location.origin}/bgm-oauth-callback`
+
+      const res = await getBangumiAuthUrl({ redirect_uri: redirectUri })
       const authUrl = res.data?.url || res.url
       if (!authUrl) {
         showMessage('error', '获取授权链接失败: 返回的URL为空')

@@ -438,7 +438,6 @@ class TelegramChannel(BaseNotificationChannel):
                     bot.send_message(
                         chat_id,
                         f"🔔 测试连接成功！\nBot: @{info.username} ({info.first_name})\n来自 Misaka 弹幕服务器的测试消息。",
-                        parse_mode="Markdown",
                     )
                 except Exception as e:
                     self.logger.warning(f"测试消息发送失败: {e}")

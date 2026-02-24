@@ -8,4 +8,5 @@ export const RoutePaths = {
   SOURCE: '/source',
   SETTING: '/setting',
   CONTROL: '/control',
+  BGM_OAUTH_CALLBACK: '/bgm-oauth-callback',
 }
