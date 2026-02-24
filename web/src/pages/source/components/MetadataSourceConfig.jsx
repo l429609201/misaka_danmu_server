@@ -29,7 +29,7 @@ import dayjs from 'dayjs'
  */
 export function BangumiConfig({ form }) {
   const { showMessage } = useMessage()
-  const { showModal } = useModal()
+  const { confirm: showModal } = useModal()
   const [authMode, setAuthMode] = useState('token') // 'token' or 'oauth'
   const [authInfo, setAuthInfo] = useState({})
   const [showPassword, setShowPassword] = useState(false)
