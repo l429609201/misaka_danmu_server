@@ -156,22 +156,27 @@ class MetadataSourceManager:
                         provider_name = obj.provider_name
                         if provider_name in self._source_classes:
                             self.logger.warning(f"发现重复的元数据源 '{provider_name}'。将被覆盖。")
-                        
+
                         self._source_classes[provider_name] = obj
                         discovered_providers.append(provider_name)
-                        self.logger.info(f"元数据源 '{provider_name}' (来自模块 {name}) 已发现。")
             except Exception as e:
                 self.logger.error(f"从模块 {name} 加载元数据源失败: {e}", exc_info=True)
 
         async with self._session_factory() as session:
             await crud.sync_metadata_sources_to_db(session, discovered_providers)
             settings_list = await crud.get_all_metadata_source_settings(session)
-        
+
         self.source_settings = {s['providerName']: s for s in settings_list}
 
         for provider_name, source_class in self._source_classes.items():
             self.sources[provider_name] = source_class(self._session_factory, self._config_manager, self.scraper_manager, self.cache_manager)
-            self.logger.info(f"已加载元数据源 '{provider_name}'。")
+
+        # 汇总输出
+        _P = "           - "
+        log_lines = [f"已加载 {len(self.sources)} 个元数据源"]
+        for pn in sorted(self.sources.keys()):
+            log_lines.append(f"{_P}{pn}")
+        self.logger.info("\n".join(log_lines))
 
     async def search_aliases_from_enabled_sources(self, keyword: str, user: models.User) -> Set[str]:
         """从所有已启用的辅助元数据源并发获取别名。"""

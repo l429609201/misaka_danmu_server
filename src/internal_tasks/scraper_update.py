@@ -13,6 +13,8 @@ from typing import Optional, Dict, Any
 import httpx
 from fastapi import FastAPI
 
+from .base import BasePollingTask
+
 # 复用 scraper_resources 中的工具函数
 from ..api.ui.scraper_resources import (
     parse_github_url,
@@ -37,7 +39,22 @@ class SystemUser:
     username = "system_auto_update"
 
 
-async def scraper_auto_update_handler(app: FastAPI) -> None:
+class ScraperAutoUpdateTask(BasePollingTask):
+    """弹幕源自动更新轮询任务"""
+    name = "scraper_auto_update"
+    enabled_key = "scraperAutoUpdateEnabled"
+    interval_key = "scraperAutoUpdateInterval"
+    default_interval = 30   # 30分钟
+    min_interval = 15       # 最小15分钟
+    startup_delay = 60      # 启动后60秒开始
+
+    @staticmethod
+    async def handler(app: FastAPI) -> None:
+        """弹幕源自动更新处理器"""
+        await _scraper_auto_update_handler(app)
+
+
+async def _scraper_auto_update_handler(app: FastAPI) -> None:
     """
     弹幕源自动更新处理器
 

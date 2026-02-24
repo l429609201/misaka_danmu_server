@@ -39,7 +39,6 @@ class NotificationManager:
                             and attr is not BaseNotificationChannel
                             and getattr(attr, 'channel_type', '')):
                         self._channel_classes[attr.channel_type] = attr
-                        logger.info(f"发现通知渠道类型: {attr.channel_type} ({attr.display_name})")
             except Exception as e:
                 logger.error(f"加载通知渠道模块 {modname} 失败: {e}", exc_info=True)
 
@@ -52,7 +51,20 @@ class NotificationManager:
             if ch_data.get("isEnabled"):
                 await self._load_channel(ch_data)
 
-        logger.info(f"通知管理器初始化完成，已加载 {len(self.channels)} 个渠道实例")
+        # 汇总输出
+        _P = "           - "
+        enabled_count = len(self.channels)
+        type_count = len(self._channel_classes)
+        log_lines = [f"通知渠道已初始化 (可用类型: {type_count}, 已启用实例: {enabled_count})"]
+        # 已启用的实例
+        for ch_id, ch in self.channels.items():
+            log_lines.append(f"{_P}[已启用] {ch.name} (id={ch_id})")
+        # 未启用的可用类型
+        enabled_types = {ch.channel_type for ch in self.channels.values()}
+        for ch_type, cls in self._channel_classes.items():
+            if ch_type not in enabled_types:
+                log_lines.append(f"{_P}[可用] {cls.display_name}")
+        logger.info("\n".join(log_lines))
 
     async def _load_channel(self, ch_data: dict):
         """加载单个渠道实例"""
@@ -75,7 +87,6 @@ class NotificationManager:
                 notification_service=self.notification_service,
             )
             self.channels[channel_id] = instance
-            logger.info(f"已加载通知渠道: {ch_data['name']} (type={channel_type}, id={channel_id})")
         except Exception as e:
             logger.error(f"创建渠道实例失败: {ch_data['name']} - {e}", exc_info=True)
 
@@ -84,7 +95,6 @@ class NotificationManager:
         for ch_id, channel in self.channels.items():
             try:
                 await channel.start()
-                logger.info(f"渠道已启动: {channel.name} (id={ch_id})")
             except Exception as e:
                 logger.error(f"启动渠道失败: {channel.name} (id={ch_id}) - {e}", exc_info=True)
 

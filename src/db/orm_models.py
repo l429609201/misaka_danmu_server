@@ -200,6 +200,8 @@ class BangumiAuth(Base):
     userId: Mapped[int] = mapped_column("user_id", BigInteger, primary_key=True)
     bangumiUserId: Mapped[Optional[int]] = mapped_column("bangumi_user_id", Integer)
     nickname: Mapped[Optional[str]] = mapped_column(String(500))
+    username: Mapped[Optional[str]] = mapped_column(String(500))
+    sign: Mapped[Optional[str]] = mapped_column(TEXT)
     avatarUrl: Mapped[Optional[str]] = mapped_column("avatar_url", String(512))
     accessToken: Mapped[str] = mapped_column("access_token", TEXT)
     refreshToken: Mapped[Optional[str]] = mapped_column("refresh_token", TEXT)

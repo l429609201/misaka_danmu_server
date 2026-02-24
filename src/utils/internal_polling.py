@@ -74,23 +74,24 @@ class InternalPollingManager:
             min_interval=min_interval,
             startup_delay=startup_delay
         )
-        self.logger.info(f"已注册内置轮询任务: {name}")
     
     def _register_builtin_tasks(self):
-        """注册所有内置轮询任务"""
-        # 延迟导入避免循环依赖
-        from src.internal_tasks.scraper_update import scraper_auto_update_handler
+        """自动发现并注册所有内置轮询任务"""
+        # 导入 internal_tasks 包会触发 pkgutil 自动扫描，
+        # 所有 BasePollingTask 子类通过 __init_subclass__ 自动进入注册表
+        from src.internal_tasks.base import BasePollingTask
+        import src.internal_tasks  # noqa: F401 — 触发自动发现
 
-        # 资源仓库自动更新
-        self.register(
-            name="scraper_auto_update",
-            handler=scraper_auto_update_handler,
-            enabled_key="scraperAutoUpdateEnabled",
-            interval_key="scraperAutoUpdateInterval",
-            default_interval=30,  # 30分钟
-            min_interval=15,      # 最小15分钟
-            startup_delay=60      # 启动后60秒开始
-        )
+        for task_cls in BasePollingTask.get_all_tasks():
+            self.register(
+                name=task_cls.name,
+                handler=task_cls.handler,
+                enabled_key=task_cls.enabled_key,
+                interval_key=task_cls.interval_key,
+                default_interval=task_cls.default_interval,
+                min_interval=task_cls.min_interval,
+                startup_delay=task_cls.startup_delay,
+            )
 
     async def start(self):
         """启动所有已注册的轮询任务"""
@@ -102,7 +103,13 @@ class InternalPollingManager:
             self._running_coroutines[name] = asyncio.create_task(
                 self._run_polling_loop(task_info)
             )
-            self.logger.info(f"内置轮询任务 '{name}' 已启动")
+
+        # 汇总输出
+        _P = "           - "
+        log_lines = [f"已启动 {len(self._polling_tasks)} 个内置轮询任务"]
+        for name, task_info in self._polling_tasks.items():
+            log_lines.append(f"{_P}{name} (间隔: {task_info.default_interval}分钟)")
+        self.logger.info("\n".join(log_lines))
     
     async def stop(self):
         """停止所有轮询任务"""
@@ -116,16 +123,20 @@ class InternalPollingManager:
         self._running_coroutines.clear()
     
     async def _get_interval(self, task_info: PollingTaskInfo) -> int:
-        """获取轮询间隔（分钟）"""
+        """获取轮询间隔（分钟），interval_key 为空时直接用硬编码默认值"""
+        if not task_info.interval_key:
+            return task_info.default_interval
         try:
             interval_str = await self.config_manager.get(task_info.interval_key, str(task_info.default_interval))
             interval = int(interval_str)
             return max(interval, task_info.min_interval)
         except (ValueError, TypeError):
             return task_info.default_interval
-    
+
     async def _is_enabled(self, task_info: PollingTaskInfo) -> bool:
-        """检查任务是否启用"""
+        """检查任务是否启用，enabled_key 为空时视为始终启用"""
+        if not task_info.enabled_key:
+            return True
         enabled_str = await self.config_manager.get(task_info.enabled_key, "false")
         return enabled_str.lower() == "true"
     

@@ -122,7 +122,8 @@ async def _get_bangumi_auth(session: AsyncSession, user_id: int) -> Dict[str, An
 
     return {
         "isAuthenticated": True, "bangumiUserId": auth.bangumiUserId,
-        "nickname": auth.nickname, "avatarUrl": auth.avatarUrl,
+        "nickname": auth.nickname, "username": auth.username,
+        "sign": auth.sign, "avatarUrl": auth.avatarUrl,
         "authorizedAt": auth.authorizedAt, "expiresAt": auth.expiresAt,
         "accessToken": auth.accessToken, "daysLeft": days_left
     }
@@ -242,7 +243,7 @@ async def exchange_code(
         "redirect_uri": body.redirect_uri,
     }
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             token_response = await client.post("https://bgm.tv/oauth/access_token", data=payload)
             token_response.raise_for_status()
             token_data = token_response.json()
@@ -260,6 +261,8 @@ async def exchange_code(
         auth_to_save = {
             "bangumiUserId": user_info.get("id"),
             "nickname": user_info.get("nickname"),
+            "username": user_info.get("username"),
+            "sign": user_info.get("sign", ""),
             "avatarUrl": avatar_url,
             "accessToken": token_data.get("access_token"),
             "refreshToken": token_data.get("refresh_token"),

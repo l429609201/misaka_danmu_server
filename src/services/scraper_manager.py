@@ -278,21 +278,36 @@ class ScraperManager:
         self.scraper_settings = {s['providerName']: s for s in settings_list}
 
         # Instantiate all discovered scrapers
+        enabled_count = 0
+        disabled_count = 0
+        scraper_items = []  # (order, name, status)
+
         for provider_name, scraper_class in self._scraper_classes.items():
             scraper_instance = scraper_class(self._session_factory, self.config_manager, self.transport_manager)
             # 【优化】设置 scraper_manager 引用,以便使用缓存的配置
             scraper_instance._scraper_manager_ref = self
             self.scrapers[provider_name] = scraper_instance
             setting = self.scraper_settings.get(provider_name, {})
-            
-            is_enabled_by_user = setting.get('isEnabled', True)
-            final_status = "已启用" if is_enabled_by_user else "已禁用"
 
-            if setting:
-                order = setting.get('displayOrder', 'N/A')
-                logging.getLogger(__name__).info(f"已加载搜索源 '{provider_name}' (状态: {final_status}, 顺序: {order})。")
+            is_enabled = setting.get('isEnabled', True)
+            order = setting.get('displayOrder', 999)
+            if is_enabled:
+                enabled_count += 1
             else:
+                disabled_count += 1
+            scraper_items.append((order, provider_name))
+
+            if not setting:
                 logging.getLogger(__name__).warning(f"已加载搜索源 '{provider_name}'，但在数据库中未找到其设置。")
+
+        # 汇总输出（按顺序排列）
+        scraper_items.sort(key=lambda x: x[0])
+        _P = "           - "
+        total = enabled_count + disabled_count
+        log_lines = [f"已加载 {total} 个搜索源 (已启用: {enabled_count}, 已禁用: {disabled_count})"]
+        for order, name in scraper_items:
+            log_lines.append(f"{_P}(顺序: {order:02d}) {name}")
+        logging.getLogger(__name__).info("\n".join(log_lines))
 
     async def initialize(self):
         """
