@@ -64,6 +64,13 @@ export const getLogs = (options = {}) =>
     ...options,
   })
 
+/** 获取日志文件列表 */
+export const getLogFiles = () => api.get('/api/ui/logs/files')
+
+/** 获取指定日志文件内容 */
+export const getLogFileContent = (filename, tail = 500) =>
+  api.get(`/api/ui/logs/files/${encodeURIComponent(filename)}`, { tail })
+
 /** 匹配测试 */
 export const getMatchTest = data =>
   api.post(

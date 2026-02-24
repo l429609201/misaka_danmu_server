@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src import security
 from src.db import crud, models, get_db_session, ConfigManager
 from src.core import get_now
-from src.services import ScraperManager, get_logs, subscribe_to_logs, unsubscribe_from_logs
+from src.services import ScraperManager, get_logs, subscribe_to_logs, unsubscribe_from_logs, list_log_files, read_log_file
 from src.rate_limiter import RateLimiter, RateLimitExceededError
 from src._version import APP_VERSION, DOCS_URL, GITHUB_OWNER, GITHUB_REPO
 
@@ -226,6 +226,30 @@ async def get_release_history(
 async def get_server_logs(current_user: models.User = Depends(security.get_current_user)):
     """获取存储在内存中的最新日志条目。"""
     return get_logs()
+
+
+@router.get("/logs/files", summary="列出所有日志文件")
+async def get_log_files(current_user: models.User = Depends(security.get_current_user)):
+    """列出日志目录中的所有日志文件（包括轮转文件）。"""
+    return list_log_files()
+
+
+@router.get("/logs/files/{filename}", summary="读取指定日志文件内容")
+async def get_log_file_content(
+    filename: str,
+    tail: int = Query(500, ge=1, le=5000, description="读取最后N行"),
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """读取指定日志文件的最后N行内容。"""
+    try:
+        lines = read_log_file(filename, tail=tail)
+        return lines
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except IOError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/logs/stream", summary="SSE实时日志推送")

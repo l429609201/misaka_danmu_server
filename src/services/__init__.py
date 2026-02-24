@@ -35,7 +35,7 @@ from src.utils import TransportManager
 from .scheduler import SchedulerManager
 
 # 日志管理
-from .log_manager import setup_logging, get_logs, subscribe_to_logs, unsubscribe_from_logs
+from .log_manager import setup_logging, get_logs, subscribe_to_logs, unsubscribe_from_logs, list_log_files, read_log_file
 
 # 搜索服务
 from .search import unified_search
