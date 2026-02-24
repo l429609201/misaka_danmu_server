@@ -4,6 +4,7 @@ import {
   searchAnimeTest,
   getBangumiDetailTest,
   getCommentTest,
+  parseFilenameTest,
   getTokenList,
 } from '../../../apis'
 import { useState, useEffect, useMemo } from 'react'
@@ -274,6 +275,59 @@ export const Test = () => {
         </div>
       ),
     },
+    fileRecognition: {
+      label: '文件识别',
+      apiPath: '/api/ui/tools/parse-filename',
+      method: 'POST',
+      noToken: true,
+      handler: parseFilenameTest,
+      fields: [
+        {
+          name: 'fileName',
+          label: '文件名',
+          apiParam: 'fileName (body)',
+          placeholder: '例: [SubGroup] Anime Name S01E02 [1080p].mkv',
+          required: true,
+          component: Input,
+        },
+      ],
+      renderResult: data => {
+        if (data?.success && data.result) {
+          const r = data.result
+          const fields = [
+            { label: '标题', value: r.title },
+            { label: '原始标题', value: r.original_title },
+            { label: '英文名', value: r.en_name },
+            { label: '季', value: r.season },
+            { label: '集', value: r.episode },
+            { label: '类型', value: r.is_movie ? '电影' : '剧集' },
+            { label: '年份', value: r.year },
+            { label: '分辨率', value: r.resolution },
+            { label: '视频编码', value: r.video_codec },
+            { label: '音频编码', value: r.audio_codec },
+            { label: '来源', value: r.source },
+            { label: '字幕组', value: r.team },
+            { label: '动态范围', value: r.dynamic_range },
+            { label: '平台', value: r.platform },
+            { label: '特效', value: r.effect },
+          ].filter(f => f.value != null && f.value !== '')
+          return (
+            <div>
+              <div className="font-bold text-green-600 mb-2">[识别成功]</div>
+              <div className="space-y-1">
+                {fields.map(f => (
+                  <div key={f.label} className="flex gap-2 text-sm">
+                    <span className="text-gray-500 w-20 shrink-0">{f.label}:</span>
+                    <span className="font-mono">{String(f.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        }
+        return <div className="text-red-600">[识别失败] {data?.message || '无法识别该文件名'}</div>
+      },
+    },
   }
 
   const handleTest = async values => {
@@ -340,7 +394,8 @@ export const Test = () => {
 
         <Row gutter={24} className="mt-4">
           <Col md={12} sm={24}>
-            {/* 接口信息展示 */}
+            {/* 接口信息展示（内部工具类接口不显示） */}
+            {!currentConfig.noToken && (
             <Alert
               message={
                 <div>
@@ -373,6 +428,7 @@ export const Test = () => {
               type="info"
               className="mb-4"
             />
+            )}
 
             <Form
               form={form}
@@ -380,7 +436,8 @@ export const Test = () => {
               onFinish={handleTest}
               className="px-6 pb-6"
             >
-              {/* Token选择（所有测试都需要） */}
+              {/* Token选择（不需要token的测试类型隐藏） */}
+              {!currentConfig.noToken && (
               <Form.Item
                 name="apiToken"
                 label={
@@ -447,6 +504,7 @@ export const Test = () => {
                   }))}
                 />
               </Form.Item>
+              )}
 
               {/* 动态字段 */}
               {currentConfig.fields.map(field => {

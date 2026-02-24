@@ -208,3 +208,52 @@ class HelpResponse(BaseModel):
     available_keys: List[str]
     description: str
 
+
+# --- 剧集组管理相关模型 ---
+
+class EpisodeGroupSummary(BaseModel):
+    """剧集组摘要"""
+    groupId: str
+    tmdbTvId: int
+    episodeCount: int
+    groupCount: int
+    isLocal: bool
+    associatedAnimeIds: List[int] = Field(default_factory=list, description="关联了此剧集组的条目ID列表")
+
+
+class EpisodeInGroupRequest(BaseModel):
+    """创建/更新剧集组时的单集信息"""
+    id: int = Field(..., description="分集ID（TMDB episodeId 或合成ID）")
+    name: str = Field("", description="分集名称")
+    episodeNumber: int = Field(..., description="TMDB 原始集数")
+    seasonNumber: int = Field(..., description="TMDB 原始季数")
+    order: int = Field(0, description="在组内的排序")
+
+
+class GroupInGroupRequest(BaseModel):
+    """创建/更新剧集组时的分组信息"""
+    name: str = Field("", description="分组名称")
+    order: int = Field(..., description="分组排序")
+    episodes: List[EpisodeInGroupRequest] = Field(..., description="该组下的分集列表")
+
+
+class EpisodeGroupCreateRequest(BaseModel):
+    """创建剧集组请求"""
+    tmdbTvId: int = Field(..., description="TMDB TV ID")
+    groupId: Optional[str] = Field(None, description="TMDB 原生剧集组ID。不传则自动生成本地剧集组 local-{tmdbTvId}")
+    name: str = Field("", description="剧集组名称")
+    groups: List[GroupInGroupRequest] = Field(..., description="分组列表")
+    animeId: Optional[int] = Field(None, description="关联的条目ID，传入则创建后自动关联")
+
+
+class EpisodeGroupUpdateRequest(BaseModel):
+    """更新剧集组请求"""
+    tmdbTvId: int = Field(..., description="TMDB TV ID")
+    name: str = Field("", description="剧集组名称")
+    groups: List[GroupInGroupRequest] = Field(..., description="分组列表")
+
+
+class EpisodeGroupAssociateRequest(BaseModel):
+    """关联/解关联剧集组与条目"""
+    animeId: int = Field(..., description="要关联的条目ID")
+

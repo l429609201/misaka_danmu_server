@@ -98,6 +98,10 @@ export const getBangumiDetailTest = data =>
 export const getCommentTest = data =>
   api.get(`/api/v1/${data.apiToken}/comment/${data.episodeId}`)
 
+/** 文件名识别测试 */
+export const parseFilenameTest = data =>
+  api.post('/api/ui/tools/parse-filename', { fileName: data.fileName })
+
 /** 清除搜索缓存 */
 export const clearSearchCache = () => api.post('/api/ui/cache/clear')
 

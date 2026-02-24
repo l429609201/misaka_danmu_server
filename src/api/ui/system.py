@@ -252,6 +252,26 @@ async def get_log_file_content(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ParseFilenameRequest(BaseModel):
+    """文件名解析请求"""
+    fileName: str = Field(..., description="要解析的文件名")
+
+
+@router.post("/tools/parse-filename", summary="文件名识别测试")
+async def parse_filename_test(
+    request: ParseFilenameRequest,
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """调用文件名解析模块，返回识别结果。"""
+    from src.utils.filename_parser import parse_filename
+    from dataclasses import asdict
+
+    result = parse_filename(request.fileName)
+    if result is None:
+        return {"success": False, "message": "无法识别该文件名", "result": None}
+    return {"success": True, "result": asdict(result)}
+
+
 @router.get("/logs/stream", summary="SSE实时日志推送")
 async def stream_server_logs(current_user: models.User = Depends(security.get_current_user)):
     """使用Server-Sent Events实时推送服务器日志。"""

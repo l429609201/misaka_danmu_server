@@ -35,6 +35,8 @@ class ParseResult:
     dynamic_range: Optional[str] = None
     platform: Optional[str] = None
     effect: Optional[str] = None
+    original_title: Optional[str] = None
+    en_name: Optional[str] = None
 
 
 # ============================================================================
@@ -150,27 +152,27 @@ ALIAS_RE = re.compile(
     r'[\]\)\}）】]'
 )
 
-# 深度噪音词 (新增，来自 anime-matcher NOISE_WORDS)
+# 深度噪音词 (同步 anime-matcher NOISE_WORDS，已移除内联 (?i) 标志，统一由调用方传 re.IGNORECASE)
 NOISE_WORDS = [
-    r"(?i)PTS|JADE|AOD|CHC|(?!LINETV)[A-Z]{1,4}TV[-0-9UVHDK]*",
-    r"(?i)[0-9]{1,2}th|[0-9]{1,2}bit|IMAX|BBC|XXX|DC$",
-    r"(?i)Ma10p|Hi10p|Hi10|Ma10|10bit|8bit",
+    r"PTS|JADE|AOD|CHC|(?!LINETV)[A-Z]{1,4}TV[-0-9UVHDK]*",
+    r"[0-9]{1,2}th|[0-9]{1,2}bit|IMAX|BBC|XXX|DC$",
+    r"Ma10p|Hi10p|Hi10|Ma10|10bit|8bit",
     r"年龄限制版|年齡限制版|修正版|无修正|未删减|无修正版|無修正版",
     r"连载|新番|合集|招募翻译|版本|出品|台版|港版|搬运|搬運|[a-zA-Z0-9]+字幕组|[a-zA-Z0-9]+字幕社|[★☆]*[0-9]{1,2}月新番[★☆]*",
-    r"(?i)UNCUT|UNRATE|WITH EXTRAS|RERIP|SUBBED|PROPER|REPACK|Complete|Extended|Version|10bit",
-    r"(?i)\b(Movie|OVA|ONA|Special|SP|Specials|劇場版|剧场版|OAD|Extra)\b",
-    r"(?i)\b[vV][0-9]{1,2}\b|(?i)\bver[0-9]{1,2}\b",
+    r"UNCUT|UNRATE|WITH EXTRAS|RERIP|SUBBED|PROPER|REPACK|Complete|Extended|Version|10bit",
+    r"\b(OVA|ONA|Special|SP|Specials|劇場版|剧场版|OAD|Extra)\b",
+    r"\b[vV][0-9]{1,2}\b|\bver[0-9]{1,2}\b",
     r"CD[ ]*[1-9]|DVD[ ]*[1-9]|DISK[ ]*[1-9]|DISC[ ]*[1-9]|[ ]+GB",
-    r"(?i)YYeTs|人人影视|弯弯字幕组",
-    r"(?i)[简繁中日英双雙多]+[体文语語]+[ ]*(MP4|MKV|AVC|HEVC|AAC|ASS|SRT)*",
-    r"(?:繁体|繁體|简体|简体|简日|繁日|简中|繁中|简繁|双语|双语|内嵌|內嵌|内封|內封|外挂|外掛)",
+    r"YYeTs|人人影视|弯弯字幕组",
+    r"[简繁中日英双雙多]+[体文语語]+[ ]*(MP4|MKV|AVC|HEVC|AAC|ASS|SRT)*",
+    r"繁体|繁體|简体|简体|简日|繁日|简中|繁中|简繁|双语|双语|内嵌|內嵌|内封|內封|外挂|外掛",
 ]
 
-# 发布组排除词 (新增，来自 anime-matcher NOT_GROUPS)
+# 发布组排除词 (同步 anime-matcher NOT_GROUPS，已移除内联 (?i)，由调用方传 re.IGNORECASE)
 NOT_GROUPS = (
     "1080P|720P|4K|2160P|H264|H265|X264|X265|AVC|HEVC|AAC|DTS|AC3|DDP|ATMOS"
     "|WEB-DL|WEBRIP|BLURAY|BD|HD|HDR|SDR|DV|TRUEHD|HIRES|10BIT|EAC3|UHD 4K"
-    "|Ma10p|Hi10p|Hi10|Ma10|(?i)REMUX"
+    "|Ma10p|Hi10p|Hi10|Ma10|REMUX"
 )
 
 # 发布组语义特征词 (新增，来自 anime-matcher GROUP_KEYWORDS)
@@ -305,6 +307,145 @@ def _normalize_separators(title: str) -> str:
     return title.strip(' -')
 
 
+def _has_cjk(text: str) -> bool:
+    """检查文本是否包含 CJK 字符（中日韩统一表意文字、平假名、片假名）"""
+    return bool(re.search(r'[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uf900-\ufaff]', text))
+
+
+def _is_latin_word(word: str) -> bool:
+    """检查一个词是否为纯 Latin 字母组成"""
+    return bool(re.match(r'^[a-zA-Z][a-zA-Z\'-]*$', word))
+
+
+def _split_multilang_title(title: str) -> Tuple[str, Optional[str]]:
+    """
+    多语种标题拆分：当标题同时包含 CJK 和 Latin 文字时，拆分为 CJK 和 Latin 两部分。
+    参考 Lens 项目 STEP 5 "标题残差剥离与拆分" 的逻辑。
+
+    返回: (cjk_title, en_name)
+    - 发生拆分时: cjk_title 为 CJK 部分, en_name 为 Latin 部分
+    - 未拆分时: cjk_title 为原始标题, en_name 为 None
+
+    规则:
+    - CJK 在前 + 2个以上 Latin 词在后 → 拆分
+    - Latin 在前(≥2词) + CJK 在后 → 拆分
+    - 单个 Latin 词 + CJK（如 "BLEACH 死神"）→ 不拆分
+    - 纯 CJK 或纯 Latin → 不拆分
+    """
+    if not title or ' ' not in title:
+        return title, None
+
+    # 快速检查：必须同时包含 CJK 和 Latin
+    if not _has_cjk(title) or not re.search(r'[a-zA-Z]{2,}', title):
+        return title, None
+
+    words = title.split()
+
+    # 对每个词分类: True=CJK, False=Latin, None=其他(数字等)
+    def classify(w):
+        if _has_cjk(w):
+            return True
+        if _is_latin_word(w):
+            return False
+        return None
+
+    tags = [classify(w) for w in words]
+
+    # 找第一个 CJK 词和第一个 Latin 词的位置
+    first_cjk = next((i for i, t in enumerate(tags) if t is True), None)
+    first_latin = next((i for i, t in enumerate(tags) if t is False), None)
+
+    if first_cjk is None or first_latin is None:
+        return title, None
+
+    # 情况1: CJK 在前，Latin 在后
+    if first_cjk < first_latin:
+        last_cjk_before_latin = first_cjk
+        for i in range(first_cjk, len(tags)):
+            if tags[i] is True:
+                last_cjk_before_latin = i
+            elif tags[i] is False:
+                break
+        latin_count = sum(1 for t in tags[last_cjk_before_latin + 1:] if t is False)
+        if latin_count >= 2:
+            cjk_part = ' '.join(words[:last_cjk_before_latin + 1]).strip()
+            en_part = ' '.join(words[last_cjk_before_latin + 1:]).strip()
+            return cjk_part, en_part or None
+
+    # 情况2: Latin 在前，CJK 在后
+    elif first_latin < first_cjk:
+        latin_count = sum(1 for t in tags[:first_cjk] if t is False)
+        if latin_count >= 2:
+            en_part = ' '.join(words[:first_cjk]).strip()
+            cjk_part = ' '.join(words[first_cjk:]).strip()
+            return cjk_part, en_part or None
+
+    return title, None
+
+
+def _strip_all_metadata(name: str) -> str:
+    """
+    从文件名中剥离所有已知的元数据标签（分辨率、编码、来源、HDR、平台、特效等），
+    参考上游 anime-matcher 的 "噪声屏蔽" 策略：先剥离元数据，再提取标题。
+    """
+    temp = name
+
+    # 0. 预处理：拆分常见连写元数据 (如 WEB-DLHDR → WEB-DL.HDR)
+    temp = re.sub(r'(?i)(WEB-DL)(HDR)', r'\1.\2', temp)
+    temp = re.sub(r'(?i)(HEVC|AVC|H\.?265|H\.?264|x\.?265|x\.?264)(HDR)', r'\1.\2', temp)
+
+    # 1. 剥离字幕标签括号块和别名括号块
+    temp = SUBTITLE_RE.sub(' ', temp)
+    temp = ALIAS_RE.sub(' ', temp)
+
+    # 2. 剥离技术规格（按优先级顺序，长模式优先）
+    for pattern in [PIX_RE, VIDEO_RE, AUDIO_RE, SOURCE_RE,
+                    DYNAMIC_RANGE_RE, EFFECT_RE, PLATFORM_RE]:
+        temp = pattern.sub(' ', temp)
+
+    # 3. 剥离所有方括号/圆括号内容 (元数据值已在阶段1提取，此处可安全移除)
+    temp = re.sub(r'\[.*?\]|\(.*?\)|【.*?】|（.*?）', ' ', temp)
+
+    # 4. 剥离噪音词 (NOISE_WORDS 不含内联 (?i)，统一传 re.IGNORECASE)
+    for nw in NOISE_WORDS:
+        temp = re.sub(nw, ' ', temp, flags=re.IGNORECASE)
+
+    # 5. 剥离声道信息残留 (如 5.1, 7.1)
+    temp = re.sub(r'(?<![a-zA-Z0-9])([0-9]\.[0-9])(?:ch)?(?![a-zA-Z0-9])', ' ', temp)
+
+    # 6. 剥离尾部发布组标签 (如 -PTerWEB, -ADE, @ADWeb)
+    temp = re.sub(r'[-@][A-Za-z][A-Za-z0-9]{1,15}$', ' ', temp)
+
+    # 7. 清理空壳括号和孤儿括号
+    for _ in range(3):
+        temp = re.sub(r'[\[\(\{（【][\s\-\._/&+\*]*[\]\)\}）】]', ' ', temp)
+
+    # 8. 清理装饰性符号
+    temp = re.sub(r'[★☆■□◆◇●○•]', ' ', temp)
+
+    # 9. 压缩连续分隔符和空格
+    temp = re.sub(r'[\s\-\._/]{3,}', ' ', temp)
+    temp = re.sub(r'\s+', ' ', temp).strip(' -._')
+
+    return temp
+
+
+def _extract_tail_group(name: str) -> Optional[str]:
+    """
+    提取尾部发布组标签 (如 -PTerWEB, -ADE)。
+    参考上游 anime-matcher TagExtractor.extract_release_group 的尾部逻辑。
+    """
+    base = re.sub(r'\.[a-zA-Z0-9]+$', '', name)
+    m = re.search(r'-([A-Za-z][A-Za-z0-9]{1,15})$', base)
+    if m:
+        candidate = m.group(1)
+        # 排除已知的技术词
+        if re.match(rf'^({NOT_GROUPS})$', candidate, re.IGNORECASE):
+            return None
+        return candidate
+    return None
+
+
 # ============================================================================
 # 核心函数 1: parse_filename — 文件名完整解析
 # ============================================================================
@@ -314,32 +455,52 @@ def parse_filename(filename: str) -> Optional[ParseResult]:
     从文件名中解析出标题、季集、元数据等信息。
     替代 parse_filename_for_match()。
 
-    支持模式:
-    - SxxExx: "Some.Anime.S01E02.1080p.mkv"
-    - Season only: "Some Anime S03", "Some Anime Season 2"
-    - Episode only: "[Subs] Some Anime - 02 [1080p].mkv"
-    - Movie/单文件: 无季集信息
+    采用上游 anime-matcher 的 "先剥离元数据，再提取标题" 策略：
+    1. 从原始文件名中提取元数据值（分辨率、编码等）
+    2. 剥离所有元数据标签，得到干净的标题+集数字符串
+    3. 在干净字符串上做标题/季集模式匹配
     """
     name = _strip_video_extension(filename)
 
-    # 提取元数据
-    resolution = PIX_RE.search(name)
-    video_codec = VIDEO_RE.search(name)
-    audio_codec = AUDIO_RE.search(name)
-    source = SOURCE_RE.search(name)
-    dynamic_range = DYNAMIC_RANGE_RE.search(name)
-    platform = PLATFORM_RE.search(name)
-    effect = EFFECT_RE.search(name)
+    # ── 阶段1: 从原始文件名提取元数据值 ──
+    # 预处理：拆分常见连写元数据 (如 WEB-DLHDR → WEB-DL.HDR) 以便正确提取
+    name_for_meta = re.sub(r'(?i)(WEB-DL)(HDR)', r'\1.\2', name)
+    name_for_meta = re.sub(r'(?i)(HEVC|AVC|H\.?265|H\.?264|x\.?265|x\.?264)(HDR)', r'\1.\2', name_for_meta)
 
-    # 提取字幕组 (第一个方括号内容)
+    resolution = PIX_RE.search(name_for_meta)
+    video_codec = VIDEO_RE.search(name_for_meta)
+    audio_codec = AUDIO_RE.search(name_for_meta)
+    source = SOURCE_RE.search(name_for_meta)
+    dynamic_range = DYNAMIC_RANGE_RE.search(name_for_meta)
+    platform = PLATFORM_RE.search(name_for_meta)
+    effect = EFFECT_RE.search(name_for_meta)
+
+    # 提取字幕组 (首部方括号)
     team_match = re.match(r'^\[([^\]]+)\]', name)
     team = team_match.group(1) if team_match else None
+
+    # 尝试提取尾部发布组 (如 -PTerWEB)
+    if not team:
+        team = _extract_tail_group(name)
 
     # 提取年份
     year_match = re.search(r'[\(\[（]?((?:19|20)\d{2})[\)\]）]?', name)
     year = year_match.group(1) if year_match else None
 
-    # 模式1: SxxExx
+    # 构建元数据结果 (提前准备，避免重复代码)
+    meta = dict(
+        year=year,
+        resolution=resolution.group(0) if resolution else None,
+        video_codec=video_codec.group(0) if video_codec else None,
+        audio_codec=audio_codec.group(0) if audio_codec else None,
+        source=source.group(0) if source else None,
+        team=team,
+        dynamic_range=dynamic_range.group(1) if dynamic_range else None,
+        platform=(platform.group(1) or platform.group(2)) if platform else None,
+        effect=effect.group(1) if effect else None,
+    )
+
+    # ── 阶段1.5: 在原始文件名上先尝试 SxxExx (最可靠的模式) ──
     m = re.search(
         r'(?P<title>.+?)[\s._-]*[Ss](?P<season>\d{1,2})[Ee](?P<episode>\d{1,4})\b',
         name
@@ -350,22 +511,28 @@ def parse_filename(filename: str) -> Optional[ParseResult]:
         title = _normalize_separators(title)
         title = _clean_year_from_title(title)
         title = re.sub(r'\s+', ' ', title).strip(' -')
-        return ParseResult(
-            title=title,
-            season=int(m.group('season')),
-            episode=int(m.group('episode')),
-            year=year,
-            resolution=resolution.group(0) if resolution else None,
-            video_codec=video_codec.group(0) if video_codec else None,
-            audio_codec=audio_codec.group(0) if audio_codec else None,
-            source=source.group(0) if source else None,
-            team=team,
-            dynamic_range=dynamic_range.group(1) if dynamic_range else None,
-            platform=(platform.group(1) or platform.group(2)) if platform else None,
-            effect=effect.group(1) if effect else None,
-        )
-
-    # 模式2: Season only (S03, Season 2)
+        full_title = title
+        title, en_name = _split_multilang_title(title)
+        return ParseResult(title=title, season=int(m.group('season')),
+                           episode=int(m.group('episode')),
+                           original_title=full_title if en_name else None,
+                           en_name=en_name, **meta)
+    m = re.search(
+        r'(?P<title>.+?)[\s._-]+[Ss](?P<season>\d{1,2})[\s._-]+(?P<episode>\d{1,4})\b',
+        name
+    )
+    if m:
+        title = m.group('title')
+        title = _clean_brackets_and_metadata(title)
+        title = _normalize_separators(title)
+        title = _clean_year_from_title(title)
+        title = re.sub(r'\s+', ' ', title).strip(' -')
+        full_title = title
+        title, en_name = _split_multilang_title(title)
+        return ParseResult(title=title, season=int(m.group('season')),
+                           episode=int(m.group('episode')),
+                           original_title=full_title if en_name else None,
+                           en_name=en_name, **meta)
     for pattern in [
         re.compile(r'^(?P<title>.+?)[\s._-]+[Ss](?P<season>\d{1,2})(?:\s|$)', re.IGNORECASE),
         re.compile(r'^(?P<title>.+?)[\s._-]+Season[\s._-]*(?P<season>\d{1,2})(?:\s|$)', re.IGNORECASE),
@@ -377,66 +544,51 @@ def parse_filename(filename: str) -> Optional[ParseResult]:
             title = _normalize_separators(title)
             title = _clean_year_from_title(title)
             title = re.sub(r'\s+', ' ', title).strip(' -')
-            return ParseResult(
-                title=title,
-                season=int(m.group('season')),
-                year=year,
-                resolution=resolution.group(0) if resolution else None,
-                video_codec=video_codec.group(0) if video_codec else None,
-                audio_codec=audio_codec.group(0) if audio_codec else None,
-                source=source.group(0) if source else None,
-                team=team,
-                dynamic_range=dynamic_range.group(1) if dynamic_range else None,
-                platform=(platform.group(1) or platform.group(2)) if platform else None,
-                effect=effect.group(1) if effect else None,
-            )
+            full_title = title
+            title, en_name = _split_multilang_title(title)
+            return ParseResult(title=title, season=int(m.group('season')),
+                               original_title=full_title if en_name else None,
+                               en_name=en_name, **meta)
+    cleaned = _strip_all_metadata(name)
+    # 移除年份括号 (如 "(2024)")
+    cleaned = re.sub(r'[\(\（]\s*(19|20)\d{2}\s*[\)\）]', ' ', cleaned)
+    # 移除首部字幕组括号
+    cleaned = re.sub(r'^\[[^\]]+\]', '', cleaned).strip()
+    # 规范化分隔符
+    cleaned = cleaned.replace('.', ' ').replace('_', ' ')
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip(' -')
+
+    # ── 阶段3: 在干净字符串上做 Episode / Movie 匹配 ──
 
     # 模式3: Episode only ("Title - 02", "Title 02")
     for pattern in [
-        re.compile(r'^(?P<title>.+?)\s*[-_]\s*\b(?P<episode>\d{1,4})\b', re.IGNORECASE),
-        re.compile(r'^(?P<title>.+?)\s+\b(?P<episode>\d{1,4})\b', re.IGNORECASE),
+        re.compile(r'^(?P<title>.+?)\s*[-_]\s*(?P<episode>\d{1,4})\s*$'),
+        re.compile(r'^(?P<title>.+?)\s+(?P<episode>\d{1,4})\s*$'),
     ]:
-        m = pattern.search(name)
+        m = pattern.search(cleaned)
         if m:
+            ep = int(m.group('episode'))
+            # 过滤误报: 年份不应被当作集数
+            if 1900 <= ep <= 2099:
+                continue
             title = m.group('title')
-            title = _clean_brackets_and_metadata(title)
-            title = _normalize_separators(title)
             title = _clean_year_from_title(title)
             title = re.sub(r'\s+', ' ', title).strip(' -')
-            return ParseResult(
-                title=title,
-                episode=int(m.group('episode')),
-                year=year,
-                resolution=resolution.group(0) if resolution else None,
-                video_codec=video_codec.group(0) if video_codec else None,
-                audio_codec=audio_codec.group(0) if audio_codec else None,
-                source=source.group(0) if source else None,
-                team=team,
-                dynamic_range=dynamic_range.group(1) if dynamic_range else None,
-                platform=(platform.group(1) or platform.group(2)) if platform else None,
-                effect=effect.group(1) if effect else None,
-            )
-
-    # 模式4: 电影/单文件
-    title = _clean_brackets_and_metadata(name)
-    title = _normalize_separators(title)
-    title = _clean_year_from_title(title)
+            full_title = title
+            title, en_name = _split_multilang_title(title)
+            if title:
+                return ParseResult(title=title, episode=ep,
+                                   original_title=full_title if en_name else None,
+                                   en_name=en_name, **meta)
+    title = _clean_year_from_title(cleaned)
     title = re.sub(r'\s+', ' ', title).strip(' -')
+    full_title = title
+    title, en_name = _split_multilang_title(title)
 
     if title:
-        return ParseResult(
-            title=title,
-            is_movie=True,
-            year=year,
-            resolution=resolution.group(0) if resolution else None,
-            video_codec=video_codec.group(0) if video_codec else None,
-            audio_codec=audio_codec.group(0) if audio_codec else None,
-            source=source.group(0) if source else None,
-            team=team,
-            dynamic_range=dynamic_range.group(1) if dynamic_range else None,
-            platform=(platform.group(1) or platform.group(2)) if platform else None,
-            effect=effect.group(1) if effect else None,
-        )
+        return ParseResult(title=title, is_movie=True,
+                           original_title=full_title if en_name else None,
+                           en_name=en_name, **meta)
 
     return None
 

@@ -9,7 +9,7 @@ from sqlalchemy import select, func, distinct, case, or_, and_, update, delete
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timedelta
 
-from ..orm_models import Anime, TmdbEpisodeMapping
+from ..orm_models import Anime, AnimeMetadata, TmdbEpisodeMapping
 from .. import models
 from src.core.timezone import get_now
 
@@ -85,4 +85,67 @@ async def get_episode_group_mappings(session: AsyncSession, group_id: str) -> Op
         "description": "",
         "groups": groups,
     }
+
+
+async def list_episode_groups(session: AsyncSession, tmdb_tv_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    列出所有剧集组摘要，按 tmdbEpisodeGroupId 聚合。
+    可选按 tmdbTvId 过滤。
+    """
+    stmt = (
+        select(
+            TmdbEpisodeMapping.tmdbEpisodeGroupId,
+            TmdbEpisodeMapping.tmdbTvId,
+            func.count(TmdbEpisodeMapping.id).label("episodeCount"),
+            func.count(distinct(TmdbEpisodeMapping.customSeasonNumber)).label("groupCount"),
+        )
+        .group_by(TmdbEpisodeMapping.tmdbEpisodeGroupId, TmdbEpisodeMapping.tmdbTvId)
+        .order_by(TmdbEpisodeMapping.tmdbTvId)
+    )
+    if tmdb_tv_id is not None:
+        stmt = stmt.where(TmdbEpisodeMapping.tmdbTvId == tmdb_tv_id)
+
+    result = await session.execute(stmt)
+    rows = result.all()
+
+    # 批量查询所有剧集组的关联条目
+    group_ids = [row.tmdbEpisodeGroupId for row in rows]
+    assoc_stmt = (
+        select(AnimeMetadata.tmdbEpisodeGroupId, AnimeMetadata.animeId)
+        .where(AnimeMetadata.tmdbEpisodeGroupId.in_(group_ids))
+    )
+    assoc_result = await session.execute(assoc_stmt)
+    assoc_map: Dict[str, List[int]] = {}
+    for ar in assoc_result.all():
+        assoc_map.setdefault(ar.tmdbEpisodeGroupId, []).append(ar.animeId)
+
+    return [
+        {
+            "groupId": row.tmdbEpisodeGroupId,
+            "tmdbTvId": row.tmdbTvId,
+            "episodeCount": row.episodeCount,
+            "groupCount": row.groupCount,
+            "isLocal": row.tmdbEpisodeGroupId.startswith("local-"),
+            "associatedAnimeIds": assoc_map.get(row.tmdbEpisodeGroupId, []),
+        }
+        for row in rows
+    ]
+
+
+async def get_associated_anime_ids(session: AsyncSession, group_id: str) -> List[int]:
+    """查询关联了指定剧集组的所有条目ID。"""
+    stmt = select(AnimeMetadata.animeId).where(AnimeMetadata.tmdbEpisodeGroupId == group_id)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def delete_episode_group_mappings(session: AsyncSession, group_id: str) -> int:
+    """删除指定 groupId 的所有映射记录，返回删除的行数。"""
+    result = await session.execute(
+        delete(TmdbEpisodeMapping).where(TmdbEpisodeMapping.tmdbEpisodeGroupId == group_id)
+    )
+    await session.commit()
+    deleted = result.rowcount
+    logger.info(f"已删除剧集组 {group_id} 的 {deleted} 条映射记录。")
+    return deleted
 

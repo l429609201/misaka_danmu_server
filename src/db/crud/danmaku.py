@@ -238,25 +238,29 @@ def _generate_xml_from_comments(
 def _get_fs_path_from_web_path(web_path: Optional[str]) -> Optional[Path]:
     """
     将Web路径转换为文件系统路径。
-    现在支持绝对路径格式（如 /app/config/danmaku/1/2.xml）和自定义路径。
+    支持: Docker路径(/app/...)、Linux绝对路径(/)、Windows绝对路径(D:\...)、旧格式相对路径。
     """
     if not web_path:
         return None
 
-    # 如果是绝对路径，需要转换为相对路径
+    # Docker 标准路径: /app/config/... → 移除 /app/ 前缀
     if web_path.startswith('/app/'):
-        # 移除 /app/ 前缀，转换为相对路径
         return Path(web_path[5:])  # 移除 "/app/" 前缀
-    elif web_path.startswith('/'):
-        # 其他绝对路径保持不变（用户自定义的绝对路径）
+
+    # Windows 绝对路径 (如 D:\..., C:\...)
+    if len(web_path) >= 2 and web_path[1] == ':':
+        return Path(web_path)
+
+    # Linux/Mac 绝对路径
+    if web_path.startswith('/'):
         return Path(web_path)
 
     # 兼容旧的相对路径格式
-    if '/danmaku/' in web_path:
-        relative_part = web_path.split('/danmaku/', 1)[1]
+    if '/danmaku/' in web_path or '\\danmaku\\' in web_path:
+        sep = '/danmaku/' if '/danmaku/' in web_path else '\\danmaku\\'
+        relative_part = web_path.split(sep, 1)[1]
         return DANMAKU_BASE_DIR / relative_part
     elif '/custom_danmaku/' in web_path:
-        # 处理自定义路径
         relative_part = web_path.split('/custom_danmaku/', 1)[1]
         return Path(relative_part)
 

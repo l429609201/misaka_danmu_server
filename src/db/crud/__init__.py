@@ -234,6 +234,9 @@ from .token_log import (
 from .tmdb import (
     save_tmdb_episode_group_mappings,
     get_episode_group_mappings,
+    list_episode_groups,
+    delete_episode_group_mappings,
+    get_associated_anime_ids,
 )
 
 # RateLimit模块
@@ -466,6 +469,7 @@ __all__ = [
     # TMDB
     'save_tmdb_episode_group_mappings',
     'get_episode_group_mappings',
+    'get_associated_anime_ids',
     # RateLimit
     'get_or_create_rate_limit_state',
     'get_all_rate_limit_states',
