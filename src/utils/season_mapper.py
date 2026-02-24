@@ -72,79 +72,12 @@ def is_spinoff_title(title: str, base_title: str) -> bool:
 # 标题中明确季度信息提取 (V2.1.7新增)
 # ============================================================================
 
-# 中文数字到阿拉伯数字的映射
-CHINESE_NUM_MAP = {
-    '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
-    '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
-    '十一': 11, '十二': 12, '十三': 13, '十四': 14, '十五': 15,
-}
-
-# 罗马数字到阿拉伯数字的映射
-ROMAN_NUM_MAP = {
-    'i': 1, 'ii': 2, 'iii': 3, 'iv': 4, 'v': 5,
-    'vi': 6, 'vii': 7, 'viii': 8, 'ix': 9, 'x': 10,
-    'ⅰ': 1, 'ⅱ': 2, 'ⅲ': 3, 'ⅳ': 4, 'ⅴ': 5,
-    'ⅵ': 6, 'ⅶ': 7, 'ⅷ': 8, 'ⅸ': 9, 'ⅹ': 10,
-}
-
-
-def _extract_explicit_season_from_title(title: str) -> Optional[int]:
-    """
-    从标题中提取明确的季度信息 (V2.1.7新增)
-
-    识别以下模式:
-    - "第二季"、"第三季" 等中文季度
-    - "Season 2"、"Season 3" 等英文季度
-    - "S2"、"S3" 等缩写（需在标题末尾或空格后）
-    - 罗马数字如 "II"、"III" 等（需在标题末尾）
-
-    Args:
-        title: 标题字符串
-
-    Returns:
-        季度数字，如果没有明确季度信息则返回 None
-    """
-    if not title:
-        return None
-
-    title_clean = title.strip()
-
-    # 模式1: 中文 "第N季" (N为中文或阿拉伯数字)
-    match = re.search(r'第([一二三四五六七八九十]+|\d+)季', title_clean)
-    if match:
-        num_str = match.group(1)
-        if num_str.isdigit():
-            return int(num_str)
-        elif num_str in CHINESE_NUM_MAP:
-            return CHINESE_NUM_MAP[num_str]
-
-    # 模式2: 英文 "Season N"
-    match = re.search(r'Season\s*(\d+)', title_clean, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-
-    # 模式3: 缩写 "S2"、"S3" 等（在空格后或末尾）
-    match = re.search(r'(?:^|\s)S(\d+)(?:\s|$)', title_clean, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-
-    # 模式4: 罗马数字（在末尾，如 "刀剑神域 II"）
-    match = re.search(r'\s+(I{1,3}|IV|VI{0,3}|IX|X|[ⅰⅱⅲⅳⅴⅵⅶⅷⅸⅹ])\s*$', title_clean, re.IGNORECASE)
-    if match:
-        roman = match.group(1).lower()
-        if roman in ROMAN_NUM_MAP:
-            return ROMAN_NUM_MAP[roman]
-
-    # 模式5: 标题末尾的阿拉伯数字（如 "暴风之铳2"、"魔法少女小圆3"）
-    # 匹配末尾的数字，但排除年份（4位数字）和分辨率（如1080）
-    match = re.search(r'[^\d](\d{1,2})\s*$', title_clean)
-    if match:
-        num = int(match.group(1))
-        # 只接受合理的季度范围 (1-20)
-        if 1 <= num <= 20:
-            return num
-
-    return None
+# 中文数字和罗马数字映射已迁移至 src.utils.filename_parser
+from src.utils.filename_parser import (
+    CHINESE_NUM_MAP,
+    ROMAN_NUM_MAP,
+    extract_season_from_title as _extract_explicit_season_from_title,
+)
 
 
 # ============================================================================

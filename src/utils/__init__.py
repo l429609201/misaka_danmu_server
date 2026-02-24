@@ -11,7 +11,24 @@
 """
 
 # 通用工具
-from .common import parse_search_keyword, sample_comments_evenly, clean_xml_string
+from .common import sample_comments_evenly, clean_xml_string
+
+# 文件名解析 (统一模块)
+from .filename_parser import (
+    ParseResult,
+    parse_filename,
+    parse_search_keyword,
+    extract_season_episode,
+    extract_season_from_title,
+    clean_title,
+    clean_movie_title,
+    normalize_title,
+    is_movie_by_title,
+    is_chinese_title,
+    parse_episode_ranges,
+    format_episode_ranges,
+    METADATA_PATTERN,
+)
 
 # 搜索计时器
 from .search_timer import (
@@ -54,8 +71,21 @@ from .proxy_middleware import init_proxy_middleware
 from .transport_manager import TransportManager
 
 __all__ = [
-    # 通用工具
+    # 文件名解析
+    'ParseResult',
+    'parse_filename',
     'parse_search_keyword',
+    'extract_season_episode',
+    'extract_season_from_title',
+    'clean_title',
+    'clean_movie_title',
+    'normalize_title',
+    'is_movie_by_title',
+    'is_chinese_title',
+    'parse_episode_ranges',
+    'format_episode_ranges',
+    'METADATA_PATTERN',
+    # 通用工具
     'sample_comments_evenly',
     'clean_xml_string',
     # 搜索计时器

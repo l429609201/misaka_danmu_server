@@ -312,52 +312,14 @@ class LocalDanmakuScanner:
         return title, media_type, season, episode
 
     def _extract_season_episode(self, file_name: str) -> Tuple[Optional[int], Optional[int]]:
-        """
-        从文件名提取季集信息
-        
-        支持格式:
-        - S01E01, S1E1
-        - 第1季第1集
-        - 1x01
-        """
-        # 标准格式: S01E01
-        match = re.search(r'[Ss](\d+)[Ee](\d+)', file_name)
-        if match:
-            return int(match.group(1)), int(match.group(2))
-
-        # 中文格式: 第1季第1集
-        match = re.search(r'第(\d+)季第(\d+)集', file_name)
-        if match:
-            return int(match.group(1)), int(match.group(2))
-
-        # 简写格式: 1x01
-        match = re.search(r'(\d+)x(\d+)', file_name)
-        if match:
-            return int(match.group(1)), int(match.group(2))
-
-        # 仅集数: E01, EP01
-        match = re.search(r'[Ee][Pp]?(\d+)', file_name)
-        if match:
-            return 1, int(match.group(1))  # 默认第1季
-
-        return None, None
+        """从文件名提取季集信息 — 委托给统一模块"""
+        from src.utils.filename_parser import extract_season_episode
+        return extract_season_episode(file_name)
 
     def _clean_title(self, title: str) -> str:
-        """清理标题"""
-        # 移除TMDB ID等元数据标识
-        # 例如: 越狱（TMDBID=12345） → 越狱
-        title = re.sub(r'[（(]TMDBID=\d+[）)]', '', title, flags=re.IGNORECASE)
-        title = re.sub(r'[（(]TVDBID=\d+[）)]', '', title, flags=re.IGNORECASE)
-        title = re.sub(r'[（(]IMDBID=tt\d+[）)]', '', title, flags=re.IGNORECASE)
-
-        # 移除年份
-        # 例如: 阿凡达 (2009) → 阿凡达
-        # 例如: 越狱（2005） → 越狱
-        title = re.sub(r'\s*[（(]\d{4}[）)]\s*', ' ', title)
-
-        # 移除多余空格
-        title = re.sub(r'\s+', ' ', title).strip()
-        return title
+        """清理标题 — 委托给统一模块"""
+        from src.utils.filename_parser import clean_title
+        return clean_title(title)
 
 
 def copy_local_poster(poster_path: str) -> Optional[str]:

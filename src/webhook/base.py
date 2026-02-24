@@ -35,6 +35,7 @@ class BaseWebhook(ABC):
         self.config_manager = config_manager
         self.title_recognition_manager = title_recognition_manager
         self.ai_matcher_manager = ai_matcher_manager
+        self.notification_service = None  # 由 main.py 注入
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @abstractmethod
@@ -77,7 +78,18 @@ class BaseWebhook(ABC):
             delayed_enabled = (await self.config_manager.get("webhookDelayedImportEnabled", "false")).lower() == 'true'
             delay_hours_str = await self.config_manager.get("webhookDelayedImportHours", "24")
             delay_hours = int(delay_hours_str) if delay_hours_str.isdigit() else 24
-            
+
+            # 发射 webhook_triggered 通知事件
+            if self.notification_service:
+                try:
+                    await self.notification_service.emit_event("webhook_triggered", {
+                        "anime_title": payload.get("animeTitle", "未知"),
+                        "webhook_source": webhook_source,
+                        "task_title": task_title,
+                    })
+                except Exception as e:
+                    self.logger.error(f"发射 webhook_triggered 事件失败: {e}")
+
             if delayed_enabled:
                 # 延时导入开启：将任务存入数据库
                 await crud.create_webhook_task(

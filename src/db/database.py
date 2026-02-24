@@ -13,6 +13,11 @@ from .migrations import run_migrations
 # 使用模块级日志记录器
 logger = logging.getLogger(__name__)
 
+
+class DatabaseStartupError(Exception):
+    """数据库启动失败异常，用于在 lifespan 中捕获并干净退出"""
+    pass
+
 # 全局 session_factory，在应用启动时设置
 _global_session_factory = None
 
@@ -135,6 +140,7 @@ async def create_db_engine_and_session(app: FastAPI):
         db_type = settings.database.type.lower()
         engine_args = {
             "echo": False,
+            "pool_pre_ping": True,
             "pool_recycle": 3600,
             "pool_size": 20,
             "max_overflow": 40,
@@ -150,10 +156,8 @@ async def create_db_engine_and_session(app: FastAPI):
 
         logger.info("数据库引擎和会话工厂创建成功。")
     except Exception as e:
-        # 修正：调用标准化的错误日志函数，并提供更精确的上下文
         _log_db_connection_error(f"连接目标数据库 '{settings.database.name}'", e)
-        import sys
-        sys.exit(1)  # 直接退出，避免显示Traceback
+        raise DatabaseStartupError("数据库连接失败") from None
 
 async def _create_db_if_not_exists():
     """如果数据库不存在，则使用 SQLAlchemy 引擎创建它。"""
@@ -191,10 +195,8 @@ async def _create_db_if_not_exists():
             else:
                 logger.info(f"数据库 '{db_name}' 已存在，跳过创建。")
     except Exception as e:
-        # 修正：调用标准化的错误日志函数，并提供更精确的上下文
         _log_db_connection_error("检查或创建数据库时连接服务器", e)
-        import sys
-        sys.exit(1)  # 直接退出，避免显示Traceback
+        raise DatabaseStartupError("数据库连接失败") from None
     finally:
         await engine.dispose()
 
@@ -252,10 +254,25 @@ async def create_initial_admin_user(app: FastAPI):
     print(f"=== 请使用以下随机生成的密码登录: {admin_pass} ".ljust(56) + "===")
     print("="*60 + "\n")
 
+async def _is_fresh_database(engine) -> bool:
+    """
+    检测是否为全新的空数据库（没有任何应用表）。
+    通过检查核心表 'config' 是否存在来判断。
+    """
+    db_type = get_db_type()
+    async with engine.connect() as conn:
+        if db_type == "mysql":
+            sql = text("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'config'")
+        else:  # postgresql
+            sql = text("SELECT 1 FROM information_schema.tables WHERE table_name = 'config'")
+        result = await conn.execute(sql)
+        return result.scalar_one_or_none() is None
+
+
 async def init_db_tables(app: FastAPI):
     """初始化数据库和表"""
     from .db_maintainer import sync_database_schema
-    from .migrations import run_migrations
+    from .migrations import run_migrations, mark_all_migrations_done
 
     # 1. 确保数据库存在
     await _create_db_if_not_exists()
@@ -263,15 +280,27 @@ async def init_db_tables(app: FastAPI):
     # 2. 创建数据库引擎和会话工厂
     await create_db_engine_and_session(app)
 
-    # 3. 创建所有表（基于 ORM 模型）
     engine = app.state.db_engine
+
+    # 3. 检测是否为全新数据库（在 create_all 之前检查）
+    is_fresh = await _is_fresh_database(engine)
+
+    # 4. 创建所有表（基于 ORM 模型）
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # 4. 同步数据库结构（自动检测并补充缺失的字段）
-    async with engine.begin() as conn:
-        await sync_database_schema(conn, settings.database.type.lower())
+    if is_fresh:
+        # 全新数据库：create_all 已按 ORM 模型正确创建所有表，
+        # 无需同步字段或执行迁移，只需标记所有迁移为已完成
+        logger.info("检测到全新数据库，跳过结构同步和历史迁移。")
+        async with engine.begin() as conn:
+            await mark_all_migrations_done(conn)
+    else:
+        # 已有数据库：执行正常的同步和迁移流程
+        # 5. 同步数据库结构（自动检测并补充缺失的字段）
+        async with engine.begin() as conn:
+            await sync_database_schema(conn, settings.database.type.lower())
 
-    # 5. 执行数据库迁移任务
-    async with engine.begin() as conn:
-        await run_migrations(conn, settings.database.type.lower(), settings.database.name)
+        # 6. 执行数据库迁移任务
+        async with engine.begin() as conn:
+            await run_migrations(conn, settings.database.type.lower(), settings.database.name)

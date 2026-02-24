@@ -14,6 +14,27 @@ import { Tooltip } from 'antd'
 import SessionManager from '@/components/SessionManager'
 import VersionModal from '@/components/VersionModal'
 import ThemeColorPicker from '@/components/ThemeColorPicker'
+import RealtimeLogModal from '@/components/RealtimeLogModal'
+import HistoryLogModal from '@/components/HistoryLogModal'
+
+// 实时日志图标 (Lucide - scroll-text)
+const RealtimeLogIcon = () => (
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15 12h-5"/>
+    <path d="M15 8h-5"/>
+    <path d="M19 17V5a2 2 0 0 0-2-2H4"/>
+    <path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2"/>
+  </svg>
+)
+
+// 历史日志图标 (Lucide - archive)
+const HistoryLogIcon = () => (
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="20" height="5" x="2" y="3" rx="1"/>
+    <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/>
+    <path d="M10 12h4"/>
+  </svg>
+)
 
 // GitHub 图标 (Simple Icons 标准)
 const GithubIcon = () => (
@@ -136,6 +157,8 @@ export const Header = () => {
   const [docsUrl, setDocsUrl] = useState('');
   const [hasUpdate, setHasUpdate] = useState(false);
   const [versionModalOpen, setVersionModalOpen] = useState(false);
+  const [realtimeLogOpen, setRealtimeLogOpen] = useState(false);
+  const [historyLogOpen, setHistoryLogOpen] = useState(false);
   console.log(location)
 
   const activeKey = useMemo(() => {
@@ -187,6 +210,16 @@ export const Header = () => {
                 <img src="/images/logo.png" className="h-12 cursor-pointer" />
               </div>
               <div className="flex items-center justify-center gap-3 ml-auto">
+                <Tooltip title="实时日志">
+                  <div onClick={() => setRealtimeLogOpen(true)} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 18 }}>
+                    <RealtimeLogIcon />
+                  </div>
+                </Tooltip>
+                <Tooltip title="历史日志">
+                  <div onClick={() => setHistoryLogOpen(true)} className="cursor-pointer" style={{ color: '#8B7355', fontSize: 18 }}>
+                    <HistoryLogIcon />
+                  </div>
+                </Tooltip>
                 <Tooltip title="GitHub">
                   <a
                     href="https://github.com/l429609201/misaka_danmu_server"
@@ -240,6 +273,8 @@ export const Header = () => {
           docsUrl={docsUrl}
           hasUpdate={hasUpdate}
           onVersionClick={() => setVersionModalOpen(true)}
+          onRealtimeLog={() => setRealtimeLogOpen(true)}
+          onHistoryLog={() => setHistoryLogOpen(true)}
         />
       )}
 
@@ -248,6 +283,18 @@ export const Header = () => {
         open={versionModalOpen}
         onClose={() => setVersionModalOpen(false)}
         currentVersion={version}
+      />
+
+      {/* 实时日志弹窗 */}
+      <RealtimeLogModal
+        open={realtimeLogOpen}
+        onClose={() => setRealtimeLogOpen(false)}
+      />
+
+      {/* 历史日志弹窗 */}
+      <HistoryLogModal
+        open={historyLogOpen}
+        onClose={() => setHistoryLogOpen(false)}
       />
     </>
   )
@@ -558,7 +605,7 @@ const MobileHeader = ({ activeKey }) => {
   )
 }
 
-const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick }) => {
+const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick, onRealtimeLog, onHistoryLog }) => {
   const navigate = useNavigate()
   const userinfo = useAtomValue(userinfoAtom)
   const messageApi = useMessage()
@@ -659,6 +706,16 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick 
             ))}
           </div>
           <div className="flex items-center justify-center gap-4 ml-auto">
+            <Tooltip title="实时日志">
+              <div onClick={onRealtimeLog} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 20 }}>
+                <RealtimeLogIcon />
+              </div>
+            </Tooltip>
+            <Tooltip title="历史日志">
+              <div onClick={onHistoryLog} className="cursor-pointer" style={{ color: '#8B7355', fontSize: 20 }}>
+                <HistoryLogIcon />
+              </div>
+            </Tooltip>
             <Tooltip title="GitHub">
               <a
                 href="https://github.com/l429609201/misaka_danmu_server"

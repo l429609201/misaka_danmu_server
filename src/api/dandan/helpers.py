@@ -130,19 +130,9 @@ async def get_episode_mapping(session: AsyncSession, episode_id: int) -> Optiona
 
 
 def format_episode_ranges(episodes: List[int]) -> str:
-    """将分集列表格式化为简洁的范围表示，例如: [1,2,3,5,6,7,10] -> "1-3,5-7,10" """
-    if not episodes:
-        return ""
-    episodes = sorted(set(episodes))
-    ranges, start, end = [], episodes[0], episodes[0]
-    for i in range(1, len(episodes)):
-        if episodes[i] == end + 1:
-            end = episodes[i]
-        else:
-            ranges.append(str(start) if start == end else f"{start}-{end}")
-            start = end = episodes[i]
-    ranges.append(str(start) if start == end else f"{start}-{end}")
-    return ",".join(ranges)
+    """将分集列表格式化为简洁的范围表示 — 委托给统一模块"""
+    from src.utils.filename_parser import format_episode_ranges as _fmt
+    return _fmt(episodes, separator=",")
 
 
 async def find_existing_anime_by_bangumi_id(

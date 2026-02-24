@@ -76,6 +76,8 @@ class TaskManager:
 
         # 任务恢复所需的依赖，通过 set_recovery_dependencies 方法注入
         self._recovery_dependencies: Optional[Dict[str, Any]] = None
+        # 通知服务引用，通过 set_notification_service 方法注入
+        self._notification_service = None
 
     def set_recovery_dependencies(self, dependencies: Dict[str, Any]):
         """设置任务恢复所需的依赖
@@ -90,6 +92,72 @@ class TaskManager:
         """
         self._recovery_dependencies = dependencies
         self.logger.info("任务恢复依赖已设置")
+
+    def set_notification_service(self, notification_service):
+        """设置通知服务引用"""
+        self._notification_service = notification_service
+        self.logger.info("通知服务已注入 TaskManager")
+
+    def _determine_event_type(self, task: Task, is_success: bool) -> Optional[str]:
+        """根据任务的 unique_key 和 title 判断应触发的通知事件类型"""
+        key = task.unique_key or ""
+        title = task.title or ""
+        suffix = "_success" if is_success else "_failed"
+
+        # 删除任务不发通知
+        if key.startswith("delete-source-") or key.startswith("delete-bulk-sources-"):
+            return None
+
+        # 定时任务（有 scheduled_task_id）
+        if task.scheduled_task_id:
+            return "scheduled_task_complete" if is_success else "scheduled_task_failed"
+
+        # Webhook 导入
+        if key.startswith("webhook-search-"):
+            return f"webhook_import{suffix}"
+
+        # 数据源刷新
+        if key.startswith("refresh-episode-") or key.startswith("full-refresh-") or key.startswith("bulk-refresh-"):
+            return f"refresh{suffix}"
+
+        # 追更刷新（增量刷新 job 提交的导入任务，通过 title 识别）
+        if "追更" in title or "增量刷新" in title:
+            return f"incremental_refresh{suffix}"
+
+        # 自动导入
+        if key.startswith("auto-import-"):
+            return f"auto_import{suffix}"
+
+        # 媒体库扫描
+        if key.startswith("scan-media-server-"):
+            return "media_scan_complete" if is_success else None
+
+        # 通用导入（UI导入、URL导入、手动导入、批量导入、编辑后导入等）
+        if key.startswith(("ui-import-", "url-import-", "manual-import-", "batch-manual-import-", "import-")):
+            return f"import{suffix}"
+
+        # 兜底：有 unique_key 但未匹配到的，按导入处理
+        if key:
+            return f"import{suffix}"
+
+        return None
+
+    async def _emit_task_event(self, task: Task, is_success: bool, message: str = ""):
+        """发射任务完成/失败的通知事件"""
+        if not self._notification_service:
+            return
+        event_type = self._determine_event_type(task, is_success)
+        if not event_type:
+            return
+        try:
+            await self._notification_service.emit_event(event_type, {
+                "task_title": task.title,
+                "message": message,
+                "task_id": task.task_id,
+                "unique_key": task.unique_key or "",
+            })
+        except Exception as e:
+            self.logger.error(f"发射通知事件 {event_type} 失败: {e}")
 
     def start(self):
         """启动后台工作协程来处理任务队列。"""
@@ -140,6 +208,7 @@ class TaskManager:
                     session, task.task_id, TaskStatus.COMPLETED, "任务成功完成"
                 )
                 self.logger.info(f"任务 '{task.title}' (ID: {task.task_id}) 已成功完成 [队列: {queue_type}]。")
+                await self._emit_task_event(task, True, "任务成功完成")
         except TaskPauseForRateLimit as e:
             # 任务因速率限制需要暂停
             self.logger.info(f"任务 '{task.title}' (ID: {task.task_id}) 因速率限制暂停 {e.retry_after_seconds:.0f} 秒")
@@ -174,6 +243,7 @@ class TaskManager:
                     final_session, task.task_id, TaskStatus.COMPLETED, final_message
                 )
             self.logger.info(f"任务 '{task.title}' (ID: {task.task_id}) 已成功完成，消息: {final_message}")
+            await self._emit_task_event(task, True, final_message)
         except asyncio.CancelledError:
             self.logger.info(f"任务 '{task.title}' (ID: {task.task_id}) 已被用户取消。")
             async with self._session_factory() as final_session:
@@ -187,6 +257,7 @@ class TaskManager:
                     final_session, task.task_id, TaskStatus.FAILED, error_message.splitlines()[-1]
                 )
             self.logger.error(f"任务 '{task.title}' (ID: {task.task_id}) 执行失败: {traceback.format_exc()}")
+            await self._emit_task_event(task, False, error_message.splitlines()[-1])
         finally:
             async with self._lock:
                 if task.unique_key:

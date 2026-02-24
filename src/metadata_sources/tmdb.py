@@ -9,20 +9,12 @@ from pydantic import BaseModel, Field, ValidationError
 
 from src.db import crud, models, ConfigManager
 from src.utils import parse_search_keyword as utils_parse_search_keyword
+from src.utils import clean_movie_title as _clean_movie_title
 from src.utils.common import convert_keys_to_camel
 from .base import BaseMetadataSource
 
 from fastapi import HTTPException, status
 logger = logging.getLogger(__name__)
-
-def _clean_movie_title(title: Optional[str]) -> Optional[str]:
-    if not title: return None
-    phrases_to_remove = ["劇場版", "the movie"]
-    cleaned_title = title
-    for phrase in phrases_to_remove:
-        cleaned_title = re.sub(r'\s*' + re.escape(phrase) + r'\s*:?', '', cleaned_title, flags=re.IGNORECASE)
-    cleaned_title = re.sub(r'\s{2,}', ' ', cleaned_title).strip().strip(':- ')
-    return cleaned_title
 
 async def _get_proxy_for_tmdb(config_manager: ConfigManager, session_factory: async_sessionmaker[AsyncSession]) -> Optional[str]:
     """

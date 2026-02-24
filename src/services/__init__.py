@@ -35,13 +35,23 @@ from src.utils import TransportManager
 from .scheduler import SchedulerManager
 
 # 日志管理
-from .log_manager import setup_logging, get_logs, subscribe_to_logs, unsubscribe_from_logs
+from .log_manager import setup_logging, get_logs, subscribe_to_logs, unsubscribe_from_logs, list_log_files, read_log_file
 
 # 搜索服务
 from .search import unified_search
 
 # 名称转换
 from .name_converter import convert_to_chinese_title
+
+# 别名服务
+from .alias_service import (
+    fetch_aliases, extract_aliases_from_details,
+    validate_aliases_with_ai, save_aliases, fetch_and_save_aliases,
+)
+
+# 通知服务
+from .notification_service import NotificationService
+from .notification_manager import NotificationManager
 
 __all__ = [
     # 任务管理
@@ -77,5 +87,14 @@ __all__ = [
     'unified_search',
     # 名称转换
     'convert_to_chinese_title',
+    # 别名服务
+    'fetch_aliases',
+    'extract_aliases_from_details',
+    'validate_aliases_with_ai',
+    'save_aliases',
+    'fetch_and_save_aliases',
+    # 通知服务
+    'NotificationService',
+    'NotificationManager',
 ]
 

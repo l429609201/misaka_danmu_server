@@ -334,44 +334,6 @@ class PlexWebhook(BaseWebhook):
         return provider_ids
 
     def _parse_episode_ranges(self, episode_str: str) -> List[int]:
-        """
-        解析集数范围字符串，支持多种格式：
-        - 单集: "1"
-        - 范围: "1-3"
-        - 混合: "1-3,6,8,10-13,26,31-39"
-
-        返回所有集数的列表
-        """
-        episodes = []
-
-        # 移除所有空格
-        episode_str = episode_str.replace(" ", "")
-
-        # 按逗号分割
-        parts = episode_str.split(",")
-
-        for part in parts:
-            if "-" in part:
-                # 处理范围，如 "1-3" 或 "31-39"
-                try:
-                    start, end = part.split("-", 1)
-                    start_num = int(start)
-                    end_num = int(end)
-                    episodes.extend(range(start_num, end_num + 1))
-                except (ValueError, IndexError) as e:
-                    self.logger.warning(f"无法解析集数范围 '{part}': {e}")
-                    continue
-            else:
-                # 处理单集，如 "6" 或 "8"
-                try:
-                    episode_num = int(part)
-                    episodes.append(episode_num)
-                except ValueError as e:
-                    self.logger.warning(f"无法解析集数 '{part}': {e}")
-                    continue
-
-        # 去重并排序
-        episodes = sorted(list(set(episodes)))
-        self.logger.info(f"解析集数范围 '{episode_str}' -> {episodes}")
-
-        return episodes
+        """解析集数范围字符串 — 委托给统一模块"""
+        from src.utils.filename_parser import parse_episode_ranges
+        return parse_episode_ranges(episode_str)

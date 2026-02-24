@@ -8,8 +8,6 @@
     )
 """
 
-import re
-
 # --- Module-level Constants for Type Mappings and Parsing ---
 # To avoid repetition and improve maintainability.
 DANDAN_TYPE_MAPPING = {
@@ -40,9 +38,5 @@ USER_LAST_BANGUMI_CHOICE_TTL = 86400  # 用户选择记录1天
 COMMENTS_FETCH_CACHE_TTL = 300  # 弹幕获取缓存5分钟(临时缓存)
 SAMPLED_COMMENTS_CACHE_TTL_DB = 86400  # 弹幕采样缓存1天
 
-# 新增：用于清理文件名中常见元数据关键词的正则表达式
-METADATA_KEYWORDS_PATTERN = re.compile(
-    r'1080p|720p|2160p|4k|bluray|x264|h\s*\.?\s*264|hevc|x265|h\s*\.?\s*265|aac|flac|web-dl|BDRip|WEBRip|TVRip|DVDrip|AVC|CHT|CHS|BIG5|GB|10bit|8bit',
-    re.IGNORECASE
-)
+
 

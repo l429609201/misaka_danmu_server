@@ -351,13 +351,7 @@ async def webhook_search_and_dispatch_task(
             logger.info("○ Webhook 统一AI映射: 功能未启用")
 
         # 3. 根据标题关键词修正媒体类型（与 WebUI 一致）
-        def is_movie_by_title(title: str) -> bool:
-            if not title:
-                return False
-            # 关键词列表，不区分大小写
-            movie_keywords = ["剧场版", "劇場版", "movie", "映画"]
-            title_lower = title.lower()
-            return any(keyword in title_lower for keyword in movie_keywords)
+        from src.utils import is_movie_by_title
 
         for item in all_search_results:
             if item.type == "tv_series" and is_movie_by_title(item.title):

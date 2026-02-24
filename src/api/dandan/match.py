@@ -43,7 +43,6 @@ from .models import (
 from .constants import (
     DANDAN_TYPE_MAPPING, DANDAN_TYPE_DESC_MAPPING,
     FALLBACK_SEARCH_CACHE_PREFIX, FALLBACK_SEARCH_CACHE_TTL,
-    METADATA_KEYWORDS_PATTERN
 )
 from .helpers import (
     get_db_cache, set_db_cache,
@@ -65,106 +64,23 @@ logger = logging.getLogger(__name__)
 
 def parse_filename_for_match(filename: str) -> Optional[Dict[str, Any]]:
     """
-    使用正则表达式从文件名中解析出番剧标题和集数。
-    这是一个简化的实现，用于 dandanplay 兼容接口。
+    从文件名中解析出番剧标题和集数。
+    委托给统一模块 parse_filename()，并转换为 dict 格式以保持向后兼容。
     """
-    # 移除文件扩展名 - 只有当后缀是真正的视频扩展名时才移除
-    VIDEO_EXTENSIONS = {'mkv', 'mp4', 'avi', 'wmv', 'flv', 'ts', 'm2ts', 'rmvb', 'rm', 'mov', 'webm', 'mpg', 'mpeg', 'vob', 'iso', 'bdmv'}
-    name_without_ext = filename
-    if '.' in filename:
-        parts = filename.rsplit('.', 1)
-        if len(parts) == 2 and parts[1].lower() in VIDEO_EXTENSIONS:
-            name_without_ext = parts[0]
+    from src.utils.filename_parser import parse_filename
 
-    # 模式1: SXXEXX 格式 (e.g., "Some.Anime.S01E02.1080p.mkv")
-    s_e_pattern = re.compile(
-        r"^(?P<title>.+?)"
-        r"[\s._-]*"
-        r"[Ss](?P<season>\d{1,2})"
-        r"[Ee](?P<episode>\d{1,4})"
-        r"\b",
-        re.IGNORECASE
-    )
-    match = s_e_pattern.search(name_without_ext)
-    if match:
-        data = match.groupdict()
-        title = data["title"].replace(".", " ").replace("_", " ").strip()
-        title = re.sub(r'\[.*?\]', '', title).strip() # 移除字幕组标签
-        # 新增：移除标题中的年份并清理多余空格
-        title = re.sub(r'\b(19|20)\d{2}\b', '', title).strip()
-        title = re.sub(r'\s+', ' ', title).strip(' -')
-        return {
-            "title": title,
-            "season": int(data["season"]),
-            "episode": int(data["episode"])
-        }
+    result = parse_filename(filename)
+    if result is None:
+        return None
 
-    # 模式2: 只有季度 (e.g., "Some Anime S03", "Some Anime Season 2")
-    season_only_patterns = [
-        # S01, S02, S03 等格式
-        re.compile(r"^(?P<title>.+?)[\s._-]+[Ss](?P<season>\d{1,2})(?:\s|$)", re.IGNORECASE),
-        # Season 1, Season 2 等格式
-        re.compile(r"^(?P<title>.+?)[\s._-]+Season[\s._-]*(?P<season>\d{1,2})(?:\s|$)", re.IGNORECASE),
-    ]
-    for pattern in season_only_patterns:
-        match = pattern.search(name_without_ext)
-        if match:
-            data = match.groupdict()
-            title = data["title"].replace(".", " ").replace("_", " ").strip()
-            # 清理标题中的元数据
-            title = re.sub(r'\[.*?\]|\(.*?\)|\【.*?\】', '', title).strip()
-            title = METADATA_KEYWORDS_PATTERN.sub('', title).strip()
-            # 移除标题中的年份并清理多余空格
-            title = re.sub(r'\b(19|20)\d{2}\b', '', title).strip()
-            title = re.sub(r'\s+', ' ', title).strip(' -')
-            return {
-                "title": title,
-                "season": int(data["season"]),
-                "episode": None,  # 只有季度，没有集数
-            }
-
-    # 模式3: 只有集数 (e.g., "[Subs] Some Anime - 02 [1080p].mkv")
-    ep_only_patterns = [
-        re.compile(r"^(?P<title>.+?)\s*[-_]\s*\b(?P<episode>\d{1,4})\b", re.IGNORECASE),
-        re.compile(r"^(?P<title>.+?)\s+\b(?P<episode>\d{1,4})\b", re.IGNORECASE),
-    ]
-    for pattern in ep_only_patterns:
-        match = pattern.search(name_without_ext)
-        if match:
-            data = match.groupdict()
-            title = data["title"]
-            # 清理标题中的元数据
-            title = re.sub(r'\[.*?\]|\(.*?\)|\【.*?\】', '', title).strip()
-            title = METADATA_KEYWORDS_PATTERN.sub('', title).strip()
-            title = title.replace("_", " ").replace(".", " ").strip()
-            # 新增：移除标题中的年份并清理多余空格
-            title = re.sub(r'\b(19|20)\d{2}\b', '', title).strip()
-            title = re.sub(r'\s+', ' ', title).strip(' -')
-            return {
-                "title": title,
-                "season": None, # 此模式无法识别季度
-                "episode": int(data["episode"]),
-            }
-    
-    # 模式4: 电影或单文件视频 (没有集数)
-    title = name_without_ext
-    title = re.sub(r'\[.*?\]|\(.*?\)|\【.*?\】', '', title).strip()
-    title = METADATA_KEYWORDS_PATTERN.sub('', title).strip()
-    title = title.replace("_", " ").replace(".", " ").strip()
-    # 移除年份, 兼容括号内和独立两种形式
-    title = re.sub(r'\(\s*(19|20)\d{2}\s*\)', '', title).strip()
-    title = re.sub(r'\b(19|20)\d{2}\b', '', title).strip()
-    title = re.sub(r'\s+', ' ', title).strip(' -')
-
-    if title:
-        return {
-            "title": title,
-            "season": None,  # 电影不设置季度
-            "episode": None, # 电影不设置集数
-            "is_movie": True # 标记为电影
-        }
-
-    return None
+    info: Dict[str, Any] = {
+        "title": result.title,
+        "season": result.season,
+        "episode": result.episode,
+    }
+    if result.is_movie:
+        info["is_movie"] = True
+    return info
 
 
 async def get_match_for_item(

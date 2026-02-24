@@ -64,6 +64,13 @@ export const getLogs = (options = {}) =>
     ...options,
   })
 
+/** 获取日志文件列表 */
+export const getLogFiles = () => api.get('/api/ui/logs/files')
+
+/** 获取指定日志文件内容 */
+export const getLogFileContent = (filename, tail = 500) =>
+  api.get(`/api/ui/logs/files/${encodeURIComponent(filename)}`, { tail })
+
 /** 匹配测试 */
 export const getMatchTest = data =>
   api.post(
@@ -90,6 +97,10 @@ export const getBangumiDetailTest = data =>
 /** 弹幕获取测试 */
 export const getCommentTest = data =>
   api.get(`/api/v1/${data.apiToken}/comment/${data.episodeId}`)
+
+/** 文件名识别测试 */
+export const parseFilenameTest = data =>
+  api.post('/api/ui/tools/parse-filename', { fileName: data.fileName })
 
 /** 清除搜索缓存 */
 export const clearSearchCache = () => api.post('/api/ui/cache/clear')
@@ -949,3 +960,38 @@ export const getSourceEpisodesForSplit = (sourceId) =>
 /** 拆分数据源 */
 export const splitSource = (animeId, data) =>
   api.post(`/api/ui/library/anime/${animeId}/split-source`, JSON.stringify(data))
+
+
+// ========== 通知渠道 ==========
+
+/** 获取可用渠道类型 */
+export const getNotificationChannelTypes = () => api.get('/api/ui/notification/channel-types')
+
+/** 获取指定渠道类型的配置 Schema */
+export const getNotificationChannelSchema = (channelType) => api.get(`/api/ui/notification/schema/${channelType}`)
+
+/** 获取所有通知渠道 */
+export const getNotificationChannels = () => api.get('/api/ui/notification/channels')
+
+/** 创建通知渠道 */
+export const createNotificationChannel = (data) => api.post('/api/ui/notification/channels', data)
+
+/** 更新通知渠道 */
+export const updateNotificationChannel = (channelId, data) => api.put(`/api/ui/notification/channels/${channelId}`, data)
+
+/** 删除通知渠道 */
+export const deleteNotificationChannel = (channelId) => api.delete(`/api/ui/notification/channels/${channelId}`)
+
+/** 测试通知渠道连接 */
+export const testNotificationChannel = (channelId) => api.post(`/api/ui/notification/channels/${channelId}/test`)
+
+// ========== 海报搜索 ==========
+
+/** 查找作品的本地海报路径 */
+export const getLocalImage = (params) => api.get('/api/ui/poster/local-image', params)
+
+/** 下载网络海报到本地缓存 */
+export const downloadPosterToLocal = (data) => api.post('/api/ui/poster/download-to-local', data)
+
+/** 从 Fanart.tv 搜索海报 */
+export const searchFanartPosters = (params) => api.get('/api/ui/poster/fanart', params)

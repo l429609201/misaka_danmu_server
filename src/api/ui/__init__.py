@@ -20,7 +20,7 @@ from . import (
     anime, source, episode, search, import_api, task,
     token, config_extra, settings, scheduled_task, webhook, system, auth_extra,
     local_danmaku, scraper_resources, parameters, danmaku_storage, backup, danmaku_edit,
-    local_episode_group
+    local_episode_group, poster, notification_routes
 )
 
 # 模型模块 - 支持 from src.api.ui import models 风格
@@ -32,7 +32,7 @@ __all__ = [
     'anime', 'source', 'episode', 'search', 'import_api', 'task',
     'token', 'config_extra', 'settings', 'scheduled_task', 'webhook', 'system', 'auth_extra',
     'local_danmaku', 'scraper_resources', 'parameters', 'danmaku_storage', 'backup', 'danmaku_edit',
-    'local_episode_group',
+    'local_episode_group', 'poster', 'notification_routes',
     # 模型
     'models',
 ]

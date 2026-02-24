@@ -282,9 +282,87 @@ def setup_logging():
     webhook_logger.addHandler(webhook_handler)
     logging.info("专用的 Webhook 原始请求日志已初始化，将输出到 %s", webhook_log_file)
 
+    # --- 新增：为 Bot 原始交互设置一个专用的日志记录器 ---
+    bot_log_file = log_dir / "bot_raw.log"
+
+    if bot_log_file.exists():
+        try:
+            with open(bot_log_file, 'w', encoding='utf-8') as f:
+                f.truncate(0)
+            logging.info(f"已清空旧的 Bot 原始交互日志: {bot_log_file}")
+        except IOError as e:
+            logging.error(f"清空 Bot 原始交互日志失败: {e}")
+
+    bot_raw_logger = logging.getLogger("bot_raw")
+    bot_raw_logger.setLevel(logging.DEBUG)
+    bot_raw_logger.propagate = False
+
+    bot_raw_handler = logging.handlers.RotatingFileHandler(
+        bot_log_file, maxBytes=10*1024*1024, backupCount=3, encoding='utf-8'
+    )
+    bot_raw_handler.setFormatter(logging.Formatter('[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+    bot_raw_logger.addHandler(bot_raw_handler)
+    logging.info("专用的 Bot 原始交互日志已初始化，将输出到 %s", bot_log_file)
+
 def get_logs() -> List[str]:
     """返回为API存储的所有日志条目列表。"""
     return list(_logs_deque)
+
+
+def get_log_dir() -> Path:
+    """返回日志目录路径。"""
+    import os
+    if Path("/.dockerenv").exists() or os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true" or Path.cwd() == Path("/app"):
+        return Path("/app/config/logs")
+    return Path("config/logs")
+
+
+def list_log_files() -> List[dict]:
+    """列出日志目录中的所有日志文件（包括轮转文件）。"""
+    log_dir = get_log_dir()
+    if not log_dir.exists():
+        return []
+
+    # 匹配 xxx.log 和 xxx.log.1, xxx.log.2 等轮转文件
+    log_pattern = re.compile(r'^.+\.log(\.\d+)?$')
+
+    files = []
+    for f in sorted(log_dir.iterdir()):
+        if f.is_file() and log_pattern.match(f.name):
+            stat = f.stat()
+            files.append({
+                "name": f.name,
+                "size": stat.st_size,
+                "modified": stat.st_mtime,
+            })
+
+    # 按修改时间倒序
+    files.sort(key=lambda x: x["modified"], reverse=True)
+    return files
+
+
+def read_log_file(filename: str, tail: int = 500) -> List[str]:
+    """读取指定日志文件的最后 N 行。"""
+    log_dir = get_log_dir()
+    file_path = (log_dir / filename).resolve()
+
+    # 安全检查：防止路径穿越
+    if not str(file_path).startswith(str(log_dir.resolve())):
+        raise ValueError("非法的文件路径")
+
+    if not file_path.exists() or not file_path.is_file():
+        raise FileNotFoundError(f"日志文件不存在: {filename}")
+
+    # 读取最后 tail 行
+    lines = []
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            from collections import deque
+            lines = list(deque(f, maxlen=tail))
+    except Exception as e:
+        raise IOError(f"读取日志文件失败: {e}")
+
+    return [line.rstrip('\n').rstrip('\r') for line in lines]
 
 
 def subscribe_to_logs(queue: asyncio.Queue) -> None:

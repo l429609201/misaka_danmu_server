@@ -16,7 +16,7 @@ from src.db import crud, models, get_db_session, ConfigManager
 from src.services import ScraperManager, MetadataSourceManager, TitleRecognitionManager, convert_to_chinese_title
 from src.utils import (
     parse_search_keyword, ai_type_and_season_mapping_and_correction,
-    SearchTimer, SEARCH_TYPE_HOME
+    SearchTimer, SEARCH_TYPE_HOME, is_movie_by_title,
 )
 from src.ai.ai_matcher_manager import AIMatcherManager
 
@@ -29,6 +29,28 @@ from .models import UIProviderSearchResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _extract_filter_metadata(items) -> dict:
+    """从全量结果中提取可用的过滤元数据（年份、来源、类型）"""
+    years = set()
+    providers = set()
+    types = set()
+    for item in items:
+        year = item.year if hasattr(item, 'year') else item.get('year')
+        provider = item.provider if hasattr(item, 'provider') else item.get('provider')
+        item_type = item.type if hasattr(item, 'type') else item.get('type')
+        if year:
+            years.add(year)
+        if provider:
+            providers.add(provider)
+        if item_type:
+            types.add(item_type)
+    return {
+        'available_years': sorted(years, reverse=True),
+        'available_providers': sorted(providers),
+        'available_types': sorted(types),
+    }
 
 @router.get(
     "/search/anime",
@@ -171,6 +193,7 @@ async def search_anime_provider(
             paginated_results = filtered_results[start_idx:end_idx]
 
             timer.finish()  # 打印计时报告
+            filter_metadata = _extract_filter_metadata(results)
             return UIProviderSearchResponse(
                 results=[item.model_dump() for item in paginated_results],
                 supplemental_results=[models.ProviderSearchInfo.model_validate(item).model_dump() for item in cached_supplemental_results],
@@ -178,7 +201,8 @@ async def search_anime_provider(
                 search_episode=episode_to_filter,
                 total=total,
                 page=page,
-                pageSize=pageSize
+                pageSize=pageSize,
+                **filter_metadata
             )
 
         timer.step_end(details="缓存未命中")
@@ -244,6 +268,7 @@ async def search_anime_provider(
             ]
             timer.step_end(details=f"{len(all_results)}个结果", sub_steps=source_timing_sub_steps)
             logger.info(f"直接搜索完成，找到 {len(all_results)} 个原始结果。")
+            results = all_results
             filter_aliases = set(search_titles)  # 使用所有搜索标题作为过滤别名
         else:
             # 检查是否有启用的弹幕源 - 在辅助搜索之前先检查
@@ -349,16 +374,7 @@ async def search_anime_provider(
         logger.error(error_message, exc_info=True)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=error_message)
 
-    # 辅助函数，用于根据标题修正媒体类型
-    def is_movie_by_title(title: str) -> bool:
-        if not title:
-            return False
-        # 关键词列表，不区分大小写
-        movie_keywords = ["剧场版", "劇場版", "movie", "映画"]
-        title_lower = title.lower()
-        return any(keyword in title_lower for keyword in movie_keywords)
-
-    # 新增逻辑：根据标题关键词修正媒体类型
+    # 根据标题关键词修正媒体类型
     for item in results:
         if item.type == 'tv_series' and is_movie_by_title(item.title):
             logger.info(f"标题 '{item.title}' 包含电影关键词，类型从 'tv_series' 修正为 'movie'。")
@@ -478,6 +494,7 @@ async def search_anime_provider(
     paginated_results = filtered_results[start_idx:end_idx]
 
     timer.finish()  # 打印搜索计时报告
+    filter_metadata = _extract_filter_metadata(sorted_results)
     return UIProviderSearchResponse(
         results=[item.model_dump() for item in paginated_results],
         supplemental_results=[item.model_dump() for item in supplemental_results] if supplemental_results else [],
@@ -485,7 +502,8 @@ async def search_anime_provider(
         search_episode=episode_to_filter,
         total=total,
         page=page,
-        pageSize=pageSize
+        pageSize=pageSize,
+        **filter_metadata
     )
 
 

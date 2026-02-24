@@ -159,14 +159,13 @@ def get_current_container_id() -> Optional[str]:
     自动检测当前运行的容器 ID（带缓存）
 
     通过以下方式尝试获取：
-    1. 环境变量 HOSTNAME（Docker 默认设置）
-    2. socket.gethostname()
-    3. /proc/self/cgroup 文件（兼容旧版本 Docker）
-    4. /proc/1/cpuset 文件
-    5. /proc/self/mountinfo 文件（Docker 20.10+ cgroup v2）
+    1. /proc/self/mountinfo 文件中 resolv.conf 的挂载路径（最可靠，参考 MoviePilot）
+    2. /proc/self/cgroup 文件（兼容旧版本 Docker）
+    3. /proc/1/cpuset 文件
+    4. 环境变量 HOSTNAME / socket.gethostname()（兜底）
 
     Returns:
-        容器 ID（短格式，12位）或 None
+        容器 ID（完整64位）或 None
     """
     global _container_id_cache, _container_id_cache_time
 
@@ -187,89 +186,75 @@ def get_current_container_id() -> Optional[str]:
 
 def _detect_container_id_impl() -> Optional[str]:
     """容器 ID 检测的实际实现（不带缓存）"""
-    container_id = None
 
-    # 方法1: 通过环境变量 HOSTNAME（最快，优先使用）
-    # Docker 默认将容器 ID 的前 12 位作为 HOSTNAME 环境变量
+    # 方法1: 通过 /proc/self/mountinfo 中 resolv.conf 的挂载路径提取（最可靠）
+    # Docker 挂载 resolv.conf 的路径中始终包含完整 64 位容器 ID，不受 hostname 设置影响
+    # 路径格式: /var/lib/docker/containers/<64位容器ID>/resolv.conf
     try:
-        hostname = os.environ.get('HOSTNAME', '')
-        logger.debug(f"环境变量 HOSTNAME: {hostname}")
-        # 检查是否看起来像容器 ID（12位十六进制）
-        if len(hostname) == 12 and all(c in '0123456789abcdef' for c in hostname.lower()):
-            container_id = hostname
-            logger.info(f"通过环境变量 HOSTNAME 获取到容器 ID: {container_id}")
-            return container_id
+        mountinfo_path = Path('/proc/self/mountinfo')
+        if mountinfo_path.exists():
+            data = mountinfo_path.read_text()
+            # 先尝试从 resolv.conf 路径提取（参考 MoviePilot 的方式）
+            index_resolv = data.find("resolv.conf")
+            if index_resolv != -1:
+                index_second_slash = data.rfind("/", 0, index_resolv)
+                index_first_slash = data.rfind("/", 0, index_second_slash) + 1
+                container_id = data[index_first_slash:index_second_slash].strip()
+                # 验证提取的是否为有效的 64 位容器 ID
+                if len(container_id) == 64 and all(c in '0123456789abcdef' for c in container_id.lower()):
+                    logger.info(f"通过 /proc/self/mountinfo (resolv.conf) 获取到容器 ID: {container_id[:12]}")
+                    return container_id
+            # resolv.conf 方式失败时，回退到正则匹配
+            import re
+            for line in data.splitlines():
+                if 'docker/containers/' in line or '/docker-' in line:
+                    match = re.search(r'([0-9a-f]{64})', line)
+                    if match:
+                        container_id = match.group(1)
+                        logger.info(f"通过 /proc/self/mountinfo (正则) 获取到容器 ID: {container_id[:12]}")
+                        return container_id
     except Exception as e:
-        logger.debug(f"通过环境变量 HOSTNAME 获取容器 ID 失败: {e}")
+        logger.debug(f"通过 /proc/self/mountinfo 获取容器 ID 失败: {e}")
 
-    # 方法2: 通过 socket.gethostname()（也很快）
-    try:
-        hostname = socket.gethostname()
-        logger.debug(f"socket.gethostname(): {hostname}")
-        # 检查是否看起来像容器 ID（12位十六进制）
-        if len(hostname) == 12 and all(c in '0123456789abcdef' for c in hostname.lower()):
-            container_id = hostname
-            logger.info(f"通过 socket.gethostname 获取到容器 ID: {container_id}")
-            return container_id
-    except Exception as e:
-        logger.debug(f"通过 socket.gethostname 获取容器 ID 失败: {e}")
-
-    # 方法3: 通过 /proc/self/cgroup 文件（可能较慢，特别是在某些 NAS 系统上）
+    # 方法2: 通过 /proc/self/cgroup 文件（兼容旧版本 Docker / cgroup v1）
     try:
         cgroup_path = Path('/proc/self/cgroup')
         if cgroup_path.exists():
             content = cgroup_path.read_text()
-            logger.debug(f"/proc/self/cgroup 内容: {content[:200]}...")
             for line in content.splitlines():
-                # 格式类似: 12:memory:/docker/容器ID
                 if 'docker' in line or 'containerd' in line:
                     parts = line.strip().split('/')
                     if parts:
                         potential_id = parts[-1]
-                        # 容器 ID 是 64 位十六进制，取前 12 位
-                        if len(potential_id) >= 12 and all(c in '0123456789abcdef' for c in potential_id[:12].lower()):
-                            container_id = potential_id[:12]
-                            logger.info(f"通过 /proc/self/cgroup 获取到容器 ID: {container_id}")
-                            return container_id
+                        if len(potential_id) == 64 and all(c in '0123456789abcdef' for c in potential_id.lower()):
+                            logger.info(f"通过 /proc/self/cgroup 获取到容器 ID: {potential_id[:12]}")
+                            return potential_id
     except Exception as e:
         logger.debug(f"通过 /proc/self/cgroup 获取容器 ID 失败: {e}")
 
-    # 方法4: 通过 /proc/1/cpuset 文件（某些环境下可用）
+    # 方法3: 通过 /proc/1/cpuset 文件
     try:
         cpuset_path = Path('/proc/1/cpuset')
         if cpuset_path.exists():
             content = cpuset_path.read_text().strip()
-            logger.debug(f"/proc/1/cpuset 内容: {content}")
-            # 格式类似: /docker/容器ID
             if 'docker' in content or 'containerd' in content:
                 parts = content.split('/')
                 if parts:
                     potential_id = parts[-1]
-                    if len(potential_id) >= 12 and all(c in '0123456789abcdef' for c in potential_id[:12].lower()):
-                        container_id = potential_id[:12]
-                        logger.info(f"通过 /proc/1/cpuset 获取到容器 ID: {container_id}")
-                        return container_id
+                    if len(potential_id) == 64 and all(c in '0123456789abcdef' for c in potential_id.lower()):
+                        logger.info(f"通过 /proc/1/cpuset 获取到容器 ID: {potential_id[:12]}")
+                        return potential_id
     except Exception as e:
         logger.debug(f"通过 /proc/1/cpuset 获取容器 ID 失败: {e}")
 
-    # 方法5: 通过 /proc/self/mountinfo 文件（Docker 20.10+ cgroup v2，可能较慢）
+    # 方法4: 通过 HOSTNAME / socket.gethostname()（兜底，仅在未自定义 hostname 时有效）
     try:
-        mountinfo_path = Path('/proc/self/mountinfo')
-        if mountinfo_path.exists():
-            content = mountinfo_path.read_text()
-            # 查找包含 docker 或 containers 的行
-            for line in content.splitlines():
-                if 'docker/containers/' in line or '/docker-' in line:
-                    # 尝试提取容器 ID
-                    import re
-                    # 匹配 64 位十六进制容器 ID
-                    match = re.search(r'([0-9a-f]{64})', line)
-                    if match:
-                        container_id = match.group(1)[:12]
-                        logger.info(f"通过 /proc/self/mountinfo 获取到容器 ID: {container_id}")
-                        return container_id
+        hostname = os.environ.get('HOSTNAME', '') or socket.gethostname()
+        if len(hostname) == 12 and all(c in '0123456789abcdef' for c in hostname.lower()):
+            logger.info(f"通过 HOSTNAME 获取到容器 ID (短格式): {hostname}")
+            return hostname
     except Exception as e:
-        logger.debug(f"通过 /proc/self/mountinfo 获取容器 ID 失败: {e}")
+        logger.debug(f"通过 HOSTNAME 获取容器 ID 失败: {e}")
 
     logger.warning("无法自动检测容器 ID，可能不在 Docker 容器中运行或使用了自定义 hostname")
     return None

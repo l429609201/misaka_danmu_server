@@ -22,6 +22,12 @@ def _get_generate_episode_range_string():
     return generate_episode_range_string
 
 
+# 延迟导入别名服务
+def _get_fetch_and_save_aliases():
+    from src.services.alias_service import fetch_and_save_aliases
+    return fetch_and_save_aliases
+
+
 async def generic_import_task(
     provider: str,
     mediaId: str,
@@ -169,6 +175,12 @@ async def generic_import_task(
 
                 added_count = await crud.save_danmaku_for_episode(session, episode_db_id, comments, config_manager)
                 await session.commit()
+
+                # 自动获取别名
+                await _get_fetch_and_save_aliases()(
+                    session, anime_id, title_to_use, mediaType,
+                    metadata_manager, tmdb_id=tmdbId, year=year,
+                )
 
                 final_message = f"通过故障转移导入完成，共新增 {added_count} 条弹幕。" + (" (警告：海报图片下载失败)" if image_download_failed else "")
                 raise TaskSuccess(final_message)
@@ -333,6 +345,12 @@ async def generic_import_task(
             # 链接数据源
             source_id = await crud.link_source_to_anime(session, anime_id, provider, mediaId)
             await session.commit()
+
+            # 自动获取别名
+            await _get_fetch_and_save_aliases()(
+                session, anime_id, title_to_use, mediaType,
+                metadata_manager, tmdb_id=tmdbId, year=year,
+            )
 
             logger.info(f"主条目创建完成 (Anime ID: {anime_id}, Source ID: {source_id})")
         else:

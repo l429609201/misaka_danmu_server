@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, orm_models
 from src.rate_limiter import RateLimiter, RateLimitExceededError
-from src.services import TaskStatus, TaskPauseForRateLimit
+from src.services import TaskStatus
 from .utils import extract_short_error_message
 
 logger = logging.getLogger(__name__)
@@ -279,12 +279,21 @@ async def _import_episodes_iteratively(
                 else:
                     # 其他分集正常获取
                     # 根据是否为后备任务选择不同的速率限制方法
-                    if is_fallback:
-                        if not fallback_type:
-                            raise ValueError("后备任务必须指定fallback_type参数")
-                        await rate_limiter.check_fallback(fallback_type, scraper.provider_name)
-                    else:
-                        await rate_limiter.check(scraper.provider_name)
+                    # 原地等待流控重置，避免任务被踢到队列末尾导致多集任务无法连续完成
+                    while True:
+                        try:
+                            if is_fallback:
+                                if not fallback_type:
+                                    raise ValueError("后备任务必须指定fallback_type参数")
+                                await rate_limiter.check_fallback(fallback_type, scraper.provider_name)
+                            else:
+                                await rate_limiter.check(scraper.provider_name)
+                            break  # 通过流控检查，继续下载
+                        except RateLimitExceededError as e:
+                            wait_seconds = e.retry_after_seconds
+                            logger.info(f"分集 '{episode.title}' 触发流控，原地等待 {wait_seconds:.0f} 秒后继续...")
+                            await progress_callback(base_progress, f"流控等待中，{wait_seconds:.0f} 秒后继续 ({i+1}/{len(episodes)})...")
+                            await asyncio.sleep(wait_seconds + 1)
 
                     async def sub_progress_callback(p, msg):
                         await progress_callback(
@@ -374,14 +383,7 @@ async def _import_episodes_iteratively(
                 failed_episodes_details[episode.episodeIndex] = f"运行时错误: {str(e)}"
                 logger.error(f"分集 '{episode.title}' 因运行时错误而跳过: {str(e)}")
                 continue
-            except RateLimitExceededError as e:
-                # 达到流控限制，抛出暂停异常让任务管理器处理
-                # 这样可以释放 worker 去处理其他源的任务，而不是阻塞等待
-                logger.warning(f"分集导入因达到速率限制而暂停: {e}")
-                raise TaskPauseForRateLimit(
-                    retry_after_seconds=e.retry_after_seconds,
-                    message=f"速率受限，将在 {e.retry_after_seconds:.0f} 秒后自动重试..."
-                )
+
             except Exception as e:
                 failed_episodes_count += 1
                 error_msg = _extract_short_error_message(e)
