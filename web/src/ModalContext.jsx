@@ -57,9 +57,10 @@ export function ModalProvider({ children }) {
                 await config.onOk() // 执行用户传入的 onOk
               }
               resolve()
-              closeModal(modalId) // 关闭当前 modal
             } catch (error) {
               reject(error)
+            } finally {
+              closeModal(modalId) // 无论成功失败都关闭当前 modal
             }
           },
           onCancel: () => {
