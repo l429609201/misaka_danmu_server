@@ -181,128 +181,47 @@ def setup_logging():
         else:
             handler.setFormatter(verbose_formatter)
     
-    logging.info("日志系统已初始化，日志将输出到控制台和 %s", log_file)
+    # --- 专用日志记录器配置 ---
+    # 定义所有专用日志: (logger名称, 文件名, 描述, 日志级别, 格式, maxBytes)
+    _P = "  - "  # 子项缩进前缀
+    _specialized_loggers = [
+        ("scraper_responses", "scraper_responses.log", "搜索源响应",
+         logging.DEBUG, '[%(asctime)s] [%(name)s] - %(message)s', 10*1024*1024),
+        ("metadata_responses", "metadata_responses.log", "元数据响应",
+         logging.DEBUG, '[%(asctime)s] - %(message)s', 10*1024*1024),
+        ("ai_responses", "ai_responses.log", "AI响应",
+         logging.DEBUG, '[%(asctime)s] - %(message)s', 10*1024*1024),
+        ("webhook_raw", "webhook_raw.log", "Webhook原始请求",
+         logging.INFO, '[%(asctime)s] %(message)s', 5*1024*1024),
+        ("bot_raw", "bot_raw.log", "Bot原始交互",
+         logging.DEBUG, '[%(asctime)s] %(message)s', 10*1024*1024),
+    ]
 
-    # --- 新增：为爬虫响应设置一个专用的日志记录器 ---
-    scraper_log_file = log_dir / "scraper_responses.log"
-    
-    # 在启动时清空此日志文件，以确保只包含当前会话的调试信息
-    if scraper_log_file.exists():
-        try:
-            # 使用 'w' 模式打开文件会直接截断它
-            with open(scraper_log_file, 'w', encoding='utf-8') as f:
-                f.truncate(0)
-            logging.info(f"已清空旧的搜索源响应日志: {scraper_log_file}")
-        except IOError as e:
-            logging.error(f"清空搜索源响应日志失败: {e}")
+    for logger_name, filename, desc, level, fmt, max_bytes in _specialized_loggers:
+        filepath = log_dir / filename
+        # 启动时清空，确保只包含当前会话的调试信息
+        if filepath.exists():
+            try:
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.truncate(0)
+            except IOError as e:
+                logging.error(f"清空 {filename} 失败: {e}")
 
-    scraper_logger = logging.getLogger("scraper_responses")
-    scraper_logger.setLevel(logging.DEBUG) # 始终记录DEBUG级别的响应
-    scraper_logger.propagate = False # 防止日志冒泡到根记录器，避免在控制台和UI上重复显示
+        spec_logger = logging.getLogger(logger_name)
+        spec_logger.setLevel(level)
+        spec_logger.propagate = False
+        handler = logging.handlers.RotatingFileHandler(
+            filepath, maxBytes=max_bytes, backupCount=3, encoding='utf-8'
+        )
+        handler.setFormatter(logging.Formatter(fmt, datefmt='%Y-%m-%d %H:%M:%S'))
+        spec_logger.addHandler(handler)
 
-    # 为其配置一个独立的文件处理器
-    scraper_handler = logging.handlers.RotatingFileHandler(
-        scraper_log_file, maxBytes=10*1024*1024, backupCount=3, encoding='utf-8'
-    )
-    scraper_handler.setFormatter(logging.Formatter(
-        '[%(asctime)s] [%(name)s] - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    ))
-    scraper_logger.addHandler(scraper_handler)
-    logging.info("专用的搜索源响应日志已初始化，将输出到 %s", scraper_log_file)
-
-    # --- 新增：为元数据响应设置一个专用的日志记录器 ---
-    metadata_log_file = log_dir / "metadata_responses.log"
-
-    if metadata_log_file.exists():
-        try:
-            with open(metadata_log_file, 'w', encoding='utf-8') as f:
-                f.truncate(0)
-            logging.info(f"已清空旧的元数据响应日志: {metadata_log_file}")
-        except IOError as e:
-            logging.error(f"清空元数据响应日志失败: {e}")
-
-    metadata_logger = logging.getLogger("metadata_responses")
-    metadata_logger.setLevel(logging.DEBUG)
-    metadata_logger.propagate = False
-
-    metadata_handler = logging.handlers.RotatingFileHandler(
-        metadata_log_file, maxBytes=10*1024*1024, backupCount=3, encoding='utf-8'
-    )
-    metadata_handler.setFormatter(logging.Formatter(
-        '[%(asctime)s] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S'
-    ))
-    metadata_logger.addHandler(metadata_handler)
-    logging.info("专用的元数据响应日志已初始化，将输出到 %s", metadata_log_file)
-
-    # --- 新增：为AI原始响应设置一个专用的日志记录器 ---
-    ai_log_file = log_dir / "ai_responses.log"
-
-    if ai_log_file.exists():
-        try:
-            with open(ai_log_file, 'w', encoding='utf-8') as f:
-                f.truncate(0)
-            logging.info(f"已清空旧的AI响应日志: {ai_log_file}")
-        except IOError as e:
-            logging.error(f"清空AI响应日志失败: {e}")
-
-    ai_logger = logging.getLogger("ai_responses")
-    ai_logger.setLevel(logging.DEBUG)
-    ai_logger.propagate = False
-
-    ai_handler = logging.handlers.RotatingFileHandler(
-        ai_log_file, maxBytes=10*1024*1024, backupCount=3, encoding='utf-8'
-    )
-    ai_handler.setFormatter(logging.Formatter(
-        '[%(asctime)s] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S'
-    ))
-    ai_logger.addHandler(ai_handler)
-    logging.info("专用的AI响应日志已初始化，将输出到 %s", ai_log_file)
-
-    # --- 新增：为 Webhook 原始请求设置一个专用的日志记录器 ---
-    webhook_log_file = log_dir / "webhook_raw.log"
-
-    if webhook_log_file.exists():
-        try:
-            with open(webhook_log_file, 'w', encoding='utf-8') as f:
-                f.truncate(0)
-            logging.info(f"已清空旧的 Webhook 原始请求日志: {webhook_log_file}")
-        except IOError as e:
-            logging.error(f"清空 Webhook 原始请求日志失败: {e}")
-
-    webhook_logger = logging.getLogger("webhook_raw")
-    webhook_logger.setLevel(logging.INFO) # 只记录 INFO 级别及以上的日志
-    webhook_logger.propagate = False # 防止日志冒泡到根记录器
-
-    webhook_handler = logging.handlers.RotatingFileHandler(
-        webhook_log_file, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8'
-    )
-    # 为这个日志使用一个非常简洁的格式，只包含时间和消息
-    webhook_handler.setFormatter(logging.Formatter('[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
-    webhook_logger.addHandler(webhook_handler)
-    logging.info("专用的 Webhook 原始请求日志已初始化，将输出到 %s", webhook_log_file)
-
-    # --- 新增：为 Bot 原始交互设置一个专用的日志记录器 ---
-    bot_log_file = log_dir / "bot_raw.log"
-
-    if bot_log_file.exists():
-        try:
-            with open(bot_log_file, 'w', encoding='utf-8') as f:
-                f.truncate(0)
-            logging.info(f"已清空旧的 Bot 原始交互日志: {bot_log_file}")
-        except IOError as e:
-            logging.error(f"清空 Bot 原始交互日志失败: {e}")
-
-    bot_raw_logger = logging.getLogger("bot_raw")
-    bot_raw_logger.setLevel(logging.DEBUG)
-    bot_raw_logger.propagate = False
-
-    bot_raw_handler = logging.handlers.RotatingFileHandler(
-        bot_log_file, maxBytes=10*1024*1024, backupCount=3, encoding='utf-8'
-    )
-    bot_raw_handler.setFormatter(logging.Formatter('[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
-    bot_raw_logger.addHandler(bot_raw_handler)
-    logging.info("专用的 Bot 原始交互日志已初始化，将输出到 %s", bot_log_file)
+    # 汇总输出日志系统初始化信息
+    log_lines = [f"日志系统已初始化 (目录: {log_dir})"]
+    log_lines.append(f"{_P}app.log (主日志)")
+    for _, filename, desc, *_ in _specialized_loggers:
+        log_lines.append(f"{_P}{filename} ({desc})")
+    logging.info("\n".join(log_lines))
 
 def get_logs() -> List[str]:
     """返回为API存储的所有日志条目列表。"""

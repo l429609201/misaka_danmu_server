@@ -29,7 +29,7 @@ import dayjs from 'dayjs'
  */
 export function BangumiConfig({ form }) {
   const { showMessage } = useMessage()
-  const { showModal } = useModal()
+  const { confirm: showModal } = useModal()
   const [authMode, setAuthMode] = useState('token') // 'token' or 'oauth'
   const [authInfo, setAuthInfo] = useState({})
   const [showPassword, setShowPassword] = useState(false)
@@ -116,7 +116,10 @@ export function BangumiConfig({ form }) {
         return
       }
 
-      const res = await getBangumiAuthUrl()
+      // ani-rss 模式：前端用 location.origin 生成 redirect_uri
+      const redirectUri = `${window.location.origin}/bgm-oauth-callback`
+
+      const res = await getBangumiAuthUrl({ redirect_uri: redirectUri })
       const authUrl = res.data?.url || res.url
       if (!authUrl) {
         showMessage('error', '获取授权链接失败: 返回的URL为空')
@@ -289,57 +292,85 @@ export function BangumiConfig({ form }) {
           {authInfo.isAuthenticated ? (
             <div className="space-y-3">
               {/* 用户信息卡片 */}
-              <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                {/* 头像 */}
-                {authInfo.avatarUrl && (
-                  <img
-                    src={authInfo.avatarUrl}
-                    alt={authInfo.nickname}
-                    className="w-12 h-12 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
-                    onError={(e) => {
-                      e.target.style.display = 'none'
-                    }}
-                  />
-                )}
-                {/* 用户信息 */}
-                <div className="flex-1">
-                  <div className="font-medium text-base">{authInfo.nickname}</div>
-                  <div className="text-xs text-gray-500">ID: {authInfo.bangumiUserId}</div>
-                </div>
-                {/* 授权状态和时间 */}
-                <div className="flex flex-col items-end gap-1">
-                  {/* 过期状态 */}
-                  {(() => {
-                    const now = dayjs()
-                    const expiresAt = dayjs(authInfo.expiresAt)
-                    const daysLeft = expiresAt.diff(now, 'day')
-                    const isExpiringSoon = daysLeft <= 7 && daysLeft > 0
-                    const isExpired = daysLeft < 0
-
-                    return (
-                      <div
-                        className={`text-xs font-medium px-2 py-1 rounded ${
-                          isExpired
-                            ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'
-                            : isExpiringSoon
-                            ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400'
-                            : 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
-                        }`}
+              <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg space-y-3">
+                {/* 顶部：头像 + 基本信息 + 状态 */}
+                <div className="flex items-center gap-3">
+                  {/* 头像 */}
+                  {authInfo.avatarUrl && (
+                    <img
+                      src={authInfo.avatarUrl}
+                      alt={authInfo.nickname}
+                      className="w-14 h-14 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600 flex-shrink-0"
+                      onError={(e) => {
+                        e.target.style.display = 'none'
+                      }}
+                    />
+                  )}
+                  {/* 用户信息 */}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-base truncate">{authInfo.nickname}</div>
+                    {authInfo.username && (
+                      <a
+                        href={`https://bgm.tv/user/${authInfo.username}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-500 hover:text-blue-600 hover:underline"
                       >
-                        {isExpired ? (
-                          <>⚠️ 已过期</>
-                        ) : isExpiringSoon ? (
-                          <>⚠️ {daysLeft}天</>
-                        ) : (
-                          <>✓ {daysLeft}天</>
-                        )}
-                      </div>
-                    )
-                  })()}
-                  {/* 授权时间 */}
-                  <div className="text-xs text-gray-500">
-                    {dayjs(authInfo.authorizedAt).format('YYYY-MM-DD')}
+                        @{authInfo.username}
+                      </a>
+                    )}
+                    {!authInfo.username && (
+                      <div className="text-xs text-gray-500">ID: {authInfo.bangumiUserId}</div>
+                    )}
                   </div>
+                  {/* 授权状态 */}
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    {(() => {
+                      const now = dayjs()
+                      const expiresAt = dayjs(authInfo.expiresAt)
+                      const daysLeft = expiresAt.diff(now, 'day')
+                      const isExpiringSoon = daysLeft <= 7 && daysLeft > 0
+                      const isExpired = daysLeft < 0
+                      return (
+                        <div
+                          className={`text-xs font-medium px-2 py-1 rounded ${
+                            isExpired
+                              ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'
+                              : isExpiringSoon
+                              ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400'
+                              : 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
+                          }`}
+                        >
+                          {isExpired ? '⚠️ 已过期' : isExpiringSoon ? `⚠️ ${daysLeft}天` : `✓ ${daysLeft}天`}
+                        </div>
+                      )
+                    })()}
+                    <div className="text-xs text-gray-500">
+                      {dayjs(authInfo.authorizedAt).format('YYYY-MM-DD')}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 签名/简介 */}
+                {authInfo.sign && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 pt-2 break-words">
+                    {authInfo.sign}
+                  </div>
+                )}
+
+                {/* 详细信息行 */}
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 pt-2">
+                  <span>UID: {authInfo.bangumiUserId}</span>
+                  {authInfo.username && (
+                    <a
+                      href={`https://bgm.tv/user/${authInfo.username}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:text-blue-600 hover:underline"
+                    >
+                      主页 ↗
+                    </a>
+                  )}
                 </div>
               </div>
 
@@ -350,7 +381,6 @@ export function BangumiConfig({ form }) {
                   const expiresAt = dayjs(authInfo.expiresAt)
                   const daysLeft = expiresAt.diff(now, 'day')
                   const showRenewButton = daysLeft <= 7
-
                   return (
                     showRenewButton && (
                       <Button size="small" type="primary" onClick={handleOAuthLogin}>

@@ -23,3 +23,6 @@ config/*
 .augment/rules/rule-name.md
 
 config/config.yml
+
+
+.pids/

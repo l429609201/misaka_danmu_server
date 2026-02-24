@@ -398,8 +398,8 @@ export const setBangumiConfig = data =>
 export const getBangumiAuth = () =>
   api.post('/api/ui/metadata/bangumi/actions/get_auth_state')
 /** 获取授权链接 */
-export const getBangumiAuthUrl = () =>
-  api.post('/api/ui/metadata/bangumi/actions/get_auth_url')
+export const getBangumiAuthUrl = (data) =>
+  api.post('/api/ui/metadata/bangumi/actions/get_auth_url', data)
 /** 注销授权 */
 export const logoutBangumiAuth = () =>
   api.post('/api/ui/metadata/bangumi/actions/logout')

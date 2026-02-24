@@ -17,6 +17,7 @@ import { CommentDetail } from '../pages/comment/[id].jsx'
 import { Control } from '../pages/control/index.jsx'
 import { Bullet } from '../pages/bullet/index.jsx'
 import MediaFetch from '../pages/media-fetch/index.jsx'
+import BgmOAuthCallback from '../pages/bgm-oauth-callback/index.jsx'
 
 export const router = createBrowserRouter([
   {
@@ -82,6 +83,11 @@ export const router = createBrowserRouter([
         element: <Login />,
       },
     ],
+  },
+  {
+    // Bangumi OAuth 回调页面（弹窗中打开，不需要 Layout）
+    path: RoutePaths.BGM_OAUTH_CALLBACK,
+    element: <BgmOAuthCallback />,
   },
   {
     path: '*',

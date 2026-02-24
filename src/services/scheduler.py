@@ -96,9 +96,15 @@ class SchedulerManager:
                         if obj.job_type in self._job_classes:
                             logger.warning(f"发现重复的定时任务类型 '{obj.job_type}'。将被覆盖。")
                         self._job_classes[obj.job_type] = obj
-                        logger.info(f"定时任务 '{obj.job_name}' (类型: {obj.job_type}, 来自模块 {name}) 已加载。")
             except Exception as e:
                 logger.error(f"从模块 {name} 加载定时任务失败: {e}")
+
+        # 汇总输出
+        _P = "  - "
+        log_lines = [f"已加载 {len(self._job_classes)} 个定时任务类型"]
+        for job_type in sorted(self._job_classes.keys()):
+            log_lines.append(f"{_P}{job_type}")
+        logger.info("\n".join(log_lines))
 
     def get_available_jobs(self) -> List[Dict[str, str]]:
         """获取所有已加载的可用任务类型及其名称、描述和系统任务标识。"""

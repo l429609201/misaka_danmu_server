@@ -34,11 +34,20 @@ class MediaServerManager:
         async with self.session_factory() as session:
             servers = await crud.get_all_media_servers(session)
         
+        _server_display = {}  # server_id -> "name (provider)"
         for server_config in servers:
             if server_config.get('isEnabled'):
                 await self._load_server(server_config)
-        
-        self.logger.info(f"媒体服务器管理器初始化完成,已加载 {len(self.servers)} 个服务器")
+                sid = server_config['id']
+                if sid in self.servers:
+                    _server_display[sid] = f"{server_config['name']} ({server_config['providerName']})"
+
+        # 汇总输出
+        _P = "  - "
+        log_lines = [f"已加载 {len(self.servers)} 个媒体服务器"]
+        for sid, desc in _server_display.items():
+            log_lines.append(f"{_P}{desc}")
+        self.logger.info("\n".join(log_lines))
     
     async def _load_server(self, config: Dict) -> Optional[BaseMediaServer]:
         """加载单个服务器实例"""
@@ -57,7 +66,6 @@ class MediaServerManager:
             )
             
             self.servers[server_id] = instance
-            self.logger.info(f"已加载媒体服务器: {config['name']} ({provider_name})")
             return instance
         except Exception as e:
             self.logger.error(f"加载媒体服务器失败: {e}", exc_info=True)

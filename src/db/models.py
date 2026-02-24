@@ -339,6 +339,8 @@ class PaginatedCommentResponse(BaseModel):
 class BangumiAuthStatus(BaseModel):
     isAuthenticated: bool
     nickname: Optional[str] = None
+    username: Optional[str] = None
+    sign: Optional[str] = None
     avatarUrl: Optional[str] = None
     bangumiUserId: Optional[int] = None
     authorizedAt: Optional[datetime] = None

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import re
 import secrets
@@ -7,8 +6,7 @@ from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -124,7 +122,8 @@ async def _get_bangumi_auth(session: AsyncSession, user_id: int) -> Dict[str, An
 
     return {
         "isAuthenticated": True, "bangumiUserId": auth.bangumiUserId,
-        "nickname": auth.nickname, "avatarUrl": auth.avatarUrl,
+        "nickname": auth.nickname, "username": auth.username,
+        "sign": auth.sign, "avatarUrl": auth.avatarUrl,
         "authorizedAt": auth.authorizedAt, "expiresAt": auth.expiresAt,
         "accessToken": auth.accessToken, "daysLeft": days_left
     }
@@ -207,27 +206,54 @@ def get_config_manager_dep(request: Request) -> ConfigManager:
     """Dependency to get ConfigManager from app state."""
     return request.app.state.config_manager
 
-@auth_router.get("/auth/callback", summary="Bangumi OAuth回调处理", include_in_schema=False, name="bangumi_auth_callback")
-async def bangumi_auth_callback(request: Request, code: str = Query(...), state: str = Query(...), session: AsyncSession = Depends(get_db_session), config_manager: ConfigManager = Depends(get_config_manager_dep)):
-    user_id = await crud.consume_oauth_state(session, state)
-    if not user_id: return HTMLResponse("<html><body>State Mismatch. Authorization failed. Please try again.</body></html>", status_code=400)
-    client_id, client_secret = await asyncio.gather(config_manager.get("bangumiClientId"), config_manager.get("bangumiClientSecret"))
-    if not client_id or not client_secret: return HTMLResponse("<html><body>Server configuration error: Bangumi App ID or Secret is not set.</body></html>", status_code=500)
-    
-    # 修正：使用 FastAPI 的 url_for 来生成回调URL，以确保其在反向代理后也能正确工作。
-    redirect_uri = str(request.url_for('bangumi_auth_callback'))
+class ExchangeCodeRequest(BaseModel):
+    """前端 OAuth 回调页面传来的 code 交换请求"""
+    code: str = Field(..., description="bgm.tv 返回的授权码")
+    state: str = Field(..., description="OAuth state 参数")
+    redirect_uri: str = Field(..., description="前端生成的 redirect_uri（必须与授权请求时一致）")
 
-    payload = {"grant_type": "authorization_code", "client_id": client_id, "client_secret": client_secret, "code": code, "redirect_uri": redirect_uri}
+
+@auth_router.post("/auth/exchange_code", summary="用授权码换取 Token（前端回调页面调用）")
+async def exchange_code(
+    body: ExchangeCodeRequest,
+    session: AsyncSession = Depends(get_db_session),
+    config_manager: ConfigManager = Depends(get_config_manager_dep),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    前端 OAuth 回调页面拿到 code 后调用此接口，完成 token 交换。
+    采用 ani-rss 模式：redirect_uri 由前端基于 location.origin 生成，
+    确保反向代理环境下地址一致。
+    """
+    # 验证 state
+    user_id = await crud.consume_oauth_state(session, body.state)
+    if not user_id or user_id != current_user.id:
+        return {"success": False, "message": "State 验证失败，请重新授权"}
+
+    client_id = await config_manager.get("bangumiClientId", "")
+    client_secret = await config_manager.get("bangumiClientSecret", "")
+    if not client_id or not client_secret:
+        return {"success": False, "message": "Bangumi App ID 或 Secret 未配置"}
+
+    payload = {
+        "grant_type": "authorization_code",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": body.code,
+        "redirect_uri": body.redirect_uri,
+    }
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             token_response = await client.post("https://bgm.tv/oauth/access_token", data=payload)
             token_response.raise_for_status()
             token_data = token_response.json()
-            user_info_response = await client.get("https://api.bgm.tv/v0/me", headers={"Authorization": f"Bearer {token_data['access_token']}"})
+            user_info_response = await client.get(
+                "https://api.bgm.tv/v0/me",
+                headers={"Authorization": f"Bearer {token_data['access_token']}"},
+            )
             user_info_response.raise_for_status()
             user_info = user_info_response.json()
-        
-        # 新增：确保头像URL是完整的HTTPS地址
+
         avatar_url = user_info.get("avatar", {}).get("large")
         if avatar_url and avatar_url.startswith("//"):
             avatar_url = "https:" + avatar_url
@@ -235,6 +261,8 @@ async def bangumi_auth_callback(request: Request, code: str = Query(...), state:
         auth_to_save = {
             "bangumiUserId": user_info.get("id"),
             "nickname": user_info.get("nickname"),
+            "username": user_info.get("username"),
+            "sign": user_info.get("sign", ""),
             "avatarUrl": avatar_url,
             "accessToken": token_data.get("access_token"),
             "refreshToken": token_data.get("refresh_token"),
@@ -242,71 +270,13 @@ async def bangumi_auth_callback(request: Request, code: str = Query(...), state:
         }
         await _save_bangumi_auth(session, user_id, auth_to_save)
         await session.commit()
-        return HTMLResponse("""
-            <html>
-            <head>
-                <title>授权成功</title>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    }
-                    .container {
-                        text-align: center;
-                        background: white;
-                        padding: 40px;
-                        border-radius: 10px;
-                        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-                    }
-                    .success-icon {
-                        font-size: 64px;
-                        margin-bottom: 20px;
-                    }
-                    h1 {
-                        color: #333;
-                        margin-bottom: 10px;
-                    }
-                    p {
-                        color: #666;
-                        margin-bottom: 20px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="success-icon">✅</div>
-                    <h1>授权成功</h1>
-                    <p>Bangumi 授权已完成，窗口将自动关闭...</p>
-                </div>
-                <script type="text/javascript">
-                    try {
-                        // 通知父窗口
-                        if (window.opener) {
-                            window.opener.postMessage('BANGUMI-OAUTH-COMPLETE', '*');
-                            setTimeout(() => window.close(), 1000);
-                        } else {
-                            // 如果没有 opener,显示提示
-                            document.querySelector('p').textContent = '授权已完成，请手动关闭此窗口。';
-                        }
-                    } catch(e) {
-                        console.error('Failed to notify parent:', e);
-                        document.querySelector('p').textContent = '授权已完成，请手动关闭此窗口。';
-                    }
-                </script>
-            </body>
-            </html>
-            """)
+        return {"success": True, "message": "授权成功"}
     except httpx.HTTPStatusError as e:
         logger.error(f"Bangumi token exchange failed: {e.response.text}", exc_info=True)
-        return HTMLResponse(f"<html><body>Token exchange failed: {e.response.text}</body></html>", status_code=500)
+        return {"success": False, "message": f"Token 交换失败: {e.response.text}"}
     except Exception as e:
-        logger.error(f"An unexpected error occurred during Bangumi callback: {e}", exc_info=True)
-        return HTMLResponse("<html><body>An unexpected error occurred.</body></html>", status_code=500)
+        logger.error(f"Bangumi OAuth exchange error: {e}", exc_info=True)
+        return {"success": False, "message": f"授权过程发生错误: {str(e)}"}
 
 class BangumiMetadataSource(BaseMetadataSource):
     provider_name = "bangumi"
@@ -356,11 +326,13 @@ class BangumiMetadataSource(BaseMetadataSource):
 
                 # 自动刷新token (参考ani-rss: 剩余天数<=3天时刷新)
                 if auth_info.get("isAuthenticated") and auth_info.get("daysLeft", 999) <= 3:
-                    # 构造回调URL
+                    # 构造回调URL（无 request 上下文，直接用配置拼接）
+                    # 注意：refresh token 时 bgm.tv 不严格校验 redirect_uri，
+                    # 但仍需传一个合法值，这里用 localhost fallback 即可
                     base_url = await self.config_manager.get("webhookCustomDomain", "")
                     if not base_url:
-                        base_url = "http://localhost:7768"  # 默认值
-                    redirect_uri = f"{base_url}/api/metadata/bangumi/auth/callback"
+                        base_url = f"http://localhost:{settings.server.port}"
+                    redirect_uri = f"{base_url.rstrip('/')}/bgm-oauth-callback"
 
                     config = {
                         "client_id": await self.config_manager.get("bangumiClientId", ""),
@@ -575,32 +547,37 @@ class BangumiMetadataSource(BaseMetadataSource):
 
                 # 自动刷新token (参考ani-rss: 剩余天数<=3天时刷新)
                 if auth_info.get("isAuthenticated") and auth_info.get("daysLeft", 999) <= 3:
+                    base_url = await self.config_manager.get("webhookCustomDomain", "")
+                    if not base_url:
+                        base_url = f"http://localhost:{settings.server.port}"
+                    redirect_uri = f"{base_url.rstrip('/')}/bgm-oauth-callback"
                     config = {
                         "client_id": await self.config_manager.get("bangumiClientId", ""),
                         "client_secret": await self.config_manager.get("bangumiClientSecret", ""),
-                        "redirect_uri": str(request.url_for('bangumi_auth_callback'))
+                        "redirect_uri": redirect_uri
                     }
                     refreshed = await _refresh_bangumi_token(session, user.id, config)
                     if refreshed:
                         await session.commit()
-                        # 重新获取授权信息
                         auth_info = await _get_bangumi_auth(session, user.id)
                         auth_info["refreshed"] = True
 
                 return auth_info
         elif action_name == "get_auth_url":
+            # 新模式：前端传来 redirect_uri，后端只负责生成 state 和拼接 auth URL
             async with self._session_factory() as session:
                 client_id = await self.config_manager.get("bangumiClientId", "")
                 if not client_id:
                     raise ValueError("Bangumi App ID 未在设置中配置。")
 
-                # 修正：使用 FastAPI 的 url_for 来生成回调URL，以确保其在反向代理后也能正确工作。
-                redirect_uri = str(request.url_for('bangumi_auth_callback'))
+                redirect_uri = payload.get("redirect_uri", "")
+                if not redirect_uri:
+                    raise ValueError("redirect_uri 不能为空")
 
                 state = await crud.create_oauth_state(session, user.id)
                 params = {"client_id": client_id, "response_type": "code", "redirect_uri": redirect_uri, "state": state}
                 auth_url = f"https://bgm.tv/oauth/authorize?{urlencode(params)}"
-                return {"url": auth_url}
+                return {"url": auth_url, "state": state}
         elif action_name == "logout":
             async with self._session_factory() as session:
                 await _delete_bangumi_auth(session, user.id)

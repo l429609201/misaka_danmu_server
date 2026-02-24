@@ -69,9 +69,15 @@ class WebhookManager:
                         if handler_key in self._handlers:
                             logger.warning(f"发现重复的 Webhook 处理器键 '{handler_key}'。将被覆盖。")
                         self._handlers[handler_key] = obj
-                        logger.info(f"Webhook 处理器 '{handler_key}' (来自模块 {name}) 已加载。")
             except Exception as e:
                 logger.error(f"从模块 {name} 加载 Webhook 处理器失败: {e}")
+
+        # 汇总输出
+        _P = "  - "
+        log_lines = [f"已加载 {len(self._handlers)} 个 Webhook 处理器"]
+        for hk in sorted(self._handlers.keys()):
+            log_lines.append(f"{_P}{hk}")
+        logger.info("\n".join(log_lines))
 
     def get_handler(self, webhook_type: str) -> BaseWebhook:
         handler_class = self._handlers.get(webhook_type)
