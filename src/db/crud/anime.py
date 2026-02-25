@@ -320,11 +320,89 @@ async def get_or_create_anime(session: AsyncSession, title: str, media_type: str
             original_season_str = f"S{original_season:02d}" if original_season is not None else "S??"
             logger.info(f"○ 标题识别转换未生效: '{original_title}' {original_season_str} (无匹配规则)")
 
-    # 步骤3：如果都没找到，创建新番剧
-    # 如果识别词转换生效了，使用转换后的标题和季数；否则使用原始标题
+    # 步骤2.5a：别名匹配 — 在已有条目的别名中查找传入的标题
+    search_titles = [original_title]
+    if was_converted and converted_title != original_title:
+        search_titles.append(converted_title)
+
     final_title = converted_title if was_converted else original_title
     final_season = converted_season if was_converted else original_season
 
+    for search_title in search_titles:
+        alias_conditions = or_(
+            AnimeAlias.nameEn == search_title,
+            AnimeAlias.nameJp == search_title,
+            AnimeAlias.nameRomaji == search_title,
+            AnimeAlias.aliasCn1 == search_title,
+            AnimeAlias.aliasCn2 == search_title,
+            AnimeAlias.aliasCn3 == search_title,
+        )
+        alias_stmt = select(Anime).join(
+            AnimeAlias, Anime.id == AnimeAlias.animeId
+        ).where(alias_conditions, Anime.season == final_season)
+        if year:
+            alias_stmt = alias_stmt.where(Anime.year == year)
+
+        result = await session.execute(alias_stmt)
+        anime = result.scalar_one_or_none()
+        if anime:
+            logger.info(f"✓ 别名匹配成功: ID={anime.id}, 标题='{anime.title}', 通过别名'{search_title}' 命中")
+            # 检查并更新海报
+            if not anime.imageUrl and (image_url or local_image_path):
+                if image_url:
+                    anime.imageUrl = image_url
+                    logger.info(f"更新海报URL: {image_url}")
+                if local_image_path:
+                    anime.localImagePath = local_image_path
+                    logger.info(f"更新本地海报路径: {local_image_path}")
+                await session.commit()
+            return anime.id
+
+    logger.info(f"○ 别名匹配失败: 未在已有条目的别名中找到 '{original_title}'")
+
+    # 步骤2.5b：模糊标题匹配 — 用 thefuzz 做标题相似度比较
+    try:
+        from thefuzz import fuzz
+        fuzzy_stmt = select(Anime).where(Anime.season == final_season)
+        if year:
+            fuzzy_stmt = fuzzy_stmt.where(Anime.year == year)
+        result = await session.execute(fuzzy_stmt)
+        candidates = result.scalars().all()
+
+        if candidates:
+            best_match = None
+            best_score = 0
+            for candidate in candidates:
+                # 对每个候选，同时比较主标题和别名
+                score = fuzz.token_set_ratio(final_title, candidate.title)
+                if score > best_score:
+                    best_score = score
+                    best_match = candidate
+
+            if best_match and best_score >= 85:
+                logger.info(f"✓ 模糊匹配成功: ID={best_match.id}, 标题='{best_match.title}', 相似度={best_score}%, 搜索标题='{final_title}'")
+                # 检查并更新海报
+                if not best_match.imageUrl and (image_url or local_image_path):
+                    if image_url:
+                        best_match.imageUrl = image_url
+                        logger.info(f"更新海报URL: {image_url}")
+                    if local_image_path:
+                        best_match.localImagePath = local_image_path
+                        logger.info(f"更新本地海报路径: {local_image_path}")
+                    await session.commit()
+                return best_match.id
+            elif best_match:
+                logger.info(f"○ 模糊匹配未达阈值: 最佳候选'{best_match.title}', 相似度={best_score}% (需要>=85%)")
+            else:
+                logger.info(f"○ 模糊匹配: 无同季候选条目")
+        else:
+            logger.info(f"○ 模糊匹配: 无同季候选条目")
+    except ImportError:
+        logger.warning("thefuzz 库未安装，跳过模糊匹配步骤")
+    except Exception as e:
+        logger.warning(f"模糊匹配过程出错，跳过: {e}")
+
+    # 步骤3：如果都没找到，创建新番剧
     logger.info(f"创建新番剧: 标题='{final_title}', 季数={final_season}, 类型={media_type}")
     if was_converted:
         logger.info(f"✓ 使用识别词转换后的标题和季数创建新条目")
