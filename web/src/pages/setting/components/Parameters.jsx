@@ -10,6 +10,7 @@ import {
 } from '../../../apis'
 import { GenericConfigItem } from './GenericConfigItem'
 import { DatabaseBackupManager } from './DatabaseBackupManager'
+import { DatabaseInfoPanel } from './DatabaseInfoPanel'
 import { SortablePriorityList } from '../../../components/SortablePriorityList'
 
 // GitHub Token 的特殊配置（使用自定义 API）
@@ -103,6 +104,8 @@ export const Parameters = () => {
       label: group.label,
       children: (
         <div className="py-2 pb-4">
+          {/* 数据库标签页顶部显示连接信息 */}
+          {group.key === 'database' && <DatabaseInfoPanel />}
           {group.items?.map((item) => (
             <GenericConfigItem key={item.key} config={enrichConfig(item)} />
           ))}

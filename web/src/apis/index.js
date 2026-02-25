@@ -712,6 +712,8 @@ export const getConfig = (key) => api.get(`/api/ui/config/${key}`)
 export const setConfig = (key, value) => api.put(`/api/ui/config/${key}`, { value })
 /** 获取参数配置 Schema */
 export const getConfigSchema = () => api.get('/api/ui/config/schema/parameters')
+/** 获取数据库和缓存连接信息 */
+export const getDatabaseInfo = () => api.get('/api/ui/database-info')
 export const getDefaultAIPrompts = () => api.get('/api/ui/config/ai/default-prompts')
 
 /** AI 余额查询 */

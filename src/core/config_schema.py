@@ -118,7 +118,7 @@ CONFIG_SCHEMA = [
     },
     {
         "key": "database",
-        "label": "数据库设置",
+        "label": "数据库",
         "items": [
             {
                 "key": "mysqlBinlogRetentionDays",

@@ -132,6 +132,101 @@ async def list_episode_groups(session: AsyncSession, tmdb_tv_id: Optional[int] =
     ]
 
 
+async def get_episode_equivalence(
+    session: AsyncSession,
+    group_id: str,
+    season: Optional[int],
+    episode: Optional[int]
+) -> Optional[Dict[str, Any]]:
+    """
+    双向查询剧集组映射的等价信息。
+    传入的season/episode可以是custom(剧集组)也可以是tmdb标准分季，
+    函数同时尝试两个方向的匹配。
+
+    返回:
+    {
+        "custom_season": int, "custom_episode": int,
+        "tmdb_season": int, "tmdb_episode": int,
+        "season_total_episodes": int,  # 该custom季度的总集数
+        "episode_name": str,
+        "match_direction": "custom_to_tmdb" 或 "tmdb_to_custom"
+    }
+    """
+    if season is None and episode is None:
+        return None
+
+    # 方向1: 作为 custom (剧集组) 季集号查询
+    if season is not None and episode is not None:
+        stmt1 = (
+            select(TmdbEpisodeMapping)
+            .where(
+                TmdbEpisodeMapping.tmdbEpisodeGroupId == group_id,
+                TmdbEpisodeMapping.customSeasonNumber == season,
+                TmdbEpisodeMapping.customEpisodeNumber == episode,
+            )
+            .limit(1)
+        )
+        result1 = await session.execute(stmt1)
+        hit1 = result1.scalar_one_or_none()
+        if hit1:
+            # 统计该 custom 季度的总集数
+            cnt_stmt = (
+                select(func.count(TmdbEpisodeMapping.id))
+                .where(
+                    TmdbEpisodeMapping.tmdbEpisodeGroupId == group_id,
+                    TmdbEpisodeMapping.customSeasonNumber == season,
+                )
+            )
+            cnt_result = await session.execute(cnt_stmt)
+            season_total = cnt_result.scalar() or 0
+
+            return {
+                "custom_season": hit1.customSeasonNumber,
+                "custom_episode": hit1.customEpisodeNumber,
+                "tmdb_season": hit1.tmdbSeasonNumber,
+                "tmdb_episode": hit1.tmdbEpisodeNumber,
+                "season_total_episodes": season_total,
+                "episode_name": hit1.episodeName or "",
+                "match_direction": "custom_to_tmdb",
+            }
+
+    # 方向2: 作为 tmdb 标准季集号查询
+    if season is not None and episode is not None:
+        stmt2 = (
+            select(TmdbEpisodeMapping)
+            .where(
+                TmdbEpisodeMapping.tmdbEpisodeGroupId == group_id,
+                TmdbEpisodeMapping.tmdbSeasonNumber == season,
+                TmdbEpisodeMapping.tmdbEpisodeNumber == episode,
+            )
+            .limit(1)
+        )
+        result2 = await session.execute(stmt2)
+        hit2 = result2.scalar_one_or_none()
+        if hit2:
+            cnt_stmt = (
+                select(func.count(TmdbEpisodeMapping.id))
+                .where(
+                    TmdbEpisodeMapping.tmdbEpisodeGroupId == group_id,
+                    TmdbEpisodeMapping.customSeasonNumber == hit2.customSeasonNumber,
+                )
+            )
+            cnt_result = await session.execute(cnt_stmt)
+            season_total = cnt_result.scalar() or 0
+
+            return {
+                "custom_season": hit2.customSeasonNumber,
+                "custom_episode": hit2.customEpisodeNumber,
+                "tmdb_season": hit2.tmdbSeasonNumber,
+                "tmdb_episode": hit2.tmdbEpisodeNumber,
+                "season_total_episodes": season_total,
+                "episode_name": hit2.episodeName or "",
+                "match_direction": "tmdb_to_custom",
+            }
+
+    return None
+
+
 async def get_associated_anime_ids(session: AsyncSession, group_id: str) -> List[int]:
     """查询关联了指定剧集组的所有条目ID。"""
     stmt = select(AnimeMetadata.animeId).where(AnimeMetadata.tmdbEpisodeGroupId == group_id)

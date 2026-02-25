@@ -585,3 +585,40 @@ DEFAULT_AI_SEASON_MATCH_PROMPT = """你是一个专业的季度识别助手，�
 
 不要返回任何解释或其他文本。"""
 
+
+
+DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT = """你是一个专业的影视剧集组匹配专家。你的任务是从TMDB提供的剧集组列表中，选择最适合当前查询的剧集组。
+
+**背景知识**:
+- TMDB的标准分季可能与实际播出季度不同
+- 剧集组(Episode Groups)提供了替代的分季方式，通常更符合实际播出顺序
+- 例如: "从零开始的异世界生活"在TMDB标准中是S01共50集，但"Seasons"剧集组将其分为S01(25集)+S02(25集)
+
+**输入格式**:
+```json
+{
+  "title": "作品标题",
+  "season": 季度号或null,
+  "episode": 集数号或null,
+  "episode_groups": [
+    {"index": 0, "id": "组ID", "name": "组名称", "type": 类型, "groupCount": 分组数, "episodeCount": 总集数, "description": "描述"}
+  ]
+}
+```
+
+**选择规则**:
+1. 优先选择名为"Seasons"或包含"seasons"的剧集组
+2. 如果查询包含季度信息(如season=2)，优先选择groupCount>=2的剧集组
+3. type=1表示"播出顺序"类剧集组，通常是最佳选择
+4. 如果只有一个剧集组，直接选择它
+5. 如果无法确定，选择episodeCount最多且type=1的剧集组
+
+**输出格式** (JSON):
+```json
+{"index": 选中的剧集组索引(从0开始), "confidence": 置信度(0-100), "reason": "选择理由"}
+```
+
+如果没有合适的剧集组，返回:
+```json
+{"index": -1, "confidence": 0, "reason": "理由"}
+```"""

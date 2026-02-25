@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Any, Dict, Union
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,6 +60,128 @@ async def get_comments(
 async def get_app_version():
     """获取当前后端应用的版本号和文档链接。"""
     return {"version": APP_VERSION, "docsUrl": DOCS_URL}
+
+
+class DatabaseInfoResponse(BaseModel):
+    """数据库和缓存连接信息（含连接池和 Redis 详细指标）"""
+    # 数据库基本信息
+    dbType: str = Field(..., description="数据库类型 (mysql/postgresql/sqlite)")
+    dbHost: str = Field("", description="数据库主机")
+    dbPort: int = Field(0, description="数据库端口")
+    dbName: str = Field("", description="数据库名称")
+    # 数据库连接池
+    dbPoolType: str = Field("QueuePool", description="连接池类型")
+    dbPoolSize: int = Field(0, description="连接池常驻大小")
+    dbActiveConnections: int = Field(0, description="活跃连接数 (checkedout)")
+    dbIdleConnections: int = Field(0, description="空闲连接数 (checkedin)")
+    dbOverflow: int = Field(0, description="当前溢出连接数")
+    dbMaxOverflow: int = Field(0, description="最大溢出连接数")
+    dbPoolRecycle: int = Field(0, description="连接回收时间 (秒)")
+    # 缓存后端
+    cacheBackend: str = Field(..., description="缓存后端类型 (memory/redis/hybrid/database)")
+    redisUrl: Optional[str] = Field(None, description="Redis 连接地址 (脱敏)")
+    redisConnected: bool = Field(False, description="Redis 是否已连接")
+    # Redis 详细指标
+    redisVersion: Optional[str] = Field(None, description="Redis 版本")
+    redisMemoryUsed: Optional[str] = Field(None, description="已用内存 (human)")
+    redisMemoryMax: Optional[str] = Field(None, description="最大内存 (human)")
+    redisMemoryUsedBytes: Optional[int] = Field(None, description="已用内存 (bytes)")
+    redisMemoryMaxBytes: Optional[int] = Field(None, description="最大内存 (bytes)")
+    redisTotalKeys: Optional[int] = Field(None, description="缓存键总数")
+    redisConnectedClients: Optional[int] = Field(None, description="连接客户端数")
+    redisUptimeSeconds: Optional[int] = Field(None, description="运行时长 (秒)")
+
+
+@router.get("/database-info", response_model=DatabaseInfoResponse, summary="获取数据库和缓存连接信息")
+async def get_database_info(
+    request: Request,
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """获取当前数据库类型、连接信息、连接池状态以及 Redis 详细指标。"""
+    from src.core.config import settings
+    from src.core.cache import get_cache_backend, RedisBackend
+
+    db_cfg = settings.database
+    cache_cfg = settings.cache
+
+    # ---- 数据库连接池信息 ----
+    pool_size = db_cfg.pool_size
+    active_conn = 0
+    idle_conn = 0
+    overflow = 0
+    try:
+        engine = request.app.state.db_engine
+        pool = engine.pool
+        active_conn = pool.checkedout()
+        idle_conn = pool.checkedin()
+        overflow = pool.overflow()
+        pool_size = pool.size()
+    except Exception:
+        pass
+
+    # ---- Redis / 缓存信息 ----
+    redis_connected = False
+    redis_url = None
+    redis_version = None
+    redis_mem_used = None
+    redis_mem_max = None
+    redis_mem_used_bytes = None
+    redis_mem_max_bytes = None
+    redis_total_keys = None
+    redis_clients = None
+    redis_uptime = None
+
+    try:
+        backend = get_cache_backend()
+        if isinstance(backend, RedisBackend):
+            redis_connected = True
+            redis_url = backend._safe_url
+            # 获取 Redis INFO
+            try:
+                client = await backend._get_client()
+                info = await client.info()
+                redis_version = info.get("redis_version")
+                redis_mem_used = info.get("used_memory_human", "").strip()
+                redis_mem_max = info.get("maxmemory_human", "").strip()
+                redis_mem_used_bytes = info.get("used_memory")
+                redis_mem_max_bytes = info.get("maxmemory")
+                redis_clients = info.get("connected_clients")
+                redis_uptime = info.get("uptime_in_seconds")
+                # 统计所有 db 的 key 总数
+                total_keys = 0
+                for k, v in info.items():
+                    if k.startswith("db") and isinstance(v, dict):
+                        total_keys += v.get("keys", 0)
+                redis_total_keys = total_keys
+            except Exception:
+                pass  # INFO 获取失败不影响基本信息
+    except RuntimeError:
+        pass  # 缓存后端未初始化
+
+    return DatabaseInfoResponse(
+        dbType=db_cfg.type.lower(),
+        dbHost=db_cfg.host,
+        dbPort=db_cfg.port,
+        dbName=db_cfg.name,
+        dbPoolType=db_cfg.pool_type,
+        dbPoolSize=pool_size,
+        dbActiveConnections=active_conn,
+        dbIdleConnections=idle_conn,
+        dbOverflow=overflow,
+        dbMaxOverflow=db_cfg.max_overflow,
+        dbPoolRecycle=db_cfg.pool_recycle,
+        cacheBackend=cache_cfg.backend,
+        redisUrl=redis_url,
+        redisConnected=redis_connected,
+        redisVersion=redis_version,
+        redisMemoryUsed=redis_mem_used,
+        redisMemoryMax=redis_mem_max,
+        redisMemoryUsedBytes=redis_mem_used_bytes,
+        redisMemoryMaxBytes=redis_mem_max_bytes,
+        redisTotalKeys=redis_total_keys,
+        redisConnectedClients=redis_clients,
+        redisUptimeSeconds=redis_uptime,
+    )
 
 
 class VersionCheckResponse(BaseModel):

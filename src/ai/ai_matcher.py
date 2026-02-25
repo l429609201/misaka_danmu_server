@@ -24,7 +24,8 @@ from .ai_prompts import (
     DEFAULT_AI_SEASON_MAPPING_PROMPT,
     DEFAULT_AI_RECOGNITION_PROMPT,
     DEFAULT_AI_ALIAS_EXPANSION_PROMPT,
-    DEFAULT_AI_ALIAS_VALIDATION_PROMPT
+    DEFAULT_AI_ALIAS_VALIDATION_PROMPT,
+    DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT,
 )
 
 
@@ -291,7 +292,7 @@ class AIMatcher:
                 "granted_balance": str(data.get("granted_balance", "0.00")),
                 "topped_up_balance": str(data.get("topped_up_balance", "0.00"))
             }
-    
+
     def _initialize_client(self):
         """根据提供商初始化客户端"""
         try:
@@ -332,7 +333,7 @@ class AIMatcher:
         except Exception as e:
             logger.error(f"AI匹配器初始化失败: {e}")
             raise
-    
+
     async def select_best_match(
         self,
         query: Dict[str, Any],
@@ -407,6 +408,19 @@ class AIMatcher:
                 "results": results_data
             }
 
+            # 如果有剧集组等价上下文，附加额外提示
+            egc = query.get("episode_group_context")
+            if egc:
+                cs = egc.get("custom_season")
+                ce = egc.get("custom_episode")
+                ts = egc.get("tmdb_season")
+                te = egc.get("tmdb_episode")
+                total = egc.get("season_total_episodes", 0)
+                input_data["episode_group_hint"] = (
+                    f"根据TMDB剧集组映射，S{cs}E{ce}(剧集组分季)等价于S{ts}E{te}(TMDB标准分季)，"
+                    f"该季度共{total}集。请优先选择集数接近{total}集或标题包含第{cs}季相关信息的弹幕源。"
+                )
+
             logger.info(f"AI匹配: 开始分析 {len(results)} 个搜索结果")
             logger.debug(f"查询信息: {query}")
 
@@ -476,7 +490,7 @@ class AIMatcher:
 
             logger.error(f"AI匹配过程中发生错误: {e}", exc_info=True)
             return None
-    
+
     async def _match_openai(self, input_data: Dict[str, Any]) -> Optional[Dict]:
         """使用OpenAI兼容接口进行匹配"""
         if not self.client:
@@ -1381,3 +1395,146 @@ class AIMatcher:
             return None
 
 
+
+    async def select_best_episode_group(
+        self,
+        title: str,
+        season: Optional[int],
+        episode: Optional[int],
+        episode_groups: List[Dict[str, Any]]
+    ) -> Optional[int]:
+        """
+        使用混合策略（算法优先+AI兜底）从TMDB剧集组列表中选择最佳剧集组。
+
+        Args:
+            title: 作品标题
+            season: 季度号(可选)
+            episode: 集数号(可选)
+            episode_groups: TMDB剧集组列表，每个包含 id, name, type, groupCount, episodeCount 等
+
+        Returns:
+            选中的group在列表中的索引，如果无法确定则返回None
+        """
+        if not episode_groups:
+            return None
+
+        # 如果只有一个剧集组，直接选择
+        if len(episode_groups) == 1:
+            self.logger.info(f"剧集组选择: '{title}' 仅有1个剧集组 '{episode_groups[0].get('name')}', 直接选择")
+            return 0
+
+        # === 算法优先策略 ===
+
+        # 策略1: 优先查找名为 "Seasons" 的剧集组
+        for i, g in enumerate(episode_groups):
+            group_name = g.get("name", "").lower()
+            if "seasons" in group_name:
+                self.logger.info(f"剧集组选择(算法): '{title}' → 找到'Seasons'剧集组: {g.get('name')} (index={i})")
+                return i
+
+        # 策略2: 仅有1个 type=1 (播出顺序) 的剧集组时直接选择
+        type1_groups = [(i, g) for i, g in enumerate(episode_groups) if g.get("type") == 1]
+        if len(type1_groups) == 1:
+            idx, grp = type1_groups[0]
+            self.logger.info(f"剧集组选择(算法): '{title}' → 唯一type=1剧集组: {grp.get('name')} (index={idx})")
+            return idx
+
+        # 策略3: 如果有明确的季度信息，尝试名称匹配
+        if season is not None and season > 1:
+            season_keywords = [f"season {season}", f"第{season}季", f"s{season}", f"season{season}"]
+            for i, g in enumerate(episode_groups):
+                group_name = g.get("name", "").lower()
+                for kw in season_keywords:
+                    if kw in group_name:
+                        self.logger.info(f"剧集组选择(算法): '{title}' → 名称匹配季度{season}: {g.get('name')} (index={i})")
+                        return i
+
+        # === AI 兜底 ===
+        if not self.client:
+            # 没有AI客户端，回退到选择 type=1 中 episodeCount 最多的
+            if type1_groups:
+                best_idx, best_grp = max(type1_groups, key=lambda x: x[1].get("episodeCount", 0))
+                self.logger.info(f"剧集组选择(回退): '{title}' → type=1中集数最多: {best_grp.get('name')} (index={best_idx})")
+                return best_idx
+            self.logger.warning(f"剧集组选择: '{title}' → 无AI客户端且无type=1组，无法选择")
+            return None
+
+        try:
+            self.logger.info(f"剧集组选择(AI): '{title}' → 算法无法确定，使用AI从{len(episode_groups)}个组中选择")
+
+            # 构建AI输入
+            groups_for_ai = []
+            for i, g in enumerate(episode_groups):
+                groups_for_ai.append({
+                    "index": i,
+                    "id": g.get("id", ""),
+                    "name": g.get("name", ""),
+                    "type": g.get("type", 0),
+                    "groupCount": g.get("groupCount", 0),
+                    "episodeCount": g.get("episodeCount", 0),
+                    "description": g.get("description", "")[:100],
+                })
+
+            input_data = {
+                "title": title,
+                "season": season,
+                "episode": episode,
+                "episode_groups": groups_for_ai,
+            }
+
+            system_prompt = DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT
+            user_prompt = json.dumps(input_data, ensure_ascii=False, indent=2)
+
+            # 根据提供商调用不同的API
+            if self.provider == "gemini":
+                full_prompt = f"{system_prompt}\n\n{user_prompt}"
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=full_prompt,
+                    config={
+                        "temperature": 0.0,
+                        "response_mime_type": "application/json"
+                    }
+                )
+                content = response.text
+            else:
+                # OpenAI 兼容接口
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.0,
+                    response_format={"type": "json_object"},
+                    timeout=30
+                )
+                content = _extract_openai_content(response)
+                if content is None:
+                    self.logger.warning(f"剧集组选择(AI): '{title}' → AI返回空内容")
+                    return None
+
+            if self.log_raw_response:
+                ai_responses_logger.info(f"[剧集组选择] 原始响应: {content}")
+
+            parsed_data = _safe_json_loads(content, log_raw_response=self.log_raw_response)
+
+            if not parsed_data:
+                self.logger.warning(f"剧集组选择(AI): '{title}' → 无法解析AI响应")
+                return None
+
+            index = parsed_data.get("index", -1)
+            confidence = parsed_data.get("confidence", 0)
+            reason = parsed_data.get("reason", "")
+
+            if index < 0 or index >= len(episode_groups):
+                self.logger.info(f"剧集组选择(AI): '{title}' → AI未找到合适的组 (reason: {reason})")
+                return None
+
+            selected = episode_groups[index]
+            self.logger.info(f"剧集组选择(AI): '{title}' → 选择 #{index} '{selected.get('name')}' (置信度: {confidence}%, 理由: {reason})")
+            return index
+
+        except Exception as e:
+            self.logger.error(f"剧集组选择(AI)失败: {e}", exc_info=True)
+            return None
