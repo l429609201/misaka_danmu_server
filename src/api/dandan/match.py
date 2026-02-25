@@ -368,17 +368,28 @@ async def get_match_for_item(
                 # 电影不设置episode_number,保持为None
                 episode_number = None if is_movie else (parsed_info.get("episode") or 1)
 
-                # 匹配后备 AI映射配置检查
+                # 【性能优化】预获取所有配置值（避免后续重复获取）
                 match_fallback_tmdb_enabled = await config_manager.get("matchFallbackEnableTmdbSeasonMapping", "false")
+                ai_match_enabled = (await config_manager.get("aiMatchEnabled", "false")).lower() == "true"
+                ai_fallback_enabled = (await config_manager.get("aiFallbackEnabled", "true")).lower() == "true"
+                fallback_enabled = (await config_manager.get("externalApiFallbackEnabled", "false")).lower() == "true"
+                ai_episode_group_enabled = (await config_manager.get("aiEpisodeGroupEnabled", "false")).lower() == "true"
+
                 if match_fallback_tmdb_enabled.lower() != "true":
                     logger.info("○ 匹配后备 统一AI映射: 功能未启用")
+
+                # 【性能优化】AI初始化预热：如果AI匹配已启用，提前开始初始化（不阻塞）
+                ai_matcher_warmup_task = None
+                if ai_match_enabled:
+                    ai_matcher_warmup_task = asyncio.create_task(ai_matcher_manager.get_matcher())
+                    logger.debug("AI匹配器预热已启动（并行）")
+
                 match_timer.step_end()
 
                 # 预获取TMDB信息 + 弹幕源搜索（半并行优化）
                 # 先做TMDB搜索获取别名和tmdb_id，然后同时启动：弹幕源搜索 + 剧集组处理
                 pre_fetched_aliases = set()
                 pre_fetched_equiv = None  # 预取的等价上下文
-                ai_episode_group_enabled = (await config_manager.get("aiEpisodeGroupEnabled", "false")).lower() == "true"
                 _prefetch_tmdb_id = None  # TMDB搜索得到的ID，用于后续并行处理
 
                 if ai_episode_group_enabled and not is_movie:
@@ -529,8 +540,13 @@ async def get_match_for_item(
                 if match_fallback_tmdb_enabled.lower() == "true":
                     try:
                         match_timer.step_start("AI映射修正")
-                        # 获取AI匹配器
-                        ai_matcher = await ai_matcher_manager.get_matcher()
+                        # 【性能优化】使用预热的AI匹配器
+                        ai_matcher = None
+                        if ai_matcher_warmup_task:
+                            ai_matcher = await ai_matcher_warmup_task
+                            ai_matcher_warmup_task = None  # 清空task，避免重复await
+                        else:
+                            ai_matcher = await ai_matcher_manager.get_matcher()
                         if ai_matcher:
                             logger.info(f"○ 匹配后备 开始统一AI映射修正: '{base_title}' ({len(all_results)} 个结果)")
 
@@ -595,17 +611,21 @@ async def get_match_for_item(
 
                     return score
 
-                # 按分数排序 (分数高的在前)，相同分数时按源优先级排序
+                # 【性能优化】按分数排序 + 缓存分数（避免日志打印时重复计算）
+                score_cache = {}  # 缓存每个结果的分数
+                for result in all_results:
+                    score_cache[id(result)] = calculate_match_score(result)
+
                 sorted_results = sorted(
                     all_results,
-                    key=lambda r: (calculate_match_score(r), -source_order_map.get(r.provider, 999)),
+                    key=lambda r: (score_cache[id(r)], -source_order_map.get(r.provider, 999)),
                     reverse=True
                 )
 
-                # 打印排序后的结果列表
+                # 打印排序后的结果列表（使用缓存的分数）
                 lines = [f"步骤2：智能排序 - 排序后的搜索结果列表 (共 {len(sorted_results)} 条, 按匹配分数):"]
                 for idx, result in enumerate(sorted_results, 1):
-                    score = calculate_match_score(result)
+                    score = score_cache[id(result)]  # 直接从缓存获取
                     type_match = "✓" if result.type == target_type else "✗"
                     lines.append(f"  {idx}. [{type_match}] {result.provider} - {result.title} (ID: {result.mediaId}, 类型: {result.type}, 年份: {result.year or 'N/A'}, 分数: {score:.0f})")
                 logger.info("\n".join(lines))
@@ -613,27 +633,25 @@ async def get_match_for_item(
                 # 步骤3：自动选择最佳源
                 logger.info(f"步骤3：自动选择最佳源")
 
-                # 获取精确标记信息 (AI匹配和传统匹配都需要)
+                # 【性能优化】批量查询精确标记信息（1次IN查询替代N次单独查询）
                 favorited_info = {}
-                async with scraper_manager._session_factory() as ai_session:
-                    for result in sorted_results:
-                        # 查找是否有相同provider和mediaId的源被标记
-                        stmt = (
-                            select(AnimeSource.isFavorited)
-                            .where(
-                                AnimeSource.providerName == result.provider,
-                                AnimeSource.mediaId == result.mediaId
-                            )
-                            .limit(1)
+                provider_media_pairs = [(r.provider, r.mediaId) for r in sorted_results]
+                if provider_media_pairs:
+                    from sqlalchemy import tuple_
+                    favorited_stmt = (
+                        select(AnimeSource.providerName, AnimeSource.mediaId)
+                        .where(
+                            tuple_(AnimeSource.providerName, AnimeSource.mediaId).in_(provider_media_pairs),
+                            AnimeSource.isFavorited == True
                         )
-                        result_row = await ai_session.execute(stmt)
-                        is_favorited = result_row.scalar_one_or_none()
-                        if is_favorited:
-                            key = f"{result.provider}:{result.mediaId}"
-                            favorited_info[key] = True
+                    )
+                    favorited_rows = await session_inner.execute(favorited_stmt)
+                    for row in favorited_rows:
+                        key = f"{row.providerName}:{row.mediaId}"
+                        favorited_info[key] = True
 
-                # 检查是否启用AI匹配
-                ai_match_enabled = (await config_manager.get("aiMatchEnabled", "false")).lower() == 'true'
+                # 【性能优化】使用预获取的配置值（不再重复获取）
+                # ai_match_enabled, ai_fallback_enabled, fallback_enabled 已在初始化阶段获取
 
                 # 如果启用AI匹配，尝试使用AI选择
                 ai_selected_index = None
@@ -692,24 +710,22 @@ async def get_match_for_item(
                         )
 
                         if ai_selected_index is None:
-                            # 检查是否启用传统匹配兜底
-                            ai_fallback_enabled = (await config_manager.get("aiFallbackEnabled", "true")).lower() == 'true'
+                            # 使用预获取的配置值
                             if ai_fallback_enabled:
                                 logger.info("AI匹配未找到合适结果，降级到传统匹配")
                             else:
                                 logger.warning("AI匹配未找到合适结果，且传统匹配兜底已禁用，将不使用任何结果")
 
                     except Exception as e:
-                        # 检查是否启用传统匹配兜底
-                        ai_fallback_enabled = (await config_manager.get("aiFallbackEnabled", "true")).lower() == 'true'
+                        # 使用预获取的配置值
                         if ai_fallback_enabled:
                             logger.error(f"AI匹配失败，降级到传统匹配: {e}", exc_info=True)
                         else:
                             logger.error(f"AI匹配失败，且传统匹配兜底已禁用: {e}", exc_info=True)
                         ai_selected_index = None
 
-                # 检查是否启用顺延机制
-                fallback_enabled = (await config_manager.get("externalApiFallbackEnabled", "false")).lower() == 'true'
+                # 使用预获取的配置值
+                # fallback_enabled 已在初始化阶段获取
 
                 best_match = None
 
@@ -718,8 +734,7 @@ async def get_match_for_item(
                     best_match = sorted_results[ai_selected_index]
                     logger.info(f"  - 使用AI选择的结果: {best_match.provider} - {best_match.title}")
                 elif ai_match_enabled:
-                    # AI匹配已启用但失败，检查是否允许降级到传统匹配
-                    ai_fallback_enabled = (await config_manager.get("aiFallbackEnabled", "true")).lower() == 'true'
+                    # AI匹配已启用但失败，使用预获取的配置值
                     if not ai_fallback_enabled:
                         logger.warning("AI匹配失败且传统匹配兜底已禁用，匹配后备失败")
                         return DandanMatchResponse(isMatched=False, matches=[])
@@ -754,7 +769,7 @@ async def get_match_for_item(
                             first_result = sorted_results[0]
                             type_matched = first_result.type == target_type
                             similarity = fuzz.token_set_ratio(base_title, first_result.title)
-                            score = calculate_match_score(first_result)
+                            score = score_cache.get(id(first_result), calculate_match_score(first_result))
 
                             # 必须满足：类型匹配 AND 相似度 >= 70%
                             if type_matched and similarity >= 70:
@@ -799,7 +814,7 @@ async def get_match_for_item(
                             first_result = sorted_results[0]
                             type_matched = first_result.type == target_type
                             similarity = fuzz.token_set_ratio(base_title, first_result.title)
-                            score = calculate_match_score(first_result)
+                            score = score_cache.get(id(first_result), calculate_match_score(first_result))
 
                             # 必须满足：类型匹配 AND 相似度 >= 70%
                             if type_matched and similarity >= 70:

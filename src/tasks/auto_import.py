@@ -75,6 +75,16 @@ async def auto_search_and_import_task(
     timer = SearchTimer(SEARCH_TYPE_CONTROL_AUTO_IMPORT, payload.searchTerm, logger)
     timer.start()
 
+    # 【性能优化】AI初始化预热：提前检查是否需要AI，如果需要则启动预热（不阻塞）
+    ai_matcher_warmup_task = None
+    try:
+        auto_import_tmdb_enabled_check = await config_manager.get("autoImportEnableTmdbSeasonMapping", "false")
+        if auto_import_tmdb_enabled_check.lower() == "true":
+            ai_matcher_warmup_task = asyncio.create_task(ai_matcher_manager.get_matcher())
+            logger.debug("全自动导入 AI匹配器预热已启动（并行）")
+    except Exception as e:
+        logger.warning(f"全自动导入 AI预热失败: {e}")
+
     try:
         # 防御性检查：确保 rate_limiter 已被正确传递。
         if rate_limiter is None:
@@ -448,8 +458,13 @@ async def auto_search_and_import_task(
         if auto_import_tmdb_enabled.lower() == "true" and media_type != "movie":
             logger.info(f"○ 全自动导入 AI映射: 开始为 '{search_title}' 进行类型和季度映射(并行)...")
 
-            # 获取AI匹配器(如果启用)
-            ai_matcher = await ai_matcher_manager.get_matcher()
+            # 获取AI匹配器(如果启用) - 【性能优化】使用预热的AI匹配器
+            ai_matcher = None
+            if ai_matcher_warmup_task:
+                ai_matcher = await ai_matcher_warmup_task
+                ai_matcher_warmup_task = None  # 清空task，避免重复await
+            else:
+                ai_matcher = await ai_matcher_manager.get_matcher()
             if ai_matcher:
                 logger.debug("全自动导入 AI映射: 使用AI匹配器")
             else:
@@ -508,8 +523,13 @@ async def auto_search_and_import_task(
         if auto_import_tmdb_enabled.lower() == "true" and media_type != "movie":
             try:
                 timer.step_start("AI映射修正")
-                # 获取AI匹配器
-                ai_matcher = await ai_matcher_manager.get_matcher()
+                # 【性能优化】使用预热的AI匹配器
+                ai_matcher = None
+                if ai_matcher_warmup_task:
+                    ai_matcher = await ai_matcher_warmup_task
+                    ai_matcher_warmup_task = None  # 清空task，避免重复await
+                else:
+                    ai_matcher = await ai_matcher_manager.get_matcher()
                 if ai_matcher:
                     logger.info(f"○ 全自动导入 开始统一AI映射修正: '{search_title}' ({len(all_results)} 个结果)")
 
