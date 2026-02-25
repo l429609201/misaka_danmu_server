@@ -13,6 +13,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, orm_models, CacheManager
+from src.core.cache import get_cache_backend
 
 # 同包内相对导入
 from .constants import (
@@ -28,34 +29,6 @@ logger = logging.getLogger(__name__)
 
 # ==================== 缓存辅助函数 ====================
 
-def get_cache_manager_from_request() -> Optional[CacheManager]:
-    """从当前请求上下文获取 CacheManager"""
-    try:
-        from starlette.requests import Request
-        from contextvars import ContextVar
-        # 这是一个简化的实现,实际使用时需要从依赖注入获取
-        return None
-    except:
-        return None
-
-
-async def get_db_cache(session: AsyncSession, prefix: str, key: str) -> Optional[Any]:
-    """从数据库缓存中获取数据(兼容包装器)"""
-    cache_key = f"{prefix}{key}"
-    cached_data = await crud.get_cache(session, cache_key)
-
-    if cached_data:
-        if not isinstance(cached_data, str):
-            return cached_data
-        if not cached_data.strip():
-            return None
-        try:
-            return json.loads(cached_data)
-        except (json.JSONDecodeError, TypeError):
-            return cached_data
-    return None
-
-
 def convert_to_serializable(obj: Any) -> Any:
     """递归转换对象为可JSON序列化的格式"""
     if hasattr(obj, 'model_dump'):
@@ -70,58 +43,122 @@ def convert_to_serializable(obj: Any) -> Any:
         return obj
 
 
-async def set_db_cache(session: AsyncSession, prefix: str, key: str, value: Any, ttl_seconds: int):
-    """设置数据库缓存(兼容包装器)"""
+async def get_db_cache(session: AsyncSession, prefix: str, key: str) -> Optional[Any]:
+    """从缓存中获取数据（优先走缓存后端，回退到数据库直接查询）"""
+    backend = get_cache_backend()
     cache_key = f"{prefix}{key}"
+
+    if backend is not None:
+        try:
+            return await backend.get(cache_key, region="default")
+        except Exception as e:
+            logger.warning(f"缓存后端读取失败，回退到数据库: {cache_key}, 错误: {e}")
+
+    # 回退：直接走数据库
+    cached_data = await crud.get_cache(session, cache_key)
+    if cached_data:
+        if not isinstance(cached_data, str):
+            return cached_data
+        if not cached_data.strip():
+            return None
+        try:
+            return json.loads(cached_data)
+        except (json.JSONDecodeError, TypeError):
+            return cached_data
+    return None
+
+
+async def set_db_cache(session: AsyncSession, prefix: str, key: str, value: Any, ttl_seconds: int):
+    """设置缓存（优先走缓存后端，回退到数据库直接写入）"""
+    backend = get_cache_backend()
+    cache_key = f"{prefix}{key}"
+
+    # 先将 Pydantic model 等转为可序列化格式
+    if not isinstance(value, (str, int, float, bool, type(None))):
+        value = convert_to_serializable(value)
+
+    if backend is not None:
+        try:
+            await backend.set(cache_key, value, ttl=ttl_seconds, region="default")
+            logger.debug(f"设置缓存: {cache_key}")
+            return
+        except Exception as e:
+            logger.warning(f"缓存后端写入失败，回退到数据库: {cache_key}, 错误: {e}")
+
+    # 回退：直接走数据库
     try:
         if isinstance(value, str):
             json_value = value
         else:
-            serializable_value = convert_to_serializable(value)
-            json_value = json.dumps(serializable_value, ensure_ascii=False)
+            json_value = json.dumps(value, ensure_ascii=False)
         await crud.set_cache(session, cache_key, json_value, ttl_seconds)
-        logger.debug(f"设置缓存: {cache_key}")
+        logger.debug(f"设置缓存(数据库回退): {cache_key}")
     except Exception as e:
         logger.error(f"设置缓存失败: {cache_key}, 错误: {e}")
 
 
 async def delete_db_cache(session: AsyncSession, prefix: str, key: str) -> bool:
-    """删除数据库缓存(兼容包装器)"""
+    """删除缓存（优先走缓存后端，回退到数据库直接删除）"""
+    backend = get_cache_backend()
     cache_key = f"{prefix}{key}"
+
+    if backend is not None:
+        try:
+            result = await backend.delete(cache_key, region="default")
+            if result:
+                logger.debug(f"删除缓存: {cache_key}")
+            return result
+        except Exception as e:
+            logger.warning(f"缓存后端删除失败，回退到数据库: {cache_key}, 错误: {e}")
+
+    # 回退：直接走数据库
     try:
         result = await crud.delete_cache(session, cache_key)
         if result:
-            logger.debug(f"删除缓存: {cache_key}")
+            logger.debug(f"删除缓存(数据库回退): {cache_key}")
         return result
     except Exception as e:
         logger.error(f"删除缓存失败: {cache_key}, 错误: {e}")
         return False
 
 
+async def get_cache_keys(session: AsyncSession, pattern: str) -> List[str]:
+    """按模式获取缓存键列表（优先走缓存后端，回退到数据库）"""
+    backend = get_cache_backend()
+
+    if backend is not None:
+        try:
+            return await backend.keys(pattern, region="default")
+        except Exception as e:
+            logger.warning(f"缓存后端 keys 失败，回退到数据库: {pattern}, 错误: {e}")
+
+    # 回退：直接走数据库
+    return await crud.get_cache_keys_by_pattern(session, pattern)
+
+
 # ==================== 映射辅助函数 ====================
 
 async def store_episode_mapping(
-    session: AsyncSession, episode_id: int, provider: str, 
+    session: AsyncSession, episode_id: int, provider: str,
     media_id: str, episode_index: int, original_title: str
 ):
-    """存储episodeId到源的映射关系到数据库缓存"""
+    """存储episodeId到源的映射关系到缓存"""
     mapping_data = {
         "provider": provider, "media_id": media_id,
         "episode_index": episode_index, "original_title": original_title,
         "timestamp": time.time()
     }
-    cache_key = f"{EPISODE_MAPPING_CACHE_PREFIX}{episode_id}"
-    await crud.set_cache(session, cache_key, json.dumps(mapping_data), ttl_seconds=10800)
+    await set_db_cache(session, EPISODE_MAPPING_CACHE_PREFIX, str(episode_id), mapping_data, 10800)
     logger.debug(f"存储episodeId映射: {episode_id} -> {provider}:{media_id}")
 
 
 async def get_episode_mapping(session: AsyncSession, episode_id: int) -> Optional[Dict[str, Any]]:
-    """从数据库缓存中获取episodeId的映射关系"""
-    cache_key = f"{EPISODE_MAPPING_CACHE_PREFIX}{episode_id}"
-    cached_data = await crud.get_cache(session, cache_key)
-    if cached_data:
+    """从缓存中获取episodeId的映射关系"""
+    mapping_data = await get_db_cache(session, EPISODE_MAPPING_CACHE_PREFIX, str(episode_id))
+    if mapping_data:
         try:
-            mapping_data = json.loads(cached_data) if isinstance(cached_data, str) else cached_data
+            if isinstance(mapping_data, str):
+                mapping_data = json.loads(mapping_data)
             logger.info(f"从缓存获取episodeId映射: {episode_id} -> {mapping_data['provider']}:{mapping_data['media_id']}")
             return mapping_data
         except (json.JSONDecodeError, KeyError, TypeError) as e:
@@ -160,7 +197,7 @@ async def update_episode_mapping(
     await store_episode_mapping(session, episode_id, provider, media_id, episode_index, original_title)
     real_anime_id = int(str(episode_id)[2:8])
     try:
-        all_cache_keys = await crud.get_cache_keys_by_pattern(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
+        all_cache_keys = await get_cache_keys(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
         for cache_key in all_cache_keys:
             search_key = cache_key.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
             search_info = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key)
@@ -208,7 +245,7 @@ async def get_next_virtual_anime_id(session: AsyncSession) -> int:
     """获取下一个虚拟animeId（6位数字，从900000开始）"""
     max_id = None
     try:
-        all_cache_keys = await crud.get_cache_keys_by_pattern(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
+        all_cache_keys = await get_cache_keys(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
         for cache_key in all_cache_keys:
             search_key = cache_key.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
             search_info = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key)

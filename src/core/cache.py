@@ -28,6 +28,14 @@ from typing import Any, Optional, List, Callable, Union
 logger = logging.getLogger(__name__)
 
 
+def _match_wildcard(pattern: str, text: str) -> bool:
+    """简单通配符匹配，仅支持 * 匹配任意字符"""
+    if pattern == "*":
+        return True
+    import fnmatch
+    return fnmatch.fnmatch(text, pattern)
+
+
 # ==================== 抽象基类 ====================
 
 class AsyncCacheBackend(ABC):
@@ -52,6 +60,19 @@ class AsyncCacheBackend(ABC):
     @abstractmethod
     async def clear(self, region: Optional[str] = None) -> int:
         """清除缓存，指定 region 则只清该区域，否则全清。返回清除数量"""
+
+    async def keys(self, pattern: str = "*", region: str = "default") -> List[str]:
+        """
+        按模式列出缓存键（不含 region 前缀）
+
+        Args:
+            pattern: 匹配模式，支持 * 通配符
+            region: 缓存区域
+
+        Returns:
+            匹配的原始 key 列表（不含 region: 前缀）
+        """
+        return []
 
     async def close(self) -> None:
         """关闭后端连接（子类按需覆盖）"""
@@ -114,6 +135,20 @@ class MemoryBackend(AsyncCacheBackend):
             del self._store[k]
         return len(keys_to_delete)
 
+    async def keys(self, pattern: str = "*", region: str = "default") -> List[str]:
+        prefix = f"{region}:"
+        now = time.time()
+        result = []
+        for full_key, (_, expire_at) in list(self._store.items()):
+            if not full_key.startswith(prefix):
+                continue
+            if 0 < expire_at <= now:
+                continue
+            raw_key = full_key[len(prefix):]
+            if _match_wildcard(pattern, raw_key):
+                result.append(raw_key)
+        return result
+
     def _evict(self):
         """淘汰过期条目，如果没有过期的则淘汰最早插入的"""
         now = time.time()
@@ -139,12 +174,28 @@ class RedisBackend(AsyncCacheBackend):
 
     def __init__(self, redis_url: str, max_memory: str = "256mb",
                  socket_timeout: int = 30, socket_connect_timeout: int = 5):
+        # 兼容 Valkey: 自动将 valkey:// / valkeys:// 转换为 redis:// / rediss://
+        from urllib.parse import urlparse
+        parsed = urlparse(redis_url)
+        if parsed.scheme == "valkey":
+            redis_url = redis_url.replace("valkey://", "redis://", 1)
+            logger.info("检测到 Valkey URL，已自动转换为 redis:// 协议")
+        elif parsed.scheme == "valkeys":
+            redis_url = redis_url.replace("valkeys://", "rediss://", 1)
+            logger.info("检测到 Valkey TLS URL，已自动转换为 rediss:// 协议")
+
         self._redis_url = redis_url
         self._max_memory = max_memory
         self._socket_timeout = socket_timeout
         self._socket_connect_timeout = socket_connect_timeout
         self._client = None
         self._lock = asyncio.Lock()
+
+        # 日志只打印 host:port，隐藏密码
+        try:
+            self._safe_url = f"{parsed.hostname or 'localhost'}:{parsed.port or 6379}/{parsed.path.strip('/') or '0'}"
+        except Exception:
+            self._safe_url = "redis://***"
 
     async def _get_client(self):
         """懒初始化 Redis 连接"""
@@ -168,7 +219,7 @@ class RedisBackend(AsyncCacheBackend):
                     try:
                         await self._client.config_set("maxmemory", self._max_memory)
                         await self._client.config_set("maxmemory-policy", "allkeys-lru")
-                        logger.info(f"Redis 缓存后端已连接: {self._redis_url}")
+                        logger.info(f"Redis 缓存后端已连接: {self._safe_url}")
                     except Exception as e:
                         logger.warning(f"设置 Redis 内存策略失败（可能无权限）: {e}")
         return self._client
@@ -237,6 +288,19 @@ class RedisBackend(AsyncCacheBackend):
             count += 1
         return count
 
+    async def keys(self, pattern: str = "*", region: str = "default") -> List[str]:
+        client = await self._get_client()
+        full_pattern = self._make_key(region, pattern)
+        prefix = f"{region}:"
+        result = []
+        async for raw_key in client.scan_iter(match=full_pattern, count=100):
+            key_str = raw_key.decode("utf-8") if isinstance(raw_key, bytes) else raw_key
+            if key_str.startswith(prefix):
+                result.append(key_str[len(prefix):])
+            else:
+                result.append(key_str)
+        return result
+
     async def close(self) -> None:
         if self._client:
             await self._client.aclose()
@@ -290,6 +354,13 @@ class DatabaseBackend(AsyncCacheBackend):
                 await crud.delete_cache(session, k)
             return len(keys)
 
+    async def keys(self, pattern: str = "*", region: str = "default") -> List[str]:
+        from src.db import crud
+        full_pattern = self._make_key(region, pattern)
+        prefix = f"{region}:"
+        async with self._session_factory() as session:
+            full_keys = await crud.get_cache_keys_by_pattern(session, full_pattern)
+            return [k[len(prefix):] if k.startswith(prefix) else k for k in full_keys]
 
 
 # ==================== Hybrid 后端 ====================
@@ -336,6 +407,10 @@ class HybridBackend(AsyncCacheBackend):
         db_count = await self._database.clear(region)
         return mem_count + db_count
 
+    async def keys(self, pattern: str = "*", region: str = "default") -> List[str]:
+        # 以数据库为权威来源
+        return await self._database.keys(pattern, region)
+
     async def close(self) -> None:
         await self._memory.close()
         await self._database.close()
@@ -379,7 +454,7 @@ def create_cache_backend(
             socket_timeout=cache_config.redis_socket_timeout,
             socket_connect_timeout=cache_config.redis_socket_connect_timeout,
         )
-        logger.info(f"缓存后端: Redis ({cache_config.redis_url})")
+        logger.info(f"缓存后端: Redis ({backend._safe_url})")
 
     elif backend_type == "database":
         if session_factory is None:
@@ -416,9 +491,12 @@ def get_cache_backend() -> AsyncCacheBackend:
     return _global_backend
 
 
-def init_cache_backend(session_factory=None, cache_config=None) -> AsyncCacheBackend:
+async def init_cache_backend(session_factory=None, cache_config=None) -> AsyncCacheBackend:
     """
     初始化全局缓存后端（应用启动时调用一次）
+
+    - 如果配置了 Redis，会先进行连接健康检查
+    - Redis 不可用时自动降级到 Hybrid 模式（Memory L1 + Database L2）
 
     Args:
         session_factory: SQLAlchemy 异步会话工厂
@@ -428,11 +506,41 @@ def init_cache_backend(session_factory=None, cache_config=None) -> AsyncCacheBac
     from src.core.config import CacheConfig
     if cache_config is None:
         cache_config = CacheConfig()
-    _global_backend = create_cache_backend(
+
+    backend = create_cache_backend(
         backend_type=cache_config.backend,
         session_factory=session_factory,
         cache_config=cache_config,
     )
+
+    # Redis 后端健康检查
+    if cache_config.backend == "redis" and isinstance(backend, RedisBackend):
+        try:
+            client = await backend._get_client()
+            await client.ping()
+            logger.info(f"Redis 健康检查通过: {backend._safe_url}")
+        except Exception as e:
+            logger.warning(f"Redis 连接失败 ({backend._safe_url}): {e}")
+            logger.warning("自动降级到 Hybrid 模式（Memory L1 + Database L2）")
+            # 关闭失败的 Redis 后端
+            try:
+                await backend.close()
+            except Exception:
+                pass
+            # 降级到 hybrid
+            if session_factory is not None:
+                backend = create_cache_backend(
+                    backend_type="hybrid",
+                    session_factory=session_factory,
+                    cache_config=cache_config,
+                )
+            else:
+                backend = create_cache_backend(
+                    backend_type="memory",
+                    cache_config=cache_config,
+                )
+
+    _global_backend = backend
     return _global_backend
 
 

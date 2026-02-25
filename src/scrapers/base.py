@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.db import crud
 from src.db import models
+from src.core.cache import get_cache_backend
 
 from src.utils import TransportManager
 
@@ -268,6 +269,14 @@ class BaseScraper(ABC):
         self.logger.debug(f"{self.provider_name}: 缓存未预取，进行单独查询 - {key}")
         async with self._session_factory() as session:
             try:
+                _backend = get_cache_backend()
+                if _backend is not None:
+                    try:
+                        result = await _backend.get(key, region="default")
+                        if result is not None:
+                            return result
+                    except Exception:
+                        pass
                 return await crud.get_cache(session, key)
             finally:
                 await session.close()
@@ -279,7 +288,14 @@ class BaseScraper(ABC):
         if ttl > 0:
             async with self._session_factory() as session:
                 try:
-                    await crud.set_cache(session, key, value, ttl, provider=self.provider_name)
+                    _backend = get_cache_backend()
+                    if _backend is not None:
+                        try:
+                            await _backend.set(key, value, ttl=ttl, region="default")
+                        except Exception:
+                            await crud.set_cache(session, key, value, ttl, provider=self.provider_name)
+                    else:
+                        await crud.set_cache(session, key, value, ttl, provider=self.provider_name)
                     await session.commit()
                 finally:
                     await session.close()

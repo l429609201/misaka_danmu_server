@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 
 from src.db import crud, orm_models, models, get_db_session, sync_postgres_sequence, ConfigManager
 from src.core import get_now
+from src.core.cache import get_cache_backend
 from src.services import ScraperManager, TaskManager
 from src.utils import parse_search_keyword, sample_comments_evenly, record_play_history
 from src.rate_limiter import RateLimiter
@@ -41,7 +42,7 @@ from .constants import (
 )
 from .helpers import (
     get_db_cache, set_db_cache, delete_db_cache,
-    get_episode_mapping,
+    get_episode_mapping, get_cache_keys,
 )
 from .route_handler import get_token_from_path, DandanApiRoute
 from .dependencies import (
@@ -117,7 +118,15 @@ async def get_external_comments_from_url(
     结果会被缓存5小时。
     """
     cache_key = f"ext_danmaku_v2_{url}"
-    cached_comments = await crud.get_cache(session, cache_key)
+    _backend = get_cache_backend()
+    cached_comments = None
+    if _backend is not None:
+        try:
+            cached_comments = await _backend.get(cache_key, region="default")
+        except Exception as e:
+            logger.warning(f"缓存后端读取失败，回退到数据库: {e}")
+    if cached_comments is None:
+        cached_comments = await crud.get_cache(session, cache_key)
     if cached_comments is not None:
         logger.info(f"外部弹幕缓存命中: {url}")
         comments_data = cached_comments
@@ -143,7 +152,14 @@ async def get_external_comments_from_url(
             raise HTTPException(status_code=500, detail=f"获取 {scraper.provider_name} 弹幕失败。")
 
         # 缓存结果5小时 (18000秒)
-        await crud.set_cache(session, cache_key, comments_data, 18000)
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                await _backend.set(cache_key, comments_data, ttl=18000, region="default")
+            except Exception:
+                await crud.set_cache(session, cache_key, comments_data, 18000)
+        else:
+            await crud.set_cache(session, cache_key, comments_data, 18000)
 
     # 处理简繁转换（根据优先级决定使用服务端配置还是播放器参数）
     try:
@@ -241,7 +257,15 @@ async def get_comments_for_dandan(
             fallback_series_key = f"fallback_episode_{virtual_anime_base}"
 
             # 从数据库缓存中查找整部剧的信息
-            fallback_info = await crud.get_cache(session, fallback_series_key)
+            _backend = get_cache_backend()
+            fallback_info = None
+            if _backend is not None:
+                try:
+                    fallback_info = await _backend.get(fallback_series_key, region="default")
+                except Exception as e:
+                    logger.warning(f"缓存后端读取失败，回退到数据库: {e}")
+            if fallback_info is None:
+                fallback_info = await crud.get_cache(session, fallback_series_key)
             logger.debug(f"查找缓存: {fallback_series_key}, 找到: {fallback_info is not None}")
 
         # 如果数据库缓存中没有,再从数据库缓存中查找(使用新的前缀)
@@ -453,8 +477,15 @@ async def get_comments_for_dandan(
                                 "total_episodes": len(current_episodes_list)
                             }
 
-                            # 存储到数据库缓存,3小时过期
-                            await crud.set_cache(task_session, fallback_series_key, cache_value, 10800)
+                            # 存储到缓存,3小时过期
+                            _backend = get_cache_backend()
+                            if _backend is not None:
+                                try:
+                                    await _backend.set(fallback_series_key, cache_value, ttl=10800, region="default")
+                                except Exception:
+                                    await crud.set_cache(task_session, fallback_series_key, cache_value, 10800)
+                            else:
+                                await crud.set_cache(task_session, fallback_series_key, cache_value, 10800)
                             await task_session.flush()
                             logger.info(f"为整部剧创建了缓存记录: {fallback_series_key} (共{len(current_episodes_list)}集)")
                         except Exception as e:
@@ -626,7 +657,7 @@ async def get_comments_for_dandan(
                 # 如果缓存中没有，从数据库缓存中查找
                 # 首先尝试根据用户最后的选择来确定源
                 try:
-                    all_cache_keys = await crud.get_cache_keys_by_pattern(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
+                    all_cache_keys = await get_cache_keys(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
                     for cache_key in all_cache_keys:
                         search_key = cache_key.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
                         search_info = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key)
@@ -648,7 +679,7 @@ async def get_comments_for_dandan(
                 # 如果没有找到用户最后的选择，则使用原来的逻辑
                 if not episode_url:
                     try:
-                        all_cache_keys_fallback = await crud.get_cache_keys_by_pattern(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
+                        all_cache_keys_fallback = await get_cache_keys(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
                         for cache_key_fallback in all_cache_keys_fallback:
                             search_key_fallback = cache_key_fallback.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
                             search_info_fallback = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key_fallback)
@@ -704,7 +735,7 @@ async def get_comments_for_dandan(
                                 # 查找映射信息（根据real_anime_id匹配）
                                 mapping_info = None
                                 try:
-                                    all_cache_keys_mapping = await crud.get_cache_keys_by_pattern(task_session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
+                                    all_cache_keys_mapping = await get_cache_keys(task_session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
                                     for cache_key_mapping in all_cache_keys_mapping:
                                         search_key = cache_key_mapping.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
                                         last_bangumi_id = await get_db_cache(task_session, USER_LAST_BANGUMI_CHOICE_PREFIX, search_key)
@@ -788,7 +819,7 @@ async def get_comments_for_dandan(
                                         image_url = None
                                         search_keyword = None
                                         try:
-                                            all_cache_keys_info = await crud.get_cache_keys_by_pattern(task_session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
+                                            all_cache_keys_info = await get_cache_keys(task_session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
                                             for cache_key_info in all_cache_keys_info:
                                                 search_key = cache_key_info.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
                                                 last_bangumi_id = await get_db_cache(task_session, USER_LAST_BANGUMI_CHOICE_PREFIX, search_key)
@@ -885,8 +916,15 @@ async def get_comments_for_dandan(
                                                     "total_episodes": len(current_episodes_list_ref)
                                                 }
 
-                                                # 存储到数据库缓存,3小时过期
-                                                await crud.set_cache(task_session, fallback_series_key, cache_value, 10800)
+                                                # 存储到缓存,3小时过期
+                                                _backend = get_cache_backend()
+                                                if _backend is not None:
+                                                    try:
+                                                        await _backend.set(fallback_series_key, cache_value, ttl=10800, region="default")
+                                                    except Exception:
+                                                        await crud.set_cache(task_session, fallback_series_key, cache_value, 10800)
+                                                else:
+                                                    await crud.set_cache(task_session, fallback_series_key, cache_value, 10800)
                                                 await task_session.flush()
                                                 logger.info(f"为整部剧创建了缓存记录: {fallback_series_key} (共{len(current_episodes_list_ref)}集)")
                                             except Exception as e:
@@ -903,7 +941,7 @@ async def get_comments_for_dandan(
                                         # 清除缓存中所有使用这个real_anime_id的映射关系
                                         # 因为数据库中已经有了这个ID的记录，下次分配时不会再使用这个ID
                                         try:
-                                            all_cache_keys_cleanup = await crud.get_cache_keys_by_pattern(task_session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
+                                            all_cache_keys_cleanup = await get_cache_keys(task_session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
                                             for cache_key_cleanup in all_cache_keys_cleanup:
                                                 search_key = cache_key_cleanup.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
                                                 search_info = await get_db_cache(task_session, FALLBACK_SEARCH_CACHE_PREFIX, search_key)

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
 from src.db import crud, ConfigManager
+from src.core.cache import get_cache_backend
 from src.services import ScraperManager, TaskManager, MetadataSourceManager, unified_search
 from src.utils import (
     parse_search_keyword,
@@ -410,7 +411,14 @@ async def execute_fallback_search_task(
                 "results": [result.model_dump() for result in search_results],
                 "timestamp": time.time(),
             }
-            await crud.set_cache(session, cache_key, json.dumps(cache_data), ttl_seconds=600)
+            _backend = get_cache_backend()
+            if _backend is not None:
+                try:
+                    await _backend.set(cache_key, json.dumps(cache_data), ttl=600, region="default")
+                except Exception:
+                    await crud.set_cache(session, cache_key, json.dumps(cache_data), ttl_seconds=600)
+            else:
+                await crud.set_cache(session, cache_key, json.dumps(cache_data), ttl_seconds=600)
             logger.info(f"后备搜索结果已存储到数据库缓存: {cache_key}")
         except Exception as e:
             logger.warning(f"存储后备搜索结果到数据库缓存失败: {e}")

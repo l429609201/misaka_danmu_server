@@ -145,8 +145,8 @@ async def lifespan(app: FastAPI):
     # 初始化 TransportManager
     app.state.transport_manager = TransportManager()
 
-    # 初始化缓存后端（Memory/Redis/Database/Hybrid）
-    cache_backend = init_cache_backend(
+    # 初始化缓存后端（Memory/Redis/Database/Hybrid，Redis 不可用时自动降级）
+    cache_backend = await init_cache_backend(
         session_factory=session_factory,
         cache_config=settings.cache,
     )

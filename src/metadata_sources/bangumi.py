@@ -15,6 +15,7 @@ from src.db import crud, models, orm_models, get_db_session, ConfigManager, Cach
 from src.core import get_app_timezone, get_now
 from src.security import get_current_user
 from src.core import settings
+from src.core.cache import get_cache_backend
 from src.utils import parse_search_keyword
 from src.utils import clean_movie_title as _clean_movie_title
 from src.services import ScraperManager
@@ -291,6 +292,14 @@ class BangumiMetadataSource(BaseMetadataSource):
 
     async def _get_from_cache(self, key: str) -> Optional[Any]:
         """从缓存中获取数据。"""
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                result = await _backend.get(key, region="metadata")
+                if result is not None:
+                    return result
+            except Exception:
+                pass
         async with self._session_factory() as session:
             return await crud.get_cache(session, key)
 
@@ -303,9 +312,17 @@ class BangumiMetadataSource(BaseMetadataSource):
                 ttl_seconds = int(ttl_from_config)
         except (ValueError, TypeError):
             self.logger.warning(f"无法从配置 '{ttl_key}' 中解析TTL，将使用默认值 {default_ttl} 秒。")
-        
-        async with self._session_factory() as session:
-            await crud.set_cache(session, key, value, ttl_seconds)
+
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                await _backend.set(key, value, ttl=ttl_seconds, region="metadata")
+            except Exception:
+                async with self._session_factory() as session:
+                    await crud.set_cache(session, key, value, ttl_seconds)
+        else:
+            async with self._session_factory() as session:
+                await crud.set_cache(session, key, value, ttl_seconds)
 
     async def _ensure_config(self):
         """从数据库配置中加载个人访问令牌。"""

@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 
 from pydantic import Field
 from src.db import models, crud
+from src.core.cache import get_cache_backend
 
 logger = logging.getLogger(__name__)
 
@@ -320,10 +321,19 @@ class SeasonMapper:
         # 检查缓存
         sources_str = "_".join(sources) if sources else "default"
         cache_key = f"season_name_{title}_{season_number}_{year or 'any'}_{sources_str}"
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                cached_result = await _backend.get(cache_key, region="metadata")
+                if cached_result:
+                    self.logger.info(f"季度名称缓存命中: {title} S{season_number:02d}")
+                    return cached_result.get("season_name")
+            except Exception as e:
+                self.logger.warning(f"缓存后端读取失败，回退到数据库: {e}")
         async with self._session_factory() as session:
             cached_result = await crud.get_cache(session, cache_key)
             if cached_result:
-                self.logger.info(f"季度名称缓存命中: {title} S{season_number:02d}")
+                self.logger.info(f"季度名称缓存命中(数据库): {title} S{season_number:02d}")
                 return cached_result.get("season_name")
         
         # 第1步: 搜索所有元数据源
@@ -377,14 +387,18 @@ class SeasonMapper:
             return None
         
         # 缓存结果(7天)
-        async with self._session_factory() as session:
-            await crud.set_cache(
-                session,
-                cache_key,
-                {"season_name": target_season.name, "source": selected_candidate.source},
-                ttl_seconds=604800,  # 7天
-                provider=selected_candidate.source
-            )
+        cache_value = {"season_name": target_season.name, "source": selected_candidate.source}
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                await _backend.set(cache_key, cache_value, ttl=604800, region="metadata")
+            except Exception as e:
+                self.logger.warning(f"缓存后端写入失败，回退到数据库: {e}")
+                async with self._session_factory() as session:
+                    await crud.set_cache(session, cache_key, cache_value, ttl_seconds=604800, provider=selected_candidate.source)
+        else:
+            async with self._session_factory() as session:
+                await crud.set_cache(session, cache_key, cache_value, ttl_seconds=604800, provider=selected_candidate.source)
         
         self.logger.info(f"获取季度名称成功: {title} S{season_number:02d} → {target_season.name} (来源: {selected_candidate.source})")
         return target_season.name
@@ -478,10 +492,19 @@ class SeasonMapper:
 
         # 检查缓存
         cache_key = f"{source}_seasons_{id}"
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                cached_result = await _backend.get(cache_key, region="metadata")
+                if cached_result:
+                    self.logger.info(f"{source} 季度信息缓存命中: {id}")
+                    return [SeasonInfo(**s) for s in cached_result]
+            except Exception as e:
+                self.logger.warning(f"缓存后端读取失败，回退到数据库: {e}")
         async with self._session_factory() as session:
             cached_result = await crud.get_cache(session, cache_key)
             if cached_result:
-                self.logger.info(f"{source} 季度信息缓存命中: {id}")
+                self.logger.info(f"{source} 季度信息缓存命中(数据库): {id}")
                 return [SeasonInfo(**s) for s in cached_result]
 
         # 根据源类型调用不同的API
@@ -496,14 +519,18 @@ class SeasonMapper:
                 return []
 
             # 缓存结果(30天)
-            async with self._session_factory() as session:
-                await crud.set_cache(
-                    session,
-                    cache_key,
-                    [s.model_dump() for s in seasons],
-                    ttl_seconds=2592000,  # 30天
-                    provider=source
-                )
+            seasons_data = [s.model_dump() for s in seasons]
+            _backend = get_cache_backend()
+            if _backend is not None:
+                try:
+                    await _backend.set(cache_key, seasons_data, ttl=2592000, region="metadata")
+                except Exception as e:
+                    self.logger.warning(f"缓存后端写入失败，回退到数据库: {e}")
+                    async with self._session_factory() as session:
+                        await crud.set_cache(session, cache_key, seasons_data, ttl_seconds=2592000, provider=source)
+            else:
+                async with self._session_factory() as session:
+                    await crud.set_cache(session, cache_key, seasons_data, ttl_seconds=2592000, provider=source)
 
             self.logger.info(f"获取{source}季度信息成功: {id}, 共{len(seasons)}季")
             return seasons
@@ -966,10 +993,19 @@ async def _get_cached_metadata_search(
     cache_key = f"{source}_search_{hashlib.md5(search_title.encode('utf-8')).hexdigest()}"
 
     # 检查缓存
+    _backend = get_cache_backend()
+    if _backend is not None:
+        try:
+            cached_result = await _backend.get(cache_key, region="metadata")
+            if cached_result:
+                logger.info(f"[{source}] 搜索缓存命中: {search_title}")
+                return [models.MetadataDetailsResponse(**r) for r in cached_result]
+        except Exception as e:
+            logger.warning(f"缓存后端读取失败，回退到数据库: {e}")
     async with metadata_manager._session_factory() as session:
         cached_result = await crud.get_cache(session, cache_key)
         if cached_result:
-            logger.info(f"[{source}] 搜索缓存命中: {search_title}")
+            logger.info(f"[{source}] 搜索缓存命中(数据库): {search_title}")
             return [models.MetadataDetailsResponse(**r) for r in cached_result]
 
     # 缓存未命中，执行搜索
@@ -978,15 +1014,21 @@ async def _get_cached_metadata_search(
         results = await metadata_manager.search(source, search_title, None, mediaType='multi')
 
         # 缓存结果（6小时 = 21600秒）
-        async with metadata_manager._session_factory() as session:
-            await crud.set_cache(
-                session,
-                cache_key,
-                [r.model_dump() for r in results],
-                ttl_seconds=21600,  # 6小时
-                provider=source
-            )
-            logger.info(f"[{source}] 搜索结果已缓存: {search_title} (6小时)")
+        results_data = [r.model_dump() for r in results]
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                await _backend.set(cache_key, results_data, ttl=21600, region="metadata")
+                logger.info(f"[{source}] 搜索结果已缓存: {search_title} (6小时)")
+            except Exception as e:
+                logger.warning(f"缓存后端写入失败，回退到数据库: {e}")
+                async with metadata_manager._session_factory() as session:
+                    await crud.set_cache(session, cache_key, results_data, ttl_seconds=21600, provider=source)
+                    logger.info(f"[{source}] 搜索结果已缓存(数据库): {search_title} (6小时)")
+        else:
+            async with metadata_manager._session_factory() as session:
+                await crud.set_cache(session, cache_key, results_data, ttl_seconds=21600, provider=source)
+                logger.info(f"[{source}] 搜索结果已缓存: {search_title} (6小时)")
 
         return results
     except Exception as e:

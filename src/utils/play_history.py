@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, orm_models
+from src.core.cache import get_cache_backend
 
 # ORM 模型别名
 Anime = orm_models.Anime
@@ -58,7 +59,15 @@ async def record_play_history(
     async with session_factory() as cache_session:
         # 获取现有播放历史
         cache_key = f"play_history_{token}"
-        history = await crud.get_cache(cache_session, cache_key)
+        history = None
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                history = await _backend.get(cache_key, region="default")
+            except Exception:
+                pass
+        if history is None:
+            history = await crud.get_cache(cache_session, cache_key)
         if not history:
             history = []
 
@@ -78,8 +87,14 @@ async def record_play_history(
         # 只保留最近5条
         history = history[:5]
 
-        # 保存回缓存（10分钟），set_cache 会自动 commit
-        await crud.set_cache(cache_session, cache_key, history, 600)
+        # 保存回缓存（10分钟）
+        if _backend is not None:
+            try:
+                await _backend.set(cache_key, history, ttl=600, region="default")
+            except Exception:
+                await crud.set_cache(cache_session, cache_key, history, 600)
+        else:
+            await crud.set_cache(cache_session, cache_key, history, 600)
         logger.info(f"✓ 已记录播放历史: token={token[:8]}..., anime={anime_title}")
 
 
@@ -98,7 +113,15 @@ async def get_play_history(
         播放历史列表，每项包含 animeId, animeTitle, updateTime
     """
     cache_key = f"play_history_{token}"
-    history = await crud.get_cache(session, cache_key)
+    history = None
+    _backend = get_cache_backend()
+    if _backend is not None:
+        try:
+            history = await _backend.get(cache_key, region="default")
+        except Exception:
+            pass
+    if history is None:
+        history = await crud.get_cache(session, cache_key)
     return history if history else []
 
 
@@ -117,5 +140,12 @@ async def clear_play_history(
         是否成功清除
     """
     cache_key = f"play_history_{token}"
+    _backend = get_cache_backend()
+    if _backend is not None:
+        try:
+            await _backend.delete(cache_key, region="default")
+            return True
+        except Exception:
+            pass
     return await crud.delete_cache(session, cache_key)
 

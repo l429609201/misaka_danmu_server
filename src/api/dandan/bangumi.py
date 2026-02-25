@@ -34,7 +34,7 @@ from .constants import (
     USER_LAST_BANGUMI_CHOICE_TTL,
 )
 from .helpers import (
-    get_db_cache, set_db_cache,
+    get_db_cache, set_db_cache, get_cache_keys,
     store_episode_mapping, update_episode_mapping,
     find_existing_anime_by_bangumi_id,
     get_next_real_anime_id,
@@ -97,7 +97,7 @@ async def get_bangumi_details(
         if 900000 <= anime_id_int < 1000000:
             # 从数据库缓存中查找所有搜索结果
             try:
-                all_cache_keys = await crud.get_cache_keys_by_pattern(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
+                all_cache_keys = await get_cache_keys(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
                 for cache_key in all_cache_keys:
                     search_key = cache_key.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
                     search_info = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key)
@@ -126,7 +126,7 @@ async def get_bangumi_details(
                                 if scraper:
                                     # 从映射信息中获取media_type
                                     media_type = None
-                                    all_cache_keys_inner = await crud.get_cache_keys_by_pattern(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
+                                    all_cache_keys_inner = await get_cache_keys(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
                                     for cache_key_inner in all_cache_keys_inner:
                                         search_key_inner = cache_key_inner.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
                                         search_info_inner = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key_inner)
@@ -183,7 +183,7 @@ async def get_bangumi_details(
                                                 logger.info(f"新剧集: '{base_title}' (ID={real_anime_id}) 共 {len(actual_episodes)} 集")
 
                                         # 清除缓存中所有使用这个real_anime_id的其他映射（避免冲突）
-                                        all_cache_keys_conflict = await crud.get_cache_keys_by_pattern(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
+                                        all_cache_keys_conflict = await get_cache_keys(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
                                         for cache_key_conflict in all_cache_keys_conflict:
                                             sk = cache_key_conflict.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
                                             si = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, sk)
