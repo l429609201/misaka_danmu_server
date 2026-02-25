@@ -4,7 +4,7 @@ server:
   port: 7768
 
 # 本地调试测试时打开
-#environment: development
+# environment: development
 # environment: production
 
 client:
@@ -18,6 +18,18 @@ database:
   user: "danmaku"
   password: "danmaku"
   name: "danmaku"
+
+# 默认使用 hybrid 模式（内存 L1 + 数据库 L2），无需额外服务
+# 可选后端: memory（纯内存）/ redis / database（纯数据库）/ hybrid（默认）
+# cache:
+#   backend: "hybrid"                                        # 缓存后端类型
+#   redis_url: "redis://:your_password@localhost:6379/6"     # Redis 连接地址（backend 为 redis 时必填）
+#   redis_max_memory: "256mb"                                # Redis 最大内存限制
+#   redis_socket_timeout: 30                                 # Redis 读写超时（秒）
+#   redis_socket_connect_timeout: 5                          # Redis 连接超时（秒）
+#   memory_maxsize: 1024                                     # 内存缓存最大条目数
+#   memory_default_ttl: 600                                  # 内存缓存默认过期时间（秒）
+
 # 初始管理员配置（全新数据库首次启动时自动创建，密码会打印在控制台）
 admin:
   initial_user: "admin"

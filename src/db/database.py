@@ -3,7 +3,8 @@ import string
 import logging
 from fastapi import FastAPI, Request
 from sqlalchemy.engine.url import URL
-from sqlalchemy import NullPool, QueuePool
+from sqlalchemy import NullPool
+from sqlalchemy.pool import AsyncAdaptedQueuePool
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError # Import specific SQLAlchemy exceptions
@@ -139,7 +140,7 @@ async def create_db_engine_and_session(app: FastAPI):
     try:
         db_url = _get_db_url()
         db_cfg = settings.database
-        pool_class = NullPool if db_cfg.pool_type == "NullPool" else QueuePool
+        pool_class = NullPool if db_cfg.pool_type == "NullPool" else AsyncAdaptedQueuePool
 
         engine_args = {
             "echo": db_cfg.echo,
@@ -149,7 +150,7 @@ async def create_db_engine_and_session(app: FastAPI):
         }
 
         # QueuePool 特有参数，NullPool 不需要这些
-        if pool_class is QueuePool:
+        if pool_class is AsyncAdaptedQueuePool:
             engine_args.update({
                 "pool_size": db_cfg.pool_size,
                 "max_overflow": db_cfg.max_overflow,

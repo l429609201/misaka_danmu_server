@@ -24,7 +24,7 @@ class DatabaseConfig(BaseModel):
     name: str = "danmaku_db"
     # 连接池配置
     pool_type: str = "QueuePool"        # QueuePool 或 NullPool
-    pool_size: int = 20                 # 连接池常驻连接数
+    pool_size: int = 10                 # 连接池常驻连接数
     max_overflow: int = 40              # 超出 pool_size 后允许的溢出连接数
     pool_recycle: int = 300             # 连接回收时间（秒），超过此时间的连接会被自动重建
     pool_timeout: int = 30              # 从池中获取连接的等待超时（秒）
@@ -86,6 +86,16 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
             return yaml.safe_load(f) or {}
 
 
+# 缓存配置
+class CacheConfig(BaseModel):
+    backend: str = "hybrid"             # memory / redis / database / hybrid（默认混合模式：内存L1 + 数据库L2）
+    redis_url: str = ""                 # Redis 连接地址，如 redis://localhost:6379
+    redis_max_memory: str = "256mb"     # Redis 最大内存限制
+    redis_socket_timeout: int = 30      # Redis socket 超时（秒）
+    redis_socket_connect_timeout: int = 5  # Redis 连接超时（秒）
+    memory_maxsize: int = 1024          # 内存缓存最大条目数
+    memory_default_ttl: int = 600       # 内存缓存默认 TTL（秒），10分钟
+
 # (新增) 豆瓣配置
 class DoubanConfig(BaseModel):
     cookie: Optional[str] = None
@@ -99,6 +109,7 @@ class Settings(BaseSettings):
     admin: AdminConfig = AdminConfig()
     bangumi: BangumiConfig = BangumiConfig()
     log: LogConfig = LogConfig()
+    cache: CacheConfig = CacheConfig()
     douban: DoubanConfig = DoubanConfig()
     # 新增：时区配置，从 TZ 环境变量读取
     tz: str = "Asia/Shanghai"
