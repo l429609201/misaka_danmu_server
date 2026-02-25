@@ -145,7 +145,7 @@
     animation: fadeIn 0.3s ease-out;
   }
   .shadow-box {
-    box-shadow: 0px 4px 16px rgba(255, 107, 155, 0.12);
+    box-shadow: 0px 4px 16px var(--color-shadow, rgba(255, 107, 155, 0.12));
   }
 }
 

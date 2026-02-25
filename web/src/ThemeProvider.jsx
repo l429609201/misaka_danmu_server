@@ -104,6 +104,7 @@ export function ThemeProvider({ children }) {
     // 主色始终更新
     root.style.setProperty('--color-primary', colorScheme.primary)
     root.style.setProperty('--color-primary-dark', colorScheme.hover)
+    root.style.setProperty('--color-shadow', colorScheme.shadow)
 
     if (!isDarkMode) {
       // 亮色模式：背景、边框、hover 都跟随主色
