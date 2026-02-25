@@ -219,7 +219,6 @@ class RedisBackend(AsyncCacheBackend):
                     try:
                         await self._client.config_set("maxmemory", self._max_memory)
                         await self._client.config_set("maxmemory-policy", "allkeys-lru")
-                        logger.info(f"Redis 缓存后端已连接: {self._safe_url}")
                     except Exception as e:
                         logger.warning(f"设置 Redis 内存策略失败（可能无权限）: {e}")
         return self._client
@@ -454,7 +453,6 @@ def create_cache_backend(
             socket_timeout=cache_config.redis_socket_timeout,
             socket_connect_timeout=cache_config.redis_socket_connect_timeout,
         )
-        logger.info(f"缓存后端: Redis ({backend._safe_url})")
 
     elif backend_type == "database":
         if session_factory is None:
@@ -518,7 +516,11 @@ async def init_cache_backend(session_factory=None, cache_config=None) -> AsyncCa
         try:
             client = await backend._get_client()
             await client.ping()
-            logger.info(f"Redis 健康检查通过: {backend._safe_url}")
+            logger.info(
+                f"缓存后端: Redis ({backend._safe_url})\n"
+                f"  - 连接成功\n"
+                f"  - 健康检查通过"
+            )
         except Exception as e:
             logger.warning(f"Redis 连接失败 ({backend._safe_url}): {e}")
             logger.warning("自动降级到 Hybrid 模式（Memory L1 + Database L2）")
