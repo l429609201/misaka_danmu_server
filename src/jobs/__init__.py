@@ -4,7 +4,6 @@ from .database_backup import DatabaseBackupJob
 from .incremental_refresh import IncrementalRefreshJob
 from .refresh_latest_episode import RefreshLatestEpisodeJob
 from .tmdb_auto_map import TmdbAutoMapJob
-from .token_reset import TokenResetJob
 from .webhook_processor import WebhookProcessorJob
 
 __all__ = [
@@ -14,6 +13,5 @@ __all__ = [
     'IncrementalRefreshJob',
     'RefreshLatestEpisodeJob',
     'TmdbAutoMapJob',
-    'TokenResetJob',
     'WebhookProcessorJob',
 ]
