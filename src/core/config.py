@@ -25,7 +25,7 @@ class DatabaseConfig(BaseModel):
     # 连接池配置
     pool_type: str = "QueuePool"        # QueuePool 或 NullPool
     pool_size: int = 10                 # 连接池常驻连接数
-    max_overflow: int = 40              # 超出 pool_size 后允许的溢出连接数
+    max_overflow: int = 50              # 超出 pool_size 后允许的溢出连接数
     pool_recycle: int = 300             # 连接回收时间（秒），超过此时间的连接会被自动重建
     pool_timeout: int = 30              # 从池中获取连接的等待超时（秒）
     pool_pre_ping: bool = True          # 取连接前先 ping 检测是否存活
