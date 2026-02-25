@@ -90,10 +90,13 @@ export const ImportTask = () => {
     )
   }, [selectList])
 
-  // 只有失败的且有 taskType（有恢复信息）的任务才能重试
+  // 后端 _rebuild_coro_factory 支持重建的任务类型白名单
+  const RETRYABLE_TYPES = ['generic_import', 'webhook_search', 'full_refresh', 'incremental_refresh', 'auto_import']
+
+  // 只有失败的且 taskType 在可重试白名单内的任务才能重试
   const canRetry = useMemo(() => {
     return (
-      selectList.every(item => item.status === '失败' && !!item.taskType) &&
+      selectList.every(item => item.status === '失败' && RETRYABLE_TYPES.includes(item.taskType)) &&
       selectList.length > 0
     )
   }, [selectList])
@@ -374,15 +377,21 @@ export const ImportTask = () => {
    * 处理重试失败任务操作
    */
   const handleRetry = async () => {
-    try {
-      await Promise.all(
-        selectList.map(it => retryTask({ taskId: it.taskId }))
-      )
-      refreshTasks()
-      setSelectList([])
-      messageApi.success(`已重新提交 ${selectList.length} 个任务`)
-    } catch (error) {
-      messageApi.error(`重试任务失败: ${error.message}`)
+    const results = await Promise.allSettled(
+      selectList.map(it => retryTask({ taskId: it.taskId }))
+    )
+    const succeeded = results.filter(r => r.status === 'fulfilled').length
+    const failed = results.filter(r => r.status === 'rejected').length
+
+    refreshTasks()
+    setSelectList([])
+
+    if (failed === 0) {
+      messageApi.success(`已重新提交 ${succeeded} 个任务`)
+    } else if (succeeded === 0) {
+      messageApi.error(`${failed} 个任务重试失败`)
+    } else {
+      messageApi.warning(`${succeeded} 个任务已重新提交，${failed} 个失败`)
     }
   }
 

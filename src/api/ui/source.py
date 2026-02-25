@@ -175,7 +175,7 @@ async def refresh_anime(
             title_recognition_manager=title_recognition_manager
         )
         task_type = "incremental_refresh"
-        task_parameters = {"sourceId": sourceId, "nextEpisodeIndex": next_episode_index}
+        task_parameters = {"sourceId": sourceId, "nextEpisodeIndex": next_episode_index, "animeTitle": source_info["title"]}
         message_to_return = f"番剧 '{source_info['title']}' 的增量刷新任务已提交。"
     elif mode == "full":
         logger.info(f"用户 '{current_user.username}' 为番剧 '{source_info['title']}' (源ID: {sourceId}) 启动了全量刷新任务。")

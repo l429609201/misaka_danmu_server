@@ -994,6 +994,7 @@ class TaskManager:
                 next_ep = task_parameters.get("nextEpisodeIndex")
                 if not source_id or next_ep is None:
                     return None
+                anime_title = task_parameters.get("animeTitle", "")
                 return lambda session, callback: all_tasks.incremental_refresh_task(
                     sourceId=source_id,
                     nextEpisodeIndex=next_ep,
@@ -1005,6 +1006,7 @@ class TaskManager:
                     rate_limiter=rate_limiter,
                     metadata_manager=metadata_manager,
                     title_recognition_manager=title_recognition_manager,
+                    animeTitle=anime_title,
                 )
 
             elif task_type == "auto_import":
