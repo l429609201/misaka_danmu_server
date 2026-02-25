@@ -174,10 +174,10 @@ const AIMetrics = () => {
             <Col xs={24} sm={12} md={6}>
               <Statistic
                 title="缓存命中率"
-                value={cache_stats.hit_rate || 0}
+                value={(cache_stats.hit_rate || 0) * 100}
                 precision={1}
                 suffix="%"
-                valueStyle={{ color: (cache_stats.hit_rate || 0) >= 30 ? '#3f8600' : '#faad14' }}
+                valueStyle={{ color: ((cache_stats.hit_rate || 0) * 100) >= 30 ? '#3f8600' : '#faad14' }}
               />
             </Col>
             <Col xs={24} sm={12} md={6}>

@@ -383,8 +383,7 @@ class AIMatcher:
                 cached_result = self.cache.get(
                     "select_best_match",
                     query=query,
-                    results=results_data,
-                    favorited=favorited_info
+                    results=results_data
                 )
                 if cached_result is not None:
                     cache_hit = True
@@ -453,8 +452,7 @@ class AIMatcher:
                         response_data,
                         "select_best_match",
                         query=query,
-                        results=results_data,
-                        favorited=favorited_info
+                        results=results_data
                     )
                 return None
 
@@ -467,8 +465,7 @@ class AIMatcher:
                     response_data,
                     "select_best_match",
                     query=query,
-                    results=results_data,
-                    favorited=favorited_info
+                    results=results_data
                 )
 
             return index

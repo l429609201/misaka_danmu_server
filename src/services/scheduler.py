@@ -107,13 +107,12 @@ class SchedulerManager:
         logger.info("\n".join(log_lines))
 
     def get_available_jobs(self) -> List[Dict[str, str]]:
-        """获取所有已加载的可用任务类型及其名称、描述和系统任务标识。"""
+        """获取所有已加载的可用任务类型及其名称、描述。"""
         return [
             {
                 "jobType": job.job_type,
                 "name": job.job_name,
                 "description": getattr(job, 'description', ''),
-                "isSystemTask": getattr(job, 'is_system_task', False),
                 "configSchema": getattr(job, 'config_schema', [])
             }
             for job in self._job_classes.values()
