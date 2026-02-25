@@ -1563,7 +1563,17 @@ class NotificationService:
             except Exception as e:
                 errors.append(f"✗ 内存配置缓存: {e}")
 
-        # 2. 清除数据库缓存
+        # 2. 清除缓存后端（Redis / Memory / Hybrid）
+        try:
+            from src.core.cache import get_cache_backend
+            backend = get_cache_backend()
+            if backend is not None:
+                backend_count = await backend.clear() or 0
+                cleared.append(f"✓ 缓存后端 ({backend_count} 条)")
+        except Exception as e:
+            errors.append(f"✗ 缓存后端: {e}")
+
+        # 3. 清除数据库缓存
         try:
             from src.db import crud
             async with self._session_factory() as session:
@@ -1572,7 +1582,7 @@ class NotificationService:
         except Exception as e:
             errors.append(f"✗ 数据库缓存: {e}")
 
-        # 3. 清除 AI 缓存（如果可用）
+        # 4. 清除 AI 缓存（如果可用）
         if self.ai_matcher_manager:
             try:
                 matcher = await self.ai_matcher_manager.get_matcher()

@@ -338,13 +338,26 @@ async def clear_all_caches(
     current_user: models.User = Depends(security.get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ): #noqa
-    """清除数据库中存储的所有缓存数据（包括搜索结果、分集列表、后备搜索缓存、弹幕缓存等）。"""
-    # 清除数据库缓存（所有缓存现在都存储在数据库中）
+    """清除所有缓存数据（缓存后端 + 数据库）。"""
+    # 1. 清除缓存后端（Redis / Memory / Hybrid）
+    backend_count = 0
+    backend_type = "none"
+    try:
+        from src.core.cache import get_cache_backend
+        backend = get_cache_backend()
+        if backend is not None:
+            backend_type = type(backend).__name__
+            backend_count = await backend.clear() or 0
+    except Exception as e:
+        logger.warning(f"清除缓存后端失败: {e}")
+
+    # 2. 清除数据库缓存
     deleted_count = await crud.clear_all_cache(session)
 
-    logger.info(f"用户 '{current_user.username}' 清除了所有缓存: 数据库 {deleted_count} 条。")
+    logger.info(f"用户 '{current_user.username}' 清除了所有缓存: 后端({backend_type}) {backend_count} 条, 数据库 {deleted_count} 条。")
     return {
-        "message": f"成功清除缓存: 数据库 {deleted_count} 条。",
+        "message": f"成功清除缓存: 后端({backend_type}) {backend_count} 条, 数据库 {deleted_count} 条。",
+        "backend_cache": backend_count,
         "database_cache": deleted_count
     }
 

@@ -99,7 +99,7 @@ class CacheConfig(BaseModel):
 # (新增) 豆瓣配置
 class DoubanConfig(BaseModel):
     cookie: Optional[str] = None
- 
+
 
 # 3. 定义主设置类，它将聚合所有配置
 class Settings(BaseSettings):
