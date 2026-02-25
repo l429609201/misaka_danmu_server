@@ -34,7 +34,7 @@ services:
       # 默认使用 hybrid 模式（内存 L1 + 数据库 L2），无需额外服务
       # 可选后端: memory（纯内存）/ redis / database（纯数据库）/ hybrid（默认）
       # - DANMUAPI_CACHE__BACKEND=redis
-      # - DANMUAPI_CACHE__REDIS_URL=redis://localhost:6379
+      # - DANMUAPI_CACHE__REDIS_URL=redis://:you_password@XXX:XXX:XXX:XXX:6379/6
       # - DANMUAPI_CACHE__REDIS_MAX_MEMORY=256mb
       # - DANMUAPI_CACHE__REDIS_SOCKET_TIMEOUT=30
       # - DANMUAPI_CACHE__REDIS_SOCKET_CONNECT_TIMEOUT=5

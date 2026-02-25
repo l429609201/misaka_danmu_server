@@ -45,3 +45,6 @@ google-genai  # Google Gemini 官方 SDK (新版)
 docker>=6.0.0  # Docker SDK for Python
 # Telegram 通知渠道
 pyTelegramBotAPI
+
+# Redis 缓存后端（可选，仅 cache.backend 配置为 redis 时需要）
+redis>=5.0.0  # redis-py，含 asyncio 支持
