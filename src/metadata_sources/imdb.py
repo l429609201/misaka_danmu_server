@@ -645,10 +645,17 @@ class ImdbMetadataSource(BaseMetadataSource):
 
         return {alias for alias in local_aliases if alias}
 
-    async def check_connectivity(self) -> str:
+    async def check_connectivity(self) -> Dict[str, str]:
         """检查IMDb源配置状态"""
-        # IMDb源不需要特殊配置，只要能正常运行即可
-        return "配置正常 (无需特殊配置)"
+        try:
+            use_api = await self._get_config("useApi", True)
+            enable_fallback = await self._get_config("enableFallback", True)
+
+            mode = "第三方API模式 (api.imdbapi.dev)" if use_api else "官方HTML解析模式"
+            fallback = "，失败时自动切换" if enable_fallback else ""
+            return {"code": "ok", "message": f"{mode}{fallback}"}
+        except Exception as e:
+            return {"code": "error", "message": f"配置检查失败: {e}"}
 
     async def execute_action(self, action_name: str, payload: Dict[str, Any], user: models.User, request: Request) -> Any:
         """IMDb source does not support custom actions."""

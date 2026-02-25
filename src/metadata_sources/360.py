@@ -872,13 +872,13 @@ class So360MetadataSource(BaseMetadataSource):
                 aliases.update(item.aliasesCn)
         return {alias for alias in aliases if alias}
 
-    async def check_connectivity(self) -> str:
+    async def check_connectivity(self) -> Dict[str, str]:
         """检查360源配置状态"""
         # 360源不需要特殊配置，只要Cookie和Headers正确即可
         if self.cookies and self.headers:
-            return "配置正常"
+            return {"code": "ok", "message": "配置正常"}
         else:
-            return "配置异常 (缺少必要的Cookie或Headers)"
+            return {"code": "error", "message": "配置异常 (缺少必要的Cookie或Headers)"}
             
     async def execute_action(self, action_name: str, payload: Dict[str, Any], user: models.User, request: Any) -> Any:
         raise NotImplementedError(f"操作 '{action_name}' 在 {self.provider_name} 中未实现。")

@@ -178,20 +178,20 @@ class TvdbMetadataSource(BaseMetadataSource):
     async def search_aliases(self, keyword: str, user: models.User) -> Set[str]:
         return set()
 
-    async def check_connectivity(self) -> str:
+    async def check_connectivity(self) -> Dict[str, str]:
         """检查TVDB源配置状态"""
         try:
             api_key = await self.config_manager.get("tvdbApiKey", "")
             if not api_key or api_key.strip() == "":
-                return "未配置 (缺少TVDB API Key)"
+                return {"code": "unconfigured", "message": "未配置 (缺少TVDB API Key)"}
 
             # 检查API Key格式是否合理
             if len(api_key.strip()) < 10:
-                return "配置异常 (API Key格式不正确)"
+                return {"code": "error", "message": "配置异常 (API Key格式不正确)"}
 
-            return "配置正常"
+            return {"code": "ok", "message": "配置正常"}
         except Exception as e:
-            return f"配置检查失败: {e}"
+            return {"code": "error", "message": f"配置检查失败: {e}"}
     async def execute_action(self, action_name: str, payload: Dict, user: models.User) -> Any:
         """TVDB source does not support custom actions."""
         raise NotImplementedError(f"源 '{self.provider_name}' 不支持任何自定义操作。")

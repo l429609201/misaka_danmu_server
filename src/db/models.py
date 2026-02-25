@@ -418,6 +418,7 @@ class MetadataSourceStatusResponse(BaseModel):
     isAuxSearchEnabled: bool
     displayOrder: int
     status: str
+    statusCode: str = "ok"
     useProxy: bool
     isFailoverEnabled: bool
     logRawResponses: bool = Field(False, alias="log_raw_responses")
