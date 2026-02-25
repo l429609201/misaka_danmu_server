@@ -146,6 +146,8 @@ def get_default_configs(settings=None, ai_prompts=None):
             'aiNameConversionPrompt': (ai_prompts.get('DEFAULT_AI_NAME_CONVERSION_PROMPT', ''), 'AI名称转换提示词'),
             'aiLogRawResponse': ('false', '是否记录AI原始响应到日志文件'),
             'seasonMappingPrompt': (ai_prompts.get('DEFAULT_AI_SEASON_MAPPING_PROMPT', ''), 'AI季度映射提示词。用于指导AI从元数据源搜索结果中选择最佳匹配。'),
+            'aiEpisodeGroupEnabled': ('false', '是否启用AI剧集组自动选择。启用后，当作品有TMDB ID但缺少剧集组时，使用AI自动选择最佳剧集组，实现等价集数映射。'),
+            'aiEpisodeGroupPrompt': (ai_prompts.get('DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT', ''), 'AI剧集组选择提示词。用于指导AI从TMDB剧集组列表中选择最佳匹配。'),
             'aiCacheEnabled': ('true', '是否启用AI响应缓存。启用后，相同查询将直接返回缓存结果，降低API调用成本。'),
             'aiCacheTtl': ('3600', 'AI缓存过期时间(秒)。默认3600秒(1小时)。'),
             # 名称转换功能配置

@@ -23,6 +23,7 @@ const AutoMatchSetting = () => {
   const [recognitionEnabled, setRecognitionEnabled] = useState(false)
   const [aliasExpansionEnabled, setAliasExpansionEnabled] = useState(false)
   const [nameConversionEnabled, setNameConversionEnabled] = useState(false)
+  const [episodeGroupEnabled, setEpisodeGroupEnabled] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
   const [selectedMetadataSource, setSelectedMetadataSource] = useState('tmdb')
@@ -34,6 +35,7 @@ const AutoMatchSetting = () => {
   const [dynamicModels, setDynamicModels] = useState({}) // 动态获取的模型列表，按提供商ID存储
   const [refreshingModels, setRefreshingModels] = useState(false) // 是否正在刷新模型列表
   const [selectedPromptType, setSelectedPromptType] = useState('aiRecognitionPrompt') // 当前选中的提示词类型
+  const [selectedMatchPromptType, setSelectedMatchPromptType] = useState('aiPrompt') // AI自动匹配的提示词类型
   const isMobile = useAtomValue(isMobileAtom)
 
   // 加载配置
@@ -64,7 +66,9 @@ const AutoMatchSetting = () => {
         externalSearchSeasonMappingRes,
         autoImportSeasonMappingRes,
         seasonMappingSourceRes,
-        seasonMappingPromptRes
+        seasonMappingPromptRes,
+        episodeGroupEnabledRes,
+        episodeGroupPromptRes
       ] = await Promise.all([
         getConfig('aiMatchEnabled'),
         getConfig('aiFallbackEnabled'),
@@ -89,7 +93,9 @@ const AutoMatchSetting = () => {
         getConfig('externalSearchEnableTmdbSeasonMapping'),
         getConfig('autoImportEnableTmdbSeasonMapping'),
         getConfig('seasonMappingMetadataSource'),
-        getConfig('seasonMappingPrompt')
+        getConfig('seasonMappingPrompt'),
+        getConfig('aiEpisodeGroupEnabled'),
+        getConfig('aiEpisodeGroupPrompt')
       ])
 
       const enabled = enabledRes.data.value === 'true'
@@ -99,11 +105,13 @@ const AutoMatchSetting = () => {
       const aliasExpansion = aliasExpansionEnabledRes.data.value === 'true'
       const nameConversion = nameConversionEnabledRes.data.value === 'true'
       const logRawResponse = logRawResponseRes.data.value === 'true'
+      const episodeGroup = episodeGroupEnabledRes.data.value === 'true'
       setMatchMode(enabled ? 'ai' : 'traditional')
       setFallbackEnabled(fallback)
       setRecognitionEnabled(recognition)
       setAliasExpansionEnabled(aliasExpansion)
       setNameConversionEnabled(nameConversion)
+      setEpisodeGroupEnabled(episodeGroup)
       setSelectedMetadataSource(seasonMappingSourceRes.data.value || 'tmdb')
 
       const providerValue = providerRes.data.value || 'deepseek'
@@ -132,7 +140,9 @@ const AutoMatchSetting = () => {
         externalSearchEnableTmdbSeasonMapping: externalSearchSeasonMappingRes.data.value === 'true',
         autoImportEnableTmdbSeasonMapping: autoImportSeasonMappingRes.data.value === 'true',
         seasonMappingMetadataSource: seasonMappingSourceRes.data.value || 'tmdb',
-        seasonMappingPrompt: seasonMappingPromptRes.data.value || ''
+        seasonMappingPrompt: seasonMappingPromptRes.data.value || '',
+        aiEpisodeGroupEnabled: episodeGroup,
+        aiEpisodeGroupPrompt: episodeGroupPromptRes.data.value || ''
       })
 
       // 设置当前选中的提供商配置
@@ -287,7 +297,9 @@ const AutoMatchSetting = () => {
         setConfig('externalSearchEnableTmdbSeasonMapping', values.externalSearchEnableTmdbSeasonMapping ? 'true' : 'false'),
         setConfig('autoImportEnableTmdbSeasonMapping', values.autoImportEnableTmdbSeasonMapping ? 'true' : 'false'),
         setConfig('seasonMappingMetadataSource', values.seasonMappingMetadataSource || 'tmdb'),
-        setConfig('seasonMappingPrompt', values.seasonMappingPrompt || '')
+        setConfig('seasonMappingPrompt', values.seasonMappingPrompt || ''),
+        setConfig('aiEpisodeGroupEnabled', values.aiEpisodeGroupEnabled ? 'true' : 'false'),
+        setConfig('aiEpisodeGroupPrompt', values.aiEpisodeGroupPrompt || '')
       ])
 
       message.success('AI自动匹配配置保存成功')
@@ -471,6 +483,9 @@ const AutoMatchSetting = () => {
             }
             if ('aiAliasExpansionEnabled' in changedValues) {
               setAliasExpansionEnabled(changedValues.aiAliasExpansionEnabled)
+            }
+            if ('aiEpisodeGroupEnabled' in changedValues) {
+              setEpisodeGroupEnabled(changedValues.aiEpisodeGroupEnabled)
             }
           }}
         >
@@ -725,7 +740,7 @@ const AutoMatchSetting = () => {
             {/* 标签页2: AI自动匹配 */}
             <TabPane tab="AI自动匹配" key="match">
               <Row gutter={[16, 16]}>
-                <Col xs={24} sm={12}>
+                <Col xs={24} sm={8}>
                   <Card size="small" style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -748,7 +763,7 @@ const AutoMatchSetting = () => {
                     </div>
                   </Card>
                 </Col>
-                <Col xs={24} sm={12}>
+                <Col xs={24} sm={8}>
                   <Card size="small" style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -759,6 +774,24 @@ const AutoMatchSetting = () => {
                       </div>
                       <Form.Item name="aiFallbackEnabled" valuePropName="checked" noStyle>
                         <CustomSwitch disabled={matchMode === 'traditional'} />
+                      </Form.Item>
+                    </div>
+                  </Card>
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Card size="small" style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontWeight: 500 }}>AI剧集组选择</span>
+                        <Tooltip title="当作品有TMDB ID但缺少剧集组映射时,使用AI自动从TMDB剧集组列表中选择最佳匹配。启用后可实现等价集数映射（如S01E26↔S02E01），提高跨季弹幕匹配准确率。">
+                          <QuestionCircleOutlined />
+                        </Tooltip>
+                      </div>
+                      <Form.Item name="aiEpisodeGroupEnabled" valuePropName="checked" noStyle>
+                        <CustomSwitch
+                          disabled={matchMode !== 'ai'}
+                          onChange={(checked) => setEpisodeGroupEnabled(checked)}
+                        />
                       </Form.Item>
                     </div>
                   </Card>
@@ -904,68 +937,91 @@ const AutoMatchSetting = () => {
                 </Row>
               </Card>
 
+              {/* 提示词配置区域 - 下拉框切换 */}
               <Card size="small" style={{ marginTop: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <Space>
+                    <span style={{ fontWeight: 500 }}>提示词配置</span>
+                    <Select
+                      value={selectedMatchPromptType}
+                      onChange={setSelectedMatchPromptType}
+                      style={{ width: 200 }}
+                      disabled={matchMode !== 'ai'}
+                    >
+                      <Option value="aiPrompt">AI匹配提示词</Option>
+                      <Option value="seasonMappingPrompt">AI季度映射提示词</Option>
+                      <Option value="aiEpisodeGroupPrompt">AI剧集组选择提示词</Option>
+                    </Select>
+                    <Tooltip title={
+                      selectedMatchPromptType === 'aiPrompt'
+                        ? "用于指导AI如何选择最佳匹配结果的提示词。留空使用默认提示词。高级用户可自定义以优化匹配效果。"
+                        : selectedMatchPromptType === 'seasonMappingPrompt'
+                        ? "用于指导AI从元数据源搜索结果中选择最佳匹配的提示词。留空使用默认提示词。"
+                        : "用于指导AI从TMDB剧集组列表中选择最佳匹配的提示词。留空使用默认提示词。"
+                    }>
+                      <QuestionCircleOutlined />
+                    </Tooltip>
+                  </Space>
+                  <Button
+                    size="small"
+                    icon={<ReloadOutlined />}
+                    onClick={() => handleFillDefaultPrompt(selectedMatchPromptType)}
+                    disabled={matchMode !== 'ai' || (
+                      selectedMatchPromptType === 'aiEpisodeGroupPrompt' && !episodeGroupEnabled
+                    )}
+                  >
+                    填充默认提示词
+                  </Button>
+                </div>
+
+                {/* AI匹配提示词 */}
                 <Form.Item
                   name="aiPrompt"
-                  label={
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                      <Space>
-                        <span>AI匹配提示词</span>
-                        <Tooltip title="用于指导AI如何选择最佳匹配结果的提示词。留空使用默认提示词。高级用户可自定义以优化匹配效果。">
-                          <QuestionCircleOutlined />
-                        </Tooltip>
-                      </Space>
-                      <Button
-                        size="small"
-                        icon={<ReloadOutlined />}
-                        onClick={() => handleFillDefaultPrompt('aiPrompt')}
-                        disabled={matchMode !== 'ai'}
-                      >
-                        填充默认提示词
-                      </Button>
-                    </div>
-                  }
-                  labelCol={{ span: 24 }}
-                  wrapperCol={{ span: 24 }}
+                  noStyle
                 >
                   <TextArea
-                    rows={6}
+                    rows={10}
                     placeholder="留空使用默认提示词..."
-                    style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: '12px',
+                      display: selectedMatchPromptType === 'aiPrompt' ? 'block' : 'none'
+                    }}
                     disabled={matchMode !== 'ai'}
                   />
                 </Form.Item>
-              </Card>
 
-              <Card size="small" style={{ marginTop: '16px' }}>
+                {/* AI季度映射提示词 */}
                 <Form.Item
                   name="seasonMappingPrompt"
-                  label={
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                      <Space>
-                        <span>AI季度映射提示词</span>
-                        <Tooltip title="用于指导AI从元数据源搜索结果中选择最佳匹配的提示词。留空使用默认提示词。">
-                          <QuestionCircleOutlined />
-                        </Tooltip>
-                      </Space>
-                      <Button
-                        size="small"
-                        icon={<ReloadOutlined />}
-                        onClick={() => handleFillDefaultPrompt('seasonMappingPrompt')}
-                        disabled={matchMode !== 'ai'}
-                      >
-                        填充默认提示词
-                      </Button>
-                    </div>
-                  }
-                  labelCol={{ span: 24 }}
-                  wrapperCol={{ span: 24 }}
+                  noStyle
                 >
                   <TextArea
-                    rows={6}
+                    rows={10}
                     placeholder="留空使用默认提示词..."
-                    style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: '12px',
+                      display: selectedMatchPromptType === 'seasonMappingPrompt' ? 'block' : 'none'
+                    }}
                     disabled={matchMode !== 'ai'}
+                  />
+                </Form.Item>
+
+                {/* AI剧集组选择提示词 */}
+                <Form.Item
+                  name="aiEpisodeGroupPrompt"
+                  noStyle
+                >
+                  <TextArea
+                    rows={10}
+                    placeholder="留空使用默认提示词..."
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: '12px',
+                      display: selectedMatchPromptType === 'aiEpisodeGroupPrompt' ? 'block' : 'none'
+                    }}
+                    disabled={matchMode !== 'ai' || !episodeGroupEnabled}
                   />
                 </Form.Item>
               </Card>
@@ -1223,12 +1279,16 @@ const AutoMatchSetting = () => {
               <strong>传统匹配兜底</strong>: 当AI匹配失败时,自动降级到传统匹配算法,确保功能可用性(仅AI模式下可用)
             </li>
             <li>
+              <strong>AI剧集组选择</strong>: 当作品有TMDB ID但缺少剧集组映射时,使用AI自动从TMDB剧集组列表中选择最佳匹配,实现等价集数映射(如S01E26↔S02E01),提高跨季弹幕匹配准确率
+            </li>
+            <li>
               <strong>应用场景</strong>:
               <ul>
                 <li>AI智能匹配: 外部控制API全自动导入、Webhook自动导入、匹配后备机制</li>
                 <li>AI辅助识别: TMDB自动刮削与剧集组映射定时任务</li>
                 <li>AI别名扩展: 外部控制API全自动导入、Webhook自动导入等场景（当元数据源返回非中文标题时）</li>
                 <li>AI名称转换: 弹幕搜索时将非中文搜索词转换为中文（元数据源查询失败时的兜底）</li>
+                <li>AI剧集组选择: 弹幕匹配时自动选择TMDB剧集组,实现跨季等价集数映射</li>
               </ul>
             </li>
             <li>
