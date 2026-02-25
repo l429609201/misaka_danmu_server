@@ -1100,7 +1100,7 @@ class AIMatcher:
                     item.get("type", "tv_series")
                 )
 
-        self.logger.info(f"批量识别: 开始处理 {len(items)} 个标题 (最大并发: {max_concurrent})")
+        logger.info(f"批量识别: 开始处理 {len(items)} 个标题 (最大并发: {max_concurrent})")
 
         tasks = [recognize_with_limit(item) for item in items]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1109,13 +1109,13 @@ class AIMatcher:
         processed_results = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                self.logger.error(f"批量识别: 第 {i} 个项目失败: {result}")
+                logger.error(f"批量识别: 第 {i} 个项目失败: {result}")
                 processed_results.append(None)
             else:
                 processed_results.append(result)
 
         success_count = sum(1 for r in processed_results if r is not None)
-        self.logger.info(f"批量识别: 完成 {success_count}/{len(items)} 个标题")
+        logger.info(f"批量识别: 完成 {success_count}/{len(items)} 个标题")
 
         return processed_results
 
@@ -1161,11 +1161,11 @@ class AIMatcher:
 
             # 如果算法相似度达到阈值(60%)，直接返回结果
             if best_confidence >= 60.0:
-                self.logger.info(f"算法季度匹配: '{title}' → S{best_season} ({best_season_name}) (置信度: {best_confidence:.1f}%)")
+                logger.info(f"算法季度匹配: '{title}' → S{best_season} ({best_season_name}) (置信度: {best_confidence:.1f}%)")
                 return best_season
 
             # 算法相似度不足，使用AI兜底
-            self.logger.debug(f"算法相似度不足: '{title}' (最高相似度: {best_confidence:.1f}% < 60.0%), 使用AI兜底")
+            logger.debug(f"算法相似度不足: '{title}' (最高相似度: {best_confidence:.1f}% < 60.0%), 使用AI兜底")
 
             # 构建季度选项描述
             options_text = ""
@@ -1200,14 +1200,14 @@ class AIMatcher:
                 # 验证选择的季度是否在选项中
                 for option in season_options:
                     if option.get("season_number") == selected_season:
-                        self.logger.info(f"AI季度匹配: '{title}' → S{selected_season}")
+                        logger.info(f"AI季度匹配: '{title}' → S{selected_season}")
                         return selected_season
 
-            self.logger.debug(f"AI季度匹配: '{title}' → 无法解析响应: {ai_response}")
+            logger.debug(f"AI季度匹配: '{title}' → 无法解析响应: {ai_response}")
             return None
 
         except Exception as e:
-            self.logger.error(f"AI季度匹配失败: {e}")
+            logger.error(f"AI季度匹配失败: {e}")
             return None
 
     async def select_metadata_result(
@@ -1391,7 +1391,7 @@ class AIMatcher:
             return {"response": ai_response}
 
         except Exception as e:
-            self.logger.error(f"季度匹配失败 ({self.provider}): {e}")
+            logger.error(f"季度匹配失败 ({self.provider}): {e}")
             return None
 
 
@@ -1420,7 +1420,7 @@ class AIMatcher:
 
         # 如果只有一个剧集组，直接选择
         if len(episode_groups) == 1:
-            self.logger.info(f"剧集组选择: '{title}' 仅有1个剧集组 '{episode_groups[0].get('name')}', 直接选择")
+            logger.info(f"剧集组选择: '{title}' 仅有1个剧集组 '{episode_groups[0].get('name')}', 直接选择")
             return 0
 
         # === 算法优先策略 ===
@@ -1429,14 +1429,14 @@ class AIMatcher:
         for i, g in enumerate(episode_groups):
             group_name = g.get("name", "").lower()
             if "seasons" in group_name:
-                self.logger.info(f"剧集组选择(算法): '{title}' → 找到'Seasons'剧集组: {g.get('name')} (index={i})")
+                logger.info(f"剧集组选择(算法): '{title}' → 找到'Seasons'剧集组: {g.get('name')} (index={i})")
                 return i
 
         # 策略2: 仅有1个 type=1 (播出顺序) 的剧集组时直接选择
         type1_groups = [(i, g) for i, g in enumerate(episode_groups) if g.get("type") == 1]
         if len(type1_groups) == 1:
             idx, grp = type1_groups[0]
-            self.logger.info(f"剧集组选择(算法): '{title}' → 唯一type=1剧集组: {grp.get('name')} (index={idx})")
+            logger.info(f"剧集组选择(算法): '{title}' → 唯一type=1剧集组: {grp.get('name')} (index={idx})")
             return idx
 
         # 策略3: 如果有明确的季度信息，尝试名称匹配
@@ -1446,7 +1446,7 @@ class AIMatcher:
                 group_name = g.get("name", "").lower()
                 for kw in season_keywords:
                     if kw in group_name:
-                        self.logger.info(f"剧集组选择(算法): '{title}' → 名称匹配季度{season}: {g.get('name')} (index={i})")
+                        logger.info(f"剧集组选择(算法): '{title}' → 名称匹配季度{season}: {g.get('name')} (index={i})")
                         return i
 
         # === AI 兜底 ===
@@ -1454,13 +1454,13 @@ class AIMatcher:
             # 没有AI客户端，回退到选择 type=1 中 episodeCount 最多的
             if type1_groups:
                 best_idx, best_grp = max(type1_groups, key=lambda x: x[1].get("episodeCount", 0))
-                self.logger.info(f"剧集组选择(回退): '{title}' → type=1中集数最多: {best_grp.get('name')} (index={best_idx})")
+                logger.info(f"剧集组选择(回退): '{title}' → type=1中集数最多: {best_grp.get('name')} (index={best_idx})")
                 return best_idx
-            self.logger.warning(f"剧集组选择: '{title}' → 无AI客户端且无type=1组，无法选择")
+            logger.warning(f"剧集组选择: '{title}' → 无AI客户端且无type=1组，无法选择")
             return None
 
         try:
-            self.logger.info(f"剧集组选择(AI): '{title}' → 算法无法确定，使用AI从{len(episode_groups)}个组中选择")
+            logger.info(f"剧集组选择(AI): '{title}' → 算法无法确定，使用AI从{len(episode_groups)}个组中选择")
 
             # 构建AI输入
             groups_for_ai = []
@@ -1511,7 +1511,7 @@ class AIMatcher:
                 )
                 content = _extract_openai_content(response)
                 if content is None:
-                    self.logger.warning(f"剧集组选择(AI): '{title}' → AI返回空内容")
+                    logger.warning(f"剧集组选择(AI): '{title}' → AI返回空内容")
                     return None
 
             if self.log_raw_response:
@@ -1520,7 +1520,7 @@ class AIMatcher:
             parsed_data = _safe_json_loads(content, log_raw_response=self.log_raw_response)
 
             if not parsed_data:
-                self.logger.warning(f"剧集组选择(AI): '{title}' → 无法解析AI响应")
+                logger.warning(f"剧集组选择(AI): '{title}' → 无法解析AI响应")
                 return None
 
             index = parsed_data.get("index", -1)
@@ -1528,13 +1528,13 @@ class AIMatcher:
             reason = parsed_data.get("reason", "")
 
             if index < 0 or index >= len(episode_groups):
-                self.logger.info(f"剧集组选择(AI): '{title}' → AI未找到合适的组 (reason: {reason})")
+                logger.info(f"剧集组选择(AI): '{title}' → AI未找到合适的组 (reason: {reason})")
                 return None
 
             selected = episode_groups[index]
-            self.logger.info(f"剧集组选择(AI): '{title}' → 选择 #{index} '{selected.get('name')}' (置信度: {confidence}%, 理由: {reason})")
+            logger.info(f"剧集组选择(AI): '{title}' → 选择 #{index} '{selected.get('name')}' (置信度: {confidence}%, 理由: {reason})")
             return index
 
         except Exception as e:
-            self.logger.error(f"剧集组选择(AI)失败: {e}", exc_info=True)
+            logger.error(f"剧集组选择(AI)失败: {e}", exc_info=True)
             return None

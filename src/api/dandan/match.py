@@ -568,7 +568,6 @@ async def get_match_for_item(
 
                 # 步骤2：智能排序 (类型匹配优先)
                 match_timer.step_start("智能排序与匹配")
-                logger.info(f"步骤2：智能排序 (类型匹配优先)")
 
                 # 确定目标类型
                 target_type = "movie" if is_movie else "tv_series"
@@ -604,11 +603,12 @@ async def get_match_for_item(
                 )
 
                 # 打印排序后的结果列表
-                logger.info(f"排序后的搜索结果列表 (按匹配分数):")
+                lines = [f"步骤2：智能排序 - 排序后的搜索结果列表 (共 {len(sorted_results)} 条, 按匹配分数):"]
                 for idx, result in enumerate(sorted_results, 1):
                     score = calculate_match_score(result)
                     type_match = "✓" if result.type == target_type else "✗"
-                    logger.info(f"  {idx}. [{type_match}] {result.provider} - {result.title} (ID: {result.mediaId}, 类型: {result.type}, 年份: {result.year or 'N/A'}, 分数: {score:.0f})")
+                    lines.append(f"  {idx}. [{type_match}] {result.provider} - {result.title} (ID: {result.mediaId}, 类型: {result.type}, 年份: {result.year or 'N/A'}, 分数: {score:.0f})")
+                logger.info("\n".join(lines))
 
                 # 步骤3：自动选择最佳源
                 logger.info(f"步骤3：自动选择最佳源")
