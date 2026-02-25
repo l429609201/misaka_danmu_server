@@ -48,6 +48,8 @@ from .task import (
     force_fail_task,
     get_execution_task_id_from_scheduler_task,
     mark_interrupted_tasks_as_failed,
+    mark_unrecoverable_pending_tasks_as_failed,
+    get_task_for_retry,
     find_recent_task_by_unique_key,
     create_webhook_task,
     get_webhook_tasks,

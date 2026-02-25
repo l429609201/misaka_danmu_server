@@ -191,7 +191,11 @@ async def auto_import(
             title_recognition_manager=title_recognition_manager,
             api_key=api_key
         )
-        task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+        task_id, _ = await task_manager.submit_task(
+            task_coro, task_title, unique_key=unique_key,
+            task_type="auto_import",
+            task_parameters=payload.model_dump()
+        )
         # 注意: 搜索锁由任务内部的 finally 块负责释放,确保任务完成后才释放
         return {"message": "自动导入任务已提交", "taskId": task_id}
     except HTTPException as e:
@@ -726,7 +730,11 @@ async def xml_import(
             manager=manager,
             rate_limiter=rate_limiter
         )
-        task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+        task_id, _ = await task_manager.submit_task(
+            task_coro, task_title, unique_key=unique_key,
+            task_type="manual_import",
+            task_parameters={"sourceId": payload.sourceId, "episodeIndex": payload.episodeIndex, "providerName": "custom"}
+        )
         return {"message": "XML导入任务已提交", "taskId": task_id}
     except HTTPException as e:
         raise e
@@ -781,7 +789,11 @@ async def url_import(
             manager=manager,
             rate_limiter=rate_limiter
         )
-        task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+        task_id, _ = await task_manager.submit_task(
+            task_coro, task_title, unique_key=unique_key,
+            task_type="manual_import",
+            task_parameters={"sourceId": payload.sourceId, "episodeIndex": payload.episodeIndex, "providerName": provider_name}
+        )
         return {"message": "URL导入任务已提交", "taskId": task_id}
     except HTTPException as e:
         raise e

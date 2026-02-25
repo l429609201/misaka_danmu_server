@@ -115,4 +115,8 @@ class BaseWebhook(ABC):
                     title_recognition_manager=self.title_recognition_manager,
                     **payload
                 )
-                await self.task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+                await self.task_manager.submit_task(
+                    task_coro, task_title, unique_key=unique_key,
+                    task_type="webhook_search",
+                    task_parameters={"webhookSource": webhook_source, **payload}
+                )

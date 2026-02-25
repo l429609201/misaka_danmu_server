@@ -1091,6 +1091,8 @@ class NotificationService:
             )
             task_id, _ = await self.task_manager.submit_task(
                 coro_factory=task_coro, title=task_title,
+                task_type="auto_import",
+                task_parameters=payload.model_dump()
             )
             return CommandResult(
                 text=f"✅ 导入任务已提交\n标题: {search_term}\n任务ID: {task_id}",
@@ -1472,6 +1474,8 @@ class NotificationService:
 
             task_id, _ = await self.task_manager.submit_task(
                 coro_factory=task_coro, title=task_title,
+                task_type="tg_refresh",
+                task_parameters={"sourceId": source_id}
             )
             return CommandResult(
                 text=f"✅ 刷新任务已提交\n{title} [{provider}]\n集数: {ep_desc}\n任务ID: {task_id}",

@@ -272,6 +272,7 @@ class TaskInfo(BaseModel):
     createdAt: datetime
     isSystemTask: bool = False
     queueType: str = "download"  # 队列类型: "download"、"management" 或 "fallback"
+    taskType: Optional[str] = None  # 任务类型，不为 None 时表示该任务支持重试
 
 class PaginatedTasksResponse(BaseModel):
     """用于任务列表分页的响应模型"""

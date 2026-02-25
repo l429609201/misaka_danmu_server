@@ -4,6 +4,7 @@ import {
   getTaskList,
   pauseTask,
   resumeTask,
+  retryTask,
   stopTask,
 } from '@/apis'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -29,6 +30,7 @@ import {
   DeleteOutlined,
   MinusOutlined,
   PauseOutlined,
+  RetweetOutlined,
   StepBackwardOutlined,
   StopOutlined,
   FilterOutlined,
@@ -85,6 +87,14 @@ export const ImportTask = () => {
           item.status === '失败' ||
           item.status === '排队中'
       ) && selectList.length > 0
+    )
+  }, [selectList])
+
+  // 只有失败的且有 taskType（有恢复信息）的任务才能重试
+  const canRetry = useMemo(() => {
+    return (
+      selectList.every(item => item.status === '失败' && !!item.taskType) &&
+      selectList.length > 0
     )
   }, [selectList])
 
@@ -360,6 +370,22 @@ export const ImportTask = () => {
     })
   }
 
+  /**
+   * 处理重试失败任务操作
+   */
+  const handleRetry = async () => {
+    try {
+      await Promise.all(
+        selectList.map(it => retryTask({ taskId: it.taskId }))
+      )
+      refreshTasks()
+      setSelectList([])
+      messageApi.success(`已重新提交 ${selectList.length} 个任务`)
+    } catch (error) {
+      messageApi.error(`重试任务失败: ${error.message}`)
+    }
+  }
+
   useEffect(() => {
     const isLoadMore = pagination.current > 1
     refreshTasks(isLoadMore)
@@ -597,6 +623,15 @@ export const ImportTask = () => {
                   onClick={handlePause}
                 />
               </Tooltip>
+              <Tooltip title="重试失败任务">
+                <Button
+                  disabled={!canRetry}
+                  type="default"
+                  shape="circle"
+                  icon={<RetweetOutlined />}
+                  onClick={handleRetry}
+                />
+              </Tooltip>
               <Tooltip title="删除任务">
                 <Button
                   disabled={!canDelete}
@@ -712,6 +747,18 @@ export const ImportTask = () => {
                 block
               >
                 {isPause ? '继续' : '暂停'}
+              </Button>
+            </div>
+
+            {/* 重试操作 */}
+            <div className="grid grid-cols-1 gap-2">
+              <Button
+                disabled={!canRetry}
+                icon={<RetweetOutlined />}
+                onClick={handleRetry}
+                block
+              >
+                重试
               </Button>
             </div>
 

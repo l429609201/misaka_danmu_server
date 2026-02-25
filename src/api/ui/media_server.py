@@ -636,7 +636,9 @@ async def import_media_items(
         ),
         title=task_title,
         queue_type="download",
-        unique_key=unique_key
+        unique_key=unique_key,
+        task_type="import_media_items",
+        task_parameters={"itemIds": item_ids_list}
     )
 
     return {"message": "媒体项导入任务已提交", "taskId": task_id}
@@ -699,7 +701,9 @@ async def import_all_unimported_media_items(
         ),
         title=f"一键导入全部未导入: 共{len(item_ids_list)}个",
         queue_type="download",
-        unique_key=unique_key
+        unique_key=unique_key,
+        task_type="import_media_items",
+        task_parameters={"itemIds": item_ids_list}
     )
 
     return {

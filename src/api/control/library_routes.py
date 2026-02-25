@@ -315,7 +315,9 @@ async def refresh_episode(
     task_id, _ = await task_manager.submit_task(
         lambda s, cb: tasks.refresh_episode_task(episodeId, s, manager, rate_limiter, cb, config_manager),
         f"外部API刷新分集: {info['title']}",
-        unique_key=unique_key
+        unique_key=unique_key,
+        task_type="refresh_episode",
+        task_parameters={"episodeId": episodeId}
     )
     return {"message": "刷新分集任务已提交", "taskId": task_id}
 

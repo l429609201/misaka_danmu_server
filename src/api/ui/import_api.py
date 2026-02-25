@@ -122,7 +122,27 @@ async def import_from_provider(
     unique_key = f"ui-import-{'-'.join(unique_key_parts)}"
 
     # 提交任务并获取任务ID
-    task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+    task_parameters = {
+        "provider": request_data.provider,
+        "mediaId": request_data.mediaId,
+        "animeTitle": request_data.animeTitle,
+        "mediaType": request_data.type,
+        "season": request_data.season,
+        "year": request_data.year,
+        "currentEpisodeIndex": request_data.currentEpisodeIndex,
+        "imageUrl": request_data.imageUrl,
+        "doubanId": request_data.doubanId,
+        "tmdbId": request_data.tmdbId,
+        "imdbId": None,
+        "tvdbId": None,
+        "bangumiId": request_data.bangumiId,
+        "supplementProvider": request_data.supplementProvider,
+        "supplementMediaId": request_data.supplementMediaId,
+    }
+    task_id, _ = await task_manager.submit_task(
+        task_coro, task_title, unique_key=unique_key,
+        task_type="generic_import", task_parameters=task_parameters
+    )
 
     return {"message": f"'{request_data.animeTitle}' 的导入任务已提交。请在任务管理器中查看进度。", "taskId": task_id}
 

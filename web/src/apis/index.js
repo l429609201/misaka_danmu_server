@@ -216,6 +216,8 @@ export const resumeTask = data =>
 export const deleteTask = data => api.delete(`/api/ui/tasks/${data.taskId}`, { params: { force: data.force || false } })
 /** 中止任务 */
 export const stopTask = data => api.post(`/api/ui/tasks/${data.taskId}/abort`, { force: data.force || false })
+/** 重试失败任务 */
+export const retryTask = data => api.post(`/api/ui/tasks/${data.taskId}/retry`)
 /** 定时任务列表 */
 export const getScheduledTaskList = data =>
   api.get('/api/ui/scheduled-tasks', data)
