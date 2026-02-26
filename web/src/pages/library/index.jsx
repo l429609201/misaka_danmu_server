@@ -50,6 +50,7 @@ import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 import { CreateAnimeModal } from '../../components/CreateAnimeModal'
 import { IncrementalRefreshModal } from '../../components/IncrementalRefreshModal'
+import { ScanDuplicatesModal } from '../../components/ScanDuplicatesModal'
 import { RoutePaths } from '../../general/RoutePaths'
 import { padStart } from 'lodash'
 import { useModal } from '../../ModalContext'
@@ -109,6 +110,7 @@ export const Library = () => {
   }, [defaultPageSize])
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isRefreshModalOpen, setIsRefreshModalOpen] = useState(false)
+  const [isScanDuplicatesOpen, setIsScanDuplicatesOpen] = useState(false)
 
   const [form] = Form.useForm()
   const [editOpen, setEditOpen] = useState(false)
@@ -1063,6 +1065,9 @@ export const Library = () => {
                   重置
                 </Button>
               )}
+              <Button onClick={() => setIsScanDuplicatesOpen(true)}>
+                扫描重复项
+              </Button>
               <Button onClick={() => setIsRefreshModalOpen(true)}>
                 批量管理
               </Button>
@@ -1117,6 +1122,13 @@ export const Library = () => {
               )}
             </div>
             <div className="flex gap-2">
+              <Button
+                block
+                size="large"
+                onClick={() => setIsScanDuplicatesOpen(true)}
+              >
+                扫描重复项
+              </Button>
               <Button
                 block
                 size="large"
@@ -1263,6 +1275,11 @@ export const Library = () => {
       <IncrementalRefreshModal
         open={isRefreshModalOpen}
         onCancel={() => setIsRefreshModalOpen(false)}
+      />
+      <ScanDuplicatesModal
+        open={isScanDuplicatesOpen}
+        onCancel={() => setIsScanDuplicatesOpen(false)}
+        onSuccess={() => { setIsScanDuplicatesOpen(false); fetchList() }}
       />
       <Modal
         title="编辑影视信息"

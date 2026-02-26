@@ -965,6 +965,14 @@ export const getSourceEpisodesForSplit = (sourceId) =>
 export const splitSource = (animeId, data) =>
   api.post(`/api/ui/library/anime/${animeId}/split-source`, JSON.stringify(data))
 
+/** 扫描重复条目 */
+export const scanDuplicates = (strict = true) =>
+  api.get(`/api/ui/library/scan-duplicates`, { strict })
+
+/** 批量合并重复条目 */
+export const batchMergeAnimes = (data) =>
+  api.post('/api/ui/library/batch-merge', data)
+
 
 // ========== 通知渠道 ==========
 

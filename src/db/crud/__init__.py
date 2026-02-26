@@ -131,6 +131,7 @@ from .anime import (
     update_anime_aliases_if_empty,
     get_animes_with_tmdb_id,
     get_anime_details_for_dandan,
+    scan_duplicate_animes,
 )
 
 # Episode模块
@@ -393,6 +394,7 @@ __all__ = [
     'update_anime_aliases_if_empty',
     'get_animes_with_tmdb_id',
     'get_anime_details_for_dandan',
+    'scan_duplicate_animes',
     # Episode
     'get_last_episode_for_source',
     'get_episode_for_refresh',

@@ -460,14 +460,14 @@ async def create_anime(session: AsyncSession, anime_data: models.AnimeCreate) ->
     new_metadata = AnimeMetadata(animeId=new_anime.id)
     new_alias = AnimeAlias(animeId=new_anime.id)
     session.add_all([new_metadata, new_alias])
-    
+
     # 修正：在创建新作品时，自动为其创建一个'custom'数据源。
     # 这简化了用户操作，并从根源上确保了数据完整性，
     # 因为 link_source_to_anime 会负责在 scrapers 表中创建对应的条目。
     logger.info(f"为新作品 '{anime_data.title}' 自动创建 'custom' 数据源。")
     custom_media_id = f"custom_{new_anime.id}"
     await link_source_to_anime(session, new_anime.id, "custom", custom_media_id)
-    
+
     await session.flush()
     await session.refresh(new_anime)
     return new_anime
@@ -485,14 +485,14 @@ async def update_anime_aliases(session: AsyncSession, anime_id: int, payload: An
     if not alias_record:
         alias_record = AnimeAlias(animeId=anime_id)
         session.add(alias_record)
-    
+
     alias_record.nameEn = getattr(payload, 'nameEn', alias_record.nameEn)
     alias_record.nameJp = getattr(payload, 'nameJp', alias_record.nameJp)
     alias_record.nameRomaji = getattr(payload, 'nameRomaji', alias_record.nameRomaji)
     alias_record.aliasCn1 = getattr(payload, 'aliasCn1', alias_record.aliasCn1)
     alias_record.aliasCn2 = getattr(payload, 'aliasCn2', alias_record.aliasCn2)
     alias_record.aliasCn3 = getattr(payload, 'aliasCn3', alias_record.aliasCn3)
-    
+
     await session.flush()
 
 
@@ -805,7 +805,7 @@ async def search_animes_for_dandan(session: AsyncSession, keyword: str) -> List[
                     AnimeAlias.aliasCn1, AnimeAlias.aliasCn2, AnimeAlias.aliasCn3]
     ]
     stmt = stmt.where(or_(*like_conditions))
-    
+
     result = await session.execute(stmt)
     return [dict(row) for row in result.mappings()]
 
@@ -825,7 +825,7 @@ async def find_animes_for_matching(session: AsyncSession, title: str) -> List[Di
         .join(AnimeMetadata, Anime.id == AnimeMetadata.animeId, isouter=True)
         .join(AnimeAlias, Anime.id == AnimeAlias.animeId, isouter=True)
     )
-    
+
     normalized_like_title = f"%{title.replace('：', ':').replace(' ', '')}%"
     like_conditions = [
         func.replace(func.replace(col, '：', ':'), ' ', '').like(normalized_like_title)
@@ -833,7 +833,7 @@ async def find_animes_for_matching(session: AsyncSession, title: str) -> List[Di
                     AnimeAlias.aliasCn1, AnimeAlias.aliasCn2, AnimeAlias.aliasCn3]
     ]
     stmt = stmt.where(or_(*like_conditions)).distinct().order_by(title_len_expr).limit(5)
-    
+
     result = await session.execute(stmt)
     return [dict(row) for row in result.mappings()]
 
@@ -1028,9 +1028,74 @@ async def get_anime_details_for_dandan(session: AsyncSession, anime_id: int) -> 
             .where(AnimeSource.animeId == anime_id)
             .order_by(Episode.episodeIndex)
         )
-    
+
     episodes_res = await session.execute(ep_stmt)
     episodes = [dict(row) for row in episodes_res.mappings()]
-    
+
     return {"anime": dict(anime_details), "episodes": episodes}
 
+
+
+
+async def scan_duplicate_animes(session: AsyncSession, strict: bool = True) -> List[Dict[str, Any]]:
+    """
+    扫描弹幕库中的重复条目。
+    strict=True: 按 tmdbId + season 分组（严格模式）
+    strict=False: 仅按 tmdbId 分组（宽松模式，用于剧集组场景）
+
+    返回: [{ tmdbId, season(仅严格模式), items: [{ animeId, title, season, year, sourceCount, imageUrl, localImagePath }] }]
+    """
+    # 基础查询：Anime + AnimeMetadata + 源数统计
+    source_count_subq = (
+        select(
+            AnimeSource.animeId,
+            func.count(AnimeSource.id).label("sourceCount")
+        )
+        .group_by(AnimeSource.animeId)
+        .subquery()
+    )
+
+    stmt = (
+        select(
+            Anime.id.label("animeId"),
+            Anime.title,
+            Anime.season,
+            Anime.year,
+            Anime.imageUrl,
+            Anime.localImagePath,
+            AnimeMetadata.tmdbId,
+            func.coalesce(source_count_subq.c.sourceCount, 0).label("sourceCount"),
+        )
+        .join(AnimeMetadata, Anime.id == AnimeMetadata.animeId)
+        .outerjoin(source_count_subq, Anime.id == source_count_subq.c.animeId)
+        .where(
+            AnimeMetadata.tmdbId.isnot(None),
+            AnimeMetadata.tmdbId != "",
+        )
+        .order_by(AnimeMetadata.tmdbId, Anime.season)
+    )
+
+    result = await session.execute(stmt)
+    rows = [dict(r) for r in result.mappings()]
+
+    # 按分组键聚合
+    from collections import defaultdict
+    groups: Dict[Any, list] = defaultdict(list)
+    for row in rows:
+        if strict:
+            key = (row["tmdbId"], row["season"])
+        else:
+            key = row["tmdbId"]
+        groups[key].append(row)
+
+    # 只保留有 2+ 条目的组
+    duplicate_groups = []
+    for key, items in groups.items():
+        if len(items) < 2:
+            continue
+        group = {"tmdbId": items[0]["tmdbId"], "items": items}
+        if strict:
+            group["season"] = items[0]["season"]
+        duplicate_groups.append(group)
+
+    return duplicate_groups
