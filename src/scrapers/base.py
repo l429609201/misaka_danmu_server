@@ -440,9 +440,7 @@ class BaseScraper(ABC):
 
         # 如果没有配置过滤规则，直接返回所有分集
         if not blacklist_pattern:
-            self.logger.info(f"{self.provider_name}: 分集过滤结果 (无过滤规则):")
-            for episode in episodes:
-                self.logger.info(f"  - {episode.title}")
+            self.logger.info(f"{self.provider_name}: 分集过滤结果 (无过滤规则): 共 {len(episodes)} 集")
             return episodes
 
         filtered_episodes = []
@@ -457,21 +455,23 @@ class BaseScraper(ABC):
             else:
                 filtered_episodes.append(episode)
 
-        # 打印分集过滤结果
-        self.logger.info(f"{self.provider_name}: 分集过滤结果:")
+        # 打印分集过滤摘要
+        summary_parts = [f"{self.provider_name}: 分集过滤结果:"]
 
-        # 打印过滤掉的分集
+        # 打印过滤掉的分集（这些比较重要，逐条列出）
         if filtered_out_episodes:
+            summary_parts.append(f"  已过滤 {len(filtered_out_episodes)} 集:")
             for episode, junk_type in filtered_out_episodes:
-                self.logger.info(f"  - 已过滤: {episode.title} (类型: {junk_type})")
+                summary_parts.append(f"    ✗ {episode.title} ({junk_type})")
 
-        # 打印保留的分集
+        # 保留的分集只显示数量
         if filtered_episodes:
-            for episode in filtered_episodes:
-                self.logger.info(f"  - {episode.title}")
+            summary_parts.append(f"  保留 {len(filtered_episodes)} 集")
 
         if not filtered_episodes and not filtered_out_episodes:
-            self.logger.info(f"  - 无分集数据")
+            summary_parts.append(f"  无分集数据")
+
+        self.logger.info("\n".join(summary_parts))
 
         return filtered_episodes
 
