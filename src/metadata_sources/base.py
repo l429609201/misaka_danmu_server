@@ -42,8 +42,11 @@ class BaseMetadataSource(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def check_connectivity(self) -> str:
-        """检查源的配置状态，并返回状态字符串。"""
+    async def check_connectivity(self) -> Dict[str, str]:
+        """检查源的配置状态，并返回状态字典。
+
+        返回格式: {"code": "ok|unconfigured|warning|error|disabled", "message": "..."}
+        """
         raise NotImplementedError
     
     @abstractmethod

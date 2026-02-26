@@ -326,7 +326,8 @@ async def get_tasks_from_history(session: AsyncSession, search_term: Optional[st
         TaskHistory.description,
         TaskHistory.createdAt,
         TaskHistory.scheduledTaskId,
-        TaskHistory.queueType
+        TaskHistory.queueType,
+        TaskHistory.taskType
     )
 
     if search_term:
@@ -356,7 +357,8 @@ async def get_tasks_from_history(session: AsyncSession, search_term: Optional[st
             "description": row.description,
             "createdAt": row.createdAt,
             "isSystemTask": row.scheduledTaskId == "system_token_reset",
-            "queueType": row.queueType or "download"  # 如果为NULL则默认为"download"
+            "queueType": row.queueType or "download",  # 如果为NULL则默认为"download"
+            "taskType": row.taskType
         }
         for row in result.mappings()
     ]

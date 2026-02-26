@@ -69,7 +69,8 @@ class TmdbAutoMapJob(BaseJob):
         # 为元数据管理器调用创建一个虚拟用户对象
         user = models.User(id=0, username="scheduled_task")
 
-        # 初始化AI matcher (如果启用)
+        # 【性能优化】AI初始化预热：如果AI已启用，提前开始初始化（不阻塞）
+        ai_matcher_warmup_task = None
         ai_matcher = None
         ai_recognition_enabled = False
         ai_alias_correction_enabled = False
@@ -90,10 +91,9 @@ class TmdbAutoMapJob(BaseJob):
                     "aiAliasValidationPrompt": (DEFAULT_AI_ALIAS_VALIDATION_PROMPT, "AI别名验证提示词")
                 })
 
-                # 使用AIMatcherManager获取matcher实例
-                ai_matcher = await self.ai_matcher_manager.get_matcher()
-                if not ai_matcher:
-                    self.logger.warning("AI匹配器初始化失败,将使用传统搜索")
+                # 【性能优化】启动AI匹配器预热任务（并行）
+                ai_matcher_warmup_task = asyncio.create_task(self.ai_matcher_manager.get_matcher())
+                self.logger.debug("TMDB自动映射 AI匹配器预热已启动（并行）")
         except Exception as e:
             self.logger.warning(f"初始化AI matcher失败: {e}, 将使用传统搜索")
 
@@ -154,6 +154,13 @@ class TmdbAutoMapJob(BaseJob):
                         # 使用AI标准化标题 (如果启用)
                         search_title = title
                         search_year = year
+
+                        # 【性能优化】第一次使用AI时，await预热task
+                        if ai_matcher_warmup_task and not ai_matcher:
+                            ai_matcher = await ai_matcher_warmup_task
+                            ai_matcher_warmup_task = None  # 清空task，避免重复await
+                            if not ai_matcher:
+                                self.logger.warning("AI匹配器初始化失败,将使用传统搜索")
 
                         if ai_matcher and ai_recognition_enabled:
                             try:

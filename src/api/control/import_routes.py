@@ -17,6 +17,7 @@ from src.db import crud, models, orm_models, get_db_session, ConfigManager
 from src import tasks
 from src.utils import common as utils
 from src.core import get_now
+from src.core.cache import get_cache_backend
 from src.services import ScraperManager, TaskManager, MetadataSourceManager, unified_search, convert_to_chinese_title
 from src.utils import (
     SearchTimer, SEARCH_TYPE_CONTROL_SEARCH, SubStepTiming,
@@ -190,7 +191,11 @@ async def auto_import(
             title_recognition_manager=title_recognition_manager,
             api_key=api_key
         )
-        task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+        task_id, _ = await task_manager.submit_task(
+            task_coro, task_title, unique_key=unique_key,
+            task_type="auto_import",
+            task_parameters=payload.model_dump()
+        )
         # 注意: 搜索锁由任务内部的 finally 块负责释放,确保任务完成后才释放
         return {"message": "自动导入任务已提交", "taskId": task_id}
     except HTTPException as e:
@@ -384,7 +389,16 @@ async def search_media(
         timer.step_start("结果缓存")
         search_id = str(uuid.uuid4())
         indexed_results = [ControlSearchResultItem(**r.model_dump(), resultIndex=i) for i, r in enumerate(sorted_results)]
-        await crud.set_cache(session, f"control_search_{search_id}", [r.model_dump() for r in sorted_results], 600)
+        _cache_data = [r.model_dump() for r in sorted_results]
+        _cache_key = f"control_search_{search_id}"
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                await _backend.set(_cache_key, _cache_data, ttl=600, region="default")
+            except Exception:
+                await crud.set_cache(session, _cache_key, _cache_data, 600)
+        else:
+            await crud.set_cache(session, _cache_key, _cache_data, 600)
         timer.step_end()
 
         timer.finish()  # 打印计时报告
@@ -413,7 +427,15 @@ async def direct_import(
     这是一个简单、直接的导入方式。它会为选定的媒体创建一个后台导入任务。您也可以在请求中附加元数据ID（如`tmdbId`）来覆盖或补充作品信息。
     """
     cache_key = f"control_search_{payload.searchId}"
-    cached_results_raw = await crud.get_cache(session, cache_key)
+    cached_results_raw = None
+    _backend = get_cache_backend()
+    if _backend is not None:
+        try:
+            cached_results_raw = await _backend.get(cache_key, region="default")
+        except Exception:
+            pass
+    if cached_results_raw is None:
+        cached_results_raw = await crud.get_cache(session, cache_key)
 
     if cached_results_raw is None:
         raise HTTPException(status_code=404, detail="搜索会话已过期或无效，请重新搜索。")
@@ -502,7 +524,15 @@ async def get_episodes(
     此接口主要用于"编辑后导入"的场景。您可以先获取原始的分集列表，在您的客户端进行修改（例如，删除预告、调整顺序），然后再通过`/import/edited`接口提交修改后的列表进行导入。
     """
     cache_key = f"control_search_{searchId}"
-    cached_results_raw = await crud.get_cache(session, cache_key)
+    cached_results_raw = None
+    _backend = get_cache_backend()
+    if _backend is not None:
+        try:
+            cached_results_raw = await _backend.get(cache_key, region="default")
+        except Exception:
+            pass
+    if cached_results_raw is None:
+        cached_results_raw = await crud.get_cache(session, cache_key)
 
     if cached_results_raw is None:
         raise HTTPException(status_code=404, detail="搜索会话已过期或无效，请重新搜索。")
@@ -545,7 +575,15 @@ async def edited_import(
     这是最灵活的导入方式。它允许您完全控制要导入的分集，包括标题、顺序等。您可以在请求中覆盖作品标题和附加元数据ID。
     """
     cache_key = f"control_search_{payload.searchId}"
-    cached_results_raw = await crud.get_cache(session, cache_key)
+    cached_results_raw = None
+    _backend = get_cache_backend()
+    if _backend is not None:
+        try:
+            cached_results_raw = await _backend.get(cache_key, region="default")
+        except Exception:
+            pass
+    if cached_results_raw is None:
+        cached_results_raw = await crud.get_cache(session, cache_key)
 
     if cached_results_raw is None:
         raise HTTPException(status_code=404, detail="搜索会话已过期或无效，请重新搜索。")
@@ -692,7 +730,11 @@ async def xml_import(
             manager=manager,
             rate_limiter=rate_limiter
         )
-        task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+        task_id, _ = await task_manager.submit_task(
+            task_coro, task_title, unique_key=unique_key,
+            task_type="manual_import",
+            task_parameters={"sourceId": payload.sourceId, "episodeIndex": payload.episodeIndex, "providerName": "custom"}
+        )
         return {"message": "XML导入任务已提交", "taskId": task_id}
     except HTTPException as e:
         raise e
@@ -747,7 +789,11 @@ async def url_import(
             manager=manager,
             rate_limiter=rate_limiter
         )
-        task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+        task_id, _ = await task_manager.submit_task(
+            task_coro, task_title, unique_key=unique_key,
+            task_type="manual_import",
+            task_parameters={"sourceId": payload.sourceId, "episodeIndex": payload.episodeIndex, "providerName": provider_name}
+        )
         return {"message": "URL导入任务已提交", "taskId": task_id}
     except HTTPException as e:
         raise e

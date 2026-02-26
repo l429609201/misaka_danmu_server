@@ -35,17 +35,17 @@ class AIMatcherManager:
         # 如果已有缓存的 matcher，更新其 metrics 的 session factory
         if self._matcher_cache:
             self._matcher_cache.metrics.set_db_session_factory(factory)
-    
+
     async def is_enabled(self) -> bool:
         """
         检查AI匹配是否启用
-        
+
         Returns:
             True if enabled, False otherwise
         """
         enabled = await self.config_manager.get("aiMatchEnabled", "false")
         return enabled.lower() == "true"
-    
+
     async def _get_config(self) -> Dict[str, Any]:
         """
         获取AI匹配配置
@@ -98,14 +98,14 @@ class AIMatcherManager:
             "recognition_prompt": config["ai_recognition_prompt"],
             "alias_validation_prompt": config["ai_alias_validation_prompt"]
         }
-    
+
     def _config_hash(self, config: Dict[str, Any]) -> str:
         """
         计算配置的哈希值,用于检测配置变化
-        
+
         Args:
             config: 配置字典
-        
+
         Returns:
             配置哈希值
         """
@@ -113,7 +113,7 @@ class AIMatcherManager:
         import json
         config_str = json.dumps(config, sort_keys=True)
         return hashlib.md5(config_str.encode()).hexdigest()
-    
+
     async def get_matcher(self) -> Optional[AIMatcher]:
         """
         获取AI匹配器实例
@@ -175,7 +175,7 @@ class AIMatcherManager:
         except Exception as e:
             self.logger.error(f"创建AI匹配器失败: {e}", exc_info=True)
             return None
-    
+
     async def select_best_match(
         self,
         query_info: Dict[str, Any],
@@ -184,12 +184,12 @@ class AIMatcherManager:
     ) -> Optional[int]:
         """
         使用AI选择最佳匹配结果
-        
+
         Args:
             query_info: 查询信息 {"title", "season", "episode", "year", "type"}
             sorted_results: 排序后的搜索结果列表
             favorited_info: 收藏信息
-        
+
         Returns:
             选中的结果索引,如果AI匹配失败或未找到合适结果则返回None
         """
@@ -197,18 +197,56 @@ class AIMatcherManager:
             matcher = await self.get_matcher()
             if not matcher:
                 return None
-            
+
             ai_selected_index = await matcher.select_best_match(
                 query_info, sorted_results, favorited_info
             )
-            
+
             if ai_selected_index is not None:
                 self.logger.info(f"AI匹配成功选择: 索引 {ai_selected_index}")
             else:
                 self.logger.info("AI匹配未找到合适结果")
-            
+
             return ai_selected_index
         except Exception as e:
             self.logger.error(f"AI匹配失败: {e}", exc_info=True)
             return None
 
+
+    async def select_best_episode_group(
+        self,
+        title: str,
+        season: Optional[int],
+        episode: Optional[int],
+        episode_groups: List[Dict[str, Any]]
+    ) -> Optional[int]:
+        """
+        使用混合策略（算法优先+AI兜底）从TMDB剧集组列表中选择最佳剧集组。
+
+        Args:
+            title: 作品标题
+            season: 季度号(可选)
+            episode: 集数号(可选)
+            episode_groups: TMDB剧集组列表
+
+        Returns:
+            选中的group在列表中的索引，如果无法确定则返回None
+        """
+        try:
+            matcher = await self.get_matcher()
+            if not matcher:
+                return None
+
+            selected_index = await matcher.select_best_episode_group(
+                title, season, episode, episode_groups
+            )
+
+            if selected_index is not None:
+                self.logger.info(f"剧集组选择成功: '{title}' → 索引 {selected_index}")
+            else:
+                self.logger.info(f"剧集组选择: '{title}' → 未找到合适的组")
+
+            return selected_index
+        except Exception as e:
+            self.logger.error(f"剧集组选择失败: {e}", exc_info=True)
+            return None

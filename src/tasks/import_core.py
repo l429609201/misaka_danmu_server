@@ -28,6 +28,41 @@ def _get_fetch_and_save_aliases():
     return fetch_and_save_aliases
 
 
+async def _get_or_create_anime_with_deduplication(
+    session: AsyncSession,
+    provider: str,
+    mediaId: str,
+    title: str,
+    mediaType: str,
+    season: int,
+    imageUrl: Optional[str],
+    local_image_path: Optional[str],
+    year: Optional[int],
+    title_recognition_manager,
+) -> int:
+    """
+    智能查找或创建anime，避免条目分裂。
+
+    优先级：
+    1. 数据源检查（provider + mediaId）- 最精确
+    2. 标题匹配（现有逻辑）- 兜底方案
+
+    返回 anime_id
+    """
+    # 第1层：检查数据源是否已存在
+    existing_anime_id = await crud.get_anime_id_by_source_media_id(session, provider, mediaId)
+    if existing_anime_id:
+        logger.info(f"✓ 数据源已存在: provider={provider}, mediaId={mediaId}, 复用anime_id={existing_anime_id}")
+        return existing_anime_id
+
+    # 第2层：使用标题匹配（现有逻辑）
+    logger.info(f"○ 数据源未找到匹配，使用标题匹配: title='{title}', season={season}")
+    anime_id = await crud.get_or_create_anime(
+        session, title, mediaType, season, imageUrl, local_image_path, year, title_recognition_manager, provider
+    )
+    return anime_id
+
+
 async def generic_import_task(
     provider: str,
     mediaId: str,
@@ -157,9 +192,21 @@ async def generic_import_task(
                 local_image_path = await download_image(imageUrl, session, manager, provider)
                 image_download_failed = bool(imageUrl and not local_image_path)
 
-                # 修正：确保在创建时也使用年份进行重复检查
-                anime_id = await crud.get_or_create_anime(
-                    session, title_to_use, mediaType, season_to_use, imageUrl, local_image_path, year, title_recognition_manager, provider)
+                # 使用智能去重逻辑：优先检查数据源
+                anime_id = await _get_or_create_anime_with_deduplication(
+                    session=session,
+                    provider=provider,
+                    mediaId=mediaId,
+                    title=title_to_use,
+                    mediaType=mediaType,
+                    season=season_to_use,
+                    imageUrl=imageUrl,
+                    local_image_path=local_image_path,
+                    year=year,
+                    title_recognition_manager=title_recognition_manager,
+                )
+
+                # 更新元数据（如果anime是新创建的或字段为空）
                 await crud.update_metadata_if_empty(
                     session, anime_id,
                     tmdb_id=tmdbId,
@@ -168,6 +215,8 @@ async def generic_import_task(
                     douban_id=doubanId,
                     bangumi_id=bangumiId
                 )
+
+                # 链接数据源（如果还没有链接）
                 source_id = await crud.link_source_to_anime(session, anime_id, provider, mediaId)
 
                 episode_title = f"第 {currentEpisodeIndex} 集"
@@ -320,19 +369,21 @@ async def generic_import_task(
                 else:
                     logger.info(f"anime条目已存在: ID={anime_id}, 标题='{existing_anime.title}'")
             else:
-                anime_id = await crud.get_or_create_anime(
-                    session,
-                    title_to_use,
-                    mediaType,
-                    season_to_use,
-                    imageUrl,
-                    local_image_path,
-                    year,
-                    title_recognition_manager,
-                    provider
+                # 使用智能去重逻辑：优先检查数据源
+                anime_id = await _get_or_create_anime_with_deduplication(
+                    session=session,
+                    provider=provider,
+                    mediaId=mediaId,
+                    title=title_to_use,
+                    mediaType=mediaType,
+                    season=season_to_use,
+                    imageUrl=imageUrl,
+                    local_image_path=local_image_path,
+                    year=year,
+                    title_recognition_manager=title_recognition_manager,
                 )
 
-            # 更新元数据
+            # 更新元数据（如果anime是新创建的或字段为空）
             await crud.update_metadata_if_empty(
                 session, anime_id,
                 tmdb_id=tmdbId,
@@ -342,7 +393,7 @@ async def generic_import_task(
                 bangumi_id=bangumiId
             )
 
-            # 链接数据源
+            # 链接数据源（如果还没有链接）
             source_id = await crud.link_source_to_anime(session, anime_id, provider, mediaId)
             await session.commit()
 
@@ -544,11 +595,18 @@ async def edited_import_task(
                 except Exception as e:
                     logger.warning(f"海报下载失败: {e}")
 
-            # 创建条目
-            # 修正：确保在创建时也使用年份进行重复检查
-            anime_id = await crud.get_or_create_anime(
-                session, request_data.animeTitle, request_data.mediaType,
-                request_data.season, request_data.imageUrl, local_image_path, request_data.year, title_recognition_manager, request_data.provider
+            # 使用智能去重逻辑：优先检查数据源
+            anime_id = await _get_or_create_anime_with_deduplication(
+                session=session,
+                provider=request_data.provider,
+                mediaId=request_data.mediaId,
+                title=request_data.animeTitle,
+                mediaType=request_data.mediaType,
+                season=request_data.season,
+                imageUrl=request_data.imageUrl,
+                local_image_path=local_image_path,
+                year=request_data.year,
+                title_recognition_manager=title_recognition_manager,
             )
 
             # 更新元数据

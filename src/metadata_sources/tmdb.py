@@ -306,21 +306,21 @@ class TmdbMetadataSource(BaseMetadataSource):
             self.logger.warning(f"TMDB辅助搜索失败: {e}")
         return {alias for alias in aliases if alias}
 
-    async def check_connectivity(self) -> str:
+    async def check_connectivity(self) -> Dict[str, str]:
         """检查TMDB源配置状态"""
         try:
             # 检查API Key配置
             api_key = await self.config_manager.get("tmdbApiKey", "")
             if not api_key or api_key.strip() == "":
-                return "未配置 (缺少TMDB API Key)"
+                return {"code": "unconfigured", "message": "未配置 (缺少TMDB API Key)"}
 
             # 检查API Key格式是否合理 (TMDB API Key通常是32位十六进制字符串)
             if len(api_key.strip()) < 20:
-                return "配置异常 (API Key格式不正确)"
+                return {"code": "error", "message": "配置异常 (API Key格式不正确)"}
 
-            return "配置正常"
+            return {"code": "ok", "message": "配置正常"}
         except Exception as e:
-            return f"配置检查失败: {e}"
+            return {"code": "error", "message": f"配置检查失败: {e}"}
 
     async def execute_action(self, action_name: str, payload: Dict[str, Any], user: models.User, request: Any) -> Any:
         try:

@@ -145,8 +145,8 @@ def setup_logging():
         '[%(asctime)s] [%(name)s:%(lineno)d] [%(levelname)s] - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-    # 为Web界面定义一个更简洁的格式
-    ui_formatter = logging.Formatter('[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    # 为Web界面定义一个更简洁的格式（包含级别标签，方便前端按级别过滤）
+    ui_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
     # 从配置中获取日志级别，如果无效则默认为 INFO
     log_level = getattr(logging, settings.log.level.upper(), logging.INFO)

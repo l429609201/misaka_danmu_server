@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from src.scrapers.base import BaseScraper
 from src.utils import TransportManager
+from src.utils.buffered_logging import BufferedLogHandler, create_buffered_logger, flush_buffered_logs
 from src.db import models, crud, ConfigManager
 
 # 从 models 导入需要的类
@@ -378,16 +379,26 @@ class ScraperManager:
             return []
 
         # 包装搜索任务，从 @track_performance 装饰器存储的 _task_timings 中读取耗时
+        # 使用缓冲 logger 避免并发搜索日志交叉
         async def timed_search(scraper, keyword):
             task_id = id(asyncio.current_task())  # 获取当前任务ID
+
+            # 安装缓冲 logger，替换 scraper.logger
+            original_logger = scraper.logger
+            temp_logger, buffer_handler = create_buffered_logger(scraper.provider_name, task_id)
+            scraper.logger = temp_logger
+
             try:
                 result = await scraper.search(keyword, episode_info=episode_info)
                 # 从装饰器存储的 _task_timings 中读取耗时（并发安全）
                 duration_ms = scraper._task_timings.pop(task_id, 0) if hasattr(scraper, '_task_timings') else 0
-                return (scraper.provider_name, result, duration_ms, None)
+                return (scraper.provider_name, result, duration_ms, None, buffer_handler)
             except Exception as e:
                 duration_ms = scraper._task_timings.pop(task_id, 0) if hasattr(scraper, '_task_timings') else 0
-                return (scraper.provider_name, None, duration_ms, e)
+                return (scraper.provider_name, None, duration_ms, e, buffer_handler)
+            finally:
+                # 恢复原始 logger
+                scraper.logger = original_logger
 
         tasks = []
         for keyword in keywords:
@@ -398,13 +409,15 @@ class ScraperManager:
 
         # 聚合每个源的耗时和结果数（同一个源可能搜索多个关键词）
         provider_timing: Dict[str, Tuple[float, int]] = {}  # {provider: (max_duration, total_count)}
+        # 收集每个源的缓冲日志，按完成顺序记录
+        provider_buffers: Dict[str, List[Tuple[BufferedLogHandler, int, float, Exception]]] = {}
 
         all_results = []
         seen_results = set()
 
-        for provider_name, result, duration_ms, error in timed_results:
+        for provider_name, result, duration_ms, error, buffer_handler in timed_results:
+            result_count = 0
             if error:
-                logging.getLogger(__name__).error(f"搜索源 '{provider_name}' 的搜索子任务失败: {error}", exc_info=True)
                 # 记录失败的耗时
                 if provider_name not in provider_timing:
                     provider_timing[provider_name] = (duration_ms, 0)
@@ -435,6 +448,24 @@ class ScraperManager:
                 else:
                     old_dur, old_cnt = provider_timing[provider_name]
                     provider_timing[provider_name] = (max(old_dur, duration_ms), old_cnt)
+
+            # 收集缓冲日志
+            if provider_name not in provider_buffers:
+                provider_buffers[provider_name] = []
+            provider_buffers[provider_name].append((buffer_handler, result_count, duration_ms, error))
+
+        # 按源分组输出缓冲的日志（消除交叉）
+        mgr_logger = logging.getLogger(__name__)
+        for provider_name, buffers in provider_buffers.items():
+            total_count = provider_timing.get(provider_name, (0, 0))[1]
+            total_dur = provider_timing.get(provider_name, (0, 0))[0]
+            first_error = next((e for _, _, _, e in buffers if e), None)
+            # 合并同一个源的所有缓冲 handler
+            merged_handler = BufferedLogHandler()
+            for bh, _, _, _ in buffers:
+                merged_handler._records.extend(bh.records)
+                bh.clear()
+            flush_buffered_logs(mgr_logger, provider_name, merged_handler, total_count, total_dur, first_error)
 
         # 保存耗时信息供计时报告使用
         self.last_search_timing = [

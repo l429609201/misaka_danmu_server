@@ -28,6 +28,16 @@ instance.interceptors.response.use(
   res => res,
   error => {
     console.log('resError', error.response?.data, error.response?.config.url)
+
+    // 401 未授权：自动清理 token 并跳转登录页
+    if (error.response?.status === 401) {
+      Cookies.remove('danmu_token', { path: '/' })
+      // 避免在登录页重复跳转
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
+      }
+    }
+
     const errorData = error.response?.data || {}
     // 统一转换为message字段,兼容FastAPI的detail字段和自定义的message字段
     const errorObj = {

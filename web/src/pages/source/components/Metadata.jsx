@@ -35,7 +35,13 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ContainerOutlined } from '@ant-design/icons'
+import {
+  CheckCircleFilled,
+  CloseCircleFilled,
+  QuestionCircleFilled,
+  ExclamationCircleFilled,
+  MinusCircleFilled,
+} from '@ant-design/icons'
 import { useMessage } from '../../../MessageContext'
 import {
   BangumiConfig,
@@ -44,6 +50,22 @@ import {
   DoubanConfig,
   ImdbConfig
 } from './MetadataSourceConfig'
+
+const getStatusIcon = (statusCode) => {
+  switch (statusCode) {
+    case 'ok':
+      return <CheckCircleFilled style={{ color: 'var(--color-green-400)', fontSize: 16 }} />
+    case 'warning':
+      return <ExclamationCircleFilled style={{ color: 'var(--color-orange-400)', fontSize: 16 }} />
+    case 'error':
+      return <CloseCircleFilled style={{ color: 'var(--color-red-400)', fontSize: 16 }} />
+    case 'disabled':
+      return <MinusCircleFilled style={{ color: 'var(--color-gray-400)', fontSize: 16 }} />
+    case 'unconfigured':
+    default:
+      return <QuestionCircleFilled style={{ color: 'var(--color-gray-400)', fontSize: 16 }} />
+  }
+}
 
 const SortableItem = ({ item, index, handleChangeStatus, onConfig }) => {
   const {
@@ -84,21 +106,14 @@ const SortableItem = ({ item, index, handleChangeStatus, onConfig }) => {
           <div>{item.providerName}</div>
         </div>
         <div className="flex items-center justify-around gap-3">
-          {/* 新增：配置按钮 */}
+          {/* 状态图标：移到齿轮左边，hover 显示详细状态 */}
+          <Tooltip title={item.status || '未配置'} trigger={['click', 'hover']}>
+            <span className="cursor-default">{getStatusIcon(item.statusCode)}</span>
+          </Tooltip>
+          {/* 配置按钮 */}
           <div onClick={onConfig} className="cursor-pointer">
             <MyIcon icon="setting" size={24} />
           </div>
-          {item.status !== '未配置' && (
-            <Tooltip title={item.status} trigger={['click', 'hover']}>
-              <ContainerOutlined
-                style={{
-                  color: item.status?.includes('失败')
-                    ? 'var(--color-red-400)'
-                    : 'var(--color-green-400)',
-                }}
-              />
-            </Tooltip>
-          )}
           {item.isAuxSearchEnabled ? (
             <Tag color="green">已启用</Tag>
           ) : (
@@ -329,17 +344,10 @@ export const Metadata = () => {
               <div>{activeItem.providerName}</div>
             </div>
             <div className="flex items-center justify-around gap-4">
-              {activeItem.status !== '未配置' && (
-                <Tooltip title={activeItem.status}>
-                  <ContainerOutlined
-                    style={{
-                      color: activeItem.status?.includes('失败')
-                        ? 'var(--color-red-400)'
-                        : 'var(--color-green-400)',
-                    }}
-                  />
-                </Tooltip>
-              )}
+              {/* 状态图标：移到齿轮左边，hover 显示详细状态 */}
+              <Tooltip title={activeItem.status || '未配置'}>
+                <span className="cursor-default">{getStatusIcon(activeItem.statusCode)}</span>
+              </Tooltip>
               {activeItem.isAuxSearchEnabled ? (
                 <Tag color="green">已启用</Tag>
               ) : (

@@ -73,6 +73,7 @@ async def unified_search(
 
         # 优化2: 检查别名缓存
         from src.db import crud
+        from src.core.cache import get_cache_backend
         from src.utils import parse_search_keyword
 
         # 提取核心标题（去除季度和集数信息）
@@ -81,7 +82,15 @@ async def unified_search(
 
         # 使用核心标题作为缓存键，这样同一剧的不同集数可以共享别名缓存
         alias_cache_key = f"search_aliases_{core_title}"
-        cached_aliases = await crud.get_cache(session, alias_cache_key)
+        cached_aliases = None
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                cached_aliases = await _backend.get(alias_cache_key, region="search")
+            except Exception as e:
+                logger.warning(f"缓存后端读取失败，回退到数据库: {e}")
+        if cached_aliases is None:
+            cached_aliases = await crud.get_cache(session, alias_cache_key)
 
         if cached_aliases:
             try:
@@ -112,7 +121,15 @@ async def unified_search(
 
                     # 缓存别名（1小时）
                     import json
-                    await crud.set_cache(session, alias_cache_key, json.dumps(list(all_possible_aliases)), ttl_seconds=3600)
+                    alias_data = json.dumps(list(all_possible_aliases))
+                    _backend = get_cache_backend()
+                    if _backend is not None:
+                        try:
+                            await _backend.set(alias_cache_key, alias_data, ttl=3600, region="search")
+                        except Exception:
+                            await crud.set_cache(session, alias_cache_key, alias_data, ttl_seconds=3600)
+                    else:
+                        await crud.set_cache(session, alias_cache_key, alias_data, ttl_seconds=3600)
                     logger.info(f"已缓存'{core_title}'的别名: {len(all_possible_aliases)}个")
 
                     return all_possible_aliases

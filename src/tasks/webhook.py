@@ -137,6 +137,13 @@ async def webhook_search_and_dispatch_task(
         logger.info(f"Webhook 任务: 开始为 '{animeTitle}' (S{season:02d}E{currentEpisodeIndex:02d}) 查找最佳源...")
         await progress_callback(5, "正在检查已收藏的源...")
 
+        # 【性能优化】AI初始化预热：如果AI映射已启用，提前开始初始化（不阻塞）
+        ai_matcher_warmup_task = None
+        webhook_tmdb_enabled_check = await config_manager.get("webhookEnableTmdbSeasonMapping", "true")
+        if webhook_tmdb_enabled_check.lower() == "true":
+            ai_matcher_warmup_task = asyncio.create_task(ai_matcher_manager.get_matcher())
+            logger.debug("Webhook AI匹配器预热已启动（并行）")
+
         timer.step_start("查找收藏源")
 
         # 1. 优先查找已收藏的源 (Favorited Source)
@@ -313,8 +320,13 @@ async def webhook_search_and_dispatch_task(
         if webhook_tmdb_enabled.lower() == "true":
             try:
                 timer.step_start("AI映射修正")
-                # 获取AI匹配器
-                ai_matcher = await ai_matcher_manager.get_matcher()
+                # 【性能优化】使用预热的AI匹配器
+                ai_matcher = None
+                if ai_matcher_warmup_task:
+                    ai_matcher = await ai_matcher_warmup_task
+                    ai_matcher_warmup_task = None  # 清空task，避免重复await
+                else:
+                    ai_matcher = await ai_matcher_manager.get_matcher()
                 if ai_matcher:
                     logger.info(f"○ Webhook 开始统一AI映射修正: '{original_title}' ({len(all_search_results)} 个结果)")
 

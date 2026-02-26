@@ -15,6 +15,7 @@ from src.db import crud, models, orm_models, get_db_session, ConfigManager, Cach
 from src.core import get_app_timezone, get_now
 from src.security import get_current_user
 from src.core import settings
+from src.core.cache import get_cache_backend
 from src.utils import parse_search_keyword
 from src.utils import clean_movie_title as _clean_movie_title
 from src.services import ScraperManager
@@ -291,6 +292,14 @@ class BangumiMetadataSource(BaseMetadataSource):
 
     async def _get_from_cache(self, key: str) -> Optional[Any]:
         """从缓存中获取数据。"""
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                result = await _backend.get(key, region="metadata")
+                if result is not None:
+                    return result
+            except Exception:
+                pass
         async with self._session_factory() as session:
             return await crud.get_cache(session, key)
 
@@ -303,9 +312,17 @@ class BangumiMetadataSource(BaseMetadataSource):
                 ttl_seconds = int(ttl_from_config)
         except (ValueError, TypeError):
             self.logger.warning(f"无法从配置 '{ttl_key}' 中解析TTL，将使用默认值 {default_ttl} 秒。")
-        
-        async with self._session_factory() as session:
-            await crud.set_cache(session, key, value, ttl_seconds)
+
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                await _backend.set(key, value, ttl=ttl_seconds, region="metadata")
+            except Exception:
+                async with self._session_factory() as session:
+                    await crud.set_cache(session, key, value, ttl_seconds)
+        else:
+            async with self._session_factory() as session:
+                await crud.set_cache(session, key, value, ttl_seconds)
 
     async def _ensure_config(self):
         """从数据库配置中加载个人访问令牌。"""
@@ -504,16 +521,16 @@ class BangumiMetadataSource(BaseMetadataSource):
             self.logger.warning(f"Bangumi辅助搜索失败: {e}")
         return {alias for alias in local_aliases if alias}
 
-    async def check_connectivity(self) -> str:
+    async def check_connectivity(self) -> Dict[str, str]:
         """检查Bangumi源配置状态"""
         try:
             await self._ensure_config()
 
-            # 1. 优先检查 Access Token
+            # 1. 优先检查 Access Token 模式
             if self._token:
-                return "配置正常 (已配置Access Token)"
+                return {"code": "ok", "message": "Access Token 模式 (已配置)"}
 
-            # 2. 检查OAuth配置
+            # 2. 检查 OAuth 模式
             client_id = await self.config_manager.get("bangumiClientId", "")
             client_secret = await self.config_manager.get("bangumiClientSecret", "")
 
@@ -527,18 +544,18 @@ class BangumiMetadataSource(BaseMetadataSource):
                         valid_token_count = (await session.execute(stmt)).scalar_one()
 
                     if valid_token_count > 0:
-                        return f"配置正常 (OAuth已配置，{valid_token_count}个用户已授权)"
+                        return {"code": "ok", "message": f"OAuth 模式 ({valid_token_count}个用户已授权)"}
                     else:
-                        return "配置正常 (OAuth已配置，等待用户授权)"
+                        return {"code": "warning", "message": "OAuth 模式 (App已配置，等待用户授权)"}
                 except Exception:
-                    return "配置正常 (OAuth已配置)"
+                    return {"code": "ok", "message": "OAuth 模式 (App已配置)"}
             elif client_id:
-                return "配置不完整 (缺少Client Secret)"
+                return {"code": "warning", "message": "OAuth 模式 (App ID已填，App Secret 未填)"}
             else:
-                return "未配置 (缺少OAuth配置)"
+                return {"code": "unconfigured", "message": "未配置 (请填写Access Token 或 OAuth App信息)"}
 
         except Exception as e:
-            return f"配置检查失败: {e}"
+            return {"code": "error", "message": f"配置检查失败: {e}"}
 
     async def execute_action(self, action_name: str, payload: Dict[str, Any], user: models.User, request: Request) -> Any:
         if action_name == "get_auth_state":
@@ -567,8 +584,11 @@ class BangumiMetadataSource(BaseMetadataSource):
             # 新模式：前端传来 redirect_uri，后端只负责生成 state 和拼接 auth URL
             async with self._session_factory() as session:
                 client_id = await self.config_manager.get("bangumiClientId", "")
+                client_secret = await self.config_manager.get("bangumiClientSecret", "")
                 if not client_id:
-                    raise ValueError("Bangumi App ID 未在设置中配置。")
+                    raise ValueError("Bangumi App ID 未在设置中配置，请先在元数据源设置中填写。")
+                if not client_secret:
+                    raise ValueError("Bangumi App Secret 未在设置中配置，请先在元数据源设置中填写。")
 
                 redirect_uri = payload.get("redirect_uri", "")
                 if not redirect_uri:

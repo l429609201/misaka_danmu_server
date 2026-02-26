@@ -17,6 +17,7 @@ from sqlalchemy import text
 # 内部模块导入 - 使用聚合式导入
 from src.core import settings
 from src.core.default_configs import get_default_configs
+from src.core.cache import init_cache_backend, close_cache_backend
 from src.db import crud, orm_models, init_db_tables, close_db_engine, create_initial_admin_user, get_db_type, DatabaseStartupError
 from src.db import ConfigManager, CacheManager  # 管理器从 db 层导入
 from src.services import (
@@ -144,8 +145,14 @@ async def lifespan(app: FastAPI):
     # 初始化 TransportManager
     app.state.transport_manager = TransportManager()
 
-    # 初始化 CacheManager
-    app.state.cache_manager = CacheManager(session_factory)
+    # 初始化缓存后端（Memory/Redis/Database/Hybrid，Redis 不可用时自动降级）
+    cache_backend = await init_cache_backend(
+        session_factory=session_factory,
+        cache_config=settings.cache,
+    )
+
+    # 初始化 CacheManager（使用新的缓存后端）
+    app.state.cache_manager = CacheManager(session_factory, backend=cache_backend)
     logger.info("缓存管理器已初始化")
 
     # 初始化 ProxyMiddleware
@@ -237,17 +244,13 @@ async def lifespan(app: FastAPI):
     app.state.task_manager.start()
     await create_initial_admin_user(app)
 
+    # 一次性清理：删除旧的 system_token_reset 定时任务（已迁移到内部轮询任务）
     async with session_factory() as session:
-        existing_task = await session.get(orm_models.ScheduledTask, "system_token_reset")
-        if not existing_task:
-            await crud.create_scheduled_task(
-                session,
-                task_id="system_token_reset",
-                name="系统内置：Token每日重置",
-                job_type="tokenReset",
-                cron="0 0 * * *",
-                is_enabled=True
-            )
+        old_task = await session.get(orm_models.ScheduledTask, "system_token_reset")
+        if old_task:
+            await session.delete(old_task)
+            await session.commit()
+            logger.info("已清理旧的 system_token_reset 定时任务（已迁移到内部轮询任务）")
 
     app.state.cleanup_task = asyncio.create_task(cleanup_task(app))
     app.state.scheduler_manager = SchedulerManager(
@@ -330,6 +333,9 @@ async def lifespan(app: FastAPI):
             await app.state.cleanup_task
         except asyncio.CancelledError:
             pass
+
+    # 关闭缓存后端
+    await close_cache_backend()
 
     await close_db_engine(app)
     if hasattr(app.state, "scraper_manager"):

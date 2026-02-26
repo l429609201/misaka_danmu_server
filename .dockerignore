@@ -11,3 +11,17 @@ venv/
 .idea/
 docker-compose.yml
 docs/
+*.md
+README*
+LICENSE
+.github/
+tests/
+test/
+*.log
+.vscode/
+.DS_Store
+Dockerfile
+.dockerignore
+*.swp
+*.swo
+*~

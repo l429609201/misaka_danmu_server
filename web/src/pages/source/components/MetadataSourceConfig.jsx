@@ -28,7 +28,7 @@ import dayjs from 'dayjs'
  * Bangumi 配置组件
  */
 export function BangumiConfig({ form }) {
-  const { showMessage } = useMessage()
+  const messageApi = useMessage()
   const { confirm: showModal } = useModal()
   const [authMode, setAuthMode] = useState('token') // 'token' or 'oauth'
   const [authInfo, setAuthInfo] = useState({})
@@ -101,7 +101,7 @@ export function BangumiConfig({ form }) {
 
       // 如果 token 被自动刷新,显示提示
       if (auth?.refreshed) {
-        showMessage('success', '授权已自动延长')
+        messageApi.success('授权已自动延长')
       }
     } catch (error) {
       console.error('加载 Bangumi 配置失败:', error)
@@ -122,7 +122,7 @@ export function BangumiConfig({ form }) {
       const res = await getBangumiAuthUrl({ redirect_uri: redirectUri })
       const authUrl = res.data?.url || res.url
       if (!authUrl) {
-        showMessage('error', '获取授权链接失败: 返回的URL为空')
+        messageApi.error('获取授权链接失败: 返回的URL为空')
         return
       }
 
@@ -141,7 +141,7 @@ export function BangumiConfig({ form }) {
 
       // 检测弹窗是否被拦截
       if (!oauthPopupRef.current || oauthPopupRef.current.closed) {
-        showMessage('error', '弹窗被浏览器拦截，请允许弹窗后重试')
+        messageApi.error('弹窗被浏览器拦截，请允许弹窗后重试')
         return
       }
 
@@ -153,7 +153,8 @@ export function BangumiConfig({ form }) {
         }
       }, 500)
     } catch (error) {
-      showMessage('error', `获取授权链接失败: ${error.message}`)
+      const detail = error.response?.data?.detail || error.message
+      messageApi.error(`获取授权链接失败: ${detail}`)
     }
   }
 
@@ -165,9 +166,9 @@ export function BangumiConfig({ form }) {
         try {
           await logoutBangumiAuth()
           loadConfig()
-          showMessage('success', '已注销授权')
+          messageApi.success('已注销授权')
         } catch (error) {
-          showMessage('error', `注销失败: ${error.message}`)
+          messageApi.error(`注销失败: ${error.message}`)
         }
       },
     })
@@ -226,7 +227,6 @@ export function BangumiConfig({ form }) {
                 </a>
               </span>
             }
-            rules={[{ required: true, message: '请输入 App ID' }]}
             tooltip="在 bgm.tv/dev/app 创建应用后获取"
           >
             <Input placeholder="请输入 App ID" />
@@ -235,7 +235,6 @@ export function BangumiConfig({ form }) {
           <Form.Item
             name="bangumiClientSecret"
             label="App Secret"
-            rules={[{ required: true, message: '请输入 App Secret' }]}
             tooltip="应用的密钥，请妥善保管"
           >
             <Input.Password
@@ -597,7 +596,6 @@ export function DoubanConfig({ form }) {
       <Form.Item
         name="doubanCookie"
         label="Cookie"
-        rules={[{ required: true, message: '请输入豆瓣 Cookie' }]}
       >
         <Input.TextArea
           placeholder="请输入豆瓣 Cookie"

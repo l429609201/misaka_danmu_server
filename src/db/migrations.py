@@ -651,6 +651,25 @@ async def _drop_force_scrape_column_v1(conn: AsyncConnection, db_type: str):
     logger.info("已删除 scheduled_tasks 表的 force_scrape 列")
 
 
+async def _remove_system_token_reset_task_v1(conn: AsyncConnection):
+    """删除已废弃的 system_token_reset 定时任务（已迁移到内部轮询任务）"""
+    logger.info("检查是否存在 system_token_reset 定时任务...")
+
+    # 检查任务是否存在
+    check_sql = text("SELECT COUNT(*) FROM scheduled_tasks WHERE id = 'system_token_reset'")
+    result = await conn.execute(check_sql)
+    count = result.scalar()
+
+    if count == 0:
+        logger.info("system_token_reset 任务不存在，无需删除")
+        return
+
+    # 删除任务
+    delete_sql = text("DELETE FROM scheduled_tasks WHERE id = 'system_token_reset'")
+    await conn.execute(delete_sql)
+    logger.info("已删除 system_token_reset 定时任务（已迁移到内部轮询任务）")
+
+
 # 所有迁移任务的 ID 列表（新增迁移时需同步更新此列表）
 ALL_MIGRATION_IDS = [
     "migrate_clear_rate_limit_state_v1",
@@ -660,6 +679,7 @@ ALL_MIGRATION_IDS = [
     "fix_title_recognition_id_autoincrement_v1",
     "migrate_docker_image_name_v1",
     "drop_force_scrape_column_v1",
+    "remove_system_token_reset_task_v1",
 ]
 
 
@@ -695,6 +715,7 @@ async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
         ("fix_title_recognition_id_autoincrement_v1", _fix_title_recognition_id_autoincrement, ()),  # 修复 title_recognition.id 自增
         ("migrate_docker_image_name_v1", _migrate_docker_image_name_v1, ()),  # 修正 dockerImageName 默认值
         ("drop_force_scrape_column_v1", _drop_force_scrape_column_v1, (db_type,)),  # 删除已废弃的 force_scrape 列
+        ("remove_system_token_reset_task_v1", _remove_system_token_reset_task_v1, ()),  # 删除已迁移到内部轮询的 tokenReset 定时任务
     ]
 
     for migration_id, migration_func, args in migrations:

@@ -13,6 +13,7 @@ from thefuzz import fuzz
 
 from src import security
 from src.db import crud, models, get_db_session, ConfigManager
+from src.core.cache import get_cache_backend
 from src.services import ScraperManager, MetadataSourceManager, TitleRecognitionManager, convert_to_chinese_title
 from src.utils import (
     parse_search_keyword, ai_type_and_season_mapping_and_correction,
@@ -164,8 +165,19 @@ async def search_anime_provider(
         # 缓存键基于核心标题和季度，允许在同一季的不同分集搜索中复用缓存
         cache_key = f"provider_search_{search_title}_{season_to_filter or 'all'}"
         supplemental_cache_key = f"supplemental_search_{search_title}"
-        cached_results_data = await crud.get_cache(session, cache_key)
-        cached_supplemental_results = await crud.get_cache(session, supplemental_cache_key)
+        cached_results_data = None
+        cached_supplemental_results = None
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                cached_results_data = await _backend.get(cache_key, region="search")
+                cached_supplemental_results = await _backend.get(supplemental_cache_key, region="search")
+            except Exception as e:
+                logger.warning(f"缓存后端读取失败，回退到数据库: {e}")
+        if cached_results_data is None:
+            cached_results_data = await crud.get_cache(session, cache_key)
+        if cached_supplemental_results is None:
+            cached_supplemental_results = await crud.get_cache(session, supplemental_cache_key)
 
         if cached_results_data is not None and cached_supplemental_results is not None:
             logger.info(f"搜索缓存命中: '{cache_key}'")
@@ -427,10 +439,27 @@ async def search_anime_provider(
         results_to_cache.append(item_copy.model_dump())
 
     if sorted_results:
-        await crud.set_cache(session, cache_key, results_to_cache, ttl_seconds=10800)
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                await _backend.set(cache_key, results_to_cache, ttl=10800, region="search")
+            except Exception as e:
+                logger.warning(f"缓存后端写入失败，回退到数据库: {e}")
+                await crud.set_cache(session, cache_key, results_to_cache, ttl_seconds=10800)
+        else:
+            await crud.set_cache(session, cache_key, results_to_cache, ttl_seconds=10800)
     # 缓存补充结果
     if supplemental_results:
-        await crud.set_cache(session, supplemental_cache_key, [item.model_dump() for item in supplemental_results], ttl_seconds=10800)
+        supplemental_data = [item.model_dump() for item in supplemental_results]
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                await _backend.set(supplemental_cache_key, supplemental_data, ttl=10800, region="search")
+            except Exception as e:
+                logger.warning(f"缓存后端写入失败，回退到数据库: {e}")
+                await crud.set_cache(session, supplemental_cache_key, supplemental_data, ttl_seconds=10800)
+        else:
+            await crud.set_cache(session, supplemental_cache_key, supplemental_data, ttl_seconds=10800)
     timer.step_end()
     # --- 缓存逻辑结束 ---
 

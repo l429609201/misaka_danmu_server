@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, HTTPException, status
 from thefuzz import fuzz
 
-from src.db import crud, orm_models, get_db_session, sync_postgres_sequence, ConfigManager
+from src.db import crud, orm_models, models, get_db_session, sync_postgres_sequence, ConfigManager
 from src.core import get_now
 from src.services import ScraperManager, TaskManager, MetadataSourceManager, unified_search
 from src.utils import (
@@ -182,6 +182,7 @@ async def get_match_for_item(
 
     # --- 步骤 2: 如果直接搜索无果，则回退到 TMDB 映射 ---
     # 注意：TMDB映射仅适用于TV系列，电影跳过此步骤
+    potential_animes = []
     if not parsed_info.get("is_movie"):
         logger.info("直接搜索未找到精确匹配，回退到 TMDB 映射匹配。")
         potential_animes = await crud.find_animes_for_matching(session, parsed_info["title"])
@@ -210,6 +211,82 @@ async def get_match_for_item(
                     response = DandanMatchResponse(isMatched=True, matches=[match])
                     logger.info(f"发送匹配响应 (TMDB 映射匹配): {response.model_dump_json(indent=2)}")
                     return response
+
+            elif anime.get("tmdbId"):
+                # AI剧集组自动选择增强：有tmdbId但没有tmdbEpisodeGroupId
+                ai_episode_group_enabled = (await config_manager.get("aiEpisodeGroupEnabled", "false")).lower() == "true"
+                if not ai_episode_group_enabled:
+                    continue
+
+                tmdb_id = anime["tmdbId"]
+                anime_id = anime["animeId"]
+                logger.info(f"AI剧集组选择: 作品 ID {anime_id} (TMDB ID: {tmdb_id}) 有tmdbId但无剧集组，尝试自动选择...")
+
+                try:
+                    # 获取TMDB所有剧集组
+                    tmdb_source = metadata_manager.sources.get("tmdb")
+                    if not tmdb_source:
+                        logger.warning("AI剧集组选择: TMDB元数据源未加载，跳过")
+                        continue
+
+                    virtual_user = models.User(id=0, username="match_ai_group")
+                    all_groups = await tmdb_source.get_all_episode_groups(int(tmdb_id), virtual_user)
+
+                    if not all_groups:
+                        logger.info(f"AI剧集组选择: TMDB ID {tmdb_id} 没有剧集组，跳过")
+                        continue
+
+                    logger.info(f"AI剧集组选择: TMDB ID {tmdb_id} 找到 {len(all_groups)} 个剧集组: {[g.get('name') for g in all_groups]}")
+
+                    # 使用混合策略选择最佳剧集组
+                    selected_index = await ai_matcher_manager.select_best_episode_group(
+                        title=parsed_info["title"],
+                        season=parsed_info.get("season"),
+                        episode=parsed_info.get("episode"),
+                        episode_groups=all_groups
+                    )
+
+                    if selected_index is None:
+                        logger.info(f"AI剧集组选择: 未能选择合适的剧集组，跳过")
+                        continue
+
+                    selected_group = all_groups[selected_index]
+                    group_id = selected_group["id"]
+                    logger.info(f"AI剧集组选择: 选中 '{selected_group.get('name')}' (ID: {group_id})")
+
+                    # 下载并保存映射
+                    await metadata_manager.update_tmdb_mappings(int(tmdb_id), group_id, virtual_user)
+
+                    # 关联anime
+                    await crud.update_anime_tmdb_group_id(session, anime_id, group_id)
+                    logger.info(f"AI剧集组选择: 已为作品 ID {anime_id} 关联剧集组 {group_id}")
+
+                    # 重试TMDB映射匹配
+                    tmdb_results = await crud.find_episode_via_tmdb_mapping(
+                        session,
+                        tmdb_id=tmdb_id,
+                        group_id=group_id,
+                        custom_season=parsed_info.get("season"),
+                        custom_episode=parsed_info.get("episode")
+                    )
+                    if tmdb_results:
+                        logger.info(f"AI剧集组选择 + TMDB映射匹配成功，找到 {len(tmdb_results)} 个结果。")
+                        res = tmdb_results[0]
+                        dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
+                        dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
+                        match = DandanMatchInfo(
+                            episodeId=res['episodeId'], animeId=res['animeId'], animeTitle=res['animeTitle'],
+                            episodeTitle=res['episodeTitle'], type=dandan_type, typeDescription=dandan_type_desc,
+                            imageUrl=res.get('imageUrl')
+                        )
+                        response = DandanMatchResponse(isMatched=True, matches=[match])
+                        logger.info(f"发送匹配响应 (AI剧集组 + TMDB映射): {response.model_dump_json(indent=2)}")
+                        return response
+                    else:
+                        logger.info(f"AI剧集组选择: 映射已保存但当前集数未在映射中找到匹配，继续后备搜索")
+
+                except Exception as e:
+                    logger.error(f"AI剧集组选择失败: {e}", exc_info=True)
     else:
         logger.info("检测到电影文件，跳过 TMDB 映射匹配。")
 
@@ -291,30 +368,155 @@ async def get_match_for_item(
                 # 电影不设置episode_number,保持为None
                 episode_number = None if is_movie else (parsed_info.get("episode") or 1)
 
-                # 匹配后备 AI映射配置检查
+                # 【性能优化】预获取所有配置值（避免后续重复获取）
                 match_fallback_tmdb_enabled = await config_manager.get("matchFallbackEnableTmdbSeasonMapping", "false")
+                ai_match_enabled = (await config_manager.get("aiMatchEnabled", "false")).lower() == "true"
+                ai_fallback_enabled = (await config_manager.get("aiFallbackEnabled", "true")).lower() == "true"
+                fallback_enabled = (await config_manager.get("externalApiFallbackEnabled", "false")).lower() == "true"
+                ai_episode_group_enabled = (await config_manager.get("aiEpisodeGroupEnabled", "false")).lower() == "true"
+
                 if match_fallback_tmdb_enabled.lower() != "true":
                     logger.info("○ 匹配后备 统一AI映射: 功能未启用")
+
+                # 【性能优化】AI初始化预热：如果AI匹配已启用，提前开始初始化（不阻塞）
+                ai_matcher_warmup_task = None
+                if ai_match_enabled:
+                    ai_matcher_warmup_task = asyncio.create_task(ai_matcher_manager.get_matcher())
+                    logger.debug("AI匹配器预热已启动（并行）")
+
                 match_timer.step_end()
 
-                # 步骤1：使用统一的搜索函数
-                match_timer.step_start("弹幕源搜索")
-                logger.info(f"步骤1：全网搜索 '{base_title}'")
+                # 预获取TMDB信息 + 弹幕源搜索（半并行优化）
+                # 先做TMDB搜索获取别名和tmdb_id，然后同时启动：弹幕源搜索 + 剧集组处理
+                pre_fetched_aliases = set()
+                pre_fetched_equiv = None  # 预取的等价上下文
+                _prefetch_tmdb_id = None  # TMDB搜索得到的ID，用于后续并行处理
 
-                # 使用统一的搜索函数（与 WebUI 搜索保持一致的过滤策略）
-                all_results = await unified_search(
-                    search_term=base_title,
-                    session=session_inner,
-                    scraper_manager=scraper_manager,
-                    metadata_manager=metadata_manager,  # 启用元数据别名扩展
-                    use_alias_expansion=True,  # 启用别名扩展
-                    use_alias_filtering=True,  # 启用别名过滤
-                    use_title_filtering=True,  # 启用标题过滤
-                    use_source_priority_sorting=False,  # 仅按相似度排序
-                    strict_filtering=True,  # 使用严格过滤模式
-                    alias_similarity_threshold=70,  # 与 WebUI 一致的别名相似度阈值
-                    progress_callback=progress_callback
-                )
+                if ai_episode_group_enabled and not is_movie:
+                    tmdb_source = metadata_manager.sources.get("tmdb")
+                    if tmdb_source:
+                        try:
+                            match_timer.step_start("TMDB搜索(获取别名+ID)")
+                            virtual_user = models.User(id=0, username="match_prefetch")
+                            tmdb_search_results = await tmdb_source.search(base_title, virtual_user, mediaType='tv')
+                            if tmdb_search_results:
+                                _prefetch_tmdb_id = tmdb_search_results[0].id
+                                logger.info(f"TMDB预获取: 搜索命中 '{tmdb_search_results[0].title}' (ID: {_prefetch_tmdb_id})")
+
+                                # 收集TMDB别名
+                                for sr in tmdb_search_results[:3]:
+                                    pre_fetched_aliases.add(sr.title)
+                                    if sr.aliasesCn:
+                                        pre_fetched_aliases.update(sr.aliasesCn)
+                                    if sr.aliasesJp:
+                                        pre_fetched_aliases.update(sr.aliasesJp)
+                                    if sr.nameEn:
+                                        pre_fetched_aliases.add(sr.nameEn)
+                                    if sr.nameJp:
+                                        pre_fetched_aliases.add(sr.nameJp)
+
+                                # 写入别名缓存
+                                if pre_fetched_aliases:
+                                    from src.core.cache import get_cache_backend
+                                    alias_cache_key = f"search_aliases_{base_title}"
+                                    alias_data = json.dumps(list(pre_fetched_aliases))
+                                    _backend = get_cache_backend()
+                                    if _backend is not None:
+                                        try:
+                                            await _backend.set(alias_cache_key, alias_data, ttl=3600, region="search")
+                                        except Exception:
+                                            await crud.set_cache(session_inner, alias_cache_key, alias_data, ttl_seconds=3600)
+                                    else:
+                                        await crud.set_cache(session_inner, alias_cache_key, alias_data, ttl_seconds=3600)
+                                    logger.info(f"TMDB预获取: 已缓存 {len(pre_fetched_aliases)} 个别名")
+                            else:
+                                logger.info(f"TMDB预获取: 搜索 '{base_title}' 无结果")
+                            match_timer.step_end()
+                        except Exception as prefetch_err:
+                            logger.warning(f"TMDB预获取搜索失败(不影响后续流程): {prefetch_err}")
+                            try:
+                                match_timer.step_end()
+                            except Exception:
+                                pass
+
+                # 半并行：弹幕源搜索 与 剧集组处理 同时进行
+                match_timer.step_start("弹幕源搜索+剧集组处理(并行)")
+                logger.info(f"步骤1：全网搜索 '{base_title}'" + (f" + 剧集组处理(并行)" if _prefetch_tmdb_id else ""))
+
+                # 定义弹幕源搜索协程
+                async def _do_unified_search():
+                    return await unified_search(
+                        search_term=base_title,
+                        session=session_inner,
+                        scraper_manager=scraper_manager,
+                        metadata_manager=metadata_manager,
+                        use_alias_expansion=True,
+                        use_alias_filtering=True,
+                        use_title_filtering=True,
+                        use_source_priority_sorting=False,
+                        strict_filtering=True,
+                        alias_similarity_threshold=70,
+                        custom_aliases=pre_fetched_aliases if pre_fetched_aliases else None,
+                        progress_callback=progress_callback
+                    )
+
+                # 定义剧集组处理协程（与弹幕源搜索并行执行）
+                async def _do_episode_group_processing():
+                    """获取剧集组 → AI选择 → 下载映射 → 查等价"""
+                    if not _prefetch_tmdb_id:
+                        return None
+                    try:
+                        _vu = models.User(id=0, username="match_group")
+                        _tmdb_src = metadata_manager.sources.get("tmdb")
+                        if not _tmdb_src:
+                            return None
+
+                        all_groups = await _tmdb_src.get_all_episode_groups(int(_prefetch_tmdb_id), _vu)
+                        if not all_groups:
+                            logger.info(f"剧集组(并行): TMDB ID {_prefetch_tmdb_id} 没有剧集组")
+                            return None
+
+                        logger.info(f"剧集组(并行): 找到 {len(all_groups)} 个剧集组")
+                        selected_idx = await ai_matcher_manager.select_best_episode_group(
+                            title=base_title, season=season, episode=episode_number,
+                            episode_groups=all_groups
+                        )
+                        if selected_idx is None:
+                            return None
+
+                        group_id = all_groups[selected_idx]["id"]
+                        logger.info(f"剧集组(并行): 选中 '{all_groups[selected_idx].get('name')}' (ID: {group_id})")
+                        await metadata_manager.update_tmdb_mappings(int(_prefetch_tmdb_id), group_id, _vu)
+                        equiv = await crud.get_episode_equivalence(
+                            session_inner, group_id, season, episode_number
+                        )
+                        if equiv:
+                            logger.info(f"剧集组(并行): 等价映射获取成功")
+                        else:
+                            logger.info(f"剧集组(并行): 映射已保存但当前集数未在映射中找到")
+                        return equiv
+                    except Exception as eg_err:
+                        logger.warning(f"剧集组(并行)处理失败: {eg_err}")
+                        return None
+
+                # 执行并行任务
+                if _prefetch_tmdb_id:
+                    # 并行执行：弹幕源搜索 + 剧集组处理
+                    search_result, group_result = await asyncio.gather(
+                        _do_unified_search(),
+                        _do_episode_group_processing(),
+                        return_exceptions=True
+                    )
+                    all_results = search_result if not isinstance(search_result, Exception) else []
+                    if isinstance(search_result, Exception):
+                        logger.warning(f"弹幕源搜索异常: {search_result}")
+                    if isinstance(group_result, Exception):
+                        logger.warning(f"剧集组处理异常: {group_result}")
+                    elif group_result:
+                        pre_fetched_equiv = group_result
+                else:
+                    # 没有TMDB ID时，只做弹幕源搜索
+                    all_results = await _do_unified_search()
 
                 # 收集单源搜索耗时信息
                 from src.utils.search_timer import SubStepTiming
@@ -338,8 +540,13 @@ async def get_match_for_item(
                 if match_fallback_tmdb_enabled.lower() == "true":
                     try:
                         match_timer.step_start("AI映射修正")
-                        # 获取AI匹配器
-                        ai_matcher = await ai_matcher_manager.get_matcher()
+                        # 【性能优化】使用预热的AI匹配器
+                        ai_matcher = None
+                        if ai_matcher_warmup_task:
+                            ai_matcher = await ai_matcher_warmup_task
+                            ai_matcher_warmup_task = None  # 清空task，避免重复await
+                        else:
+                            ai_matcher = await ai_matcher_manager.get_matcher()
                         if ai_matcher:
                             logger.info(f"○ 匹配后备 开始统一AI映射修正: '{base_title}' ({len(all_results)} 个结果)")
 
@@ -377,7 +584,6 @@ async def get_match_for_item(
 
                 # 步骤2：智能排序 (类型匹配优先)
                 match_timer.step_start("智能排序与匹配")
-                logger.info(f"步骤2：智能排序 (类型匹配优先)")
 
                 # 确定目标类型
                 target_type = "movie" if is_movie else "tv_series"
@@ -405,44 +611,47 @@ async def get_match_for_item(
 
                     return score
 
-                # 按分数排序 (分数高的在前)，相同分数时按源优先级排序
+                # 【性能优化】按分数排序 + 缓存分数（避免日志打印时重复计算）
+                score_cache = {}  # 缓存每个结果的分数
+                for result in all_results:
+                    score_cache[id(result)] = calculate_match_score(result)
+
                 sorted_results = sorted(
                     all_results,
-                    key=lambda r: (calculate_match_score(r), -source_order_map.get(r.provider, 999)),
+                    key=lambda r: (score_cache[id(r)], -source_order_map.get(r.provider, 999)),
                     reverse=True
                 )
 
-                # 打印排序后的结果列表
-                logger.info(f"排序后的搜索结果列表 (按匹配分数):")
+                # 打印排序后的结果列表（使用缓存的分数）
+                lines = [f"步骤2：智能排序 - 排序后的搜索结果列表 (共 {len(sorted_results)} 条, 按匹配分数):"]
                 for idx, result in enumerate(sorted_results, 1):
-                    score = calculate_match_score(result)
+                    score = score_cache[id(result)]  # 直接从缓存获取
                     type_match = "✓" if result.type == target_type else "✗"
-                    logger.info(f"  {idx}. [{type_match}] {result.provider} - {result.title} (ID: {result.mediaId}, 类型: {result.type}, 年份: {result.year or 'N/A'}, 分数: {score:.0f})")
+                    lines.append(f"  {idx}. [{type_match}] {result.provider} - {result.title} (ID: {result.mediaId}, 类型: {result.type}, 年份: {result.year or 'N/A'}, 分数: {score:.0f})")
+                logger.info("\n".join(lines))
 
                 # 步骤3：自动选择最佳源
                 logger.info(f"步骤3：自动选择最佳源")
 
-                # 获取精确标记信息 (AI匹配和传统匹配都需要)
+                # 【性能优化】批量查询精确标记信息（1次IN查询替代N次单独查询）
                 favorited_info = {}
-                async with scraper_manager._session_factory() as ai_session:
-                    for result in sorted_results:
-                        # 查找是否有相同provider和mediaId的源被标记
-                        stmt = (
-                            select(AnimeSource.isFavorited)
-                            .where(
-                                AnimeSource.providerName == result.provider,
-                                AnimeSource.mediaId == result.mediaId
-                            )
-                            .limit(1)
+                provider_media_pairs = [(r.provider, r.mediaId) for r in sorted_results]
+                if provider_media_pairs:
+                    from sqlalchemy import tuple_
+                    favorited_stmt = (
+                        select(AnimeSource.providerName, AnimeSource.mediaId)
+                        .where(
+                            tuple_(AnimeSource.providerName, AnimeSource.mediaId).in_(provider_media_pairs),
+                            AnimeSource.isFavorited == True
                         )
-                        result_row = await ai_session.execute(stmt)
-                        is_favorited = result_row.scalar_one_or_none()
-                        if is_favorited:
-                            key = f"{result.provider}:{result.mediaId}"
-                            favorited_info[key] = True
+                    )
+                    favorited_rows = await session_inner.execute(favorited_stmt)
+                    for row in favorited_rows:
+                        key = f"{row.providerName}:{row.mediaId}"
+                        favorited_info[key] = True
 
-                # 检查是否启用AI匹配
-                ai_match_enabled = (await config_manager.get("aiMatchEnabled", "false")).lower() == 'true'
+                # 【性能优化】使用预获取的配置值（不再重复获取）
+                # ai_match_enabled, ai_fallback_enabled, fallback_enabled 已在初始化阶段获取
 
                 # 如果启用AI匹配，尝试使用AI选择
                 ai_selected_index = None
@@ -462,30 +671,61 @@ async def get_match_for_item(
                             "type": "movie" if is_movie else "tv_series"
                         }
 
+                        # 等价上下文注入：利用剧集组映射帮助AI更准确地选择弹幕源
+                        episode_group_context = None
+
+                        if not is_movie and ai_episode_group_enabled:
+                            # 方式1: 从库内已有作品获取等价信息
+                            for pa in potential_animes:
+                                pa_group_id = pa.get("tmdbEpisodeGroupId")
+                                if pa.get("tmdbId") and pa_group_id:
+                                    try:
+                                        equiv = await crud.get_episode_equivalence(
+                                            session_inner, pa_group_id, season, episode_number
+                                        )
+                                        if equiv:
+                                            episode_group_context = equiv
+                                            logger.info(f"等价上下文(库内): 从作品ID {pa['animeId']} 获取映射")
+                                            break
+                                    except Exception as eq_err:
+                                        logger.debug(f"等价上下文(库内)查询失败: {eq_err}")
+
+                            # 方式2: 使用预获取的等价映射（已在弹幕源搜索前完成，无需重复搜索TMDB）
+                            if not episode_group_context and pre_fetched_equiv:
+                                episode_group_context = pre_fetched_equiv
+                                logger.info(f"等价上下文(预获取): 使用预获取的TMDB等价映射")
+
+                        if episode_group_context:
+                            query_info["episode_group_context"] = episode_group_context
+                            logger.info(
+                                f"等价上下文注入: S{season}E{episode_number} "
+                                f"↔ custom=S{episode_group_context['custom_season']}E{episode_group_context['custom_episode']} "
+                                f"/ tmdb=S{episode_group_context['tmdb_season']}E{episode_group_context['tmdb_episode']} "
+                                f"(方向: {episode_group_context['match_direction']}, 该季{episode_group_context['season_total_episodes']}集)"
+                            )
+
                         # 使用AIMatcherManager进行匹配
                         ai_selected_index = await ai_matcher_manager.select_best_match(
                             query_info, sorted_results, favorited_info
                         )
 
                         if ai_selected_index is None:
-                            # 检查是否启用传统匹配兜底
-                            ai_fallback_enabled = (await config_manager.get("aiFallbackEnabled", "true")).lower() == 'true'
+                            # 使用预获取的配置值
                             if ai_fallback_enabled:
                                 logger.info("AI匹配未找到合适结果，降级到传统匹配")
                             else:
                                 logger.warning("AI匹配未找到合适结果，且传统匹配兜底已禁用，将不使用任何结果")
 
                     except Exception as e:
-                        # 检查是否启用传统匹配兜底
-                        ai_fallback_enabled = (await config_manager.get("aiFallbackEnabled", "true")).lower() == 'true'
+                        # 使用预获取的配置值
                         if ai_fallback_enabled:
                             logger.error(f"AI匹配失败，降级到传统匹配: {e}", exc_info=True)
                         else:
                             logger.error(f"AI匹配失败，且传统匹配兜底已禁用: {e}", exc_info=True)
                         ai_selected_index = None
 
-                # 检查是否启用顺延机制
-                fallback_enabled = (await config_manager.get("externalApiFallbackEnabled", "false")).lower() == 'true'
+                # 使用预获取的配置值
+                # fallback_enabled 已在初始化阶段获取
 
                 best_match = None
 
@@ -494,8 +734,7 @@ async def get_match_for_item(
                     best_match = sorted_results[ai_selected_index]
                     logger.info(f"  - 使用AI选择的结果: {best_match.provider} - {best_match.title}")
                 elif ai_match_enabled:
-                    # AI匹配已启用但失败，检查是否允许降级到传统匹配
-                    ai_fallback_enabled = (await config_manager.get("aiFallbackEnabled", "true")).lower() == 'true'
+                    # AI匹配已启用但失败，使用预获取的配置值
                     if not ai_fallback_enabled:
                         logger.warning("AI匹配失败且传统匹配兜底已禁用，匹配后备失败")
                         return DandanMatchResponse(isMatched=False, matches=[])
@@ -530,7 +769,7 @@ async def get_match_for_item(
                             first_result = sorted_results[0]
                             type_matched = first_result.type == target_type
                             similarity = fuzz.token_set_ratio(base_title, first_result.title)
-                            score = calculate_match_score(first_result)
+                            score = score_cache.get(id(first_result), calculate_match_score(first_result))
 
                             # 必须满足：类型匹配 AND 相似度 >= 70%
                             if type_matched and similarity >= 70:
@@ -575,7 +814,7 @@ async def get_match_for_item(
                             first_result = sorted_results[0]
                             type_matched = first_result.type == target_type
                             similarity = fuzz.token_set_ratio(base_title, first_result.title)
-                            score = calculate_match_score(first_result)
+                            score = score_cache.get(id(first_result), calculate_match_score(first_result))
 
                             # 必须满足：类型匹配 AND 相似度 >= 70%
                             if type_matched and similarity >= 70:

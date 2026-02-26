@@ -4,6 +4,7 @@ import {
   getTaskList,
   pauseTask,
   resumeTask,
+  retryTask,
   stopTask,
 } from '@/apis'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -29,6 +30,7 @@ import {
   DeleteOutlined,
   MinusOutlined,
   PauseOutlined,
+  RetweetOutlined,
   StepBackwardOutlined,
   StopOutlined,
   FilterOutlined,
@@ -85,6 +87,17 @@ export const ImportTask = () => {
           item.status === '失败' ||
           item.status === '排队中'
       ) && selectList.length > 0
+    )
+  }, [selectList])
+
+  // 后端 _rebuild_coro_factory 支持重建的任务类型白名单
+  const RETRYABLE_TYPES = ['generic_import', 'webhook_search', 'full_refresh', 'incremental_refresh', 'auto_import']
+
+  // 只有失败的且 taskType 在可重试白名单内的任务才能重试
+  const canRetry = useMemo(() => {
+    return (
+      selectList.every(item => item.status === '失败' && RETRYABLE_TYPES.includes(item.taskType)) &&
+      selectList.length > 0
     )
   }, [selectList])
 
@@ -360,6 +373,28 @@ export const ImportTask = () => {
     })
   }
 
+  /**
+   * 处理重试失败任务操作
+   */
+  const handleRetry = async () => {
+    const results = await Promise.allSettled(
+      selectList.map(it => retryTask({ taskId: it.taskId }))
+    )
+    const succeeded = results.filter(r => r.status === 'fulfilled').length
+    const failed = results.filter(r => r.status === 'rejected').length
+
+    refreshTasks()
+    setSelectList([])
+
+    if (failed === 0) {
+      messageApi.success(`已重新提交 ${succeeded} 个任务`)
+    } else if (succeeded === 0) {
+      messageApi.error(`${failed} 个任务重试失败`)
+    } else {
+      messageApi.warning(`${succeeded} 个任务已重新提交，${failed} 个失败`)
+    }
+  }
+
   useEffect(() => {
     const isLoadMore = pagination.current > 1
     refreshTasks(isLoadMore)
@@ -597,6 +632,15 @@ export const ImportTask = () => {
                   onClick={handlePause}
                 />
               </Tooltip>
+              <Tooltip title="重试失败任务">
+                <Button
+                  disabled={!canRetry}
+                  type="default"
+                  shape="circle"
+                  icon={<RetweetOutlined />}
+                  onClick={handleRetry}
+                />
+              </Tooltip>
               <Tooltip title="删除任务">
                 <Button
                   disabled={!canDelete}
@@ -712,6 +756,18 @@ export const ImportTask = () => {
                 block
               >
                 {isPause ? '继续' : '暂停'}
+              </Button>
+            </div>
+
+            {/* 重试操作 */}
+            <div className="grid grid-cols-1 gap-2">
+              <Button
+                disabled={!canRetry}
+                icon={<RetweetOutlined />}
+                onClick={handleRetry}
+                block
+              >
+                重试
               </Button>
             </div>
 

@@ -731,6 +731,64 @@ class TaskManager:
         self.logger.warning(f"尝试恢复任务 {task_id} 失败，因为它不是当前已暂停的任务。")
         return False
 
+    async def retry_task(self, task_id: str) -> str:
+        """手动重试一个失败的任务。
+
+        从数据库中读取任务的 taskType 和 taskParameters，重建协程工厂并重新提交到队列。
+
+        Args:
+            task_id: 要重试的任务 ID
+
+        Returns:
+            新任务的 ID
+
+        Raises:
+            HTTPException: 任务不存在、状态不允许重试、或无法重建协程工厂时
+        """
+        async with self._session_factory() as session:
+            task_info = await crud.get_task_for_retry(session, task_id)
+
+        if not task_info:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在")
+
+        if task_info["status"] != "失败":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="只有失败的任务才能重试")
+
+        task_type = task_info.get("taskType")
+        task_parameters_raw = task_info.get("taskParameters")
+
+        if not task_type or not task_parameters_raw:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="该任务缺少恢复所需信息（任务类型或参数），无法重试"
+            )
+
+        try:
+            task_parameters = json.loads(task_parameters_raw) if isinstance(task_parameters_raw, str) else task_parameters_raw
+        except (json.JSONDecodeError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="任务参数格式错误，无法重试"
+            )
+
+        coro_factory = await self._rebuild_coro_factory(task_type, task_parameters)
+        if not coro_factory:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"无法为任务类型 '{task_type}' 重建执行逻辑，该类型暂不支持重试"
+            )
+
+        new_task_id, _ = await self.submit_task(
+            coro_factory,
+            task_info["title"],
+            unique_key=task_info.get("uniqueKey"),
+            task_type=task_type,
+            task_parameters=task_parameters,
+            queue_type=task_info.get("queueType", "download")
+        )
+        self.logger.info(f"手动重试任务 '{task_info['title']}' 成功，原ID: {task_id}，新ID: {new_task_id}")
+        return new_task_id
+
     async def _handle_interrupted_tasks(self):
         """处理服务重启时中断的任务（包括运行中和排队中的任务）"""
         try:
@@ -767,7 +825,12 @@ class TaskManager:
 
                     self.logger.info(f"排队中的任务处理完成: {recovered_count} 个已恢复, {failed_count} 个无法恢复")
 
-                if not running_tasks and not pending_tasks:
+                # 3. 清理剩余的排队中任务（无 taskType 的任务，无法恢复，标记为失败）
+                unrecoverable_count = await crud.mark_unrecoverable_pending_tasks_as_failed(session)
+                if unrecoverable_count > 0:
+                    self.logger.info(f"已将 {unrecoverable_count} 个无法恢复的排队中任务标记为失败（缺少任务类型信息）")
+
+                if not running_tasks and not pending_tasks and not unrecoverable_count:
                     self.logger.info("没有发现需要处理的中断任务")
 
         except Exception as e:
@@ -913,6 +976,56 @@ class TaskManager:
                     rate_limiter=rate_limiter,
                     title_recognition_manager=title_recognition_manager,
                     selectedEpisodes=task_parameters.get("selectedEpisodes"),
+                )
+
+            elif task_type == "full_refresh":
+                from . import tasks as all_tasks
+                source_id = task_parameters.get("sourceId")
+                if not source_id:
+                    return None
+                return lambda session, callback: all_tasks.full_refresh_task(
+                    source_id, session, scraper_manager, self, rate_limiter,
+                    callback, metadata_manager, self.config_manager,
+                )
+
+            elif task_type == "incremental_refresh":
+                from . import tasks as all_tasks
+                source_id = task_parameters.get("sourceId")
+                next_ep = task_parameters.get("nextEpisodeIndex")
+                if not source_id or next_ep is None:
+                    return None
+                anime_title = task_parameters.get("animeTitle", "")
+                return lambda session, callback: all_tasks.incremental_refresh_task(
+                    sourceId=source_id,
+                    nextEpisodeIndex=next_ep,
+                    session=session,
+                    manager=scraper_manager,
+                    task_manager=self,
+                    config_manager=self.config_manager,
+                    progress_callback=callback,
+                    rate_limiter=rate_limiter,
+                    metadata_manager=metadata_manager,
+                    title_recognition_manager=title_recognition_manager,
+                    animeTitle=anime_title,
+                )
+
+            elif task_type == "auto_import":
+                from . import tasks as all_tasks
+                from src.api.control.models import (
+                    ControlAutoImportRequest, AutoImportSearchType, AutoImportMediaType,
+                )
+                try:
+                    payload = ControlAutoImportRequest(**task_parameters)
+                except Exception:
+                    self.logger.warning(f"auto_import 任务参数解析失败，无法重建")
+                    return None
+                return lambda session, callback: all_tasks.auto_search_and_import_task(
+                    payload, callback, session,
+                    self.config_manager, scraper_manager,
+                    metadata_manager, self,
+                    ai_matcher_manager=ai_matcher_manager,
+                    rate_limiter=rate_limiter,
+                    title_recognition_manager=title_recognition_manager,
                 )
 
             else:

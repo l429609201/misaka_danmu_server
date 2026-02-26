@@ -318,7 +318,8 @@ async def get_tasks_from_history(
         TaskHistory.description,
         TaskHistory.createdAt,
         TaskHistory.scheduledTaskId,
-        TaskHistory.queueType
+        TaskHistory.queueType,
+        TaskHistory.taskType
     )
 
     if search_term:
@@ -493,6 +494,42 @@ async def mark_interrupted_tasks_as_failed(session: AsyncSession) -> int:
     result = await session.execute(stmt)
     await session.commit()
     return result.rowcount
+
+
+async def mark_unrecoverable_pending_tasks_as_failed(session: AsyncSession) -> int:
+    """将所有排队中但无法恢复的任务标记为失败（taskType 为 NULL 的任务无法在重启后重建）"""
+    stmt = (
+        update(TaskHistory)
+        .where(
+            TaskHistory.status == '排队中',
+            or_(TaskHistory.taskType.is_(None), TaskHistory.taskParameters.is_(None))
+        )
+        .values(
+            status='失败',
+            description='因服务重启且无法恢复而取消',
+            finishedAt=get_now(),
+            updatedAt=get_now()
+        )
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    return result.rowcount
+
+
+async def get_task_for_retry(session: AsyncSession, task_id: str) -> Optional[Dict[str, Any]]:
+    """获取任务的恢复信息（用于手动重试）"""
+    task = await session.get(TaskHistory, task_id)
+    if not task:
+        return None
+    return {
+        "taskId": task.taskId,
+        "title": task.title,
+        "status": task.status,
+        "taskType": task.taskType,
+        "taskParameters": task.taskParameters,
+        "uniqueKey": task.uniqueKey,
+        "queueType": task.queueType,
+    }
 
 
 async def find_recent_task_by_unique_key(

@@ -104,6 +104,18 @@ async def abort_task_endpoint(
 
 
 
+@router.post("/tasks/{task_id}/retry", summary="重试一个失败的任务")
+async def retry_task_endpoint(
+    task_id: str,
+    current_user: models.User = Depends(security.get_current_user),
+    task_manager: TaskManager = Depends(get_task_manager)
+):
+    """重试一个失败的任务。从历史记录中读取任务参数，重建并重新提交到队列。"""
+    new_task_id = await task_manager.retry_task(task_id)
+    return {"message": "任务已重新提交", "newTaskId": new_task_id}
+
+
+
 @router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT, summary="删除一个历史任务")
 async def delete_task_from_history_endpoint(
     task_id: str,

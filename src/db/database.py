@@ -3,6 +3,8 @@ import string
 import logging
 from fastapi import FastAPI, Request
 from sqlalchemy.engine.url import URL
+from sqlalchemy import NullPool
+from sqlalchemy.pool import AsyncAdaptedQueuePool
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError # Import specific SQLAlchemy exceptions
@@ -137,15 +139,23 @@ async def create_db_engine_and_session(app: FastAPI):
 
     try:
         db_url = _get_db_url()
-        db_type = settings.database.type.lower()
+        db_cfg = settings.database
+        pool_class = NullPool if db_cfg.pool_type == "NullPool" else AsyncAdaptedQueuePool
+
         engine_args = {
-            "echo": False,
-            "pool_pre_ping": True,
-            "pool_recycle": 3600,
-            "pool_size": 20,
-            "max_overflow": 40,
-            "pool_timeout": 30
+            "echo": db_cfg.echo,
+            "pool_pre_ping": db_cfg.pool_pre_ping,
+            "pool_recycle": db_cfg.pool_recycle,
+            "poolclass": pool_class,
         }
+
+        # QueuePool 特有参数，NullPool 不需要这些
+        if pool_class is AsyncAdaptedQueuePool:
+            engine_args.update({
+                "pool_size": db_cfg.pool_size,
+                "max_overflow": db_cfg.max_overflow,
+                "pool_timeout": db_cfg.pool_timeout,
+            })
 
         engine = create_async_engine(db_url, **engine_args)
         session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)

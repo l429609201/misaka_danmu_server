@@ -260,3 +260,54 @@ class FileItem(BaseModel):
             datetime: lambda v: v.isoformat() if v else None
         }
 
+
+
+
+class DuplicateAnimeItem(BaseModel):
+    """重复组中的单个条目"""
+    animeId: int
+    title: str
+    season: int
+    year: Optional[int] = None
+    sourceCount: int = 0
+    imageUrl: Optional[str] = None
+    localImagePath: Optional[str] = None
+
+
+class DuplicateGroup(BaseModel):
+    """一组重复的条目"""
+    tmdbId: str
+    season: Optional[int] = None  # 严格模式下有值
+    items: List[DuplicateAnimeItem]
+
+
+class ScanDuplicatesResponse(BaseModel):
+    """扫描重复项响应"""
+    groups: List[DuplicateGroup]
+    totalGroups: int
+    totalItems: int
+
+
+class MergeOperation(BaseModel):
+    """单个合并操作"""
+    targetAnimeId: int
+    sourceAnimeIds: List[int]
+
+
+class BatchMergeRequest(BaseModel):
+    """批量合并请求"""
+    operations: List[MergeOperation]
+
+
+class MergeResultItem(BaseModel):
+    """单个合并结果"""
+    targetAnimeId: int
+    success: bool
+    error: Optional[str] = None
+
+
+class BatchMergeResponse(BaseModel):
+    """批量合并响应"""
+    results: List[MergeResultItem]
+    successCount: int
+    failCount: int

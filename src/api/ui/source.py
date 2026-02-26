@@ -125,7 +125,11 @@ async def reorder_source_episodes(
 
     task_title = f"重整集数: {source_info['title']} ({source_info['providerName']})"
     task_coro = lambda session, callback: tasks.reorder_episodes_task(sourceId, session, callback)
-    task_id, _ = await task_manager.submit_task(task_coro, task_title, queue_type="management")
+    task_id, _ = await task_manager.submit_task(
+        task_coro, task_title, queue_type="management",
+        task_type="reorder_episodes",
+        task_parameters={"sourceId": sourceId}
+    )
 
     logger.info(f"用户 '{current_user.username}' 提交了重整源 ID: {sourceId} 集数的任务 (Task ID: {task_id})。")
     return {"message": f"重整集数任务 '{task_title}' 已提交。", "taskId": task_id}
@@ -161,7 +165,7 @@ async def refresh_anime(
         paginated_result = await crud.get_episodes_for_source(session, sourceId, page_size=9999) # 获取所有分集以找到最大集数
         latest_episode_index = max((ep['episodeIndex'] for ep in paginated_result.get("episodes", [])), default=0)
         next_episode_index = latest_episode_index + 1
-        
+
         unique_key = f"import-{source_info['providerName']}-{source_info['mediaId']}-ep{next_episode_index}"
         task_title = f"增量刷新: {source_info['title']} ({source_info['providerName']}) - 尝试第{next_episode_index}集"
         task_coro = lambda s, cb: tasks.incremental_refresh_task(
@@ -170,17 +174,24 @@ async def refresh_anime(
             rate_limiter=rate_limiter, metadata_manager=metadata_manager,
             title_recognition_manager=title_recognition_manager
         )
+        task_type = "incremental_refresh"
+        task_parameters = {"sourceId": sourceId, "nextEpisodeIndex": next_episode_index, "animeTitle": source_info["title"]}
         message_to_return = f"番剧 '{source_info['title']}' 的增量刷新任务已提交。"
     elif mode == "full":
         logger.info(f"用户 '{current_user.username}' 为番剧 '{source_info['title']}' (源ID: {sourceId}) 启动了全量刷新任务。")
         unique_key = f"full-refresh-{sourceId}"
         task_title = f"全量刷新: {source_info['title']} ({source_info['providerName']})"
         task_coro = lambda s, cb: tasks.full_refresh_task(sourceId, s, scraper_manager, task_manager, rate_limiter, cb, metadata_manager, config_manager)
+        task_type = "full_refresh"
+        task_parameters = {"sourceId": sourceId}
         message_to_return = f"番剧 '{source_info['title']}' 的全量刷新任务已提交。"
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="无效的刷新模式，必须是 'full' 或 'incremental'。")
 
-    task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+    task_id, _ = await task_manager.submit_task(
+        task_coro, task_title, unique_key=unique_key,
+        task_type=task_type, task_parameters=task_parameters
+    )
     return {"message": message_to_return, "taskId": task_id}
 
 
@@ -255,7 +266,11 @@ async def manual_import_episode(
         episodeIndex=request_data.episodeIndex, content=content_to_use, providerName=provider_name,
         progress_callback=callback, session=session, manager=scraper_manager, rate_limiter=rate_limiter
     )
-    task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+    task_id, _ = await task_manager.submit_task(
+        task_coro, task_title, unique_key=unique_key,
+        task_type="manual_import",
+        task_parameters={"sourceId": source_id, "episodeIndex": request_data.episodeIndex, "providerName": provider_name}
+    )
     return {"message": f"手动导入任务 '{task_title}' 已提交。", "taskId": task_id}
 
 
@@ -292,7 +307,11 @@ async def batch_manual_import(
             manager=scraper_manager,
             rate_limiter=rate_limiter
         )
-        task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+        task_id, _ = await task_manager.submit_task(
+            task_coro, task_title, unique_key=unique_key,
+            task_type="batch_manual_import",
+            task_parameters={"sourceId": sourceId, "providerName": source_info['providerName']}
+        )
         return {"message": "批量手动导入任务已提交", "taskId": task_id}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))

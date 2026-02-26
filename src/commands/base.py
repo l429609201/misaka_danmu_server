@@ -8,6 +8,7 @@ from typing import Optional, Tuple, List, Any, TYPE_CHECKING
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud
+from src.core.cache import get_cache_backend
 
 if TYPE_CHECKING:
     from src.api.dandan import DandanSearchAnimeResponse, DandanSearchAnimeItem
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 async def _get_db_cache(session: AsyncSession, prefix: str, key: str) -> Optional[Any]:
     """
-    从数据库缓存中获取数据
+    从缓存中获取数据（优先走缓存后端，回退到数据库）
 
     Args:
         session: 数据库会话
@@ -28,9 +29,15 @@ async def _get_db_cache(session: AsyncSession, prefix: str, key: str) -> Optiona
         缓存值或None
     """
     cache_key = f"{prefix}{key}"
+    backend = get_cache_backend()
+    if backend is not None:
+        try:
+            return await backend.get(cache_key, region="default")
+        except Exception as e:
+            logger.warning(f"缓存后端读取失败，回退到数据库: {cache_key}, 错误: {e}")
+
     cache_entry = await crud.get_cache(session, cache_key)
     if cache_entry:
-        # cache_entry 可能是对象（有 .value 属性）或直接是值
         if hasattr(cache_entry, 'value'):
             return cache_entry.value
         else:
@@ -40,7 +47,7 @@ async def _get_db_cache(session: AsyncSession, prefix: str, key: str) -> Optiona
 
 async def _set_db_cache(session: AsyncSession, prefix: str, key: str, value: Any, ttl: int):
     """
-    设置数据库缓存
+    设置缓存（优先走缓存后端，回退到数据库）
 
     Args:
         session: 数据库会话
@@ -50,6 +57,14 @@ async def _set_db_cache(session: AsyncSession, prefix: str, key: str, value: Any
         ttl: 过期时间（秒）
     """
     cache_key = f"{prefix}{key}"
+    backend = get_cache_backend()
+    if backend is not None:
+        try:
+            await backend.set(cache_key, value, ttl=ttl, region="default")
+            return
+        except Exception as e:
+            logger.warning(f"缓存后端写入失败，回退到数据库: {cache_key}, 错误: {e}")
+
     await crud.set_cache(session, cache_key, value, ttl)
 
 

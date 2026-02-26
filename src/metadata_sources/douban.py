@@ -241,21 +241,22 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
             self.logger.warning(f"豆瓣辅助搜索失败: {e}")
         return {alias for alias in local_aliases if alias}
 
-    async def check_connectivity(self) -> str:
+    async def check_connectivity(self) -> Dict[str, str]:
         """检查豆瓣源配置状态"""
         try:
-            # 检查Cookie配置
+            # 豆瓣Cookie是可选的，没有Cookie也可以正常使用（匿名访问）
+            # 只有被流控或封禁时才需要填Cookie
             douban_cookie = await self.config_manager.get("doubanCookie", "")
             if not douban_cookie or douban_cookie.strip() == "":
-                return "未配置 (缺少豆瓣Cookie)"
+                return {"code": "ok", "message": "配置正常 (匿名访问，被流控时可配置Cookie)"}
 
-            # 检查Cookie格式是否合理
+            # 填了Cookie，检查格式是否合理
             if "bid=" not in douban_cookie and "dbcl2=" not in douban_cookie:
-                return "配置异常 (Cookie格式不正确)"
+                return {"code": "warning", "message": "Cookie已配置但格式可能不正确 (建议检查)"}
 
-            return "配置正常"
+            return {"code": "ok", "message": "配置正常 (已配置Cookie)"}
         except Exception as e:
-            return f"配置检查失败: {e}"
+            return {"code": "error", "message": f"配置检查失败: {e}"}
 
     async def execute_action(self, action_name: str, payload: Dict, user: models.User) -> Any:
         """Douban source does not support custom actions."""

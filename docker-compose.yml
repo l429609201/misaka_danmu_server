@@ -29,6 +29,18 @@ services:
       - DANMUAPI_DATABASE__NAME=danmuapi
       # 新增：日志级别配置 (可选值: DEBUG, INFO, WARNING, ERROR)
       # - DANMUAPI_LOG__LEVEL=DEBUG
+
+      # 缓存配置
+      # 默认使用 hybrid 模式（内存 L1 + 数据库 L2），无需额外服务
+      # 可选后端: memory（纯内存）/ redis / database（纯数据库）/ hybrid（默认）
+      # - DANMUAPI_CACHE__BACKEND=redis
+      # - DANMUAPI_CACHE__REDIS_URL=redis://:you_password@XXX:XXX:XXX:XXX:6379/6
+      # - DANMUAPI_CACHE__REDIS_MAX_MEMORY=256mb
+      # - DANMUAPI_CACHE__REDIS_SOCKET_TIMEOUT=30
+      # - DANMUAPI_CACHE__REDIS_SOCKET_CONNECT_TIMEOUT=5
+      # - DANMUAPI_CACHE__MEMORY_MAXSIZE=1024
+      # - DANMUAPI_CACHE__MEMORY_DEFAULT_TTL=600
+
       # JWT 配置 - 强烈建议在 .env 文件中设置一个强密钥
       #- DANMUAPI_JWT__SECRET_KEY=${JWT_SECRET_KEY:-a_very_secret_key_that_should_be_changed_in_prod}
       # 初始管理员配置

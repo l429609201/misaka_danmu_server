@@ -25,6 +25,7 @@ from src.ai.ai_prompts import (
     DEFAULT_AI_ALIAS_VALIDATION_PROMPT,
     DEFAULT_AI_ALIAS_EXPANSION_PROMPT,
     DEFAULT_AI_NAME_CONVERSION_PROMPT,
+    DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT,
 )
 from src.ai.ai_providers import get_all_providers, supports_balance_query, get_provider_config
 from src.utils import DanmakuPathTemplate
@@ -755,7 +756,8 @@ async def get_default_ai_prompts(
         "aiAliasValidationPrompt": DEFAULT_AI_ALIAS_VALIDATION_PROMPT,
         "aiAliasExpansionPrompt": DEFAULT_AI_ALIAS_EXPANSION_PROMPT,
         "aiNameConversionPrompt": DEFAULT_AI_NAME_CONVERSION_PROMPT,
-        "seasonMappingPrompt": DEFAULT_AI_SEASON_MAPPING_PROMPT
+        "seasonMappingPrompt": DEFAULT_AI_SEASON_MAPPING_PROMPT,
+        "aiEpisodeGroupPrompt": DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT
     }
 
 

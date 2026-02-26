@@ -350,14 +350,17 @@ class MetadataSourceManager:
 
             if is_enabled:
                 status_text = "检查失败"
+                status_code = "error"
                 status_result = status_map.get(provider_name)
-                if isinstance(status_result, str):
-                    status_text = status_result
+                if isinstance(status_result, dict):
+                    status_text = status_result.get("message", "检查失败")
+                    status_code = status_result.get("code", "error")
                 elif isinstance(status_result, Exception):
                     self.logger.error(f"检查 '{provider_name}' 连接状态时出错: {status_result}")
             else:
                 # 禁用的源显示为"已禁用"状态
                 status_text = "已禁用"
+                status_code = "disabled"
 
             full_status_list.append({
                 "providerName": provider_name,
@@ -366,6 +369,7 @@ class MetadataSourceManager:
                 "isFailoverEnabled": setting.get('isFailoverEnabled', False),
                 "displayOrder": setting.get('displayOrder', 99),
                 "status": status_text,
+                "statusCode": status_code,
                 "useProxy": setting.get('useProxy', False),
                 "logRawResponses": setting.get('log_raw_responses', False),
             })

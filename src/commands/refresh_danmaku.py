@@ -14,7 +14,7 @@ from datetime import datetime
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .base import CommandHandler
+from .base import CommandHandler, _get_db_cache, _set_db_cache
 from src.db import crud
 
 if TYPE_CHECKING:
@@ -71,7 +71,7 @@ class RefreshDanmakuCommand(CommandHandler):
 
         # 获取会话状态（用于缓存番剧和分集信息）
         session_key = f"cmd_session_{token}"
-        session_state = await crud.get_cache(session, session_key)
+        session_state = await _get_db_cache(session, "", session_key)
         if not session_state:
             session_state = {}
 
@@ -142,7 +142,7 @@ class RefreshDanmakuCommand(CommandHandler):
 
         # 读取播放历史
         cache_key = f"play_history_{token}"
-        history = await crud.get_cache(session, cache_key)
+        history = await _get_db_cache(session, "", cache_key)
 
         logger.info(f"@SXDM 查询播放历史: token={token[:8]}..., cache_key={cache_key}, result={history}")
 
@@ -194,7 +194,7 @@ class RefreshDanmakuCommand(CommandHandler):
             "data": {"animeList": anime_list},
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-        await crud.set_cache(session, session_key, session_state, self.SESSION_TTL)
+        await _set_db_cache(session, "", session_key, session_state, self.SESSION_TTL)
 
         # 记录执行时间
         await self.record_execution(token, session)
@@ -321,7 +321,7 @@ class RefreshDanmakuCommand(CommandHandler):
         session_state["stage"] = "select_episode"
         session_state["data"]["selectedAnime"] = selected_anime
         session_state["data"]["episodes"] = episode_list
-        await crud.set_cache(session, session_key, session_state, self.SESSION_TTL)
+        await _set_db_cache(session, "", session_key, session_state, self.SESSION_TTL)
 
         # 第一条：引导说明
         anime_items = [
@@ -392,7 +392,7 @@ class RefreshDanmakuCommand(CommandHandler):
 
         # 从播放历史中获取番剧列表
         cache_key = f"play_history_{token}"
-        history = await crud.get_cache(session, cache_key)
+        history = await _get_db_cache(session, "", cache_key)
         if not history:
             return self.error_response(
                 "未找到播放历史",

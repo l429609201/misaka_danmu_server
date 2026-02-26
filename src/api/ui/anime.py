@@ -16,7 +16,7 @@ from src.utils import download_image
 from src.api.dependencies import (
     get_scraper_manager, get_task_manager, get_metadata_manager
 )
-from .models import UITaskResponse, RefreshPosterRequest, ReassociationRequest
+from .models import UITaskResponse, RefreshPosterRequest, ReassociationRequest, ScanDuplicatesResponse, BatchMergeRequest, BatchMergeResponse, MergeResultItem
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ async def get_anime_full_details(
     details = await crud.get_anime_full_details(session, animeId)
     if not details:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anime not found")
-    
+
     # 修正：如果 crud 函数没有返回年份，手动从 Anime 表中获取并添加到响应中
     # 这确保了即使在 `get_anime_full_details` 的实现中忘记包含年份，API也能正确返回。
     if 'year' not in details or details.get('year') is None:
@@ -260,3 +260,49 @@ async def delete_anime_from_library(
 
 
 
+
+
+@router.get("/library/scan-duplicates", response_model=ScanDuplicatesResponse, summary="扫描弹幕库中的重复条目")
+async def scan_duplicates(
+    strict: bool = Query(True, description="严格模式(tmdbId+season)或宽松模式(仅tmdbId)"),
+    current_user: models.User = Depends(security.get_current_user),
+    session: AsyncSession = Depends(get_db_session)
+):
+    """扫描弹幕库中基于TMDB ID的重复条目，返回重复组列表。"""
+    groups = await crud.scan_duplicate_animes(session, strict=strict)
+    total_items = sum(len(g["items"]) for g in groups)
+    return ScanDuplicatesResponse(
+        groups=groups,
+        totalGroups=len(groups),
+        totalItems=total_items,
+    )
+
+
+@router.post("/library/batch-merge", response_model=BatchMergeResponse, summary="批量合并重复条目")
+async def batch_merge_animes(
+    request: BatchMergeRequest,
+    current_user: models.User = Depends(security.get_current_user),
+    session: AsyncSession = Depends(get_db_session)
+):
+    """批量执行合并操作，将源条目的数据源移动到目标条目。"""
+    results = []
+    success_count = 0
+    fail_count = 0
+
+    for op in request.operations:
+        for source_id in op.sourceAnimeIds:
+            try:
+                ok = await crud.reassociate_anime_sources(session, source_id, op.targetAnimeId)
+                if ok:
+                    success_count += 1
+                    results.append(MergeResultItem(targetAnimeId=op.targetAnimeId, success=True))
+                    logger.info(f"用户 '{current_user.username}' 合并: {source_id} → {op.targetAnimeId}")
+                else:
+                    fail_count += 1
+                    results.append(MergeResultItem(targetAnimeId=op.targetAnimeId, success=False, error=f"合并 {source_id} 失败"))
+            except Exception as e:
+                fail_count += 1
+                results.append(MergeResultItem(targetAnimeId=op.targetAnimeId, success=False, error=str(e)))
+                logger.error(f"合并 {source_id} → {op.targetAnimeId} 失败: {e}", exc_info=True)
+
+    return BatchMergeResponse(results=results, successCount=success_count, failCount=fail_count)

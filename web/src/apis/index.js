@@ -27,6 +27,9 @@ export const login = data =>
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   })
 
+/** 白名单自动登录 */
+export const autoLogin = () => api.post('/api/ui/auth/auto-login')
+
 /** 退出登录 */
 export const logout = () => api.post('/api/ui/auth/logout')
 
@@ -216,6 +219,8 @@ export const resumeTask = data =>
 export const deleteTask = data => api.delete(`/api/ui/tasks/${data.taskId}`, { params: { force: data.force || false } })
 /** 中止任务 */
 export const stopTask = data => api.post(`/api/ui/tasks/${data.taskId}/abort`, { force: data.force || false })
+/** 重试失败任务 */
+export const retryTask = data => api.post(`/api/ui/tasks/${data.taskId}/retry`)
 /** 定时任务列表 */
 export const getScheduledTaskList = data =>
   api.get('/api/ui/scheduled-tasks', data)
@@ -710,6 +715,8 @@ export const getConfig = (key) => api.get(`/api/ui/config/${key}`)
 export const setConfig = (key, value) => api.put(`/api/ui/config/${key}`, { value })
 /** 获取参数配置 Schema */
 export const getConfigSchema = () => api.get('/api/ui/config/schema/parameters')
+/** 获取数据库和缓存连接信息 */
+export const getDatabaseInfo = () => api.get('/api/ui/database-info')
 export const getDefaultAIPrompts = () => api.get('/api/ui/config/ai/default-prompts')
 
 /** AI 余额查询 */
@@ -960,6 +967,14 @@ export const getSourceEpisodesForSplit = (sourceId) =>
 /** 拆分数据源 */
 export const splitSource = (animeId, data) =>
   api.post(`/api/ui/library/anime/${animeId}/split-source`, JSON.stringify(data))
+
+/** 扫描重复条目 */
+export const scanDuplicates = (strict = true) =>
+  api.get(`/api/ui/library/scan-duplicates`, { strict })
+
+/** 批量合并重复条目 */
+export const batchMergeAnimes = (data) =>
+  api.post('/api/ui/library/batch-merge', data)
 
 
 // ========== 通知渠道 ==========

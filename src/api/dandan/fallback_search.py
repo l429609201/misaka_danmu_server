@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
 from src.db import crud, ConfigManager
+from src.core.cache import get_cache_backend
 from src.services import ScraperManager, TaskManager, MetadataSourceManager, unified_search
 from src.utils import (
     parse_search_keyword,
@@ -203,6 +204,16 @@ async def execute_fallback_search_task(
     timer = SearchTimer(SEARCH_TYPE_FALLBACK_SEARCH, search_term, logger)
     timer.start()
 
+    # 【性能优化】AI初始化预热：如果AI映射已启用，提前开始初始化（不阻塞）
+    ai_matcher_warmup_task = None
+    try:
+        fallback_search_season_mapping_enabled_check = await config_manager.get("fallbackSearchEnableTmdbSeasonMapping", "false")
+        if fallback_search_season_mapping_enabled_check.lower() == "true":
+            ai_matcher_warmup_task = asyncio.create_task(ai_matcher_manager.get_matcher())
+            logger.debug("后备搜索 AI匹配器预热已启动（并行）")
+    except Exception as e:
+        logger.warning(f"后备搜索 AI预热失败: {e}")
+
     try:
         timer.step_start("关键词解析与预处理")
         # 1. 解析搜索词
@@ -304,7 +315,13 @@ async def execute_fallback_search_task(
         if fallback_search_season_mapping_enabled.lower() == "true":
             try:
                 timer.step_start("AI映射修正")
-                ai_matcher = await ai_matcher_manager.get_matcher()
+                # 【性能优化】使用预热的AI匹配器
+                ai_matcher = None
+                if ai_matcher_warmup_task:
+                    ai_matcher = await ai_matcher_warmup_task
+                    ai_matcher_warmup_task = None  # 清空task，避免重复await
+                else:
+                    ai_matcher = await ai_matcher_manager.get_matcher()
                 if ai_matcher:
                     logger.info(f"○ 后备搜索 开始统一AI映射修正: '{search_title}' ({len(sorted_results)} 个结果)")
                     mapping_result = await ai_type_and_season_mapping_and_correction(
@@ -410,7 +427,14 @@ async def execute_fallback_search_task(
                 "results": [result.model_dump() for result in search_results],
                 "timestamp": time.time(),
             }
-            await crud.set_cache(session, cache_key, json.dumps(cache_data), ttl_seconds=600)
+            _backend = get_cache_backend()
+            if _backend is not None:
+                try:
+                    await _backend.set(cache_key, json.dumps(cache_data), ttl=600, region="default")
+                except Exception:
+                    await crud.set_cache(session, cache_key, json.dumps(cache_data), ttl_seconds=600)
+            else:
+                await crud.set_cache(session, cache_key, json.dumps(cache_data), ttl_seconds=600)
             logger.info(f"后备搜索结果已存储到数据库缓存: {cache_key}")
         except Exception as e:
             logger.warning(f"存储后备搜索结果到数据库缓存失败: {e}")

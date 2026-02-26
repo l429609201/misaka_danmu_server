@@ -48,6 +48,8 @@ from .task import (
     force_fail_task,
     get_execution_task_id_from_scheduler_task,
     mark_interrupted_tasks_as_failed,
+    mark_unrecoverable_pending_tasks_as_failed,
+    get_task_for_retry,
     find_recent_task_by_unique_key,
     create_webhook_task,
     get_webhook_tasks,
@@ -129,6 +131,7 @@ from .anime import (
     update_anime_aliases_if_empty,
     get_animes_with_tmdb_id,
     get_anime_details_for_dandan,
+    scan_duplicate_animes,
 )
 
 # Episode模块
@@ -236,6 +239,7 @@ from .tmdb import (
     get_episode_group_mappings,
     list_episode_groups,
     delete_episode_group_mappings,
+    get_episode_equivalence,
     get_associated_anime_ids,
 )
 
@@ -390,6 +394,7 @@ __all__ = [
     'update_anime_aliases_if_empty',
     'get_animes_with_tmdb_id',
     'get_anime_details_for_dandan',
+    'scan_duplicate_animes',
     # Episode
     'get_last_episode_for_source',
     'get_episode_for_refresh',
@@ -469,6 +474,7 @@ __all__ = [
     # TMDB
     'save_tmdb_episode_group_mappings',
     'get_episode_group_mappings',
+    'get_episode_equivalence',
     'get_associated_anime_ids',
     # RateLimit
     'get_or_create_rate_limit_state',
