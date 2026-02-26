@@ -53,16 +53,43 @@ def get_fs_path_from_web_path(web_path: str) -> Optional[Path]:
     支持两种路径格式:
     1. Docker 标准路径: /app/config/danmaku/xxx/yyy.xml → {CONFIG_DIR}/danmaku/xxx/yyy.xml
     2. 自定义绝对路径: /opt/xxx/yyy.xml → /opt/xxx/yyy.xml (直接使用)
+
+    安全检查：防止路径穿越攻击
     """
     if not web_path:
         return None
+
     # Docker 标准路径格式
     if web_path.startswith("/app/config/"):
         relative_path = web_path[len("/app/config/"):]
-        return CONFIG_DIR / relative_path
+        # 安全检查：防止路径穿越
+        if ".." in relative_path or relative_path.startswith("/"):
+            logger.warning(f"检测到路径穿越尝试: {web_path}")
+            return None
+        result_path = CONFIG_DIR / relative_path
+        # 验证解析后的路径仍在 CONFIG_DIR 下
+        try:
+            result_path.resolve().relative_to(CONFIG_DIR.resolve())
+        except ValueError:
+            logger.warning(f"路径穿越检测: {web_path} 解析到 CONFIG_DIR 之外")
+            return None
+        return result_path
+
     # 自定义绝对路径（Linux 或 Windows）
     if web_path.startswith("/") or (len(web_path) >= 2 and web_path[1] == ':'):
-        return Path(web_path)
+        # 安全检查：防止路径穿越
+        if ".." in web_path:
+            logger.warning(f"检测到路径穿越尝试: {web_path}")
+            return None
+        result_path = Path(web_path)
+        # 验证路径不包含危险字符
+        try:
+            result_path.resolve()
+        except (OSError, RuntimeError):
+            logger.warning(f"无效路径: {web_path}")
+            return None
+        return result_path
+
     return None
 
 

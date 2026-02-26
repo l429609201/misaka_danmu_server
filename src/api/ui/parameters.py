@@ -136,9 +136,33 @@ async def upload_scraper_package(
 
             if file.filename.endswith('.zip'):
                 with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    # 安全检查：防止 Zip Slip 攻击
+                    for member in zip_ref.namelist():
+                        # 检查路径穿越
+                        member_path = (extract_dir / member).resolve()
+                        if not str(member_path).startswith(str(extract_dir.resolve())):
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"检测到恶意压缩包：路径穿越尝试 ({member})"
+                            )
                     zip_ref.extractall(extract_dir)
             elif file.filename.endswith(('.tar.gz', '.tgz')):
                 with tarfile.open(file_path, 'r:gz') as tar_ref:
+                    # 安全检查：防止 Zip Slip 攻击
+                    for member in tar_ref.getmembers():
+                        # 检查路径穿越
+                        member_path = (extract_dir / member.name).resolve()
+                        if not str(member_path).startswith(str(extract_dir.resolve())):
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"检测到恶意压缩包：路径穿越尝试 ({member.name})"
+                            )
+                        # 检查符号链接
+                        if member.issym() or member.islnk():
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"检测到恶意压缩包：包含符号链接 ({member.name})"
+                            )
                     tar_ref.extractall(extract_dir)
             else:
                 raise HTTPException(status_code=400, detail="不支持的文件格式,仅支持 .zip 或 .tar.gz")

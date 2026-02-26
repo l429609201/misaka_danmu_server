@@ -2040,13 +2040,26 @@ async def _download_and_extract_release(
             # 处理 tar.gz 格式
             with tarfile.open(fileobj=io.BytesIO(archive_content), mode='r:gz') as tar_ref:
                 for member in tar_ref.getmembers():
+                    # 安全检查：防止符号链接和路径穿越
+                    if member.issym() or member.islnk():
+                        logger.warning(f"跳过符号链接: {member.name}")
+                        continue
+
                     if member.isfile() and member.name.endswith(('.so', '.pyd', '.json')):
                         # 获取文件名（去掉路径前缀）
                         base_name = Path(member.name).name
-                        if not base_name:
+                        if not base_name or ".." in member.name:
+                            logger.warning(f"跳过可疑文件名: {member.name}")
                             continue
 
                         target_path = scrapers_dir / base_name
+
+                        # 安全检查：确保目标路径在 scrapers_dir 内
+                        try:
+                            target_path.resolve().relative_to(scrapers_dir.resolve())
+                        except ValueError:
+                            logger.warning(f"检测到路径穿越尝试: {member.name}")
+                            continue
 
                         # 读取并写入文件
                         file_obj = tar_ref.extractfile(member)
@@ -2063,15 +2076,23 @@ async def _download_and_extract_release(
                     if zip_info.filename.endswith(('.so', '.pyd', '.json')):
                         # 获取文件名（去掉路径前缀）
                         base_name = Path(zip_info.filename).name
-                        if not base_name:
+                        if not base_name or ".." in zip_info.filename:
+                            logger.warning(f"跳过可疑文件名: {zip_info.filename}")
                             continue
 
                         target_path = scrapers_dir / base_name
 
+                        # 安全检查：确保目标路径在 scrapers_dir 内
+                        try:
+                            target_path.resolve().relative_to(scrapers_dir.resolve())
+                        except ValueError:
+                            logger.warning(f"检测到路径穿越尝试: {zip_info.filename}")
+                            continue
+
                         # 读取并写入文件
                         file_content = zip_ref.read(zip_info.filename)
                         await asyncio.to_thread(target_path.write_bytes, file_content)
-                        extracted_count += 1
+                        eracted_count += 1
                         logger.debug(f"解压: {base_name}")
 
         logger.info(f"解压完成: 共 {extracted_count} 个文件")
