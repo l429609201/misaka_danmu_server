@@ -15,6 +15,7 @@ from src.api.dependencies import get_config_manager
 # 从 crud 导入需要的子模块
 user_crud = crud.user
 session_crud = crud.session
+config_crud = crud.config
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -67,26 +68,103 @@ async def auto_login(
 
     如果请求来自白名单IP，自动生成JWT token并返回
     如果不在白名单中，返回401错误
-    """
-    # 检查IP白名单（使用带 jti 的版本）
-    whitelist_result = await security.check_ip_whitelist_with_jti(request, session)
 
-    if not whitelist_result:
+    注意：此接口不依赖 check_ip_whitelist，避免 session 回滚问题
+    """
+    import ipaddress
+    import hashlib
+
+    # 获取 IP 白名单配置
+    ip_whitelist_str = await config_crud.get_config_value(session, "ipWhitelist", "")
+    if not ip_whitelist_str or not ip_whitelist_str.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="IP whitelist is not configured",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 获取受信任代理配置并解析真实 IP
+    trusted_proxies_str = await config_crud.get_config_value(session, "trustedProxies", "")
+    client_ip_str = security._get_real_client_ip_sync(request, trusted_proxies_str)
+
+    # 解析白名单网段
+    whitelist_networks = []
+    for entry in ip_whitelist_str.split(','):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            network = ipaddress.ip_network(entry, strict=False)
+            whitelist_networks.append(network)
+        except ValueError:
+            pass
+
+    if not whitelist_networks:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="IP whitelist is empty",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 检查客户端 IP 是否在白名单中
+    try:
+        client_addr = ipaddress.ip_address(client_ip_str)
+        is_whitelisted = any(client_addr in network for network in whitelist_networks)
+    except ValueError:
+        is_whitelisted = False
+
+    if not is_whitelisted:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not in IP whitelist",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    whitelist_user, whitelist_jti = whitelist_result
+    # 获取管理员用户
+    admin_user = await user_crud.get_user_by_username(session, "admin")
+    if not admin_user:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Admin user not found",
+        )
 
-    # 白名单用户已经在 check_ip_whitelist_with_jti 中创建了会话记录
-    # 现在使用该会话的 jti 生成 JWT token
+    # 生成白名单会话的 jti（与 check_ip_whitelist 保持一致）
+    user_agent = request.headers.get("user-agent", "")
+    ua_hash = hashlib.md5(user_agent.encode()).hexdigest()[:8] if user_agent else "unknown"
+    whitelist_jti = f"whitelist_{client_ip_str}_{ua_hash}"
+
+    # 生成 JWT token（使用白名单会话的 jti）
     access_token, _, expire_minutes = await security.create_access_token(
-        data={"sub": whitelist_user.username},
+        data={"sub": admin_user["username"]},
         session=session,
-        jti=whitelist_jti  # 使用白名单会话的 jti
+        jti=whitelist_jti
     )
+
+    # 尝试创建会话记录（如果已存在则忽略）
+    try:
+        db_expire_minutes = None if expire_minutes == -1 else expire_minutes
+        await session_crud.create_user_session(
+            session=session,
+            user_id=admin_user["id"],
+            jti=whitelist_jti,
+            ip_address=client_ip_str,
+            user_agent=user_agent[:500] if user_agent else None,
+            expires_minutes=db_expire_minutes
+        )
+    except Exception as e:
+        # 如果会话已存在（并发请求），忽略错误
+        if "Duplicate entry" in str(e) or "UNIQUE constraint" in str(e):
+            # 回滚当前事务，避免 PendingRollback 错误
+            await session.rollback()
+            # 更新最后使用时间
+            try:
+                await session_crud.update_session_last_used(session, whitelist_jti)
+            except Exception:
+                pass
+        else:
+            # 其他错误也回滚，但记录日志
+            await session.rollback()
+            logger.error(f"创建白名单会话记录失败: {e}")
 
     return {"accessToken": access_token, "tokenType": "bearer", "expiresIn": expire_minutes}
 
