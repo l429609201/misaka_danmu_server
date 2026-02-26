@@ -403,17 +403,22 @@ async def _get_user_from_token(token: str, session: AsyncSession, validate_sessi
     return models.User.model_validate(user), jti
 
 
-async def create_access_token(data: dict, session: AsyncSession, expires_delta: Optional[timedelta] = None) -> Tuple[str, str, int]:
+async def create_access_token(data: dict, session: AsyncSession, expires_delta: Optional[timedelta] = None, jti: Optional[str] = None) -> Tuple[str, str, int]:
     """
     创建JWT访问令牌
 
+    :param data: JWT payload 数据
+    :param session: 数据库会话
+    :param expires_delta: 过期时间增量（未使用，保留向后兼容）
+    :param jti: 可选的会话ID，如果不提供则自动生成
     :return: (token, jti, expire_minutes)
     """
     to_encode = data.copy()
 
     # 新增：添加标准声明以增强安全性和互操作性
     now = get_now() # 使用服务器本地时间的 naive datetime
-    jti = str(uuid.uuid4())
+    if jti is None:
+        jti = str(uuid.uuid4())
     to_encode.update({
         "iat": now,  # Issued At: 令牌签发时间
         "jti": jti,  # JWT ID: 每个令牌的唯一标识符，可用于防止重放攻击

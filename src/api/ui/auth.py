@@ -57,6 +57,40 @@ async def login_for_access_token(
     return {"accessToken": access_token, "tokenType": "bearer", "expiresIn": expire_minutes}
 
 
+@router.post("/auto-login", response_model=models.Token, summary="白名单自动登录")
+async def auto_login(
+    request: Request,
+    session: AsyncSession = Depends(get_db_session)
+):
+    """
+    白名单IP自动登录接口
+
+    如果请求来自白名单IP，自动生成JWT token并返回
+    如果不在白名单中，返回401错误
+    """
+    # 检查IP白名单（使用带 jti 的版本）
+    whitelist_result = await security.check_ip_whitelist_with_jti(request, session)
+
+    if not whitelist_result:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not in IP whitelist",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    whitelist_user, whitelist_jti = whitelist_result
+
+    # 白名单用户已经在 check_ip_whitelist_with_jti 中创建了会话记录
+    # 现在使用该会话的 jti 生成 JWT token
+    access_token, _, expire_minutes = await security.create_access_token(
+        data={"sub": whitelist_user.username},
+        session=session,
+        jti=whitelist_jti  # 使用白名单会话的 jti
+    )
+
+    return {"accessToken": access_token, "tokenType": "bearer", "expiresIn": expire_minutes}
+
+
 @router.get("/users/me", response_model=models.User, summary="获取当前用户信息")
 async def read_users_me(current_user: models.User = Depends(security.get_current_user)):
     """获取当前登录用户的信息"""

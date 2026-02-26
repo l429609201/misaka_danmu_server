@@ -27,6 +27,9 @@ export const login = data =>
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   })
 
+/** 白名单自动登录 */
+export const autoLogin = () => api.post('/api/ui/auth/auto-login')
+
 /** 退出登录 */
 export const logout = () => api.post('/api/ui/auth/logout')
 
