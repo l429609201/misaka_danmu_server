@@ -86,6 +86,9 @@ def flush_buffered_logs(
 
     lines = [header]
     for record in records:
+        # 临时简化 logger 名称：_buf_.sohu.135038907895424 → sohu
+        original_name = record.name
+        record.name = provider_name
         try:
             formatted = formatter.format(record)
             # 缩进每行（多行日志如搜索结果列表）
@@ -93,6 +96,8 @@ def flush_buffered_logs(
                 lines.append(f"  {line}")
         except Exception:
             lines.append(f"  [{record.levelname}] {record.getMessage()}")
+        finally:
+            record.name = original_name
 
     if error:
         lines.append(f"  ❌ 异常: {error}")
