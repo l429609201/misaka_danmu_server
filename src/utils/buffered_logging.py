@@ -84,7 +84,7 @@ def flush_buffered_logs(
         '%(asctime)s [%(name)s] [%(levelname)s] - %(message)s'
     )
 
-    lines = [header]
+    lines = ["-", header]
     for record in records:
         # 临时简化 logger 名称：_buf_.sohu.135038907895424 → sohu
         original_name = record.name

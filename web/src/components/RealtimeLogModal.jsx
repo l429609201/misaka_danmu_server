@@ -121,6 +121,17 @@ export default function RealtimeLogModal({ open, onClose }) {
       <span>实时日志</span>
       <span className={`inline-block w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-400'}`} />
       <span className="text-xs text-gray-400">{connected ? '已连接' : '未连接'}</span>
+      {!isMobile && (
+        <>
+          <span className="text-gray-300 mx-1">|</span>
+          <Segmented
+            size="small"
+            options={['INFO', 'WARN', 'DEBUG']}
+            value={logLevel}
+            onChange={setLogLevel}
+          />
+        </>
+      )}
     </div>
   )
 
@@ -158,15 +169,17 @@ export default function RealtimeLogModal({ open, onClose }) {
 
   const logContent = (
     <div className={isMobile ? 'flex-1 overflow-hidden flex flex-col gap-2' : 'flex flex-col gap-2'}>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-400">日志级别</span>
-        <Segmented
-          size="small"
-          options={['INFO', 'WARN', 'DEBUG']}
-          value={logLevel}
-          onChange={setLogLevel}
-        />
-      </div>
+      {isMobile && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400">-</span>
+          <Segmented
+            size="small"
+            options={['INFO', 'WARN', 'DEBUG']}
+            value={logLevel}
+            onChange={setLogLevel}
+          />
+        </div>
+      )}
       <Card className={isMobile ? 'flex-1 overflow-hidden flex flex-col' : ''} styles={{ body: { padding: isMobile ? 8 : 12, ...(isMobile ? { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } : {}) } }}>
         <div
           ref={containerRef}
