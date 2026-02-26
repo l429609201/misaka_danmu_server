@@ -227,9 +227,10 @@ async def import_media_items(
 
     # 导入电视节目(按季度合并为单个任务)
     for (title, season), season_items in tv_shows.items():
+        season_str = f"S{season:02d}" if season is not None else "S??"
         await progress_callback(
             int((completed / total_tasks) * 100),
-            f"导入电视节目: {title} S{season:02d} (共 {len(season_items)} 集)..."
+            f"导入电视节目: {title} {season_str} (共 {len(season_items)} 集)..."
         )
 
         try:
@@ -240,7 +241,7 @@ async def import_media_items(
             )
 
             selected_episodes = sorted([item.episode for item in season_items if item.episode is not None])
-            logger.info(f"电视节目 {title} S{season:02d} 选中的分集: {selected_episodes}")
+            logger.info(f"电视节目 {title} {season_str} 选中的分集: {selected_episodes}")
 
             task_id, _ = await task_manager.submit_task(
                 lambda session, progress_callback, item=representative_item, selected_eps=selected_episodes: webhook_search_and_dispatch_task(
@@ -248,7 +249,7 @@ async def import_media_items(
                     mediaType="tv_series",
                     season=item.season,
                     currentEpisodeIndex=item.episode,  # 使用代表集数进行匹配
-                    searchKeyword=f"{item.title} S{item.season:02d}E{item.episode:02d}",
+                    searchKeyword=f"{item.title} S{item.season or 1:02d}E{item.episode or 1:02d}",
                     year=item.year,
                     tmdbId=item.tmdbId,
                     tvdbId=item.tvdbId,
