@@ -25,8 +25,12 @@ export const Login = () => {
       const res = await login(values)
 
       if (res.data.accessToken) {
+        // 动态计算 Cookie 过期时间（与后端 JWT 过期时间一致）
+        const expiresInMinutes = res.data.expiresIn || 4320 // 默认 3 天
+        const expiresInDays = expiresInMinutes / (60 * 24)
+
         Cookies.set('danmu_token', res.data.accessToken, {
-          expires: 30,
+          expires: expiresInDays,
           path: '/',
           secure: location.protocol === 'https:',
           sameSite: 'lax'

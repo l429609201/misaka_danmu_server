@@ -54,7 +54,7 @@ async def login_for_access_token(
         expires_minutes=expire_minutes
     )
 
-    return {"accessToken": access_token, "tokenType": "bearer"}
+    return {"accessToken": access_token, "tokenType": "bearer", "expiresIn": expire_minutes}
 
 
 @router.get("/users/me", response_model=models.User, summary="获取当前用户信息")

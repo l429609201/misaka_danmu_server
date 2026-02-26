@@ -335,7 +335,8 @@ const MobileHeader = ({ activeKey }) => {
   const onLogout = async () => {
     await logout()
     Cookies.remove('danmu_token', { path: '/' })
-    navigate(RoutePaths.LOGIN)
+    // 刷新页面清理前端状态（定时器、WebSocket、缓存等）
+    window.location.href = RoutePaths.LOGIN
   }
 
   const handleRestart = async () => {
@@ -637,7 +638,8 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
   const onLogout = async () => {
     await logout()
     Cookies.remove('danmu_token', { path: '/' })
-    navigate(RoutePaths.LOGIN)
+    // 刷新页面清理前端状态（定时器、WebSocket、缓存等）
+    window.location.href = RoutePaths.LOGIN
   }
 
   const handleRestart = async () => {
