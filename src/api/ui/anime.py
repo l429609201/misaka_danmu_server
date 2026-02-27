@@ -102,16 +102,21 @@ async def edit_anime_info(
 
     # 新增：如果提供了TMDB ID和剧集组ID，则更新映射表
     if update_data.tmdbId and update_data.tmdbEpisodeGroupId:
-        logger.info(f"检测到TMDB ID和剧集组ID，开始更新映射表...")
-        try:
-            await metadata_manager.update_tmdb_mappings(
-                tmdb_tv_id=int(update_data.tmdbId),
-                group_id=update_data.tmdbEpisodeGroupId,
-                user=current_user
-            )
-        except Exception as e:
-            # 仅记录错误，不中断主流程，因为核心信息已保存
-            logger.error(f"更新TMDB映射失败: {e}", exc_info=True)
+        group_id = update_data.tmdbEpisodeGroupId
+        # 本地剧集组（local-*）已通过本地接口保存，无需从 TMDB API 拉取
+        if group_id.startswith("local-"):
+            logger.info(f"剧集组 {group_id} 为本地剧集组，跳过 TMDB API 映射更新。")
+        else:
+            logger.info(f"检测到TMDB ID和剧集组ID，开始更新映射表...")
+            try:
+                await metadata_manager.update_tmdb_mappings(
+                    tmdb_tv_id=int(update_data.tmdbId),
+                    group_id=group_id,
+                    user=current_user
+                )
+            except Exception as e:
+                # 仅记录错误，不中断主流程，因为核心信息已保存
+                logger.error(f"更新TMDB映射失败: {e}", exc_info=True)
     return
 
 
