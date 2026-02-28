@@ -75,6 +75,9 @@ from .danmaku_color import (
     DEFAULT_RANDOM_COLOR_PALETTE,
     apply_random_color,
     parse_palette,
+    apply_repeat_highlight,
+    DEFAULT_REPEAT_HIGHLIGHT_COLOR,
+    DEFAULT_REPEAT_HIGHLIGHT_MIN_COUNT,
 )
 
 # 弹幕过滤
@@ -184,6 +187,9 @@ __all__ = [
     'DEFAULT_RANDOM_COLOR_PALETTE',
     'apply_random_color',
     'parse_palette',
+    'apply_repeat_highlight',
+    'DEFAULT_REPEAT_HIGHLIGHT_COLOR',
+    'DEFAULT_REPEAT_HIGHLIGHT_MIN_COUNT',
     # 弹幕过滤
     'apply_blacklist_filter',
     # 弹幕解析

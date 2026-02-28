@@ -61,7 +61,9 @@ def _get_predownload_functions():
 from .danmaku_color import (
     DEFAULT_RANDOM_COLOR_MODE,
     DEFAULT_RANDOM_COLOR_PALETTE,
+    DEFAULT_REPEAT_HIGHLIGHT_MIN_COUNT,
     apply_random_color,
+    apply_repeat_highlight,
     parse_palette,
 )
 from .danmaku_filter import apply_blacklist_filter
@@ -1155,7 +1157,8 @@ async def get_comments_for_dandan(
     except Exception as e:
         logger.error(f"应用弹幕黑名单过滤失败: {e}", exc_info=True)
 
-    # 应用随机颜色配置
+    # 应用随机颜色 + 重复弹幕高亮（共用同一份色板）
+    palette = DEFAULT_RANDOM_COLOR_PALETTE
     try:
         random_color_mode = await config_manager.get('danmakuRandomColorMode', DEFAULT_RANDOM_COLOR_MODE)
         random_color_palette_raw = await config_manager.get('danmakuRandomColorPalette', DEFAULT_RANDOM_COLOR_PALETTE)
@@ -1163,6 +1166,16 @@ async def get_comments_for_dandan(
         comments_data = apply_random_color(comments_data, random_color_mode, palette)
     except Exception as e:
         logger.error(f"应用随机颜色失败: {e}", exc_info=True)
+
+    # 重复弹幕自动上色（内容以 " X数字" 结尾且次数达到阈值，从色板随机取色）
+    try:
+        comments_data = apply_repeat_highlight(
+            comments_data,
+            min_count=DEFAULT_REPEAT_HIGHLIGHT_MIN_COUNT,
+            palette=palette,
+        )
+    except Exception as e:
+        logger.error(f"应用重复弹幕高亮失败: {e}", exc_info=True)
 
     # 处理简繁转换（根据优先级决定使用服务端配置还是播放器参数）
     try:

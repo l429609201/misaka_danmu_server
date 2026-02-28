@@ -1,7 +1,8 @@
 import json
 import logging
 import random
-from typing import Any, Dict, Iterable, List
+import re
+from typing import Any, Dict, Iterable, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,12 @@ DEFAULT_RANDOM_COLOR_PALETTE: List[int] = [
 # - all_white: 所有弹幕变白色
 DEFAULT_RANDOM_COLOR_MODE = "off"
 VALID_RANDOM_COLOR_MODES = {"off", "white_to_random", "all_random", "all_white"}
+
+# 重复弹幕高亮：最小重复次数为 3（颜色从随机色板中随机取，与普通弹幕行为一致）
+DEFAULT_REPEAT_HIGHLIGHT_MIN_COUNT: int = 3
+
+# 匹配 "内容 X数字" 结尾的弹幕（如 "好好好 X50"）
+_REPEAT_SUFFIX_RE = re.compile(r'^(.*?)\s+X(\d+)$')
 
 
 def _normalize_color_value(value: Any) -> int:
@@ -103,6 +110,39 @@ def _set_color_in_p(parts: List[str], color: int) -> None:
         while len(parts) < 3:
             parts.append("0")
         parts.append(color_str)
+
+
+def apply_repeat_highlight(
+    comments: List[Dict[str, Any]],
+    min_count: int = DEFAULT_REPEAT_HIGHLIGHT_MIN_COUNT,
+    palette: Optional[List[int]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    对重复次数达到阈值的弹幕从色板中随机取色，行为与普通随机弹幕一致。
+
+    检测规则：弹幕内容（m 字段）以 " X数字" 结尾，如 "好好好 X50"。
+    当数字 >= min_count 时，从 palette（默认随机色板）随机选一个颜色替换。
+    """
+    use_palette = palette if palette else DEFAULT_RANDOM_COLOR_PALETTE
+
+    processed = []
+    for item in comments:
+        m = item.get("m", "")
+        match = _REPEAT_SUFFIX_RE.match(m)
+        if match:
+            try:
+                count = int(match.group(2))
+            except ValueError:
+                count = 0
+            if count >= min_count:
+                p_attr = item.get("p", "")
+                if p_attr:
+                    parts = p_attr.split(",")
+                    _set_color_in_p(parts, random.choice(use_palette))
+                    processed.append({**item, "p": ",".join(parts)})
+                    continue
+        processed.append(item)
+    return processed
 
 
 def apply_random_color(
