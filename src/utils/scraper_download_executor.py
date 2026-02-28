@@ -1288,6 +1288,9 @@ class ScraperDownloadExecutor:
         existing_scrapers.update(versions_data)
         existing_hashes.update(hashes_data)
 
+        # 从 package_data 读取全局版本限制字段
+        min_server_version = package_data.get('min_server_version')
+
         # 构建完整的 versions.json
         versions_json = {
             "platform": platform_info.get('platform', 'unknown'),
@@ -1296,6 +1299,8 @@ class ScraperDownloadExecutor:
             "hashes": existing_hashes,
             "updated_at": datetime.now().isoformat()
         }
+        if min_server_version:
+            versions_json['min_server_version'] = min_server_version
 
         versions_json_str = json.dumps(versions_json, indent=2, ensure_ascii=False)
         await asyncio.to_thread(backup_versions_file.write_text, versions_json_str)
@@ -1325,6 +1330,9 @@ class ScraperDownloadExecutor:
             merged_scrapers = {**existing_scrapers, **versions_data}
             merged_hashes = {**existing_hashes, **hashes_data}
 
+            # 从 package_data 读取全局版本限制字段
+            min_server_version = package_data.get('min_server_version')
+
             full_versions_data = {
                 "platform": platform_info['platform'],
                 "type": platform_info['arch'],
@@ -1335,6 +1343,8 @@ class ScraperDownloadExecutor:
 
             if merged_hashes:
                 full_versions_data["hashes"] = merged_hashes
+            if min_server_version:
+                full_versions_data['min_server_version'] = min_server_version
 
             versions_json_str = json.dumps(full_versions_data, indent=2, ensure_ascii=False)
             await asyncio.to_thread(versions_file.write_text, versions_json_str)
@@ -1363,6 +1373,16 @@ class ScraperDownloadExecutor:
             scrapers_hashes = {}
             local_package_file = scrapers_dir / "package.json"
 
+            # 从解压后的 versions.json 读取全局版本限制字段（覆盖前读取）
+            min_server_version = None
+            existing_versions_file = scrapers_dir / "versions.json"
+            if existing_versions_file.exists():
+                try:
+                    existing_ver_data = json.loads(await asyncio.to_thread(existing_versions_file.read_text))
+                    min_server_version = existing_ver_data.get('min_server_version')
+                except Exception:
+                    pass
+
             if local_package_file.exists():
                 try:
                     package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
@@ -1378,6 +1398,9 @@ class ScraperDownloadExecutor:
                             if platform_key in hashes:
                                 scrapers_hashes[scraper_name] = hashes[platform_key]
                     logger.info(f"从 package.json 读取到 {len(scrapers_versions)} 个源的版本信息, {len(scrapers_hashes)} 个哈希值")
+                    # package.json 也可能携带版本限制字段
+                    if not min_server_version:
+                        min_server_version = package_content.get('min_server_version')
                 except Exception as e:
                     logger.warning(f"读取 package.json 中的源版本信息失败: {e}")
 
@@ -1391,6 +1414,8 @@ class ScraperDownloadExecutor:
                 "full_replace": True,
                 "updated_at": datetime.now().isoformat()  # 使用 updated_at 与其他地方保持一致
             }
+            if min_server_version:
+                versions_data['min_server_version'] = min_server_version
 
             # 写入 versions.json 到 scrapers 目录
             versions_file = scrapers_dir / "versions.json"

@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from ..orm_models import Anime, Episode, AnimeMetadata, AnimeSource
 from .. import models
 from src.core.timezone import get_now
+from src.utils.common import handle_danmaku_likes
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,8 @@ async def save_danmaku_for_episode(
     session: AsyncSession,
     episode_id: int,
     comments: List[Dict[str, Any]],
-    config_manager = None
+    config_manager = None,
+    fire_threshold: int = 1000
 ) -> int:
     """
     将弹幕写入XML文件，并更新数据库记录，返回新增数量。
@@ -70,6 +72,8 @@ async def save_danmaku_for_episode(
     episode = episode_result.scalar_one_or_none()
     if not episode:
         raise ValueError(f"找不到ID为 {episode_id} 的分集")
+
+    comments = handle_danmaku_likes(list(comments), fire_threshold)
 
     new_comment_count = len(comments)
     old_comment_count = episode.commentCount or 0

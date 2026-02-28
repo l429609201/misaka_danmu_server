@@ -11,7 +11,7 @@
 """
 
 # 通用工具
-from .common import sample_comments_evenly, clean_xml_string
+from .common import sample_comments_evenly, clean_xml_string, handle_danmaku_likes
 
 # 文件名解析 (统一模块)
 from .filename_parser import (
@@ -88,6 +88,7 @@ __all__ = [
     # 通用工具
     'sample_comments_evenly',
     'clean_xml_string',
+    'handle_danmaku_likes',
     # 搜索计时器
     'SearchTimer',
     'SubStepTiming',

@@ -127,7 +127,8 @@ async def full_refresh_task(sourceId: int, session: AsyncSession, scraper_manage
                     if new_count > existing_count:
                         # 新弹幕更多，保存
                         added_count = await crud.save_danmaku_for_episode(
-                            session, episode_id, comments, config_manager
+                            session, episode_id, comments, config_manager,
+                            fire_threshold=scraper.likes_fire_threshold
                         )
                         total_comments_added += added_count
                         successful_indices.append(episode_index)
@@ -257,7 +258,10 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
 
         # 获取 animeId 用于文件路径
         anime_id = info["animeId"]
-        added_count = await crud.save_danmaku_for_episode(session, episodeId, all_comments_from_source, config_manager)
+        added_count = await crud.save_danmaku_for_episode(
+            session, episodeId, all_comments_from_source, config_manager,
+            fire_threshold=scraper.likes_fire_threshold
+        )
 
         await session.commit()
         raise TaskSuccess(f"刷新完成，新增 {added_count} 条弹幕。")
@@ -405,7 +409,10 @@ async def refresh_bulk_episodes_task(episodeIds: List[int], session: AsyncSessio
                 await rate_limiter.increment(provider_name)
 
                 # 4. 保存弹幕
-                added_count = await crud.save_danmaku_for_episode(session, episode_id, all_comments_from_source, config_manager)
+                added_count = await crud.save_danmaku_for_episode(
+                    session, episode_id, all_comments_from_source, config_manager,
+                    fire_threshold=scraper.likes_fire_threshold
+                )
                 total_added_comments += added_count
                 success_episodes.append((episode_index, episode_id))
 

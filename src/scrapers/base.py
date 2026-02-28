@@ -319,6 +319,9 @@ class BaseScraper(ABC):
 
     rate_limit_quota: Optional[int] = None # 新增：特定源的配额
 
+    # 点赞火焰阈值：l >= 此值显示 🔥，否则显示 ❤️（各源可在内部覆盖）
+    likes_fire_threshold: int = 1000
+
     def build_media_url(self, media_id: str) -> Optional[str]:
         """
         构造平台播放页面URL。

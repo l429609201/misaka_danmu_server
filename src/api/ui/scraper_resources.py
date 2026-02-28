@@ -892,6 +892,15 @@ async def load_resources_stream(
                             scrapers_versions = {}
                             scrapers_hashes = {}
                             local_package_file = scrapers_dir / "package.json"
+                            # 从解压后的 versions.json 读取全局版本限制字段（覆盖前读取）
+                            min_server_version = None
+                            existing_versions_file = scrapers_dir / "versions.json"
+                            if existing_versions_file.exists():
+                                try:
+                                    existing_ver_data = json.loads(await asyncio.to_thread(existing_versions_file.read_text))
+                                    min_server_version = existing_ver_data.get('min_server_version')
+                                except Exception:
+                                    pass
                             try:
                                 if local_package_file.exists():
                                     package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
@@ -908,6 +917,9 @@ async def load_resources_stream(
                                             if platform_key in hashes:
                                                 scrapers_hashes[scraper_name] = hashes[platform_key]
                                     logger.info(f"从 package.json 读取到 {len(scrapers_versions)} 个源的版本信息")
+                                    # package.json 也可能携带版本限制字段
+                                    if not min_server_version:
+                                        min_server_version = package_content.get('min_server_version')
                             except Exception as e:
                                 logger.warning(f"读取 package.json 中的源版本信息失败: {e}")
 
@@ -920,6 +932,8 @@ async def load_resources_stream(
                                 "full_replace": True,
                                 "update_time": datetime.now().isoformat()
                             }
+                            if min_server_version:
+                                versions_data['min_server_version'] = min_server_version
                             versions_json_str = json.dumps(versions_data, indent=2, ensure_ascii=False)
                             await asyncio.to_thread(SCRAPERS_VERSIONS_FILE.write_text, versions_json_str)
                             logger.info(f"已更新 versions.json: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
@@ -1397,6 +1411,8 @@ async def load_resources_stream(
                                 # 保存版本信息
                                 if versions_data:
                                     try:
+                                        # 从 package_data 读取全局版本限制字段
+                                        pkg_min_ver = package_data.get('min_server_version')
                                         full_versions_data = {
                                             "platform": platform_info['platform'],
                                             "type": platform_info['arch'],
@@ -1405,6 +1421,8 @@ async def load_resources_stream(
                                         }
                                         if hashes_data:
                                             full_versions_data["hashes"] = hashes_data
+                                        if pkg_min_ver:
+                                            full_versions_data['min_server_version'] = pkg_min_ver
                                         versions_json_str = json.dumps(full_versions_data, indent=2, ensure_ascii=False)
                                         await asyncio.to_thread(SCRAPERS_VERSIONS_FILE.write_text, versions_json_str)
                                         logger.info(f"已保存 {len(versions_data)} 个弹幕源的版本信息")

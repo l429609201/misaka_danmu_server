@@ -18,7 +18,7 @@ from src.db import crud, orm_models, models, get_db_session, sync_postgres_seque
 from src.core import get_now
 from src.core.cache import get_cache_backend
 from src.services import ScraperManager, TaskManager
-from src.utils import parse_search_keyword, sample_comments_evenly, record_play_history
+from src.utils import parse_search_keyword, sample_comments_evenly, record_play_history, handle_danmaku_likes
 from src.rate_limiter import RateLimiter
 from src import tasks
 
@@ -143,6 +143,7 @@ async def get_external_comments_from_url(
             
             episode_id_for_comments = scraper.format_episode_id_for_comments(provider_episode_id)
             comments_data = await scraper.get_comments(episode_id_for_comments)
+            comments_data = handle_danmaku_likes(comments_data, scraper.likes_fire_threshold)
 
             # 修正：使用 scraper.provider_name 修复未定义的 'provider' 变量
             if not comments_data: logger.warning(f"未能从 {scraper.provider_name} URL 获取任何弹幕: {url}")
@@ -495,7 +496,8 @@ async def get_comments_for_dandan(
 
                         # 保存弹幕
                         added_count = await crud.save_danmaku_for_episode(
-                            task_session, current_episodeId, comments, config_manager
+                            task_session, current_episodeId, comments, config_manager,
+                            fire_threshold=current_scraper.likes_fire_threshold
                         )
                         await task_session.commit()
                         logger.info(f"保存成功，共 {added_count} 条弹幕")
@@ -932,7 +934,8 @@ async def get_comments_for_dandan(
 
                                         # 4. 保存弹幕到数据库
                                         added_count = await crud.save_danmaku_for_episode(
-                                            task_session, episode_db_id, raw_comments_data, current_config_manager
+                                            task_session, episode_db_id, raw_comments_data, current_config_manager,
+                                            fire_threshold=scraper.likes_fire_threshold
                                         )
                                         await task_session.commit()
 

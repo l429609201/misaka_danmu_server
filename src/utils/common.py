@@ -33,6 +33,32 @@ def clean_xml_string(xml_string: str) -> str:
     )
     return invalid_xml_char_re.sub('', xml_string)
 
+def handle_danmaku_likes(comments: List[Dict[str, Any]], fire_threshold: int = 1000) -> List[Dict[str, Any]]:
+    """
+    处理弹幕点赞数，将 like 字段格式化后追加到弹幕内容末尾，并移除 like 字段。
+
+    - l >= fire_threshold → 🔥，否则 ❤️（阈值由各源的 likes_fire_threshold 决定）
+    - 最低显示阈值：like >= 5
+    - 格式化：>= 10000 → "1.2w"，>= 1000 → "1.2k"，否则直接数字
+    """
+    MIN_LIKE = 5
+
+    def _fmt(n: int) -> str:
+        if n >= 10000:
+            return f"{n / 10000:.1f}w"
+        if n >= 1000:
+            return f"{n / 1000:.1f}k"
+        return str(n)
+
+    for item in comments:
+        like = item.pop('l', None)
+        if like and isinstance(like, (int, float)) and like >= MIN_LIKE:
+            emoji = '🔥' if like >= fire_threshold else '❤️'
+            item['m'] = f"{item.get('m', '')} {emoji} {_fmt(int(like))}"
+
+    return comments
+
+
 def sample_comments_evenly(comments: List[Dict[str, Any]], target_count: int) -> List[Dict[str, Any]]:
     """
     按固定时间段（3分钟）随机均匀采样弹幕

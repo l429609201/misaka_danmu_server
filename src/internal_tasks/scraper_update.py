@@ -262,6 +262,23 @@ async def _perform_update(
                     except Exception as e:
                         logger.warning(f"读取 package.json 中的源版本信息失败: {e}")
 
+                    # 从解压后的 versions.json 读取全局版本限制字段（覆盖前读取）
+                    min_server_version = None
+                    existing_versions_file = scrapers_dir / "versions.json"
+                    if existing_versions_file.exists():
+                        try:
+                            existing_ver_data = json.loads(await asyncio.to_thread(existing_versions_file.read_text))
+                            min_server_version = existing_ver_data.get('min_server_version')
+                        except Exception:
+                            pass
+                    # package.json 也可能携带版本限制字段
+                    if local_package_file.exists() and not min_server_version:
+                        try:
+                            pkg = json.loads(await asyncio.to_thread(local_package_file.read_text))
+                            min_server_version = pkg.get('min_server_version')
+                        except Exception:
+                            pass
+
                     versions_data = {
                         "platform": platform_info['platform'],
                         "type": platform_info['arch'],
@@ -271,6 +288,8 @@ async def _perform_update(
                         "full_replace": True,
                         "update_time": datetime.now().isoformat()
                     }
+                    if min_server_version:
+                        versions_data['min_server_version'] = min_server_version
                     versions_json_str = json.dumps(versions_data, indent=2, ensure_ascii=False)
                     await asyncio.to_thread(SCRAPERS_VERSIONS_FILE.write_text, versions_json_str)
                     logger.info(f"已更新 versions.json: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
@@ -685,6 +704,9 @@ async def _save_versions(
         merged_scrapers = {**existing_scrapers, **versions_data}
         merged_hashes = {**existing_hashes, **hashes_data}
 
+        # 从 package_data 读取全局版本限制字段
+        min_server_version = package_data.get('min_server_version')
+
         full_versions_data = {
             "platform": platform_info['platform'],
             "type": platform_info['arch'],
@@ -694,6 +716,8 @@ async def _save_versions(
 
         if merged_hashes:
             full_versions_data["hashes"] = merged_hashes
+        if min_server_version:
+            full_versions_data['min_server_version'] = min_server_version
 
         versions_json_str = json.dumps(full_versions_data, indent=2, ensure_ascii=False)
         await asyncio.to_thread(SCRAPERS_VERSIONS_FILE.write_text, versions_json_str)

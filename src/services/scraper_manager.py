@@ -22,6 +22,17 @@ ScraperSetting = models.ScraperSetting
 if TYPE_CHECKING:
     from .metadata_manager import MetadataSourceManager
 
+
+def _version_satisfies(current: str, minimum: str) -> bool:
+    """比较语义版本号，返回 current >= minimum。解析失败时默认放行。"""
+    try:
+        cur = tuple(int(x) for x in current.strip().split('.')[:3])
+        min_ = tuple(int(x) for x in minimum.strip().split('.')[:3])
+        return cur >= min_
+    except Exception:
+        return True
+
+
 class ScraperManager:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager, metadata_manager: "MetadataSourceManager", transport_manager: TransportManager):
         self.scrapers: Dict[str, BaseScraper] = {}
@@ -177,6 +188,7 @@ class ScraperManager:
 
         # 从 versions.json 读取各个源的版本号（优先使用，因为 .so 模块无法热更新）
         versions_from_file: Dict[str, str] = {}
+        global_min_version: Optional[str] = None
         versions_json_path = scrapers_dir / "versions.json"
         if versions_json_path.exists():
             try:
@@ -184,9 +196,21 @@ class ScraperManager:
                 versions_data = json.loads(versions_json_path.read_text())
                 # versions.json 中的 scrapers 字段存储各个源的版本号
                 versions_from_file = versions_data.get('scrapers', {})
+                # 读取全局版本限制字段
+                global_min_version = versions_data.get('min_server_version')
                 logging.getLogger(__name__).debug(f"从 versions.json 读取到 {len(versions_from_file)} 个源的版本信息")
             except Exception as e:
                 logging.getLogger(__name__).warning(f"读取 versions.json 失败: {e}")
+
+        # 全局版本检查：若弹幕源包要求的最低服务器版本高于当前版本，跳过全部加载
+        if global_min_version:
+            from src._version import APP_VERSION
+            if not _version_satisfies(APP_VERSION, global_min_version):
+                logging.getLogger(__name__).warning(
+                    f"弹幕源包要求服务器版本 >= {global_min_version}，"
+                    f"当前版本 {APP_VERSION}，跳过全部弹幕源加载"
+                )
+                return
 
         # 使用 pkgutil 发现模块，这对于 .py, .pyc, .so 文件都有效。
         # 我们需要同时处理源码和编译后的情况。
@@ -213,6 +237,7 @@ class ScraperManager:
                 for name, obj in inspect.getmembers(module, inspect.isclass):
                     if issubclass(obj, BaseScraper) and obj is not BaseScraper:
                         provider_name = obj.provider_name # 直接访问类属性，避免实例化
+
                         discovered_providers.append(provider_name)
                         # (新增) 注册该刮削器能处理的域名
                         for domain in getattr(obj, 'handled_domains', []):
