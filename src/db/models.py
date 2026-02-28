@@ -226,6 +226,7 @@ class LibrarySourceBrief(BaseModel):
     providerName: str
     isFavorited: bool
     incrementalRefreshEnabled: bool
+    isFinished: bool = False
 
 
 class LibraryAnimeInfo(BaseModel):

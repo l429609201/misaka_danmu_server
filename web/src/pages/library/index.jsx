@@ -43,6 +43,7 @@ import {
   toggleSourceFavorite,
   toggleSourceIncremental,
   downloadPosterToLocal,
+  bulkSetFinished,
 } from '../../apis'
 import { MyIcon } from '@/components/MyIcon'
 import { DANDAN_TYPE_DESC_MAPPING, DANDAN_TYPE_MAPPING } from '../../configs'
@@ -136,6 +137,10 @@ export const Library = () => {
   const modalApi = useModal()
   const messageApi = useMessage()
   const deleteFilesRef = useRef(true) // 删除时是否同时删除弹幕文件，默认为 true
+
+  // 多选批量操作状态
+  const [selectedRowKeys, setSelectedRowKeys] = useState([])
+  const [bulkFinishedLoading, setBulkFinishedLoading] = useState(false)
 
   // 源选择弹窗状态（用于标记和追更操作）
   const [sourceSelectOpen, setSourceSelectOpen] = useState(false)
@@ -249,7 +254,16 @@ export const Library = () => {
       title: '影视名称',
       dataIndex: 'title',
       key: 'title',
-      width: 200,
+      width: 220,
+      render: (text, record) => {
+        const allFinished = record.sources?.length > 0 && record.sources.every(s => s.isFinished)
+        return (
+          <Space size={4}>
+            <span>{text}</span>
+            {allFinished && <Tag color="default" style={{ marginInlineEnd: 0 }}>已完结</Tag>}
+          </Space>
+        )
+      },
     },
     {
       title: '类型',
@@ -478,6 +492,22 @@ export const Library = () => {
         }
       },
     })
+  }
+
+  // 批量标记完结/取消完结
+  const handleBulkSetFinished = async (isFinished) => {
+    if (selectedRowKeys.length === 0) return
+    try {
+      setBulkFinishedLoading(true)
+      await bulkSetFinished({ animeIds: selectedRowKeys, isFinished })
+      messageApi.success(`已${isFinished ? '标记' : '取消'}完结 ${selectedRowKeys.length} 部作品`)
+      setSelectedRowKeys([])
+      getList()
+    } catch (e) {
+      messageApi.error('操作失败')
+    } finally {
+      setBulkFinishedLoading(false)
+    }
   }
 
   const goTask = res => {
@@ -1147,11 +1177,43 @@ export const Library = () => {
             </div>
           </div>
         )}
+        {selectedRowKeys.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+            <span className="text-sm text-blue-700 dark:text-blue-300 font-medium">已选 {selectedRowKeys.length} 部作品</span>
+            <Button
+              size="small"
+              loading={bulkFinishedLoading}
+              onClick={() => handleBulkSetFinished(true)}
+            >
+              标记完结
+            </Button>
+            <Button
+              size="small"
+              loading={bulkFinishedLoading}
+              onClick={() => handleBulkSetFinished(false)}
+            >
+              取消完结
+            </Button>
+            <Button
+              size="small"
+              onClick={() => setSelectedRowKeys([])}
+            >
+              取消选择
+            </Button>
+          </div>
+        )}
         <ResponsiveTable
           dataSource={list}
           columns={columns}
           loading={loading}
           rowKey="animeId"
+          tableProps={{
+            rowSelection: {
+              selectedRowKeys,
+              onChange: setSelectedRowKeys,
+              preserveSelectedRowKeys: true,
+            },
+          }}
           pagination={{
             ...pagination,
             showTotal: total => `共 ${total} 条数据`,
@@ -1192,6 +1254,7 @@ export const Library = () => {
                     <Tag color="blue">{DANDAN_TYPE_DESC_MAPPING[record.type]}</Tag>
                     {record.season && <Tag>第{record.season}季</Tag>}
                     {record.year && <Tag>{record.year}年</Tag>}
+                    {record.sources?.length > 0 && record.sources.every(s => s.isFinished) && <Tag color="default">已完结</Tag>}
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-400">
                     <span>集数: {record.episodeCount || 0}</span>

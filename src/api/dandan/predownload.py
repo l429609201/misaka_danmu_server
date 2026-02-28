@@ -126,6 +126,10 @@ async def try_predownload_next_episode(
                 logger.warning(f"预下载跳过: 当前分集的源 {current_episode.sourceId} 不存在")
                 return
 
+            if source.isFinished:
+                logger.info(f"预下载跳过: 源 '{source.providerName}' 已标记完结 (sourceId={source.id})")
+                return
+
             # 6. 查询下一集
             next_episode_index = current_episode.episodeIndex + 1
             next_episode_stmt = select(orm_models.Episode).where(

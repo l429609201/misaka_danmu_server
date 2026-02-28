@@ -188,6 +188,7 @@ async def get_library_anime(session: AsyncSession, keyword: Optional[str] = None
                 AnimeSource.providerName.label("providerName"),
                 AnimeSource.isFavorited.label("isFavorited"),
                 AnimeSource.incrementalRefreshEnabled.label("incrementalRefreshEnabled"),
+                AnimeSource.isFinished.label("isFinished"),
             )
             .where(AnimeSource.animeId.in_(anime_ids))
             .order_by(AnimeSource.animeId, AnimeSource.createdAt)
@@ -206,6 +207,7 @@ async def get_library_anime(session: AsyncSession, keyword: Optional[str] = None
                 "providerName": row["providerName"],
                 "isFavorited": row["isFavorited"],
                 "incrementalRefreshEnabled": row["incrementalRefreshEnabled"],
+                "isFinished": row["isFinished"],
             })
 
         # 将源列表添加到每个 item
@@ -842,7 +844,8 @@ async def get_anime_full_details(session: AsyncSession, anime_id: int) -> Option
     stmt = (
         select(
             Anime.id.label("animeId"), Anime.title, Anime.type, Anime.season, Anime.year, Anime.localImagePath.label("localImagePath"),
-            Anime.episodeCount.label("episodeCount"), Anime.imageUrl.label("imageUrl"), AnimeMetadata.tmdbId.label("tmdbId"), AnimeMetadata.tmdbEpisodeGroupId.label("tmdbEpisodeGroupId"),
+            Anime.episodeCount.label("episodeCount"), Anime.imageUrl.label("imageUrl"),
+            AnimeMetadata.tmdbId.label("tmdbId"), AnimeMetadata.tmdbEpisodeGroupId.label("tmdbEpisodeGroupId"),
             AnimeMetadata.bangumiId.label("bangumiId"), AnimeMetadata.tvdbId.label("tvdbId"), AnimeMetadata.doubanId.label("doubanId"), AnimeMetadata.imdbId.label("imdbId"),
             AnimeAlias.nameEn.label("nameEn"), AnimeAlias.nameJp.label("nameJp"), AnimeAlias.nameRomaji.label("nameRomaji"), AnimeAlias.aliasCn1.label("aliasCn1"),
             AnimeAlias.aliasCn2.label("aliasCn2"), AnimeAlias.aliasCn3.label("aliasCn3"), AnimeAlias.aliasLocked.label("aliasLocked")
@@ -1099,3 +1102,18 @@ async def scan_duplicate_animes(session: AsyncSession, strict: bool = True) -> L
         duplicate_groups.append(group)
 
     return duplicate_groups
+
+
+
+async def bulk_set_sources_finished_by_anime_ids(session: AsyncSession, anime_ids: List[int], is_finished: bool) -> int:
+    """批量设置指定番剧下所有源的完结状态，返回实际更新的记录数。"""
+    if not anime_ids:
+        return 0
+    stmt = (
+        update(AnimeSource)
+        .where(AnimeSource.animeId.in_(anime_ids))
+        .values(isFinished=is_finished)
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    return result.rowcount

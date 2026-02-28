@@ -607,6 +607,9 @@ export const deleteAnimeSource = data =>
 export const deleteAnimeSourceSingle = data =>
   api.delete(`/api/ui/library/source/${data.sourceId}?deleteFiles=${data.deleteFiles !== false}`)
 
+/** 批量标记番剧完结状态（标记所有源） */
+export const bulkSetFinished = data => api.post('/api/ui/library/anime/bulk-set-finished', data)
+
 /** 数据源收藏状态 */
 export const toggleSourceFavorite = data =>
   api.put(`/api/ui/library/source/${data.sourceId}/favorite`)

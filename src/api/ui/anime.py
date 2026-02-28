@@ -86,6 +86,20 @@ async def get_anime_full_details(
 
 
 
+@router.post("/library/anime/bulk-set-finished", status_code=status.HTTP_204_NO_CONTENT, summary="批量标记番剧完结状态")
+async def bulk_set_finished(
+    animeIds: List[int] = Body(..., description="番剧ID列表"),
+    isFinished: bool = Body(..., description="是否完结"),
+    current_user: models.User = Depends(security.get_current_user),
+    session: AsyncSession = Depends(get_db_session)
+):
+    """批量将指定番剧的所有数据源标记为完结或取消完结。完结后预下载将跳过该源。"""
+    count = await crud.bulk_set_sources_finished_by_anime_ids(session, animeIds, isFinished)
+    action = "完结" if isFinished else "取消完结"
+    logger.info(f"用户 '{current_user.username}' 批量{action}了 {len(animeIds)} 部番剧的 {count} 个数据源")
+    return
+
+
 @router.put("/library/anime/{animeId}", status_code=status.HTTP_204_NO_CONTENT, summary="编辑影视信息")
 async def edit_anime_info(
     animeId: int,

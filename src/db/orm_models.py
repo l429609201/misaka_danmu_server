@@ -64,6 +64,7 @@ class AnimeSource(Base):
     mediaId: Mapped[str] = mapped_column("media_id", String(255))  # 255 以避免复合索引超过 3072 字节
     isFavorited: Mapped[bool] = mapped_column("is_favorited", Boolean, default=False)
     incrementalRefreshEnabled: Mapped[bool] = mapped_column("incremental_refresh_enabled", Boolean, default=False)
+    isFinished: Mapped[bool] = mapped_column("is_finished", Boolean, default=False)
     incrementalRefreshFailures: Mapped[int] = mapped_column("incremental_refresh_failures", Integer, default=0)
     lastRefreshLatestEpisodeAt: Mapped[Optional[datetime]] = mapped_column("last_refresh_latest_episode_at", NaiveDateTime, nullable=True)
     createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime)
