@@ -163,7 +163,8 @@ async def _refresh_bangumi_token(session: AsyncSession, user_id: int, config: Di
 
     client_id = config.get("client_id")
     client_secret = config.get("client_secret")
-    redirect_uri = config.get("redirect_uri")
+    # 优先使用授权时保存的 redirect_uri，保证和授权时一致（bgm.tv 严格校验）
+    redirect_uri = getattr(auth, 'redirectUri', None) or config.get("redirect_uri")
 
     if not all([client_id, client_secret, redirect_uri]):
         logger.warning("Bangumi OAuth配置不完整,无法刷新token")
@@ -268,6 +269,7 @@ async def exchange_code(
             "accessToken": token_data.get("access_token"),
             "refreshToken": token_data.get("refresh_token"),
             "expiresAt": get_now() + timedelta(seconds=token_data.get("expires_in", 0)),
+            "redirectUri": body.redirect_uri,
         }
         await _save_bangumi_auth(session, user_id, auth_to_save)
         await session.commit()

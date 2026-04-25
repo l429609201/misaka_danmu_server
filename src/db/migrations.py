@@ -226,7 +226,7 @@ async def _rollback_to_original_types_v1(conn: AsyncConnection, db_type: str):
         'api_tokens': {'name': 500, 'token': 500},
         'token_access_logs': {'ip_address': 500, 'status': 500, 'path': 512},
         'ua_rules': {'ua_string': 500},
-        'bangumi_auth': {'nickname': 500, 'avatar_url': 512},
+        'bangumi_auth': {'nickname': 500, 'avatar_url': 512, 'redirect_uri': 512},
         'oauth_states': {'state_key': 500},
         'anime_aliases': {'name_en': 500, 'name_jp': 500, 'name_romaji': 500, 'alias_cn_1': 500, 'alias_cn_2': 500, 'alias_cn_3': 500},
         'tmdb_episode_mapping': {'tmdb_episode_group_id': 500},
