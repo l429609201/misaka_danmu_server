@@ -60,6 +60,7 @@ const AutoMatchSetting = () => {
         nameConversionEnabledRes,
         nameConversionPromptRes,
         logRawResponseRes,
+        thinkingEnabledRes,
         homeSearchSeasonMappingRes,
         fallbackSearchSeasonMappingRes,
         webhookSeasonMappingRes,
@@ -87,6 +88,7 @@ const AutoMatchSetting = () => {
         getConfig('aiNameConversionEnabled'),
         getConfig('aiNameConversionPrompt'),
         getConfig('aiLogRawResponse'),
+        getConfig('aiThinkingEnabled'),
         getConfig('homeSearchEnableTmdbSeasonMapping'),
         getConfig('fallbackSearchEnableTmdbSeasonMapping'),
         getConfig('webhookEnableTmdbSeasonMapping'),
@@ -106,6 +108,7 @@ const AutoMatchSetting = () => {
       const aliasExpansion = aliasExpansionEnabledRes.data.value === 'true'
       const nameConversion = nameConversionEnabledRes.data.value === 'true'
       const logRawResponse = logRawResponseRes.data.value === 'true'
+      const thinkingEnabled = thinkingEnabledRes.data.value === 'true'
       const episodeGroup = episodeGroupEnabledRes.data.value === 'true'
       setMatchMode(enabled ? 'ai' : 'traditional')
       setFallbackEnabled(fallback)
@@ -134,6 +137,7 @@ const AutoMatchSetting = () => {
         aiNameConversionEnabled: nameConversion,
         aiNameConversionPrompt: nameConversionPromptRes.data.value || '',
         aiLogRawResponse: logRawResponse,
+        aiThinkingEnabled: thinkingEnabled,
         homeSearchEnableTmdbSeasonMapping: homeSearchSeasonMappingRes.data.value === 'true',
         fallbackSearchEnableTmdbSeasonMapping: fallbackSearchSeasonMappingRes.data.value === 'true',
         webhookEnableTmdbSeasonMapping: webhookSeasonMappingRes.data.value === 'true',
@@ -261,7 +265,8 @@ const AutoMatchSetting = () => {
         setConfig('aiApiKey', values.aiApiKey || ''),
         setConfig('aiBaseUrl', values.aiBaseUrl || ''),
         setConfig('aiModel', values.aiModel || ''),
-        setConfig('aiLogRawResponse', values.aiLogRawResponse ? 'true' : 'false')
+        setConfig('aiLogRawResponse', values.aiLogRawResponse ? 'true' : 'false'),
+        setConfig('aiThinkingEnabled', values.aiThinkingEnabled ? 'true' : 'false')
       ])
 
       message.success('AI连接配置保存成功')
@@ -729,6 +734,30 @@ const AutoMatchSetting = () => {
                     <QuestionCircleOutlined style={{ color: '#999' }} />
                   </Tooltip>
                 </div>
+
+                <Form.Item noStyle shouldUpdate={(prev, cur) => prev.aiProvider !== cur.aiProvider}>
+                  {({ getFieldValue }) => getFieldValue('aiProvider') === 'deepseek' && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: isMobile ? '0' : '0 16px',
+                      width: isMobile ? '100%' : 'auto',
+                      justifyContent: isMobile ? 'center' : 'flex-start'
+                    }}>
+                      <span style={{ fontSize: '14px', whiteSpace: 'nowrap' }}>思考模式</span>
+                      <Form.Item name="aiThinkingEnabled" valuePropName="checked" noStyle>
+                        <CustomSwitch
+                          checkedChildren="开启"
+                          unCheckedChildren="关闭"
+                        />
+                      </Form.Item>
+                      <Tooltip title="启用后，DeepSeek 模型在输出最终答案前会先进行思维链推理，可提升准确性但会增加耗时和 token 消耗。思考内容会记录到 ai_responses.log 中。">
+                        <QuestionCircleOutlined style={{ color: '#999' }} />
+                      </Tooltip>
+                    </div>
+                  )}
+                </Form.Item>
 
                 <Button
                   type="primary"

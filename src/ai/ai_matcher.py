@@ -154,6 +154,7 @@ class AIMatcher:
         self.base_url = config.get("ai_match_base_url")
         self.model = config.get("ai_match_model")
         self.log_raw_response = config.get("ai_log_raw_response", False)
+        self.thinking_enabled = config.get("ai_thinking_enabled", False)
 
         # 提示词配置: 直接使用传入的配置,不做任何兜底处理
         # 注意: 硬编码的DEFAULT_*_PROMPT只用于初始化数据库,不用于运行时兜底
@@ -306,6 +307,25 @@ class AIMatcher:
                 "granted_balance": str(data.get("granted_balance", "0.00")),
                 "topped_up_balance": str(data.get("topped_up_balance", "0.00"))
             }
+
+    def _get_deepseek_thinking_extra(self) -> dict:
+        """当 provider 为 deepseek 且启用思考模式时，返回 extra_body 参数。"""
+        if self.provider == "deepseek" and self.thinking_enabled:
+            return {"extra_body": {"thinking": {"type": "enabled"}}}
+        return {}
+
+    def _log_reasoning_content(self, response, method_name: str):
+        """记录 DeepSeek 思考模式的 reasoning_content 到日志。"""
+        if not self.log_raw_response:
+            return
+        try:
+            reasoning = getattr(response.choices[0].message, 'reasoning_content', None)
+            if reasoning:
+                ai_responses_logger.info(
+                    f"[{method_name}] 思考内容 (reasoning_content):\n{reasoning}\n{'='*80}"
+                )
+        except Exception:
+            pass
 
     def _initialize_client(self):
         """根据提供商初始化客户端"""
@@ -521,9 +541,11 @@ class AIMatcher:
                 ],
                 temperature=0.0,
                 response_format={"type": "json_object"},
-                timeout=30
+                timeout=30,
+                **self._get_deepseek_thinking_extra()
             )
 
+            self._log_reasoning_content(response, "select_best_match")
             content = _extract_openai_content(response)
             if content is None:
                 return None
@@ -748,9 +770,11 @@ class AIMatcher:
                 ],
                 temperature=0.0,
                 response_format={"type": "json_object"},
-                timeout=30
+                timeout=30,
+                **self._get_deepseek_thinking_extra()
             )
 
+            self._log_reasoning_content(response, "recognize_title")
             content = _extract_openai_content(response)
             if content is None:
                 return None
@@ -940,9 +964,11 @@ class AIMatcher:
                 ],
                 temperature=0.0,
                 response_format={"type": "json_object"},
-                timeout=30
+                timeout=30,
+                **self._get_deepseek_thinking_extra()
             )
 
+            self._log_reasoning_content(response, "expand_aliases")
             content = _extract_openai_content(response)
             if content is None:
                 return None
@@ -1073,8 +1099,10 @@ class AIMatcher:
                     ],
                     temperature=0.0,
                     response_format={"type": "json_object"},
-                    timeout=30
+                    timeout=30,
+                    **self._get_deepseek_thinking_extra()
                 )
+                self._log_reasoning_content(response, "validate_aliases")
                 content = _extract_openai_content(response)
                 if content is None:
                     return None
@@ -1329,8 +1357,11 @@ class AIMatcher:
                     ],
                     temperature=0.0,
                     response_format={"type": "json_object"},
-                    timeout=30
+                    timeout=30,
+                    **self._get_deepseek_thinking_extra()
                 )
+                self._log_reasoning_content(response, "metadata_match")
+                content = _extract_openai_content(response)
 
             if self.log_raw_response:
                 ai_responses_logger.info(f"[元数据匹配] 原始响应: {content}")
@@ -1401,8 +1432,10 @@ class AIMatcher:
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.1,
-                    **_get_max_tokens_param(self.model, 50)
+                    **_get_max_tokens_param(self.model, 50),
+                    **self._get_deepseek_thinking_extra()
                 )
+                self._log_reasoning_content(response, "season_match")
                 content = _extract_openai_content(response)
                 if content is None:
                     return None
@@ -1529,8 +1562,10 @@ class AIMatcher:
                     ],
                     temperature=0.0,
                     response_format={"type": "json_object"},
-                    timeout=30
+                    timeout=30,
+                    **self._get_deepseek_thinking_extra()
                 )
+                self._log_reasoning_content(response, "episode_group_select")
                 content = _extract_openai_content(response)
                 if content is None:
                     logger.warning(f"剧集组选择(AI): '{title}' → AI返回空内容")
@@ -1674,8 +1709,10 @@ class AIMatcher:
                         {"role": "user", "content": user_prompt}
                     ],
                     temperature=0.0,
-                    **_get_max_tokens_param(self.model, 4096)
+                    **_get_max_tokens_param(self.model, 4096),
+                    **self._get_deepseek_thinking_extra()
                 )
+                self._log_reasoning_content(response, "generate_regex")
                 content = _extract_openai_content(response)
 
             if not content:

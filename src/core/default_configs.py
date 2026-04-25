@@ -151,6 +151,7 @@ def get_default_configs(settings=None, ai_prompts=None):
             'aiNameConversionEnabled': ('false', '是否启用AI名称转换（兜底）。启用后，当元数据源查询失败时使用AI进行名称转换。'),
             'aiNameConversionPrompt': (ai_prompts.get('DEFAULT_AI_NAME_CONVERSION_PROMPT', ''), 'AI名称转换提示词'),
             'aiLogRawResponse': ('false', '是否记录AI原始响应到日志文件'),
+            'aiThinkingEnabled': ('false', '是否启用DeepSeek思考模式。启用后，AI在输出最终答案前会先进行思维链推理，可提升准确性但会增加耗时和token消耗。仅对DeepSeek提供商生效。'),
             'seasonMappingPrompt': (ai_prompts.get('DEFAULT_AI_SEASON_MAPPING_PROMPT', ''), 'AI季度映射提示词。用于指导AI从元数据源搜索结果中选择最佳匹配。'),
             'aiEpisodeGroupEnabled': ('false', '是否启用AI剧集组自动选择。启用后，当作品有TMDB ID但缺少剧集组时，使用AI自动选择最佳剧集组，实现等价集数映射。'),
             'aiEpisodeGroupPrompt': (ai_prompts.get('DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT', ''), 'AI剧集组选择提示词。用于指导AI从TMDB剧集组列表中选择最佳匹配。'),

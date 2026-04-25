@@ -355,12 +355,20 @@ async def get_comments_for_dandan(
             # 获取分集列表（自动路由补充源 mediaId）
             try:
                 episodes_list = await scraper_manager.get_episodes_routed(provider, mediaId, db_media_type=media_type)
-                if not episodes_list or len(episodes_list) < episode_number:
-                    logger.error(f"无法获取第{episode_number}集的信息，跳过创建数据库条目")
+                if not episodes_list:
+                    logger.error(f"无法获取分集列表，跳过创建数据库条目")
                     return models.CommentResponse(count=0, comments=[])
 
-                # 获取目标分集信息
-                target_episode = episodes_list[episode_number - 1]
+                # 按 episodeIndex 精确查找目标分集（不能用位置索引，因为可能缺集）
+                target_episode = None
+                for ep in episodes_list:
+                    if ep.episodeIndex == episode_number:
+                        target_episode = ep
+                        break
+
+                if not target_episode:
+                    logger.error(f"分集列表中未找到第{episode_number}集（共{len(episodes_list)}条记录），跳过创建数据库条目")
+                    return models.CommentResponse(count=0, comments=[])
                 provider_episode_id = target_episode.episodeId
                 episode_title = target_episode.title
                 episode_url = target_episode.url
@@ -823,9 +831,14 @@ async def get_comments_for_dandan(
                                 current_episodes_list_ref = episodes_list
 
                             if episodes_list:
-                                # get_episodes 已做归一化，episodeIndex 从1开始，直接用下标取集
-                                if current_episode_number <= len(episodes_list):
-                                    target_episode = episodes_list[current_episode_number - 1]
+                                # 按 episodeIndex 精确查找目标分集（不能用位置索引，因为可能缺集）
+                                target_episode = None
+                                for ep in episodes_list:
+                                    if ep.episodeIndex == current_episode_number:
+                                        target_episode = ep
+                                        break
+
+                                if target_episode:
                                     provider_episode_id = target_episode.episodeId
                                     # 使用原生分集标题和URL
                                     original_episode_title = target_episode.title
@@ -863,7 +876,7 @@ async def get_comments_for_dandan(
                                         logger.warning(f"无法获取 {current_provider} 的分集ID: episode_number={current_episode_number}")
                                         raw_comments_data = None
                                 else:
-                                    logger.warning(f"从 {current_provider} 获取分集列表失败或集数不足: media_id={current_episode_url}, episode_number={current_episode_number}, total={len(episodes_list)}")
+                                    logger.warning(f"从 {current_provider} 分集列表中未找到第{current_episode_number}集: media_id={current_episode_url}, 共{len(episodes_list)}条记录")
                                     raw_comments_data = None
                             else:
                                 logger.warning(f"从 {current_provider} 获取分集列表失败: media_id={current_episode_url}, episode_number={current_episode_number}")
