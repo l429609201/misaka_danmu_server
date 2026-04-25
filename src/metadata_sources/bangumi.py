@@ -600,6 +600,31 @@ class BangumiMetadataSource(BaseMetadataSource):
                 params = {"client_id": client_id, "response_type": "code", "redirect_uri": redirect_uri, "state": state}
                 auth_url = f"https://bgm.tv/oauth/authorize?{urlencode(params)}"
                 return {"url": auth_url, "state": state}
+        elif action_name == "refresh_token":
+            # 原地刷新 token（不跳转 bgm.tv，使用 refresh_token 续期）
+            async with self._session_factory() as session:
+                auth_info = await _get_bangumi_auth(session, user.id)
+                if not auth_info.get("isAuthenticated"):
+                    return {"success": False, "message": "当前未授权，请先完成 OAuth 授权"}
+
+                client_id = await self.config_manager.get("bangumiClientId", "")
+                client_secret = await self.config_manager.get("bangumiClientSecret", "")
+                if not client_id or not client_secret:
+                    return {"success": False, "message": "Bangumi App ID 或 Secret 未配置"}
+
+                # redirect_uri 由 _refresh_bangumi_token 内部从 auth.redirectUri 读取
+                config = {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "redirect_uri": "",  # fallback，优先用 DB 中保存的
+                }
+                refreshed = await _refresh_bangumi_token(session, user.id, config)
+                if refreshed:
+                    await session.commit()
+                    auth_info = await _get_bangumi_auth(session, user.id)
+                    return {"success": True, "message": "Token 续期成功", "authInfo": auth_info}
+                else:
+                    return {"success": False, "message": "Token 续期失败，refresh_token 可能已过期，请重新授权"}
         elif action_name == "logout":
             async with self._session_factory() as session:
                 await _delete_bangumi_auth(session, user.id)

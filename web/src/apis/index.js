@@ -429,6 +429,9 @@ export const getBangumiAuthUrl = (data) =>
 /** 注销授权 */
 export const logoutBangumiAuth = () =>
   api.post('/api/ui/metadata/bangumi/actions/logout')
+/** 刷新/续期授权 (使用 refresh_token，不跳转) */
+export const refreshBangumiAuth = () =>
+  api.post('/api/ui/metadata/bangumi/actions/refresh_token')
 
 /** ------------------------------------------ 豆瓣、tmdb、tvdb配置、代理------------------------------------------  */
 /** 获取tmdb配置 */
