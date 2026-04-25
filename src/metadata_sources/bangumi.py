@@ -179,7 +179,7 @@ async def _refresh_bangumi_token(session: AsyncSession, user_id: int, config: Di
         }
 
         async with httpx.AsyncClient() as client:
-            response = await client.post("https://bgm.tv/oauth/access_token", json=payload)
+            response = await client.post("https://bgm.tv/oauth/access_token", data=payload)
             response.raise_for_status()
             token_data = response.json()
 
