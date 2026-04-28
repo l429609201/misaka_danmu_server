@@ -215,6 +215,51 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
         if not provider_episode_id:
             raise ValueError(f"分集 {episodeId} 的 provider_episode_id 为空")
 
+        # 检测 fallback 格式的 providerEpisodeId（格式: fallback_{provider}_{mediaId}_{episodeNumber}）
+        # 这种格式是匹配后备流程创建的，scraper 无法直接使用，需要重新解析
+        if provider_episode_id.startswith("fallback_"):
+            parts = provider_episode_id.split("_", 3)  # ['fallback', provider, mediaId, episodeNumber]
+            if len(parts) >= 4:
+                fb_provider = parts[1]
+                fb_media_id = parts[2]
+                fb_episode_number = int(parts[3])
+                logger.info(f"检测到 fallback 格式 providerEpisodeId，解析: provider={fb_provider}, mediaId={fb_media_id}, episode={fb_episode_number}")
+
+                scraper = manager.get_scraper(fb_provider)
+                if not scraper:
+                    logger.error(f"找不到 {fb_provider} 的 scraper，无法刷新")
+                    raise TaskSuccess("刷新失败：找不到对应的弹幕源")
+
+                await progress_callback(15, "正在重新获取分集信息...")
+                try:
+                    episodes_list = await scraper.get_episodes(fb_media_id)
+                    if episodes_list:
+                        target_ep = next((ep for ep in episodes_list if ep.episodeIndex == fb_episode_number), None)
+                        if target_ep:
+                            provider_episode_id = target_ep.episodeId
+                            provider_name = fb_provider
+                            logger.info(f"已从分集列表解析到真实 vid: {provider_episode_id}")
+
+                            # 更新数据库中的 providerEpisodeId 为真实值，避免下次再解析
+                            from sqlalchemy import update
+                            await session.execute(
+                                update(orm_models.Episode)
+                                .where(orm_models.Episode.id == episodeId)
+                                .values(providerEpisodeId=provider_episode_id)
+                            )
+                            await session.flush()
+                        else:
+                            logger.warning(f"分集列表中未找到第 {fb_episode_number} 集")
+                            raise TaskSuccess(f"刷新失败：分集列表中未找到第 {fb_episode_number} 集")
+                    else:
+                        logger.warning(f"从 {fb_provider} 获取分集列表为空: mediaId={fb_media_id}")
+                        raise TaskSuccess("刷新失败：获取分集列表为空")
+                except TaskSuccess:
+                    raise
+                except Exception as e:
+                    logger.error(f"解析 fallback providerEpisodeId 失败: {e}")
+                    raise TaskSuccess(f"刷新失败：{e}")
+
         scraper = manager.get_scraper(provider_name)
 
         # 移除这里的 check，让并发下载函数自己处理流控
@@ -250,7 +295,7 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
             all_comments_from_source = comments
 
         if not all_comments_from_source:
-            await crud.update_episode_fetch_time(session, episodeId)
+            # 不更新 fetched_at，保留旧时间戳，让下次请求仍能触发自动刷新
             raise TaskSuccess("未找到任何弹幕。")
 
 
