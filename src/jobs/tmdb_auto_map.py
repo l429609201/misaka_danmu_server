@@ -313,6 +313,7 @@ class TmdbAutoMapJob(BaseJob):
                                 continue
                     except Exception as e:
                         self.logger.error(f"搜索 '{title}' 时发生错误: {e}")
+                        await session.rollback()
                         continue
 
                 # 步骤 1.5: 对于已有TMDB ID的作品，也需要识别季度信息

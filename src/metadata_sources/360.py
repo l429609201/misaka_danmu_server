@@ -73,20 +73,27 @@ class So360MetadataSource(BaseMetadataSource):
     }
 
     # 360内部平台名 -> 本项目弹幕源 provider name
+    # 注意：360 API 实际返回的 bilibili key 是 "bilibili1"，不是 "bilibili"
     PLATFORM_TO_PROVIDER: Dict[str, str] = {
         "qq": "tencent",
         "qiyi": "iqiyi",
         "youku": "youku",
         "bilibili1": "bilibili",
-        "bilibili": "bilibili",
         "imgo": "mgtv",
         "migu": "migu",
         "sohu": "sohu",
         "leshi": "le",
         "xigua": "xigua",
     }
-    # 反向映射: 本项目弹幕源 provider name -> 360内部平台名
-    PROVIDER_TO_PLATFORM: Dict[str, str] = {v: k for k, v in PLATFORM_TO_PROVIDER.items()}
+    # 反向映射: 本项目弹幕源 provider name -> 360内部平台名（列表，因为一个 provider 可能对应多个 key）
+    PROVIDER_TO_PLATFORMS: Dict[str, List[str]] = {}
+
+    @classmethod
+    def _build_provider_to_platforms(cls) -> Dict[str, List[str]]:
+        result: Dict[str, List[str]] = {}
+        for platform_key, provider in cls.PLATFORM_TO_PROVIDER.items():
+            result.setdefault(provider, []).append(platform_key)
+        return result
 
     def __init__(self, session_factory, config_manager: ConfigManager, scraper_manager, cache_manager: CacheManager):
         super().__init__(session_factory, config_manager, scraper_manager, cache_manager)
@@ -253,7 +260,7 @@ class So360MetadataSource(BaseMetadataSource):
 
     async def find_url_for_provider(self, keyword: str, target_provider: str, user: models.User, season: Optional[int] = None, episode_index: Optional[int] = None) -> Optional[str]:
         """通过360搜索查找指定平台（如腾讯、B站）的播放链接。"""
-        provider_map = { "tencent": "qq", "iqiyi": "qiyi", "youku": "youku", "bilibili": "bilibili", "mgtv": "imgo" }
+        provider_map = { "tencent": "qq", "iqiyi": "qiyi", "youku": "youku", "bilibili": "bilibili1", "mgtv": "imgo" }
         target_site = provider_map.get(target_provider)
         if not target_site:
             self.logger.debug(f"360故障转移：不支持的目标平台 '{target_provider}'")
@@ -621,7 +628,7 @@ class So360MetadataSource(BaseMetadataSource):
                         self.logger.warning(f"360: 回写缓存失败: {e}")
 
             # 2. 转换provider名称到360的site名称
-            provider_map = { "tencent": "qq", "iqiyi": "qiyi", "youku": "youku", "bilibili": "bilibili", "mgtv": "imgo" }
+            provider_map = { "tencent": "qq", "iqiyi": "qiyi", "youku": "youku", "bilibili": "bilibili1", "mgtv": "imgo" }
             target_site = provider_map.get(target_provider) if target_provider else None
 
             # 3. 优先使用搜索结果中的seriesPlaylinks (仅当平台匹配时)
@@ -838,8 +845,8 @@ class So360MetadataSource(BaseMetadataSource):
         """
         supported_providers: Set[str] = set()
 
-        # 平台映射: 360内部名称 -> 标准名称
-        provider_reverse_map = {"qq": "tencent", "qiyi": "iqiyi", "youku": "youku", "bilibili": "bilibili", "imgo": "mgtv"}
+        # 平台映射: 360内部名称 -> 标准名称（bilibili 在 360 API 中用 bilibili1）
+        provider_reverse_map = {"qq": "tencent", "qiyi": "iqiyi", "youku": "youku", "bilibili1": "bilibili", "imgo": "mgtv"}
 
         cat_id = item.get('cat_id', '')
         cat_name = item.get('cat_name', '')
@@ -847,8 +854,8 @@ class So360MetadataSource(BaseMetadataSource):
         en_id = item.get('en_id', '')
         playlinks = item.get('playlinks', {})
 
-        # 只检查 playlinks 中存在的平台
-        all_platforms = ['qq', 'qiyi', 'youku', 'bilibili', 'imgo']
+        # 只检查 playlinks 中存在的平台（bilibili 在 360 中是 bilibili1）
+        all_platforms = ['qq', 'qiyi', 'youku', 'bilibili1', 'imgo']
         platforms_to_check = [site for site in all_platforms if site in playlinks]
 
         if not platforms_to_check:
@@ -922,7 +929,8 @@ class So360MetadataSource(BaseMetadataSource):
         对 empty_providers 中有对应平台链接的源生成补全条目。
         """
         # 只对有映射关系的空结果源进行补全
-        providers_to_supplement = {p for p in empty_providers if p in self.PROVIDER_TO_PLATFORM}
+        provider_platforms_map = self._build_provider_to_platforms()
+        providers_to_supplement = {p for p in empty_providers if p in provider_platforms_map}
         if not providers_to_supplement:
             return []
 
@@ -947,11 +955,13 @@ class So360MetadataSource(BaseMetadataSource):
             playlinks = item_data.get('playlinks', {}) if isinstance(item_data, dict) else {}
 
             for provider_name in list(providers_to_supplement - supplemented_providers):
-                platform_key = self.PROVIDER_TO_PLATFORM[provider_name]
-                if platform_key in playlinks:
+                # 一个 provider 可能对应多个 360 平台 key（如 bilibili/bilibili1），逐一检查
+                platform_keys = provider_platforms_map.get(provider_name, [])
+                matched_key = next((k for k in platform_keys if k in playlinks), None)
+                if matched_key:
                     supplement_items.append(models.ProviderSearchInfo(
                         provider=provider_name,
-                        mediaId=f"sup_{self.provider_name}_{so360_item.id}_{platform_key}",
+                        mediaId=f"sup_{self.provider_name}_{so360_item.id}_{matched_key}",
                         title=so360_item.title,
                         type=so360_item.type or 'tv_series',
                         season=1,

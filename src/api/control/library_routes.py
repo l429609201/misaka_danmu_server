@@ -133,17 +133,20 @@ async def create_anime_entry(
             detail="已存在同名同季度的作品。"
         )
 
+    # 直接创建新条目，不走 get_or_create_anime 的模糊匹配逻辑
+    # create_anime_entry 是"创建"接口，精确查重通过后应无条件创建新记录
     season_for_create = payload.season if payload.type == AutoImportMediaType.TV_SERIES else 1
-    new_anime_id = await crud.get_or_create_anime(
-        session,
+    anime_data = models.AnimeCreate(
         title=payload.title,
-        media_type=payload.type.value,
+        type=payload.type.value,
         season=season_for_create,
-        year=payload.year,
-        image_url=None,
-        local_image_path=None,
-        title_recognition_manager=title_recognition_manager
+        year=payload.year if payload.year else None,
     )
+    try:
+        new_anime = await crud.create_anime(session, anime_data)
+        new_anime_id = new_anime.id
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
     await crud.update_metadata_if_empty(
         session, new_anime_id,
