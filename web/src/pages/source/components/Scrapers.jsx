@@ -167,16 +167,11 @@ const SortableItem = ({
             {item.version && (
               <Tag color="blue">{item.version}</Tag>
             )}
-            {item.isEnabled ? (
-              <Tag color="green">已启用</Tag>
-            ) : (
-              <Tag color="red">未启用</Tag>
-            )}
-            <Tooltip title="切换启用状态">
-              <div onClick={handleChangeStatus}>
-                <MyIcon icon="exchange" size={24} />
-              </div>
-            </Tooltip>
+            <Switch
+              size="small"
+              checked={item.isEnabled}
+              onChange={handleChangeStatus}
+            />
           </div>
         </div>
       </div>
