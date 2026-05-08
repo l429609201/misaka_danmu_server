@@ -431,6 +431,34 @@ class ScraperManager:
             for scraper in enabled_scrapers:
                 tasks.append(timed_search(scraper, keyword))
 
+        # 并行启动补充源搜索（乐观策略：先搜所有可映射平台，后续再过滤）
+        supplement_task = None
+        if self.metadata_manager:
+            all_possible_empty = {
+                name for name in self.scrapers if name != 'custom'
+            }
+            if all_possible_empty:
+                primary_keyword = keywords[0] if keywords else ""
+
+                async def _run_supplement():
+                    import time as _time
+                    _start = _time.monotonic()
+                    results = await self.metadata_manager.supplement_empty_search_results(
+                        primary_keyword, all_possible_empty
+                    )
+                    _dur = (_time.monotonic() - _start) * 1000
+                    return results, _dur
+
+                supplement_task = asyncio.create_task(_run_supplement())
+
+        # 预加载全局过滤配置（与弹幕源搜索并行，避免搜索完成后串行读取）
+        async def _preload_filter_config():
+            cn = await self.config_manager.get("search_result_global_blacklist_cn", "")
+            eng = await self.config_manager.get("search_result_global_blacklist_eng", "")
+            return cn, eng
+
+        filter_config_task = asyncio.create_task(_preload_filter_config())
+
         timed_results = await asyncio.gather(*tasks)
 
         # 聚合每个源的耗时和结果数（同一个源可能搜索多个关键词）
@@ -480,56 +508,82 @@ class ScraperManager:
                 provider_buffers[provider_name] = []
             provider_buffers[provider_name].append((buffer_handler, result_count, duration_ms, error))
 
-        # 按源分组输出缓冲的日志（消除交叉）
+        # 按源分组输出缓冲的日志（消除交叉）- 使用 create_task 异步执行，不阻塞事件循环
         mgr_logger = logging.getLogger(__name__)
-        for provider_name, buffers in provider_buffers.items():
-            total_count = provider_timing.get(provider_name, (0, 0))[1]
-            total_dur = provider_timing.get(provider_name, (0, 0))[0]
-            first_error = next((e for _, _, _, e in buffers if e), None)
-            # 合并同一个源的所有缓冲 handler
-            merged_handler = BufferedLogHandler()
-            for bh, _, _, _ in buffers:
-                merged_handler._records.extend(bh.records)
-                bh.clear()
-            flush_buffered_logs(mgr_logger, provider_name, merged_handler, total_count, total_dur, first_error)
+
+        async def _async_flush_logs():
+            """异步日志 flush，不阻塞 search_all 的返回"""
+            for pn, buffers in provider_buffers.items():
+                total_count = provider_timing.get(pn, (0, 0))[1]
+                total_dur = provider_timing.get(pn, (0, 0))[0]
+                first_error = next((e for _, _, _, e in buffers if e), None)
+                merged_handler = BufferedLogHandler()
+                for bh, _, _, _ in buffers:
+                    merged_handler._records.extend(bh.records)
+                    bh.clear()
+                flush_buffered_logs(mgr_logger, pn, merged_handler, total_count, total_dur, first_error)
+                await asyncio.sleep(0)  # 让出事件循环，避免长时间阻塞
+
+        asyncio.create_task(_async_flush_logs())
 
         # 保存耗时信息供计时报告使用
         self.last_search_timing = [
             (name, dur, cnt) for name, (dur, cnt) in sorted(provider_timing.items(), key=lambda x: -x[1][0])
         ]
 
-        # 通用搜索补充逻辑：对无结果的弹幕源（含搜索返回0 + 被禁用的），调用补充源兜底
+        # 收集补充源结果（已在弹幕源搜索开始时并行启动，现在 await 获取结果）
         try:
-            # 搜索了但返回0结果的源
-            empty_providers = {
-                name for name, (_, cnt) in provider_timing.items()
-                if cnt == 0 and name != 'custom'
-            }
-            # 被禁用的源（没有参与搜索，同样视为"无结果"）
-            disabled_providers = {
-                name for name in self.scrapers
-                if not self.scraper_settings.get(name, {}).get('isEnabled')
-                and name != 'custom'
-            }
-            empty_providers |= disabled_providers
-            if empty_providers and self.metadata_manager:
-                primary_keyword = keywords[0] if keywords else ""
-                supplement_results = await self.metadata_manager.supplement_empty_search_results(
-                    primary_keyword, empty_providers
-                )
-                for supp_item in supplement_results:
+            if supplement_task:
+                supplement_results, _supp_dur = await supplement_task
+
+                # 根据实际空结果过滤：只保留弹幕源确实没搜到的 provider
+                empty_providers = {
+                    name for name, (_, cnt) in provider_timing.items()
+                    if cnt == 0 and name != 'custom'
+                }
+                disabled_providers = {
+                    name for name in self.scrapers
+                    if not self.scraper_settings.get(name, {}).get('isEnabled')
+                    and name != 'custom'
+                }
+                empty_providers |= disabled_providers
+
+                # 过滤：只保留实际空结果的 provider 的补充
+                filtered_supp = [r for r in supplement_results if r.provider in empty_providers]
+
+                # 去重并合并
+                added_count = 0
+                supplemented_providers = set()
+                for supp_item in filtered_supp:
                     unique_id = (supp_item.provider, supp_item.mediaId)
                     if unique_id not in seen_results:
                         all_results.append(supp_item)
                         seen_results.add(unique_id)
-                if supplement_results:
-                    mgr_logger.info(f"搜索补充源: 补全了 {len(supplement_results)} 个搜索结果")
-        except Exception as e:
-            mgr_logger.debug(f"搜索补充源调用失败: {e}")
+                        added_count += 1
+                        supplemented_providers.add(supp_item.provider)
 
-        # 新增：在此处应用全局标题过滤
-        cn_pattern_str = await self.config_manager.get("search_result_global_blacklist_cn", "")
-        eng_pattern_str = await self.config_manager.get("search_result_global_blacklist_eng", "")
+                # 使用框框格式输出日志
+                _lines = ["-", f"┌─── 搜索补充源 ({added_count}个补充, {_supp_dur:.0f}ms) ───"]
+                _lines.append(f"  无结果的弹幕源: {sorted(empty_providers)}")
+                if filtered_supp:
+                    for supp_item in filtered_supp:
+                        _lines.append(f"  + [{supp_item.provider}] {supp_item.title}")
+                else:
+                    _lines.append(f"  (未获得任何补充结果)")
+                _lines.append(f"└─── 搜索补充源 ───")
+                mgr_logger.info("\n".join(_lines))
+
+                # 将补充源各项耗时追加到计时报告
+                if hasattr(self.metadata_manager, 'last_supplement_timing') and self.metadata_manager.last_supplement_timing:
+                    for s_name, s_dur, s_cnt in self.metadata_manager.last_supplement_timing:
+                        self.last_search_timing.append((f"补充:{s_name}", s_dur, s_cnt))
+                else:
+                    self.last_search_timing.append(("搜索补充源", _supp_dur, added_count))
+        except Exception as e:
+            mgr_logger.warning(f"搜索补充源调用失败: {e}", exc_info=True)
+
+        # 使用预加载的全局过滤配置（已与弹幕源并行加载完成）
+        cn_pattern_str, eng_pattern_str = await filter_config_task
 
         cn_pattern = re.compile(cn_pattern_str, re.IGNORECASE) if cn_pattern_str else None
         eng_pattern = re.compile(r'(\[|\【|\b)(' + eng_pattern_str + r')(\d{1,2})?(\s|_ALL)?(\]|\】|\b)', re.IGNORECASE) if eng_pattern_str else None

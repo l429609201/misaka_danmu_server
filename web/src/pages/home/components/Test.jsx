@@ -4,6 +4,7 @@ import {
   searchAnimeTest,
   getBangumiDetailTest,
   getCommentTest,
+  pollTaskCommentTest,
   parseFilenameTest,
   getTokenList,
 } from '../../../apis'
@@ -19,6 +20,7 @@ import {
   Tag,
   Alert,
   Pagination,
+  Switch,
 } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 
@@ -32,11 +34,14 @@ export const Test = () => {
   const [searchKeyword, setSearchKeyword] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  const [showRaw, setShowRaw] = useState(false)
 
   // 加载 token 列表
   useEffect(() => {
     fetchTokens()
   }, [])
+
+  const STORAGE_KEY = 'test_selected_token'
 
   const fetchTokens = async () => {
     try {
@@ -56,6 +61,19 @@ export const Test = () => {
       setTokensLoading(false)
     }
   }
+
+  // tokens 加载完成后自动选中：优先恢复缓存，否则选第一个
+  useEffect(() => {
+    if (tokens.length === 0) return
+    const cached = localStorage.getItem(STORAGE_KEY)
+    const current = form.getFieldValue('apiToken')
+    // 已有值（且仍在有效列表中）就不覆盖
+    if (current && tokens.find(t => t.token === current)) return
+    const target = (cached && tokens.find(t => t.token === cached))
+      ? cached
+      : tokens[0].token
+    form.setFieldValue('apiToken', target)
+  }, [tokens])
 
   // 测试配置：每个测试类型的配置
   const testConfigs = {
@@ -253,6 +271,43 @@ export const Test = () => {
           component: InputNumber,
           componentProps: { className: 'w-full', style: { width: '100%' } },
         },
+        {
+          name: 'chConvert',
+          label: '简繁转换',
+          apiParam: 'chConvert (query)',
+          tooltip: '0-不转换，1-转为简体，2-转为繁体，默认 0',
+          required: false,
+          component: Select,
+          componentProps: {
+            placeholder: '默认不转换',
+            allowClear: true,
+            options: [
+              { label: '0 - 不转换', value: 0 },
+              { label: '1 - 转为简体', value: 1 },
+              { label: '2 - 转为繁体', value: 2 },
+            ],
+          },
+        },
+        {
+          name: 'withRelated',
+          label: '包含关联弹幕',
+          apiParam: 'withRelated (query)',
+          tooltip: '是否包含关联番剧的弹幕，默认开启',
+          required: false,
+          component: Switch,
+          componentProps: { checkedChildren: '是', unCheckedChildren: '否', defaultChecked: true },
+          valuePropName: 'checked',
+        },
+        {
+          name: 'asyncMode',
+          label: '异步模式',
+          apiParam: 'async (query)',
+          tooltip: '开启后立即返回 taskId，不等待弹幕下载完成，适合弹幕尚未入库的场景',
+          required: false,
+          component: Switch,
+          componentProps: { checkedChildren: '开', unCheckedChildren: '关' },
+          valuePropName: 'checked',
+        },
       ],
       getListData: data => data?.comments || [],
       searchFilter: (item, keyword) => {
@@ -381,6 +436,58 @@ export const Test = () => {
         )
       },
     },
+    taskcomment: {
+      label: '弹幕任务轮询',
+      apiPath: '/api/v1/{token}/taskcomment/{taskId}',
+      method: 'GET',
+      handler: pollTaskCommentTest,
+      fields: [
+        {
+          name: 'taskId',
+          label: '任务 ID',
+          apiParam: 'taskId (path)',
+          placeholder: '粘贴 async=1 接口返回的 taskId',
+          required: true,
+          component: Input,
+        },
+      ],
+      renderResult: data => {
+        const statusColor = {
+          completed: 'text-green-600',
+          pending: 'text-blue-500',
+          failed: 'text-red-600',
+        }[data?.status] || 'text-gray-600'
+        const statusLabel = {
+          completed: '[已完成]',
+          pending: '[进行中]',
+          failed: '[失败]',
+        }[data?.status] || '[未知]'
+        return (
+          <div className="space-y-2">
+            <div className={`font-bold ${statusColor}`}>
+              {statusLabel}
+              {data?.taskId && <span className="ml-2 text-xs font-mono text-gray-400">{data.taskId}</span>}
+            </div>
+            {data?.description && (
+              <div className="text-sm text-gray-500">{data.description}</div>
+            )}
+            {data?.progress != null && data.status === 'pending' && (
+              <div className="w-full bg-gray-200 rounded-full h-1.5">
+                <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${data.progress}%` }} />
+              </div>
+            )}
+            {data?.episodeId != null && (
+              <div className="text-sm text-gray-600">
+                episodeId: <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-mono">{data.episodeId}</code>
+                {data.status === 'completed' && (
+                  <span className="ml-2 text-xs text-gray-400">（使用此 ID 调用 /comment/{'{episodeId}'} 获取弹幕）</span>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      },
+    },
     fileRecognition: {
       label: '文件识别',
       apiPath: '/api/ui/tools/parse-filename',
@@ -487,7 +594,9 @@ export const Test = () => {
           activeKey={activeTab}
           onChange={key => {
             setActiveTab(key)
-            form.resetFields()
+            // 只重置动态字段，保留 apiToken 选中状态
+            const fieldNames = testConfigs[key].fields.map(f => f.name)
+            form.resetFields(fieldNames)
             setResult(null)
             setSearchKeyword('')
             setCurrentPage(1)
@@ -576,6 +685,7 @@ export const Test = () => {
                   loading={tokensLoading}
                   showSearch
                   optionFilterProp="searchLabel"
+                  onChange={val => localStorage.setItem(STORAGE_KEY, val)}
                   disabled={tokens.length === 0}
                   notFoundContent={
                     <div className="text-center p-4 text-gray-400">
@@ -629,6 +739,8 @@ export const Test = () => {
                         )}
                       </div>
                     }
+                    tooltip={field.tooltip}
+                    valuePropName={field.valuePropName || 'value'}
                     rules={[
                       {
                         required: field.required,
@@ -661,9 +773,42 @@ export const Test = () => {
           {/* 结果区域（上下布局，全宽展示） */}
           {result && (
             <div className="mt-4 px-2">
-              <div className="text-sm text-gray-500 mb-2">测试结果:</div>
+              {/* 结果标题栏 + 视图切换开关 */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm text-gray-500">测试结果:</div>
+                {/* 药丸形视图切换开关 */}
+                <button
+                  type="button"
+                  onClick={() => setShowRaw(v => !v)}
+                  className={`
+                    flex items-center gap-1.5 px-1.5 py-1 rounded-full text-xs font-medium
+                    border transition-all duration-200 select-none cursor-pointer
+                    ${showRaw
+                      ? 'bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-950 dark:border-blue-700 dark:text-blue-400'
+                      : 'bg-gray-100 border-gray-200 text-gray-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'
+                    }
+                  `}
+                >
+                  <span className={`transition-all duration-200 px-1.5 py-0.5 rounded-full text-xs ${!showRaw ? 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 shadow-sm' : ''}`}>
+                    格式化
+                  </span>
+                  {/* 滑块轨道 */}
+                  <div className={`relative w-8 h-4 rounded-full transition-colors duration-200 ${showRaw ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all duration-200 ${showRaw ? 'left-[18px]' : 'left-0.5'}`} />
+                  </div>
+                  <span className={`transition-all duration-200 px-1.5 py-0.5 rounded-full text-xs ${showRaw ? 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 shadow-sm' : ''}`}>
+                    原始
+                  </span>
+                </button>
+              </div>
+
               <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded">
-                {result.error ? (
+                {showRaw ? (
+                  /* 原始 JSON 展示 */
+                  <pre className="text-xs text-gray-700 dark:text-gray-300 overflow-auto max-h-[500px] whitespace-pre-wrap break-all leading-relaxed">
+                    {JSON.stringify(result, null, 2)}
+                  </pre>
+                ) : result.error ? (
                   <div className="text-red-600">
                     <div className="font-bold">[错误]</div>
                     <div className="mt-2">{result.message}</div>

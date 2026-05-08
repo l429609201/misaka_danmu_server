@@ -98,8 +98,18 @@ export const getBangumiDetailTest = data =>
   api.get(`/api/v1/${data.apiToken}/bangumi/${data.bangumiId}`)
 
 /** 弹幕获取测试 */
-export const getCommentTest = data =>
-  api.get(`/api/v1/${data.apiToken}/comment/${data.episodeId}`)
+export const getCommentTest = data => {
+  const params = new URLSearchParams()
+  if (data.asyncMode) params.append('async', '1')
+  if (data.chConvert != null && data.chConvert !== 0) params.append('chConvert', data.chConvert)
+  if (data.withRelated === false) params.append('withRelated', 'false')
+  const query = params.toString()
+  return api.get(`/api/v1/${data.apiToken}/comment/${data.episodeId}${query ? `?${query}` : ''}`)
+}
+
+/** 弹幕异步任务轮询测试 */
+export const pollTaskCommentTest = data =>
+  api.get(`/api/v1/${data.apiToken}/taskcomment/${data.taskId}`)
 
 /** 文件名识别测试 */
 export const parseFilenameTest = data =>

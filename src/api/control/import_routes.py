@@ -313,11 +313,17 @@ async def search_media(
             use_source_priority_sorting=False,  # 不排序，后面自己处理
             progress_callback=None
         )
-        # 收集单源搜索耗时信息
-        source_timing_sub_steps = [
-            SubStepTiming(name=name, duration_ms=dur, result_count=cnt)
-            for name, dur, cnt in manager.last_search_timing
-        ]
+        # 收集单源搜索耗时信息（分组显示）
+        source_timing_sub_steps = []
+        for name, dur, cnt in manager.last_search_timing:
+            if name.startswith("补充:"):
+                source_timing_sub_steps.append(
+                    SubStepTiming(name=name[3:], duration_ms=dur, result_count=cnt, group="补充源")
+                )
+            else:
+                source_timing_sub_steps.append(
+                    SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="弹幕源")
+                )
         timer.step_end(details=f"{len(results)}个结果", sub_steps=source_timing_sub_steps)
 
         logger.info(f"搜索完成，共 {len(results)} 个结果")

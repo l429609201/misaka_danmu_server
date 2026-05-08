@@ -62,21 +62,25 @@ async def clear_expired_oauth_states(session: AsyncSession):
 
 async def find_recent_task_by_unique_key(session: AsyncSession, unique_key: str, within_hours: int) -> Optional[TaskHistory]:
     """
-    Finds a task by its unique_key that is either currently active 
-    or was completed within the specified time window.
+    Finds a task by its unique_key that is either currently active
+    or was completed (not failed) within the specified time window.
     """
     if not unique_key:
         return None
 
     cutoff_time = get_now() - timedelta(hours=within_hours)
-    
+
     stmt = (
         select(TaskHistory)
         .where(
             TaskHistory.uniqueKey == unique_key,
             or_(
                 TaskHistory.status.in_(['排队中', '运行中', '已暂停']),
-                TaskHistory.finishedAt >= cutoff_time
+                # 只匹配成功完成的任务，失败的任务不阻止重新提交
+                and_(
+                    TaskHistory.status == '已完成',
+                    TaskHistory.finishedAt >= cutoff_time
+                )
             )
         )
         .order_by(TaskHistory.createdAt.desc())

@@ -14,6 +14,7 @@ class SubStepTiming:
     name: str
     duration_ms: float
     result_count: int = 0
+    group: str = ""  # 分组名称，相同 group 的会归到一个框里显示
 
 
 @dataclass
@@ -54,9 +55,32 @@ class SearchTimingReport:
             status = "✓" if step.success else "✗"
             detail_str = f" ({step.details})" if step.details else ""
             lines.append(f"⏱️   {status} {step.name}: {step.duration_ms:.0f}ms{detail_str}")
-            # 打印子步骤（如单源搜索耗时）
-            for sub in step.sub_steps:
-                lines.append(f"⏱️            - {sub.name}: {sub.duration_ms:.0f}ms（{sub.result_count}个结果）")
+            # 按 group 分组渲染子步骤
+            if step.sub_steps:
+                # 收集分组：保持出现顺序
+                groups = []
+                group_items = {}
+                for sub in step.sub_steps:
+                    g = sub.group or ""
+                    if g not in group_items:
+                        groups.append(g)
+                        group_items[g] = []
+                    group_items[g].append(sub)
+
+                for g in groups:
+                    items = group_items[g]
+                    if g:
+                        # 有分组名：框框格式
+                        group_max_dur = max(s.duration_ms for s in items)
+                        group_total_cnt = sum(s.result_count for s in items)
+                        lines.append(f"⏱️          ┌─── {g} ({group_max_dur:.0f}ms, {group_total_cnt}个结果) ───")
+                        for sub in items:
+                            lines.append(f"⏱️          │  - {sub.name}: {sub.duration_ms:.0f}ms（{sub.result_count}个结果）")
+                        lines.append(f"⏱️          └─── {g} ───")
+                    else:
+                        # 无分组名：原始平铺格式
+                        for sub in items:
+                            lines.append(f"⏱️            - {sub.name}: {sub.duration_ms:.0f}ms（{sub.result_count}个结果）")
 
         lines.extend([
             "⏱️ ───────────────────────────────────────────────────────",

@@ -272,12 +272,18 @@ async def search_anime_provider(
             # 修正:变量名统一
             timer.step_start("弹幕源搜索")
             all_results = await manager.search_all(search_titles, episode_info=episode_info)
-            # 收集单源搜索耗时信息
+            # 收集单源搜索耗时信息（分组显示）
             from src.utils.search_timer import SubStepTiming
-            source_timing_sub_steps = [
-                SubStepTiming(name=name, duration_ms=dur, result_count=cnt)
-                for name, dur, cnt in manager.last_search_timing
-            ]
+            source_timing_sub_steps = []
+            for name, dur, cnt in manager.last_search_timing:
+                if name.startswith("补充:"):
+                    source_timing_sub_steps.append(
+                        SubStepTiming(name=name[3:], duration_ms=dur, result_count=cnt, group="补充源")
+                    )
+                else:
+                    source_timing_sub_steps.append(
+                        SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="弹幕源")
+                    )
             timer.step_end(details=f"{len(all_results)}个结果", sub_steps=source_timing_sub_steps)
             logger.info(f"直接搜索完成，找到 {len(all_results)} 个原始结果。")
             results = all_results
@@ -298,26 +304,51 @@ async def search_anime_provider(
             logger.info(f"将使用标题列表 {search_titles} 进行全网搜索...")
 
             timer.step_start("并行搜索(弹幕源+辅助源)")
-            # 1. 并行启动两个任务
+            # 1. 先启动辅助源搜索（让它先发出HTTP请求，避免被弹幕源占满事件循环）
+            import time as _search_time
+
+            async def _timed_supp_search():
+                """包装辅助源搜索，记录耗时"""
+                _start = _search_time.monotonic()
+                result = await metadata_manager.search_supplemental_sources(search_title, current_user)
+                _dur = (_search_time.monotonic() - _start) * 1000
+                return result, _dur
+
+            supp_task = asyncio.create_task(_timed_supp_search())
+            # 让出事件循环，让辅助源有机会开始HTTP请求
+            await asyncio.sleep(0)
+
+            # 2. 再启动弹幕源搜索
             main_task = asyncio.create_task(
                 manager.search_all(search_titles, episode_info=episode_info)
             )
 
-            supp_task = asyncio.create_task(
-                metadata_manager.search_supplemental_sources(search_title, current_user)
-            )
-
             # 2. 等待两个任务都完成
-            all_results, (all_possible_aliases, supplemental_results) = await asyncio.gather(
+            all_results, ((all_possible_aliases, supplemental_results), _) = await asyncio.gather(
                 main_task, supp_task
             )
 
-            # 收集单源搜索耗时信息
+            # 收集单源搜索耗时信息（分组显示）
             from src.utils.search_timer import SubStepTiming
-            source_timing_sub_steps = [
-                SubStepTiming(name=name, duration_ms=dur, result_count=cnt)
-                for name, dur, cnt in manager.last_search_timing
-            ]
+            source_timing_sub_steps = []
+
+            # 弹幕源 + 补充源分组
+            for name, dur, cnt in manager.last_search_timing:
+                if name.startswith("补充:"):
+                    source_timing_sub_steps.append(
+                        SubStepTiming(name=name[3:], duration_ms=dur, result_count=cnt, group="补充源")
+                    )
+                else:
+                    source_timing_sub_steps.append(
+                        SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="弹幕源")
+                    )
+
+            # 辅助源分组（别名获取）
+            for name, dur, cnt in metadata_manager.last_aux_search_timing:
+                source_timing_sub_steps.append(
+                    SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="辅助源(别名)")
+                )
+
             timer.step_end(
                 details=f"弹幕{len(all_results)}个+辅助{len(supplemental_results)}个",
                 sub_steps=source_timing_sub_steps

@@ -230,6 +230,7 @@ async def get_external_comments_from_url(
 @comments_router.get(
     "/comment/{episodeId}",
     response_model=models.CommentResponse,
+    response_model_exclude_none=True,
     summary="[dandanplay兼容] 获取弹幕"
 )
 async def get_comments_for_dandan(
@@ -239,6 +240,7 @@ async def get_comments_for_dandan(
     # 'from' 是 Python 的关键字，所以我们必须使用别名
     fromTime: int = Query(0, alias="from", description="弹幕开始时间(秒)"),
     withRelated: bool = Query(True, description="是否包含关联弹幕"),
+    async_mode: bool = Query(False, alias="async", description="异步模式：传入1的时候，在超时响应的情况下返回taskid"),
     token: str = Depends(get_token_from_path),
     session: AsyncSession = Depends(get_db_session),
     config_manager: ConfigManager = Depends(get_config_manager),
@@ -719,7 +721,14 @@ async def get_comments_for_dandan(
                             logger.warning(f"任务完成但数据库中未找到弹幕数据")
                     except asyncio.TimeoutError:
                         logger.info(f"匹配后备弹幕下载任务超时（30秒），任务将在后台继续执行，完成后会自动触发预下载")
-                        # 超时后返回空结果，但任务继续在后台运行，完成后会通过回调触发预下载
+                        # async_mode：超时后返回 taskId 让客户端轮询
+                        if async_mode:
+                            await _release_coalesce(episodeId)
+                            return models.CommentResponse(
+                                count=0, comments=[],
+                                status="pending", taskId=task_id,
+                            )
+                        # 同步模式：超时后返回空结果
                         await _release_coalesce(episodeId)
                         return models.CommentResponse(count=0, comments=[])
 
@@ -910,6 +919,16 @@ async def get_comments_for_dandan(
                                             episodeId=episode_id_for_comments,
                                             url=original_episode_url  # 使用原生URL
                                         )
+
+                                        # 并发下载前显式检查流控，RuntimeError（配置校验失败）直接上抛
+                                        # _download_episode_comments_concurrent 内部会吞掉所有异常，
+                                        # 需要在外层提前捕获致命错误，确保任务能被正确标记为 FAILED
+                                        try:
+                                            await current_rate_limiter.check_fallback("search", current_provider)
+                                        except RuntimeError:
+                                            raise  # 配置校验失败，直接向上抛，task_manager 标为 FAILED
+                                        except Exception:
+                                            pass  # 普通流控超限交给内部处理
 
                                         # 使用并发下载获取弹幕（三线程模式）
                                         async def dummy_progress_callback(_, _unused):
@@ -1105,7 +1124,7 @@ async def get_comments_for_dandan(
                                     return raw_comments_data
                             else:
                                 logger.warning(f"获取弹幕失败")
-                                return None
+                                raise TaskSuccess("获取弹幕失败，源站未返回数据")
                         except Exception as e:
                             logger.error(f"弹幕下载任务执行失败: {e}", exc_info=True)
                             raise  # 让异常传播到 task_manager，标记任务为失败
@@ -1193,7 +1212,14 @@ async def get_comments_for_dandan(
                                 logger.warning(f"任务完成但数据库中未找到弹幕数据")
                         except asyncio.TimeoutError:
                             logger.info(f"后备搜索弹幕下载任务超时（30秒），任务将在后台继续执行，完成后会自动触发预下载")
-                            # 任务继续在后台运行，完成后会通过回调触发预下载
+                            # async_mode：超时后返回 taskId 让客户端轮询
+                            if async_mode:
+                                await _release_coalesce(episodeId)
+                                return models.CommentResponse(
+                                    count=0, comments=[],
+                                    status="pending", taskId=task_id,
+                                )
+                            # 同步模式：超时后继续后续逻辑（返回空结果）
 
                     except HTTPException as e:
                         if e.status_code == 409:  # 任务已在运行中
@@ -1357,4 +1383,7 @@ async def get_comments_for_dandan(
     # 修正：使用统一的弹幕处理函数，以确保输出格式符合 dandanplay 客户端规范
     processed_comments = process_comments_for_dandanplay(comments_data)
 
-    return models.CommentResponse(count=len(processed_comments), comments=processed_comments)
+    return models.CommentResponse(
+        count=len(processed_comments),
+        comments=processed_comments,
+    )

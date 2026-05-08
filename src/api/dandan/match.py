@@ -371,12 +371,19 @@ async def get_match_for_item(
                 # 电影不设置episode_number,保持为None
                 episode_number = None if is_movie else (parsed_info.get("episode") or 1)
 
-                # 【性能优化】预获取所有配置值（避免后续重复获取）
-                match_fallback_tmdb_enabled = await config_manager.get("matchFallbackEnableTmdbSeasonMapping", "false")
-                ai_match_enabled = (await config_manager.get("aiMatchEnabled", "false")).lower() == "true"
-                ai_fallback_enabled = (await config_manager.get("aiFallbackEnabled", "true")).lower() == "true"
-                fallback_enabled = (await config_manager.get("externalApiFallbackEnabled", "false")).lower() == "true"
-                ai_episode_group_enabled = (await config_manager.get("aiEpisodeGroupEnabled", "false")).lower() == "true"
+                # 【性能优化】并行预获取所有配置值
+                _cfg_tasks = await asyncio.gather(
+                    config_manager.get("matchFallbackEnableTmdbSeasonMapping", "false"),
+                    config_manager.get("aiMatchEnabled", "false"),
+                    config_manager.get("aiFallbackEnabled", "true"),
+                    config_manager.get("externalApiFallbackEnabled", "false"),
+                    config_manager.get("aiEpisodeGroupEnabled", "false"),
+                )
+                match_fallback_tmdb_enabled = _cfg_tasks[0]
+                ai_match_enabled = _cfg_tasks[1].lower() == "true"
+                ai_fallback_enabled = _cfg_tasks[2].lower() == "true"
+                fallback_enabled = _cfg_tasks[3].lower() == "true"
+                ai_episode_group_enabled = _cfg_tasks[4].lower() == "true"
 
                 if match_fallback_tmdb_enabled.lower() != "true":
                     logger.info("○ 匹配后备 统一AI映射: 功能未启用")
@@ -389,62 +396,41 @@ async def get_match_for_item(
 
                 match_timer.step_end()
 
-                # 预获取TMDB信息 + 弹幕源搜索（半并行优化）
-                # 先做TMDB搜索获取别名和tmdb_id，然后同时启动：弹幕源搜索 + 剧集组处理
+                # 全并行优化：TMDB搜索 + 弹幕源搜索 同时启动
+                # 注意：辅助源别名不需要单独调用，因为：
+                #   - TMDB 别名已从 _do_tmdb_prefetch 获取
+                #   - 360 补充已在 unified_search → search_all → supplement_empty_search_results 中处理
                 pre_fetched_aliases = set()
-                pre_fetched_equiv = None  # 预取的等价上下文
-                _prefetch_tmdb_id = None  # TMDB搜索得到的ID，用于后续并行处理
+                pre_fetched_equiv = None
+                _prefetch_tmdb_id = None
 
-                if ai_episode_group_enabled and not is_movie:
+                match_timer.step_start("并行搜索(弹幕源+TMDB)")
+
+                # 定义 TMDB 搜索协程（获取别名+ID）
+                async def _do_tmdb_prefetch():
+                    if not (ai_episode_group_enabled and not is_movie):
+                        return None, set()
                     tmdb_source = metadata_manager.sources.get("tmdb")
-                    if tmdb_source:
-                        try:
-                            match_timer.step_start("TMDB搜索(获取别名+ID)")
-                            virtual_user = models.User(id=0, username="match_prefetch")
-                            tmdb_search_results = await tmdb_source.search(base_title, virtual_user, mediaType='tv')
-                            if tmdb_search_results:
-                                _prefetch_tmdb_id = tmdb_search_results[0].id
-                                logger.info(f"TMDB预获取: 搜索命中 '{tmdb_search_results[0].title}' (ID: {_prefetch_tmdb_id})")
-
-                                # 收集TMDB别名
-                                for sr in tmdb_search_results[:3]:
-                                    pre_fetched_aliases.add(sr.title)
-                                    if sr.aliasesCn:
-                                        pre_fetched_aliases.update(sr.aliasesCn)
-                                    if sr.aliasesJp:
-                                        pre_fetched_aliases.update(sr.aliasesJp)
-                                    if sr.nameEn:
-                                        pre_fetched_aliases.add(sr.nameEn)
-                                    if sr.nameJp:
-                                        pre_fetched_aliases.add(sr.nameJp)
-
-                                # 写入别名缓存
-                                if pre_fetched_aliases:
-                                    from src.core.cache import get_cache_backend
-                                    alias_cache_key = f"search_aliases_{base_title}"
-                                    alias_data = json.dumps(list(pre_fetched_aliases))
-                                    _backend = get_cache_backend()
-                                    if _backend is not None:
-                                        try:
-                                            await _backend.set(alias_cache_key, alias_data, ttl=3600, region="search")
-                                        except Exception:
-                                            await crud.set_cache(session_inner, alias_cache_key, alias_data, ttl_seconds=3600)
-                                    else:
-                                        await crud.set_cache(session_inner, alias_cache_key, alias_data, ttl_seconds=3600)
-                                    logger.info(f"TMDB预获取: 已缓存 {len(pre_fetched_aliases)} 个别名")
-                            else:
-                                logger.info(f"TMDB预获取: 搜索 '{base_title}' 无结果")
-                            match_timer.step_end()
-                        except Exception as prefetch_err:
-                            logger.warning(f"TMDB预获取搜索失败(不影响后续流程): {prefetch_err}")
-                            try:
-                                match_timer.step_end()
-                            except Exception:
-                                pass
-
-                # 半并行：弹幕源搜索 与 剧集组处理 同时进行
-                match_timer.step_start("弹幕源搜索+剧集组处理(并行)")
-                logger.info(f"步骤1：全网搜索 '{base_title}'" + (f" + 剧集组处理(并行)" if _prefetch_tmdb_id else ""))
+                    if not tmdb_source:
+                        return None, set()
+                    try:
+                        virtual_user = models.User(id=0, username="match_prefetch")
+                        tmdb_search_results = await tmdb_source.search(base_title, virtual_user, mediaType='tv')
+                        aliases = set()
+                        tmdb_id = None
+                        if tmdb_search_results:
+                            tmdb_id = tmdb_search_results[0].id
+                            logger.info(f"TMDB预获取: 搜索命中 '{tmdb_search_results[0].title}' (ID: {tmdb_id})")
+                            for sr in tmdb_search_results[:3]:
+                                aliases.add(sr.title)
+                                if sr.aliasesCn: aliases.update(sr.aliasesCn)
+                                if sr.aliasesJp: aliases.update(sr.aliasesJp)
+                                if sr.nameEn: aliases.add(sr.nameEn)
+                                if sr.nameJp: aliases.add(sr.nameJp)
+                        return tmdb_id, aliases
+                    except Exception as e:
+                        logger.warning(f"TMDB预获取搜索失败: {e}")
+                        return None, set()
 
                 # 定义弹幕源搜索协程
                 async def _do_unified_search():
@@ -459,74 +445,82 @@ async def get_match_for_item(
                         use_source_priority_sorting=False,
                         strict_filtering=True,
                         alias_similarity_threshold=70,
-                        custom_aliases=pre_fetched_aliases if pre_fetched_aliases else None,
                         progress_callback=progress_callback
                     )
 
-                # 定义剧集组处理协程（与弹幕源搜索并行执行）
-                async def _do_episode_group_processing():
-                    """获取剧集组 → AI选择 → 下载映射 → 查等价"""
-                    if not _prefetch_tmdb_id:
-                        return None
+                # 并行启动：先 TMDB，再弹幕源
+                tmdb_task = asyncio.create_task(_do_tmdb_prefetch())
+                await asyncio.sleep(0)
+                search_task = asyncio.create_task(_do_unified_search())
+
+                # 等待完成
+                (tmdb_id_result, tmdb_aliases), search_result = await asyncio.gather(
+                    tmdb_task, search_task
+                )
+
+                _prefetch_tmdb_id = tmdb_id_result
+                pre_fetched_aliases = tmdb_aliases
+                all_results = search_result if isinstance(search_result, list) else []
+
+                # 剧集组处理（需要 TMDB ID）
+                if _prefetch_tmdb_id:
+                    # 剧集组处理（需要 TMDB ID，串行但在搜索完成后执行）
                     try:
                         _vu = models.User(id=0, username="match_group")
                         _tmdb_src = metadata_manager.sources.get("tmdb")
-                        if not _tmdb_src:
-                            return None
-
-                        all_groups = await _tmdb_src.get_all_episode_groups(int(_prefetch_tmdb_id), _vu)
-                        if not all_groups:
-                            logger.info(f"剧集组(并行): TMDB ID {_prefetch_tmdb_id} 没有剧集组")
-                            return None
-
-                        logger.info(f"剧集组(并行): 找到 {len(all_groups)} 个剧集组")
-                        selected_idx = await ai_matcher_manager.select_best_episode_group(
-                            title=base_title, season=season, episode=episode_number,
-                            episode_groups=all_groups
-                        )
-                        if selected_idx is None:
-                            return None
-
-                        group_id = all_groups[selected_idx]["id"]
-                        logger.info(f"剧集组(并行): 选中 '{all_groups[selected_idx].get('name')}' (ID: {group_id})")
-                        await metadata_manager.update_tmdb_mappings(int(_prefetch_tmdb_id), group_id, _vu)
-                        equiv = await crud.get_episode_equivalence(
-                            session_inner, group_id, season, episode_number
-                        )
-                        if equiv:
-                            logger.info(f"剧集组(并行): 等价映射获取成功")
-                        else:
-                            logger.info(f"剧集组(并行): 映射已保存但当前集数未在映射中找到")
-                        return equiv
+                        if _tmdb_src:
+                            all_groups = await _tmdb_src.get_all_episode_groups(int(_prefetch_tmdb_id), _vu)
+                            if all_groups:
+                                logger.info(f"剧集组: 找到 {len(all_groups)} 个剧集组")
+                                selected_idx = await ai_matcher_manager.select_best_episode_group(
+                                    title=base_title, season=season, episode=episode_number,
+                                    episode_groups=all_groups
+                                )
+                                if selected_idx is not None:
+                                    group_id = all_groups[selected_idx]["id"]
+                                    logger.info(f"剧集组: 选中 '{all_groups[selected_idx].get('name')}' (ID: {group_id})")
+                                    await metadata_manager.update_tmdb_mappings(int(_prefetch_tmdb_id), group_id, _vu)
+                                    equiv = await crud.get_episode_equivalence(
+                                        session_inner, group_id, season, episode_number
+                                    )
+                                    if equiv:
+                                        pre_fetched_equiv = equiv
+                                        logger.info(f"剧集组: 等价映射获取成功")
                     except Exception as eg_err:
-                        logger.warning(f"剧集组(并行)处理失败: {eg_err}")
-                        return None
+                        logger.warning(f"剧集组处理失败: {eg_err}")
 
-                # 执行并行任务
-                if _prefetch_tmdb_id:
-                    # 并行执行：弹幕源搜索 + 剧集组处理
-                    search_result, group_result = await asyncio.gather(
-                        _do_unified_search(),
-                        _do_episode_group_processing(),
-                        return_exceptions=True
-                    )
-                    all_results = search_result if not isinstance(search_result, Exception) else []
-                    if isinstance(search_result, Exception):
-                        logger.warning(f"弹幕源搜索异常: {search_result}")
-                    if isinstance(group_result, Exception):
-                        logger.warning(f"剧集组处理异常: {group_result}")
-                    elif group_result:
-                        pre_fetched_equiv = group_result
-                else:
-                    # 没有TMDB ID时，只做弹幕源搜索
-                    all_results = await _do_unified_search()
+                    # 写入别名缓存
+                    if pre_fetched_aliases:
+                        from src.core.cache import get_cache_backend
+                        alias_cache_key = f"search_aliases_{base_title}"
+                        alias_data = json.dumps(list(pre_fetched_aliases))
+                        _backend = get_cache_backend()
+                        try:
+                            if _backend is not None:
+                                await _backend.set(alias_cache_key, alias_data, ttl=3600, region="search")
+                            else:
+                                await crud.set_cache(session_inner, alias_cache_key, alias_data, ttl_seconds=3600)
+                        except Exception:
+                            pass
 
-                # 收集单源搜索耗时信息
+                # 收集单源搜索耗时信息（分组显示）
                 from src.utils.search_timer import SubStepTiming
-                source_timing_sub_steps = [
-                    SubStepTiming(name=name, duration_ms=dur, result_count=cnt)
-                    for name, dur, cnt in scraper_manager.last_search_timing
-                ]
+                source_timing_sub_steps = []
+                for name, dur, cnt in scraper_manager.last_search_timing:
+                    if name.startswith("补充:"):
+                        source_timing_sub_steps.append(
+                            SubStepTiming(name=name[3:], duration_ms=dur, result_count=cnt, group="补充源")
+                        )
+                    else:
+                        source_timing_sub_steps.append(
+                            SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="弹幕源")
+                        )
+                # 辅助源别名计时
+                if hasattr(metadata_manager, 'last_aux_search_timing') and metadata_manager.last_aux_search_timing:
+                    for name, dur, cnt in metadata_manager.last_aux_search_timing:
+                        source_timing_sub_steps.append(
+                            SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="辅助源(别名)")
+                        )
 
                 if not all_results:
                     logger.warning(f"匹配后备失败：没有找到任何搜索结果")

@@ -265,12 +265,28 @@ async def execute_fallback_search_task(
             episode_info=episode_info,
             alias_similarity_threshold=70,
         )
-        # 收集单源搜索耗时信息
+        # 收集单源搜索耗时信息（分组显示，与主页搜索一致）
         from src.utils.search_timer import SubStepTiming
-        source_timing_sub_steps = [
-            SubStepTiming(name=name, duration_ms=dur, result_count=cnt)
-            for name, dur, cnt in scraper_manager.last_search_timing
-        ]
+        source_timing_sub_steps = []
+
+        # 弹幕源 + 补充源分组
+        for name, dur, cnt in scraper_manager.last_search_timing:
+            if name.startswith("补充:"):
+                source_timing_sub_steps.append(
+                    SubStepTiming(name=name[3:], duration_ms=dur, result_count=cnt, group="补充源")
+                )
+            else:
+                source_timing_sub_steps.append(
+                    SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="弹幕源")
+                )
+
+        # 辅助源分组（别名获取）
+        if hasattr(metadata_manager, 'last_aux_search_timing') and metadata_manager.last_aux_search_timing:
+            for name, dur, cnt in metadata_manager.last_aux_search_timing:
+                source_timing_sub_steps.append(
+                    SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="辅助源(别名)")
+                )
+
         timer.step_end(details=f"{len(sorted_results)}个结果", sub_steps=source_timing_sub_steps)
 
         # 5. 根据标题关键词修正媒体类型
