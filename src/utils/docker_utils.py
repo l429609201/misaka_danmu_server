@@ -353,14 +353,16 @@ async def restart_container(fallback_container_name: str = "misaka_danmu_server"
         sys.stdout.flush()
         sys.stderr.flush()
 
-        # 使用线程异步执行重启，避免阻塞当前进程
-        # 这样可以让日志有时间刷新，然后容器才会被重启
+        # 使用 SIGTERM 信号优雅停止，依赖容器的 restart policy 自动重启
+        # 避免群辉等平台上 container.restart() 导致 exit code 128 的问题
         import threading
         def do_restart():
             try:
-                container.restart(timeout=10)
+                # 先尝试 stop（发送 SIGTERM），让 restart policy 处理重启
+                container.stop(timeout=10)
             except Exception as e:
-                logger.error(f"重启容器时发生错误: {e}")
+                logger.warning(f"通过 Docker stop 重启失败: {e}，降级到进程退出")
+                restart_via_exit()
 
         restart_thread = threading.Thread(target=do_restart, daemon=True)
         restart_thread.start()

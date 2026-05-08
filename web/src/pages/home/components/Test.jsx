@@ -589,7 +589,24 @@ export const Test = () => {
 
   return (
     <div className="my-4">
-      <Card title="API 接口测试">
+      <Card title="API 接口测试" extra={
+        <Select
+          value={activeTab}
+          onChange={key => {
+            setActiveTab(key)
+            const fieldNames = testConfigs[key].fields.map(f => f.name)
+            form.resetFields(fieldNames)
+            setResult(null)
+            setSearchKeyword('')
+            setCurrentPage(1)
+          }}
+          style={{ width: 180 }}
+          options={Object.entries(testConfigs).map(([key, config]) => ({
+            value: key,
+            label: config.label,
+          }))}
+        />
+      }>
         <Tabs
           activeKey={activeTab}
           onChange={key => {
