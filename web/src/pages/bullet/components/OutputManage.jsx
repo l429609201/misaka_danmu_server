@@ -28,6 +28,26 @@ import { useMessage } from '../../../MessageContext'
 
 const { TextArea } = Input
 
+// 默认弹幕黑名单规则（参考 hills TG群群友分享过滤规则）
+const DEFAULT_BLACKLIST_PATTERNS = `# ===== 广告/推广类 =====
+广告|推广|加群|加微|关注|粉丝|订阅|直播间|主播|带货|下单|优惠|福利|红包|抽奖|转发
+
+# ===== 刷屏/无意义类 =====
+^[\\s]*$
+^[.。，,!！?？~～]{1,}$
+^(.)(\\1){4,}
+^[哈呵嘿]{4,}$
+^[6６六]+$
+^[？?]+$
+^[!！]+$
+
+# ===== 引战/争议类 =====
+[弱智傻逼脑残智障废物垃圾]
+nmsl|cnm|sb|wdnmd|滚|死
+
+# ===== 剧透类 =====
+^剧透|^提前说|^后面`
+
 const DEFAULT_COLOR_PALETTE = [
   '#ffffff',
   '#ffffff',
@@ -432,17 +452,42 @@ export const OutputManage = () => {
 
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-gray-700">黑名单规则（正则表达式）</span>
-            <Tooltip title="使用 AI 根据自然语言描述生成正则表达式">
-              <Button
-                type="link"
-                size="small"
-                icon={<RobotOutlined />}
-                disabled={!blacklistEnabled}
-                onClick={() => setAiRegexModalOpen(true)}
-              >
-                AI 生成
-              </Button>
-            </Tooltip>
+            <Space size="small">
+              <Tooltip title="填充推荐的默认过滤规则（会覆盖当前内容）">
+                <Button
+                  type="link"
+                  size="small"
+                  disabled={!blacklistEnabled}
+                  onClick={() => {
+                    if (blacklistPatterns.trim()) {
+                      Modal.confirm({
+                        title: '填充默认配置',
+                        content: '当前已有规则内容，填充默认配置将覆盖现有内容。是否继续？',
+                        okText: '覆盖',
+                        cancelText: '取消',
+                        onOk: () => setBlacklistPatterns(DEFAULT_BLACKLIST_PATTERNS),
+                      })
+                    } else {
+                      setBlacklistPatterns(DEFAULT_BLACKLIST_PATTERNS)
+                      messageApi.success('已填充默认黑名单规则')
+                    }
+                  }}
+                >
+                  填充默认配置
+                </Button>
+              </Tooltip>
+              <Tooltip title="使用 AI 根据自然语言描述生成正则表达式">
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<RobotOutlined />}
+                  disabled={!blacklistEnabled}
+                  onClick={() => setAiRegexModalOpen(true)}
+                >
+                  AI 生成
+                </Button>
+              </Tooltip>
+            </Space>
           </div>
           <TextArea
             value={blacklistPatterns}
