@@ -114,19 +114,15 @@ const SortableItem = ({ item, index, handleChangeStatus, onConfig }) => {
           <div onClick={onConfig} className="cursor-pointer">
             <MyIcon icon="setting" size={24} />
           </div>
-          {item.isAuxSearchEnabled ? (
-            <Tag color="green">已启用</Tag>
-          ) : (
-            <Tag color="red">未启用</Tag>
-          )}
           {item.providerName !== 'tmdb' ? (
-            <Tooltip title="切换启用状态">
-              <div onClick={handleChangeStatus}>
-                <MyIcon icon="exchange" size={24} />
-              </div>
-            </Tooltip>
+            <Switch
+              checked={item.isAuxSearchEnabled}
+              checkedChildren="已启用"
+              unCheckedChildren="未启用"
+              onChange={handleChangeStatus}
+            />
           ) : (
-            <div className="w-6"></div>
+            <Tag color="green">已启用</Tag>
           )}
         </div>
       </div>
@@ -360,17 +356,15 @@ export const Metadata = () => {
               <Tooltip title={activeItem.status || '未配置'}>
                 <span className="cursor-default">{getStatusIcon(activeItem.statusCode)}</span>
               </Tooltip>
-              {activeItem.isAuxSearchEnabled ? (
-                <Tag color="green">已启用</Tag>
-              ) : (
-                <Tag color="red">未启用</Tag>
-              )}
               {activeItem.providerName !== 'tmdb' ? (
-                <div>
-                  <MyIcon icon="exchange" size={24} />
-                </div>
+                <Switch
+                  checked={activeItem.isAuxSearchEnabled}
+                  checkedChildren="已启用"
+                  unCheckedChildren="未启用"
+                  onChange={() => handleChangeStatus(activeItem)}
+                />
               ) : (
-                <div className="w-6"></div>
+                <Tag color="green">已启用</Tag>
               )}
             </div>
           </div>
