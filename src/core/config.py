@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 # 1. 为配置的不同部分创建 Pydantic 模型，提供类型提示和默认值
 class ServerConfig(BaseModel):
-    host: str = "0.0.0.0"
+    host: str = "::"
     port: int = 7768
 
 # 新增：前端客户端配置模型
@@ -60,7 +60,7 @@ def _generate_config_template(jwt_secret: str) -> str:
 
 # 服务器监听配置
 server:
-  host: "0.0.0.0"      # 监听地址，0.0.0.0 表示所有网卡
+  host: "::"            # 监听地址，:: 表示同时监听 IPv4 和 IPv6（dual-stack），0.0.0.0 仅 IPv4
   port: 7768            # 监听端口
 
 # 数据库配置（支持 mysql / postgresql / sqlite）
