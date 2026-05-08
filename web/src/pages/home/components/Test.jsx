@@ -112,8 +112,8 @@ export const Test = () => {
           key={index}
           className={`p-3 rounded border ${
             data?.isMatched
-              ? 'bg-green-50 border-green-200'
-              : 'bg-blue-50 border-blue-200'
+              ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
+              : 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800'
           }`}
         >
           <div className="flex items-start gap-3">
@@ -121,15 +121,15 @@ export const Test = () => {
               <img src={it.imageUrl} alt={it.animeTitle} className="w-16 h-24 object-cover rounded" />
             )}
             <div className="flex-1">
-              <div className="font-semibold text-gray-800">
+              <div className="font-semibold text-gray-800 dark:text-gray-200">
                 {it.animeTitle}
-                <span className="ml-2 text-xs text-gray-500">(作品ID: {it.animeId})</span>
+                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">(作品ID: {it.animeId})</span>
               </div>
-              <div className="text-sm text-gray-600 mt-1">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                 {it.episodeTitle}
-                <span className="ml-2 text-xs text-gray-400">(分集ID: {it.episodeId})</span>
+                <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">(分集ID: {it.episodeId})</span>
               </div>
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 <Tag color={it.type === 'tvseries' ? 'blue' : 'purple'}>{it.typeDescription}</Tag>
                 {it.shift !== 0 && (
                   <Tag color="orange" className="ml-1">
@@ -178,10 +178,10 @@ export const Test = () => {
         return <div className="text-red-600">[搜索失败] 未找到结果</div>
       },
       renderItem: (anime, index) => (
-        <div key={index} className="p-2 bg-blue-50 rounded">
-          <div>番剧: {anime.animeTitle} (ID: {anime.animeId})</div>
-          <div>类型: {anime.typeDescription}</div>
-          {anime.episodes && <div>分集数: {anime.episodes.length}</div>}
+        <div key={index} className="p-2 bg-blue-50 dark:bg-blue-950 rounded border border-blue-200 dark:border-blue-800">
+          <div className="text-gray-800 dark:text-gray-200">番剧: {anime.animeTitle} (ID: {anime.animeId})</div>
+          <div className="text-gray-600 dark:text-gray-400">类型: {anime.typeDescription}</div>
+          {anime.episodes && <div className="text-gray-600 dark:text-gray-400">分集数: {anime.episodes.length}</div>}
         </div>
       ),
     },
@@ -213,19 +213,19 @@ export const Test = () => {
         return <div className="text-red-600">[搜索失败] 未找到结果</div>
       },
       renderItem: (anime, index) => (
-        <div key={index} className="p-3 bg-blue-50 rounded border border-blue-200">
+        <div key={index} className="p-3 bg-blue-50 dark:bg-blue-950 rounded border border-blue-200 dark:border-blue-800">
           <div className="flex items-start gap-3">
             {anime.imageUrl && (
               <img src={anime.imageUrl} alt={anime.animeTitle} className="w-16 h-24 object-cover rounded" />
             )}
             <div className="flex-1">
-              <div className="font-semibold text-gray-800">
+              <div className="font-semibold text-gray-800 dark:text-gray-200">
                 {anime.animeTitle}
-                <span className="ml-2 text-xs text-gray-500">(ID: {anime.animeId})</span>
+                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">(ID: {anime.animeId})</span>
               </div>
-              <div className="text-sm text-gray-600 mt-1">类型: {anime.typeDescription}</div>
-              <div className="text-sm text-gray-600">分集数: {anime.episodeCount || 0}</div>
-              {anime.year && <div className="text-xs text-gray-400 mt-1">{anime.year}年</div>}
+              <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">类型: {anime.typeDescription}</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">分集数: {anime.episodeCount || 0}</div>
+              {anime.year && <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{anime.year}年</div>}
             </div>
           </div>
         </div>
@@ -258,22 +258,22 @@ export const Test = () => {
           return (
             <div className="space-y-2">
               <div className="font-bold text-green-600">[查询成功]</div>
-              <div className="flex items-start gap-3 p-3 bg-blue-50 rounded border border-blue-200">
+              <div className="flex items-start gap-3 p-3 bg-blue-50 dark:bg-blue-950 rounded border border-blue-200 dark:border-blue-800">
                 {b.imageUrl && (
                   <img src={b.imageUrl} alt={b.animeTitle} className="w-20 h-28 object-cover rounded" />
                 )}
                 <div className="flex-1 space-y-1">
-                  <div className="font-semibold text-gray-800 text-base">{b.animeTitle}</div>
+                  <div className="font-semibold text-gray-800 dark:text-gray-200 text-base">{b.animeTitle}</div>
                   <div className="flex flex-wrap gap-1.5 text-xs">
                     <Tag color="blue">{b.typeDescription || b.type}</Tag>
                     {b.rating > 0 && <Tag color="gold">评分: {b.rating}</Tag>}
                     {b.isFavorited && <Tag color="red">已追番</Tag>}
                   </div>
-                  <div className="text-sm text-gray-600">
-                    作品ID: <code className="bg-gray-100 px-1 rounded">{b.animeId}</code>
-                    {b.bangumiId && <span className="ml-2">Bangumi: <code className="bg-gray-100 px-1 rounded">{b.bangumiId}</code></span>}
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    作品ID: <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">{b.animeId}</code>
+                    {b.bangumiId && <span className="ml-2">Bangumi: <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">{b.bangumiId}</code></span>}
                   </div>
-                  <div className="text-sm font-medium text-gray-700">
+                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
                     共 <span className="text-blue-600">{epCount}</span> 个分集
                   </div>
                 </div>
@@ -288,12 +288,12 @@ export const Test = () => {
         )
       },
       renderItem: (ep, index) => (
-        <div key={index} className="flex items-center gap-3 py-2 px-3 rounded hover:bg-gray-100 border-b border-gray-100">
-          <span className="text-gray-400 font-mono w-8 text-right shrink-0">
+        <div key={index} className="flex items-center gap-3 py-2 px-3 rounded hover:bg-gray-100 dark:hover:bg-gray-800 border-b border-gray-100 dark:border-gray-800">
+          <span className="text-gray-400 dark:text-gray-500 font-mono w-8 text-right shrink-0">
             {ep.episodeNumber != null ? ep.episodeNumber : index + 1}
           </span>
           <span className="flex-1 truncate" title={ep.episodeTitle}>{ep.episodeTitle || '未知'}</span>
-          <code className="text-xs text-gray-400 shrink-0">ID: {ep.episodeId}</code>
+          <code className="text-xs text-gray-400 dark:text-gray-500 shrink-0">ID: {ep.episodeId}</code>
         </div>
       ),
     },
@@ -405,12 +405,12 @@ export const Test = () => {
 
             {/* 弹幕热力图 */}
             <div>
-              <div className="text-xs text-gray-500 mb-1">弹幕密度分布 (每{bucketLabel})</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">弹幕密度分布 (每{bucketLabel})</div>
               <div className="flex items-end gap-px h-16 bg-gray-100 dark:bg-gray-800 rounded p-1 overflow-hidden">
                 {buckets.map((count, i) => {
                   const h = Math.max((count / maxBucket) * 100, count > 0 ? 4 : 0)
                   const intensity = count / maxBucket
-                  const bg = intensity > 0.8 ? 'bg-red-500' : intensity > 0.5 ? 'bg-orange-400' : intensity > 0.2 ? 'bg-blue-400' : 'bg-blue-200'
+                  const bg = intensity > 0.8 ? 'bg-red-500' : intensity > 0.5 ? 'bg-orange-400' : intensity > 0.2 ? 'bg-blue-400' : 'bg-blue-200 dark:bg-blue-700'
                   const startSec = i * bucketSize
                   const endSec = Math.min((i + 1) * bucketSize, maxTime)
                   const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
@@ -421,7 +421,7 @@ export const Test = () => {
                   )
                 })}
               </div>
-              <div className="flex justify-between text-xs text-gray-400 mt-0.5 px-1">
+              <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-0.5 px-1">
                 <span>0:00</span>
                 <span>{durationMin}:{String(durationSec).padStart(2, '0')}</span>
               </div>
@@ -431,7 +431,7 @@ export const Test = () => {
             <div className="flex flex-wrap gap-4 text-xs">
               {/* 弹幕模式分布 */}
               <div>
-                <div className="text-gray-500 mb-1">模式分布</div>
+                <div className="text-gray-500 dark:text-gray-400 mb-1">模式分布</div>
                 <div className="flex flex-wrap gap-1">
                   {modeEntries.map(([label, count]) => (
                     <Tag key={label} className="!text-xs !m-0">{label}: {count}</Tag>
@@ -440,12 +440,12 @@ export const Test = () => {
               </div>
               {/* 热门颜色 */}
               <div>
-                <div className="text-gray-500 mb-1">热门颜色</div>
+                <div className="text-gray-500 dark:text-gray-400 mb-1">热门颜色</div>
                 <div className="flex gap-1">
                   {topColors.map(([hex, count]) => (
                     <div key={hex} className="flex items-center gap-0.5" title={`${hex} (${count}条)`}>
-                      <span className="w-3 h-3 rounded-sm border border-gray-200" style={{ backgroundColor: hex }} />
-                      <span className="text-gray-400">{count}</span>
+                      <span className="w-3 h-3 rounded-sm border border-gray-200 dark:border-gray-700" style={{ backgroundColor: hex }} />
+                      <span className="text-gray-400 dark:text-gray-500">{count}</span>
                     </div>
                   ))}
                 </div>
@@ -497,7 +497,7 @@ export const Test = () => {
           completed: 'text-green-600',
           pending: 'text-blue-500',
           failed: 'text-red-600',
-        }[data?.status] || 'text-gray-600'
+        }[data?.status] || 'text-gray-600 dark:text-gray-400'
         const statusLabel = {
           completed: '[已完成]',
           pending: '[进行中]',
@@ -507,21 +507,21 @@ export const Test = () => {
           <div className="space-y-2">
             <div className={`font-bold ${statusColor}`}>
               {statusLabel}
-              {data?.taskId && <span className="ml-2 text-xs font-mono text-gray-400">{data.taskId}</span>}
+              {data?.taskId && <span className="ml-2 text-xs font-mono text-gray-400 dark:text-gray-500">{data.taskId}</span>}
             </div>
             {data?.description && (
-              <div className="text-sm text-gray-500">{data.description}</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">{data.description}</div>
             )}
             {data?.progress != null && data.status === 'pending' && (
-              <div className="w-full bg-gray-200 rounded-full h-1.5">
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                 <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${data.progress}%` }} />
               </div>
             )}
             {data?.episodeId != null && (
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-gray-600 dark:text-gray-400">
                 episodeId: <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-mono">{data.episodeId}</code>
                 {data.status === 'completed' && (
-                  <span className="ml-2 text-xs text-gray-400">（使用此 ID 调用 /comment/{'{episodeId}'} 获取弹幕）</span>
+                  <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">（使用此 ID 调用 /comment/{'{episodeId}'} 获取弹幕）</span>
                 )}
               </div>
             )}
@@ -571,7 +571,7 @@ export const Test = () => {
               <div className="space-y-1">
                 {fields.map(f => (
                   <div key={f.label} className="flex gap-2 text-sm">
-                    <span className="text-gray-500 w-20 shrink-0">{f.label}:</span>
+                    <span className="text-gray-500 dark:text-gray-400 w-20 shrink-0">{f.label}:</span>
                     <span className="font-mono">{String(f.value)}</span>
                   </div>
                 ))}
@@ -674,21 +674,21 @@ export const Test = () => {
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <Tag color="blue">{currentConfig.method}</Tag>
-                    <code className="text-sm bg-gray-100 px-2 py-1 rounded">
+                    <code className="text-sm bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
                       {currentConfig.apiPath}
                     </code>
                   </div>
                   {currentConfig.fields.length > 0 && (
-                    <div className="text-xs text-gray-600">
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
                       <div className="font-semibold mb-1">参数说明:</div>
                       <div className="pl-2">
                         {currentConfig.fields.map(field => (
                           <div key={field.name} className="mb-1">
-                            <span className="font-mono text-blue-600">
+                            <span className="font-mono text-blue-600 dark:text-blue-400">
                               {field.label}
                             </span>
                             {' → '}
-                            <span className="text-gray-500">
+                            <span className="text-gray-500 dark:text-gray-400">
                               {field.apiParam || field.name}
                             </span>
                           </div>
@@ -833,7 +833,7 @@ export const Test = () => {
             <div className="mt-4 px-2">
               {/* 结果标题栏 + 视图切换开关 */}
               <div className="flex items-center justify-between mb-2">
-                <div className="text-sm text-gray-500">测试结果:</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">测试结果:</div>
                 {/* 药丸形视图切换开关 */}
                 <button
                   type="button"
