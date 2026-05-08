@@ -27,3 +27,6 @@ config/config.yml
 
 
 .pids/
+
+# 嵌套git仓库
+misaka-relay/
