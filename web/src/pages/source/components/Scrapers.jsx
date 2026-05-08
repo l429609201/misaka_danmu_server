@@ -2457,7 +2457,7 @@ export const Scrapers = () => {
             tooltip="该源的搜索请求超时时间。最低5秒，最大100秒，留空则不限。"
             className="mb-4"
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-start gap-3">
               <div className="flex-1">
                 <Form.Item name={`scraper_${setname}_search_timeout`} noStyle>
                   <Slider
@@ -2467,9 +2467,11 @@ export const Scrapers = () => {
                   />
                 </Form.Item>
               </div>
-              <Form.Item name={`scraper_${setname}_search_timeout`} noStyle>
-                <InputNumber min={5} max={100} controls={false} style={{ width: 80 }} addonAfter="秒" />
-              </Form.Item>
+              <div style={{ marginTop: 4 }}>
+                <Form.Item name={`scraper_${setname}_search_timeout`} noStyle>
+                  <InputNumber min={5} max={100} controls={false} style={{ width: 80 }} addonAfter="秒" />
+                </Form.Item>
+              </div>
             </div>
           </Form.Item>
 
