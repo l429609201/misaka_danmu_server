@@ -235,16 +235,37 @@ export const Test = () => {
           component: Input,
         },
       ],
-      // 番剧详情是单条数据，不需要分页
-      renderResult: data => {
+      getListData: data => data?.bangumi?.episodes || [],
+      searchFilter: (item, keyword) => {
+        const kw = keyword.toLowerCase()
+        return (item.episodeTitle || '').toLowerCase().includes(kw)
+      },
+      renderHeader: data => {
         if (data?.bangumi) {
-          const bangumi = data.bangumi
+          const b = data.bangumi
+          const epCount = b.episodes?.length || 0
           return (
-            <div className="font-bold text-green-600">
-              <div>[查询成功]</div>
-              <div className="mt-2 p-2 bg-blue-50 rounded font-normal">
-                <div>标题: {bangumi.animeTitle}</div>
-                <div>类型: {bangumi.typeDescription}</div>
+            <div className="space-y-2">
+              <div className="font-bold text-green-600">[查询成功]</div>
+              <div className="flex items-start gap-3 p-3 bg-blue-50 rounded border border-blue-200">
+                {b.imageUrl && (
+                  <img src={b.imageUrl} alt={b.animeTitle} className="w-20 h-28 object-cover rounded" />
+                )}
+                <div className="flex-1 space-y-1">
+                  <div className="font-semibold text-gray-800 text-base">{b.animeTitle}</div>
+                  <div className="flex flex-wrap gap-1.5 text-xs">
+                    <Tag color="blue">{b.typeDescription || b.type}</Tag>
+                    {b.rating > 0 && <Tag color="gold">评分: {b.rating}</Tag>}
+                    {b.isFavorited && <Tag color="red">已追番</Tag>}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    作品ID: <code className="bg-gray-100 px-1 rounded">{b.animeId}</code>
+                    {b.bangumiId && <span className="ml-2">Bangumi: <code className="bg-gray-100 px-1 rounded">{b.bangumiId}</code></span>}
+                  </div>
+                  <div className="text-sm font-medium text-gray-700">
+                    共 <span className="text-blue-600">{epCount}</span> 个分集
+                  </div>
+                </div>
               </div>
             </div>
           )
@@ -255,6 +276,15 @@ export const Test = () => {
           </div>
         )
       },
+      renderItem: (ep, index) => (
+        <div key={index} className="flex items-center gap-3 py-2 px-3 rounded hover:bg-gray-100 border-b border-gray-100">
+          <span className="text-gray-400 font-mono w-8 text-right shrink-0">
+            {ep.episodeNumber != null ? ep.episodeNumber : index + 1}
+          </span>
+          <span className="flex-1 truncate" title={ep.episodeTitle}>{ep.episodeTitle || '未知'}</span>
+          <code className="text-xs text-gray-400 shrink-0">ID: {ep.episodeId}</code>
+        </div>
+      ),
     },
     comment: {
       label: '弹幕获取',

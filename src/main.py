@@ -8,7 +8,6 @@ import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request, Depends, status
-from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse, Response # noqa: F401
 from fastapi.middleware.cors import CORSMiddleware
@@ -443,13 +442,11 @@ async def control_api_openapi_json():
 
 @app.get("/api/control/docs", include_in_schema=False)
 async def custom_swagger_ui_html():
-    """提供一个使用本地静态资源的 Swagger UI 页面。"""
-    return get_swagger_ui_html(
+    """提供一个使用本地静态资源、部分汉化的 Swagger UI 页面。"""
+    from src.utils.swagger_cn import get_swagger_ui_html_cn
+    return get_swagger_ui_html_cn(
         openapi_url="/api/control/openapi.json",
-        title="Misaka Danmaku External Control API - Docs",
-        swagger_js_url="/static/swagger-ui/swagger-ui-bundle.js",
-        swagger_css_url="/static/swagger-ui/swagger-ui.css",
-        swagger_favicon_url="/static/swagger-ui/favicon-32x32.png"
+        title="Misaka Danmaku 外部控制 API 文档",
     )
 
 # 新增：配置CORS，允许前端开发服务器访问API
