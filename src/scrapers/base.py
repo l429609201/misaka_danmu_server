@@ -130,6 +130,8 @@ class BaseScraper(ABC):
         self.transport_manager = transport_manager
         self.logger = logging.getLogger(self.__class__.__name__)
         # 用于跟踪当前客户端实例所使用的代理配置
+        # 搜索超时（秒），由 scraper_manager 从 config 注入，默认15秒
+        self._search_timeout: float = 15.0
         self._current_proxy_config: Optional[str] = None
         # 缓存 scraper_manager 引用,用于访问预加载的 scraper 设置
         self._scraper_manager_ref: Optional[Any] = None
@@ -239,13 +241,17 @@ class BaseScraper(ABC):
     async def _create_client(self, **kwargs) -> httpx.AsyncClient: # type: ignore
         """
         创建 httpx.AsyncClient，并根据配置应用代理。
-        子类可以传递额外的 httpx.AsyncClient 参数。
+        超时统一由 _search_timeout 控制（由 scraper_manager 从 config 注入），
+        忽略子类传入的 timeout 参数。
         """
         proxy_to_use = await self._get_proxy_for_provider()
         await self._log_proxy_usage(proxy_to_use)
         self._current_proxy_config = proxy_to_use
 
-        client_kwargs = {"proxy": proxy_to_use, "timeout": 20.0, "follow_redirects": True, **kwargs}
+        # 忽略子类传的 timeout，统一用配置的 _search_timeout
+        kwargs.pop("timeout", None)
+
+        client_kwargs = {"proxy": proxy_to_use, "timeout": self._search_timeout, "follow_redirects": True, **kwargs}
         return httpx.AsyncClient(**client_kwargs)
 
     async def _get_from_cache(self, key: str) -> Optional[Any]:

@@ -407,8 +407,7 @@ class ScraperManager:
         # 包装搜索任务，从 @track_performance 装饰器存储的 _task_timings 中读取耗时
         # 使用缓冲 logger 避免并发搜索日志交叉
 
-        # 预加载所有启用源的超时配置（并行读取，避免逐个查询 config 表）
-        timeout_configs = {}
+        # 预加载所有启用源的超时配置并注入到 scraper 实例
         timeout_tasks = {
             scraper.provider_name: self.config_manager.get(
                 f"scraper_{scraper.provider_name}_search_timeout", "15"
@@ -416,11 +415,12 @@ class ScraperManager:
             for scraper in enabled_scrapers
         }
         timeout_raw = await asyncio.gather(*timeout_tasks.values())
-        for provider_name, raw_val in zip(timeout_tasks.keys(), timeout_raw):
+        for scraper in enabled_scrapers:
+            raw_val = timeout_raw[list(timeout_tasks.keys()).index(scraper.provider_name)]
             try:
-                timeout_configs[provider_name] = max(5.0, min(100.0, float(raw_val)))
+                scraper._search_timeout = max(5.0, min(100.0, float(raw_val)))
             except (ValueError, TypeError):
-                timeout_configs[provider_name] = 15.0
+                scraper._search_timeout = 15.0
 
         async def timed_search(scraper, keyword):
             task_id = id(asyncio.current_task())  # 获取当前任务ID
@@ -430,21 +430,11 @@ class ScraperManager:
             temp_logger, buffer_handler = create_buffered_logger(scraper.provider_name, task_id)
             scraper.logger = temp_logger
 
-            # 从预加载的超时配置读取（默认15秒）
-            search_timeout = timeout_configs.get(scraper.provider_name, 15.0)
-
             try:
-                result = await asyncio.wait_for(
-                    scraper.search(keyword, episode_info=episode_info),
-                    timeout=search_timeout
-                )
+                result = await scraper.search(keyword, episode_info=episode_info)
                 # 从装饰器存储的 _task_timings 中读取耗时（并发安全）
                 duration_ms = scraper._task_timings.pop(task_id, 0) if hasattr(scraper, '_task_timings') else 0
                 return (scraper.provider_name, result, duration_ms, None, buffer_handler)
-            except asyncio.TimeoutError:
-                duration_ms = search_timeout * 1000
-                temp_logger.warning(f"搜索超时（{search_timeout:.0f}秒），已跳过")
-                return (scraper.provider_name, None, duration_ms, None, buffer_handler)
             except Exception as e:
                 duration_ms = scraper._task_timings.pop(task_id, 0) if hasattr(scraper, '_task_timings') else 0
                 return (scraper.provider_name, None, duration_ms, e, buffer_handler)
