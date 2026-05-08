@@ -22,14 +22,12 @@ import {
   setDanmakuBlacklistEnabled,
   getDanmakuBlacklistPatterns,
   setDanmakuBlacklistPatterns,
+  getDanmakuBlacklistDefaults,
   generateRegex,
 } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
 
 const { TextArea } = Input
-
-// 默认弹幕黑名单规则（参考 hills TG群群友分享过滤规则）
-const DEFAULT_BLACKLIST_PATTERNS = `2333|666|哈哈哈|牛逼|前排|抢前排|第[0-9一二三四五六七八九十百千]+排|空降|到此一游|打卡|报道|报到|学[jJvVaA]+|后台播放|生日快乐|现在.+点|几点了|^\\d+小时|^\\d+分钟|^\\d+秒|^\\d{4}年|^\\d+月\\d+日|纯享版|三连|一键三连|恰饭|币没了|热乎的|^\\d+分钟前|白嫖|奥利给|寄了|蚌埠住了|蚌住|绷不住|笑死|草|泪目|哭了|泪奔|我哭了|弹幕护体|高考加油|上岸|保佑|还愿|活该|大快人心|报应|吓得我|一个巴掌拍不响|苍蝇不叮无缝的蛋|可怜之人必有可恨之处|^从.{0,8}来的|广东人|四川人|东北人|山东人|河南人|江苏人|浙江人|上海人|北京人|我老婆|我老公|我儿子|我女儿|我妈|爸|弟|姐|szd|真香|真恶心|太丑了|太美了|抱走|承包|舔屏|鼻血|已存|壁纸|手机壁纸|桌面|高清|无码|开车|手动狗头|手动滑稽|doge|妙啊|寄寄+|111+|222+|333+|444+|555+|777+|888+|999+|000+|(.){6,}|^.{0,9}\\(|^[一-龥\\w]{0,10} \\)|^[^一-龥]{8,}\\(|[·・]?(■|▂|▃|▄|▅|▆|▇|█){3,}[·・]?|^[一-龥]{5}[，,][一-龥]{7}[，,][一-龥]{5} \\)|见.{0,6}滚|滚.{0,6}见|智障|弱智|脑残|垃圾|辣鸡|恶心|死全家|去死妈|死爹|去死|傻逼|傻B|SB|sb|S ?b|cnm|你妈|NMSL|nm+l|tmd|他妈|操|艹|曹|叉|尼玛|泥马|日你|日死|去死吧|傻吊|阳痿|早泄|卖鲍|约炮|赌博|菠菜|开盘|杀猪盘|三狗|pg|AG|DG|OB|MG|BBIN|PT|EA|JDB|已三连|已投币|已充电|已关注|已收藏|已点赞|已打赏|已上舰|已续舰|提督|总督|舰长|大会员|年度大会员|小心心|辣条|打call|冲鸭|yyds|YYDS|绝绝子|神作|神番|封神|名场面|修罗场|真香警告|社死|翻车|贴贴|抱抱|亲亲|我爱你|娶我|嫁我|已婚|已离婚|已出轨|已出柜|已弯|已直|已黑化|已净化|已成佛|已飞升|已圆寂|已投胎|已退网|已退圈|已取关|已拉黑|已举报|已切割|已脱粉|已回踩|已反黑|已洗白|世界尽头|冷酷异变|生崽|生猴子|生一窝|小奶猫|小奶狗|小奶狐|小奶狼|小奶龙|舔狗|舔狼|上头了|太上头|眼睛怀孕|耳朵怀孕|妊娠纹|打桩机|大力出奇迹|黑化强三倍|洗白弱三倍|寄中寄|寄里寄气|玉玉了|已紫砂|我裂开了|xswl|awsl|AWSL|好甜|好刀|锁死|嗑疯了|嗑到脑溢血|嗑拉了|嗑吐了|cp粉狂喜|大型发糖|大型撒狗粮|大型虐狗|大型修罗场|大型翻车现场|大型社死现场|大型真香现场|大型纪录片|太顶了|太硬了|太粗了|太长了|太快了|太刺激了|爽飞了|高潮了|喷了|射了|已升天|手动@所有人|我来晚了|我先润了|我先溜了|我先寄了|88|886|拜拜|202[5-9]|2030|新年快乐|跨年快乐|龙年大吉|恭喜发财|暴富|脱单`
 
 const DEFAULT_COLOR_PALETTE = [
   '#ffffff',
@@ -441,18 +439,31 @@ export const OutputManage = () => {
                   type="link"
                   size="small"
                   disabled={!blacklistEnabled}
-                  onClick={() => {
+                  onClick={async () => {
+                    const fillDefaults = async () => {
+                      try {
+                        const res = await getDanmakuBlacklistDefaults()
+                        const patterns = res.data?.patterns || ''
+                        if (!patterns) {
+                          messageApi.warning('未获取到默认规则')
+                          return
+                        }
+                        setBlacklistPatterns(patterns)
+                        messageApi.success('已填充默认黑名单规则')
+                      } catch (e) {
+                        messageApi.error('获取默认规则失败')
+                      }
+                    }
                     if (blacklistPatterns.trim()) {
                       Modal.confirm({
                         title: '填充默认配置',
                         content: '当前已有规则内容，填充默认配置将覆盖现有内容。是否继续？',
                         okText: '覆盖',
                         cancelText: '取消',
-                        onOk: () => setBlacklistPatterns(DEFAULT_BLACKLIST_PATTERNS),
+                        onOk: fillDefaults,
                       })
                     } else {
-                      setBlacklistPatterns(DEFAULT_BLACKLIST_PATTERNS)
-                      messageApi.success('已填充默认黑名单规则')
+                      await fillDefaults()
                     }
                   }}
                 >
