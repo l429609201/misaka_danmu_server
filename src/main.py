@@ -677,8 +677,6 @@ if __name__ == "__main__":
             return _original_bind(self, address)
 
         socket.socket.bind = _dual_stack_bind
-        logging.getLogger("uvicorn").info(f"双栈模式：[::] 同时接受 IPv4 + IPv6 连接")
-
         uvicorn.run(
             "src.main:app",
             host="::",
