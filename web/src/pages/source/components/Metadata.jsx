@@ -122,7 +122,11 @@ const SortableItem = ({ item, index, handleChangeStatus, onConfig }) => {
               onChange={handleChangeStatus}
             />
           ) : (
-            <Tag color="green">已启用</Tag>
+            <Switch
+              checked
+              checkedChildren="已启用"
+              disabled
+            />
           )}
         </div>
       </div>
@@ -364,7 +368,11 @@ export const Metadata = () => {
                   onChange={() => handleChangeStatus(activeItem)}
                 />
               ) : (
-                <Tag color="green">已启用</Tag>
+                <Switch
+                  checked
+                  checkedChildren="已启用"
+                  disabled
+                />
               )}
             </div>
           </div>
