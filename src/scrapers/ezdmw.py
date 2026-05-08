@@ -146,7 +146,7 @@ class EzdmwScraper(BaseScraper):
                 timeout_val = float(timeout_str)
             except (ValueError, TypeError):
                 timeout_val = 15.0
-            proxy = await self._get_proxy_url()
+            proxy = await self._get_proxy_for_provider()
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(timeout_val),
                 follow_redirects=True,
