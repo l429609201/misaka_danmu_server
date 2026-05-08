@@ -463,7 +463,8 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
           message="增量追更定时任务未配置"
           description="请在设置中配置增量追更定时任务，否则追更功能不会自动执行。"
           showIcon
-          style={{ marginBottom: 24 }}
+          style={{ marginBottom: 12 }}
+          banner
         />
       )
     }
@@ -474,101 +475,70 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
         icon={taskStatus.enabled ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
         message={
           <span>
-            增量追更定时任务：{taskStatus.enabled ? '已启用' : '已禁用'}
+            追更任务：{taskStatus.enabled ? '已启用' : '已禁用'}
             {taskStatus.cronExpression && (
-              <Tag className="ml-4">{taskStatus.cronExpression}</Tag>
+              <span className="text-xs text-gray-400 ml-2">{taskStatus.cronExpression}</span>
+            )}
+            {taskStatus.nextRunTime && taskStatus.enabled && (
+              <span className="text-xs text-gray-400 ml-2">
+                下次 {dayjs(taskStatus.nextRunTime).format('MM-DD HH:mm')}
+              </span>
             )}
           </span>
         }
-        description={
-          taskStatus.nextRunTime && taskStatus.enabled
-            ? `下次执行：${dayjs(taskStatus.nextRunTime).format('YYYY-MM-DD HH:mm:ss')}`
-            : null
-        }
         showIcon
-        style={{ marginBottom: 24 }}
+        style={{ marginBottom: 12 }}
+        banner
       />
     )
   }
 
   // 渲染源列表项
   const renderSourceItem = (source, animeTitle) => (
-    <div key={source.sourceId} className="source-item flex flex-col gap-2 py-3 px-4 rounded-lg border-b border-gray-100 dark:border-gray-700 last:border-b-0 hover:bg-gray-100 dark:hover:bg-gray-700">
-      <div className="flex items-center gap-4">
-        <Checkbox
-          checked={selectedSourceIds.includes(source.sourceId)}
-          onChange={(e) => handleCheckboxChange(source.sourceId, e.target.checked)}
-        />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium">{source.providerName}</span>
-            <Tag color="blue" size="small">当前 第{source.episodeCount}集</Tag>
-            {source.incrementalRefreshEnabled && (
-              <>
-                <Tag color="green" size="small">追更中</Tag>
-                <Tag color={source.incrementalRefreshFailures > 0 ? 'error' : 'default'} size="small">
-                  失败 {source.incrementalRefreshFailures}/{stats.maxFailures}
-                </Tag>
-              </>
-            )}
-            {source.isFavorited && (
-              <Tag color="gold" size="small">★ 已标记</Tag>
-            )}
-            {source.isFinished && (
-              <Tag color="default" size="small">已完结</Tag>
-            )}
-          </div>
+    <div key={source.sourceId} className="source-item flex items-center gap-3 py-2.5 px-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" style={{ borderBottom: '1px solid var(--ant-color-border-secondary, #f0f0f0)' }}>
+      <Checkbox
+        checked={selectedSourceIds.includes(source.sourceId)}
+        onChange={(e) => handleCheckboxChange(source.sourceId, e.target.checked)}
+      />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-sm">{source.providerName}</span>
+          <span className="text-xs text-gray-400">第{source.episodeCount}集</span>
+          {source.incrementalRefreshEnabled && source.incrementalRefreshFailures > 0 && (
+            <Tag color="error" bordered={false} style={{ fontSize: 11, lineHeight: '18px', padding: '0 6px', margin: 0 }}>
+              失败{source.incrementalRefreshFailures}/{stats.maxFailures}
+            </Tag>
+          )}
           {source.lastRefreshLatestEpisodeAt && (
-            <div className="text-xs text-gray-400 mt-1">
-              上次追更：{dayjs(source.lastRefreshLatestEpisodeAt).format('YYYY-MM-DD HH:mm')}
-            </div>
+            <span className="text-xs text-gray-400 hidden sm:inline">
+              追更于 {dayjs(source.lastRefreshLatestEpisodeAt).format('MM-DD HH:mm')}
+            </span>
           )}
         </div>
-        {!isMobile && (
-          <Space size="small">
-            <Switch
-              checkedChildren="追更"
-              unCheckedChildren="追更"
-              checked={source.incrementalRefreshEnabled}
-              onChange={() => handleToggleRefresh(source.sourceId)}
-            />
-            <Switch
-              checkedChildren="标记"
-              unCheckedChildren="标记"
-              checked={source.isFavorited}
-              onChange={() => handleToggleFavorite(source.sourceId)}
-            />
-            <Switch
-              checkedChildren="完结"
-              unCheckedChildren="完结"
-              checked={source.isFinished}
-              onChange={() => handleToggleFinished(source.sourceId)}
-            />
-          </Space>
-        )}
       </div>
-      {isMobile && (
-        <div className="flex gap-3 pl-8">
-          <Switch
-            checkedChildren="追更"
-            unCheckedChildren="追更"
-            checked={source.incrementalRefreshEnabled}
-            onChange={() => handleToggleRefresh(source.sourceId)}
-          />
-          <Switch
-            checkedChildren="标记"
-            unCheckedChildren="标记"
-            checked={source.isFavorited}
-            onChange={() => handleToggleFavorite(source.sourceId)}
-          />
-          <Switch
-            checkedChildren="完结"
-            unCheckedChildren="完结"
-            checked={source.isFinished}
-            onChange={() => handleToggleFinished(source.sourceId)}
-          />
-        </div>
-      )}
+      <Space size={4}>
+        <Switch
+          size="small"
+          checkedChildren="追更"
+          unCheckedChildren="追更"
+          checked={source.incrementalRefreshEnabled}
+          onChange={() => handleToggleRefresh(source.sourceId)}
+        />
+        <Switch
+          size="small"
+          checkedChildren="标记"
+          unCheckedChildren="标记"
+          checked={source.isFavorited}
+          onChange={() => handleToggleFavorite(source.sourceId)}
+        />
+        <Switch
+          size="small"
+          checkedChildren="完结"
+          unCheckedChildren="完结"
+          checked={source.isFinished}
+          onChange={() => handleToggleFinished(source.sourceId)}
+        />
+      </Space>
     </div>
   )
 
@@ -578,110 +548,110 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
       {/* 定时任务状态 */}
       {renderTaskStatus()}
 
-      {/* 统计信息和过滤器 */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
-          <Tag>共 {stats.totalSources} 个源</Tag>
-          <Tag color="blue">追更中 {stats.refreshEnabled} 个</Tag>
-          <Tag color="green">已标记 {stats.favorited} 个</Tag>
-        </div>
-        <Space size="small">
-          <Dropdown
-            menu={{
-              items: [
-                { key: 'all', label: '全部' },
-                { key: 'movie', label: '电影' },
-                { key: 'tv_series', label: '电视节目' },
-              ],
-              selectedKeys: [typeFilter],
-              onClick: ({ key }) => handleTypeFilterChange(key),
-            }}
-            trigger={['click']}
+      {/* 统计信息 */}
+      <div className="mb-3 text-sm text-gray-500">
+        共 <span className="font-medium text-gray-700 dark:text-gray-300">{stats.totalSources}</span> 个源，
+        追更 <span className="font-medium text-blue-500">{stats.refreshEnabled}</span>，
+        标记 <span className="font-medium text-green-500">{stats.favorited}</span>
+      </div>
+
+      {/* 筛选器 */}
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'all', label: '全部类型' },
+              { key: 'movie', label: '电影' },
+              { key: 'tv_series', label: '电视节目' },
+            ],
+            selectedKeys: [typeFilter],
+            onClick: ({ key }) => handleTypeFilterChange(key),
+          }}
+          trigger={['click']}
+        >
+          <Button size="small" type={typeFilter !== 'all' ? 'primary' : 'default'} ghost={typeFilter !== 'all'}>
+            {typeFilter === 'all' ? '类型' : typeFilter === 'movie' ? '电影' : '电视'} <DownOutlined />
+          </Button>
+        </Dropdown>
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'all', label: '全部' },
+              { key: 'enabled', label: '已追更' },
+              { key: 'disabled', label: '未追更' },
+            ],
+            selectedKeys: [refreshFilter],
+            onClick: ({ key }) => handleRefreshFilterChange(key),
+          }}
+          trigger={['click']}
+        >
+          <Button size="small" type={refreshFilter !== 'all' ? 'primary' : 'default'} ghost={refreshFilter !== 'all'}>
+            {refreshFilter === 'all' ? '追更' : refreshFilter === 'enabled' ? '已追更' : '未追更'} <DownOutlined />
+          </Button>
+        </Dropdown>
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'all', label: '全部' },
+              { key: 'favorited', label: '已标记' },
+              { key: 'unfavorited', label: '未标记' },
+            ],
+            selectedKeys: [favoriteFilter],
+            onClick: ({ key }) => handleFavoriteFilterChange(key),
+          }}
+          trigger={['click']}
+        >
+          <Button size="small" type={favoriteFilter !== 'all' ? 'primary' : 'default'} ghost={favoriteFilter !== 'all'}>
+            {favoriteFilter === 'all' ? '标记' : favoriteFilter === 'favorited' ? '已标记' : '未标记'} <DownOutlined />
+          </Button>
+        </Dropdown>
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'all', label: '全部' },
+              { key: 'finished', label: '已完结' },
+              { key: 'unfinished', label: '未完结' },
+            ],
+            selectedKeys: [finishedFilter],
+            onClick: ({ key }) => handleFinishedFilterChange(key),
+          }}
+          trigger={['click']}
+        >
+          <Button size="small" type={finishedFilter !== 'all' ? 'primary' : 'default'} ghost={finishedFilter !== 'all'}>
+            {finishedFilter === 'all' ? '完结' : finishedFilter === 'finished' ? '已完结' : '未完结'} <DownOutlined />
+          </Button>
+        </Dropdown>
+        <Dropdown menu={sortDropdownItems} trigger={['click']}>
+          <Button size="small">
+            <span className="flex items-center gap-1">
+              {currentSortLabel}
+              <MyIcon icon={sortOrder === 'asc' ? 'arrowTop-fill' : 'xiajiantou-'} size={13} />
+            </span>
+          </Button>
+        </Dropdown>
+        {!isMobile && (
+          <Popover
+            content={
+              <div style={{ width: 220 }}>
+                <Input
+                  placeholder="搜索番剧或源名称..."
+                  allowClear
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                  onPressEnter={(e) => handleSearch(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            }
+            title="搜索"
+            trigger="click"
+            placement="bottom"
           >
-            <Button size="small">
-              类型: {typeFilter === 'all' ? '全部' : typeFilter === 'movie' ? '电影' : '电视节目'} <DownOutlined />
+            <Button size="small" icon={<SearchOutlined />} type={searchKeyword ? 'primary' : 'default'} ghost={!!searchKeyword}>
+              {searchKeyword ? `${searchKeyword.length > 4 ? searchKeyword.slice(0, 4) + '...' : searchKeyword}` : '搜索'}
             </Button>
-          </Dropdown>
-          <Dropdown
-            menu={{
-              items: [
-                { key: 'all', label: '全部' },
-                { key: 'enabled', label: '已追更' },
-                { key: 'disabled', label: '未追更' },
-              ],
-              selectedKeys: [refreshFilter],
-              onClick: ({ key }) => handleRefreshFilterChange(key),
-            }}
-            trigger={['click']}
-          >
-            <Button size="small">
-              追更: {refreshFilter === 'all' ? '全部' : refreshFilter === 'enabled' ? '已追更' : '未追更'} <DownOutlined />
-            </Button>
-          </Dropdown>
-          <Dropdown
-            menu={{
-              items: [
-                { key: 'all', label: '全部' },
-                { key: 'favorited', label: '已标记' },
-                { key: 'unfavorited', label: '未标记' },
-              ],
-              selectedKeys: [favoriteFilter],
-              onClick: ({ key }) => handleFavoriteFilterChange(key),
-            }}
-            trigger={['click']}
-          >
-            <Button size="small">
-              标记: {favoriteFilter === 'all' ? '全部' : favoriteFilter === 'favorited' ? '已标记' : '未标记'} <DownOutlined />
-            </Button>
-          </Dropdown>
-          <Dropdown
-            menu={{
-              items: [
-                { key: 'all', label: '全部' },
-                { key: 'finished', label: '已完结' },
-                { key: 'unfinished', label: '未完结' },
-              ],
-              selectedKeys: [finishedFilter],
-              onClick: ({ key }) => handleFinishedFilterChange(key),
-            }}
-            trigger={['click']}
-          >
-            <Button size="small">
-              完结: {finishedFilter === 'all' ? '全部' : finishedFilter === 'finished' ? '已完结' : '未完结'} <DownOutlined />
-            </Button>
-          </Dropdown>
-          <Dropdown menu={sortDropdownItems} trigger={['click']}>
-            <Button size="small">
-              <span className="flex items-center gap-1">
-                {currentSortLabel}
-                <MyIcon icon={sortOrder === 'asc' ? 'arrowTop-fill' : 'xiajiantou-'} size={13} />
-              </span>
-            </Button>
-          </Dropdown>
-          {!isMobile && (
-            <Popover
-              content={
-                <div style={{ width: 220 }}>
-                  <Input
-                    placeholder="搜索番剧或源名称..."
-                    allowClear
-                    value={searchKeyword}
-                    onChange={(e) => setSearchKeyword(e.target.value)}
-                    onPressEnter={(e) => handleSearch(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-              }
-              title="搜索"
-              trigger="click"
-              placement="bottom"
-            >
-              <Button size="small" icon={<SearchOutlined />}>
-                {searchKeyword ? `搜索: ${searchKeyword.length > 4 ? searchKeyword.slice(0, 4) + '...' : searchKeyword}` : '搜索'}
-              </Button>
-            </Popover>
-          )}
-        </Space>
+          </Popover>
+        )}
       </div>
 
       {/* 源列表 */}
@@ -692,16 +662,21 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
           <Empty description="暂无数据" />
         ) : (
           <Collapse
+            bordered={false}
+            size="small"
             defaultActiveKey={animeGroups.slice(0, 3).map(g => g.animeId)}
             items={animeGroups.map(group => ({
               key: group.animeId,
               label: (
                 <div className="flex items-center gap-2">
-                  <Tag size="small" color={group.animeType === 'movie' ? 'purple' : 'blue'}>
-                    {group.animeType === 'movie' ? '电影' : '电视节目'}
-                  </Tag>
-                  <span className="font-medium">{group.animeTitle}</span>
-                  <Tag size="small">{group.sources.length} 个源</Tag>
+                  <span className="text-xs px-1.5 py-0.5 rounded" style={{
+                    background: group.animeType === 'movie' ? 'var(--ant-purple-1, #f9f0ff)' : 'var(--ant-blue-1, #e6f4ff)',
+                    color: group.animeType === 'movie' ? 'var(--ant-purple-6, #722ed1)' : 'var(--ant-blue-6, #1677ff)',
+                  }}>
+                    {group.animeType === 'movie' ? '电影' : 'TV'}
+                  </span>
+                  <span className="font-medium text-sm">{group.animeTitle}</span>
+                  <span className="text-xs text-gray-400">{group.sources.length}源</span>
                 </div>
               ),
               children: group.sources.map(source => renderSourceItem(source, group.animeTitle)),
