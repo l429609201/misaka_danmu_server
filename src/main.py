@@ -658,9 +658,58 @@ app.mount("/static/swagger-ui", StaticFiles(directory=STATIC_DIR), name="swagger
 # 添加一个运行入口，以便直接从配置启动
 # 这样就可以通过 `python -m src.main` 来运行，并自动使用 config.yml 中的端口和主机
 if __name__ == "__main__":
-    uvicorn.run(
-        "src.main:app",
-        host=settings.server.host,
-        port=settings.server.port,
-        reload=settings.environment == "development"  # 开发环境启用自动重载
-    )
+    import socket
+
+    host = settings.server.host
+    port = settings.server.port
+    ipv6_enabled = getattr(settings.server, 'ipv6', True)
+    is_reload = settings.environment == "development"
+
+    if ipv6_enabled and not is_reload:
+        # 双栈模式：手动创建 IPv4 + IPv6 两个 socket，传给 uvicorn
+        sockets = []
+
+        # IPv4 socket
+        sock4 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock4.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock4.bind((host, port))
+        sockets.append(sock4)
+
+        # IPv6 socket（IPV6_V6ONLY=1 确保不冲突）
+        try:
+            sock6 = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+            sock6.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            sock6.bind(("::", port))
+            sockets.append(sock6)
+            logging.getLogger("uvicorn").info(f"双栈模式：同时监听 IPv4({host}:{port}) + IPv6([::]:{port})")
+        except OSError as e:
+            logging.getLogger("uvicorn").warning(f"IPv6 监听失败（{e}），仅使用 IPv4")
+
+        config = uvicorn.Config("src.main:app", host=host, port=port)
+        server = uvicorn.Server(config)
+        server.config.loaded = True
+        # 替换 server 的 socket 列表
+        import asyncio
+        async def _serve():
+            config.setup_event_loop()
+            server.config = config
+            server._sockets = sockets  # type: ignore
+            # 手动设置已绑定的 sockets
+            for s in sockets:
+                s.listen(config.backlog)
+                s.setblocking(False)
+            await server.startup(sockets=sockets)
+            await server.main_loop()
+            await server.shutdown(sockets=sockets)
+        asyncio.run(_serve())
+    else:
+        # 普通模式 / reload 模式（reload 不支持自定义 socket）
+        if ipv6_enabled and is_reload:
+            logging.getLogger("uvicorn").warning("开发模式(reload)下不支持双栈，仅监听 IPv4")
+        uvicorn.run(
+            "src.main:app",
+            host=host,
+            port=port,
+            reload=is_reload,
+        )
