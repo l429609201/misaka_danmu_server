@@ -1,4 +1,6 @@
 import time
+import warnings
+warnings.filterwarnings("ignore", message="urllib3.*doesn't match a supported version")
 import uvicorn
 import asyncio
 import secrets
