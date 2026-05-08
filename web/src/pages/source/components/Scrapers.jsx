@@ -2468,7 +2468,7 @@ export const Scrapers = () => {
                 </Form.Item>
               </div>
               <Form.Item name={`scraper_${setname}_search_timeout`} noStyle>
-                <InputNumber min={5} max={100} controls={false} style={{ width: 60 }} addonAfter="秒" />
+                <InputNumber min={5} max={100} controls={false} style={{ width: 80 }} addonAfter="秒" />
               </Form.Item>
             </div>
           </Form.Item>
