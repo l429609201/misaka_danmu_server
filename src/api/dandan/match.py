@@ -343,6 +343,57 @@ async def get_match_for_item(
                 if cached_response:
                     return cached_response
 
+        # 方案D: 整季缓存复用 - 同标题同季的不同集，复用之前的匹配结果
+        season_cache_key = f"match_season_{parsed_info['title']}_{parsed_info.get('season', 1)}"
+        season_cache = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, season_cache_key)
+        if season_cache and not parsed_info.get("is_movie"):
+            cached_time = season_cache.get("timestamp", 0)
+            if time.time() - cached_time < 3600:  # 1小时内
+                logger.info(f"整季缓存命中: {season_cache_key}，复用匹配结果（跳过搜索）")
+                episode_number = parsed_info.get("episode") or 1
+
+                # 从缓存中恢复匹配信息
+                cached_provider = season_cache["provider"]
+                cached_mediaId = season_cache["mediaId"]
+                cached_real_anime_id = season_cache["real_anime_id"]
+                cached_title = season_cache["final_title"]
+                cached_season = season_cache["final_season"]
+                cached_source_order = season_cache.get("source_order", 1)
+
+                # 直接生成 episodeId
+                from .bangumi import generate_episode_id
+                real_episode_id = generate_episode_id(cached_real_anime_id, cached_source_order, episode_number)
+                virtual_anime_id = season_cache.get("virtual_anime_id", 900000)
+
+                # 存储本集的 episodeId 映射（供 comment 接口使用）
+                episode_mapping_key = f"fallback_episode_{real_episode_id}"
+                episode_mapping_data = {
+                    "virtual_anime_id": virtual_anime_id,
+                    "real_anime_id": cached_real_anime_id,
+                    "provider": cached_provider,
+                    "mediaId": cached_mediaId,
+                    "episode_number": episode_number,
+                    "final_title": cached_title,
+                    "final_season": cached_season,
+                    "media_type": season_cache.get("media_type", "tv_series"),
+                    "imageUrl": season_cache.get("imageUrl"),
+                    "year": season_cache.get("year"),
+                    "timestamp": time.time()
+                }
+                await set_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, episode_mapping_key, episode_mapping_data, FALLBACK_SEARCH_CACHE_TTL)
+
+                match_result = DandanMatchInfo(
+                    episodeId=real_episode_id,
+                    animeId=virtual_anime_id,
+                    animeTitle=cached_title,
+                    episodeTitle=f"第{episode_number}集",
+                    type="tvseries",
+                    typeDescription="缓存匹配",
+                    imageUrl=season_cache.get("imageUrl")
+                )
+                logger.info(f"整季缓存匹配: {cached_title} S{cached_season:02d}E{episode_number:02d} → episodeId={real_episode_id}")
+                return DandanMatchResponse(isMatched=True, matches=[match_result])
+
         logger.info(f"匹配失败，已启用后备机制，正在为 '{item.fileName}' 创建自动搜索任务。")
 
         # 将匹配后备逻辑包装成协程工厂
@@ -1038,67 +1089,8 @@ async def get_match_for_item(
 
                 logger.info(f"匹配后备完成: virtual_anime_id={virtual_anime_id}, real_anime_id={real_anime_id}, episodeId={real_episode_id}")
 
-                # 方案A: 写入数据库 - 创建anime和episode记录
-                try:
-                    logger.info("开始将后备匹配结果写入数据库...")
-
-                    # 检查anime是否已存在
-                    stmt = select(orm_models.Anime).where(orm_models.Anime.id == real_anime_id)
-                    result = await session_inner.execute(stmt)
-                    existing_anime = result.scalar_one_or_none()
-
-                    if not existing_anime:
-                        # 创建anime条目
-                        logger.info(f"创建anime条目: id={real_anime_id}, title='{final_title}'")
-                        new_anime = orm_models.Anime(
-                            id=real_anime_id,
-                            title=final_title,
-                            type=best_match.type,
-                            season=final_season,
-                            imageUrl=best_match.imageUrl,
-                            year=best_match.year,
-                            createdAt=get_now()
-                        )
-                        session_inner.add(new_anime)
-                        await session_inner.flush()
-                        # 同步PostgreSQL序列
-                        await sync_postgres_sequence(session_inner)
-                    else:
-                        logger.info(f"anime条目已存在: id={real_anime_id}, title='{existing_anime.title}'")
-
-                    # 创建或获取source关联
-                    source_id = await crud.link_source_to_anime(session_inner, real_anime_id, best_match.provider, best_match.mediaId)
-                    logger.info(f"source_id={source_id}, provider={best_match.provider}, mediaId={best_match.mediaId}")
-
-                    # 创建episode记录
-                    # 优先使用从来源端获取的剧集标题，否则使用通用格式
-                    if is_movie:
-                        episode_title = final_title
-                    elif matched_episode_title:
-                        episode_title = matched_episode_title
-                        logger.info(f"  - 使用来源端剧集标题: '{episode_title}'")
-                    else:
-                        episode_title = f"第{final_episode_number}集"
-                        logger.info(f"  - 使用通用剧集标题: '{episode_title}'")
-                    episode_db_id = await crud.create_episode_if_not_exists(
-                        session_inner,
-                        real_anime_id,
-                        source_id,
-                        final_episode_number,
-                        episode_title,
-                        None,  # url
-                        f"fallback_{best_match.provider}_{best_match.mediaId}_{final_episode_number}"  # provider_episode_id
-                    )
-                    logger.info(f"episode记录已创建/获取: episode_db_id={episode_db_id}")
-
-                    # 提交数据库更改
-                    await session_inner.commit()
-                    logger.info("后备匹配结果已成功写入数据库")
-
-                except Exception as db_error:
-                    logger.error(f"写入数据库失败: {db_error}", exc_info=True)
-                    await session_inner.rollback()
-                    # 即使数据库写入失败,也继续返回结果(依赖缓存)
+                # 不在 match 时写入数据库，由 comment 接口在下载弹幕成功后才创建记录
+                # 缓存映射已在上方存储（fallback_anime_ / fallback_episode_），comment 接口会读取
 
                 # 返回真实的匹配结果
                 match_result = DandanMatchInfo(
@@ -1113,13 +1105,32 @@ async def get_match_for_item(
                 response = DandanMatchResponse(isMatched=True, matches=[match_result])
                 logger.info(f"发送匹配响应 (匹配后备): episodeId={real_episode_id}, animeId={virtual_anime_id}")
 
-                # 存储到防重复缓存
+                # 存储到防重复缓存（按集）
                 recent_fallback_key = f"recent_fallback_{parsed_info['title']}_{parsed_info.get('season')}_{parsed_info.get('episode')}"
                 recent_fallback_data = {
                     "response": response,
                     "timestamp": time.time()
                 }
                 await set_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, recent_fallback_key, recent_fallback_data, 300)  # 5分钟TTL
+
+                # 存储整季缓存（TV系列专用，1小时TTL）
+                if not is_movie:
+                    season_cache_key = f"match_season_{parsed_info['title']}_{parsed_info.get('season', 1)}"
+                    season_cache_data = {
+                        "provider": best_match.provider,
+                        "mediaId": best_match.mediaId,
+                        "real_anime_id": real_anime_id,
+                        "virtual_anime_id": virtual_anime_id,
+                        "final_title": final_title,
+                        "final_season": final_season,
+                        "source_order": source_order,
+                        "media_type": best_match.type,
+                        "imageUrl": best_match.imageUrl,
+                        "year": best_match.year,
+                        "timestamp": time.time()
+                    }
+                    await set_db_cache(session_inner, FALLBACK_SEARCH_CACHE_PREFIX, season_cache_key, season_cache_data, 3600)
+                    logger.info(f"整季缓存已存储: {season_cache_key}")
 
                 match_timer.step_end(details="匹配成功")
                 match_timer.finish()  # 打印计时报告

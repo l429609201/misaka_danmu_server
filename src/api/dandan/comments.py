@@ -512,7 +512,18 @@ async def get_comments_for_dandan(
                         await current_rate_limiter.check_fallback("match", current_provider)
 
                         # 下载弹幕
-                        comments = await current_scraper.get_comments(current_provider_episode_id, progress_callback=progress_callback)
+                        # 如果 provider_episode_id 是 URL 格式，用基类通用方法解析
+                        actual_episode_id = current_provider_episode_id
+                        if actual_episode_id and actual_episode_id.startswith("http"):
+                            try:
+                                parsed_id = await current_scraper.get_id_from_url(actual_episode_id)
+                                if parsed_id:
+                                    actual_episode_id = current_scraper.format_episode_id_for_comments(parsed_id)
+                                    logger.info(f"URL 已解析为 episode_id: {actual_episode_id}")
+                            except Exception as e:
+                                logger.warning(f"URL 解析失败，尝试直接使用: {e}")
+
+                        comments = await current_scraper.get_comments(actual_episode_id, progress_callback=progress_callback)
                         if not comments:
                             logger.warning(f"下载失败，未获取到弹幕")
                             raise TaskSuccess("未获取到弹幕，源站可能暂时不可用")

@@ -79,4 +79,3 @@ async def poll_danmaku_task(
         progress=task.progress,
         description=task.description,
     )
- 
