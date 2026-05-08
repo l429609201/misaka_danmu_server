@@ -213,10 +213,21 @@ export const Test = () => {
         return <div className="text-red-600">[搜索失败] 未找到结果</div>
       },
       renderItem: (anime, index) => (
-        <div key={index} className="p-2 bg-blue-50 rounded">
-          <div>番剧: {anime.animeTitle} (ID: {anime.animeId})</div>
-          <div>类型: {anime.typeDescription}</div>
-          <div>分集数: {anime.episodeCount || 0}</div>
+        <div key={index} className="p-3 bg-blue-50 rounded border border-blue-200">
+          <div className="flex items-start gap-3">
+            {anime.imageUrl && (
+              <img src={anime.imageUrl} alt={anime.animeTitle} className="w-16 h-24 object-cover rounded" />
+            )}
+            <div className="flex-1">
+              <div className="font-semibold text-gray-800">
+                {anime.animeTitle}
+                <span className="ml-2 text-xs text-gray-500">(ID: {anime.animeId})</span>
+              </div>
+              <div className="text-sm text-gray-600 mt-1">类型: {anime.typeDescription}</div>
+              <div className="text-sm text-gray-600">分集数: {anime.episodeCount || 0}</div>
+              {anime.year && <div className="text-xs text-gray-400 mt-1">{anime.year}年</div>}
+            </div>
+          </div>
         </div>
       ),
     },
