@@ -73,7 +73,12 @@ import {
 const navItems = [
   { key: RoutePaths.HOME, label: '首页', icon: 'home' },
   { key: RoutePaths.LIBRARY, label: '弹幕库', icon: 'tvlibrary' },
-  { key: RoutePaths.TASK, label: '任务管理器', icon: 'renwu' },
+  { key: RoutePaths.TASK, label: '任务管理器', icon: 'renwu', children: [
+    { key: 'task', label: '进行中的任务' },
+    { key: 'webhook', label: 'Webhook 任务' },
+    { key: 'schedule', label: '定时任务' },
+    { key: 'ratelimit', label: '流控面板' },
+  ]},
   { key: RoutePaths.BULLET, label: '弹幕', icon: 'danmu', children: [
     { key: 'token', label: 'Token管理' },
     { key: 'output', label: '弹幕输出配置' },
