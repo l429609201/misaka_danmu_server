@@ -35,9 +35,8 @@ from src.rate_limiter import RateLimiter
 from src._version import APP_VERSION
 from src import security
     
-print(f"当前环境: {settings.environment}")
-
 logger = logging.getLogger(__name__)
+logger.info(f"当前环境: {settings.environment}")
 
 def _is_docker_environment():
     """检测是否在Docker容器中运行"""
