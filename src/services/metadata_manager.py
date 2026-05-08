@@ -183,13 +183,13 @@ class MetadataSourceManager:
     async def search_aliases_from_enabled_sources(self, keyword: str, user: models.User) -> Set[str]:
         """从所有已启用的辅助元数据源并发获取别名。"""
         # 修正：调用新的、更通用的方法，并只返回别名部分
-        aliases, _ = await self.search_supplemental_sources(keyword, user)
+        aliases, _, _ = await self.search_supplemental_sources(keyword, user)
         return aliases
 
-    async def search_supplemental_sources(self, keyword: str, user: models.User) -> Tuple[Set[str], List[models.ProviderSearchInfo]]:
+    async def search_supplemental_sources(self, keyword: str, user: models.User) -> Tuple[Set[str], List[models.ProviderSearchInfo], Dict[str, str]]:
         """
         从所有启用的辅助源（包括强制启用的）进行搜索。
-        返回一个元组：(别名集合, 补充搜索结果列表)
+        返回一个元组：(别名集合, 补充搜索结果列表, 标题→类型映射)
 
         优化：对于 TMDB/Bangumi 等源，搜索结果不包含完整别名，
         需要对前几个结果调用 get_details 获取完整别名（包括中文别名）。
@@ -285,12 +285,14 @@ class MetadataSourceManager:
                 self.logger.warning(f"已启用的元数据源 '{provider}' 未被成功加载，跳过辅助搜索。")
 
         if not tasks:
-            return set(), []
+            return set(), [], {}
 
         pipeline_results = await asyncio.gather(*tasks)
 
         all_aliases: Set[str] = set()
         supplemental_results: List[models.ProviderSearchInfo] = []
+        # 标题→类型映射：用于帮助弹幕源修正媒体类型
+        title_type_map: Dict[str, str] = {}
         self.last_aux_search_timing = []
 
         for provider_name, res, search_dur, detail_info, error in pipeline_results:
@@ -320,11 +322,21 @@ class MetadataSourceManager:
             self.last_aux_search_timing.append((provider_name, total_provider_dur, len(res)))
             self.logger.info(f"辅助源 '{provider_name}' 为关键词 '{keyword}' 找到了 {len(res)} 个结果, {detail_alias_count} 个别名。({total_provider_dur:.0f}ms)")
 
-            # 收集别名
+            # 收集别名 + 构建标题→类型映射
             for item in res:
+                # 标准化 type：TMDB 返回 "tv"，统一为 "tv_series"
+                item_type = item.type if hasattr(item, 'type') and item.type else None
+                if item_type == 'tv':
+                    item_type = 'tv_series'
+
                 all_aliases.add(item.title)
+                if item_type:
+                    title_type_map[item.title] = item_type
                 if item.aliasesCn:
                     all_aliases.update(item.aliasesCn)
+                    if item_type:
+                        for alias in item.aliasesCn:
+                            title_type_map[alias] = item_type
                 if item.aliasesJp:
                     all_aliases.update(item.aliasesJp)
                 if item.nameJp:
@@ -352,7 +364,7 @@ class MetadataSourceManager:
                 if detail_aliases:
                     all_aliases.update(detail_aliases)
 
-        return {alias for alias in all_aliases if alias}, supplemental_results
+        return {alias for alias in all_aliases if alias}, supplemental_results, title_type_map
 
     async def supplement_empty_search_results(
         self,

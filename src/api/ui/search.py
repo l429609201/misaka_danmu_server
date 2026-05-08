@@ -269,6 +269,7 @@ async def search_anime_provider(
         if not has_any_aux_source:
             logger.info("未配置或未启用任何有效的辅助搜索源，直接进行全网搜索。")
             supplemental_results = []
+            aux_title_type_map = {}
             # 修正:变量名统一
             timer.step_start("弹幕源搜索")
             all_results = await manager.search_all(search_titles, episode_info=episode_info)
@@ -324,7 +325,7 @@ async def search_anime_provider(
             )
 
             # 2. 等待两个任务都完成
-            all_results, ((all_possible_aliases, supplemental_results), _) = await asyncio.gather(
+            all_results, ((all_possible_aliases, supplemental_results, aux_title_type_map), _) = await asyncio.gather(
                 main_task, supp_task
             )
 
@@ -435,6 +436,19 @@ async def search_anime_provider(
         if item.type == 'tv_series' and is_movie_by_title(item.title):
             logger.info(f"标题 '{item.title}' 包含电影关键词，类型从 'tv_series' 修正为 'movie'。")
             item.type = 'movie'
+
+    # 根据辅助源（TMDB/360等）的类型信息修正弹幕源结果
+    if aux_title_type_map:
+        type_corrected = 0
+        for item in results:
+            if item.title in aux_title_type_map:
+                aux_type = aux_title_type_map[item.title]
+                if item.type != aux_type:
+                    logger.debug(f"辅助源类型修正: '{item.title}' {item.type} → {aux_type}")
+                    item.type = aux_type
+                    type_corrected += 1
+        if type_corrected:
+            logger.info(f"辅助源类型修正: 共修正 {type_corrected} 个结果的媒体类型")
 
     # 如果用户在搜索词中明确指定了季度，则对结果进行过滤
     if season_to_filter:

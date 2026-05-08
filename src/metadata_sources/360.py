@@ -282,6 +282,13 @@ class So360MetadataSource(BaseMetadataSource):
                 ))
 
             self.logger.info(f"360搜索: 过滤后返回 {len(results)} 个结果")
+            if results:
+                result_lines = ["360搜索: 搜索结果列表:"]
+                for r in results:
+                    platforms = r.extra.get("supported_providers", []) if r.extra else []
+                    platforms_str = ", ".join(platforms) if platforms else "无"
+                    result_lines.append(f"    - {r.title} (ID: {r.id}, 类型: {r.type}, 年份: {r.year or 'N/A'}, 平台: {platforms_str})")
+                self.logger.info("\n".join(result_lines))
             return results
 
         except httpx.ConnectError as e:
@@ -934,7 +941,7 @@ class So360MetadataSource(BaseMetadataSource):
                 self.logger.debug(f"360探测: {title} - {site} 平台获取失败: {e}")
                 continue
 
-        self.logger.info(f"360探测完成: {title} 支持的平台: {supported_providers}")
+        self.logger.debug(f"360探测完成: {title} 支持的平台: {supported_providers}")
         return supported_providers
 
     def _detect_provider_from_url(self, url: str) -> Optional[str]:
