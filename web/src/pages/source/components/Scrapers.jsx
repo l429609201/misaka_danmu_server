@@ -168,8 +168,9 @@ const SortableItem = ({
               <Tag color="blue">{item.version}</Tag>
             )}
             <Switch
-              size="small"
               checked={item.isEnabled}
+              checkedChildren="已启用"
+              unCheckedChildren="未启用"
               onChange={handleChangeStatus}
             />
           </div>
