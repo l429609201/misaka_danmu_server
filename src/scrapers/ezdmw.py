@@ -163,8 +163,10 @@ class EzdmwScraper(BaseScraper):
 
     async def _fetch_html(self, url: str) -> str:
         """获取 HTML 页面内容"""
+        self.logger.debug(f"ezdmw: GET {url}")
         client = await self._get_client()
         resp = await client.get(url)
+        self.logger.debug(f"ezdmw: 响应状态 {resp.status_code}, 长度 {len(resp.text)}")
         resp.raise_for_status()
         return resp.text
 
@@ -236,24 +238,59 @@ class EzdmwScraper(BaseScraper):
 
     async def _perform_search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
         """执行实际搜索"""
-        url = f"{BASE_URL}/Index/search_some.html?searchText={keyword}&page=0"
+        from urllib.parse import quote
+        encoded_keyword = quote(keyword)
+        url = f"{BASE_URL}/Index/search_some.html?searchText={encoded_keyword}&page=0"
+        self.logger.info(f"ezdmw: 请求搜索URL: {url}")
         try:
             html = await self._fetch_html(url)
         except Exception as e:
             self.logger.error(f"ezdmw: 搜索请求失败: {e}")
             return []
 
-        parser = SearchResultParser()
-        parser.feed(html)
+        # 记录原始响应（用于调试）
+        if await self._is_logging_enabled():
+            scraper_responses_logger = logging.getLogger("scraper_responses")
+            scraper_responses_logger.info(f"[ezdmw] search response length: {len(html)}")
+            scraper_responses_logger.debug(f"[ezdmw] search response preview:\n{html[:2000]}")
+
+        # 使用正则直接提取 #some_drama 区域中的番剧链接
+        # 匹配: <a href="/Index/bangumi/90971.html" ...><img .../>...<p>标题内容</p></a>
+        bangumi_pattern = re.compile(
+            r'<a[^>]*href="[^"]*?/Index/bangumi/(\d+)\.html"[^>]*>'  # <a> 标签，提取ID
+            r'.*?'  # 中间内容 (img等)
+            r'<p[^>]*>(.*?)</p>'  # <p>标题</p>
+            r'.*?</a>',  # 关闭 </a>
+            re.DOTALL
+        )
 
         results = []
-        for item in parser.results:
+        seen_ids = set()
+        for match in bangumi_pattern.finditer(html):
+            bangumi_id = match.group(1)
+            raw_title = match.group(2)
+
+            if bangumi_id in seen_ids:
+                continue
+            seen_ids.add(bangumi_id)
+
+            # 清理标题：去除 HTML 标签
+            title = re.sub(r'<[^>]+>', '', raw_title).strip()
+            # 移除 "更至XX话"、年份季度信息等
+            title = re.sub(r'\s*更至\d+话.*$', '', title).strip()
+            title = re.sub(r'\s*\d{4}年\d+月.*$', '', title).strip()
+
+            if not title:
+                continue
+
+            self.logger.info(f"  - 找到番剧: ID={bangumi_id}, 标题={title}")
+
             info = models.ProviderSearchInfo(
                 provider=self.provider_name,
-                mediaId=item["id"],
-                title=item["title"],
+                mediaId=bangumi_id,
+                title=title,
                 type="tv_series",
-                season=get_season_from_title(item["title"]),
+                season=get_season_from_title(title),
                 year=None,
                 imageUrl="",
                 episodeCount=None,
