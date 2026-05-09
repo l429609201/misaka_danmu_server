@@ -99,10 +99,6 @@
 
 ## Sponsors
 
-<a href="https://newnei.apifast.top/" target="_blank">
-  <img src="https://assets.wlai.vip/logo.png" width="100" alt="云AI"/>
-</a>
-
 ### 🤖 Sponsored by [云AI](https://newnei.apifast.top/)
 
 本项目的 AI 辅助匹配功能由 **云AI** 提供支持 —— 一站式 AI API 聚合平台，让你轻松接入主流大模型能力。
