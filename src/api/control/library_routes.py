@@ -307,7 +307,7 @@ async def refresh_episode(
 
     task_id, _ = await task_manager.submit_task(
         lambda s, cb: tasks.refresh_episode_task(episodeId, s, manager, rate_limiter, cb, config_manager),
-        f"外部API刷新分集: {info['title']}",
+        f"外部API刷新分集: {info['title']} [{info.get('providerName', '?')}] (mediaId={info.get('mediaId', '?')})",
         unique_key=unique_key,
         task_type="refresh_episode",
         task_parameters={"episodeId": episodeId}

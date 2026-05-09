@@ -167,7 +167,7 @@ async def refresh_anime(
         next_episode_index = latest_episode_index + 1
 
         unique_key = f"import-{source_info['providerName']}-{source_info['mediaId']}-ep{next_episode_index}"
-        task_title = f"增量刷新: {source_info['title']} ({source_info['providerName']}) - 尝试第{next_episode_index}集"
+        task_title = f"增量刷新: {source_info['title']} ({source_info['providerName']}) [mediaId={source_info['mediaId']}] - 尝试第{next_episode_index}集"
         task_coro = lambda s, cb: tasks.incremental_refresh_task(
             sourceId=sourceId, nextEpisodeIndex=next_episode_index, session=s, manager=scraper_manager,
             task_manager=task_manager, config_manager=config_manager, progress_callback=cb, animeTitle=source_info["title"],
@@ -180,7 +180,7 @@ async def refresh_anime(
     elif mode == "fill_missing":
         logger.info(f"用户 '{current_user.username}' 为番剧 '{source_info['title']}' (源ID: {sourceId}) 启动了分集补全任务。")
         unique_key = f"fill-missing-{source_info['providerName']}-{source_info['mediaId']}"
-        task_title = f"补全: {source_info['title']} ({source_info['providerName']})"
+        task_title = f"补全: {source_info['title']} ({source_info['providerName']}) [mediaId={source_info['mediaId']}]"
         task_coro = lambda s, cb: tasks.fill_missing_task(
             sourceId=sourceId, session=s, manager=scraper_manager,
             task_manager=task_manager, config_manager=config_manager, progress_callback=cb, animeTitle=source_info["title"],
@@ -193,7 +193,7 @@ async def refresh_anime(
     elif mode == "full":
         logger.info(f"用户 '{current_user.username}' 为番剧 '{source_info['title']}' (源ID: {sourceId}) 启动了全量刷新任务。")
         unique_key = f"full-refresh-{sourceId}"
-        task_title = f"全量刷新: {source_info['title']} ({source_info['providerName']})"
+        task_title = f"全量刷新: {source_info['title']} ({source_info['providerName']}) [mediaId={source_info['mediaId']}]"
         task_coro = lambda s, cb: tasks.full_refresh_task(sourceId, s, scraper_manager, task_manager, rate_limiter, cb, metadata_manager, config_manager)
         task_type = "full_refresh"
         task_parameters = {"sourceId": sourceId}
