@@ -97,6 +97,23 @@
   <img src="https://contrib.rocks/image?repo=l429609201/misaka_danmu_server" alt="contributors" />
 </a>
 
+## Sponsors
+
+### 🤖 Sponsored by [云AI](https://newnei.apifast.top/)
+
+本项目的 AI 辅助匹配功能由 **云AI** 提供支持 —— 一站式 AI API 聚合平台，让你轻松接入主流大模型能力。
+
+#### ✨ 服务优势
+
+* 聚合多家主流大模型 API（OpenAI、Claude、Gemini、DeepSeek 等），一个 Key 即可调用
+* 价格实惠，按量计费，适合个人开发者和小团队
+* 兼容 OpenAI API 格式，无需修改代码即可无缝接入
+* 稳定高可用，支持高并发请求
+
+👉 [立即体验云AI](https://newnei.apifast.top/)
+
+---
+
 ## 参考项目
 
  - 已接入[弹弹play](https://www.dandanplay.com)开放平台 - [弹弹play API文档](https://api.dandanplay.net/swagger/index.html)
