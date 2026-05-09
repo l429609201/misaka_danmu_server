@@ -10,6 +10,7 @@ Docker 工具模块
 
 import os
 import sys
+import signal
 import socket
 import logging
 import time
@@ -308,11 +309,52 @@ def get_docker_status() -> Dict[str, Any]:
     return status
 
 
+def _check_restart_policy(container) -> bool:
+    """
+    检查容器是否配置了自动重启策略（参考 MoviePilot）
+
+    Args:
+        container: Docker container 对象
+
+    Returns:
+        bool: 是否有有效的重启策略
+    """
+    try:
+        restart_policy = container.attrs.get('HostConfig', {}).get('RestartPolicy', {})
+        policy_name = restart_policy.get('Name', 'no')
+        auto_restart_policies = ['always', 'unless-stopped', 'on-failure']
+        has_restart_policy = policy_name in auto_restart_policies
+        logger.info(f"容器重启策略: {policy_name}, 支持自动重启: {has_restart_policy}")
+        return has_restart_policy
+    except Exception as e:
+        logger.warning(f"检查重启策略失败: {e}")
+        return False
+
+
+def _start_graceful_shutdown_monitor(container) -> None:
+    """
+    启动优雅退出超时监控（参考 MoviePilot）
+    如果 60 秒内 SIGTERM 没有让进程退出，则降级到 Docker API restart
+    """
+    def monitor_thread():
+        time.sleep(60)
+        logger.warning("SIGTERM 优雅退出超时 60 秒，降级到 Docker API restart...")
+        try:
+            container.restart(timeout=10)
+        except Exception as e:
+            logger.error(f"Docker API restart 兜底也失败: {e}")
+
+    thread = threading.Thread(target=monitor_thread, daemon=True)
+    thread.start()
+
+
 async def restart_container(fallback_container_name: str = "misaka_danmu_server") -> Dict[str, Any]:
     """
-    重启当前容器
+    重启当前容器（参考 MoviePilot 的三段式重启策略）
 
-    优先自动检测当前容器 ID，如果检测失败则使用兜底容器名称
+    1. 有 restart policy → 用 os.kill(SIGTERM) 优雅退出，让 Docker 自动重启
+    2. 无 restart policy → 用 container.restart() Docker API 重启
+    3. 超时兜底 → 60秒后降级到 container.restart()
 
     Args:
         fallback_container_name: 兜底容器名称（自动检测失败时使用）
@@ -347,32 +389,34 @@ async def restart_container(fallback_container_name: str = "misaka_danmu_server"
         logger.info(f"正在重启容器: {container_name} (ID: {container_id})")
 
         # 刷新日志，确保上面的日志被写入
-        import sys
         for handler in logging.getLogger().handlers:
             handler.flush()
         sys.stdout.flush()
         sys.stderr.flush()
 
-        # 使用 container.restart() 重启容器
-        # 注意：不能用 container.stop()，因为 Docker 的 restart policy 不会重启手动 stop 的容器
-        import threading
-        def do_restart():
-            try:
-                container.restart(timeout=10)
-            except Exception as e:
-                logger.warning(f"通过 Docker restart 重启失败: {e}，降级到进程退出")
-                restart_via_exit()
+        # 检查容器是否配置了自动重启策略
+        has_restart_policy = _check_restart_policy(container)
 
-        restart_thread = threading.Thread(target=do_restart, daemon=True)
-        restart_thread.start()
-
-        # 不等待线程完成，直接返回
-        # 容器重启会杀死当前进程，所以我们不需要等待
+        if has_restart_policy:
+            # 方案1: 有重启策略，使用 SIGTERM 优雅退出（参考 MoviePilot）
+            # os.kill(SIGTERM) 是进程自杀，Docker 认为是"容器内部退出" → restart policy 生效
+            # 这比 container.stop() 和 container.restart() 更安全，避免群晖等平台的兼容问题
+            logger.info("检测到容器配置了自动重启策略，使用 SIGTERM 优雅重启方式...")
+            _start_graceful_shutdown_monitor(container)
+            os.kill(os.getpid(), signal.SIGTERM)
+        else:
+            # 方案2: 无重启策略，使用 Docker API 直接重启
+            logger.info("容器未配置自动重启策略，使用 Docker API restart...")
+            restart_thread = threading.Thread(
+                target=lambda: container.restart(timeout=10), daemon=True
+            )
+            restart_thread.start()
 
         return {
             "success": True,
             "message": f"已向容器 '{container_name}' 发送重启指令",
-            "container_id": container_id
+            "container_id": container_id,
+            "method": "sigterm" if has_restart_policy else "docker_api"
         }
     except NotFound:
         return {
