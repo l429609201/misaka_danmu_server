@@ -113,6 +113,7 @@ class SchedulerManager:
                 "jobType": job.job_type,
                 "name": job.job_name,
                 "description": getattr(job, 'description', ''),
+                "isSystemTask": getattr(job, 'is_system_task', False),
                 "configSchema": getattr(job, 'config_schema', [])
             }
             for job in self._job_classes.values()
