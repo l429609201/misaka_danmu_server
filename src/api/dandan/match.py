@@ -360,8 +360,7 @@ async def get_match_for_item(
                 cached_season = season_cache["final_season"]
                 cached_source_order = season_cache.get("source_order", 1)
 
-                # 直接生成 episodeId
-                from .bangumi import generate_episode_id
+                # 直接生成 episodeId（generate_episode_id 已在模块顶部导入）
                 real_episode_id = generate_episode_id(cached_real_anime_id, cached_source_order, episode_number)
                 virtual_anime_id = season_cache.get("virtual_anime_id", 900000)
 

@@ -251,7 +251,7 @@ async def execute_fallback_search_task(
         await progress_callback(10, "开始搜索...")
 
         # 检查是否有同标题的搜索结果缓存（不含集数，10分钟内复用）
-        from src.db.crud.utility import get_cache as get_raw_cache
+        from src.db.crud.cache import get_cache as get_raw_cache
         fallback_result_cache_key = f"fallback_result_{search_title}"
         cached_fallback_result = await get_raw_cache(session, fallback_result_cache_key)
         if cached_fallback_result and isinstance(cached_fallback_result, dict):
