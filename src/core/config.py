@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 7768
+    ipv6: bool = True  # 是否同时启用 IPv6 监听（dual-stack）
 
 # 新增：前端客户端配置模型
 class ClientConfig(BaseModel):
@@ -60,8 +61,9 @@ def _generate_config_template(jwt_secret: str) -> str:
 
 # 服务器监听配置
 server:
-  host: "0.0.0.0"      # 监听地址，0.0.0.0 表示所有网卡
+  host: "0.0.0.0"      # IPv4 监听地址，0.0.0.0 表示所有网卡
   port: 7768            # 监听端口
+  ipv6: true            # 是否同时监听 IPv6（双栈）
 
 # 数据库配置（支持 mysql / postgresql / sqlite）
 database:

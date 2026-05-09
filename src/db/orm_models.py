@@ -225,6 +225,7 @@ class BangumiAuth(Base):
     accessToken: Mapped[str] = mapped_column("access_token", TEXT)
     refreshToken: Mapped[Optional[str]] = mapped_column("refresh_token", TEXT)
     expiresAt: Mapped[Optional[datetime]] = mapped_column("expires_at", NaiveDateTime)
+    redirectUri: Mapped[Optional[str]] = mapped_column("redirect_uri", String(512))
     authorizedAt: Mapped[Optional[datetime]] = mapped_column("authorized_at", NaiveDateTime)
 
 class OauthState(Base):

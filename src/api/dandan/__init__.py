@@ -105,6 +105,12 @@ from .comments import (
     get_comments_for_dandan,
 )
 
+# 弹幕异步任务轮询
+from .taskcomment import (
+    taskcomment_router,
+    poll_danmaku_task,
+)
+
 # 番剧详情功能
 from .bangumi import (
     bangumi_router,
@@ -235,12 +241,14 @@ dandan_router = APIRouter(route_class=DandanApiRoute)
 
 # 挂载以支持兼容路径: /{token}/api/v2/...
 dandan_router.include_router(comments_router, prefix="/{token}/api/v2")
+dandan_router.include_router(taskcomment_router, prefix="/{token}/api/v2")
 dandan_router.include_router(bangumi_router, prefix="/{token}/api/v2")
 dandan_router.include_router(search_router, prefix="/{token}/api/v2")
 dandan_router.include_router(match_router, prefix="/{token}/api/v2")
 
 # 挂载以支持直接路径: /{token}/...
 dandan_router.include_router(comments_router, prefix="/{token}")
+dandan_router.include_router(taskcomment_router, prefix="/{token}")
 dandan_router.include_router(bangumi_router, prefix="/{token}")
 dandan_router.include_router(search_router, prefix="/{token}")
 dandan_router.include_router(match_router, prefix="/{token}")

@@ -75,6 +75,37 @@ logger = logging.getLogger(__name__)
 # 创建评论路由器
 comments_router = APIRouter(route_class=DandanApiRoute)
 
+# ============ 请求合并（Request Coalescing）============
+# 同一个 episodeId 同一时间只允许一个刷新/下载任务，
+# 其他并发请求（无论来自哪个 token）都等同一个 Event。
+_episode_inflight: dict[int, asyncio.Event] = {}
+_episode_inflight_lock = asyncio.Lock()
+
+
+async def _coalesce_or_own(episode_id: int) -> tuple[bool, asyncio.Event]:
+    """
+    尝试获取指定 episodeId 的处理权。
+
+    Returns:
+        (is_owner, event)
+        - is_owner=True:  你是第一个请求，负责实际执行任务并在完成后 set() event
+        - is_owner=False: 已有请求在处理，你只需 await event.wait()
+    """
+    async with _episode_inflight_lock:
+        if episode_id in _episode_inflight:
+            return False, _episode_inflight[episode_id]
+        event = asyncio.Event()
+        _episode_inflight[episode_id] = event
+        return True, event
+
+
+async def _release_coalesce(episode_id: int):
+    """任务完成后释放 episodeId 的处理权并唤醒所有等待者。"""
+    async with _episode_inflight_lock:
+        event = _episode_inflight.pop(episode_id, None)
+    if event:
+        event.set()
+
 
 # === process_comments_for_dandanplay ===
 def process_comments_for_dandanplay(comments_data: List[Dict[str, Any]]) -> List[models.Comment]:
@@ -199,6 +230,7 @@ async def get_external_comments_from_url(
 @comments_router.get(
     "/comment/{episodeId}",
     response_model=models.CommentResponse,
+    response_model_exclude_none=True,
     summary="[dandanplay兼容] 获取弹幕"
 )
 async def get_comments_for_dandan(
@@ -208,6 +240,7 @@ async def get_comments_for_dandan(
     # 'from' 是 Python 的关键字，所以我们必须使用别名
     fromTime: int = Query(0, alias="from", description="弹幕开始时间(秒)"),
     withRelated: bool = Query(True, description="是否包含关联弹幕"),
+    async_mode: bool = Query(False, alias="async", description="异步模式：传入1的时候，在超时响应的情况下返回taskid"),
     token: str = Depends(get_token_from_path),
     session: AsyncSession = Depends(get_db_session),
     config_manager: ConfigManager = Depends(get_config_manager),
@@ -291,10 +324,28 @@ async def get_comments_for_dandan(
         predownload_task.add_done_callback(handle_predownload_exception)
 
     if not comments_data:
+        # ── 请求合并：同一 episodeId 只允许一个请求执行下载/刷新 ──
+        is_owner, coalesce_event = await _coalesce_or_own(episodeId)
+        if not is_owner:
+            # 已有请求在处理这个 episodeId，等它完成后直接从 DB 读取
+            logger.info(f"[请求合并] episodeId={episodeId} 已有下载任务在执行，等待结果...")
+            try:
+                await asyncio.wait_for(coalesce_event.wait(), timeout=60.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"[请求合并] episodeId={episodeId} 等待超时（60秒）")
+            comments_data = await crud.fetch_comments(session, episodeId)
+            if comments_data:
+                logger.info(f"[请求合并] episodeId={episodeId} 从数据库读取到 {len(comments_data)} 条弹幕")
+            else:
+                logger.warning(f"[请求合并] episodeId={episodeId} 等待完成但仍无弹幕数据")
+                return models.CommentResponse(count=0, comments=[])
+            # 非 owner：数据已拿到，直接跳到输出处理（不进入下载逻辑）
+
+    if not comments_data:
+        # owner 路径：执行实际下载任务
         logger.info(f"弹幕库中未找到 episodeId={episodeId} 的弹幕，尝试直接从源站获取")
 
         # 检查是否是后备搜索/匹配后备的episodeId
-        # 虚拟episodeId格式: 25000166010002 (166=anime_id, 01=source_order, 0002=episode_number)
         # 缓存key格式: fallback_episode_25000166010000 (最后4位为0000表示整部剧)
 
         fallback_info = None
@@ -355,12 +406,22 @@ async def get_comments_for_dandan(
             # 获取分集列表（自动路由补充源 mediaId）
             try:
                 episodes_list = await scraper_manager.get_episodes_routed(provider, mediaId, db_media_type=media_type)
-                if not episodes_list or len(episodes_list) < episode_number:
-                    logger.error(f"无法获取第{episode_number}集的信息，跳过创建数据库条目")
+                if not episodes_list:
+                    logger.error(f"无法获取分集列表，跳过创建数据库条目")
+                    await _release_coalesce(episodeId)
                     return models.CommentResponse(count=0, comments=[])
 
-                # 获取目标分集信息
-                target_episode = episodes_list[episode_number - 1]
+                # 按 episodeIndex 精确查找目标分集（不能用位置索引，因为可能缺集）
+                target_episode = None
+                for ep in episodes_list:
+                    if ep.episodeIndex == episode_number:
+                        target_episode = ep
+                        break
+
+                if not target_episode:
+                    logger.error(f"分集列表中未找到第{episode_number}集（共{len(episodes_list)}条记录），跳过创建数据库条目")
+                    await _release_coalesce(episodeId)
+                    return models.CommentResponse(count=0, comments=[])
                 provider_episode_id = target_episode.episodeId
                 episode_title = target_episode.title
                 episode_url = target_episode.url
@@ -369,6 +430,7 @@ async def get_comments_for_dandan(
 
             except Exception as e:
                 logger.error(f"获取分集信息失败: {e}", exc_info=True)
+                await _release_coalesce(episodeId)
                 return models.CommentResponse(count=0, comments=[])
 
             # 步骤2：分集获取成功，创建或获取anime条目
@@ -450,7 +512,18 @@ async def get_comments_for_dandan(
                         await current_rate_limiter.check_fallback("match", current_provider)
 
                         # 下载弹幕
-                        comments = await current_scraper.get_comments(current_provider_episode_id, progress_callback=progress_callback)
+                        # 如果 provider_episode_id 是 URL 格式，用基类通用方法解析
+                        actual_episode_id = current_provider_episode_id
+                        if actual_episode_id and actual_episode_id.startswith("http"):
+                            try:
+                                parsed_id = await current_scraper.get_id_from_url(actual_episode_id)
+                                if parsed_id:
+                                    actual_episode_id = current_scraper.format_episode_id_for_comments(parsed_id)
+                                    logger.info(f"URL 已解析为 episode_id: {actual_episode_id}")
+                            except Exception as e:
+                                logger.warning(f"URL 解析失败，尝试直接使用: {e}")
+
+                        comments = await current_scraper.get_comments(actual_episode_id, progress_callback=progress_callback)
                         if not comments:
                             logger.warning(f"下载失败，未获取到弹幕")
                             raise TaskSuccess("未获取到弹幕，源站可能暂时不可用")
@@ -659,7 +732,15 @@ async def get_comments_for_dandan(
                             logger.warning(f"任务完成但数据库中未找到弹幕数据")
                     except asyncio.TimeoutError:
                         logger.info(f"匹配后备弹幕下载任务超时（30秒），任务将在后台继续执行，完成后会自动触发预下载")
-                        # 超时后返回空结果，但任务继续在后台运行，完成后会通过回调触发预下载
+                        # async_mode：超时后返回 taskId 让客户端轮询
+                        if async_mode:
+                            await _release_coalesce(episodeId)
+                            return models.CommentResponse(
+                                count=0, comments=[],
+                                status="pending", taskId=task_id,
+                            )
+                        # 同步模式：超时后返回空结果
+                        await _release_coalesce(episodeId)
                         return models.CommentResponse(count=0, comments=[])
 
                 except HTTPException as e:
@@ -683,10 +764,12 @@ async def get_comments_for_dandan(
                     else:
                         logger.error(f"提交匹配后备弹幕下载任务失败: {e}", exc_info=True)
                         await session.rollback()
+                        await _release_coalesce(episodeId)
                         return models.CommentResponse(count=0, comments=[])
                 except Exception as e:
                     logger.error(f"提交匹配后备弹幕下载任务失败: {e}", exc_info=True)
                     await session.rollback()
+                    await _release_coalesce(episodeId)
                     return models.CommentResponse(count=0, comments=[])
 
         # 任务完成后,弹幕已经保存到数据库,不再从缓存读取
@@ -823,9 +906,14 @@ async def get_comments_for_dandan(
                                 current_episodes_list_ref = episodes_list
 
                             if episodes_list:
-                                # get_episodes 已做归一化，episodeIndex 从1开始，直接用下标取集
-                                if current_episode_number <= len(episodes_list):
-                                    target_episode = episodes_list[current_episode_number - 1]
+                                # 按 episodeIndex 精确查找目标分集（不能用位置索引，因为可能缺集）
+                                target_episode = None
+                                for ep in episodes_list:
+                                    if ep.episodeIndex == current_episode_number:
+                                        target_episode = ep
+                                        break
+
+                                if target_episode:
                                     provider_episode_id = target_episode.episodeId
                                     # 使用原生分集标题和URL
                                     original_episode_title = target_episode.title
@@ -842,6 +930,16 @@ async def get_comments_for_dandan(
                                             episodeId=episode_id_for_comments,
                                             url=original_episode_url  # 使用原生URL
                                         )
+
+                                        # 并发下载前显式检查流控，RuntimeError（配置校验失败）直接上抛
+                                        # _download_episode_comments_concurrent 内部会吞掉所有异常，
+                                        # 需要在外层提前捕获致命错误，确保任务能被正确标记为 FAILED
+                                        try:
+                                            await current_rate_limiter.check_fallback("search", current_provider)
+                                        except RuntimeError:
+                                            raise  # 配置校验失败，直接向上抛，task_manager 标为 FAILED
+                                        except Exception:
+                                            pass  # 普通流控超限交给内部处理
 
                                         # 使用并发下载获取弹幕（三线程模式）
                                         async def dummy_progress_callback(_, _unused):
@@ -863,7 +961,7 @@ async def get_comments_for_dandan(
                                         logger.warning(f"无法获取 {current_provider} 的分集ID: episode_number={current_episode_number}")
                                         raw_comments_data = None
                                 else:
-                                    logger.warning(f"从 {current_provider} 获取分集列表失败或集数不足: media_id={current_episode_url}, episode_number={current_episode_number}, total={len(episodes_list)}")
+                                    logger.warning(f"从 {current_provider} 分集列表中未找到第{current_episode_number}集: media_id={current_episode_url}, 共{len(episodes_list)}条记录")
                                     raw_comments_data = None
                             else:
                                 logger.warning(f"从 {current_provider} 获取分集列表失败: media_id={current_episode_url}, episode_number={current_episode_number}")
@@ -1037,7 +1135,7 @@ async def get_comments_for_dandan(
                                     return raw_comments_data
                             else:
                                 logger.warning(f"获取弹幕失败")
-                                return None
+                                raise TaskSuccess("获取弹幕失败，源站未返回数据")
                         except Exception as e:
                             logger.error(f"弹幕下载任务执行失败: {e}", exc_info=True)
                             raise  # 让异常传播到 task_manager，标记任务为失败
@@ -1125,7 +1223,14 @@ async def get_comments_for_dandan(
                                 logger.warning(f"任务完成但数据库中未找到弹幕数据")
                         except asyncio.TimeoutError:
                             logger.info(f"后备搜索弹幕下载任务超时（30秒），任务将在后台继续执行，完成后会自动触发预下载")
-                            # 任务继续在后台运行，完成后会通过回调触发预下载
+                            # async_mode：超时后返回 taskId 让客户端轮询
+                            if async_mode:
+                                await _release_coalesce(episodeId)
+                                return models.CommentResponse(
+                                    count=0, comments=[],
+                                    status="pending", taskId=task_id,
+                                )
+                            # 同步模式：超时后继续后续逻辑（返回空结果）
 
                     except HTTPException as e:
                         if e.status_code == 409:  # 任务已在运行中
@@ -1152,7 +1257,11 @@ async def get_comments_for_dandan(
         # 如果仍然没有弹幕数据，返回空结果
         if not comments_data:
             logger.warning(f"无法获取 episodeId={episodeId} 的弹幕数据")
+            await _release_coalesce(episodeId)
             return models.CommentResponse(count=0, comments=[])
+
+        # ── owner 下载完毕，释放 coalesce 锁让等待者继续 ──
+        await _release_coalesce(episodeId)
 
     # 应用弹幕输出上限（按时间段均匀采样，带缓存）
     limit_str = await config_manager.get('danmakuOutputLimitPerSource', '-1')
@@ -1285,4 +1394,7 @@ async def get_comments_for_dandan(
     # 修正：使用统一的弹幕处理函数，以确保输出格式符合 dandanplay 客户端规范
     processed_comments = process_comments_for_dandanplay(comments_data)
 
-    return models.CommentResponse(count=len(processed_comments), comments=processed_comments)
+    return models.CommentResponse(
+        count=len(processed_comments),
+        comments=processed_comments,
+    )

@@ -27,11 +27,15 @@ class AutoImportMediaType(str, Enum):
 
 class ControlActionResponse(BaseModel):
     """通用操作成功响应模型"""
+    status: str = "success"
     message: str
+    animeId: Optional[int] = None
+    sourceId: Optional[int] = None
 
 
 class ControlTaskResponse(BaseModel):
     """任务提交成功响应模型"""
+    status: str = "success"
     message: str
     taskId: str
 

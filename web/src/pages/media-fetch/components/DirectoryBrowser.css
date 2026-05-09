@@ -65,6 +65,55 @@
   border-radius: 0 !important;
 }
 
+/* ===== 移动端优化：文件名显示完整 ===== */
+@media (max-width: 768px) {
+  /* 隐藏日期列（表头+内容），让文件名占满宽度 */
+  .chonky-fileListHeader .chonky-fileListHeaderEntry:nth-child(2) {
+    display: none !important;
+  }
+  .chonky-fileList .chonky-fileEntry > div:nth-child(2) {
+    display: none !important;
+  }
+
+  /* 文件名列占满可用空间 */
+  .chonky-fileListHeader .chonky-fileListHeaderEntry:nth-child(1) {
+    flex: 1 1 100% !important;
+    max-width: none !important;
+  }
+  .chonky-fileList .chonky-fileEntry > div:nth-child(1) {
+    flex: 1 1 100% !important;
+    max-width: none !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 文件名文字不截断，允许换行 */
+  .chonky-fileEntry .chonky-fileEntryName {
+    white-space: normal !important;
+    word-break: break-all !important;
+    line-height: 1.3 !important;
+  }
+
+  /* 工具栏紧凑 */
+  .chonky-toolbar {
+    padding: 4px 8px !important;
+    min-height: 36px !important;
+  }
+  .chonky-toolbar button {
+    padding: 2px 6px !important;
+    font-size: 12px !important;
+  }
+
+  /* 面包屑导航紧凑 */
+  .chonky-breadcrumbs {
+    font-size: 12px !important;
+  }
+  .chonky-breadcrumbs button {
+    padding: 2px 4px !important;
+    min-width: auto !important;
+  }
+}
+
 /* 防止Modal自身滚动 - 只在DirectoryBrowser中使用 */
 .DirectoryBrowser-modal .ant-modal-body {
   overflow: hidden !important;

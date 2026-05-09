@@ -312,12 +312,18 @@ async def webhook_search_and_dispatch_task(
             episode_info=episode_info,
             alias_similarity_threshold=70,
         )
-        # 收集单源搜索耗时信息
+        # 收集单源搜索耗时信息（分组显示）
         from src.utils.search_timer import SubStepTiming
-        source_timing_sub_steps = [
-            SubStepTiming(name=name, duration_ms=dur, result_count=cnt)
-            for name, dur, cnt in manager.last_search_timing
-        ]
+        source_timing_sub_steps = []
+        for name, dur, cnt in manager.last_search_timing:
+            if name.startswith("补充:"):
+                source_timing_sub_steps.append(
+                    SubStepTiming(name=name[3:], duration_ms=dur, result_count=cnt, group="补充源")
+                )
+            else:
+                source_timing_sub_steps.append(
+                    SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="弹幕源")
+                )
         timer.step_end(details=f"{len(all_search_results)}个结果", sub_steps=source_timing_sub_steps)
 
         if not all_search_results:

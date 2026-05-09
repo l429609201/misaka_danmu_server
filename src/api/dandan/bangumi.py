@@ -209,9 +209,8 @@ async def get_bangumi_details(
                                         search_info["bangumi_mapping"][bangumiId] = mapping_info
                                         await set_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key, search_info, FALLBACK_SEARCH_CACHE_TTL)
 
+                                        # 构建 episodes 列表（源切换和新剧集共用）
                                         for episode_data in actual_episodes:
-                                            # 直接使用归一化后的 episodeIndex，而非枚举下标 i+1
-                                            # 归一化在 get_episodes 内部完成，episodeIndex 已从1开始
                                             episode_index = episode_data.episodeIndex
 
                                             # 如果指定了特定集数，只返回该集数
@@ -220,7 +219,6 @@ async def get_bangumi_details(
 
                                             # 使用真实animeId生成标准的episodeId
                                             episode_id = generate_episode_id(real_anime_id, 1, episode_index)
-                                            # 直接使用原始分集标题
                                             episode_title = episode_data.title
 
                                             # 只有在新剧集时才存储映射关系（源切换时已经在上面更新了）

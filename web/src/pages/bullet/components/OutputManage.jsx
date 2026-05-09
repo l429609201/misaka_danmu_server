@@ -22,6 +22,7 @@ import {
   setDanmakuBlacklistEnabled,
   getDanmakuBlacklistPatterns,
   setDanmakuBlacklistPatterns,
+  getDanmakuBlacklistDefaults,
   generateRegex,
 } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
@@ -432,17 +433,55 @@ export const OutputManage = () => {
 
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-gray-700">黑名单规则（正则表达式）</span>
-            <Tooltip title="使用 AI 根据自然语言描述生成正则表达式">
-              <Button
-                type="link"
-                size="small"
-                icon={<RobotOutlined />}
-                disabled={!blacklistEnabled}
-                onClick={() => setAiRegexModalOpen(true)}
-              >
-                AI 生成
-              </Button>
-            </Tooltip>
+            <Space size="small">
+              <Tooltip title="填充推荐的默认过滤规则（会覆盖当前内容）">
+                <Button
+                  type="link"
+                  size="small"
+                  disabled={!blacklistEnabled}
+                  onClick={async () => {
+                    const fillDefaults = async () => {
+                      try {
+                        const res = await getDanmakuBlacklistDefaults()
+                        const patterns = res.data?.patterns || ''
+                        if (!patterns) {
+                          messageApi.warning('未获取到默认规则')
+                          return
+                        }
+                        setBlacklistPatterns(patterns)
+                        messageApi.success('已填充默认黑名单规则')
+                      } catch (e) {
+                        messageApi.error('获取默认规则失败')
+                      }
+                    }
+                    if (blacklistPatterns.trim()) {
+                      Modal.confirm({
+                        title: '填充默认配置',
+                        content: '当前已有规则内容，填充默认配置将覆盖现有内容。是否继续？',
+                        okText: '覆盖',
+                        cancelText: '取消',
+                        onOk: fillDefaults,
+                      })
+                    } else {
+                      await fillDefaults()
+                    }
+                  }}
+                >
+                  填充默认配置
+                </Button>
+              </Tooltip>
+              <Tooltip title="使用 AI 根据自然语言描述生成正则表达式">
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<RobotOutlined />}
+                  disabled={!blacklistEnabled}
+                  onClick={() => setAiRegexModalOpen(true)}
+                >
+                  AI 生成
+                </Button>
+              </Tooltip>
+            </Space>
           </div>
           <TextArea
             value={blacklistPatterns}

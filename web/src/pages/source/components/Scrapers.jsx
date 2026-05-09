@@ -11,6 +11,7 @@ import {
   Modal,
   Row,
   Select,
+  Slider,
   Spin,
   Switch,
   Space,
@@ -166,16 +167,12 @@ const SortableItem = ({
             {item.version && (
               <Tag color="blue">{item.version}</Tag>
             )}
-            {item.isEnabled ? (
-              <Tag color="green">已启用</Tag>
-            ) : (
-              <Tag color="red">未启用</Tag>
-            )}
-            <Tooltip title="切换启用状态">
-              <div onClick={handleChangeStatus}>
-                <MyIcon icon="exchange" size={24} />
-              </div>
-            </Tooltip>
+            <Switch
+              checked={item.isEnabled}
+              checkedChildren="已启用"
+              unCheckedChildren="未启用"
+              onChange={handleChangeStatus}
+            />
           </div>
         </div>
       </div>
@@ -1251,6 +1248,8 @@ export const Scrapers = () => {
       [`${item.providerName}EpisodeBlacklistRegex`]:
         res.data?.[`${item.providerName}EpisodeBlacklistRegex`] || '',
       useProxy: res.data?.useProxy ?? false,
+      [`scraper_${item.providerName}_search_timeout`]:
+        parseInt(res.data?.[`scraper_${item.providerName}_search_timeout`]) || 15,
       ...dynamicInitialValues,
     })
 
@@ -2452,6 +2451,29 @@ export const Scrapers = () => {
               <Switch />
             </Form.Item>
           )}
+
+          <Form.Item
+            label="搜索超时"
+            tooltip="该源的搜索请求超时时间。最低5秒，最大100秒，留空则不限。"
+            className="mb-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-1">
+                <Form.Item name={`scraper_${setname}_search_timeout`} noStyle>
+                  <Slider
+                    min={5}
+                    max={100}
+                    marks={{ 5: '5s', 15: '15s', 30: '30s', 60: '60s', 100: '100s' }}
+                  />
+                </Form.Item>
+              </div>
+              <div style={{ marginTop: 4 }}>
+                <Form.Item name={`scraper_${setname}_search_timeout`} noStyle>
+                  <InputNumber min={5} max={100} controls={false} style={{ width: 80 }} addonAfter="秒" />
+                </Form.Item>
+              </div>
+            </div>
+          </Form.Item>
 
           {/* dandanplay specific */}
           {setname === 'dandanplay' && (

@@ -73,12 +73,41 @@ import {
 const navItems = [
   { key: RoutePaths.HOME, label: '首页', icon: 'home' },
   { key: RoutePaths.LIBRARY, label: '弹幕库', icon: 'tvlibrary' },
-  { key: RoutePaths.TASK, label: '任务管理器', icon: 'renwu' },
-  { key: RoutePaths.BULLET, label: '弹幕', icon: 'danmu' },
-  { key: RoutePaths.MEDIA_FETCH, label: '媒体获取', icon: 'movie' },
-  { key: RoutePaths.SOURCE, label: '搜索源', icon: 'search' },
-  { key: RoutePaths.CONTROL, label: '外部控制', icon: 'controlapi' },
-  { key: RoutePaths.SETTING, label: '设置', icon: 'setting' },
+  { key: RoutePaths.TASK, label: '任务管理器', icon: 'renwu', children: [
+    { key: 'task', label: '进行中的任务' },
+    { key: 'webhook', label: 'Webhook 任务' },
+    { key: 'schedule', label: '定时任务' },
+    { key: 'ratelimit', label: '流控面板' },
+  ]},
+  { key: RoutePaths.BULLET, label: '弹幕', icon: 'danmu', children: [
+    { key: 'token', label: 'Token管理' },
+    { key: 'output', label: '弹幕输出配置' },
+    { key: 'storage', label: '弹幕存储配置' },
+    { key: 'fallback', label: '设置' },
+  ]},
+  { key: RoutePaths.MEDIA_FETCH, label: '媒体获取', icon: 'movie', children: [
+    { key: 'library-scan', label: '媒体库读取' },
+    { key: 'local-scan', label: '本地扫描' },
+  ]},
+  { key: RoutePaths.SOURCE, label: '搜索源', icon: 'search', children: [
+    { key: 'scrapers', label: '弹幕搜索源' },
+    { key: 'metadata', label: '元信息搜索源' },
+    { key: 'global-filter', label: '设置' },
+  ]},
+  { key: RoutePaths.CONTROL, label: '外部控制', icon: 'controlapi', children: [
+    { key: 'apikey', label: 'API密钥' },
+    { key: 'settings', label: '设置' },
+    { key: 'apilogs', label: 'API访问日志' },
+    { key: 'apidoc', label: 'API文档' },
+  ]},
+  { key: RoutePaths.SETTING, label: '设置', icon: 'setting', children: [
+    { key: 'parameters', label: '参数配置' },
+    { key: 'proxy', label: '代理设置' },
+    { key: 'webhook', label: 'Webhook' },
+    { key: 'notification', label: '通知与交互' },
+    { key: 'recognition', label: '识别词配置' },
+    { key: 'automatch', label: 'AI辅助增强' },
+  ]},
 ]
 import { getVersion } from '../apis/index.js';
 
@@ -693,18 +722,45 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
           </div>
           <div className="flex items-center justify-center">
             {navItems.map(it => (
-              <div
-                key={it.key}
-                className={classNames(
-                  'text-base font-semibold cursor-pointer mx-3',
-                  {
-                    'text-primary': activeKey === it.key,
-                  }
-                )}
-                onClick={() => navigate(it.key)}
-              >
-                {it.label}
-              </div>
+              it.children ? (
+                <Dropdown
+                  key={it.key}
+                  menu={{
+                    items: it.children.map(child => ({
+                      key: child.key,
+                      label: child.label,
+                    })),
+                    onClick: ({ key: childKey }) => {
+                      navigate(`${it.key}?key=${childKey}`)
+                    },
+                  }}
+                >
+                  <div
+                    className={classNames(
+                      'text-base font-semibold cursor-pointer mx-3',
+                      {
+                        'text-primary': activeKey === it.key,
+                      }
+                    )}
+                    onClick={() => navigate(it.key)}
+                  >
+                    {it.label}
+                  </div>
+                </Dropdown>
+              ) : (
+                <div
+                  key={it.key}
+                  className={classNames(
+                    'text-base font-semibold cursor-pointer mx-3',
+                    {
+                      'text-primary': activeKey === it.key,
+                    }
+                  )}
+                  onClick={() => navigate(it.key)}
+                >
+                  {it.label}
+                </div>
+              )
             ))}
           </div>
           <div className="flex items-center justify-center gap-4 ml-auto">

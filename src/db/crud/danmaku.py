@@ -302,6 +302,11 @@ async def update_metadata_if_empty(
     metadata_record = result.scalar_one_or_none()
 
     if not metadata_record:
+        # 创建前先确认 anime 记录存在，避免外键约束失败
+        anime_exists = await session.get(Anime, anime_id)
+        if not anime_exists:
+            logger.warning(f"update_metadata_if_empty: anime_id={anime_id} 不存在，跳过创建 metadata")
+            return
         metadata_record = AnimeMetadata(animeId=anime_id)
         session.add(metadata_record)
         await session.flush()

@@ -20,6 +20,8 @@ src/rate_limiter.py
 generator_config.ini
 src/scrapers/*
 !src/scrapers/_example.py
+!src/scrapers/__init__.py
+!src/scrapers/base.py
 config/*
 .augment/rules/rule-name.md
 
@@ -27,3 +29,6 @@ config/config.yml
 
 
 .pids/
+
+# 嵌套git仓库
+misaka-relay/

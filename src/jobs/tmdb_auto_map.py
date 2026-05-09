@@ -97,8 +97,24 @@ class TmdbAutoMapJob(BaseJob):
         except Exception as e:
             self.logger.warning(f"初始化AI matcher失败: {e}, 将使用传统搜索")
 
-        # 获取所有作品(TV系列和电影/剧场版)
-        from src.db.orm_models import Anime, AnimeMetadata
+        # 获取所有作品(TV系列和电影/剧场版)，同时带出别名信息用于增量跳过判断
+        from src.db.orm_models import Anime, AnimeMetadata, AnimeAlias
+        from sqlalchemy import func, case, or_
+        # 子查询：检查是否存在任意非空别名
+        has_alias_subq = (
+            select(
+                AnimeAlias.animeId,
+                case(
+                    (or_(
+                        AnimeAlias.nameEn.isnot(None),
+                        AnimeAlias.nameJp.isnot(None),
+                        AnimeAlias.aliasCn1.isnot(None),
+                    ), True),
+                    else_=False
+                ).label("hasAlias")
+            )
+            .subquery()
+        )
         stmt = (
             select(
                 Anime.id.label("animeId"),
@@ -106,9 +122,11 @@ class TmdbAutoMapJob(BaseJob):
                 Anime.year,
                 Anime.type,
                 AnimeMetadata.tmdbId,
-                AnimeMetadata.tmdbEpisodeGroupId
+                AnimeMetadata.tmdbEpisodeGroupId,
+                func.coalesce(has_alias_subq.c.hasAlias, False).label("hasAlias")
             )
             .outerjoin(AnimeMetadata, Anime.id == AnimeMetadata.animeId)
+            .outerjoin(has_alias_subq, Anime.id == has_alias_subq.c.animeId)
             .where(Anime.type.in_(['tv_series', 'movie']))
         )
         result = await session.execute(stmt)
@@ -134,13 +152,20 @@ class TmdbAutoMapJob(BaseJob):
             self.logger.info(f"正在处理: '{title}' (Anime ID: {anime_id}, TMDB ID: {tmdb_id or '无'})")
 
             try:
-                # 非强制刮削模式下，跳过已有完整数据的条目
+                # 非强制刮削模式下，增量跳过已有完整数据的条目：
+                # - 已有 TMDB ID + 已有别名 + (未开启剧集组 或 已有剧集组) → 跳过
                 existing_group_id = show.get('tmdbEpisodeGroupId')
-                if not force_scrape and tmdb_id and existing_group_id:
-                    self.logger.info(f"跳过 '{title}': 已有TMDB ID({tmdb_id})和剧集组({existing_group_id})，非强制刮削模式。")
-                    skipped_count += 1
-                    processed_count += 1
-                    continue
+                has_alias = show.get('hasAlias', False)
+                if not force_scrape and tmdb_id and has_alias:
+                    # 如果不需要剧集组，或者已有剧集组，则完全跳过
+                    if not enable_episode_group or existing_group_id:
+                        skip_reason = "已有TMDB ID和别名"
+                        if existing_group_id:
+                            skip_reason += f"和剧集组({existing_group_id})"
+                        self.logger.debug(f"增量跳过 '{title}': {skip_reason}")
+                        skipped_count += 1
+                        processed_count += 1
+                        continue
 
                 # 初始化变量
                 use_episode_group = False
@@ -313,6 +338,7 @@ class TmdbAutoMapJob(BaseJob):
                                 continue
                     except Exception as e:
                         self.logger.error(f"搜索 '{title}' 时发生错误: {e}")
+                        await session.rollback()
                         continue
 
                 # 步骤 1.5: 对于已有TMDB ID的作品，也需要识别季度信息

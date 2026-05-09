@@ -124,7 +124,8 @@ async def refresh_single_episode(
     logger.info(f"用户 '{current_user.username}' 请求刷新分集 ID: {episodeId} ({episode['title']})")
 
     provider_name = episode.get('providerName', '未知源')
-    task_title = f"刷新分集: {episode['title']} - [{provider_name}]"
+    media_id = episode.get('mediaId', '?')
+    task_title = f"刷新分集: {episode['title']} - [{provider_name}] (mediaId={media_id})"
     task_coro = lambda session, callback: tasks.refresh_episode_task(episodeId, session, scraper_manager, rate_limiter, callback, config_manager)
     task_id, _ = await task_manager.submit_task(task_coro, task_title)
 

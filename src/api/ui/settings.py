@@ -238,6 +238,19 @@ async def get_global_filter_defaults(
     return {"cn": cn_default, "eng": eng_default}
 
 
+@router.get("/settings/danmaku-blacklist/defaults", summary="获取弹幕黑名单的默认规则")
+async def get_danmaku_blacklist_defaults(
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """
+    获取弹幕输出黑名单的默认正则规则。
+    来自 default_configs.py 中的默认值，用于用户想要填充默认配置时使用。
+    """
+    from src.core.default_configs import get_default_configs
+    defaults = get_default_configs()
+    patterns_default = defaults.get('danmakuBlacklistPatterns', ('', ''))[0]
+    return {"patterns": patterns_default}
+
 
 @router.put("/settings/global-filter", summary="更新全局标题过滤规则")
 async def update_global_filter_settings(

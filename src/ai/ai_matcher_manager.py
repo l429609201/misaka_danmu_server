@@ -62,6 +62,7 @@ class AIMatcherManager:
             "ai_recognition_prompt": await self.config_manager.get("aiRecognitionPrompt", ""),
             "ai_alias_validation_prompt": await self.config_manager.get("aiAliasValidationPrompt", ""),
             "ai_log_raw_response": (await self.config_manager.get("aiLogRawResponse", "false")).lower() == "true",
+            "ai_thinking_enabled": (await self.config_manager.get("aiThinkingEnabled", "false")).lower() == "true",
             "ai_cache_enabled": (await self.config_manager.get("aiCacheEnabled", "true")).lower() == "true",
             "ai_cache_ttl": int(await self.config_manager.get("aiCacheTtl", "3600"))
         }
