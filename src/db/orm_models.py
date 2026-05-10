@@ -206,7 +206,9 @@ class TokenAccessLog(Base):
     status: Mapped[str] = mapped_column(String(500))
     path: Mapped[Optional[str]] = mapped_column(String(512))
     method: Mapped[Optional[str]] = mapped_column(String(10))
+    requestHeaders: Mapped[Optional[str]] = mapped_column("request_headers", TEXT, nullable=True)
     requestBody: Mapped[Optional[str]] = mapped_column("request_body", TEXT)
+    responseHeaders: Mapped[Optional[str]] = mapped_column("response_headers", TEXT, nullable=True)
     responseBody: Mapped[Optional[str]] = mapped_column("response_body", TEXT)
     statusCode: Mapped[Optional[int]] = mapped_column("status_code", Integer)
 

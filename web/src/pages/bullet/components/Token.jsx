@@ -316,38 +316,48 @@ export const Token = ({ domain }) => {
     },
   ]
 
-  // 请求详情展开面板（复用外部控制日志样式）
+  // 请求/响应详情展开面板（与外部控制日志一致）
+  const DetailBlock = ({ label, content }) => {
+    if (!content) return null
+    return (
+      <div className="mb-3">
+        <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{label}</div>
+        <pre className="text-xs bg-gray-50 dark:bg-gray-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto m-0">
+          {content}
+        </pre>
+      </div>
+    )
+  }
+
   const TokenLogDetailPanel = ({ log }) => {
-    if (!log.requestBody && !log.responseBody) {
+    const hasRequest = log.requestHeaders || log.requestBody
+    const hasResponse = log.responseHeaders || log.responseBody
+    if (!hasRequest && !hasResponse) {
       return <div className="text-xs text-gray-400 py-2">暂无详细请求/响应记录</div>
     }
     const items = []
-    if (log.requestBody) {
+    if (hasRequest) {
       items.push({
         key: 'request',
         label: '📤 请求信息',
         children: (
           <div>
             {log.method && <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">方法: <Tag color="blue" size="small">{log.method}</Tag></div>}
-            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">请求内容</div>
-            <pre className="text-xs bg-gray-50 dark:bg-gray-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto m-0">
-              {log.requestBody}
-            </pre>
+            <DetailBlock label="请求头" content={log.requestHeaders} />
+            <DetailBlock label="请求内容" content={log.requestBody} />
           </div>
         ),
       })
     }
-    if (log.responseBody) {
+    if (hasResponse) {
       items.push({
         key: 'response',
         label: '📥 响应信息',
         children: (
           <div>
             {log.statusCode && <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">状态码: <Tag color={log.statusCode >= 400 ? 'red' : 'green'}>{log.statusCode}</Tag></div>}
-            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">响应内容</div>
-            <pre className="text-xs bg-gray-50 dark:bg-gray-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto m-0">
-              {log.responseBody}
-            </pre>
+            <DetailBlock label="响应头" content={log.responseHeaders} />
+            <DetailBlock label="响应内容" content={log.responseBody} />
           </div>
         ),
       })
@@ -719,7 +729,7 @@ export const Token = ({ domain }) => {
             rowKey={'accessTime'}
             expandable={{
               expandedRowRender: (record) => <TokenLogDetailPanel log={record} />,
-              rowExpandable: (record) => !!(record.requestBody || record.responseBody),
+              rowExpandable: (record) => !!(record.requestHeaders || record.requestBody || record.responseHeaders || record.responseBody),
             }}
             scroll={{
               x: '100%',

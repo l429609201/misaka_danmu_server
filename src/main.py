@@ -31,6 +31,8 @@ from src.services import (
 from src.utils import InternalPollingManager, init_proxy_middleware
 from src.api import api_router, control_router
 from src.api.dandan import dandan_router
+from src.api.middleware import log_not_found_requests, capture_api_response
+from src.api.mcp import setup_mcp
 from src.ai import AIMatcherManager
 from src.ai.ai_prompts import DEFAULT_AI_MATCH_PROMPT, DEFAULT_AI_RECOGNITION_PROMPT, DEFAULT_AI_ALIAS_VALIDATION_PROMPT, DEFAULT_AI_ALIAS_EXPANSION_PROMPT, DEFAULT_AI_SEASON_MAPPING_PROMPT
 from src.rate_limiter import RateLimiter
@@ -483,125 +485,13 @@ async def httpx_timeout_error_handler(request: Request, exc: httpx.TimeoutExcept
 
 
 @app.middleware("http")
-async def log_not_found_requests(request: Request, call_next):
-    """
-    中间件：捕获所有请求。
-    - 如果是未找到的API路径 (404)，则返回 403 Forbidden，避免路径枚举。
-    - 对其他 404 错误，记录详细信息以供调试。
-    """
-    response = await call_next(request)
-    if response.status_code == 404:
-        # 如果是 API 路径未找到，返回 403，同时记录原始响应内容
-        if request.url.path.startswith("/api/"):
-            original_body_text = None
-            try:
-                body_bytes = getattr(response, "body", b"")
-                if isinstance(body_bytes, (bytes, bytearray)) and body_bytes:
-                    try:
-                        original_json = json.loads(body_bytes)
-                        original_body_text = json.dumps(original_json, ensure_ascii=False)
-                    except Exception:
-                        original_body_text = body_bytes.decode("utf-8", "ignore")
-            except Exception as e:
-                logger.debug(f"读取原始404响应body失败: {e}")
-
-            if original_body_text:
-                logger.warning("API路径未找到原始响应内容: %s", original_body_text)
-
-            logger.warning(
-                f"API路径未找到 (返回403): {request.method} {request.url.path} from {request.client.host}"
-            )
-            return JSONResponse(
-                status_code=status.HTTP_403_FORBIDDEN,
-                content={"detail": "Forbidden"}
-            )
-
-        # 对于非 API 路径的 404 (例如，如果静态文件服务被错误配置)，记录详细信息
-        scope = request.scope
-        serializable_scope = {
-            "type": scope.get("type"),
-            "http_version": scope.get("http_version"),
-            "server": scope.get("server"),
-            "client": scope.get("client"),
-            "scheme": scope.get("scheme"),
-            "method": scope.get("method"),
-            "root_path": scope.get("root_path"),
-            "path": scope.get("path"),
-            "raw_path": scope.get("raw_path", b"").decode("utf-8", "ignore"),
-            "query_string": scope.get("query_string", b"").decode("utf-8", "ignore"),
-            "headers": {h[0].decode("utf-8", "ignore"): h[1].decode("utf-8", "ignore") for h in scope.get("headers", [])},
-        }
-        log_details = {
-            "message": "HTTP 404 Not Found - 未找到匹配的路由或文件",
-            "url": str(request.url),
-            "raw_request_scope": serializable_scope
-        }
-        logging.getLogger(__name__).warning("未处理的请求详情 (原始请求范围):\n%s", json.dumps(log_details, indent=2, ensure_ascii=False))
-    return response
+async def _log_not_found(request: Request, call_next):
+    return await log_not_found_requests(request, call_next)
 
 
 @app.middleware("http")
-async def capture_control_api_response(request: Request, call_next):
-    """
-    中间件：为外部控制API和MCP捕获响应头和响应体，更新到访问日志中。
-    对 /api/control/ 和 /api/mcp/ 路径生效。
-    """
-    path = request.url.path
-    if not (path.startswith("/api/control/") or path.startswith("/api/mcp/")):
-        return await call_next(request)
-
-    response = await call_next(request)
-
-    # 检查是否有日志ID需要更新
-    log_id = getattr(request.state, 'external_log_id', None)
-    if log_id is None:
-        return response
-
-    try:
-        # 读取响应体（需要消费流并重建响应）
-        from starlette.responses import Response as StarletteResponse
-        response_body_bytes = b""
-        async for chunk in response.body_iterator:
-            response_body_bytes += chunk
-
-        response_headers_str = json.dumps(dict(response.headers), ensure_ascii=False, indent=2)
-        response_body_str = response_body_bytes.decode(errors='ignore') if response_body_bytes else None
-
-        # 截断过长的响应体（避免数据库存储过大）
-        max_body_len = 10000
-        if response_body_str and len(response_body_str) > max_body_len:
-            response_body_str = response_body_str[:max_body_len] + f"\n... (已截断，总长度: {len(response_body_bytes)} 字节)"
-
-        # 使用独立的数据库会话更新日志
-        session_factory = request.app.state.db_session_factory
-        async with session_factory() as session:
-            await crud.update_external_api_log_response(
-                session,
-                log_id=log_id,
-                status_code=response.status_code,
-                response_headers=response_headers_str,
-                response_body=response_body_str,
-            )
-
-        # 重建响应
-        return StarletteResponse(
-            content=response_body_bytes,
-            status_code=response.status_code,
-            headers=dict(response.headers),
-            media_type=response.media_type,
-        )
-    except Exception as e:
-        logger.debug(f"捕获控制API响应信息失败: {e}")
-        # 如果出错，尝试返回原始响应体
-        try:
-            return StarletteResponse(
-                content=response_body_bytes,
-                status_code=response.status_code,
-                headers=dict(response.headers),
-                media_type=response.media_type,
-            )
-        except Exception:
-            return response
+async def _capture_api_response(request: Request, call_next):
+    return await capture_api_response(request, call_next)
 
 
 async def cleanup_task(app: FastAPI):
@@ -632,7 +522,6 @@ app.include_router(api_router, prefix="/api")
 
 # --- MCP Server 初始化 ---
 # 必须在所有路由注册完毕后调用，这样 fastapi-mcp 才能扫描到所有外部控制 API
-from src.api.mcp import setup_mcp
 setup_mcp(app)
 
 # --- 新增：挂载 Swagger UI 的静态文件目录 ---

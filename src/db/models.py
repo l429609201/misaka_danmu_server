@@ -332,7 +332,9 @@ class TokenAccessLog(BaseModel):
     path: Optional[str] = None
     userAgent: Optional[str] = None
     method: Optional[str] = None
+    requestHeaders: Optional[str] = None
     requestBody: Optional[str] = None
+    responseHeaders: Optional[str] = None
     responseBody: Optional[str] = None
     statusCode: Optional[int] = None
 
