@@ -5,7 +5,7 @@ import {
   LockOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
-import { Button, Card, Input, message, Modal, Space } from 'antd'
+import { Button, Card, Input, message, Modal, Space, Typography, Collapse } from 'antd'
 import { useEffect, useState } from 'react'
 import { getControlApiKey, refreshControlApiKey } from '../../../apis'
 import { useModal } from '../../../ModalContext'
@@ -61,7 +61,7 @@ export const ApiKey = () => {
     <div className="my-6">
       <Card title="外部API密钥" loading={loading}>
         <div className="mb-4">
-          此密钥用于所有 /api/control/* 接口的鉴权。请妥善保管，不要泄露。
+          此密钥用于所有 <Typography.Text code>/api/control/*</Typography.Text> 外部控制接口和 <Typography.Text code>/api/mcp</Typography.Text> MCP 接口的鉴权。请妥善保管，不要泄露。
         </div>
         {isMobile ? (
           <div className="space-y-3">
@@ -149,6 +149,35 @@ export const ApiKey = () => {
             </div>
           </div>
         )}
+      </Card>
+
+      {/* MCP 连接说明 */}
+      <Card title="MCP Server" size="small" className="mt-4">
+        <div className="mb-2 text-sm">
+          弹幕库内置 MCP (Model Context Protocol) Server，AI Agent 可通过 MCP 协议调用外部控制 API。
+        </div>
+        <Collapse size="small" items={[{
+          key: 'mcp-config',
+          label: '📋 客户端配置示例',
+          children: (
+            <pre className="text-xs bg-gray-50 dark:bg-gray-800 rounded p-3 overflow-x-auto whitespace-pre-wrap break-all m-0">
+{`{
+  "mcpServers": {
+    "misaka-danmu": {
+      "type": "http",
+      "url": "http://<你的地址>:7768/api/mcp",
+      "headers": {
+        "X-API-KEY": "<上方的API密钥>"
+      }
+    }
+  }
+}`}
+            </pre>
+          ),
+        }]} />
+        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          端点: <Typography.Text code>/api/mcp</Typography.Text>　传输: streamable-http　认证: <Typography.Text code>X-API-KEY</Typography.Text> 请求头 或 <Typography.Text code>?apikey=</Typography.Text> 查询参数
+        </div>
       </Card>
     </div>
   )
