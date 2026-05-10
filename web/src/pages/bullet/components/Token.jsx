@@ -1,6 +1,7 @@
 import {
   Button,
   Card,
+  Collapse,
   Form,
   Input,
   InputNumber,
@@ -315,41 +316,81 @@ export const Token = ({ domain }) => {
     },
   ]
 
+  // 请求详情展开面板（复用外部控制日志样式）
+  const TokenLogDetailPanel = ({ log }) => {
+    if (!log.requestBody && !log.responseBody) {
+      return <div className="text-xs text-gray-400 py-2">暂无详细请求/响应记录</div>
+    }
+    const items = []
+    if (log.requestBody) {
+      items.push({
+        key: 'request',
+        label: '📤 请求信息',
+        children: (
+          <div>
+            {log.method && <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">方法: <Tag color="blue" size="small">{log.method}</Tag></div>}
+            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">请求内容</div>
+            <pre className="text-xs bg-gray-50 dark:bg-gray-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto m-0">
+              {log.requestBody}
+            </pre>
+          </div>
+        ),
+      })
+    }
+    if (log.responseBody) {
+      items.push({
+        key: 'response',
+        label: '📥 响应信息',
+        children: (
+          <div>
+            {log.statusCode && <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">状态码: <Tag color={log.statusCode >= 400 ? 'red' : 'green'}>{log.statusCode}</Tag></div>}
+            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">响应内容</div>
+            <pre className="text-xs bg-gray-50 dark:bg-gray-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto m-0">
+              {log.responseBody}
+            </pre>
+          </div>
+        ),
+      })
+    }
+    return <Collapse size="small" items={items} />
+  }
+
   const logsColumns = [
     {
       title: '访问时间',
       dataIndex: 'accessTime',
       key: 'accessTime',
-      width: 300,
-      render: (_, record) => {
-        return (
-          <Typography.Text>{dayjs(record.accessTime).format('YYYY-MM-DD HH:mm:ss')}</Typography.Text>
-        )
-      },
+      width: 180,
+      render: (_, record) => dayjs(record.accessTime).format('YYYY-MM-DD HH:mm:ss'),
     },
     {
       title: 'IP地址',
       dataIndex: 'ipAddress',
       key: 'ipAddress',
-      width: 200,
-      render: (_, record) => (
-        <Typography.Text code>{record.ipAddress}</Typography.Text>
-      ),
+      width: 150,
+    },
+    {
+      title: '方法',
+      dataIndex: 'method',
+      key: 'method',
+      width: 70,
+      render: (_, record) => record.method ? <Tag color="blue">{record.method}</Tag> : '-',
     },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 150,
-      render: (_, record) => (
-        <Typography.Text>{record.status}</Typography.Text>
-      ),
+      width: 120,
+      render: (_, record) => {
+        const isAllowed = record.status === 'allowed'
+        return <Tag color={isAllowed ? 'success' : 'error'}>{record.status}</Tag>
+      },
     },
     {
       title: '路径',
-      width: 300,
       dataIndex: 'path',
       key: 'path',
+      width: 250,
       render: (_, record) => (
         <Typography.Text code className="text-xs break-all">
           {record.path}
@@ -360,30 +401,13 @@ export const Token = ({ domain }) => {
       title: 'User-Agent',
       dataIndex: 'userAgent',
       key: 'userAgent',
-      width: 250,
+      width: 200,
+      ellipsis: true,
       render: (_, record) => (
-        <span className="text-gray-600 dark:text-gray-400 text-xs break-all">
+        <span className="text-gray-600 dark:text-gray-400 text-xs">
           {record.userAgent}
         </span>
       ),
-    },
-    {
-      title: '方法',
-      dataIndex: 'method',
-      key: 'method',
-      width: 70,
-      render: (_, record) => record.method ? <Tag color="blue">{record.method}</Tag> : '-',
-    },
-    {
-      title: '请求体',
-      dataIndex: 'requestBody',
-      key: 'requestBody',
-      width: 300,
-      render: (_, record) => record.requestBody ? (
-        <Typography.Text code className="text-xs break-all" style={{ maxHeight: 60, overflow: 'auto', display: 'block' }}>
-          {record.requestBody}
-        </Typography.Text>
-      ) : '-',
     },
   ]
 
@@ -693,8 +717,13 @@ export const Token = ({ domain }) => {
             dataSource={tokenLogs}
             columns={logsColumns}
             rowKey={'accessTime'}
+            expandable={{
+              expandedRowRender: (record) => <TokenLogDetailPanel log={record} />,
+              rowExpandable: (record) => !!(record.requestBody || record.responseBody),
+            }}
             scroll={{
               x: '100%',
+              y: 400,
             }}
             className="modern-table"
           />
