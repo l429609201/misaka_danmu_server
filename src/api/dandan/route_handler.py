@@ -143,8 +143,25 @@ async def get_token_from_path(
     # 3. 增加调用计数（后台异步执行，不阻塞请求）
     await crud.increment_token_call_count(session, token_info['id'])
 
-    # 3. 记录成功访问
-    crud.create_token_access_log(session, token_info['id'], client_ip_str, user_agent, log_status='allowed', path=log_path)
+    # 4. 记录成功访问（含请求体和方法）
+    request_body_str = None
+    try:
+        if request.method in ("POST", "PUT", "PATCH"):
+            body_bytes = await request.body()
+            if body_bytes and len(body_bytes) < 10000:  # 限制10KB
+                request_body_str = body_bytes.decode("utf-8", "ignore")
+    except Exception:
+        pass
+    crud.create_token_access_log(
+        session, token_info['id'], client_ip_str, user_agent,
+        log_status='allowed', path=log_path,
+        method=request.method, request_body=request_body_str
+    )
+
+    # 将 token_id 存到 request.state，供中间件回填响应信息
+    request.state.token_log_token_id = token_info['id']
+    request.state.token_log_ip = client_ip_str
+    request.state.token_log_path = log_path
 
     return token
 

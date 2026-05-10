@@ -15,7 +15,9 @@ from src.core.timezone import get_now
 logger = logging.getLogger(__name__)
 
 
-async def _write_token_log_bg(token_id: int, ip_address: str, user_agent: Optional[str], log_status: str, path: Optional[str]):
+async def _write_token_log_bg(token_id: int, ip_address: str, user_agent: Optional[str], log_status: str, path: Optional[str],
+                               method: Optional[str] = None, request_body: Optional[str] = None,
+                               response_body: Optional[str] = None, status_code: Optional[int] = None):
     """后台写入访问日志，使用独立 session，失败静默忽略，不影响主请求。"""
     try:
         session_factory = get_session_factory()
@@ -26,6 +28,10 @@ async def _write_token_log_bg(token_id: int, ip_address: str, user_agent: Option
                 userAgent=user_agent,
                 status=log_status,
                 path=path,
+                method=method,
+                requestBody=request_body,
+                responseBody=response_body,
+                statusCode=status_code,
                 accessTime=get_now())
             session.add(new_log)
             await session.commit()
@@ -33,19 +39,26 @@ async def _write_token_log_bg(token_id: int, ip_address: str, user_agent: Option
         logger.warning(f"后台写入 token_access_log 失败（不影响请求）: {e}")
 
 
-def create_token_access_log(_session: AsyncSession, token_id: int, ip_address: str, user_agent: Optional[str], log_status: str, path: Optional[str] = None):
+def create_token_access_log(_session: AsyncSession, token_id: int, ip_address: str, user_agent: Optional[str], log_status: str, path: Optional[str] = None,
+                            method: Optional[str] = None, request_body: Optional[str] = None,
+                            response_body: Optional[str] = None, status_code: Optional[int] = None):
     """
     异步写入访问日志。使用 asyncio.create_task 在后台执行，主请求无需等待。
-    session 参数保留以兼容旧调用方，但实际使用独立 session 写入避免锁竞争。
     """
-    asyncio.create_task(_write_token_log_bg(token_id, ip_address, user_agent, log_status, path))
+    asyncio.create_task(_write_token_log_bg(token_id, ip_address, user_agent, log_status, path,
+                                            method, request_body, response_body, status_code))
 
 
 async def get_token_access_logs(session: AsyncSession, token_id: int) -> List[Dict[str, Any]]:
     stmt = select(TokenAccessLog).where(TokenAccessLog.tokenId == token_id).order_by(TokenAccessLog.accessTime.desc()).limit(200)
     result = await session.execute(stmt)
     return [
-        {"ipAddress": log.ipAddress, "userAgent": log.userAgent, "accessTime": log.accessTime, "status": log.status, "path": log.path}
+        {
+            "ipAddress": log.ipAddress, "userAgent": log.userAgent,
+            "accessTime": log.accessTime, "status": log.status, "path": log.path,
+            "method": log.method, "requestBody": log.requestBody,
+            "responseBody": log.responseBody, "statusCode": log.statusCode,
+        }
         for log in result.scalars()
     ]
 

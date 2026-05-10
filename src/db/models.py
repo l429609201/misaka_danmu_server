@@ -331,6 +331,10 @@ class TokenAccessLog(BaseModel):
     status: str
     path: Optional[str] = None
     userAgent: Optional[str] = None
+    method: Optional[str] = None
+    requestBody: Optional[str] = None
+    responseBody: Optional[str] = None
+    statusCode: Optional[int] = None
 
 # --- 用户和认证模型 ---
 class UserBase(BaseModel):

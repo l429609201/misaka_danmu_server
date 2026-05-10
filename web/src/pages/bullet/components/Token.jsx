@@ -367,6 +367,24 @@ export const Token = ({ domain }) => {
         </span>
       ),
     },
+    {
+      title: '方法',
+      dataIndex: 'method',
+      key: 'method',
+      width: 70,
+      render: (_, record) => record.method ? <Tag color="blue">{record.method}</Tag> : '-',
+    },
+    {
+      title: '请求体',
+      dataIndex: 'requestBody',
+      key: 'requestBody',
+      width: 300,
+      render: (_, record) => record.requestBody ? (
+        <Typography.Text code className="text-xs break-all" style={{ maxHeight: 60, overflow: 'auto', display: 'block' }}>
+          {record.requestBody}
+        </Typography.Text>
+      ) : '-',
+    },
   ]
 
   return (
@@ -643,6 +661,20 @@ export const Token = ({ domain }) => {
                           <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0 mt-1">UA:</span>
                           <Typography.Text code className="text-xs break-all flex-1">
                             {log.userAgent}
+                          </Typography.Text>
+                        </div>
+                      )}
+                      {log.method && (
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0">方法:</span>
+                          <Tag color="blue" size="small">{log.method}</Tag>
+                        </div>
+                      )}
+                      {log.requestBody && (
+                        <div className="flex items-start gap-3">
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0 mt-1">请求:</span>
+                          <Typography.Text code className="text-xs break-all flex-1" style={{ maxHeight: 80, overflow: 'auto' }}>
+                            {log.requestBody}
                           </Typography.Text>
                         </div>
                       )}
