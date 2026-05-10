@@ -682,42 +682,49 @@ async def ai_season_mapping_and_correction(
                 best_match = metadata_results[0]
                 logger.info(f"○ AI季度映射: 唯一[{metadata_source}]匹配: {best_match.title} (类型: {best_match.type})")
             else:
-                try:
-                    provider_results = []
-                    for r in metadata_results:
-                        provider_results.append(models.ProviderSearchInfo(
-                            provider=metadata_source,
-                            mediaId=r.tmdbId or r.id,
-                            title=r.title,
-                            type=r.type or "unknown",
-                            season=1,
-                            year=r.year,
-                            imageUrl=r.imageUrl,
-                            episodeCount=None
-                        ))
-
-                    query_info = {
-                        "title": search_title,
-                        "season": None,
-                        "episode": None,
-                        "year": None,
-                        "type": None
-                    }
-
-                    selected_index = await ai_matcher.select_best_match(
-                        query_info, provider_results, {}
-                    )
-
-                    if selected_index is not None and 0 <= selected_index < len(metadata_results):
-                        best_match = metadata_results[selected_index]
-                        logger.info(f"✓ AI季度映射: AI选择[{metadata_source}]匹配: {best_match.title} (类型: {best_match.type}, ID: {best_match.id})")
-                    else:
-                        logger.error(f"⚠ AI季度映射: AI选择匹配失败，使用第一个结果")
-                        best_match = metadata_results[0]
-
-                except Exception as e:
-                    logger.error(f"⚠ AI季度映射: 匹配选择失败，使用第一个结果: {e}")
+                # 快速路径：第一个结果标题完全匹配时直接用
+                from thefuzz import fuzz as _sm_fuzz
+                first_sim = _sm_fuzz.ratio(search_title.lower(), metadata_results[0].title.lower())
+                if first_sim >= 90:
                     best_match = metadata_results[0]
+                    logger.info(f"○ AI季度映射: 快速路径 [{metadata_source}]匹配: {best_match.title} (相似度{first_sim}%)")
+                else:
+                    try:
+                        provider_results = []
+                        for r in metadata_results:
+                            provider_results.append(models.ProviderSearchInfo(
+                                provider=metadata_source,
+                                mediaId=r.tmdbId or r.id,
+                                title=r.title,
+                                type=r.type or "unknown",
+                                season=1,
+                                year=r.year,
+                                imageUrl=r.imageUrl,
+                                episodeCount=None
+                            ))
+
+                        query_info = {
+                            "title": search_title,
+                            "season": None,
+                            "episode": None,
+                            "year": None,
+                            "type": None
+                        }
+
+                        selected_index = await ai_matcher.select_best_match(
+                            query_info, provider_results, {}
+                        )
+
+                        if selected_index is not None and 0 <= selected_index < len(metadata_results):
+                            best_match = metadata_results[selected_index]
+                            logger.info(f"✓ AI季度映射: AI选择[{metadata_source}]匹配: {best_match.title} (类型: {best_match.type}, ID: {best_match.id})")
+                        else:
+                            logger.error(f"⚠ AI季度映射: AI选择匹配失败，使用第一个结果")
+                            best_match = metadata_results[0]
+
+                    except Exception as e:
+                        logger.error(f"⚠ AI季度映射: 匹配选择失败，使用第一个结果: {e}")
+                        best_match = metadata_results[0]
 
             # 3. 获取季度信息
             if best_match.type != 'tv':
