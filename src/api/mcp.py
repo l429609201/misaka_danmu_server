@@ -29,13 +29,14 @@ from fastapi import FastAPI, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, get_db_session, ConfigManager
+from src.api.middleware import normalize_ip
 
 logger = logging.getLogger(__name__)
 
 
 def _resolve_client_ip(request: Request, trusted_networks: list) -> str:
     """解析真实客户端 IP（支持反向代理和 CIDR 白名单）"""
-    client_ip_str = request.client.host if request.client else "127.0.0.1"
+    client_ip_str = normalize_ip(request.client.host if request.client else "127.0.0.1")
     is_trusted = False
     if trusted_networks:
         try:
@@ -46,9 +47,9 @@ def _resolve_client_ip(request: Request, trusted_networks: list) -> str:
     if is_trusted:
         x_forwarded_for = request.headers.get("x-forwarded-for")
         if x_forwarded_for:
-            client_ip_str = x_forwarded_for.split(',')[0].strip()
+            client_ip_str = normalize_ip(x_forwarded_for.split(',')[0].strip())
         else:
-            client_ip_str = request.headers.get("x-real-ip", client_ip_str)
+            client_ip_str = normalize_ip(request.headers.get("x-real-ip", client_ip_str))
     return client_ip_str
 
 

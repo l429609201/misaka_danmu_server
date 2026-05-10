@@ -17,19 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, get_db_session, ConfigManager
 from src.core import get_now, get_app_timezone
+from src.api.middleware import normalize_ip
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_ip(ip_str: str) -> str:
-    """标准化 IP 地址：将 IPv4-mapped IPv6（::ffff:x.x.x.x）还原为纯 IPv4"""
-    try:
-        addr = ipaddress.ip_address(ip_str)
-        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
-            return str(addr.ipv4_mapped)
-    except ValueError:
-        pass
-    return ip_str
 
 
 class DandanApiRoute(APIRoute):
@@ -97,7 +87,7 @@ async def get_token_from_path(
                 logger.warning(f"无效的受信任代理IP或CIDR: '{proxy_entry.strip()}'，已忽略。")
     
     client_ip_str = request.client.host if request.client else "127.0.0.1"
-    client_ip_str = _normalize_ip(client_ip_str)  # ::ffff:x.x.x.x → x.x.x.x
+    client_ip_str = normalize_ip(client_ip_str)  # ::ffff:x.x.x.x → x.x.x.x
     is_trusted = False
     if trusted_networks:
         try:
@@ -109,9 +99,9 @@ async def get_token_from_path(
     if is_trusted:
         x_forwarded_for = request.headers.get("x-forwarded-for")
         if x_forwarded_for:
-            client_ip_str = _normalize_ip(x_forwarded_for.split(',')[0].strip())
+            client_ip_str = normalize_ip(x_forwarded_for.split(',')[0].strip())
         else:
-            client_ip_str = _normalize_ip(request.headers.get("x-real-ip", client_ip_str))
+            client_ip_str = normalize_ip(request.headers.get("x-real-ip", client_ip_str))
     # --- IP解析结束 ---
 
     # 1. 验证 token 是否存在、启用且未过期

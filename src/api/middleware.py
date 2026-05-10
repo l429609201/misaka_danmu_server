@@ -1,14 +1,15 @@
 """
-HTTP 中间件模块
+HTTP 中间件 & 网络工具模块
 
-将响应捕获等中间件从 main.py 独立出来，避免 main.py 过度膨胀。
 包含：
+- normalize_ip: IPv4-mapped IPv6 地址标准化（公共工具函数）
 - capture_api_response: 统一捕获 外部控制/MCP/Token API 的响应头和响应体
 - log_not_found_requests: 404 路径保护（API 路径返回 403 防枚举）
 """
 
 import json
 import logging
+import ipaddress
 
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
@@ -17,6 +18,17 @@ from starlette.responses import Response as StarletteResponse
 from src.db import crud
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_ip(ip_str: str) -> str:
+    """标准化 IP 地址：将 IPv4-mapped IPv6（::ffff:x.x.x.x）还原为纯 IPv4"""
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+            return str(addr.ipv4_mapped)
+    except ValueError:
+        pass
+    return ip_str
 
 # 需要捕获响应的路径前缀
 _CAPTURE_PREFIXES = ("/api/control/", "/api/mcp/", "/api/v1/")
