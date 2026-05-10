@@ -631,6 +631,10 @@ async def get_match_for_item(
 
                 # 步骤2：智能排序 (类型匹配优先)
                 match_timer.step_start("智能排序与匹配")
+                from src.utils.search_timer import SubStepTiming
+                import time as _perf_time
+                _match_sub_steps = []
+                _sub_start = _perf_time.perf_counter()
 
                 # 确定目标类型
                 target_type = "movie" if is_movie else "tv_series"
@@ -683,6 +687,9 @@ async def get_match_for_item(
                     type_match = "✓" if result.type == target_type else "✗"
                     lines.append(f"  {idx}. [{type_match}] {result.provider} - {result.title} (ID: {result.mediaId}, 类型: {result.type}, 年份: {result.year or 'N/A'}, 分数: {score:.0f})")
                 logger.info("\n".join(lines))
+
+                _match_sub_steps.append(SubStepTiming(name="排序打分", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
+                _sub_start = _perf_time.perf_counter()
 
                 # 步骤3：自动选择最佳源
                 logger.info(f"步骤3：自动选择最佳源")
@@ -780,6 +787,9 @@ async def get_match_for_item(
 
                 # 使用预获取的配置值
                 # fallback_enabled 已在初始化阶段获取
+
+                _match_sub_steps.append(SubStepTiming(name="AI匹配" if ai_match_enabled else "传统匹配", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
+                _sub_start = _perf_time.perf_counter()
 
                 best_match = None
 
@@ -984,8 +994,9 @@ async def get_match_for_item(
 
                 if not best_match:
                     logger.warning(f"匹配后备失败：所有候选源都无法提供有效分集")
-                    match_timer.step_end(details="无有效分集")
-                    match_timer.finish()  # 打印计时报告
+                    _match_sub_steps.append(SubStepTiming(name="顺延验证", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
+                    match_timer.step_end(details="无有效分集", sub_steps=_match_sub_steps)
+                    match_timer.finish()
                     response = DandanMatchResponse(isMatched=False, matches=[])
                     match_fallback_result["response"] = response
                     return
@@ -1162,7 +1173,8 @@ async def get_match_for_item(
                     await set_db_cache(session_inner, FALLBACK_SEARCH_CACHE_PREFIX, season_cache_key, season_cache_data, 3600)
                     logger.info(f"整季缓存已存储: {season_cache_key}")
 
-                match_timer.step_end(details="匹配成功")
+                _match_sub_steps.append(SubStepTiming(name="验证+获取分集", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
+                match_timer.step_end(details="匹配成功", sub_steps=_match_sub_steps)
                 match_timer.finish()  # 打印计时报告
                 match_fallback_result["response"] = response
                 # 保存匹配详情供后续使用
