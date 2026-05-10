@@ -249,16 +249,62 @@ async def search_anime_provider(
         # 修正：检查是否有任何启用的辅助源或强制辅助源
         has_any_aux_source = await metadata_manager.has_any_enabled_aux_source()
 
-        # 🚀 V2.1.6优化: 提前启动元数据查询，与搜索并行
+        # 🚀 V2.1.6优化: 提前启动元数据查询+季度信息获取，与搜索并行
+        # 预热内容：搜TMDB → AI选最佳匹配 → 获取季度信息（全部完成后缓存）
         metadata_prefetch_task = None
         if ai_matcher and metadata_manager:
-            async def prefetch_metadata():
+            async def prefetch_metadata_full():
+                """完整预热：搜TMDB + AI选匹配 + 获取季度信息"""
                 try:
                     from src.utils.season_mapper import _get_cached_metadata_search
-                    return await _get_cached_metadata_search(search_title, metadata_manager, logger)
+                    from src.db import models as _models
+                    _prefetch_logger = logging.getLogger(__name__)
+
+                    # 步骤1: 搜TMDB
+                    metadata_results = await _get_cached_metadata_search(search_title, metadata_manager, _prefetch_logger)
+                    if not metadata_results:
+                        return {"metadata_results": [], "seasons_info": None, "best_match": None}
+
+                    # 步骤2: AI选最佳匹配（如果多个结果）
+                    best_match = metadata_results[0]
+                    if len(metadata_results) > 1:
+                        try:
+                            provider_results = [
+                                _models.ProviderSearchInfo(
+                                    provider="tmdb", mediaId=r.tmdbId or r.id,
+                                    title=r.title, type=r.type or "unknown",
+                                    season=1, year=r.year, imageUrl=r.imageUrl, episodeCount=None
+                                ) for r in metadata_results
+                            ]
+                            query_info = {"title": search_title, "season": None, "episode": None, "year": None, "type": None}
+                            selected_index = await ai_matcher.select_best_match(query_info, provider_results, {})
+                            if selected_index is not None and 0 <= selected_index < len(metadata_results):
+                                best_match = metadata_results[selected_index]
+                        except Exception:
+                            pass
+
+                    # 步骤3: 获取季度信息（只对TV类型）
+                    seasons_info = None
+                    tv_match = best_match if best_match.type == 'tv' else None
+                    if not tv_match:
+                        for r in metadata_results:
+                            if r.type == 'tv':
+                                tv_match = r
+                                break
+                    if tv_match:
+                        try:
+                            seasons_info = await metadata_manager.get_seasons("tmdb", tv_match.id)
+                        except Exception:
+                            pass
+
+                    return {
+                        "metadata_results": metadata_results,
+                        "seasons_info": seasons_info,
+                        "best_match": tv_match or best_match
+                    }
                 except Exception:
                     return None
-            metadata_prefetch_task = asyncio.create_task(prefetch_metadata())
+            metadata_prefetch_task = asyncio.create_task(prefetch_metadata_full())
 
         # 构建搜索标题列表：包含原始标题和季度映射后的标题
         search_titles = [search_title]
@@ -522,18 +568,25 @@ async def search_anime_provider(
 
 
 
-    # 🚀 V2.1.6: 使用统一的AI类型和季度映射修正函数
+    # 🚀 V2.1.6: 使用统一的AI类型和季度映射修正函数（使用预热数据加速）
     if ai_matcher and metadata_manager:
         try:
             timer.step_start("AI映射修正")
             logger.info("🔄 开始AI映射修正...")
-            # 获取预取的元数据结果（如果有）
-            prefetched_metadata = None
+            # 获取预热的完整数据（TMDB搜索 + AI选匹配 + 季度信息）
+            prefetched_full = None
             if metadata_prefetch_task:
                 try:
-                    prefetched_metadata = await metadata_prefetch_task
+                    prefetched_full = await metadata_prefetch_task
                 except Exception:
                     pass
+
+            # 传入预热数据：metadata_results 用于跳过搜索，seasons_info 用于跳过获取季度
+            prefetched_metadata = None
+            prefetched_seasons = None
+            if prefetched_full and isinstance(prefetched_full, dict):
+                prefetched_metadata = prefetched_full.get("metadata_results")
+                prefetched_seasons = prefetched_full.get("seasons_info")
 
             mapping_result = await ai_type_and_season_mapping_and_correction(
                 search_title=search_title,
@@ -542,7 +595,8 @@ async def search_anime_provider(
                 ai_matcher=ai_matcher,
                 logger=logger,
                 similarity_threshold=60.0,
-                prefetched_metadata_results=prefetched_metadata
+                prefetched_metadata_results=prefetched_metadata,
+                prefetched_seasons_info=prefetched_seasons
             )
 
             # 应用修正结果
