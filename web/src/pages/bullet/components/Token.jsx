@@ -609,15 +609,17 @@ export const Token = ({ domain }) => {
         title={
           <div className="flex items-center gap-3">
             <Typography.Text>Token访问日志</Typography.Text>
+            <Tag color="blue">{tokenLogs.length} 条</Tag>
           </div>
         }
-        width={isMobile ? '100%' : 900}
+        width={isMobile ? '100%' : '90vw'}
+        style={isMobile ? {} : { maxWidth: 1400 }}
         open={logsOpen}
         cancelText="取消"
         okText="确认"
         onCancel={() => setLogsOpen(false)}
         onOk={() => setLogsOpen(false)}
-        styles={isMobile ? { body: { height: 'calc(100vh - 200px)' } } : {}}
+        styles={isMobile ? { body: { height: 'calc(100vh - 200px)' } } : { body: { maxHeight: '70vh', overflow: 'auto' } }}
         className="modern-modal"
       >
         {isMobile ? (

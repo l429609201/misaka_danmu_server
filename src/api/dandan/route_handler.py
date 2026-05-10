@@ -144,19 +144,24 @@ async def get_token_from_path(
     await crud.increment_token_call_count(session, token_info['id'])
 
     # 4. 记录成功访问（含请求体和方法）
-    request_body_str = None
-    try:
-        if request.method in ("POST", "PUT", "PATCH"):
-            body_bytes = await request.body()
-            if body_bytes and len(body_bytes) < 10000:  # 限制10KB
-                request_body_str = body_bytes.decode("utf-8", "ignore")
-    except Exception:
-        pass
-    crud.create_token_access_log(
-        session, token_info['id'], client_ip_str, user_agent,
-        log_status='allowed', path=log_path,
-        method=request.method, request_body=request_body_str
-    )
+    # 跳过高频轮询接口（taskcomment），避免日志刷屏
+    _skip_log_paths = ('/taskcomment/', '/api/v2/taskcomment/')
+    should_log = not any(skip in log_path for skip in _skip_log_paths)
+
+    if should_log:
+        request_body_str = None
+        try:
+            if request.method in ("POST", "PUT", "PATCH"):
+                body_bytes = await request.body()
+                if body_bytes and len(body_bytes) < 10000:  # 限制10KB
+                    request_body_str = body_bytes.decode("utf-8", "ignore")
+        except Exception:
+            pass
+        crud.create_token_access_log(
+            session, token_info['id'], client_ip_str, user_agent,
+            log_status='allowed', path=log_path,
+            method=request.method, request_body=request_body_str
+        )
 
     # 将 token_id 存到 request.state，供中间件回填响应信息
     request.state.token_log_token_id = token_info['id']
