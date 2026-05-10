@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 # 需要捕获响应的路径前缀
 _CAPTURE_PREFIXES = ("/api/control/", "/api/mcp/", "/api/v1/")
 
+# 404→403 保护不应拦截的路径（MCP 子应用由 fastapi-mcp 挂载，路由机制不同）
+_SKIP_404_PREFIXES = ("/api/mcp",)
+
 
 async def capture_api_response(request: Request, call_next):
     """
@@ -105,6 +108,9 @@ async def log_not_found_requests(request: Request, call_next):
     response = await call_next(request)
     if response.status_code == 404:
         if request.url.path.startswith("/api/"):
+            # MCP 等子应用路径不做 404→403 转换
+            if any(request.url.path.startswith(p) for p in _SKIP_404_PREFIXES):
+                return response
             original_body_text = None
             try:
                 body_bytes = getattr(response, "body", b"")
