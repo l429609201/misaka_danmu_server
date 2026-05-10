@@ -629,6 +629,11 @@ app.include_router(dandan_router, prefix="/api/v1", tags=["DanDanPlay Compatible
 # 包含所有非 dandanplay 的 API 路由
 app.include_router(api_router, prefix="/api")
 
+# --- MCP Server 初始化 ---
+# 必须在所有路由注册完毕后调用，这样 fastapi-mcp 才能扫描到所有外部控制 API
+from src.api.mcp import setup_mcp
+setup_mcp(app)
+
 # --- 新增：挂载 Swagger UI 的静态文件目录 ---
 def _is_docker_environment():
     """检测是否在Docker容器中运行"""

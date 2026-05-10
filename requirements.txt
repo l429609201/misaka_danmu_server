@@ -49,3 +49,5 @@ pyTelegramBotAPI
 
 # Redis 缓存后端（可选，仅 cache.backend 配置为 redis 时需要）
 redis>=5.0.0  # redis-py，含 asyncio 支持
+# MCP Server（Model Context Protocol）支持
+fastapi-mcp>=0.3.0  # 将FastAPI路由暴露为MCP工具
