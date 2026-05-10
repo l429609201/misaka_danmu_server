@@ -115,7 +115,7 @@ export const ApiLogs = () => {
   return (
     <div className="my-6">
       <Card title="API访问日志" loading={loading}>
-        <div className="mb-4">这里显示最近100条通过外部API的访问记录。</div>
+        <div className="mb-4">这里显示最近100条通过外部API和MCP的访问记录。</div>
         {isMobile ? (
           <div className="space-y-4">
             {logs.map((log, index) => {
@@ -180,7 +180,7 @@ export const ApiLogs = () => {
             }}
             scroll={{
               x: '100%',
-              y: 400,
+              y: 'calc(100vh - 400px)',
             }}
           />
         )}

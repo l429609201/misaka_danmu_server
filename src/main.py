@@ -543,10 +543,11 @@ async def log_not_found_requests(request: Request, call_next):
 @app.middleware("http")
 async def capture_control_api_response(request: Request, call_next):
     """
-    中间件：为外部控制API捕获响应头和响应体，更新到访问日志中。
-    仅对 /api/control/ 路径生效。
+    中间件：为外部控制API和MCP捕获响应头和响应体，更新到访问日志中。
+    对 /api/control/ 和 /api/mcp/ 路径生效。
     """
-    if not request.url.path.startswith("/api/control/"):
+    path = request.url.path
+    if not (path.startswith("/api/control/") or path.startswith("/api/mcp/")):
         return await call_next(request)
 
     response = await call_next(request)
