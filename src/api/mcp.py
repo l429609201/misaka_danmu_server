@@ -181,6 +181,8 @@ def setup_mcp(app: FastAPI) -> None:
             auth_config=AuthConfig(
                 dependencies=[Depends(_verify_mcp_api_key)],
             ),
+            # 转发认证头，MCP 调用工具时会将 X-API-KEY 传递给 /api/control/ 的鉴权
+            headers=["x-api-key"],
         )
 
         # 挂载 MCP 端点到 /api/mcp，使用 streamable-http 传输
@@ -188,7 +190,7 @@ def setup_mcp(app: FastAPI) -> None:
 
         logger.info("MCP Server 已挂载到 /api/mcp (streamable-http)")
         logger.info(
-            "客户端连接示例: "
+            "MCP 客户端连接配置: "
             '{"type": "http", "url": "http://<host>:7768/api/mcp", '
             '"headers": {"X-API-KEY": "<externalApiKey>"}}'
         )

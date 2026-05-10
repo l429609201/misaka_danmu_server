@@ -412,11 +412,13 @@ def _control_api_openapi():
     schema = get_openapi(
         title="Misaka Danmaku External Control API",
         version="1.0.0",
-        description="用于外部自动化和集成的API。所有端点都需要通过 `?api_key=` 进行鉴权。",
+        description="用于外部自动化和集成的API。支持两种鉴权方式：\n"
+                    "1. **查询参数**：`?api_key=<你的密钥>`\n"
+                    "2. **请求头**：`X-API-KEY: <你的密钥>`（推荐，也用于 MCP 连接）",
         routes=control_routes,
     )
 
-    # 替换安全方案：只保留 API Key，移除 OAuth2
+    # 替换安全方案：同时支持查询参数和请求头
     schema["components"] = schema.get("components", {})
     schema["components"]["securitySchemes"] = {
         "APIKeyQuery": {
@@ -424,14 +426,20 @@ def _control_api_openapi():
             "in": "query",
             "name": "api_key",
             "description": "通过 URL 查询参数传递 API Key"
+        },
+        "APIKeyHeader": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-KEY",
+            "description": "通过请求头传递 API Key（推荐，也用于 MCP 连接）"
         }
     }
 
-    # 给所有路径添加 API Key 安全要求
+    # 给所有路径添加 API Key 安全要求（两种方式任选其一）
     for path_item in schema.get("paths", {}).values():
         for operation in path_item.values():
             if isinstance(operation, dict):
-                operation["security"] = [{"APIKeyQuery": []}]
+                operation["security"] = [{"APIKeyQuery": []}, {"APIKeyHeader": []}]
 
     app._control_openapi_schema = schema
     return schema

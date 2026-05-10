@@ -148,6 +148,10 @@ async def verify_api_key(
         request_body_str = None
 
     if not api_key:
+        # 兼容 MCP 转发：也从 X-API-KEY 请求头获取
+        api_key = request.headers.get("x-api-key")
+
+    if not api_key:
         log_entry = await crud.create_external_api_log(
             session, client_ip_str, endpoint, status.HTTP_401_UNAUTHORIZED, "API Key缺失",
             request_headers=request_headers_str,

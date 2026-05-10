@@ -62,6 +62,9 @@ export const ApiKey = () => {
       <Card title="外部API密钥" loading={loading}>
         <div className="mb-4">
           此密钥用于所有 <Typography.Text code>/api/control/*</Typography.Text> 外部控制接口和 <Typography.Text code>/api/mcp</Typography.Text> MCP 接口的鉴权。请妥善保管，不要泄露。
+          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            支持两种认证方式：查询参数 <Typography.Text code>?api_key=密钥</Typography.Text> 或请求头 <Typography.Text code>X-API-KEY: 密钥</Typography.Text>（推荐）
+          </div>
         </div>
         {isMobile ? (
           <div className="space-y-3">
