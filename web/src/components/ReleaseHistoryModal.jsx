@@ -8,13 +8,11 @@ import ReactMarkdown from 'react-markdown'
 const { Text } = Typography
 
 /**
- * 预处理 GitHub Release 的 changelog 文本，使 ReactMarkdown 能正确渲染换行。
+ * 预处理 GitHub Release 的 changelog 文本，使 ReactMarkdown 能正确渲染。
  */
 const preprocessChangelog = (text) => {
   if (!text) return text
-  return text
-    .replace(/\r\n/g, '\n')       // 统一换行符
-    .replace(/\n(?!\n)/g, '\n\n') // 单换行 → 双换行（保留已有的双换行）
+  return text.replace(/\r\n/g, '\n')
 }
 
 // Markdown 渲染样式

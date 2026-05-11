@@ -12,15 +12,12 @@ import ReactMarkdown from 'react-markdown'
 const { Text, Title } = Typography
 
 /**
- * 预处理 GitHub Release 的 changelog 文本，使 ReactMarkdown 能正确渲染换行。
- * GitHub Release body 使用 \r\n 单换行，Markdown 中单换行不会产生实际换行效果，
- * 需要转换为双换行（段落分隔）才能正确显示。
+ * 预处理 GitHub Release 的 changelog 文本，使 ReactMarkdown 能正确渲染。
+ * 仅统一换行符为 \n，不做额外的换行替换，以保留 Markdown 列表等结构的正确解析。
  */
 const preprocessChangelog = (text) => {
   if (!text) return text
-  return text
-    .replace(/\r\n/g, '\n')       // 统一换行符
-    .replace(/\n(?!\n)/g, '\n\n') // 单换行 → 双换行（保留已有的双换行）
+  return text.replace(/\r\n/g, '\n')
 }
 
 // Markdown 渲染样式

@@ -35,13 +35,13 @@ export const RateLimitIndicator = () => {
     return () => clearInterval(timerRef.current)
   }, [])
 
-  if (!data || !data.globalEnabled) return null
+  if (!data || !data.enabled) return null
 
   const globalPercent = data.globalLimit > 0
     ? Math.min(100, Math.round((data.globalRequestCount / data.globalLimit) * 100))
     : 0
-  const fallbackPercent = data.fallbackTotalLimit > 0
-    ? Math.min(100, Math.round((data.fallbackTotalCount / data.fallbackTotalLimit) * 100))
+  const fallbackPercent = data.fallback?.totalLimit > 0
+    ? Math.min(100, Math.round((data.fallback.totalCount / data.fallback.totalLimit) * 100))
     : 0
 
   const globalColor = getColor(globalPercent)
@@ -56,7 +56,7 @@ export const RateLimitIndicator = () => {
         全局: {data.globalRequestCount}/{data.globalLimit} ({globalPercent}%)
       </div>
       <div style={{ color: fallbackColor }}>
-        后备: {data.fallbackTotalCount}/{data.fallbackTotalLimit} ({fallbackPercent}%)
+        后备: {data.fallback?.totalCount ?? 0}/{data.fallback?.totalLimit ?? 0} ({fallbackPercent}%)
       </div>
       {data.secondsUntilReset > 0 && (
         <div className="mt-1 text-gray-400">
