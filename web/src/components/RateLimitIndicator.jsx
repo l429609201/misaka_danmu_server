@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Progress, Tooltip } from 'antd'
+import { Tooltip } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { getRateLimitStatus } from '@/apis'
 
 /**
- * 导航栏流控状态环形指示器
- * 双层环形：外圈=全局流控，内圈=后备流控
+ * 导航栏流控状态 Tag 指示器
+ * Tag 形状 + 双进度条：上行=下载流控，下行=后备流控
  * 颜色逻辑：<80% 绿色 / 80-99% 橙色 / 100% 红色
  * 流控未启用时不显示
  */
@@ -14,6 +14,17 @@ const getColor = (percent) => {
   if (percent >= 80) return '#faad14'
   return '#52c41a'
 }
+
+/** 单行进度条 */
+const BarRow = ({ label, percent, color }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%' }}>
+    <span style={{ fontSize: 9, color: '#888', width: 18, flexShrink: 0, fontWeight: 500 }}>{label}</span>
+    <div style={{ flex: 1, height: 4, background: 'rgba(0,0,0,0.04)', borderRadius: 2, overflow: 'hidden' }}>
+      <div style={{ width: `${percent}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.5s ease' }} />
+    </div>
+    <span style={{ fontSize: 9, width: 26, textAlign: 'right', flexShrink: 0, color }}>{percent}%</span>
+  </div>
+)
 
 export const RateLimitIndicator = () => {
   const [data, setData] = useState(null)
@@ -31,7 +42,7 @@ export const RateLimitIndicator = () => {
 
   useEffect(() => {
     fetchStatus()
-    timerRef.current = setInterval(fetchStatus, 30000) // 30秒轮询
+    timerRef.current = setInterval(fetchStatus, 30000)
     return () => clearInterval(timerRef.current)
   }, [])
 
@@ -46,61 +57,51 @@ export const RateLimitIndicator = () => {
 
   const globalColor = getColor(globalPercent)
   const fallbackColor = getColor(fallbackPercent)
-
   const isWarning = globalPercent >= 80 || fallbackPercent >= 80
+  const warningColor = globalPercent >= 100 || fallbackPercent >= 100 ? '#ff4d4f' : '#faad14'
 
   const tooltipContent = (
-    <div className="text-xs">
-      <div className="font-medium mb-1">流控状态</div>
+    <div style={{ fontSize: 12 }}>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>流控状态</div>
       <div style={{ color: globalColor }}>
-        全局: {data.globalRequestCount}/{data.globalLimit} ({globalPercent}%)
+        下载: {data.globalRequestCount}/{data.globalLimit} ({globalPercent}%)
       </div>
       <div style={{ color: fallbackColor }}>
         后备: {data.fallback?.totalCount ?? 0}/{data.fallback?.totalLimit ?? 0} ({fallbackPercent}%)
       </div>
       {data.secondsUntilReset > 0 && (
-        <div className="mt-1 text-gray-400">
-          {Math.ceil(data.secondsUntilReset / 60)} 分钟后重置
-        </div>
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', margin: '4px 0' }} />
       )}
-      <div className="mt-1 text-gray-400">点击查看详情</div>
+      {data.secondsUntilReset > 0 && (
+        <div style={{ color: '#aaa' }}>{Math.ceil(data.secondsUntilReset / 60)} 分钟后重置</div>
+      )}
+      <div style={{ color: '#aaa', marginTop: 2 }}>点击查看详情</div>
     </div>
   )
 
   return (
     <Tooltip title={tooltipContent} placement="bottom">
       <div
-        className="cursor-pointer relative flex items-center justify-center"
-        style={{ width: 28, height: 28 }}
         onClick={() => navigate('/task?key=ratelimit')}
+        style={{
+          display: 'inline-flex', flexDirection: 'column', gap: 3,
+          padding: '4px 8px', borderRadius: 4, cursor: 'pointer',
+          border: '1px solid #d9d9d9', background: '#fafafa',
+          minWidth: 90, position: 'relative', transition: 'box-shadow 0.2s',
+        }}
+        onMouseEnter={e => e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)'}
+        onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
       >
-        {/* 外圈：全局流控 */}
-        <Progress
-          type="circle"
-          percent={globalPercent}
-          size={28}
-          strokeWidth={12}
-          strokeColor={globalColor}
-          trailColor="rgba(0,0,0,0.06)"
-          format={() => null}
-        />
-        {/* 内圈：后备流控 */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Progress
-            type="circle"
-            percent={fallbackPercent}
-            size={16}
-            strokeWidth={14}
-            strokeColor={fallbackColor}
-            trailColor="rgba(0,0,0,0.06)"
-            format={() => null}
-          />
-        </div>
-        {/* 达限红点 */}
+        <BarRow label="下载" percent={globalPercent} color={globalColor} />
+        <BarRow label="后备" percent={fallbackPercent} color={fallbackColor} />
         {isWarning && (
           <div
-            className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full animate-pulse"
-            style={{ backgroundColor: globalPercent >= 100 || fallbackPercent >= 100 ? '#ff4d4f' : '#faad14' }}
+            className="animate-pulse"
+            style={{
+              position: 'absolute', top: -2, right: -2,
+              width: 6, height: 6, borderRadius: '50%',
+              backgroundColor: warningColor,
+            }}
           />
         )}
       </div>
