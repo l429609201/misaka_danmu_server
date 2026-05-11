@@ -16,6 +16,7 @@ import VersionModal from '@/components/VersionModal'
 import ThemeColorPicker from '@/components/ThemeColorPicker'
 import RealtimeLogModal from '@/components/RealtimeLogModal'
 import HistoryLogModal from '@/components/HistoryLogModal'
+import { RateLimitIndicator } from '@/components/RateLimitIndicator'
 
 // 实时日志图标 (Lucide - scroll-text)
 const RealtimeLogIcon = () => (
@@ -98,6 +99,7 @@ const navItems = [
     { key: 'apikey', label: 'API密钥' },
     { key: 'settings', label: '设置' },
     { key: 'apilogs', label: 'API访问日志' },
+    { key: 'mcp', label: 'MCP' },
     { key: 'apidoc', label: 'API文档' },
   ]},
   { key: RoutePaths.SETTING, label: '设置', icon: 'setting', children: [
@@ -239,6 +241,7 @@ export const Header = () => {
                 <img src="/images/logo.png" className="h-12 cursor-pointer" />
               </div>
               <div className="flex items-center justify-center gap-3 ml-auto">
+                <RateLimitIndicator />
                 <Tooltip title="实时日志">
                   <div onClick={() => setRealtimeLogOpen(true)} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 18 }}>
                     <RealtimeLogIcon />
@@ -764,6 +767,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
             ))}
           </div>
           <div className="flex items-center justify-center gap-4 ml-auto">
+            <RateLimitIndicator />
             <Tooltip title="实时日志">
               <div onClick={onRealtimeLog} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 20 }}>
                 <RealtimeLogIcon />
