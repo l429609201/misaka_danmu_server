@@ -5,13 +5,23 @@ import dayjs from 'dayjs'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store'
 
+// JSON 格式化：尝试解析并美化，同时解码 Unicode 转义
+const formatContent = (raw) => {
+  if (!raw) return raw
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2)
+  } catch {
+    return raw
+  }
+}
+
 const DetailBlock = ({ label, content }) => {
   if (!content) return null
   return (
     <div className="mb-3">
       <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{label}</div>
       <pre className="text-xs bg-gray-50 dark:bg-gray-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto m-0">
-        {content}
+        {formatContent(content)}
       </pre>
     </div>
   )
