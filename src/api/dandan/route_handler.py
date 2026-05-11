@@ -6,6 +6,7 @@
 """
 
 import re
+import json
 import logging
 import ipaddress
 from typing import Callable
@@ -157,8 +158,7 @@ async def get_token_from_path(
                 k: v for k, v in request.headers.items()
                 if k.lower() not in ('authorization', 'cookie')
             }
-            import json as _json
-            request_headers_str = _json.dumps(filtered_headers, ensure_ascii=False, indent=2)
+            request_headers_str = json.dumps(filtered_headers, ensure_ascii=False, indent=2)
         except Exception:
             pass
 
