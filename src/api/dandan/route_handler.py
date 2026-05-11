@@ -6,6 +6,7 @@
 """
 
 import re
+import json
 import logging
 import ipaddress
 from typing import Callable
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, get_db_session, ConfigManager
 from src.core import get_now, get_app_timezone
+from src.api.middleware import normalize_ip
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +88,7 @@ async def get_token_from_path(
                 logger.warning(f"无效的受信任代理IP或CIDR: '{proxy_entry.strip()}'，已忽略。")
     
     client_ip_str = request.client.host if request.client else "127.0.0.1"
+    client_ip_str = normalize_ip(client_ip_str)  # ::ffff:x.x.x.x → x.x.x.x
     is_trusted = False
     if trusted_networks:
         try:
@@ -97,10 +100,9 @@ async def get_token_from_path(
     if is_trusted:
         x_forwarded_for = request.headers.get("x-forwarded-for")
         if x_forwarded_for:
-            client_ip_str = x_forwarded_for.split(',')[0].strip()
+            client_ip_str = normalize_ip(x_forwarded_for.split(',')[0].strip())
         else:
-            # 如果没有 X-Forwarded-For，则回退到 X-Real-IP
-            client_ip_str = request.headers.get("x-real-ip", client_ip_str)
+            client_ip_str = normalize_ip(request.headers.get("x-real-ip", client_ip_str))
     # --- IP解析结束 ---
 
     # 1. 验证 token 是否存在、启用且未过期
@@ -143,8 +145,41 @@ async def get_token_from_path(
     # 3. 增加调用计数（后台异步执行，不阻塞请求）
     await crud.increment_token_call_count(session, token_info['id'])
 
-    # 3. 记录成功访问
-    crud.create_token_access_log(session, token_info['id'], client_ip_str, user_agent, log_status='allowed', path=log_path)
+    # 4. 记录成功访问（含请求头、请求体和方法）
+    # 跳过高频轮询接口（taskcomment），避免日志刷屏
+    _skip_log_paths = ('/taskcomment/', '/api/v2/taskcomment/')
+    should_log = not any(skip in log_path for skip in _skip_log_paths)
+
+    if should_log:
+        # 捕获请求头（过滤敏感信息）
+        request_headers_str = None
+        try:
+            filtered_headers = {
+                k: v for k, v in request.headers.items()
+                if k.lower() not in ('authorization', 'cookie')
+            }
+            request_headers_str = json.dumps(filtered_headers, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+        request_body_str = None
+        try:
+            if request.method in ("POST", "PUT", "PATCH"):
+                body_bytes = await request.body()
+                if body_bytes and len(body_bytes) < 10000:  # 限制10KB
+                    request_body_str = body_bytes.decode("utf-8", "ignore")
+        except Exception:
+            pass
+
+        # 使用 awaited 版本获取 log_id，供中间件回填响应
+        log_id = await crud.create_token_access_log_awaited(
+            token_info['id'], client_ip_str, user_agent,
+            log_status='allowed', path=log_path,
+            method=request.method,
+            request_headers=request_headers_str,
+            request_body=request_body_str,
+        )
+        request.state.token_log_id = log_id
 
     return token
 

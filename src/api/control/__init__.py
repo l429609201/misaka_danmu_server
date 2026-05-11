@@ -19,6 +19,8 @@ from .scheduler_routes import router as scheduler_router
 from .settings_routes import router as settings_router
 from .rate_limit_routes import router as rate_limit_router
 from .episode_group_routes import router as episode_group_router
+from .scraper_routes import router as scraper_router
+from .log_routes import router as log_router
 
 # 创建主路由
 control_router = APIRouter(
@@ -36,6 +38,8 @@ control_router.include_router(scheduler_router)
 control_router.include_router(settings_router)
 control_router.include_router(rate_limit_router)
 control_router.include_router(episode_group_router)
+control_router.include_router(scraper_router)
+control_router.include_router(log_router)
 
 # 导出模型和依赖项供外部使用
 from .models import (

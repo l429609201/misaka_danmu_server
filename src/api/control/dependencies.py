@@ -16,6 +16,7 @@ from src.db import crud, get_db_session, ConfigManager
 from src.services import ScraperManager, TaskManager, SchedulerManager, MetadataSourceManager
 from src.rate_limiter import RateLimiter
 from src.ai import AIMatcherManager
+from src.api.middleware import normalize_ip
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ async def verify_api_key(
             except ValueError:
                 logger.warning(f"无效的受信任代理IP或CIDR: '{proxy_entry.strip()}'，已忽略。")
 
-    client_ip_str = request.client.host if request.client else "127.0.0.1"
+    client_ip_str = normalize_ip(request.client.host if request.client else "127.0.0.1")
     is_trusted = False
     if trusted_networks:
         try:
@@ -112,9 +113,9 @@ async def verify_api_key(
     if is_trusted:
         x_forwarded_for = request.headers.get("x-forwarded-for")
         if x_forwarded_for:
-            client_ip_str = x_forwarded_for.split(',')[0].strip()
+            client_ip_str = normalize_ip(x_forwarded_for.split(',')[0].strip())
         else:
-            client_ip_str = request.headers.get("x-real-ip", client_ip_str)
+            client_ip_str = normalize_ip(request.headers.get("x-real-ip", client_ip_str))
     # --- IP解析结束 ---
 
     endpoint = request.url.path
@@ -146,6 +147,10 @@ async def verify_api_key(
             request._receive = receive
     except Exception:
         request_body_str = None
+
+    if not api_key:
+        # 兼容 MCP 转发：也从 X-API-KEY 请求头获取
+        api_key = request.headers.get("x-api-key")
 
     if not api_key:
         log_entry = await crud.create_external_api_log(

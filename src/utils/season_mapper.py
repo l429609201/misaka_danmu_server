@@ -637,7 +637,8 @@ async def ai_season_mapping_and_correction(
     logger,
     similarity_threshold: float = 60.0,
     prefetched_metadata_results: list = None,  # 🚀 V2.1.6: 预取的元数据结果
-    metadata_source: str = "tmdb"  # 元数据源
+    metadata_source: str = "tmdb",  # 元数据源
+    prefetched_seasons_info: list = None  # 🚀 预取的季度信息
 ) -> list:
     """
     AI季度映射与修正函数 - V2.1.6优化版本
@@ -656,87 +657,100 @@ async def ai_season_mapping_and_correction(
         list: 修正结果列表
     """
     try:
-        # 1. 使用预取的元数据结果或重新查询
-        if prefetched_metadata_results:
-            metadata_results = prefetched_metadata_results
-            logger.info(f"✓ AI季度映射: 使用预取的[{metadata_source}]结果 ({len(metadata_results)} 个)")
+        # 🚀 快速路径：如果预热的季度信息已就绪，直接跳到修正阶段
+        if prefetched_seasons_info is not None:
+            seasons_info = prefetched_seasons_info
+            if not seasons_info or len(seasons_info) <= 1:
+                logger.info(f"○ AI季度映射: '{search_title}' 只有{len(seasons_info) if seasons_info else 0}个季度（预热），跳过")
+                return []
+            logger.info(f"✓ AI季度映射: 使用预热的季度信息 ({len(seasons_info)} 个季度)")
         else:
-            metadata_results = await _get_cached_metadata_search(search_title, metadata_manager, logger, metadata_source)
+            # 原始路径：逐步获取元数据、AI选匹配、获取季度
+            # 1. 使用预取的元数据结果或重新查询
+            if prefetched_metadata_results:
+                metadata_results = prefetched_metadata_results
+                logger.info(f"✓ AI季度映射: 使用预取的[{metadata_source}]结果 ({len(metadata_results)} 个)")
+            else:
+                metadata_results = await _get_cached_metadata_search(search_title, metadata_manager, logger, metadata_source)
 
-        if not metadata_results:
-            logger.info(f"○ AI季度映射: 未找到 '{search_title}' 的[{metadata_source}]信息")
-            return []
-
-        # 2. 如果返回多个结果，使用AI选择最佳匹配
-        if len(metadata_results) == 1:
-            best_match = metadata_results[0]
-            logger.info(f"○ AI季度映射: 唯一[{metadata_source}]匹配: {best_match.title} (类型: {best_match.type})")
-        else:
-            # 多个结果时，AI选择最佳匹配
-            try:
-                provider_results = []
-                for r in metadata_results:
-                    provider_results.append(models.ProviderSearchInfo(
-                        provider=metadata_source,
-                        mediaId=r.tmdbId or r.id,
-                        title=r.title,
-                        type=r.type or "unknown",
-                        season=1,
-                        year=r.year,
-                        imageUrl=r.imageUrl,
-                        episodeCount=None
-                    ))
-
-                query_info = {
-                    "title": search_title,
-                    "season": None,
-                    "episode": None,
-                    "year": None,
-                    "type": None
-                }
-
-                selected_index = await ai_matcher.select_best_match(
-                    query_info, provider_results, {}
-                )
-
-                if selected_index is not None and 0 <= selected_index < len(metadata_results):
-                    best_match = metadata_results[selected_index]
-                    logger.info(f"✓ AI季度映射: AI选择[{metadata_source}]匹配: {best_match.title} (类型: {best_match.type}, ID: {best_match.id})")
-                else:
-                    logger.error(f"⚠ AI季度映射: AI选择匹配失败，使用第一个结果")
-                    best_match = metadata_results[0]
-
-            except Exception as e:
-                logger.error(f"⚠ AI季度映射: 匹配选择失败，使用第一个结果: {e}")
-                best_match = metadata_results[0]
-
-        # 3. 获取季度信息用于后续修正
-        # 确保选择的是TV类型，否则无法获取季度信息
-        if best_match.type != 'tv':
-            logger.warning(f"⚠ AI季度映射: 选择的结果不是TV类型 ({best_match.type})，无法获取季度信息")
-            # 尝试找到TV类型的结果
-            tv_result = None
-            for result in metadata_results:
-                if result.type == 'tv':
-                    tv_result = result
-                    logger.info(f"✓ AI季度映射: 找到TV类型结果: {tv_result.title} (ID: {tv_result.id})")
-                    break
-
-            if not tv_result:
-                logger.error(f"⚠ AI季度映射: 结果中没有TV类型，无法获取季度信息")
+            if not metadata_results:
+                logger.info(f"○ AI季度映射: 未找到 '{search_title}' 的[{metadata_source}]信息")
                 return []
 
-            best_match = tv_result
+            # 2. 如果返回多个结果，使用AI选择最佳匹配
+            if len(metadata_results) == 1:
+                best_match = metadata_results[0]
+                logger.info(f"○ AI季度映射: 唯一[{metadata_source}]匹配: {best_match.title} (类型: {best_match.type})")
+            else:
+                # 快速路径：第一个结果标题完全匹配时直接用
+                from thefuzz import fuzz as _sm_fuzz
+                first_sim = _sm_fuzz.ratio(search_title.lower(), metadata_results[0].title.lower())
+                if first_sim >= 90:
+                    best_match = metadata_results[0]
+                    logger.info(f"○ AI季度映射: 快速路径 [{metadata_source}]匹配: {best_match.title} (相似度{first_sim}%)")
+                else:
+                    try:
+                        provider_results = []
+                        for r in metadata_results:
+                            provider_results.append(models.ProviderSearchInfo(
+                                provider=metadata_source,
+                                mediaId=r.tmdbId or r.id,
+                                title=r.title,
+                                type=r.type or "unknown",
+                                season=1,
+                                year=r.year,
+                                imageUrl=r.imageUrl,
+                                episodeCount=None
+                            ))
 
-        try:
-            seasons_info = await metadata_manager.get_seasons(metadata_source, best_match.id)
-        except Exception as e:
-            logger.error(f"获取[{metadata_source}]季度信息失败: {best_match.id}, 错误: {e}")
-            return []
+                        query_info = {
+                            "title": search_title,
+                            "season": None,
+                            "episode": None,
+                            "year": None,
+                            "type": None
+                        }
 
-        if not seasons_info or len(seasons_info) <= 1:
-            logger.info(f"○ AI季度映射: '{search_title}' 只有1个季度或无季度信息，跳过")
-            return []
+                        selected_index = await ai_matcher.select_best_match(
+                            query_info, provider_results, {}
+                        )
+
+                        if selected_index is not None and 0 <= selected_index < len(metadata_results):
+                            best_match = metadata_results[selected_index]
+                            logger.info(f"✓ AI季度映射: AI选择[{metadata_source}]匹配: {best_match.title} (类型: {best_match.type}, ID: {best_match.id})")
+                        else:
+                            logger.error(f"⚠ AI季度映射: AI选择匹配失败，使用第一个结果")
+                            best_match = metadata_results[0]
+
+                    except Exception as e:
+                        logger.error(f"⚠ AI季度映射: 匹配选择失败，使用第一个结果: {e}")
+                        best_match = metadata_results[0]
+
+            # 3. 获取季度信息
+            if best_match.type != 'tv':
+                logger.warning(f"⚠ AI季度映射: 选择的结果不是TV类型 ({best_match.type})，无法获取季度信息")
+                tv_result = None
+                for result in metadata_results:
+                    if result.type == 'tv':
+                        tv_result = result
+                        logger.info(f"✓ AI季度映射: 找到TV类型结果: {tv_result.title} (ID: {tv_result.id})")
+                        break
+
+                if not tv_result:
+                    logger.error(f"⚠ AI季度映射: 结果中没有TV类型，无法获取季度信息")
+                    return []
+
+                best_match = tv_result
+
+            try:
+                seasons_info = await metadata_manager.get_seasons(metadata_source, best_match.id)
+            except Exception as e:
+                logger.error(f"获取[{metadata_source}]季度信息失败: {best_match.id}, 错误: {e}")
+                return []
+
+            if not seasons_info or len(seasons_info) <= 1:
+                logger.info(f"○ AI季度映射: '{search_title}' 只有1个季度或无季度信息，跳过")
+                return []
 
         # 聚合日志收集
         log_lines = []
@@ -881,7 +895,8 @@ async def ai_type_and_season_mapping_and_correction(
     logger,
     similarity_threshold: float = 60.0,
     prefetched_metadata_results: list = None,  # 🚀 V2.1.6: 预取的元数据结果
-    metadata_source: str = "tmdb"  # 元数据源
+    metadata_source: str = "tmdb",  # 元数据源
+    prefetched_seasons_info: list = None  # 🚀 预取的季度信息
 ) -> dict:
     """
     统一的AI类型和季度映射与修正函数
@@ -935,7 +950,8 @@ async def ai_type_and_season_mapping_and_correction(
                 logger=logger,
                 similarity_threshold=similarity_threshold,
                 prefetched_metadata_results=prefetched_metadata_results,
-                metadata_source=metadata_source
+                metadata_source=metadata_source,
+                prefetched_seasons_info=prefetched_seasons_info
             )
 
             # 应用季度修正到原始搜索结果

@@ -203,7 +203,7 @@ class MetadataSourceManager:
         ]
 
         if not enabled_providers:
-            return set(), []
+            return set(), [], {}
 
         # 并行读取 config
         force_config_tasks = [

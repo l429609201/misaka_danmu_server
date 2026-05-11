@@ -205,6 +205,12 @@ class TokenAccessLog(Base):
     accessTime: Mapped[datetime] = mapped_column("access_time", NaiveDateTime)
     status: Mapped[str] = mapped_column(String(500))
     path: Mapped[Optional[str]] = mapped_column(String(512))
+    method: Mapped[Optional[str]] = mapped_column(String(10))
+    requestHeaders: Mapped[Optional[str]] = mapped_column("request_headers", TEXT, nullable=True)
+    requestBody: Mapped[Optional[str]] = mapped_column("request_body", TEXT)
+    responseHeaders: Mapped[Optional[str]] = mapped_column("response_headers", TEXT, nullable=True)
+    responseBody: Mapped[Optional[str]] = mapped_column("response_body", TEXT)
+    statusCode: Mapped[Optional[int]] = mapped_column("status_code", Integer)
 
     __table_args__ = (Index('idx_token_id_time', 'token_id', 'access_time'),)
 

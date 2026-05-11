@@ -141,7 +141,7 @@ async def unified_search(
                     from src.db import models
                     user = models.User(id=0, username="system")
                     # 使用核心标题获取别名
-                    all_possible_aliases, supp_results = await metadata_manager.search_supplemental_sources(core_title, user)
+                    all_possible_aliases, supp_results, _ = await metadata_manager.search_supplemental_sources(core_title, user)
 
                     # 将补充结果输出到调用方（如果提供了输出参数）
                     if supplemental_results_out is not None and supp_results:

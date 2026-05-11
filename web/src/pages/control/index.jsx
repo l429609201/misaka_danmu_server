@@ -2,6 +2,7 @@ import { Tabs } from 'antd'
 import { ApiKey } from './components/ApiKey'
 import { ApiDoc } from './components/ApiDoc'
 import { ApiLogs } from './components/ApiLogs'
+import { McpInfo } from './components/McpInfo'
 import { Settings } from './components/Settings'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { MobileTabs } from '@/components/MobileTabs'
@@ -29,6 +30,11 @@ export const Control = () => {
       label: 'API访问日志',
       key: 'apilogs',
       children: <ApiLogs />,
+    },
+    {
+      label: 'MCP',
+      key: 'mcp',
+      children: <McpInfo />,
     },
     {
       label: 'API文档',

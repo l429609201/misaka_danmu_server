@@ -2816,7 +2816,7 @@ export const Scrapers = () => {
                 }}
               >
                 {changelogModal.content
-                  ? changelogModal.content.replace(/\r\n/g, '\n').replace(/\n(?!\n)/g, '\n\n')
+                  ? changelogModal.content.replace(/\r\n/g, '\n')
                   : ''}
               </ReactMarkdown>
             </div>

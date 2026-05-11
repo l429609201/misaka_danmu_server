@@ -49,7 +49,7 @@ async def search_metadata_source(
     ### 工作流程
     1.  提供 `provider` 来指定要查询的源。
     2.  提供 `keyword` 或 `id` 中的一个来进行搜索。
-    3.  对于某些源（如TMDB），可能需要提供 `mediaType` 来区分电视剧和电影。
+    3.  `mediaType` 为可选参数。TMDB 不传时默认搜索全部类型(multi)，其他源可忽略。
 
     ### 返回
     返回一个包含元数据详情的列表。如果通过ID查找且成功，列表中将只有一个元素。
@@ -61,11 +61,17 @@ async def search_metadata_source(
 
     # --- 将通用媒体类型映射到特定于提供商的类型 ---
     provider_media_type: str | None = None
-    if mediaType:
-        if provider == 'tmdb':
+    if provider == 'tmdb':
+        if mediaType:
             provider_media_type = 'tv' if mediaType == AutoImportMediaType.TV_SERIES else 'movie'
-        elif provider == 'tvdb':
+        else:
+            # TMDB 必须指定 mediaType，未指定时默认使用 multi（同时搜索电视剧和电影）
+            provider_media_type = 'multi'
+    elif provider == 'tvdb':
+        if mediaType:
             provider_media_type = 'series' if mediaType == AutoImportMediaType.TV_SERIES else 'movies'
+    elif mediaType:
+        provider_media_type = mediaType.value
     # --- 映射结束 ---
 
     # 创建一个虚拟用户，因为元数据管理器的核心方法需要它

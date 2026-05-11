@@ -248,6 +248,8 @@ from .api_token import (
 # TokenLog模块
 from .token_log import (
     create_token_access_log,
+    create_token_access_log_awaited,
+    update_token_access_log_response,
     get_token_access_logs,
     get_ua_rules,
     add_ua_rule,

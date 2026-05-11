@@ -631,6 +631,10 @@ async def get_match_for_item(
 
                 # 步骤2：智能排序 (类型匹配优先)
                 match_timer.step_start("智能排序与匹配")
+                from src.utils.search_timer import SubStepTiming
+                import time as _perf_time
+                _match_sub_steps = []
+                _sub_start = _perf_time.perf_counter()
 
                 # 确定目标类型
                 target_type = "movie" if is_movie else "tv_series"
@@ -683,6 +687,9 @@ async def get_match_for_item(
                     type_match = "✓" if result.type == target_type else "✗"
                     lines.append(f"  {idx}. [{type_match}] {result.provider} - {result.title} (ID: {result.mediaId}, 类型: {result.type}, 年份: {result.year or 'N/A'}, 分数: {score:.0f})")
                 logger.info("\n".join(lines))
+
+                _match_sub_steps.append(SubStepTiming(name="排序打分", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
+                _sub_start = _perf_time.perf_counter()
 
                 # 步骤3：自动选择最佳源
                 logger.info(f"步骤3：自动选择最佳源")
@@ -780,6 +787,9 @@ async def get_match_for_item(
 
                 # 使用预获取的配置值
                 # fallback_enabled 已在初始化阶段获取
+
+                _match_sub_steps.append(SubStepTiming(name="AI匹配" if ai_match_enabled else "传统匹配", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
+                _sub_start = _perf_time.perf_counter()
 
                 best_match = None
 
@@ -885,6 +895,8 @@ async def get_match_for_item(
 
                 # 用于保存从来源端获取的剧集标题
                 matched_episode_title = None
+                # 分集列表缓存（顺延验证时填充，后续复用避免重复请求）
+                episodes_cache = {}
 
                 # ===== 反向偏移：将文件名/用户传入的偏移后集号还原为源站原始集号 =====
                 # episode_number 来自文件名解析，等同于用户期望的集号（偏移后的值）
@@ -902,71 +914,101 @@ async def get_match_for_item(
                         logger.warning(f"  - 反向偏移失败，使用原始集号: {e}")
 
                 if best_match is None and fallback_enabled:
-                    # 顺延机制启用：依次验证候选源 (按分数从高到低)
-                    logger.info(f"  - 顺延机制启用，依次验证候选源")
-                    for attempt, candidate in enumerate(sorted_results, 1):
-                        logger.info(f"    {attempt}. 正在验证: {candidate.provider} - {candidate.title} (ID: {candidate.mediaId}, 类型: {candidate.type})")
+                    # 顺延机制启用：并行预取前N个高分候选源的分集列表，然后内存验证
+                    logger.info(f"  - 顺延机制启用，并行预取分集列表")
+                    MAX_PREFETCH = 5  # 并行预取前5个候选源
+                    prefetch_candidates = sorted_results[:MAX_PREFETCH]
+
+                    # 并行获取分集列表
+                    async def _fetch_episodes(candidate):
                         try:
-                            scraper = scraper_manager.get_scraper(candidate.provider)
-                            if not scraper:
-                                logger.warning(f"    {attempt}. {candidate.provider} - 无法获取scraper，跳过")
-                                continue
-
-                            # 获取分集列表进行验证
-                            episodes = await scraper_manager.get_episodes_routed(candidate.provider, candidate.mediaId, db_media_type=candidate.type)
-                            if not episodes:
-                                logger.warning(f"    {attempt}. {candidate.provider} - 没有分集列表，跳过")
-                                continue
-
-                            # 如果用户搜索的是电影，只匹配电影类型的候选源
-                            if is_movie:
-                                if candidate.type != "movie":
-                                    logger.warning(f"    {attempt}. {candidate.provider} - 类型不匹配 (搜索电影，但候选源是{candidate.type})，跳过")
-                                    continue
-                                logger.info(f"    {attempt}. {candidate.provider} - 验证通过 (电影)")
-                            else:
-                                # 非电影场景，也需要验证候选源类型匹配
-                                if candidate.type != target_type:
-                                    logger.warning(f"    {attempt}. {candidate.provider} - 类型不匹配({candidate.type}≠{target_type})，跳过")
-                                    continue
-                            # 如果指定了集数，检查是否有目标集数
-                            # 使用反向偏移后的 source_episode_number 去匹配源站分集
-                            if not is_movie and source_episode_number is not None:
-                                target_episode = None
-                                for ep in episodes:
-                                    if ep.episodeIndex == source_episode_number:
-                                        target_episode = ep
-                                        break
-
-                                if not target_episode:
-                                    logger.warning(f"    {attempt}. {candidate.provider} - 没有第 {source_episode_number} 集"
-                                                   f"{f' (原始集号: {episode_number})' if source_episode_number != episode_number else ''}，跳过")
-                                    continue
-
-                                # 保存来源端的剧集标题
-                                matched_episode_title = target_episode.title
-                                logger.info(f"    {attempt}. {candidate.provider} - 验证通过，剧集标题: '{matched_episode_title}'")
-                            else:
-                                logger.info(f"    {attempt}. {candidate.provider} - 验证通过")
-                            best_match = candidate
-                            break
+                            eps = await scraper_manager.get_episodes_routed(
+                                candidate.provider, candidate.mediaId, db_media_type=candidate.type
+                            )
+                            return candidate, eps
                         except Exception as e:
-                            logger.warning(f"    {attempt}. {candidate.provider} - 验证失败: {e}")
+                            logger.debug(f"预取分集失败: {candidate.provider} - {e}")
+                            return candidate, None
+
+                    prefetch_results = await asyncio.gather(
+                        *[_fetch_episodes(c) for c in prefetch_candidates]
+                    )
+
+                    # 构建缓存：provider:mediaId -> episodes
+                    episodes_cache = {}
+                    for candidate, eps in prefetch_results:
+                        episodes_cache[f"{candidate.provider}:{candidate.mediaId}"] = eps
+
+                    # 在内存中验证（包括预取的和剩余的）
+                    for attempt, candidate in enumerate(sorted_results, 1):
+                        cache_key = f"{candidate.provider}:{candidate.mediaId}"
+                        logger.info(f"    {attempt}. 正在验证: {candidate.provider} - {candidate.title} (ID: {candidate.mediaId}, 类型: {candidate.type})")
+
+                        # 优先从缓存取，没有则实时获取（超出预取范围的候选源）
+                        if cache_key in episodes_cache:
+                            episodes = episodes_cache[cache_key]
+                        else:
+                            try:
+                                episodes = await scraper_manager.get_episodes_routed(
+                                    candidate.provider, candidate.mediaId, db_media_type=candidate.type
+                                )
+                                episodes_cache[cache_key] = episodes
+                            except Exception as e:
+                                logger.warning(f"    {attempt}. {candidate.provider} - 获取分集失败: {e}")
+                                continue
+
+                        if not episodes:
+                            logger.warning(f"    {attempt}. {candidate.provider} - 没有分集列表，跳过")
                             continue
+
+                        # 类型验证
+                        if is_movie:
+                            if candidate.type != "movie":
+                                logger.warning(f"    {attempt}. {candidate.provider} - 类型不匹配 (搜索电影，但候选源是{candidate.type})，跳过")
+                                continue
+                            logger.info(f"    {attempt}. {candidate.provider} - 验证通过 (电影)")
+                        else:
+                            if candidate.type != target_type:
+                                logger.warning(f"    {attempt}. {candidate.provider} - 类型不匹配({candidate.type}≠{target_type})，跳过")
+                                continue
+
+                        # 集数验证
+                        if not is_movie and source_episode_number is not None:
+                            target_episode = None
+                            for ep in episodes:
+                                if ep.episodeIndex == source_episode_number:
+                                    target_episode = ep
+                                    break
+
+                            if not target_episode:
+                                logger.warning(f"    {attempt}. {candidate.provider} - 没有第 {source_episode_number} 集"
+                                               f"{f' (原始集号: {episode_number})' if source_episode_number != episode_number else ''}，跳过")
+                                continue
+
+                            matched_episode_title = target_episode.title
+                            logger.info(f"    {attempt}. {candidate.provider} - 验证通过，剧集标题: '{matched_episode_title}'")
+                        else:
+                            logger.info(f"    {attempt}. {candidate.provider} - 验证通过")
+                        best_match = candidate
+                        break
 
                 if not best_match:
                     logger.warning(f"匹配后备失败：所有候选源都无法提供有效分集")
-                    match_timer.step_end(details="无有效分集")
-                    match_timer.finish()  # 打印计时报告
+                    _match_sub_steps.append(SubStepTiming(name="顺延验证", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
+                    match_timer.step_end(details="无有效分集", sub_steps=_match_sub_steps)
+                    match_timer.finish()
                     response = DandanMatchResponse(isMatched=False, matches=[])
                     match_fallback_result["response"] = response
                     return
 
                 # 如果还没有获取剧集标题（非顺延机制匹配成功的情况），主动获取
-                # 使用反向偏移后的 source_episode_number 匹配源站分集
+                # 复用预取缓存，避免重复HTTP请求
                 if matched_episode_title is None and not is_movie and source_episode_number is not None:
                     try:
-                        episodes = await scraper_manager.get_episodes_routed(best_match.provider, best_match.mediaId, db_media_type=best_match.type)
+                        cache_key = f"{best_match.provider}:{best_match.mediaId}"
+                        episodes = episodes_cache.get(cache_key) if episodes_cache else None
+                        if episodes is None:
+                            episodes = await scraper_manager.get_episodes_routed(best_match.provider, best_match.mediaId, db_media_type=best_match.type)
                         if episodes:
                             for ep in episodes:
                                 if ep.episodeIndex == source_episode_number:
@@ -1131,7 +1173,8 @@ async def get_match_for_item(
                     await set_db_cache(session_inner, FALLBACK_SEARCH_CACHE_PREFIX, season_cache_key, season_cache_data, 3600)
                     logger.info(f"整季缓存已存储: {season_cache_key}")
 
-                match_timer.step_end(details="匹配成功")
+                _match_sub_steps.append(SubStepTiming(name="验证+获取分集", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
+                match_timer.step_end(details="匹配成功", sub_steps=_match_sub_steps)
                 match_timer.finish()  # 打印计时报告
                 match_fallback_result["response"] = response
                 # 保存匹配详情供后续使用

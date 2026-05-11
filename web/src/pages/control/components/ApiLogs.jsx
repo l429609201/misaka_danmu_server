@@ -1,18 +1,26 @@
-import { Card, Collapse, Table, Tag, Typography } from 'antd'
+import { Card, Collapse, Empty, Table, Tag, Typography } from 'antd'
 import { useEffect, useState } from 'react'
 import { getControlApiKeyLog } from '../../../apis'
 import dayjs from 'dayjs'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store'
 
+// JSON 格式化：尝试解析并美化，同时解码 Unicode 转义
+const formatContent = (raw) => {
+  if (!raw) return raw
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2)
+  } catch {
+    return raw
+  }
+}
+
 const DetailBlock = ({ label, content }) => {
   if (!content) return null
   return (
     <div className="mb-3">
       <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{label}</div>
-      <pre className="text-xs bg-gray-50 dark:bg-gray-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto m-0">
-        {content}
-      </pre>
+      <pre className="text-xs bg-gray-50 dark:bg-gray-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto m-0">{formatContent(content)}</pre>
     </div>
   )
 }
@@ -115,8 +123,10 @@ export const ApiLogs = () => {
   return (
     <div className="my-6">
       <Card title="API访问日志" loading={loading}>
-        <div className="mb-4">这里显示最近100条通过外部API的访问记录。</div>
-        {isMobile ? (
+        <div className="mb-4">这里显示最近100条通过外部API和MCP的访问记录。</div>
+        {logs.length === 0 && !loading ? (
+          <Empty description="暂无访问记录" />
+        ) : isMobile ? (
           <div className="space-y-4">
             {logs.map((log, index) => {
               const isSuccess = log.statusCode < 400;
@@ -180,7 +190,7 @@ export const ApiLogs = () => {
             }}
             scroll={{
               x: '100%',
-              y: 400,
+              y: 600,
             }}
           />
         )}
