@@ -51,15 +51,18 @@ async def get_all_scraper_configs(
     config_manager: ConfigManager = Depends(get_config_manager),
 ):
     """
-    获取所有弹幕源的配置信息，包括启用状态、代理开关、分集黑名单、日志开关和搜索超时。
-    不包含 'custom' 虚拟源。
+    获取所有**已加载**的弹幕源配置信息，包括启用状态、代理开关、分集黑名单、日志开关和搜索超时。
+    只返回实际加载成功的源，不包含数据库中残留的无效记录和 'custom' 虚拟源。
     """
     all_settings = await crud.get_all_scraper_settings(session)
-    settings = [s for s in all_settings if s.get('providerName') != 'custom']
+    # 只返回实际加载了实例的源（交叉校验数据库 + 内存）
+    loaded_providers = set(manager.scrapers.keys())
 
     result = []
-    for s in settings:
+    for s in all_settings:
         name = s['providerName']
+        if name == 'custom' or name not in loaded_providers:
+            continue
 
         # 分集黑名单
         blacklist = await config_manager.get(f"{name}_episode_blacklist_regex", "")
@@ -105,10 +108,12 @@ async def update_scraper_config(
     - **logRawResponses**: 是否记录原始响应到日志文件
     - **searchTimeout**: 搜索超时时间(秒), 范围 1-120
     """
-    # 验证源是否存在
+    # 验证源是否存在（数据库 + 内存实例双校验）
     scraper_setting = await crud.get_scraper_setting_by_name(session, provider)
     if not scraper_setting:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"弹幕源 '{provider}' 不存在。")
+    if provider not in manager.scrapers:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"弹幕源 '{provider}' 数据库有记录但未加载，可能源文件已被移除。")
 
     updated_fields = []
 
