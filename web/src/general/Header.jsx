@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RoutePaths } from './RoutePaths.jsx'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAtom, useAtomValue } from 'jotai'
 import { isMobileAtom, userinfoAtom } from '../../store/index.js'
 import DarkModeToggle from '@/components/DarkModeToggle.jsx';
@@ -338,6 +338,8 @@ const MobileHeader = ({ activeKey }) => {
     { key: 'user', label: '我的', icon: 'user', children: navItems.slice(3) }, // 其余的放在"我的"菜单下
   ]
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const subKey = searchParams.get('key') // 当前 URL 中的子标签 key
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false)
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false)
   const [isThemeColorOpen, setIsThemeColorOpen] = useState(false)
@@ -413,7 +415,7 @@ const MobileHeader = ({ activeKey }) => {
     }
   }
 
-  const handleMenuItemClick = (item) => {
+  const handleMenuItemClick = (item, parentItem) => {
     if (item.key === 'logout') {
       onLogout()
     } else if (item.key === 'change-password') {
@@ -424,6 +426,18 @@ const MobileHeader = ({ activeKey }) => {
       setIsThemeColorOpen(true)
     } else if (item.key === 'restart-service') {
       // 重启由 Popconfirm 处理，这里不做任何事
+    } else if (parentItem?.key === 'user') {
+      // "我的"菜单的子项是navItems中的页面，其children是子页面
+      // 导航到该页面的第一个子页面
+      const navItem = navItems.find(n => n.key === item.key)
+      if (navItem?.children?.length) {
+        navigate(`${item.key}?key=${navItem.children[0].key}`)
+      } else {
+        navigate(item.key)
+      }
+    } else if (parentItem) {
+      // 非"我的"菜单的子项（如任务管理器的子项），导航到父路径+子key
+      navigate(`${parentItem.key}?key=${item.key}`)
     } else {
       navigate(item.key)
     }
@@ -470,7 +484,7 @@ const MobileHeader = ({ activeKey }) => {
                       <div>
                         <MyIcon icon={it.icon} size={26} />
                       </div>
-                      <div className="text-xs">{userMenuLabel}</div>
+                      <div className="text-xs">{it.key === 'user' ? userMenuLabel : it.label}</div>
                     </div>
                   }
                   items={[
@@ -479,44 +493,46 @@ const MobileHeader = ({ activeKey }) => {
                       label: o.label,
                       icon: o.icon,
                     })),
-                    {
-                      key: 'theme-color',
-                      label: '主题色',
-                      icon: 'MenuIcon-gexinghua-heise',
-                    },
-                    {
-                      key: 'session-manager',
-                      label: '会话管理',
-                      icon: 'huihuaguanli',
-                    },
-                    {
-                      key: 'change-password',
-                      label: '修改密码',
-                      icon: 'key',
-                    },
-                    ...(dockerAvailable ? [{
-                      key: 'restart-service',
-                      label: (
-                        <Popconfirm
-                          title="确认重启"
-                          description="确定要重启服务吗？"
-                          onConfirm={handleRestart}
-                          okText="确定"
-                          cancelText="取消"
-                        >
-                          <span>重启服务</span>
-                        </Popconfirm>
-                      ),
-                      icon: 'zhongqi',
-                    }] : []),
-                    {
-                      key: 'logout',
-                      label: '退出登录',
-                      icon: 'tuichudenglu',
-                    },
+                    ...(it.key === 'user' ? [
+                      {
+                        key: 'theme-color',
+                        label: '主题色',
+                        icon: 'MenuIcon-gexinghua-heise',
+                      },
+                      {
+                        key: 'session-manager',
+                        label: '会话管理',
+                        icon: 'huihuaguanli',
+                      },
+                      {
+                        key: 'change-password',
+                        label: '修改密码',
+                        icon: 'key',
+                      },
+                      ...(dockerAvailable ? [{
+                        key: 'restart-service',
+                        label: (
+                          <Popconfirm
+                            title="确认重启"
+                            description="确定要重启服务吗？"
+                            onConfirm={handleRestart}
+                            okText="确定"
+                            cancelText="取消"
+                          >
+                            <span>重启服务</span>
+                          </Popconfirm>
+                        ),
+                        icon: 'zhongqi',
+                      }] : []),
+                      {
+                        key: 'logout',
+                        label: '退出登录',
+                        icon: 'tuichudenglu',
+                      },
+                    ] : []),
                   ]}
-                  onItemClick={handleMenuItemClick}
-                  activeKey={activeKey}
+                  onItemClick={(item) => handleMenuItemClick(item, it)}
+                  activeKey={it.key === 'user' ? activeKey : subKey}
                 />
               )}
             </>
