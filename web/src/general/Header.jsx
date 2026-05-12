@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { RoutePaths } from './RoutePaths.jsx'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAtom, useAtomValue } from 'jotai'
 import { isMobileAtom, userinfoAtom } from '../../store/index.js'
 import DarkModeToggle from '@/components/DarkModeToggle.jsx';
@@ -338,6 +338,8 @@ const MobileHeader = ({ activeKey }) => {
     { key: 'user', label: '我的', icon: 'user', children: navItems.slice(3) }, // 其余的放在"我的"菜单下
   ]
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const subKey = searchParams.get('key') // 当前 URL 中的子标签 key
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false)
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false)
   const [isThemeColorOpen, setIsThemeColorOpen] = useState(false)
@@ -530,7 +532,7 @@ const MobileHeader = ({ activeKey }) => {
                     ] : []),
                   ]}
                   onItemClick={(item) => handleMenuItemClick(item, it)}
-                  activeKey={activeKey}
+                  activeKey={it.key === 'user' ? activeKey : subKey}
                 />
               )}
             </>

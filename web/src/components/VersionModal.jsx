@@ -470,55 +470,102 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
 
           {/* 操作按钮 */}
           <Divider className="!my-2" />
-          <div className={isMobile ? 'flex flex-col gap-2' : 'flex justify-between items-center'}>
-            <div className={isMobile ? 'flex items-center justify-between' : 'flex items-center gap-2'}>
-              <Button
-                onClick={() => setReleaseHistoryOpen(true)}
-                icon={<HistoryOutlined />}
-                size={isMobile ? 'small' : 'middle'}
-              >
-                更新日志
-              </Button>
-              {/* 更新源切换 */}
+          {isMobile ? (
+            <div className="flex flex-col gap-2">
+              {/* 第一行：更新日志 + 刷新 + Release */}
+              <div className="flex gap-2 items-center">
+                <Button
+                  onClick={() => setReleaseHistoryOpen(true)}
+                  icon={<HistoryOutlined />}
+                  size="small"
+                >
+                  更新日志
+                </Button>
+                <Button onClick={() => loadData()} icon={<SyncOutlined />} size="small">
+                  刷新
+                </Button>
+                {updateInfo?.releaseUrl && (
+                  <Button
+                    href={updateInfo.releaseUrl}
+                    target="_blank"
+                    size="small"
+                  >
+                    Release
+                  </Button>
+                )}
+              </div>
+              {/* 第二行：左边切换开关 + 右边检查并更新 */}
               {dockerStatus?.canUpdate && (
-                <Switch
-                  checked={useGithubSource}
-                  checkedChildren={<><GithubOutlined /> GitHub</>}
-                  unCheckedChildren={<><MyIcon icon="Docker2" size={14} className="mr-0.5 align-middle" /> Docker</>}
-                  onChange={v => {
-                    setUseGithubSource(v)
-                    localStorage.setItem('updateSource', v ? 'github' : 'docker')
-                  }}
-                />
+                <div className="flex items-center justify-between">
+                  <Switch
+                    checked={useGithubSource}
+                    checkedChildren={<><GithubOutlined /> GitHub</>}
+                    unCheckedChildren={<><MyIcon icon="Docker2" size={14} className="mr-0.5 align-middle" /> Docker</>}
+                    onChange={v => {
+                      setUseGithubSource(v)
+                      localStorage.setItem('updateSource', v ? 'github' : 'docker')
+                    }}
+                  />
+                  <Button
+                    type="primary"
+                    icon={<RocketOutlined />}
+                    onClick={handleUpdate}
+                    loading={updating}
+                    disabled={updateComplete}
+                    size="small"
+                  >
+                    {updateInfo?.hasUpdate ? '更新并重启' : '检查并更新'}
+                  </Button>
+                </div>
               )}
             </div>
-            <div className={isMobile ? 'flex gap-2 justify-end' : 'flex gap-2'}>
-              <Button onClick={() => loadData()} icon={<SyncOutlined />} size={isMobile ? 'small' : 'middle'}>
-                刷新
-              </Button>
-              {dockerStatus?.canUpdate && (
+          ) : (
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2">
                 <Button
-                  type="primary"
-                  icon={<RocketOutlined />}
-                  onClick={handleUpdate}
-                  loading={updating}
-                  disabled={updateComplete}
-                  size={isMobile ? 'small' : 'middle'}
+                  onClick={() => setReleaseHistoryOpen(true)}
+                  icon={<HistoryOutlined />}
                 >
-                  {updateInfo?.hasUpdate ? '更新并重启' : '检查并更新'}
+                  更新日志
                 </Button>
-              )}
-              {updateInfo?.releaseUrl && (
-                <Button
-                  href={updateInfo.releaseUrl}
-                  target="_blank"
-                  size={isMobile ? 'small' : 'middle'}
-                >
-                  Release
+                {dockerStatus?.canUpdate && (
+                  <Switch
+                    checked={useGithubSource}
+                    checkedChildren={<><GithubOutlined /> GitHub</>}
+                    unCheckedChildren={<><MyIcon icon="Docker2" size={14} className="mr-0.5 align-middle" /> Docker</>}
+                    onChange={v => {
+                      setUseGithubSource(v)
+                      localStorage.setItem('updateSource', v ? 'github' : 'docker')
+                    }}
+                  />
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={() => loadData()} icon={<SyncOutlined />}>
+                  刷新
                 </Button>
-              )}
+                {dockerStatus?.canUpdate && (
+                  <Button
+                    type="primary"
+                    icon={<RocketOutlined />}
+                    onClick={handleUpdate}
+                    loading={updating}
+                    disabled={updateComplete}
+                  >
+                    {updateInfo?.hasUpdate ? '更新并重启' : '检查并更新'}
+                  </Button>
+                )}
+                {updateInfo?.releaseUrl && (
+                  <Button
+                    href={updateInfo.releaseUrl}
+                    target="_blank"
+                  >
+                    Release
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </Spin>
 
