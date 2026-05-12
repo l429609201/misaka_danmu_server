@@ -492,6 +492,11 @@ async def update_config_item(
 
     await crud.update_config_value(session, config_key, value_str)
     config_manager.invalidate(config_key)
+
+    # JWT 有效期变更时，清空白名单会话缓存以实现热加载
+    if config_key == "jwtExpireMinutes":
+        security.clear_whitelist_session_cache()
+
     logger.info(f"用户 '{current_user.username}' 更新了配置项 '{config_key}'。")
 
 
