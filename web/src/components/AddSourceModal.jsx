@@ -1,4 +1,4 @@
-import { Form, Input, Modal, Select, message } from 'antd'
+import { Form, Input, Modal, Select } from 'antd'
 import { useState, useEffect } from 'react'
 import { addSourceToAnime, getScrapers } from '../apis'
 import { useMessage } from '../MessageContext'
