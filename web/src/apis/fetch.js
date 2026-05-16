@@ -27,7 +27,6 @@ instance.interceptors.request.use(
 instance.interceptors.response.use(
   res => res,
   error => {
-    console.log('resError', error.response?.data, error.response?.config.url)
 
     // 401 未授权：自动清理 token 并跳转登录页
     if (error.response?.status === 401) {

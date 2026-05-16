@@ -41,9 +41,8 @@ export const Layout = () => {
             window.location.href = '/login'
           }
         })
-        .catch(err => {
+        .catch(() => {
           // 自动登录失败（不在白名单中），跳转登录页
-          console.log('自动登录失败，跳转登录页')
           window.location.href = '/login'
         })
     } else {
