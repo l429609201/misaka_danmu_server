@@ -309,6 +309,10 @@ class BaseScraper(ABC):
     # 每个子类都必须覆盖这个类属性
     provider_name: str
 
+    # (可选) 子类可覆盖此属性，设置在UI上显示的友好名称。
+    # 如果未设置，前端将 fallback 到 provider_name。
+    display_name: Optional[str] = None
+
     # (可选) 子类可以覆盖此字典来声明其可配置的字段。
     # 格式: { "config_key": ("UI显示的标签", "字段类型", "UI上的提示信息") }
     # 支持的字段类型: "string", "boolean", "password"

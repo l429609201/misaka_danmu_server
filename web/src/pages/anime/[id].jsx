@@ -80,8 +80,6 @@ export const AnimeDetail = () => {
   const messageApi = useMessage()
   const deleteFilesRef = useRef(true) // 删除时是否同时删除弹幕文件，默认为 true
 
-  console.log(sourceList, 'sourceList')
-
   const totalEpisodeCount = useMemo(() => {
     return sourceList.reduce((total, item) => {
       return total + item.episodeCount
@@ -154,7 +152,6 @@ export const AnimeDetail = () => {
   }, [keyword])
 
   useEffect(() => {
-    console.log(keyword, pagination.pageSize, pagination.current)
     handleEditSource(false)
   }, [keyword, pagination.pageSize, pagination.current])
 
@@ -613,7 +610,6 @@ export const AnimeDetail = () => {
 
   const rowSelection = {
     onChange: (_, selectedRows) => {
-      console.log('selectedRows: ', selectedRows)
       setSelectedRows(selectedRows)
     },
   }

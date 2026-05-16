@@ -957,7 +957,6 @@ export const EpisodeDetail = () => {
       if (confirmLoading) return
       setConfirmLoading(true)
       const values = await form.validateFields()
-      console.log(values, 'values')
 
       if (values.episodeId) {
         // 编辑模式
@@ -996,7 +995,6 @@ export const EpisodeDetail = () => {
       setManualImportMode('xml')
       messageApi.success('分集信息更新成功！')
     } catch (error) {
-      console.log(error)
       // 改进错误提示，处理对象类型的错误
       let errorMsg = '更新失败'
       if (error?.errorFields) {

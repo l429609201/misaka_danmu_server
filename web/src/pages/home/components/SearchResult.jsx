@@ -438,7 +438,6 @@ export const SearchResult = () => {
           setConfirmLoading(true)
           const results = await Promise.allSettled(
             selectList.map(item => {
-              console.log(item, '1')
               return importDanmu(
                 JSON.stringify({
                   provider: item.provider,
@@ -1949,7 +1948,6 @@ const SortableItem = ({
             key={item.title}
             value={item.title}
             onChange={e => {
-              console.log(e.target.value, 'e.target.value')
               handleEditTitle(e.target.value)
             }}
             onFocus={() => setIsFocused(true)}

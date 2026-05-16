@@ -447,7 +447,6 @@ export function TMDBConfig({ form }) {
     try {
       const response = await getTmdbConfig()
       const config = response.data || response
-      console.log('TMDB 配置:', config)
       form.setFieldsValue({
         tmdbApiKey: config.tmdbApiKey || '',
         tmdbApiBaseUrl: config.tmdbApiBaseUrl || 'https://api.themoviedb.org',

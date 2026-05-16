@@ -212,7 +212,6 @@ export const ImportTask = () => {
    * 处理中止任务操作
    */
   const handleStop = () => {
-    console.log('handleStop clicked', selectList)
 
     let forceStop = false
 
@@ -284,7 +283,6 @@ export const ImportTask = () => {
    * 处理删除任务操作
    */
   const handleDelete = () => {
-    console.log('handleDelete clicked', selectList)
 
     const hasStuckTasks = selectList.some(task =>
       task.status === '运行中' || task.status === '已暂停'

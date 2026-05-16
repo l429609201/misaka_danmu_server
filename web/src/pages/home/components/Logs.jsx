@@ -38,7 +38,6 @@ export const Logs = () => {
       },
       onopen: async response => {
         if (response.ok) {
-          console.log('SSE日志流已连接')
           setLoading(false)
         } else {
           throw new Error(`连接失败: ${response.status}`)
@@ -65,7 +64,6 @@ export const Logs = () => {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
-        console.log('SSE日志流已关闭')
       }
     }
   }, [])

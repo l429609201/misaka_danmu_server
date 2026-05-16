@@ -96,10 +96,7 @@ async def lifespan(app: FastAPI):
     """
     应用生命周期管理器。
     - `yield` 之前的部分在应用启动时执行。
-            try:
-                await app.state.metadata_manager.close_all()
-            except Exception as e:
-                logger.exception(f"关闭 MetadataManager 时发生错误: {e}")
+    - `yield` 之后的部分在应用关闭时执行。
     """
     # --- Startup Logic ---
     setup_logging()

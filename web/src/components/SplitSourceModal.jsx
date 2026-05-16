@@ -55,7 +55,6 @@ export const SplitSourceModal = ({ open, animeId, animeTitle, sources, onCancel,
     setSelectedEpisodeIds([]) // 切换数据源时清空已选分集
     try {
       const res = await getSourceEpisodesForSplit(sourceId)
-      console.log('分集列表响应:', res.data) // 调试日志
       setEpisodes(res.data?.episodes || [])
     } catch (error) {
       console.error('加载分集列表失败:', error)
@@ -215,11 +214,9 @@ export const SplitSourceModal = ({ open, animeId, animeTitle, sources, onCancel,
             placeholder="选择要拆分的数据源"
             value={selectedSourceId}
             onChange={(value) => {
-              console.log('选择的数据源ID:', value)
               setSelectedSourceId(value)
             }}
             options={sources?.map(s => {
-              console.log('数据源:', s)
               return {
                 value: s.sourceId,
                 label: `${s.providerName} - ${s.mediaId} (${s.episodeCount || 0}集)`

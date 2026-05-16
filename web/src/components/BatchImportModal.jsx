@@ -810,7 +810,6 @@ const SortableItem = ({
             key={item.title}
             value={item.title}
             onChange={e => {
-              console.log(e.target.value, 'e.target.value')
               handleEditTitle(e.target.value)
             }}
             onFocus={() => setIsFocused(true)}

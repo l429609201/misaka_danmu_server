@@ -49,9 +49,7 @@ export const useScroll = ({ canLoadMore, onLoadMore, setRoot }) => {
     }
 
     const target = targetRef.current
-    console.log('observeTarget调用:', { target, canLoadMore })
     if (!target || !canLoadMore) {
-      console.log('跳过观察:', { hasTarget: !!target, canLoadMore })
       return
     }
 
@@ -66,7 +64,6 @@ export const useScroll = ({ canLoadMore, onLoadMore, setRoot }) => {
             !isLoadingRef.current &&
             canLoadMore
           ) {
-            console.log('触发滚动加载更多')
             onLoadMoreRef.current()
           }
         })
@@ -91,7 +88,6 @@ export const useScroll = ({ canLoadMore, onLoadMore, setRoot }) => {
    */
   const setTargetRef = useCallback(
     target => {
-      console.log('设置滚动目标元素:', target, 'canLoadMore:', canLoadMore)
       targetRef.current = target
       // 设置目标元素后立即开始观察
       if (target) {

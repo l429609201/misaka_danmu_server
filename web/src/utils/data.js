@@ -5,7 +5,6 @@
  * @returns {{title: string, season: number|null, episode: number|null}}
  */
 export function parseSearchKeyword(keyword) {
-  console.log(keyword, 'keyword')
   if (!keyword) return { title: keyword, season: null, episode: null }
 
   keyword = keyword.trim()

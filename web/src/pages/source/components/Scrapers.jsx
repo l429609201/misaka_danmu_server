@@ -132,7 +132,7 @@ const SortableItem = ({
           <div {...attributes} {...listeners} style={{ cursor: 'grab' }}>
             <MyIcon icon="drag" size={24} />
           </div>
-          <div>{item.providerName}</div>
+          <div>{item.displayName || item.providerName}</div>
         </div>
         <div className={`flex ${isMobile ? 'ml-auto' : 'items-center justify-around'} gap-4`}>
           {item.providerName === 'bilibili' && (
@@ -494,7 +494,6 @@ export const Scrapers = () => {
       },
       onopen: async response => {
         if (response.ok) {
-          console.log('SSE 进度流已连接')
         } else {
           throw new Error(`连接失败: ${response.status}`)
         }
@@ -504,7 +503,6 @@ export const Scrapers = () => {
           const data = JSON.parse(event.data)
 
           if (data.type === 'progress') {
-            console.log('收到 progress 消息:', data.status, 'need_restart:', data.need_restart)
             // 更新进度
             // 当 total = 0 时（无需下载），显示 100%；否则按实际进度计算
             // 当 current = total 且 total > 0 时，也显示 100%（下载完成，可能在热加载中）
@@ -595,7 +593,6 @@ export const Scrapers = () => {
           }
 
           if (data.type === 'done') {
-            console.log('收到 done 消息:', data)
             taskCompleted = true
 
             // 检查是否需要重启
@@ -639,13 +636,11 @@ export const Scrapers = () => {
                     if (!response.ok) {
                       // 服务返回错误，认为已停止
                       serviceWentDown = true
-                      console.log('服务已停止（返回错误）')
                       break
                     }
                   } catch (e) {
                     // 服务不可用，认为已停止
                     serviceWentDown = true
-                    console.log('服务已停止（连接失败）')
                     break
                   }
 
@@ -654,7 +649,7 @@ export const Scrapers = () => {
 
                 // 如果服务一直没停止，可能重启很快，继续等待恢复
                 if (!serviceWentDown) {
-                  console.log('服务似乎没有停止，可能重启非常快，继续检测...')
+                  // 服务似乎没有停止，可能重启非常快，继续检测
                 }
 
                 // 第二阶段：等待服务恢复
@@ -698,7 +693,6 @@ export const Scrapers = () => {
                     }
                   } catch (e) {
                     // 服务还未恢复，继续等待
-                    console.log(`等待服务恢复... (${waitSeconds}秒)`)
                   }
 
                   // 等待 checkInterval 毫秒，同时更新秒数
@@ -788,12 +782,10 @@ export const Scrapers = () => {
         console.error('SSE 进度流错误:', error)
         // 如果任务已完成，忽略连接断开错误
         if (taskCompleted) {
-          console.log('任务已完成，忽略连接断开错误')
           throw new Error('任务已完成，停止重试')
         }
         if (error.name !== 'AbortError') {
           // SSE 断开时，尝试查询缓存的任务状态（可能是容器重启导致的断开）
-          console.log('SSE 断开，尝试查询缓存的任务状态...')
 
           // 使用 fetch 直接查询，避免 axios 拦截器的影响
           const token = Cookies.get('danmu_token')
@@ -813,8 +805,6 @@ export const Scrapers = () => {
 
                   if (data.need_restart) {
                     // 容器正在重启，不在这里刷新，让 checkServiceReady() 处理
-                    // 只更新提示信息，不触发刷新
-                    console.log('SSE 断开后查询到任务完成且需要重启，等待 checkServiceReady() 处理')
                     setDownloadProgress(prev => ({
                       ...prev,
                       progress: 100,
@@ -1456,7 +1446,7 @@ export const Scrapers = () => {
           <div className="w-full flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MyIcon icon="drag" size={24} />
-              <div>{activeItem.providerName}</div>
+              <div>{activeItem.displayName || activeItem.providerName}</div>
             </div>
             <div className="flex items-center justify-around gap-4">
               <MyIcon icon="setting" size={24} />
