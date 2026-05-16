@@ -18,8 +18,8 @@ const getColor = (percent) => {
 /** 单行进度条 */
 const BarRow = ({ label, percent, color }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%' }}>
-    <span style={{ fontSize: 9, color: '#888', width: 18, flexShrink: 0, fontWeight: 500 }}>{label}</span>
-    <div style={{ flex: 1, height: 4, background: 'rgba(0,0,0,0.04)', borderRadius: 2, overflow: 'hidden' }}>
+    <span style={{ fontSize: 9, width: 18, flexShrink: 0, fontWeight: 500 }} className="text-gray-400 dark:text-gray-500">{label}</span>
+    <div style={{ flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' }} className="bg-black/5 dark:bg-white/10">
       <div style={{ width: `${percent}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.5s ease' }} />
     </div>
     <span style={{ fontSize: 9, width: 26, textAlign: 'right', flexShrink: 0, color }}>{percent}%</span>
@@ -83,10 +83,10 @@ export const RateLimitIndicator = () => {
     <Tooltip title={tooltipContent} placement="bottom">
       <div
         onClick={() => navigate('/task?key=ratelimit')}
+        className="border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800"
         style={{
           display: 'inline-flex', flexDirection: 'column', gap: 3,
           padding: '4px 8px', borderRadius: 4, cursor: 'pointer',
-          border: '1px solid #d9d9d9', background: '#fafafa',
           minWidth: 90, position: 'relative', transition: 'box-shadow 0.2s',
         }}
         onMouseEnter={e => e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)'}
