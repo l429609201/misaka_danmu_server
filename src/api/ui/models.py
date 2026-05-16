@@ -204,6 +204,7 @@ class GlobalFilterSettings(BaseModel):
 class RateLimitProviderStatus(BaseModel):
     """流控提供商状态"""
     providerName: str
+    displayName: Optional[str] = None  # UI 友好显示名称
     requestCount: int
     quota: Union[int, str]  # Can be a number or "∞"
 

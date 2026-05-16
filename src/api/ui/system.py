@@ -591,8 +591,15 @@ async def get_rate_limit_status(
         except ValueError:
             pass
 
+        # 获取 display_name（从 scraper 类属性读取，优先显示友好名称）
+        display_name = None
+        scraper_class = scraper_manager.get_scraper_class(provider_name)
+        if scraper_class:
+            display_name = getattr(scraper_class, 'display_name', None)
+
         provider_items.append(RateLimitProviderStatus(
             providerName=provider_name,
+            displayName=display_name,
             requestCount=provider_state.requestCount if provider_state else 0,
             quota=quota
         ))

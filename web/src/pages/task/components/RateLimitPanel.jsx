@@ -179,6 +179,7 @@ export const RateLimitPanel = () => {
                     dataIndex: 'providerName',
                     key: 'providerName',
                     width: 100,
+                    render: (_, record) => record.displayName || record.providerName,
                   },
                   {
                     title: '总计/配额',
