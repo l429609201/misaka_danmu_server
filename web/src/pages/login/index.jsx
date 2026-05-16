@@ -44,9 +44,8 @@ export const Login = () => {
         messageApi.success('白名单自动登录成功！')
         navigate('/')
       })
-      .catch(err => {
+      .catch(() => {
         // 不在白名单中，显示登录表单
-        console.log('不在白名单中，需要手动登录')
         setCheckingWhitelist(false)
       })
   }, [])

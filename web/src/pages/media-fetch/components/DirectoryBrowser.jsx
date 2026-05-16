@@ -287,9 +287,7 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
   const loadDirectory = async (path) => {
     setLoading(true);
     try {
-      console.log('正在加载目录:', path);
       const token = Cookies.get('danmu_token');
-      console.log('当前token:', token);
 
       // 检查token是否存在
       if (!token) {
@@ -299,7 +297,6 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
 
       // 规范化路径，移除多余的前导斜杠
       const normalizedPath = path.replace(/^\/+/, '/');
-      console.log('规范化路径:', normalizedPath);
 
       const requestData = {
         id: normalizedPath || 'root',  // 添加id字段，使用路径或root
@@ -308,10 +305,8 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
         path: normalizedPath,
         name: ''
       };
-      console.log('发送请求数据:', requestData);
 
       const response = await browseDirectory(requestData, 'name');
-      console.log('浏览目录响应:', response);
 
       // 显示所有文件和文件夹
       const allFiles = response.data;
@@ -363,9 +358,7 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
       cancelText: '取消',
       onOk: async () => {
         try {
-          console.log('正在删除文件夹:', normalizedPath);
           const res = await deleteFolder(normalizedPath);
-          console.log('删除响应:', res);
           message.success(res.data.message || '文件夹删除成功');
           // 重新加载目录
           await loadDirectory(currentPath);
@@ -376,7 +369,6 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
         }
       },
       onCancel: () => {
-        console.log('用户取消了删除操作');
       },
     });
   };
@@ -404,7 +396,6 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
       // 目录选择模式（原有逻辑）
       const rawPath = selectedFile ? selectedFile.id : currentPath;
       const pathToSelect = rawPath.replace(/^\/+/, '/');
-      console.log('选择目录 - selectedFile:', selectedFile, 'pathToSelect:', pathToSelect);
       onSelect(pathToSelect);
       onClose();
     }
@@ -536,12 +527,10 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
           // 电脑端完全禁用默认action，手机端显示默认action
           disableDefaultFileActions={!isMobile}
           onFileAction={(data) => {
-            console.log('File action:', data.id, data.payload);
 
             // 处理鼠标点击选择文件
             if (data.id === 'mouse_click_file' && data.payload.clickType === 'single') {
               const clickedFile = data.payload.file;
-              console.log('点击文件:', clickedFile);
 
               // 如果点击的是已选择的文件，则取消选择；否则选择该文件
               if (selectedFile && selectedFile.id === clickedFile.id) {
@@ -553,7 +542,6 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
 
             // 处理空白区域点击
             if (data.id === 'change_selection') {
-              console.log('点击空白处');
               setSelectedFile(null); // 取消文件选择
             }
 
@@ -583,18 +571,13 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
             }
             // 处理删除文件夹
             else if (data.id === ChineseActions.DeleteFolder.id) {
-              console.log('Delete folder action triggered', data.payload);
               // 对于需要选择的action，使用 selectedFilesForAction
               const selectedFiles = data.state.selectedFilesForAction || [];
               const targetFile = selectedFiles.length > 0 ? selectedFiles[0] : null;
-              console.log('Selected files for delete:', selectedFiles);
-              console.log('Target file for delete:', targetFile);
 
               if (targetFile && FileHelper.isDirectory(targetFile)) {
-                console.log('Calling handleDeleteFolder with:', targetFile.id);
                 handleDeleteFolder(targetFile.id);
               } else {
-                console.log('No valid folder selected for deletion');
                 message.warning('请先选择一个文件夹');
               }
             }

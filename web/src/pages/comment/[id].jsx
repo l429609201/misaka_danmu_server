@@ -42,8 +42,6 @@ export const CommentDetail = () => {
     onLoadMore: handleLoadMore,
   })
 
-  console.log(!loadingMore, commentList.length, pagination.total)
-
   /**
    * 获取弹幕详情
    * @param {boolean} isLoadMore - 是否为加载更多操作

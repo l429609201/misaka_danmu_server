@@ -13,7 +13,7 @@
 
 ### ⚡ 性能优化
 
-- 无
+- **流控调整** —依据弹弹play平台接口调用量分析，流控量比较与其他人应用相对小， 因此翻倍流控量。
 
 ### 🎨 界面优化
 
@@ -24,3 +24,4 @@
 - **一键更新 Docker Compose 支持** — 一键更新自动检测容器是否由 Docker Compose 创建，优先使用 `docker compose up -d` 方式重建，保留 Compose 项目关联；非 Compose 容器走原有 docker run 兜底逻辑。
 - **统一 IP 解析函数** — `security.py` 中重复的 `_normalize_ip` 函数改为复用 `middleware.py` 的公共 `normalize_ip`，减少代码重复。
 - **修复文件名拼写** — `localstroage.js` 更正为 `localStorage.js`。
+- **清理前端调试日志** — 移除 15 个文件中遗留的 41 条 `console.log` 调试日志，避免生产环境信息泄露。

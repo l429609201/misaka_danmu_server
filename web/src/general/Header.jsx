@@ -190,7 +190,6 @@ export const Header = () => {
   const [versionModalOpen, setVersionModalOpen] = useState(false);
   const [realtimeLogOpen, setRealtimeLogOpen] = useState(false);
   const [historyLogOpen, setHistoryLogOpen] = useState(false);
-  console.log(location)
 
   const activeKey = useMemo(() => {
     if (location.pathname === '/') return RoutePaths.HOME

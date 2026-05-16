@@ -593,7 +593,6 @@ export const Test = () => {
 
       const config = testConfigs[activeTab]
       const res = await config.handler({ apiToken: values.apiToken, ...values })
-      console.log('测试结果:', res)
 
       setResult(res?.data || res)
     } catch (error) {

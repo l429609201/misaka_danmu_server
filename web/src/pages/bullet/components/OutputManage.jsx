@@ -128,7 +128,6 @@ export const OutputManage = () => {
         setLikesStyle(rawStyle.data?.value || 'heart_white')
       }
     } catch (e) {
-      console.log(e)
       messageApi.error('获取配置失败')
     } finally {
       setLoading(false)
