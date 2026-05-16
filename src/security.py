@@ -15,6 +15,7 @@ from passlib.context import CryptContext
 from src.db import crud, models, get_db_session
 from src.core import settings, get_now
 from src.db.crud import session as session_crud
+from src.api.middleware import normalize_ip as _normalize_ip
 
 logger = logging.getLogger(__name__)
 
@@ -81,16 +82,6 @@ def clear_whitelist_session_cache():
         logger.info(f"JWT 配置变更，清空白名单会话缓存（{len(_whitelist_session_cache)} 条）")
         _whitelist_session_cache.clear()
 
-
-def _normalize_ip(ip_str: str) -> str:
-    """标准化 IP 地址：将 IPv4-mapped IPv6（::ffff:x.x.x.x）还原为纯 IPv4"""
-    try:
-        addr = ipaddress.ip_address(ip_str)
-        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
-            return str(addr.ipv4_mapped)
-    except ValueError:
-        pass
-    return ip_str
 
 
 def _get_real_client_ip_sync(request: Request, trusted_proxies_str: str) -> str:
