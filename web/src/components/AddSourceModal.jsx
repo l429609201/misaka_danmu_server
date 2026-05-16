@@ -1,25 +1,40 @@
 import { Form, Input, Modal, Select, message } from 'antd'
-import { useState } from 'react'
-import { addSourceToAnime } from '../apis'
+import { useState, useEffect } from 'react'
+import { addSourceToAnime, getScrapers } from '../apis'
 import { useMessage } from '../MessageContext'
 import { MyIcon } from '@/components/MyIcon'
 import { generateRandomStr } from '../utils/data'
 
-// 通用数据源列表，将来可以从后端动态获取
-const PROVIDER_OPTIONS = [
-  { value: 'custom', label: '自定义 (Custom)' },
-  { value: 'bilibili', label: 'Bilibili' },
-  { value: 'tencent', label: '腾讯视频 (Tencent)' },
-  { value: 'iqiyi', label: '爱奇艺 (iQiyi)' },
-  { value: 'youku', label: '优酷 (Youku)' },
-  { value: 'mgtv', label: '芒果TV (MGTV)' },
-  { value: 'renren', label: '人人视频' },
-]
-
 export const AddSourceModal = ({ open, animeId, onCancel, onSuccess }) => {
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
+  const [providerOptions, setProviderOptions] = useState([
+    { value: 'custom', label: '自定义 (Custom)' },
+  ])
   const messageApi = useMessage()
+
+  // 弹窗打开时动态加载已注册的弹幕源列表
+  useEffect(() => {
+    if (!open) return
+    const loadProviders = async () => {
+      try {
+        const res = await getScrapers()
+        const scraperList = res.data || []
+        const dynamicOptions = scraperList.map(s => ({
+          value: s.providerName,
+          label: s.displayName || s.providerName,
+        }))
+        // "自定义" 始终在最前
+        setProviderOptions([
+          { value: 'custom', label: '自定义 (Custom)' },
+          ...dynamicOptions,
+        ])
+      } catch {
+        // 加载失败时保留默认的 custom 选项
+      }
+    }
+    loadProviders()
+  }, [open])
 
   const handleOk = async () => {
     if (!animeId) return
@@ -64,7 +79,7 @@ export const AddSourceModal = ({ open, animeId, onCancel, onSuccess }) => {
         >
           <Select
             showSearch
-            options={PROVIDER_OPTIONS}
+            options={providerOptions}
             placeholder="选择一个平台"
           />
         </Form.Item>
