@@ -32,7 +32,7 @@ export const TokenManage = () => {
           className="text-primary"
           rel="noopener noreferrer"
         >
-          dandanplayapi
+          弹弹play API
         </a>
         ，同时增加了使用访问令牌管理弹幕api,支持
         <a
