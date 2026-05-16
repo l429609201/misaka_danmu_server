@@ -132,7 +132,7 @@ const SortableItem = ({
           <div {...attributes} {...listeners} style={{ cursor: 'grab' }}>
             <MyIcon icon="drag" size={24} />
           </div>
-          <div>{item.providerName}</div>
+          <div>{item.displayName || item.providerName}</div>
         </div>
         <div className={`flex ${isMobile ? 'ml-auto' : 'items-center justify-around'} gap-4`}>
           {item.providerName === 'bilibili' && (
@@ -1456,7 +1456,7 @@ export const Scrapers = () => {
           <div className="w-full flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MyIcon icon="drag" size={24} />
-              <div>{activeItem.providerName}</div>
+              <div>{activeItem.displayName || activeItem.providerName}</div>
             </div>
             <div className="flex items-center justify-around gap-4">
               <MyIcon icon="setting" size={24} />

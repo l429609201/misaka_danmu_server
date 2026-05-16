@@ -464,6 +464,7 @@ class ScraperSettingWithConfig(ScraperSetting):
     isLoggable: bool
     logRawResponses: bool = False
     version: Optional[str] = None  # 弹幕源版本号
+    displayName: Optional[str] = None  # UI 友好显示名称，优先于 providerName
 
 class ProxySettingsResponse(BaseModel):
     proxyMode: str = "none"  # none, http_socks, accelerate

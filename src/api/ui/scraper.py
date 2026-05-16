@@ -45,6 +45,8 @@ async def get_scraper_settings(
 
         if scraper_class:
             full_setting_data['isLoggable'] = getattr(scraper_class, "is_loggable", False)
+            # 读取 display_name，优先使用弹幕源自定义的友好名称
+            full_setting_data['displayName'] = getattr(scraper_class, "display_name", None)
             # 关键修复：复制类属性以避免修改共享的可变字典
             base_fields = getattr(scraper_class, "configurable_fields", None)
             configurable_fields = base_fields.copy() if base_fields is not None else {}
