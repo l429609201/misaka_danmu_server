@@ -855,6 +855,17 @@ def _recreate_via_compose(
         f'echo "=== Docker Compose 模式: 更新服务 {compose_service} ==="; '
         f'{tag_cmd}'
         f'cd {shlex.quote(compose_working_dir)}; '
+        # 关键修复：在 compose up 之前显式拉取最新镜像
+        # 即使主进程已经 docker pull 过，compose 内部仍可能使用旧的镜像引用
+        f'echo "=== 步骤 1/4: 拉取最新镜像 ==="; '
+        f'docker compose{compose_file_args} pull {shlex.quote(compose_service)} || true; '
+        # 显式销毁旧容器，确保彻底替换（避免 compose up 跳过重建）
+        f'echo "=== 步骤 2/4: 停止旧容器 ==="; '
+        f'docker compose{compose_file_args} stop {shlex.quote(compose_service)} || true; '
+        f'echo "=== 步骤 3/4: 删除旧容器 ==="; '
+        f'docker compose{compose_file_args} rm -f {shlex.quote(compose_service)} || true; '
+        # 启动新容器（用最新镜像）
+        f'echo "=== 步骤 4/4: 启动新容器 ==="; '
         f'docker compose{compose_file_args} up -d --force-recreate {shlex.quote(compose_service)}; '
         f'echo "=== Compose 重建完成 ==="'
     )
