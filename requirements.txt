@@ -1,8 +1,8 @@
 fastapi
 uvicorn[standard]
-aiomysql
-asyncpg
-SQLAlchemy[asyncio]
+aiomysql>=0.2.0
+asyncpg>=0.29.0
+SQLAlchemy[asyncio]>=2.0.32
 greenlet
 apscheduler
 pydantic-settings
