@@ -383,6 +383,7 @@ export const Scrapers = () => {
         branches: res.data?.branches || [],
         tags: res.data?.tags || [],
         minServerVersion: res.data?.minServerVersion || null,
+        appVersion: res.data?.appVersion || null,
       })
     } catch (error) {
       console.error('加载仓库分支/标签失败:', error)
@@ -1731,21 +1732,20 @@ export const Scrapers = () => {
                     {repoRefs.tags.length > 0 && (
                       <Select.OptGroup label="版本标签">
                         {repoRefs.tags.map(t => {
-                          // 比较当前服务器版本与远程 package.json 中的 min_fetchable_version
-                          // 如果当前服务器版本低于最低可拉取版本，标记所有旧 tag 为不可用
-                          // 注意：min_fetchable_version 是对服务器版本的要求，不能拿 tag 版本号来比
+                          // 每个 tag 现在是 {name, minServerVersion} 对象
+                          const tagName = typeof t === 'string' ? t : t.name
+                          const tagMinVer = typeof t === 'string' ? null : t.minServerVersion
+                          // 用当前服务器版本和该 tag 要求的最低服务器版本比较
                           const parseVer = (v) => (v || '').replace(/^v/i, '').split('.').map(Number)
-                          const minVer = parseVer(versionInfo.minFetchableVersion)
-                          // 获取当前已安装的本地版本，低于本地版本的 tag 标记为"旧版本"
-                          const localVer = parseVer(versionInfo.localVersion)
-                          const tagVer = parseVer(t)
-                          const isOlderThanLocal = localVer.length >= 3 && tagVer.length >= 3 &&
-                            (tagVer[0] < localVer[0] ||
-                              (tagVer[0] === localVer[0] && tagVer[1] < localVer[1]) ||
-                              (tagVer[0] === localVer[0] && tagVer[1] === localVer[1] && tagVer[2] < localVer[2]))
+                          const appVer = parseVer(repoRefs.appVersion)
+                          const minVer = parseVer(tagMinVer)
+                          const isDisabled = tagMinVer && appVer.length >= 3 && minVer.length >= 3 &&
+                            (appVer[0] < minVer[0] ||
+                              (appVer[0] === minVer[0] && appVer[1] < minVer[1]) ||
+                              (appVer[0] === minVer[0] && appVer[1] === minVer[1] && appVer[2] < minVer[2]))
                           return (
-                            <Select.Option key={`tag-${t}`} value={t} disabled={isOlderThanLocal}>
-                              {t}{isOlderThanLocal ? ' (低于当前版本)' : ''}
+                            <Select.Option key={`tag-${tagName}`} value={tagName} disabled={isDisabled}>
+                              {tagName}{isDisabled ? ` (需要服务器 ≥${tagMinVer})` : ''}
                             </Select.Option>
                           )
                         })}
