@@ -60,7 +60,7 @@ def _get_db_url(include_db_name: bool = True, for_server: bool = False) -> URL:
     db_type = get_db_type()
     
     if db_type == "mysql":
-        drivername = "mysql+aiomysql"
+        drivername = "mysql+asyncmy"
         query = {"charset": "utf8mb4"}
         database = settings.database.name if include_db_name else None
     elif db_type == "postgresql":

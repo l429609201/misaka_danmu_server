@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-aiomysql>=0.2.0
+asyncmy>=0.2.9
 asyncpg>=0.29.0
 SQLAlchemy[asyncio]>=2.0.32
 greenlet
