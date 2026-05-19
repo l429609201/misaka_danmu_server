@@ -569,6 +569,10 @@ export const ImportTask = () => {
             <Progress
               percent={item.progress}
               status={item.status.includes('失败') && 'exception'}
+              strokeColor={{
+                '0%': '#108ee9',
+                '100%': '#87d068',
+              }}
               strokeWidth={8}
               showInfo={true}
               size="small"
@@ -964,6 +968,10 @@ export const ImportTask = () => {
                         <Progress
                           percent={item.progress}
                           status={item.status.includes('失败') && 'exception'}
+                          strokeColor={{
+                            '0%': '#108ee9',
+                            '100%': '#87d068',
+                          }}
                           strokeWidth={10}
                           showInfo={true}
                         />
