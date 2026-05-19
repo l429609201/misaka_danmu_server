@@ -818,6 +818,7 @@ export const ImportTask = () => {
               />
             ) : (
               <List
+                className="task-manager-list"
                 itemLayout="vertical"
                 size="small"
                 dataSource={taskList}

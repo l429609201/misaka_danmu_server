@@ -785,3 +785,37 @@ html[data-page-style="liquid-glass"].dark .ant-table-thead > tr > th {
   background: rgba(30, 41, 59, 0.5) !important;
   backdrop-filter: blur(10px);
 }
+
+/* 任务管理器列表 — 液态玻璃下每项独立玻璃卡片 */
+html[data-page-style="liquid-glass"] .task-manager-list .ant-list-item {
+  background: rgba(255, 255, 255, 0.45) !important;
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.55) !important;
+  border-radius: 16px !important;
+  margin-bottom: 12px !important;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition: all 0.2s ease;
+}
+html[data-page-style="liquid-glass"] .task-manager-list .ant-list-item:hover {
+  background: rgba(255, 255, 255, 0.6) !important;
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+html[data-page-style="liquid-glass"].dark .task-manager-list .ant-list-item {
+  background: rgba(30, 41, 59, 0.55) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+html[data-page-style="liquid-glass"].dark .task-manager-list .ant-list-item:hover {
+  background: rgba(30, 41, 59, 0.7) !important;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
