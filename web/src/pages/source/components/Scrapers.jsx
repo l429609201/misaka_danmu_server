@@ -1731,18 +1731,21 @@ export const Scrapers = () => {
                     {repoRefs.tags.length > 0 && (
                       <Select.OptGroup label="版本标签">
                         {repoRefs.tags.map(t => {
-                          // 比较 tag 版本与远程 package.json 中的 min_fetchable_version
-                          // 低于该最低可拉取版本的标记为不可用并禁用
+                          // 比较当前服务器版本与远程 package.json 中的 min_fetchable_version
+                          // 如果当前服务器版本低于最低可拉取版本，标记所有旧 tag 为不可用
+                          // 注意：min_fetchable_version 是对服务器版本的要求，不能拿 tag 版本号来比
                           const parseVer = (v) => (v || '').replace(/^v/i, '').split('.').map(Number)
-                          const tagVer = parseVer(t)
                           const minVer = parseVer(versionInfo.minFetchableVersion)
-                          const isDisabled = minVer.length >= 3 && tagVer.length >= 3 &&
-                            (tagVer[0] < minVer[0] ||
-                              (tagVer[0] === minVer[0] && tagVer[1] < minVer[1]) ||
-                              (tagVer[0] === minVer[0] && tagVer[1] === minVer[1] && tagVer[2] < minVer[2]))
+                          // 获取当前已安装的本地版本，低于本地版本的 tag 标记为"旧版本"
+                          const localVer = parseVer(versionInfo.localVersion)
+                          const tagVer = parseVer(t)
+                          const isOlderThanLocal = localVer.length >= 3 && tagVer.length >= 3 &&
+                            (tagVer[0] < localVer[0] ||
+                              (tagVer[0] === localVer[0] && tagVer[1] < localVer[1]) ||
+                              (tagVer[0] === localVer[0] && tagVer[1] === localVer[1] && tagVer[2] < localVer[2]))
                           return (
-                            <Select.Option key={`tag-${t}`} value={t} disabled={isDisabled}>
-                              {t}{isDisabled ? ' (不兼容当前服务器)' : ''}
+                            <Select.Option key={`tag-${t}`} value={t} disabled={isOlderThanLocal}>
+                              {t}{isOlderThanLocal ? ' (低于当前版本)' : ''}
                             </Select.Option>
                           )
                         })}
