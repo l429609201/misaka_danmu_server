@@ -169,7 +169,7 @@ async def full_refresh_task(sourceId: int, session: AsyncSession, scraper_manage
         await progress_callback(98, "正在生成刷新报告...")
 
         episode_range_str = generate_episode_range_string(successful_indices)
-        final_message = f"全量刷新完成，处理了 {total_episodes} 个分集，新增 {total_comments_added} 条弹幕。"
+        final_message = f"全量刷新完成，处理了 {total_episodes} 个分集，共获取 {total_comments_added} 条弹幕。" if total_comments_added > 0 else f"全量刷新完成，处理了 {total_episodes} 个分集，暂无新弹幕。"
 
         if successful_indices:
             final_message += f"\n成功刷新: {len(successful_indices)} 集"
@@ -325,7 +325,10 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
         )
 
         await session.commit()
-        raise TaskSuccess(f"刷新完成，新增 {added_count} 条弹幕。")
+        if added_count > 0:
+            raise TaskSuccess(f"刷新完成，新增 {added_count} 条弹幕。")
+        else:
+            raise TaskSuccess("刷新完成，该分集暂无新弹幕。")
     except TaskSuccess:
         # 任务成功完成，直接重新抛出，由 TaskManager 处理
         raise
@@ -500,7 +503,8 @@ async def refresh_bulk_episodes_task(episodeIds: List[int], session: AsyncSessio
         success_ranges = format_episode_ranges(success_episodes)
         failed_ranges = format_episode_ranges(failed_episodes)
 
-        message = f"批量刷新完成，共处理 {total} 个，成功 {success_count} 个 {success_ranges}，失败 {failed_count} 个 {failed_ranges}，新增 {total_added_comments} 条弹幕。"
+        comment_part = f"共获取 {total_added_comments} 条弹幕" if total_added_comments > 0 else "暂无新弹幕"
+        message = f"批量刷新完成，共处理 {total} 个，成功 {success_count} 个 {success_ranges}，失败 {failed_count} 个 {failed_ranges}，{comment_part}。"
         raise TaskSuccess(message)
     except TaskSuccess:
         raise
