@@ -126,12 +126,27 @@ class WeChatChannel(BaseNotificationChannel):
         return self._CAPABILITIES
 
     def _api_base(self) -> str:
-        """返回企业微信 API Base URL（支持通用出网代理路由 /out/）"""
+        """返回企业微信 API Base URL，智能识别代理格式：
+        - 留空 → 直连官方 https://qyapi.weixin.qq.com/cgi-bin
+        - 包含 /cgi-bin → 用户给了完整路径，直接用
+        - 以 /out 结尾 → MoviePilot 通用出网代理格式
+        - 其他 → 简单反代（Flask/Nginx 直接转发 /cgi-bin/*）
+        """
         proxy = self.config.get("wecom_proxy", "").strip().rstrip("/")
         if not proxy:
             return WECOM_API_BASE
-        # 通用出网代理格式：{vps_url}/out/qyapi.weixin.qq.com/cgi-bin
-        return f"{proxy}/out/qyapi.weixin.qq.com/cgi-bin"
+
+        # 已包含 /cgi-bin → 完整路径，直接用
+        if "/cgi-bin" in proxy:
+            return proxy if proxy.endswith("/cgi-bin") else proxy.split("/cgi-bin")[0] + "/cgi-bin"
+
+        # 以 /out 结尾 → MoviePilot 通用出网代理格式
+        if proxy.endswith("/out"):
+            return f"{proxy}/qyapi.weixin.qq.com/cgi-bin"
+
+        # 默认：简单反代，直接拼 /cgi-bin
+        # 兼容 Flask/Nginx 等直接转发 /cgi-bin/* 到企业微信的代理
+        return f"{proxy}/cgi-bin"
 
     def _relay_headers(self) -> dict:
         """当使用 VPS 代理时注入认证 Header，防止代理被滥用"""
@@ -568,8 +583,8 @@ class WeChatChannel(BaseNotificationChannel):
                 "key": "wecom_proxy",
                 "label": "API 反向代理地址",
                 "type": "string",
-                "description": "企业微信 API 反向代理地址（对齐 MP 的 WECHAT_PROXY 设计）。留空则直连官方地址 代理搭建：https://t.me/areyouok32/90 ",
-                "placeholder": "https://qyapi.weixin.qq.com",
+                "description": "企业微信 API 反向代理地址。支持多种格式：① 简单反代（如 http://192.168.1.5:9034，自动拼接 /cgi-bin）② MP 通用出网代理（如 https://vps.com/out）③ 完整路径（如 http://host:port/cgi-bin）。留空则直连官方地址。",
+                "placeholder": "http://192.168.1.5:9034",
             },
             {
                 "key": "tunnel_enabled",
