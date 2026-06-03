@@ -31,8 +31,10 @@ import {
 } from '@ant-design/icons'
 import copy from 'copy-to-clipboard'
 import { useMessage } from '../../../MessageContext'
+import { useTranslation } from 'react-i18next'
 
 export const Webhook = () => {
+  const { t } = useTranslation()
   const [isLoading, setLoading] = useState(true)
   const [isSaving, setSaving] = useState(false)
   const [apiKey, setApiKey] = useState('')
@@ -74,7 +76,7 @@ export const Webhook = () => {
       // 使用 setFieldsValue 将从后端获取的设置填充到表单中
       form.setFieldsValue(settingsRes.data)
     } catch (error) {
-      messageApi.error('加载Webhook配置失败')
+      messageApi.error(t('webhook.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -84,9 +86,9 @@ export const Webhook = () => {
     try {
       const res = await refreshWebhookApikey()
       setApiKey(res.data.value)
-      messageApi.success('API Key 已刷新')
+      messageApi.success(t('webhook.apiKeyRefreshed'))
     } catch (error) {
-      messageApi.error('刷新API Key失败')
+      messageApi.error(t('webhook.apiKeyRefreshFailed'))
     }
   }
 
@@ -109,9 +111,9 @@ export const Webhook = () => {
         webhookDeleteSyncEnabled: values.webhookDeleteSyncEnabled ?? false,
       }
       await setWebhookSettings(payload)
-      messageApi.success('保存成功')
+      messageApi.success(t('webhook.saveSuccess'))
     } catch (error) {
-      messageApi.error('保存失败')
+      messageApi.error(t('webhook.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -123,7 +125,7 @@ export const Webhook = () => {
 
   const handleAiGenerate = async () => {
     if (!aiRegexDesc.trim()) {
-      messageApi.warning('请输入描述')
+      messageApi.warning(t('webhook.inputDescription'))
       return
     }
     setAiRegexLoading(true)
@@ -134,10 +136,10 @@ export const Webhook = () => {
       if (res.data?.regex) {
         setAiRegexResult(res.data.regex)
       } else {
-        messageApi.error('AI 未能生成有效的正则表达式')
+        messageApi.error(t('webhook.aiNoValidRegex'))
       }
     } catch (e) {
-      messageApi.error(e?.response?.data?.detail || 'AI 正则生成失败')
+      messageApi.error(e?.response?.data?.detail || t('webhook.aiRegexGenFailed'))
     } finally {
       setAiRegexLoading(false)
     }
@@ -149,19 +151,17 @@ export const Webhook = () => {
     setAiRegexModalOpen(false)
     setAiRegexDesc('')
     setAiRegexResult('')
-    messageApi.success('已应用 AI 生成的规则')
+    messageApi.success(t('webhook.aiRuleApplied'))
   }
 
   return (
     <div className="my-6">
-      <Card loading={isLoading} title="Webhook 配置">
+      <Card loading={isLoading} title={t('webhook.title')}>
         <div>
           <div className="mb-3">
-            Webhook
-            用于接收来自外部服务的通知，以实现自动化导入。请将下方对应服务的 URL
-            填入其 Webhook 通知设置中。
+            {t('webhook.desc')}
           </div>
-          <div className="mb-4">{`URL 格式为：http(s)://域名(ip):端口(port)/api/webhook/{服务名}?api_key={你的API Key}`}</div>
+          <div className="mb-4">{t('webhook.urlFormat')}</div>
           <div className="flex items-center justify-start gap-3 mb-4">
             <div className="shrink-0 w-auto md:w-[120px]">API Key:</div>
             <div className="w-full">
@@ -179,12 +179,12 @@ export const Webhook = () => {
         <Divider />
         <Form form={form} layout="vertical" onFinish={onSave}>
           <Form.Item
-            label={<div className="text-base font-medium">Webhook 控制</div>}
+            label={<div className="text-base font-medium">{t('webhook.webhookControl')}</div>}
           >
             <Row gutter={[16, 12]} align={'stretch'}>
               <Col md={5} xs={12}>
                 <div className="h-full flex items-center gap-2">
-                  <span>启用 Webhook</span>
+                  <span>{t('webhook.enableWebhook')}</span>
                   <Form.Item
                     name="webhookEnabled"
                     valuePropName="checked"
@@ -196,9 +196,9 @@ export const Webhook = () => {
               </Col>
               <Col md={5} xs={12}>
                 <div className="h-full flex items-center gap-2">
-                  <span>启用延时导入</span>
+                  <span>{t('webhook.enableDelayImport')}</span>
                   <Tooltip
-                    title="延时导入需要配合定时任务功能使用。启用后，Webhook接收到的通知会先存储到数据库中，等待定时任务在指定时间后执行导入。这样可以避免媒体文件还未完全扫描完成就开始导入弹幕的问题。请确保在【任务管理-定时任务】中启用了Webhook任务处理。"
+                    title={t('webhook.delayImportTip')}
                     placement="top"
                   >
                     <InfoCircleOutlined />
@@ -214,7 +214,7 @@ export const Webhook = () => {
               </Col>
               <Col md={6} xs={12}>
                 <div className="h-full flex items-center gap-2">
-                  <span>自定义延时时间 (小时)</span>
+                  <span>{t('webhook.customDelayHours')}</span>
                   <Form.Item name="webhookDelayedImportHours" noStyle>
                     <InputNumber
                       min={1}
@@ -225,7 +225,7 @@ export const Webhook = () => {
               </Col>
               <Col md={6} xs={12}>
                 <div className="h-full flex items-center gap-2">
-                  <span>记录原始请求</span>
+                  <span>{t('webhook.recordRawRequest')}</span>
                   <Form.Item
                     name="webhookLogRawRequest"
                     valuePropName="checked"
@@ -237,11 +237,11 @@ export const Webhook = () => {
               </Col>
             </Row>
             <div className="text-gray-400 text-xs mt-2">
-              全局启用或禁用Webhook，并可选择延时导入以等待媒体文件被完整扫描。
+              {t('webhook.webhookControlDesc')}
             </div>
           </Form.Item>
 
-          <Form.Item label="过滤规则 (正则表达式)">
+          <Form.Item label={t('webhook.filterRule')}>
             <Form.Item name="webhookFilterRegex" noStyle>
               <Input
                 addonBefore={
@@ -250,38 +250,38 @@ export const Webhook = () => {
                       defaultValue="blacklist"
                       style={{ width: 100 }}
                       options={[
-                        { value: 'blacklist', label: '黑名单' },
-                        { value: 'whitelist', label: '白名单' },
+                        { value: 'blacklist', label: t('webhook.blacklist') },
+                        { value: 'whitelist', label: t('webhook.whitelist') },
                       ]}
                     />
                   </Form.Item>
                 }
                 addonAfter={
-                  <Tooltip title="AI 生成正则">
+                  <Tooltip title={t('webhook.aiGenRegex')}>
                     <RobotOutlined
                       style={{ cursor: 'pointer' }}
                       onClick={() => setAiRegexModalOpen(true)}
                     />
                   </Tooltip>
                 }
-                placeholder="留空则不过滤"
+                placeholder={t('webhook.filterPlaceholder')}
               />
             </Form.Item>
             <div className="text-gray-400 text-xs mt-1">
-              黑名单：匹配规则的标题将被忽略。白名单：只有匹配规则的标题才会被处理。
+              {t('webhook.filterDesc')}
             </div>
           </Form.Item>
 
-          <Form.Item name="webhookCustomDomain" label="自定义域名 (可选)">
-            <Input placeholder="例如：https://your.domain.com" />
+          <Form.Item name="webhookCustomDomain" label={t('webhook.customDomain')}>
+            <Input placeholder={t('webhook.customDomainPlaceholder')} />
           </Form.Item>
 
           <Form.Item
             label={
               <div className="flex items-center gap-2">
-                <span className="text-base font-medium">启用顺延机制</span>
+                <span className="text-base font-medium">{t('webhook.enableFallback')}</span>
                 <Tooltip
-                  title="当选中的源没有有效分集时（如只有预告片被过滤掉），自动尝试下一个候选源。关闭此选项时，将使用传统的单源选择模式。"
+                  title={t('webhook.enableFallbackTip')}
                   placement="top"
                 >
                   <InfoCircleOutlined />
@@ -298,13 +298,13 @@ export const Webhook = () => {
                 <Switch disabled={!webhookEnabled} />
               </Form.Item>
               <span className="text-gray-400 text-sm">
-                启用后，当首选源无法提供有效分集时，会自动尝试其他候选源
+                {t('webhook.fallbackDesc')}
               </span>
             </div>
           </Form.Item>
 
           <Form.Item
-            label="删除联动"
+            label={t('webhook.deleteSync')}
             className="mb-3"
           >
             <div className="flex items-center gap-2">
@@ -316,14 +316,14 @@ export const Webhook = () => {
                 <Switch disabled={!webhookEnabled} />
               </Form.Item>
               <span className="text-gray-400 text-sm">
-                启用后，当 Emby/Jellyfin 删除媒体时，自动联动删除弹幕库中通过 Webhook 入库的对应记录
+                {t('webhook.deleteSyncDesc')}
               </span>
             </div>
           </Form.Item>
 
           {webhookEnabled &&
             services?.map(it => (
-              <Form.Item key={it} label={`${it} Webhook地址`}>
+              <Form.Item key={it} label={t('webhook.webhookAddress', { service: it })}>
                 <Space.Compact style={{ width: '100%' }}>
                   <Input
                     readOnly
@@ -336,7 +336,7 @@ export const Webhook = () => {
                       copy(
                         `${domain || window.location.origin}/api/webhook/${it}?api_key=${apiKey}`
                       )
-                      messageApi.success('复制成功')
+                      messageApi.success(t('webhook.copySuccess'))
                     }}
                   />
                 </Space.Compact>
@@ -345,14 +345,14 @@ export const Webhook = () => {
 
           <Form.Item>
             <Button type="primary" htmlType="submit" loading={isSaving}>
-              保存设置
+              {t('webhook.saveSettings')}
             </Button>
           </Form.Item>
         </Form>
       </Card>
 
       <Modal
-        title={<><RobotOutlined /> AI 正则生成助手</>}
+        title={<><RobotOutlined /> {t('webhook.aiRegexAssistant')}</>}
         open={aiRegexModalOpen}
         onCancel={() => { setAiRegexModalOpen(false); setAiRegexResult('') }}
         footer={null}
@@ -361,12 +361,12 @@ export const Webhook = () => {
         <div className="space-y-4">
           <div>
             <div className="text-sm text-gray-600 mb-2">
-              用自然语言描述你想过滤的内容，AI 会帮你生成对应的正则表达式。
+              {t('webhook.aiRegexDesc')}
             </div>
             <Input.TextArea
               value={aiRegexDesc}
               onChange={e => setAiRegexDesc(e.target.value)}
-              placeholder="例如：过滤掉包含 纪录片、花絮、特典 的标题"
+              placeholder={t('webhook.aiRegexPlaceholder')}
               rows={3}
               onPressEnter={e => { if (!e.shiftKey) { e.preventDefault(); handleAiGenerate() } }}
             />
@@ -378,20 +378,20 @@ export const Webhook = () => {
               loading={aiRegexLoading}
               onClick={handleAiGenerate}
             >
-              生成
+              {t('webhook.generate')}
             </Button>
           </div>
           {aiRegexResult && (
             <div>
-              <div className="text-sm text-gray-600 mb-1">生成结果：</div>
+              <div className="text-sm text-gray-600 mb-1">{t('webhook.generateResult')}</div>
               <div className="bg-gray-50 border rounded p-3 font-mono text-sm break-all">
                 {aiRegexResult}
               </div>
               <div className="flex justify-end mt-3">
                 <Space>
-                  <Button onClick={() => setAiRegexResult('')}>清除</Button>
+                  <Button onClick={() => setAiRegexResult('')}>{t('webhook.clear')}</Button>
                   <Button type="primary" onClick={handleApplyAiRegex}>
-                    应用规则
+                    {t('webhook.applyRule')}
                   </Button>
                 </Space>
               </div>

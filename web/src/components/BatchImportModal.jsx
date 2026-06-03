@@ -11,6 +11,7 @@ import {
   Upload,
 } from 'antd'
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { batchManualImport, validateImportUrl } from '../apis'
 import {
   CloseCircleOutlined,
@@ -42,6 +43,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 
 export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
+  const { t } = useTranslation()
   const messageApi = useMessage()
   const [loading, setLoading] = useState(false)
   // 导入模式: 'xml' | 'url'
@@ -92,7 +94,7 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
       .filter(line => line.length > 0)
 
     if (urls.length === 0) {
-      messageApi.warning('请输入至少一个URL')
+      messageApi.warning(t('batchImport.inputAtLeastOneUrl'))
       return
     }
 
@@ -125,7 +127,7 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
                 return {
                   ...initialResults[index],
                   status: 'error',
-                  errorMessage: `来源不匹配 (${res.data.provider})`,
+                  errorMessage: t('batchImport.sourceMismatch', { provider: res.data.provider }),
                   provider: res.data.provider,
                 }
               }
@@ -141,14 +143,14 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
             return {
               ...initialResults[index],
               status: 'error',
-              errorMessage: res.data?.errorMessage || '解析失败',
+              errorMessage: res.data?.errorMessage || t('batchImport.parseFailed'),
             }
           }
         } catch (error) {
           return {
             ...initialResults[index],
             status: 'error',
-            errorMessage: error.detail || error.message || '解析失败',
+            errorMessage: error.detail || error.message || t('batchImport.parseFailed'),
           }
         }
       })
@@ -160,9 +162,9 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
     const successCount = results.filter(r => r.status === 'success').length
     const errorCount = results.filter(r => r.status === 'error').length
     if (successCount > 0) {
-      messageApi.success(`解析完成：${successCount} 个成功，${errorCount} 个失败`)
+      messageApi.success(t('batchImport.parseDone', { success: successCount, error: errorCount }))
     } else {
-      messageApi.error('所有URL解析失败')
+      messageApi.error(t('batchImport.allUrlFailed'))
     }
   }
 
@@ -170,7 +172,7 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
   const handleBatchUrlImport = async () => {
     const selectedItems = urlParseResults.filter(item => item.selected && item.status === 'success')
     if (selectedItems.length === 0) {
-      messageApi.warning('请选择至少一个有效的URL')
+      messageApi.warning(t('batchImport.selectAtLeastOneUrl'))
       return
     }
 
@@ -188,13 +190,13 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
       })
 
       if (res.data) {
-        messageApi.success(res.data.message || `成功导入 ${selectedItems.length} 个分集`)
+        messageApi.success(res.data.message || t('batchImport.importSuccess', { count: selectedItems.length }))
         onSuccess(res.data)
         clearUrlState()
       }
     } catch (error) {
       console.error('批量URL导入失败:', error)
-      messageApi.error(error.detail || error.message || '批量URL导入失败')
+      messageApi.error(error.detail || error.message || t('batchImport.urlImportFailed'))
     } finally {
       setLoading(false)
     }
@@ -218,7 +220,7 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
     if (!sourceInfo?.sourceId) return
     try {
       if (xmlDataList.length === 0) {
-        messageApi.warn('未解析到任何有效条目！')
+        messageApi.warn(t('batchImport.noValidItems'))
         return
       }
       setLoading(true)
@@ -239,7 +241,7 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
     } catch (error) {
       console.error('批量导入失败:', error)
       messageApi.error(
-        error.detail || error.message || '批量导入失败，请检查内容格式和日志'
+        error.detail || error.message || t('batchImport.batchImportFailed')
       )
     } finally {
       setLoading(false)
@@ -483,11 +485,11 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
       <div className="p-4">
         <div className="mb-4">
           <div className="text-gray-500 dark:text-gray-400 mb-2">
-            输入多个视频URL（每行一个），系统将批量解析并导入
-            {!isCustomSource && <span className="text-orange-500 ml-1">（仅支持 {sourceInfo?.providerName} 平台的链接）</span>}
+            {t('batchImport.urlImportDesc')}
+            {!isCustomSource && <span className="text-orange-500 ml-1">{t('batchImport.onlySupportProvider', { provider: sourceInfo?.providerName })}</span>}
           </div>
           <Input.TextArea
-            placeholder={`请输入视频URL，每行一个\n例如：\nhttps://www.bilibili.com/video/BV1xxx\nhttps://www.bilibili.com/video/BV2xxx`}
+            placeholder={t('batchImport.urlPlaceholder')}
             value={urlListInput}
             onChange={e => {
               setUrlListInput(e.target.value)
@@ -497,7 +499,7 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
           />
           <div className="flex items-center justify-between mt-4">
             <div className="flex items-center gap-2">
-              <span className="text-gray-500 dark:text-gray-400 text-sm">起始集数：</span>
+              <span className="text-gray-500 dark:text-gray-400 text-sm">{t('batchImport.startEpisode')}</span>
               <InputNumber
                 value={startEpisodeIndex}
                 onChange={setStartEpisodeIndex}
@@ -512,7 +514,7 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
               loading={urlValidating}
               disabled={!urlListInput.trim()}
             >
-              批量解析URL
+              {t('batchImport.batchParseUrl')}
             </Button>
           </div>
         </div>
@@ -528,14 +530,14 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
                   onChange={e => handleSelectAll(e.target.checked)}
                   disabled={successCount === 0}
                 >
-                  全选
+                  {t('batchImport.selectAll')}
                 </Checkbox>
                 <span className="text-gray-500 dark:text-gray-400 text-sm">
-                  已选择 {selectedCount}/{successCount} 个有效项
+                  {t('batchImport.selectedValid', { selected: selectedCount, success: successCount })}
                 </span>
               </div>
               <Button size="small" onClick={handleApplyEpisodeIndex}>
-                一键应用集数
+                {t('batchImport.applyEpisodeIndex')}
               </Button>
             </div>
             <div className="max-h-64 overflow-y-auto">
@@ -570,7 +572,7 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
                         <Input
                           value={item.title}
                           onChange={e => updateParseResult(item.id, { title: e.target.value })}
-                          placeholder="分集标题"
+                          placeholder={t('batchImport.episodeTitlePlaceholder')}
                           size="small"
                           className="mb-1"
                         />
@@ -605,13 +607,13 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
 
   return (
     <Modal
-      title={`批量导入 - ${sourceInfo?.animeName} (${sourceInfo?.providerName})`}
+      title={t('batchImport.title', { name: sourceInfo?.animeName, provider: sourceInfo?.providerName })}
       open={open}
       onOk={handleOk}
       onCancel={onCancel}
       confirmLoading={loading}
       destroyOnHidden
-      okText={importMode === 'url' ? `导入选中 (${selectedValidCount})` : '确定'}
+      okText={importMode === 'url' ? t('batchImport.importSelected', { count: selectedValidCount }) : t('common.confirm')}
       okButtonProps={{
         disabled: importMode === 'url' && selectedValidCount === 0
       }}
@@ -631,8 +633,8 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
             }
           }}
           options={[
-            { label: <span><UploadOutlined className="mr-1" />XML文件导入</span>, value: 'xml' },
-            { label: <span><LinkOutlined className="mr-1" />URL批量导入</span>, value: 'url' },
+            { label: <span><UploadOutlined className="mr-1" />{t('batchImport.xmlFileImport')}</span>, value: 'xml' },
+            { label: <span><LinkOutlined className="mr-1" />{t('batchImport.urlBatchImport')}</span>, value: 'url' },
           ]}
           block
         />
@@ -655,14 +657,14 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
                     loading={uploading}
                     disabled={uploading}
                   >
-                    选择文件
+                    {t('batchImport.selectFile')}
                   </Button>
-                  <div className="ml-2 dark:text-gray-300">或直接拖拽文件到此处</div>
+                  <div className="ml-2 dark:text-gray-300">{t('batchImport.dragFileHere')}</div>
                 </div>
                 <div className="mt-2 text-gray-500 dark:text-gray-400">
                   {isCustomSource
-                    ? '支持批量上传，仅接受.xml格式文件'
-                    : `支持批量上传，接受.xml格式文件或 ${sourceInfo?.providerName} 的视频URL`
+                    ? t('batchImport.xmlOnlyTip')
+                    : t('batchImport.xmlOrUrlTip', { provider: sourceInfo?.providerName })
                   }
                 </div>
               </div>
@@ -670,11 +672,11 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
           </div>
           {xmlDataList.length === 0 ? (
             <div className="text-center py-10 text-gray-500 dark:text-gray-400">
-              <Empty description="暂无解析数据，请上传XML文件" />
+              <Empty description={t('batchImport.noParseData')} />
             </div>
           ) : (
             <>
-              <Tooltip title="以第一个文件集为准依次自增1">
+              <Tooltip title={t('batchImport.autoIncrementTip')}>
                 <Button
                   onClick={() => {
                     setXmlDataList(list => {
@@ -688,7 +690,7 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
                     })
                   }}
                 >
-                  一键应用集数
+                  {t('batchImport.applyEpisodeIndex')}
                 </Button>
               </Tooltip>
               <DndContext

@@ -112,7 +112,11 @@ class SchedulerManager:
             {
                 "jobType": job.job_type,
                 "name": job.job_name,
+                "name_en": getattr(job, 'job_name_en', ''),
+                "name_tw": getattr(job, 'job_name_tw', ''),
                 "description": getattr(job, 'description', ''),
+                "description_en": getattr(job, 'description_en', ''),
+                "description_tw": getattr(job, 'description_tw', ''),
                 "isSystemTask": getattr(job, 'is_system_task', False),
                 "configSchema": getattr(job, 'config_schema', [])
             }

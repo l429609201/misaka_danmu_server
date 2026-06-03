@@ -4,6 +4,7 @@ import { getControlApiKeyLog } from '../../../apis'
 import dayjs from 'dayjs'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store'
+import { useTranslation } from 'react-i18next'
 
 // JSON 格式化：尝试解析并美化，同时解码 Unicode 转义
 const formatContent = (raw) => {
@@ -25,21 +26,21 @@ const DetailBlock = ({ label, content }) => {
   )
 }
 
-const LogDetailPanel = ({ log }) => {
+const LogDetailPanel = ({ log, t }) => {
   const hasRequest = log.requestHeaders || log.requestBody
   const hasResponse = log.responseHeaders || log.responseBody
   if (!hasRequest && !hasResponse) {
-    return <div className="text-xs text-gray-400 py-2">暂无详细请求/响应记录</div>
+    return <div className="text-xs text-gray-400 py-2">{t('control.apiLogsEmpty')}</div>
   }
   const items = []
   if (hasRequest) {
     items.push({
       key: 'request',
-      label: '📤 请求信息',
+      label: t('control.apiLogsRequestInfo'),
       children: (
         <div>
-          <DetailBlock label="请求头" content={log.requestHeaders} />
-          <DetailBlock label="请求内容" content={log.requestBody} />
+          <DetailBlock label={t('control.apiLogsRequestHeaders')} content={log.requestHeaders} />
+          <DetailBlock label={t('control.apiLogsRequestBody')} content={log.requestBody} />
         </div>
       ),
     })
@@ -47,11 +48,11 @@ const LogDetailPanel = ({ log }) => {
   if (hasResponse) {
     items.push({
       key: 'response',
-      label: '📥 响应信息',
+      label: t('control.apiLogsResponseInfo'),
       children: (
         <div>
-          <DetailBlock label="响应头" content={log.responseHeaders} />
-          <DetailBlock label="响应内容" content={log.responseBody} />
+          <DetailBlock label={t('control.apiLogsResponseHeaders')} content={log.responseHeaders} />
+          <DetailBlock label={t('control.apiLogsResponseBody')} content={log.responseBody} />
         </div>
       ),
     })
@@ -60,6 +61,7 @@ const LogDetailPanel = ({ log }) => {
 }
 
 export const ApiLogs = () => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [logs, setLogs] = useState([])
   const isMobile = useAtomValue(isMobileAtom)
@@ -77,7 +79,7 @@ export const ApiLogs = () => {
 
   const columns = [
     {
-      title: '访问时间',
+      title: t('control.apiLogsColumnTime'),
       dataIndex: 'accessTime',
       key: 'accessTime',
       width: 200,
@@ -88,19 +90,19 @@ export const ApiLogs = () => {
       },
     },
     {
-      title: 'IP地址',
+      title: t('control.apiLogsColumnIp'),
       dataIndex: 'ipAddress',
       key: 'ipAddress',
       width: 150,
     },
     {
-      title: '端点',
+      title: t('control.apiLogsColumnEndpoint'),
       dataIndex: 'endpoint',
       key: 'endpoint',
       width: 200,
     },
     {
-      title: '状态码',
+      title: t('control.apiLogsColumnStatusCode'),
       width: 200,
       dataIndex: 'statusCode',
       key: 'statusCode',
@@ -113,7 +115,7 @@ export const ApiLogs = () => {
       },
     },
     {
-      title: '消息',
+      title: t('control.apiLogsColumnMessage'),
       dataIndex: 'message',
       key: 'message',
       width: 400,
@@ -122,10 +124,10 @@ export const ApiLogs = () => {
 
   return (
     <div className="my-6">
-      <Card title="API访问日志" loading={loading}>
-        <div className="mb-4">这里显示最近100条通过外部API和MCP的访问记录。</div>
+      <Card title={t('control.apiLogsCardTitle')} loading={loading}>
+        <div className="mb-4">{t('control.apiLogsDesc')}</div>
         {logs.length === 0 && !loading ? (
-          <Empty description="暂无访问记录" />
+          <Empty description={t('control.apiLogsNoRecords')} />
         ) : isMobile ? (
           <div className="space-y-4">
             {logs.map((log, index) => {
@@ -157,21 +159,21 @@ export const ApiLogs = () => {
                         </Typography.Text>
                       </div>
                       <div className="flex items-start gap-3">
-                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0 mt-1">端点:</span>
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0 mt-1">{t('control.apiLogsEndpoint')}:</span>
                         <Typography.Text code className="text-xs break-all flex-1">
                           {log.endpoint}
                         </Typography.Text>
                       </div>
                       {log.message && (
                         <div className="flex items-start gap-3">
-                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0 mt-1">消息:</span>
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0 mt-1">{t('control.apiLogsMessage')}:</span>
                           <Typography.Text code className="text-xs break-all flex-1">
                             {log.message}
                           </Typography.Text>
                         </div>
                       )}
                     </div>
-                    <LogDetailPanel log={log} />
+                    <LogDetailPanel log={log} t={t} />
                   </div>
                 </Card>
               );
@@ -185,7 +187,7 @@ export const ApiLogs = () => {
             columns={columns}
             rowKey={(_, index) => index}
             expandable={{
-              expandedRowRender: (record) => <LogDetailPanel log={record} />,
+              expandedRowRender: (record) => <LogDetailPanel log={record} t={t} />,
               rowExpandable: (record) => !!(record.requestHeaders || record.requestBody || record.responseHeaders || record.responseBody),
             }}
             scroll={{

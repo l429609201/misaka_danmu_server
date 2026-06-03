@@ -8,7 +8,7 @@ import { LayoutLogin } from './LayoutLogin.jsx'
 import { Home } from '@/pages/home'
 import { Login } from '@/pages/login'
 import { Task } from '@/pages/task'
-import { Library } from '../pages/library/index.jsx'
+import { LibraryTabsPage } from '../pages/library/tabs.jsx'
 import { Setting } from '../pages/setting/index.jsx'
 import { Source } from '../pages/source/index.jsx'
 import { AnimeDetail } from '../pages/anime/[id].jsx'
@@ -18,6 +18,7 @@ import { Control } from '../pages/control/index.jsx'
 import { Bullet } from '../pages/bullet/index.jsx'
 import MediaFetch from '../pages/media-fetch/index.jsx'
 import BgmOAuthCallback from '../pages/bgm-oauth-callback/index.jsx'
+import TraktOAuthCallback from '../pages/trakt-oauth-callback/index.jsx'
 
 export const router = createBrowserRouter([
   {
@@ -46,7 +47,11 @@ export const router = createBrowserRouter([
       },
       {
         path: RoutePaths.LIBRARY,
-        element: <Library />,
+        element: <LibraryTabsPage />,
+      },
+      {
+        path: RoutePaths.BATCH_MANAGE,
+        element: <LibraryTabsPage />,
       },
       {
         path: RoutePaths.SETTING,
@@ -88,6 +93,11 @@ export const router = createBrowserRouter([
     // Bangumi OAuth 回调页面（弹窗中打开，不需要 Layout）
     path: RoutePaths.BGM_OAUTH_CALLBACK,
     element: <BgmOAuthCallback />,
+  },
+  {
+    // Trakt OAuth 回调页面（弹窗中打开，不需要 Layout）
+    path: RoutePaths.TRAKT_OAUTH_CALLBACK,
+    element: <TraktOAuthCallback />,
   },
   {
     path: '*',

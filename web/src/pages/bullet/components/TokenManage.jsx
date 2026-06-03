@@ -3,8 +3,10 @@ import { Domain } from './Domain'
 import { Token } from './Token'
 import { Ua } from './Ua'
 import { getCustomDomain } from '../../../apis'
+import { useTranslation } from 'react-i18next'
 
 export const TokenManage = () => {
+  const { t } = useTranslation()
   const [domain, setDomain] = useState('')
 
   // 在父组件统一管理 domain 状态
@@ -25,16 +27,16 @@ export const TokenManage = () => {
       <Domain domain={domain} onDomainChange={handleDomainChange} />
       <Ua />
       <p>
-        本项目参考了
+        {t('bullet.tokenDesc1')}
         <a
           href="https://api.dandanplay.net/swagger/index.html"
           target="_blank"
           className="text-primary"
           rel="noopener noreferrer"
         >
-          弹弹play API
+          {t('bullet.tokenDescDandanplay')}
         </a>
-        ，同时增加了使用访问令牌管理弹幕api,支持
+        {t('bullet.tokenDesc2')}
         <a
           href="https://t.me/yamby_release"
           target="_blank"
@@ -59,7 +61,7 @@ export const TokenManage = () => {
           className="text-primary"
           rel="noopener noreferrer"
         >
-          小幻影视
+          {t('bullet.tokenDescXiaoHuan')}
         </a>
         、
         <a

@@ -6,6 +6,7 @@ import { Tag, Tooltip, Space, Dropdown } from 'antd'
 import { MenuOutlined } from '@ant-design/icons'
 import { DANDAN_TYPE_DESC_MAPPING } from '../../configs'
 import { MyIcon } from '@/components/MyIcon'
+import { useTranslation } from 'react-i18next'
 
 const getImageSrc = (record) => {
   let src = record.localImagePath || record.imageUrl
@@ -21,6 +22,7 @@ const typeIconMap = {
 }
 
 const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished }) => {
+  const { t } = useTranslation()
   const imageSrc = getImageSrc(record)
   const hasFavorited = record.sources?.some(s => s.isFavorited)
   const hasIncremental = record.sources?.some(s => s.incrementalRefreshEnabled)
@@ -29,19 +31,19 @@ const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncreme
   const menuItems = [
     {
       key: 'favorite',
-      label: hasFavorited ? '取消标记' : '标记',
+      label: hasFavorited ? t('libraryGroup.menuUnFav') : t('libraryGroup.menuFav'),
       icon: <MyIcon icon={hasFavorited ? 'favorites-fill' : 'favorites'} size={16} className={hasFavorited ? 'text-yellow-400' : ''} />,
       onClick: () => onFavorite?.(record),
     },
     {
       key: 'incremental',
-      label: hasIncremental ? '取消追更' : '追更',
+      label: hasIncremental ? t('libraryGroup.menuUnInc') : t('libraryGroup.menuInc'),
       icon: <MyIcon icon={hasIncremental ? 'zengliang' : 'clock'} size={16} className={hasIncremental ? 'text-green-500' : ''} />,
       onClick: () => onIncremental?.(record),
     },
     {
       key: 'finished',
-      label: allFinished ? '取消完结' : '完结',
+      label: allFinished ? t('libraryGroup.menuUnFin') : t('libraryGroup.menuFin'),
       icon: <MyIcon icon={allFinished ? 'wanjie1' : 'wanjie'} size={16} className={allFinished ? 'text-blue-500' : 'text-gray-400'} />,
       onClick: () => onFinished?.(record),
     },
@@ -88,7 +90,7 @@ const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncreme
         {/* 悬浮操作层 */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-200 flex items-end justify-end p-2 opacity-0 group-hover:opacity-100">
           <Space size={6} onClick={e => e.stopPropagation()}>
-            <Tooltip title="编辑">
+            <Tooltip title={t('libraryGroup.btnEdit')}>
               <span className="w-7 h-7 bg-white/90 dark:bg-gray-600/90 rounded flex items-center justify-center cursor-pointer hover:bg-white dark:hover:bg-gray-500"
                 onClick={() => onEdit(record)}>
                 <MyIcon icon="edit" size={14} />
@@ -99,7 +101,7 @@ const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncreme
                 <MenuOutlined style={{ fontSize: 13 }} />
               </span>
             </Dropdown>
-            <Tooltip title="删除">
+            <Tooltip title={t('libraryGroup.btnDelete')}>
               <span className="w-7 h-7 bg-white/90 dark:bg-gray-600/90 rounded flex items-center justify-center cursor-pointer hover:bg-white dark:hover:bg-gray-500 hover:text-red-500"
                 onClick={() => onDelete(record)}>
                 <MyIcon icon="delete" size={14} />
@@ -122,11 +124,11 @@ const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncreme
           {record.year && <span>{record.year}</span>}
           {record.season && <span>S{record.season}</span>}
           <span>·</span>
-          <span>{record.episodeCount || 0}集</span>
+          <span>{t('libraryGroup.episodeUnit', { count: record.episodeCount || 0 })}</span>
           {record.sourceCount > 0 && (
             <>
               <span>·</span>
-              <span>{record.sourceCount}源</span>
+              <span>{t('libraryGroup.sourceUnit', { count: record.sourceCount })}</span>
             </>
           )}
         </div>

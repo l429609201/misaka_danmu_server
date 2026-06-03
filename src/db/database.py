@@ -60,7 +60,14 @@ def _get_db_url(include_db_name: bool = True, for_server: bool = False) -> URL:
     db_type = get_db_type()
     
     if db_type == "mysql":
-        drivername = "mysql+asyncmy"
+        # Windows 上 asyncmy 的 Cython 编译版本存在 C unsigned long 32位溢出 bug
+        # (read_uint64 在 Windows C ABI 中 unsigned long 只有 4 字节)
+        # 使用纯 Python 的 aiomysql 作为后备驱动，避免此问题
+        import platform
+        if platform.system() == "Windows":
+            drivername = "mysql+aiomysql"
+        else:
+            drivername = "mysql+asyncmy"
         query = {"charset": "utf8mb4"}
         database = settings.database.name if include_db_name else None
     elif db_type == "postgresql":

@@ -40,6 +40,7 @@ class DoubanJsonSearchResponse(BaseModel):
 # --- Main Metadata Source Class ---
 class DoubanMetadataSource(BaseMetadataSource): # type: ignore
     provider_name = "douban" # type: ignore
+    config_keys = ["doubanCookie"]
     test_url = "https://movie.douban.com"
     has_force_aux_search_toggle = True # 新增：硬编码标志
     is_failover_source = True

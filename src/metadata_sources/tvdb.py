@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 class TvdbMetadataSource(BaseMetadataSource):
     provider_name = "tvdb"
+    config_keys = ["tvdbApiKey"]
     test_url = "https://api4.thetvdb.com"
 
     async def _get_tvdb_token(self, client: httpx.AsyncClient) -> str:

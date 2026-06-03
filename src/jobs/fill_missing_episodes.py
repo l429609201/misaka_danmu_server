@@ -13,24 +13,38 @@ from src.services import TaskManager, TaskSuccess
 class FillMissingEpisodesJob(BaseJob):
     job_type = "fillMissingEpisodes"
     job_name = "分集补全扫描"
+    job_name_en = "Episode Fill Scan"
+    job_name_tw = "分集補全掃描"
     description = "扫描库内所有条目，检测因导入异常导致的缺集情况，自动补全缺失的分集弹幕。"
+    description_en = "Scan all library entries to detect missing episodes caused by import errors, and auto-fill missing danmaku."
+    description_tw = "掃描庫內所有條目，偵測因匯入異常導致的缺集情況，自動補全缺失的分集彈幕。"
     config_schema = [
         {
             "key": "maxFillCount",
             "label": "每次最大补全源数",
+            "label_en": "Max Fill Count Per Run",
+            "label_tw": "每次最大補全源數",
             "type": "number",
             "default": 10,
             "min": 1,
             "max": 100,
             "suffix": "个",
-            "description": "每次执行最多对多少个源进行补全，避免一次性请求过多。"
+            "suffix_en": "",
+            "suffix_tw": "個",
+            "description": "每次执行最多对多少个源进行补全，避免一次性请求过多。",
+            "description_en": "Max number of sources to fill per run, to avoid excessive requests.",
+            "description_tw": "每次執行最多對多少個源進行補全，避免一次性請求過多。"
         },
         {
             "key": "skipFinished",
             "label": "跳过已完结源",
+            "label_en": "Skip Finished Sources",
+            "label_tw": "跳過已完結源",
             "type": "boolean",
             "default": False,
-            "description": "开启后，标记为已完结的源将被跳过，不进行缺集扫描。"
+            "description": "开启后，标记为已完结的源将被跳过，不进行缺集扫描。",
+            "description_en": "When enabled, sources marked as finished will be skipped during scan.",
+            "description_tw": "開啟後，標記為已完結的源將被跳過，不進行缺集掃描。"
         },
     ]
 

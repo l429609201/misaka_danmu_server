@@ -1,9 +1,11 @@
 import { useState, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Modal, Tooltip } from 'antd'
 import { CheckOutlined } from '@ant-design/icons'
 import { useThemeMode, PRESET_THEME_COLORS } from '../ThemeProvider'
 
 const ThemeColorPicker = ({ open, onClose }) => {
+  const { t } = useTranslation()
   const { themeColor, setThemeColor } = useThemeMode()
   const [customColor, setCustomColor] = useState(themeColor)
   const colorInputRef = useRef(null)
@@ -21,7 +23,7 @@ const ThemeColorPicker = ({ open, onClose }) => {
 
   return (
     <Modal
-      title="主题色切换"
+      title={t('themeColor.title')}
       open={open}
       onCancel={onClose}
       footer={null}
@@ -31,10 +33,10 @@ const ThemeColorPicker = ({ open, onClose }) => {
       <div className="py-2">
         {/* 预设色板 */}
         <div className="mb-4">
-          <div className="text-sm text-gray-500 dark:text-gray-400 mb-3">预设主题</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-3">{t('themeColor.presetTheme')}</div>
           <div className="grid grid-cols-4 gap-3">
             {PRESET_THEME_COLORS.map(({ name, color }) => (
-              <Tooltip title={name} key={color}>
+              <Tooltip title={t(`themeColor.${name}`)} key={color}>
                 <div
                   className="flex flex-col items-center gap-1.5 cursor-pointer group"
                   onClick={() => handlePresetClick(color)}
@@ -52,7 +54,7 @@ const ThemeColorPicker = ({ open, onClose }) => {
                       <CheckOutlined style={{ color: '#fff', fontSize: 16 }} />
                     )}
                   </div>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{name}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{t(`themeColor.${name}`)}</span>
                 </div>
               </Tooltip>
             ))}
@@ -64,7 +66,7 @@ const ThemeColorPicker = ({ open, onClose }) => {
 
         {/* 自定义调色板 */}
         <div>
-          <div className="text-sm text-gray-500 dark:text-gray-400 mb-3">自定义颜色</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400 mb-3">{t('themeColor.customColor')}</div>
           <div className="flex items-center gap-3">
             <div
               className="relative w-10 h-10 rounded-full cursor-pointer overflow-hidden transition-transform hover:scale-110"
@@ -104,7 +106,7 @@ const ThemeColorPicker = ({ open, onClose }) => {
                   placeholder="#FF6B9B"
                 />
               </div>
-              <div className="text-xs text-gray-400 mt-1">输入 HEX 色值或点击色块取色</div>
+              <div className="text-xs text-gray-400 mt-1">{t('themeColor.inputHexTip')}</div>
             </div>
           </div>
         </div>
@@ -114,7 +116,7 @@ const ThemeColorPicker = ({ open, onClose }) => {
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded-full" style={{ backgroundColor: themeColor }} />
             <span className="text-sm" style={{ color: themeColor, fontWeight: 500 }}>
-              当前主题色：{themeColor}
+              {t('themeColor.currentColor')}：{themeColor}
             </span>
           </div>
         </div>

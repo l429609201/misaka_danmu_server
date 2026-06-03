@@ -14,18 +14,28 @@ from src.services import TaskSuccess
 class AutoFinishJob(BaseJob):
     job_type = "autoFinish"
     job_name = "追更自动完结"
+    job_name_en = "Auto-Finish Tracking"
+    job_name_tw = "追更自動完結"
     description = "自动检测 TMDB 上已完结的番剧，延迟指定天数后自动取消追更。适用于不想手动关闭追更的场景。"
+    description_en = "Auto-detect finished anime on TMDB and cancel tracking after a delay. Useful for automatic untracking."
+    description_tw = "自動偵測 TMDB 上已完結的番劇，延遲指定天數後自動取消追更。適用於不想手動關閉追更的場景。"
 
     config_schema = [
         {
             "key": "delayDays",
             "label": "延迟天数",
+            "label_en": "Delay Days",
+            "label_tw": "延遲天數",
             "type": "number",
             "default": 2,
             "min": 0,
             "max": 30,
             "suffix": "天",
-            "description": "TMDB 标记完结后延迟几天再取消追更，让系统有时间抓取最后一集弹幕。"
+            "suffix_en": "days",
+            "suffix_tw": "天",
+            "description": "TMDB 标记完结后延迟几天再取消追更，让系统有时间抓取最后一集弹幕。",
+            "description_en": "Days to wait after TMDB marks as finished before canceling tracking, allowing time to fetch the last episode's danmaku.",
+            "description_tw": "TMDB 標記完結後延遲幾天再取消追更，讓系統有時間抓取最後一集彈幕。"
         }
     ]
 

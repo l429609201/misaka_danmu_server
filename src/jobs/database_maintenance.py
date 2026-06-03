@@ -105,7 +105,11 @@ class DatabaseMaintenanceJob(BaseJob):
     """
     job_type = "databaseMaintenance"
     job_name = "缓存日志清理任务"
+    job_name_en = "Cache & Log Cleanup"
+    job_name_tw = "快取日誌清理任務"
     description = "定期清理过期的应用日志、优化数据库表、清理无效的图片缓存文件。帮助保持系统性能和节省存储空间。"
+    description_en = "Periodically clean expired logs, optimize database tables, and clean invalid image caches. Helps maintain performance and save storage."
+    description_tw = "定期清理過期的應用日誌、最佳化資料庫表、清理無效的圖片快取檔案。幫助保持系統效能和節省儲存空間。"
 
     async def run(self, session: AsyncSession, progress_callback: Callable):
         """

@@ -819,3 +819,149 @@ html[data-page-style="liquid-glass"].dark .task-manager-list .ant-list-item:hove
     0 6px 20px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
+
+
+
+
+/* 通用 AntD 表格主题修复：表头、固定操作列背景和圆角跟随当前主题 */
+:where(.library-table, .ant-table-wrapper) .ant-table,
+:where(.library-table, .ant-table-wrapper) .ant-table-container,
+:where(.library-table, .ant-table-wrapper) .ant-table-content,
+:where(.library-table, .ant-table-wrapper) .ant-table-body {
+  background: transparent !important;
+}
+
+:where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th,
+:where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th.ant-table-cell-fix-left,
+:where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th.ant-table-cell-fix-right,
+:where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th[class*="ant-table-cell-fix-"] {
+  background: var(--color-hover) !important;
+}
+
+:where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th:first-child {
+  border-start-start-radius: 12px !important;
+  border-end-start-radius: 12px !important;
+}
+
+:where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th:last-child,
+:where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th.ant-table-cell-fix-right {
+  border-start-end-radius: 12px !important;
+  border-end-end-radius: 12px !important;
+}
+
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td,
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td.ant-table-cell-fix-left,
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td.ant-table-cell-fix-right,
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td[class*="ant-table-cell-fix-"] {
+  background: var(--color-card) !important;
+  background-clip: padding-box;
+  border-top: 4px solid transparent !important;
+  border-bottom: 4px solid transparent !important;
+}
+
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td:first-child {
+  border-start-start-radius: 14px !important;
+  border-end-start-radius: 14px !important;
+}
+
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td:last-child,
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td.ant-table-cell-fix-right {
+  border-start-end-radius: 14px !important;
+  border-end-end-radius: 14px !important;
+}
+
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td,
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr.ant-table-row:hover > td,
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr.ant-table-row:hover > td.ant-table-cell-fix-left,
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr.ant-table-row:hover > td.ant-table-cell-fix-right,
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td[class*="ant-table-cell-fix-"] {
+  background: var(--color-hover) !important;
+}
+
+:where(.library-table, .ant-table-wrapper) .ant-table-cell-fix-right-first::after,
+:where(.library-table, .ant-table-wrapper) .ant-table-cell-fix-right-last::after,
+:where(.library-table, .ant-table-wrapper) .ant-table-cell-fix-left-first::after,
+:where(.library-table, .ant-table-wrapper) .ant-table-cell-fix-left-last::after {
+  box-shadow: none !important;
+}
+
+html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th {
+  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, 0.56)) !important;
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+}
+
+html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td,
+html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td[class*="ant-table-cell-fix-"] {
+  background: color-mix(in srgb, var(--color-primary) 4%, rgba(255, 255, 255, 0.48)) !important;
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+}
+
+html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td,
+html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr.ant-table-row:hover > td,
+html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td[class*="ant-table-cell-fix-"] {
+  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, 0.6)) !important;
+}
+
+html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th,
+html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td,
+html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td[class*="ant-table-cell-fix-"] {
+  background: rgba(30, 41, 59, 0.52) !important;
+}
+
+html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td,
+html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr.ant-table-row:hover > td,
+html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td[class*="ant-table-cell-fix-"] {
+  background: rgba(30, 41, 59, 0.72) !important;
+}
+
+:where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td {
+  vertical-align: middle !important;
+}
+
+:where(.library-table, .ant-table-wrapper) .ant-table-cell > .ant-space,
+:where(.library-table, .ant-table-wrapper) .ant-table-cell > .ant-typography,
+:where(.library-table, .ant-table-wrapper) .ant-table-cell > div {
+  vertical-align: middle;
+}
+
+
+.library-drag-overlay {
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--color-card);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+}
+
+.library-drag-overlay table,
+.library-drag-overlay tbody,
+.library-drag-overlay tr {
+  width: 100%;
+  height: 100%;
+}
+
+.library-drag-overlay td {
+  background: var(--color-card) !important;
+  border-bottom: 0 !important;
+}
+
+.library-drag-overlay .ant-table-cell-fix-left,
+.library-drag-overlay .ant-table-cell-fix-right {
+  position: static !important;
+}
+
+html[data-page-style="liquid-glass"] .library-drag-overlay,
+html[data-page-style="liquid-glass"] .library-drag-overlay td {
+  background: color-mix(in srgb, var(--color-primary) 4%, rgba(255, 255, 255, 0.58)) !important;
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+}
+
+html[data-page-style="liquid-glass"].dark .library-drag-overlay,
+html[data-page-style="liquid-glass"].dark .library-drag-overlay td {
+  background: rgba(30, 41, 59, 0.72) !important;
+}
+

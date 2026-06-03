@@ -1,17 +1,19 @@
 import { Button, Card } from 'antd'
+import { useTranslation } from 'react-i18next'
 
 export const ApiDoc = () => {
+  const { t } = useTranslation()
   return (
     <div className="my-6">
       <Card
-        title="API文档"
+        title={t('control.apiDocTitle')}
         extra={
           <Button
             onClick={() => {
               window.open('/api/control/docs', '_blank')
             }}
           >
-            文档链接
+            {t('control.apiDocLink')}
           </Button>
         }
       >

@@ -2,6 +2,7 @@ import React from 'react'
 import { Input, Button, Space, Drawer } from 'antd'
 import { SearchOutlined, FilterOutlined } from '@ant-design/icons'
 import { useAtomValue } from 'jotai'
+import { useTranslation } from 'react-i18next'
 import { isMobileAtom } from '../../store/index.js'
 import classNames from 'classnames'
 
@@ -10,7 +11,7 @@ import classNames from 'classnames'
  * 移动端优化的搜索和筛选布局
  */
 export const ResponsiveSearchBar = ({
-  searchPlaceholder = '搜索...',
+  searchPlaceholder,
   onSearch,
   searchValue,
   onSearchChange,
@@ -19,15 +20,17 @@ export const ResponsiveSearchBar = ({
   onFilterChange,
   className,
 }) => {
+  const { t } = useTranslation()
   const isMobile = useAtomValue(isMobileAtom)
   const [filterVisible, setFilterVisible] = React.useState(false)
+  const placeholder = searchPlaceholder ?? t('common.searchPlaceholder')
 
   if (isMobile) {
     return (
       <>
         <div className={classNames('space-y-3', className)}>
           <Input.Search
-            placeholder={searchPlaceholder}
+            placeholder={placeholder}
             value={searchValue}
             onChange={onSearchChange}
             onSearch={onSearch}
@@ -41,16 +44,16 @@ export const ResponsiveSearchBar = ({
                 onClick={() => setFilterVisible(true)}
                 block
               >
-                筛选
+                {t('common.filter')}
               </Button>
             )}
             {extra}
           </div>
         </div>
-        
+
         {filters && (
           <Drawer
-            title="筛选条件"
+            title={t('common.filterCondition')}
             placement="bottom"
             onClose={() => setFilterVisible(false)}
             open={filterVisible}
@@ -66,7 +69,7 @@ export const ResponsiveSearchBar = ({
                   setFilterVisible(false)
                 }}
               >
-                应用筛选
+                {t('common.applyFilter')}
               </Button>
             </div>
           </Drawer>
@@ -79,7 +82,7 @@ export const ResponsiveSearchBar = ({
   return (
     <div className={classNames('flex items-center gap-4', className)}>
       <Input.Search
-        placeholder={searchPlaceholder}
+        placeholder={placeholder}
         value={searchValue}
         onChange={onSearchChange}
         onSearch={onSearch}

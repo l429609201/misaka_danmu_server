@@ -20,7 +20,11 @@ class RefreshLatestEpisodeJob(BaseJob):
     
     job_type = "refreshLatestEpisode"
     job_name = "刷新最新集弹幕"
+    job_name_en = "Refresh Latest Episode Danmaku"
+    job_name_tw = "重新整理最新集彈幕"
     description = "自动检测已启用追更的作品,对最新一集弹幕数未达到阈值的进行定时刷新。适用于正在连载的动画/电视剧。"
+    description_en = "Auto-detect tracked works and refresh danmaku for the latest episode when count is below threshold. For ongoing anime/TV series."
+    description_tw = "自動偵測已啟用追更的作品，對最新一集彈幕數未達到閾值的進行定時重新整理。適用於正在連載的動畫/電視劇。"
 
     async def run(self, session: AsyncSession, progress_callback: Callable):
         """定时任务的核心逻辑: 刷新最新一集的弹幕"""

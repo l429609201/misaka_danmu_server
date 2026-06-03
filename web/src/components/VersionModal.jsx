@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Modal, Button, Tag, Spin, Badge, Typography, Divider, Alert, Card, Progress, Row, Col, Statistic, Switch } from 'antd'
 import { SyncOutlined, RocketOutlined, CheckCircleOutlined, CloseCircleOutlined, HistoryOutlined, CloudServerOutlined, GithubOutlined } from '@ant-design/icons'
 import { checkAppUpdate, getDockerStatus, restartService } from '../apis'
@@ -45,6 +46,7 @@ const markdownComponents = {
 }
 
 export const VersionModal = ({ open, onClose, currentVersion }) => {
+  const { t } = useTranslation()
   const isMobile = useAtomValue(isMobileAtom)
   const [loading, setLoading] = useState(false)
   const [updateInfo, setUpdateInfo] = useState(null)
@@ -148,7 +150,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
   // 开始更新
   const handleUpdate = async () => {
     if (!dockerStatus?.canUpdate) {
-      messageApi.error('Docker 套接字 不可用，无法执行更新')
+      messageApi.error(t('versionModal.socketUnavailable'))
       return
     }
 
@@ -205,7 +207,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
                 // 第一阶段：等待服务停止（最多30秒）
                 for (let i = 0; i < 30; i++) {
                   waited++
-                  updateLastLog(`⏳ 等待容器停止... (${waited}秒)`)
+                  updateLastLog(`⏳ ${t('versionModal.waitContainerStopping', { seconds: waited })}`)
                   try {
                     const res = await fetch('/api/ui/version', { signal: AbortSignal.timeout(3000) })
                     if (!res.ok) break
@@ -219,11 +221,11 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
                 for (let i = 0; i < 60; i++) {
                   waited++
                   setCountdown(maxWait - waited)
-                  updateLastLog(`⏳ 正在等待服务恢复... (${waited}秒)`)
+                  updateLastLog(`⏳ ${t('versionModal.waitServiceRecovering', { seconds: waited })}`)
                   try {
                     const res = await fetch('/api/ui/version', { signal: AbortSignal.timeout(3000) })
                     if (res.ok) {
-                      updateLastLog('✅ 服务已恢复，正在刷新...')
+                      updateLastLog(`✅ ${t('versionModal.serviceRecovered')}`)
                       await new Promise(r => setTimeout(r, 500))
                       window.location.reload()
                       return
@@ -233,7 +235,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
                 }
 
                 // 超时
-                updateLastLog('⚠️ 等待超时，请手动刷新页面')
+                updateLastLog(`⚠️ ${t('versionModal.waitTimeout')}`)
                 setCountdown(null)
               }
               waitForRestart()
@@ -251,7 +253,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
         },
         onerror(err) {
           console.error('更新流错误:', err)
-          setUpdateError('连接中断')
+          setUpdateError(t('versionModal.connectionInterrupted'))
           setUpdating(false)
         },
         onclose() {
@@ -260,7 +262,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
       })
     } catch (error) {
       console.error('更新失败:', error)
-      setUpdateError(error.message || '更新失败')
+      setUpdateError(error.message || t('versionModal.updateFailed'))
       setUpdating(false)
     }
   }
@@ -272,7 +274,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
       messageApi.success(res.data.message)
       onClose()
     } catch (error) {
-      messageApi.error('重启失败: ' + (error.message || '未知错误'))
+      messageApi.error(t('versionModal.restartFailed') + ': ' + (error.message || t('versionModal.unknownError')))
     }
   }
 
@@ -282,7 +284,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
 
     return (
       <div className={isMobile ? 'flex-1 min-h-0 overflow-y-auto rounded-lg p-4 mt-2' : 'max-h-[300px] overflow-y-auto rounded-lg p-4 mt-4'} style={{ backgroundColor: 'var(--color-hover)' }}>
-        <Title level={5}>更新日志</Title>
+        <Title level={5}>{t('versionModal.changelog')}</Title>
         <div className="text-sm">
           <ReactMarkdown components={markdownComponents}>
             {preprocessChangelog(updateInfo.changelog)}
@@ -294,7 +296,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
 
   return (
     <Modal
-      title="版本信息"
+      title={t('versionModal.title')}
       open={open}
       onCancel={onClose}
       footer={null}
@@ -305,21 +307,21 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
         <div className={isMobile ? 'flex flex-col' : 'space-y-4'} style={isMobile ? { maxHeight: 'calc(100vh - 160px)' } : {}}>
           {/* 当前版本 */}
           <div className="flex items-center justify-between">
-            <Text>当前版本</Text>
+            <Text>{t('versionModal.currentVersion')}</Text>
             <Tag color="blue">{currentVersion}</Tag>
           </div>
 
           {/* 最新版本 */}
           {updateInfo && (
             <div className="flex items-center justify-between">
-              <Text>最新版本</Text>
+              <Text>{t('versionModal.latestVersion')}</Text>
               <div className="flex items-center gap-2">
                 {updateInfo.hasUpdate ? (
                   <Tag color="green">{updateInfo.latestVersion}</Tag>
                 ) : (
-                  <Tag>{updateInfo.latestVersion || '检查中...'}</Tag>
+                  <Tag>{updateInfo.latestVersion || t('versionModal.checking')}</Tag>
                 )}
-                {updateInfo.hasUpdate && <Badge status="processing" text="有新版本" />}
+                {updateInfo.hasUpdate && <Badge status="processing" text={t('versionModal.hasNewVersion')} />}
               </div>
             </div>
           )}
@@ -327,11 +329,11 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
           {/* Docker 状态 */}
           <Divider />
           <div className="flex items-center justify-between">
-            <Text>Docker 状态</Text>
+            <Text>{t('versionModal.dockerStatus')}</Text>
             {dockerStatus?.socketAvailable ? (
-              <Tag icon={<CheckCircleOutlined />} color="success">已连接</Tag>
+              <Tag icon={<CheckCircleOutlined />} color="success">{t('versionModal.connected')}</Tag>
             ) : (
-              <Tag icon={<CloseCircleOutlined />} color="default">未连接</Tag>
+              <Tag icon={<CloseCircleOutlined />} color="default">{t('versionModal.disconnected')}</Tag>
             )}
           </div>
 
@@ -339,8 +341,8 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
             <Alert
               type="info"
               showIcon
-              message="Docker 套接字 未映射"
-              description="如需使用一键更新功能，请在 docker-compose.yml 中添加 /var/run/docker.sock:/var/run/docker.sock 路径映射"
+              message={t('versionModal.socketNotMapped')}
+              description={t('versionModal.socketNotMappedDesc')}
             />
           )}
 
@@ -352,16 +354,16 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
               title={
                 <div className="flex items-center gap-2">
                   <CloudServerOutlined />
-                  <span>{dockerStats.containerName || '容器状态'}</span>
+                  <span>{dockerStats.containerName || t('versionModal.containerStatus')}</span>
                   <Tag color={dockerStats.status === 'running' ? 'success' : 'warning'} className="!ml-2">
-                    {{ running: '运行中', exited: '已停止', paused: '已暂停', restarting: '重启中', created: '已创建', dead: '已终止' }[dockerStats.status] || dockerStats.status}
+                    {{ running: t('versionModal.statusRunning'), exited: t('versionModal.statusExited'), paused: t('versionModal.statusPaused'), restarting: t('versionModal.statusRestarting'), created: t('versionModal.statusCreated'), dead: t('versionModal.statusDead') }[dockerStats.status] || dockerStats.status}
                   </Tag>
                 </div>
               }
             >
               <Row gutter={[16, 12]}>
                 <Col span={12}>
-                  <div className="text-xs mb-1" style={{ color: 'var(--color-text-secondary)' }}>CPU 使用率</div>
+                  <div className="text-xs mb-1" style={{ color: 'var(--color-text-secondary)' }}>{t('versionModal.cpuUsage')}</div>
                   <Progress
                     percent={dockerStats.cpu?.percent || 0}
                     size="small"
@@ -370,7 +372,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
                   />
                 </Col>
                 <Col span={12}>
-                  <div className="text-xs mb-1" style={{ color: 'var(--color-text-secondary)' }}>内存使用 ({dockerStats.memory?.limitFormatted || '-'})</div>
+                  <div className="text-xs mb-1" style={{ color: 'var(--color-text-secondary)' }}>{t('versionModal.memoryUsage')} ({dockerStats.memory?.limitFormatted || '-'})</div>
                   <Progress
                     percent={dockerStats.memory?.percent || 0}
                     size="small"
@@ -380,14 +382,14 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
                 </Col>
                 <Col span={12}>
                   <Statistic
-                    title={<span>网络接收 <span className="text-green-500">↓{dockerStats.network?.rxRateFormatted || '0 B/s'}</span></span>}
+                    title={<span>{t('versionModal.networkRx')} <span className="text-green-500">↓{dockerStats.network?.rxRateFormatted || '0 B/s'}</span></span>}
                     value={dockerStats.network?.rxFormatted || '0 B'}
                     valueStyle={{ fontSize: '14px' }}
                   />
                 </Col>
                 <Col span={12}>
                   <Statistic
-                    title={<span>网络发送 <span className="text-blue-500">↑{dockerStats.network?.txRateFormatted || '0 B/s'}</span></span>}
+                    title={<span>{t('versionModal.networkTx')} <span className="text-blue-500">↑{dockerStats.network?.txRateFormatted || '0 B/s'}</span></span>}
                     value={dockerStats.network?.txFormatted || '0 B'}
                     valueStyle={{ fontSize: '14px' }}
                   />
@@ -402,7 +404,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
           {/* 更新进度 */}
           {(updating || updateLogs.length > 0) && (
             <div className="mt-4">
-              <Divider>更新进度</Divider>
+              <Divider>{t('versionModal.updateProgress')}</Divider>
               {/* 进度条 */}
               {(updating || updateProgress > 0) && (
                 <Progress
@@ -436,13 +438,13 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
             <Alert
               type="success"
               showIcon
-              message="更新完成"
+              message={t('versionModal.updateComplete')}
               description={
                 countdown === -1
-                  ? "正在等待容器停止..."
+                  ? t('versionModal.waitingContainerStop')
                   : countdown != null && countdown > 0
-                    ? `正在等待服务恢复... (剩余约 ${countdown} 秒)`
-                    : "更新任务已完成，等待服务恢复后将自动刷新页面"
+                    ? t('versionModal.waitingServiceRecover', { seconds: countdown })
+                    : t('versionModal.updateDoneAutoRefresh')
               }
               className="mt-3"
             />
@@ -453,8 +455,8 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
             <Alert
               type="info"
               showIcon
-              message="无需更新"
-              description="当前镜像已是最新版本，无需操作。"
+              message={t('versionModal.noUpdate')}
+              description={t('versionModal.noUpdateDesc')}
               className="mt-3"
             />
           )}
@@ -463,7 +465,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
             <Alert
               type="error"
               showIcon
-              message="更新失败"
+              message={t('versionModal.updateFailed')}
               description={updateError}
             />
           )}
@@ -479,10 +481,10 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
                   icon={<HistoryOutlined />}
                   size="small"
                 >
-                  更新日志
+                  {t('versionModal.changelog')}
                 </Button>
                 <Button onClick={() => loadData()} icon={<SyncOutlined />} size="small">
-                  刷新
+                  {t('common.refresh')}
                 </Button>
                 {updateInfo?.releaseUrl && (
                   <Button
@@ -514,7 +516,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
                     disabled={updateComplete}
                     size="small"
                   >
-                    {updateInfo?.hasUpdate ? '更新并重启' : '检查并更新'}
+                    {updateInfo?.hasUpdate ? t('versionModal.updateAndRestart') : t('versionModal.checkAndUpdate')}
                   </Button>
                 </div>
               )}
@@ -526,7 +528,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
                   onClick={() => setReleaseHistoryOpen(true)}
                   icon={<HistoryOutlined />}
                 >
-                  更新日志
+                  {t('versionModal.changelog')}
                 </Button>
                 {dockerStatus?.canUpdate && (
                   <Switch
@@ -542,7 +544,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
               </div>
               <div className="flex gap-2">
                 <Button onClick={() => loadData()} icon={<SyncOutlined />}>
-                  刷新
+                  {t('common.refresh')}
                 </Button>
                 {dockerStatus?.canUpdate && (
                   <Button
@@ -552,7 +554,7 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
                     loading={updating}
                     disabled={updateComplete}
                   >
-                    {updateInfo?.hasUpdate ? '更新并重启' : '检查并更新'}
+                    {updateInfo?.hasUpdate ? t('versionModal.updateAndRestart') : t('versionModal.checkAndUpdate')}
                   </Button>
                 )}
                 {updateInfo?.releaseUrl && (

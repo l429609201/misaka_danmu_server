@@ -1,7 +1,7 @@
 """核心导入任务模块"""
 import logging
 from typing import Callable, Optional, List
-from sqlalchemy import select
+from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, orm_models, models, sync_postgres_sequence, ConfigManager
@@ -122,6 +122,8 @@ async def generic_import_task(
     mediaServerSeriesId: Optional[str] = None,
     mediaServerSeasonId: Optional[str] = None,
     mediaServerEpisodeId: Optional[str] = None,
+    # 新增: 任务完成后是否自动开启增量追更（用于日历订阅等需要持续追更的入口）
+    enable_incremental_refresh: bool = False,
 ):
     """
     后台任务：执行从指定数据源导入弹幕的完整流程。
@@ -286,6 +288,15 @@ async def generic_import_task(
 
                 # 链接数据源（如果还没有链接）
                 source_id = await crud.link_source_to_anime(session, anime_id, provider, mediaId)
+
+                # 任务级别的「完成后开启追更」标记（如日历订阅入口）
+                if enable_incremental_refresh:
+                    await session.execute(
+                        sql_update(orm_models.AnimeSource)
+                        .where(orm_models.AnimeSource.id == source_id)
+                        .values(incrementalRefreshEnabled=True)
+                    )
+                    logger.info(f"已为源 ID {source_id} 开启增量追更（来自订阅入口）")
 
                 episode_title = f"第 {currentEpisodeIndex} 集"
                 episode_db_id = await crud.create_episode_if_not_exists(session, anime_id, source_id, currentEpisodeIndex, episode_title, None, "failover")
@@ -544,6 +555,16 @@ async def generic_import_task(
 
             # 链接数据源（如果还没有链接）
             source_id = await crud.link_source_to_anime(session, anime_id, provider, mediaId)
+
+            # 任务级别的「完成后开启追更」标记（如日历订阅入口）
+            if enable_incremental_refresh:
+                await session.execute(
+                    sql_update(orm_models.AnimeSource)
+                    .where(orm_models.AnimeSource.id == source_id)
+                    .values(incrementalRefreshEnabled=True)
+                )
+                logger.info(f"已为源 ID {source_id} 开启增量追更（来自订阅入口）")
+
             await session.commit()
 
             # 自动获取别名
@@ -597,8 +618,6 @@ async def generic_import_task(
 
     # 处理追更任务的失败计数
     if is_incremental_refresh and incremental_refresh_source_id:
-        from sqlalchemy import update as sql_update
-
         if not successful_episodes_indices and not skipped_episodes_indices and failed_episodes_count > 0:
             # 追更失败,增加失败计数
             stmt = sql_update(orm_models.AnimeSource).where(

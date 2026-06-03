@@ -2,11 +2,13 @@ import React, { useState, useMemo } from 'react'
 import { Modal, Table, Radio, Button, Space, InputNumber, Alert, Tag } from 'antd'
 import { InfoCircleOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { useTranslation } from 'react-i18next'
 
 /**
  * 番剧源关联冲突解决对话框
  */
 const ReassociationConflictModal = ({ open, onCancel, onConfirm, conflictData, targetAnimeTitle }) => {
+  const { t } = useTranslation()
   // 每个提供商的解决方案状态
   const [resolutions, setResolutions] = useState({})
   // 每个提供商的偏移量
@@ -120,19 +122,19 @@ const ReassociationConflictModal = ({ open, onCancel, onConfirm, conflictData, t
   // 表格列定义
   const getColumns = providerName => [
     {
-      title: '集数',
+      title: t('reassociation.colEpisode'),
       dataIndex: 'episodeIndex',
       key: 'episodeIndex',
       width: 80,
       align: 'center',
     },
     {
-      title: '源番剧',
+      title: t('reassociation.colSourceAnime'),
       key: 'source',
       width: 150,
       render: record => (
         <div>
-          <div>🎬 {record.sourceDanmakuCount} 条弹幕</div>
+          <div>{t('reassociation.danmakuCount', { count: record.sourceDanmakuCount })}</div>
           {record.sourceLastFetchTime && (
             <div style={{ fontSize: '12px', color: '#999' }}>
               📅 {dayjs(record.sourceLastFetchTime).format('YYYY-MM-DD')}
@@ -142,12 +144,12 @@ const ReassociationConflictModal = ({ open, onCancel, onConfirm, conflictData, t
       ),
     },
     {
-      title: '目标番剧',
+      title: t('reassociation.colTargetAnime'),
       key: 'target',
       width: 150,
       render: record => (
         <div>
-          <div>🎬 {record.targetDanmakuCount} 条弹幕</div>
+          <div>{t('reassociation.danmakuCount', { count: record.targetDanmakuCount })}</div>
           {record.targetLastFetchTime && (
             <div style={{ fontSize: '12px', color: '#999' }}>
               📅 {dayjs(record.targetLastFetchTime).format('YYYY-MM-DD')}
@@ -157,7 +159,7 @@ const ReassociationConflictModal = ({ open, onCancel, onConfirm, conflictData, t
       ),
     },
     {
-      title: '保留',
+      title: t('reassociation.colKeep'),
       key: 'keep',
       width: 150,
       align: 'center',
@@ -168,8 +170,8 @@ const ReassociationConflictModal = ({ open, onCancel, onConfirm, conflictData, t
             handleEpisodeSelection(providerName, record.episodeIndex, e.target.value)
           }
         >
-          <Radio value={true}>源</Radio>
-          <Radio value={false}>目标</Radio>
+          <Radio value={true}>{t('reassociation.radioSource')}</Radio>
+          <Radio value={false}>{t('reassociation.radioTarget')}</Radio>
         </Radio.Group>
       ),
     },
@@ -181,17 +183,17 @@ const ReassociationConflictModal = ({ open, onCancel, onConfirm, conflictData, t
 
   return (
     <Modal
-      title="🔀 数据源关联冲突解决"
+      title={t('reassociation.title')}
       open={open}
       onCancel={onCancel}
       onOk={handleConfirm}
       width={900}
-      okText="确认关联"
-      cancelText="取消"
+      okText={t('reassociation.okText')}
+      cancelText={t('common.cancel')}
     >
       <Alert
-        message="检测到以下提供商存在冲突"
-        description={`目标番剧: ${targetAnimeTitle}`}
+        message={t('reassociation.alertMessage')}
+        description={t('reassociation.alertDescription', { title: targetAnimeTitle })}
         type="warning"
         icon={<InfoCircleOutlined />}
         showIcon
@@ -205,7 +207,7 @@ const ReassociationConflictModal = ({ open, onCancel, onConfirm, conflictData, t
               📺 {conflict.providerName}
             </Tag>
             <span style={{ marginLeft: 8, color: '#999' }}>
-              冲突分集: {conflict.conflictEpisodes.length} 集
+              {t('reassociation.conflictEpisodes', { count: conflict.conflictEpisodes.length })}
             </span>
           </div>
 
@@ -221,22 +223,22 @@ const ReassociationConflictModal = ({ open, onCancel, onConfirm, conflictData, t
 
           <Space style={{ marginBottom: 12 }}>
             <Button size="small" onClick={() => handleSelectAllSource(conflict.providerName)}>
-              全选源番剧
+              {t('reassociation.selectAllSource')}
             </Button>
             <Button size="small" onClick={() => handleSelectAllTarget(conflict.providerName)}>
-              全选目标番剧
+              {t('reassociation.selectAllTarget')}
             </Button>
             <Button
               size="small"
               type="primary"
               onClick={() => handleSelectByDanmakuCount(conflict.providerName)}
             >
-              按弹幕数量选择
+              {t('reassociation.selectByDanmaku')}
             </Button>
           </Space>
 
           <div style={{ marginTop: 12 }}>
-            <span style={{ marginRight: 8 }}>集数偏移:</span>
+            <span style={{ marginRight: 8 }}>{t('reassociation.episodeOffset')}</span>
             <InputNumber
               size="small"
               value={offsets[conflict.providerName] || 0}
@@ -245,7 +247,7 @@ const ReassociationConflictModal = ({ open, onCancel, onConfirm, conflictData, t
               placeholder="0"
             />
             <span style={{ marginLeft: 8, color: '#999', fontSize: '12px' }}>
-              (正数向后偏移，负数向前偏移)
+              {t('reassociation.offsetHint')}
             </span>
           </div>
         </div>

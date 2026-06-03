@@ -41,11 +41,13 @@ import {
 import classNames from 'classnames'
 import { useModal } from '../../../ModalContext'
 import { useMessage } from '../../../MessageContext'
+import { useTranslation } from 'react-i18next'
 import { useAtom } from 'jotai'
 import { isMobileAtom } from '../../../../store'
 import { ResponsiveTable } from '@/components/ResponsiveTable'
 
 export const ImportTask = () => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [taskList, setTaskList] = useState([])
   const [selectList, setSelectList] = useState([])
@@ -141,7 +143,7 @@ export const ImportTask = () => {
       setTaskList(newData)
 
     } catch (error) {
-      console.error('轮询获取数据失败:', error)
+      console.error(t('importTask.pollFailed'), error)
     }
   }, [search, status, pagination.current, pagination.pageSize, queueFilter])
 
@@ -193,7 +195,7 @@ export const ImportTask = () => {
         refreshTasks()
         setSelectList([])
       } catch (error) {
-        message.error(`操作失败: ${error.message}`)
+        message.error(t('importTask.operationFailed', { msg: error.message }))
       }
     } else {
       try {
@@ -203,7 +205,7 @@ export const ImportTask = () => {
         refreshTasks()
         setSelectList([])
       } catch (error) {
-        message.error(`操作失败: ${error.message}`)
+        message.error(t('importTask.operationFailed', { msg: error.message }))
       }
     }
   }
@@ -224,7 +226,7 @@ export const ImportTask = () => {
 
       return (
         <div>
-          <div>您确定要中止任务吗？</div>
+          <div>{t('importTask.abortConfirm')}</div>
           <div className="max-h-[310px] overflow-y-auto mt-3">
             {selectList.map((it, i) => (
               <div key={it.taskId}>
@@ -242,15 +244,15 @@ export const ImportTask = () => {
                 className="mr-2"
               />
               <span className="text-sm">
-                强制中止
+                {t('importTask.forceAbort')}
                 <span className="text-gray-500 ml-1">
-                  (直接标记为失败状态，适用于卡住的任务)
+                  {t('importTask.forceAbortDesc')}
                 </span>
               </span>
             </label>
             {force && (
               <div className="mt-2 text-xs text-orange-600">
-                ⚠️ 强制中止将直接标记任务为失败状态
+                {t('importTask.forceAbortWarn')}
               </div>
             )}
           </div>
@@ -259,10 +261,10 @@ export const ImportTask = () => {
     }
 
     modalApi.confirm({
-      title: '中止任务',
+      title: t('importTask.abortTitle'),
       content: <StopConfirmContent />,
-      okText: '确认',
-      cancelText: '取消',
+      okText: t('importTask.confirm'),
+      cancelText: t('importTask.cancel'),
       onOk: async () => {
         try {
           await Promise.all(
@@ -270,9 +272,9 @@ export const ImportTask = () => {
           )
           refreshTasks()
           setSelectList([])
-          messageApi.success(forceStop ? '强制中止成功' : '中止成功')
+          messageApi.success(forceStop ? t('importTask.forceAbortSuccess') : t('importTask.abortSuccess'))
         } catch (error) {
-          messageApi.error(`中止任务失败: ${error.message}`)
+          messageApi.error(t('importTask.abortFailed', { msg: error.message }))
           throw error
         }
       },
@@ -299,7 +301,7 @@ export const ImportTask = () => {
 
       return (
         <div>
-          <div>您确定要从历史记录中删除任务吗？</div>
+          <div>{t('importTask.deleteConfirm')}</div>
           <div className="max-h-[310px] overflow-y-auto mt-3">
             {selectList.map((it, i) => (
               <div key={it.taskId}>
@@ -320,15 +322,15 @@ export const ImportTask = () => {
                 className="mr-2"
               />
               <span className="text-sm">
-                强制删除
+                {t('importTask.forceDelete')}
                 <span className="text-gray-500 ml-1">
-                  (跳过中止逻辑，直接删除历史记录，适用于卡住的任务)
+                  {t('importTask.forceDeleteDesc')}
                 </span>
               </span>
             </label>
             {force && (
               <div className="mt-2 text-xs text-orange-600">
-                ⚠️ 强制删除将绕过正常的任务中止流程
+                {t('importTask.forceDeleteWarn')}
               </div>
             )}
           </div>
@@ -336,7 +338,7 @@ export const ImportTask = () => {
           {hasStuckTasks && !force && (
             <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
               <div className="text-sm text-yellow-700">
-                💡 检测到运行中或暂停的任务，必须勾选"强制删除"才能删除
+                {t('importTask.forceDeleteHint')}
               </div>
             </div>
           )}
@@ -345,16 +347,16 @@ export const ImportTask = () => {
     }
 
     modalApi.confirm({
-      title: '删除任务',
+      title: t('importTask.deleteTitle'),
       content: <DeleteConfirmContent />,
-      okText: '确认',
-      cancelText: '取消',
+      okText: t('importTask.confirm'),
+      cancelText: t('importTask.cancel'),
       onOk: async () => {
         try {
           // 如果有卡住的任务但没有勾选强制删除，阻止执行
           if (hasStuckTasks && !forceDelete) {
-            messageApi.warning('检测到运行中或暂停的任务，请勾选"强制删除"选项')
-            return Promise.reject(new Error('需要强制删除'))
+            messageApi.warning(t('importTask.needForceDelete'))
+            return Promise.reject(new Error(t('importTask.needForceDeleteErr')))
           }
 
           await Promise.all(
@@ -362,9 +364,9 @@ export const ImportTask = () => {
           )
           refreshTasks()
           setSelectList([])
-          messageApi.success(forceDelete ? '强制删除成功' : '删除成功')
+          messageApi.success(forceDelete ? t('importTask.forceDeleteSuccess') : t('importTask.deleteSuccess'))
         } catch (error) {
-          messageApi.error(`删除任务失败: ${error.message}`)
+          messageApi.error(t('importTask.deleteFailed', { msg: error.message }))
           throw error
         }
       },
@@ -385,11 +387,11 @@ export const ImportTask = () => {
     setSelectList([])
 
     if (failed === 0) {
-      messageApi.success(`已重新提交 ${succeeded} 个任务`)
+      messageApi.success(t('importTask.resubmitted', { count: succeeded }))
     } else if (succeeded === 0) {
-      messageApi.error(`${failed} 个任务重试失败`)
+      messageApi.error(t('importTask.retryFailed', { count: failed }))
     } else {
-      messageApi.warning(`${succeeded} 个任务已重新提交，${failed} 个失败`)
+      messageApi.warning(t('importTask.retryPartial', { succeeded, failed }))
     }
   }
 
@@ -418,9 +420,9 @@ export const ImportTask = () => {
   // 状态筛选菜单
   const statusMenu = {
     items: [
-      { key: 'in_progress', label: '进行中' },
-      { key: 'completed', label: '已完成' },
-      { key: 'all', label: '全部' },
+      { key: 'in_progress', label: t('importTask.filterInProgress') },
+      { key: 'completed', label: t('importTask.filterCompleted') },
+      { key: 'all', label: t('importTask.filterAll') },
     ],
     onClick: ({ key }) => {
       navigate(`/task?search=${search}&status=${key}`, {
@@ -431,20 +433,20 @@ export const ImportTask = () => {
 
   const getStatusLabel = (status) => {
     switch (status) {
-      case 'in_progress': return '进行中'
-      case 'completed': return '已完成'
-      case 'all': return '全部'
-      default: return '进行中'
+      case 'in_progress': return t('importTask.filterInProgress')
+      case 'completed': return t('importTask.filterCompleted')
+      case 'all': return t('importTask.filterAll')
+      default: return t('importTask.filterInProgress')
     }
   }
 
   // 队列类型筛选菜单
   const queueMenu = {
     items: [
-      { key: 'all', label: '全部队列' },
-      { key: 'download', label: '下载队列' },
-      { key: 'management', label: '管理队列' },
-      { key: 'fallback', label: '后备队列' },
+      { key: 'all', label: t('importTask.queueAll') },
+      { key: 'download', label: t('importTask.queueDownload') },
+      { key: 'management', label: t('importTask.queueManagement') },
+      { key: 'fallback', label: t('importTask.queueFallback') },
     ],
     onClick: ({ key }) => {
       setQueueFilter(key)
@@ -455,11 +457,11 @@ export const ImportTask = () => {
 
   const getQueueLabel = (queue) => {
     switch (queue) {
-      case 'all': return '全部队列'
-      case 'download': return '下载队列'
-      case 'management': return '管理队列'
-      case 'fallback': return '后备队列'
-      default: return '全部队列'
+      case 'all': return t('importTask.queueAll')
+      case 'download': return t('importTask.queueDownload')
+      case 'management': return t('importTask.queueManagement')
+      case 'fallback': return t('importTask.queueFallback')
+      default: return t('importTask.queueAll')
     }
   }
 
@@ -531,10 +533,10 @@ export const ImportTask = () => {
                     className="text-xs"
                   >
                     {item.queueType === 'management'
-                      ? '管理'
+                      ? t('importTask.typeManagement')
                       : item.queueType === 'fallback'
-                        ? '后备'
-                        : '下载'}
+                        ? t('importTask.typeFallback')
+                        : t('importTask.typeDownload')}
                   </Tag>
                 </div>
               </div>
@@ -587,7 +589,7 @@ export const ImportTask = () => {
     <div className="my-6">
       <Card
         loading={loading}
-        title="任务管理器"
+        title={t('importTask.cardTitle')}
         extra={
           !isMobile && (
             <div className='flex items-center justify-end gap-2 flex-wrap' style={{ maxWidth: '100%' }}>
@@ -601,7 +603,7 @@ export const ImportTask = () => {
                   {getQueueLabel(queueFilter)}
                 </Button>
               </Dropdown>
-              <Tooltip title="全选/取消全选">
+              <Tooltip title={t('importTask.selectAllTip')}>
                 <Button
                   type="default"
                   shape="circle"
@@ -625,7 +627,7 @@ export const ImportTask = () => {
                   }}
                 />
               </Tooltip>
-              <Tooltip title="启用/暂停任务">
+              <Tooltip title={t('importTask.pauseResumeTip')}>
                 <Button
                   disabled={!canPause}
                   type="default"
@@ -634,7 +636,7 @@ export const ImportTask = () => {
                   onClick={handlePause}
                 />
               </Tooltip>
-              <Tooltip title="重试失败任务">
+              <Tooltip title={t('importTask.retryTip')}>
                 <Button
                   disabled={!canRetry}
                   type="default"
@@ -643,7 +645,7 @@ export const ImportTask = () => {
                   onClick={handleRetry}
                 />
               </Tooltip>
-              <Tooltip title="删除任务">
+              <Tooltip title={t('importTask.deleteTip')}>
                 <Button
                   disabled={!canDelete}
                   type="default"
@@ -652,7 +654,7 @@ export const ImportTask = () => {
                   onClick={handleDelete}
                 />
               </Tooltip>
-              <Tooltip title="中止任务">
+              <Tooltip title={t('importTask.abortTip')}>
                 <Button
                   disabled={!canStop}
                   type="default"
@@ -662,7 +664,7 @@ export const ImportTask = () => {
                 />
               </Tooltip>
               <Input.Search
-                placeholder="按任务标题搜索"
+                placeholder={t('importTask.searchByTitle')}
                 allowClear
                 enterButton
                 style={{ width: isMobile ? '100%' : '200px' }}
@@ -696,7 +698,7 @@ export const ImportTask = () => {
             <div className="mb-4">
               <Space.Compact style={{ width: '100%' }}>
                 <Input
-                  placeholder="搜索任务"
+                  placeholder={t('importTask.searchTask')}
                   value={searchInputValue}
                   onChange={(e) => setSearchInputValue(e.target.value)}
                   onPressEnter={handleSearch}
@@ -720,7 +722,7 @@ export const ImportTask = () => {
                   borderBottomLeftRadius: 0,
                   borderBottomRightRadius: 20,
                   fontSize: 14
-                }}>搜索</Button>
+                }}>{t('importTask.search')}</Button>
               </Space.Compact>
             </div>
 
@@ -748,8 +750,8 @@ export const ImportTask = () => {
                 block
               >
                 {selectList.length === taskList.length && !!selectList.length
-                  ? '取消全选'
-                  : '全选'}
+                  ? t('importTask.deselectAll')
+                  : t('importTask.selectAll')}
               </Button>
               <Button
                 disabled={!canPause}
@@ -757,7 +759,7 @@ export const ImportTask = () => {
                 onClick={handlePause}
                 block
               >
-                {isPause ? '继续' : '暂停'}
+                {isPause ? t('importTask.resume') : t('importTask.pause')}
               </Button>
             </div>
 
@@ -769,7 +771,7 @@ export const ImportTask = () => {
                 onClick={handleRetry}
                 block
               >
-                重试
+                {t('importTask.retry')}
               </Button>
             </div>
 
@@ -782,7 +784,7 @@ export const ImportTask = () => {
                 onClick={handleDelete}
                 block
               >
-                删除
+                {t('importTask.delete')}
               </Button>
               <Button
                 disabled={!canStop}
@@ -791,14 +793,14 @@ export const ImportTask = () => {
                 onClick={handleStop}
                 block
               >
-                中止
+                {t('importTask.abort')}
               </Button>
             </div>
 
             {/* 选中任务提示 */}
             {selectList.length > 0 && (
               <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded">
-                已选择 {selectList.length} 个任务
+                {t('importTask.selectedCount', { count: selectList.length })}
               </div>
             )}
           </div>
@@ -845,18 +847,18 @@ export const ImportTask = () => {
                   },
                   hideOnSinglePage: true,
                   showSizeChanger: true,
-                  showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+                  showTotal: (total, range) => t('importTask.paginationTotal', { from: range[0], to: range[1], total }),
                   locale: {
-                    items_per_page: '条/页',
-                    jump_to: '跳至',
-                    jump_to_confirm: '确定',
-                    page: '页',
-                    prev_page: '上一页',
-                    next_page: '下一页',
-                    prev_5: '向前 5 页',
-                    next_5: '向后 5 页',
-                    prev_3: '向前 3 页',
-                    next_3: '向后 3 页',
+                    items_per_page: t('importTask.itemsPerPage'),
+                    jump_to: t('importTask.jumpTo'),
+                    jump_to_confirm: t('importTask.jumpConfirm'),
+                    page: t('importTask.page'),
+                    prev_page: t('importTask.prevPage'),
+                    next_page: t('importTask.nextPage'),
+                    prev_5: t('importTask.prev5'),
+                    next_5: t('importTask.next5'),
+                    prev_3: t('importTask.prev3'),
+                    next_3: t('importTask.next3'),
                   },
                 }}
                 renderItem={(item, index) => {
@@ -925,10 +927,10 @@ export const ImportTask = () => {
                                 {getQueueIcon(item.queueType)}
                               </span>
                               {item.queueType === 'management'
-                                ? '管理队列'
+                                ? t('importTask.typeManagementQueue')
                                 : item.queueType === 'fallback'
-                                  ? '后备队列'
-                                  : '下载队列'}
+                                  ? t('importTask.typeFallbackQueue')
+                                  : t('importTask.typeDownloadQueue')}
                             </Tag>
                           </div>
                         </div>
@@ -983,7 +985,7 @@ export const ImportTask = () => {
               />
             )
           ) : (
-            <Empty description="没有符合条件的任务" />
+            <Empty description={t('importTask.emptyDesc')} />
           )}
         </div>
       </Card>

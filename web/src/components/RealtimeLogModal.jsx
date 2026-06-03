@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Modal, Drawer, Button, Tooltip, message, Empty, Switch, Card, Segmented, Input } from 'antd'
 import { CopyOutlined, ExportOutlined, ClearOutlined, VerticalAlignBottomOutlined, SearchOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -8,6 +9,7 @@ import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../store'
 
 export default function RealtimeLogModal({ open, onClose }) {
+  const { t } = useTranslation()
   const [logs, setLogs] = useState([])
   const [connected, setConnected] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
@@ -21,7 +23,7 @@ export default function RealtimeLogModal({ open, onClose }) {
   useEffect(() => {
     if (!open) return
     const token = Cookies.get('danmu_token')
-    if (!token) { messageApi.error('未登录'); return }
+    if (!token) { messageApi.error(t('realtimeLog.notLoggedIn')); return }
 
     const ctrl = new AbortController()
     abortRef.current = ctrl
@@ -29,7 +31,7 @@ export default function RealtimeLogModal({ open, onClose }) {
     fetchEventSource('/api/ui/logs/stream', {
       signal: ctrl.signal,
       headers: { Authorization: `Bearer ${token}` },
-      onopen: async (res) => { if (res.ok) setConnected(true); else throw new Error(`连接失败: ${res.status}`) },
+      onopen: async (res) => { if (res.ok) setConnected(true); else throw new Error(`${t('realtimeLog.connectFailed')}: ${res.status}`) },
       onmessage: (event) => {
         const msg = event.data.trim()
         if (!msg) return
@@ -69,14 +71,14 @@ export default function RealtimeLogModal({ open, onClose }) {
   const copyLogLine = async (logText) => {
     try {
       await navigator.clipboard.writeText(logText)
-      messageApi.success('日志已复制到剪贴板')
+      messageApi.success(t('realtimeLog.copied'))
     } catch {
       const textArea = document.createElement('textarea')
       textArea.value = logText
       document.body.appendChild(textArea)
       textArea.select()
-      try { document.execCommand('copy'); messageApi.success('日志已复制到剪贴板') }
-      catch { messageApi.error('复制失败') }
+      try { document.execCommand('copy'); messageApi.success(t('realtimeLog.copied')) }
+      catch { messageApi.error(t('realtimeLog.copyFailed')) }
       document.body.removeChild(textArea)
     }
   }
@@ -154,9 +156,9 @@ export default function RealtimeLogModal({ open, onClose }) {
 
   const titleNode = (
     <div className="flex items-center gap-2">
-      <span>实时日志</span>
+      <span>{t('realtimeLog.title')}</span>
       <span className={`inline-block w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-400'}`} />
-      <span className="text-xs text-gray-400">{connected ? '已连接' : '未连接'}</span>
+      <span className="text-xs text-gray-400">{connected ? t('realtimeLog.connected') : t('realtimeLog.disconnected')}</span>
       {!isMobile && (
         <>
           <span className="text-gray-300 mx-1">|</span>
@@ -171,7 +173,7 @@ export default function RealtimeLogModal({ open, onClose }) {
           </div>
           <Input
             size="small"
-            placeholder="搜索日志..."
+            placeholder={t('realtimeLog.searchPlaceholder')}
             prefix={<SearchOutlined className="text-gray-400" />}
             allowClear
             value={searchText}
@@ -185,9 +187,9 @@ export default function RealtimeLogModal({ open, onClose }) {
 
   const actionButtons = (
     <div className="flex gap-1">
-      <Tooltip title="清空"><Button size="small" type="text" icon={<ClearOutlined />} onClick={() => setLogs([])} /></Tooltip>
-      <Tooltip title="导出"><Button size="small" type="text" icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
-      <Tooltip title="滚动到顶部">
+      <Tooltip title={t('realtimeLog.clear')}><Button size="small" type="text" icon={<ClearOutlined />} onClick={() => setLogs([])} /></Tooltip>
+      <Tooltip title={t('realtimeLog.export')}><Button size="small" type="text" icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
+      <Tooltip title={t('realtimeLog.scrollTop')}>
         <Button size="small" type="text" icon={<VerticalAlignBottomOutlined className="rotate-180" />} onClick={() => {
           if (containerRef.current) containerRef.current.scrollTop = 0
         }} />
@@ -198,14 +200,14 @@ export default function RealtimeLogModal({ open, onClose }) {
   const footerNode = (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-400">自动滚动</span>
+        <span className="text-xs text-gray-400">{t('realtimeLog.autoScroll')}</span>
         <Switch size="small" checked={autoScroll} onChange={setAutoScroll} />
       </div>
       {!isMobile && (
         <div className="flex gap-2">
-          <Tooltip title="清空"><Button icon={<ClearOutlined />} onClick={() => setLogs([])} /></Tooltip>
-          <Tooltip title="导出"><Button icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
-          <Tooltip title="滚动到顶部">
+          <Tooltip title={t('realtimeLog.clear')}><Button icon={<ClearOutlined />} onClick={() => setLogs([])} /></Tooltip>
+          <Tooltip title={t('realtimeLog.export')}><Button icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
+          <Tooltip title={t('realtimeLog.scrollTop')}>
             <Button icon={<VerticalAlignBottomOutlined className="rotate-180" />} onClick={() => {
               if (containerRef.current) containerRef.current.scrollTop = 0
             }} />
@@ -229,7 +231,7 @@ export default function RealtimeLogModal({ open, onClose }) {
           </div>
           <Input
             size="small"
-            placeholder="搜索日志..."
+            placeholder={t('realtimeLog.searchPlaceholder')}
             prefix={<SearchOutlined className="text-gray-400" />}
             allowClear
             value={searchText}
@@ -245,7 +247,7 @@ export default function RealtimeLogModal({ open, onClose }) {
         >
           {filteredLogs.length === 0 ? (
             <div className="flex items-center justify-center" style={{ height: isMobile ? '40vh' : '40vh' }}>
-              <Empty description={<span className="text-gray-400">{logs.length === 0 ? '等待日志...' : '无匹配日志'}</span>} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty description={<span className="text-gray-400">{logs.length === 0 ? t('realtimeLog.waitingLog') : t('realtimeLog.noMatchLog')}</span>} image={Empty.PRESENTED_IMAGE_SIMPLE} />
             </div>
           ) : (
             filteredLogs.map((line, i) => {
@@ -269,7 +271,7 @@ export default function RealtimeLogModal({ open, onClose }) {
                       icon={<CopyOutlined />}
                       className={`shrink-0 opacity-0 group-hover:opacity-100 transition-opacity ${isMobile ? 'opacity-60' : ''}`}
                       onClick={(e) => { e.stopPropagation(); copyLogLine(filtered) }}
-                      title="复制日志"
+                      title={t('realtimeLog.copyLog')}
                     />
                   </div>
                 </div>

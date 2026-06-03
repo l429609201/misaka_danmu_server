@@ -8,7 +8,7 @@ import {
   Tooltip,
   Tabs,
 } from 'antd'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import {
   getMetaData,
   getProviderConfig,
@@ -23,7 +23,6 @@ import { MyIcon } from '@/components/MyIcon'
 import {
   closestCorners,
   DndContext,
-  DragOverlay,
   MouseSensor,
   TouchSensor,
   useSensor,
@@ -43,12 +42,14 @@ import {
   MinusCircleFilled,
 } from '@ant-design/icons'
 import { useMessage } from '../../../MessageContext'
+import { useTranslation } from 'react-i18next'
 import {
   BangumiConfig,
   TMDBConfig,
   TVDBConfig,
   DoubanConfig,
-  ImdbConfig
+  ImdbConfig,
+  TraktConfig,
 } from './MetadataSourceConfig'
 
 const getStatusIcon = (statusCode) => {
@@ -68,6 +69,7 @@ const getStatusIcon = (statusCode) => {
 }
 
 const SortableItem = ({ item, index, handleChangeStatus, onConfig }) => {
+  const { t } = useTranslation()
   const {
     attributes,
     listeners,
@@ -94,20 +96,27 @@ const SortableItem = ({ item, index, handleChangeStatus, onConfig }) => {
   }
 
   return (
-    <List.Item ref={setNodeRef} style={style}>
-      {/* 保留你原有的列表项渲染逻辑 */}
-      <div className="w-full flex items-center justify-between">
-        {/* 左侧添加拖拽手柄 */}
+    <List.Item ref={setNodeRef} style={style} className="!border-0 !p-0 mb-3">
+      <div
+        {...attributes}
+        {...listeners}
+        className="w-full rounded-xl border px-4 py-3 flex items-center justify-between transition-all hover:shadow-md"
+        style={{ background: 'var(--color-card)', borderColor: 'var(--color-border)', cursor: isDragging ? 'grabbing' : 'grab' }}
+      >
         <div className="flex items-center gap-2">
-          {/* 将attributes移到拖拽图标容器上，确保只有拖拽图标可触发拖拽 */}
-          <div {...attributes} {...listeners} style={{ cursor: 'grab' }}>
+          <div style={{ cursor: 'grab' }}>
             <MyIcon icon="drag" size={24} />
           </div>
           <div>{item.providerName}</div>
         </div>
-        <div className="flex items-center justify-around gap-3">
+        <div
+          className="flex items-center justify-around gap-3"
+          onPointerDown={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
+          onTouchStart={e => e.stopPropagation()}
+        >
           {/* 状态图标：移到齿轮左边，hover 显示详细状态 */}
-          <Tooltip title={item.status || '未配置'} trigger={['click', 'hover']}>
+          <Tooltip title={item.status || t('metadata.notConfigured')} trigger={['click', 'hover']}>
             <span className="cursor-default">{getStatusIcon(item.statusCode)}</span>
           </Tooltip>
           {/* 配置按钮 */}
@@ -117,14 +126,14 @@ const SortableItem = ({ item, index, handleChangeStatus, onConfig }) => {
           {item.providerName !== 'tmdb' ? (
             <Switch
               checked={item.isAuxSearchEnabled}
-              checkedChildren="已启用"
-              unCheckedChildren="未启用"
+              checkedChildren={t('metadata.enabled')}
+              unCheckedChildren={t('metadata.notEnabled')}
               onChange={handleChangeStatus}
             />
           ) : (
             <Switch
               checked
-              checkedChildren="已启用"
+              checkedChildren={t('metadata.enabled')}
               disabled
             />
           )}
@@ -135,10 +144,10 @@ const SortableItem = ({ item, index, handleChangeStatus, onConfig }) => {
 }
 
 export const Metadata = () => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [list, setList] = useState([])
   const [activeItem, setActiveItem] = useState(null)
-  const dragOverlayRef = useRef(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedSource, setSelectedSource] = useState(null)
   const [form] = Form.useForm()
@@ -197,7 +206,7 @@ export const Metadata = () => {
           form.setFieldsValue(formValues)
         })
         .catch(() => {
-          messageApi.error('获取配置失败')
+          messageApi.error(t('metadata.getConfigFailed'))
         })
     }
   }, [isModalOpen, selectedSource, form, messageApi])
@@ -241,7 +250,7 @@ export const Metadata = () => {
       }))
       setMetaData(payload)
       messageApi.success(
-        `已更新排序，${movedItem.providerName} 移动到位置 ${overIndex + 1}`
+        t('metadata.sortUpdated', { name: movedItem.providerName, position: overIndex + 1 })
       )
     }
 
@@ -326,64 +335,24 @@ export const Metadata = () => {
           imdbUseApi: values.imdbUseApi ?? true,
           imdbEnableFallback: values.imdbEnableFallback ?? true,
         })
+      } else if (providerName === 'trakt') {
+        // Trakt OAuth 走内置 CF Worker，无需保存配置
       }
 
-      messageApi.success('保存成功')
+      messageApi.success(t('metadata.saveSuccess'))
       setIsModalOpen(false)
       // 成功后刷新列表以更新状态
       fetchInfo()
     } catch (error) {
-      messageApi.error(`保存失败: ${error.message || '未知错误'}`)
+      messageApi.error(`${t('metadata.saveFailed')}: ${error.message || t('metadata.unknownError')}`)
     } finally {
       setConfirmLoading(false)
     }
   }
 
-  const renderDragOverlay = () => {
-    if (!activeItem) return null
-
-    return (
-      <div ref={dragOverlayRef} style={{ width: '100%', maxWidth: '100%' }}>
-        <List.Item
-          style={{
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-            opacity: 0.9,
-          }}
-        >
-          <div className="w-full flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <MyIcon icon="drag" size={24} />
-              <div>{activeItem.providerName}</div>
-            </div>
-            <div className="flex items-center justify-around gap-4">
-              {/* 状态图标：移到齿轮左边，hover 显示详细状态 */}
-              <Tooltip title={activeItem.status || '未配置'}>
-                <span className="cursor-default">{getStatusIcon(activeItem.statusCode)}</span>
-              </Tooltip>
-              {activeItem.providerName !== 'tmdb' ? (
-                <Switch
-                  checked={activeItem.isAuxSearchEnabled}
-                  checkedChildren="已启用"
-                  unCheckedChildren="未启用"
-                  onChange={() => handleChangeStatus(activeItem)}
-                />
-              ) : (
-                <Switch
-                  checked
-                  checkedChildren="已启用"
-                  disabled
-                />
-              )}
-            </div>
-          </div>
-        </List.Item>
-      </div>
-    )
-  }
-
   return (
     <div className="my-6">
-      <Card loading={loading} title="元信息搜索源">
+      <Card loading={loading} title={t('metadata.metadataSearchSource')}>
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}
@@ -413,12 +382,10 @@ export const Metadata = () => {
             />
           </SortableContext>
 
-          {/* 拖拽覆盖层 */}
-          <DragOverlay>{renderDragOverlay()}</DragOverlay>
         </DndContext>
       </Card>
       <Modal
-        title={`配置: ${selectedSource?.providerName}`}
+        title={t('metadata.configTitle', { name: selectedSource?.providerName })}
         open={isModalOpen}
         onOk={handleSaveSettings}
         onCancel={() => setIsModalOpen(false)}
@@ -437,37 +404,37 @@ export const Metadata = () => {
             items={[
               {
                 key: 'general',
-                label: '通用配置',
+                label: t('metadata.generalConfig'),
                 children: (
                   <div className="space-y-4">
                     <div className="my-4">
-                      请为 {selectedSource?.providerName} 源填写以下配置信息。
+                      {t('metadata.fillConfigTip', { name: selectedSource?.providerName })}
                     </div>
                     <div className="flex items-center justify-start flex-wrap gap-2 mb-4">
                       <Form.Item
                         name="useProxy"
-                        label="启用代理"
+                        label={t('metadata.useProxy')}
                         valuePropName="checked"
                         className="min-w-[100px] shrink-0 !mb-0"
                       >
                         <Switch />
                       </Form.Item>
                       <div className="w-full text-gray-500">
-                        启用后，此源的所有API请求将通过全局代理服务器进行。需要先在设置中配置全局代理。
+                        {t('metadata.useProxyTip')}
                       </div>
                     </div>
                     <div className="flex items-center justify-start flex-wrap md:flex-nowrap gap-2 mb-4">
                       <Form.Item
                         name="logRawResponses"
-                        label="记录原始响应"
+                        label={t('metadata.recordRawResponse')}
                         valuePropName="checked"
                         className="min-w-[100px] shrink-0 !mb-0"
                       >
                         <Switch />
                       </Form.Item>
                       <div className="w-full text-gray-500">
-                        启用后，此源的所有API请求的原始响应将被记录到{' '}
-                        <code>config/logs/metadata_responses.log</code> 文件中，用于调试。
+                        {t('metadata.rawResponseTipPrefix')}
+                        <code>config/logs/metadata_responses.log</code>{t('metadata.rawResponseTipSuffix')}
                       </div>
                     </div>
                   </div>
@@ -475,7 +442,7 @@ export const Metadata = () => {
               },
               {
                 key: 'source',
-                label: '源配置',
+                label: t('metadata.sourceConfig'),
                 children: (
                   <div className="py-4">
                     {selectedSource?.providerName === 'bangumi' && <BangumiConfig form={form} />}
@@ -483,6 +450,7 @@ export const Metadata = () => {
                     {selectedSource?.providerName === 'tvdb' && <TVDBConfig form={form} />}
                     {selectedSource?.providerName === 'douban' && <DoubanConfig form={form} />}
                     {selectedSource?.providerName === 'imdb' && <ImdbConfig form={form} />}
+                    {selectedSource?.providerName === 'trakt' && <TraktConfig form={form} />}
                     {/* 动态渲染 configurableFields 声明的字段 */}
                     {configData?.configurableFields && Object.entries(configData.configurableFields).map(([key, fieldInfo]) => {
                       // 解析字段配置（兼容元组和对象格式）
@@ -510,10 +478,10 @@ export const Metadata = () => {
                       // 其他类型暂不渲染（未来可扩展）
                       return null
                     })}
-                    {!['bangumi', 'tmdb', 'tvdb', 'douban', 'imdb'].includes(selectedSource?.providerName)
+                    {!['bangumi', 'tmdb', 'tvdb', 'douban', 'imdb', 'trakt'].includes(selectedSource?.providerName)
                       && !configData?.configurableFields && (
                       <div className="text-gray-500 text-center py-8">
-                        此源暂无特定配置项
+                        {t('metadata.noSpecificConfig')}
                       </div>
                     )}
                   </div>

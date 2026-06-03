@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button, Table, Space, Tag, Modal, Input, Alert, Spin, Popconfirm, Card, Empty, message } from 'antd'
 import Cookies from 'js-cookie'
 import {
@@ -30,6 +31,7 @@ import {
  * 用于在参数配置-数据库设置中显示
  */
 export const DatabaseBackupManager = () => {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const isMobile = useAtomValue(isMobileAtom)
   const [backups, setBackups] = useState([])
@@ -58,7 +60,7 @@ export const DatabaseBackupManager = () => {
       const res = await getBackupList()
       setBackups(res.data || [])
     } catch (err) {
-      message.error('加载备份列表失败: ' + (err.response?.data?.detail || err.message))
+      message.error(t('dbBackup.loadListFailed', { error: err.response?.data?.detail || err.message }))
     } finally {
       setLoading(false)
     }
@@ -77,10 +79,10 @@ export const DatabaseBackupManager = () => {
     try {
       setCreating(true)
       const res = await createBackup()
-      message.success(res.data?.message || '备份创建成功')
+      message.success(res.data?.message || t('dbBackup.createSuccess'))
       loadBackups()
     } catch (err) {
-      message.error('创建备份失败: ' + (err.response?.data?.detail || err.message))
+      message.error(t('dbBackup.createFailed', { error: err.response?.data?.detail || err.message }))
     } finally {
       setCreating(false)
     }
@@ -89,10 +91,10 @@ export const DatabaseBackupManager = () => {
   const handleDelete = async (filename) => {
     try {
       await deleteBackup(filename)
-      message.success('删除成功')
+      message.success(t('dbBackup.deleteSuccess'))
       loadBackups()
     } catch (err) {
-      message.error('删除失败: ' + (err.response?.data?.detail || err.message))
+      message.error(t('dbBackup.deleteFailed', { error: err.response?.data?.detail || err.message }))
     }
   }
 
@@ -100,11 +102,11 @@ export const DatabaseBackupManager = () => {
     if (selectedRowKeys.length === 0) return
     try {
       const res = await deleteBackupBatch(selectedRowKeys)
-      message.success(res.data?.message || '批量删除成功')
+      message.success(res.data?.message || t('dbBackup.batchDeleteSuccess'))
       setSelectedRowKeys([])
       loadBackups()
     } catch (err) {
-      message.error('批量删除失败: ' + (err.response?.data?.detail || err.message))
+      message.error(t('dbBackup.batchDeleteFailed', { error: err.response?.data?.detail || err.message }))
     }
   }
 
@@ -121,8 +123,9 @@ export const DatabaseBackupManager = () => {
   }
 
   const handleRestore = async () => {
-    if (restoreConfirmText !== '确认还原备份') {
-      message.error('请输入「确认还原备份」以继续')
+    const confirmKeyword = t('dbBackup.restoreConfirmKeyword')
+    if (restoreConfirmText !== confirmKeyword) {
+      message.error(t('dbBackup.restoreConfirmRequired'))
       return
     }
     try {
@@ -131,11 +134,11 @@ export const DatabaseBackupManager = () => {
         filename: restoreTarget.filename,
         confirm: 'RESTORE',
       })
-      message.success(res.data?.message || '还原成功')
+      message.success(res.data?.message || t('dbBackup.restoreSuccess'))
       setRestoreModalVisible(false)
       setRestoreConfirmText('')
     } catch (err) {
-      message.error('还原失败: ' + (err.response?.data?.detail || err.message))
+      message.error(t('dbBackup.restoreFailed', { error: err.response?.data?.detail || err.message }))
     } finally {
       setRestoring(false)
     }
@@ -152,7 +155,7 @@ export const DatabaseBackupManager = () => {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.name.endsWith('.json.gz')) {
-      message.error('请选择 .json.gz 格式的备份文件')
+      message.error(t('dbBackup.fileFormatError'))
       e.target.value = ''
       return
     }
@@ -162,18 +165,18 @@ export const DatabaseBackupManager = () => {
   // 执行上传
   const handleUpload = async () => {
     if (!uploadFile) {
-      message.error('请先选择文件')
+      message.error(t('dbBackup.selectFileFirst'))
       return
     }
     try {
       setUploading(true)
       const res = await uploadBackup(uploadFile)
-      message.success(res.data?.message || '上传成功')
+      message.success(res.data?.message || t('dbBackup.uploadSuccess'))
       setUploadModalVisible(false)
       setUploadFile(null)
       loadBackups()
     } catch (err) {
-      message.error('上传失败: ' + (err.response?.data?.detail || err.message))
+      message.error(t('dbBackup.uploadFailed', { error: err.response?.data?.detail || err.message }))
     } finally {
       setUploading(false)
     }
@@ -193,34 +196,34 @@ export const DatabaseBackupManager = () => {
 
   const columns = [
     {
-      title: '文件名',
+      title: t('dbBackup.colFilename'),
       dataIndex: 'filename',
       key: 'filename',
       ellipsis: true,
     },
     {
-      title: '数据库类型',
+      title: t('dbBackup.colDbType'),
       dataIndex: 'db_type',
       key: 'db_type',
       width: 100,
       render: (type) => type ? <Tag color="blue">{type.toUpperCase()}</Tag> : '-',
     },
     {
-      title: '大小',
+      title: t('dbBackup.colSize'),
       dataIndex: 'size',
       key: 'size',
       width: 100,
       render: (size) => formatSize(size),
     },
     {
-      title: '创建时间',
+      title: t('dbBackup.colCreatedAt'),
       dataIndex: 'created_at',
       key: 'created_at',
       width: 180,
       render: (time) => formatDate(time),
     },
     {
-      title: '操作',
+      title: t('dbBackup.colAction'),
       key: 'action',
       width: 200,
       render: (_, record) => (
@@ -230,20 +233,20 @@ export const DatabaseBackupManager = () => {
             size="small"
             icon={<CloudDownloadOutlined />}
             onClick={() => handleDownload(record.filename)}
-            title="下载"
+            title={t('dbBackup.btnDownload')}
           />
           <Button
             type="link"
             size="small"
             icon={<ReloadOutlined />}
             onClick={() => openRestoreModal(record)}
-            title="还原"
+            title={t('dbBackup.btnRestore')}
           />
           <Popconfirm
-            title="确定删除此备份？"
+            title={t('dbBackup.confirmDeleteOne')}
             onConfirm={() => handleDelete(record.filename)}
           >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} title="删除" />
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} title={t('dbBackup.btnDelete')} />
           </Popconfirm>
         </Space>
       ),
@@ -262,13 +265,13 @@ export const DatabaseBackupManager = () => {
   return (
     <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
       <div className={`flex ${isMobile ? 'flex-col gap-3' : 'items-center justify-between'} mb-4`}>
-        <h3 className="text-base font-medium">📦 数据库备份管理</h3>
+        <h3 className="text-base font-medium">{t('dbBackup.title')}</h3>
         <Space wrap>
           <Button
             icon={<UploadOutlined />}
             onClick={openUploadModal}
           >
-            上传备份
+            {t('dbBackup.btnUpload')}
           </Button>
           <Button
             type="primary"
@@ -276,7 +279,7 @@ export const DatabaseBackupManager = () => {
             onClick={handleCreate}
             loading={creating}
           >
-            立即备份
+            {t('dbBackup.btnCreateNow')}
           </Button>
         </Space>
       </div>
@@ -287,29 +290,29 @@ export const DatabaseBackupManager = () => {
           <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center gap-2'}`}>
             <div className="flex items-center gap-2">
               <ClockCircleOutlined className="text-blue-500" />
-              <span>定时备份:</span>
+              <span>{t('dbBackup.labelScheduledBackup')}</span>
               {jobStatus.enabled ? (
-                <Tag icon={<CheckCircleOutlined />} color="success">已启用</Tag>
+                <Tag icon={<CheckCircleOutlined />} color="success">{t('dbBackup.tagEnabled')}</Tag>
               ) : (
-                <Tag color="default">已暂停</Tag>
+                <Tag color="default">{t('dbBackup.tagPaused')}</Tag>
               )}
             </div>
             {jobStatus.enabled && (
               <span className="text-gray-500 dark:text-gray-400 text-sm">
-                执行周期: {jobStatus.cron_expression}
-                {jobStatus.next_run_time && ` | 下次执行: ${formatDate(jobStatus.next_run_time)}`}
+                {t('dbBackup.labelCron')}{jobStatus.cron_expression}
+                {jobStatus.next_run_time && `${t('dbBackup.labelNextRun')}${formatDate(jobStatus.next_run_time)}`}
               </span>
             )}
             <Button type="link" size="small" onClick={goToScheduledTasks}>
-              前往配置 →
+              {t('dbBackup.btnGoConfig')}
             </Button>
           </div>
         ) : (
           <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
             <ClockCircleOutlined />
-            <span>定时备份: 未配置</span>
+            <span>{t('dbBackup.labelNotConfigured')}</span>
             <Button type="link" size="small" onClick={goToScheduledTasks}>
-              前往配置 →
+              {t('dbBackup.btnGoConfig')}
             </Button>
           </div>
         )}
@@ -319,7 +322,7 @@ export const DatabaseBackupManager = () => {
       <Spin spinning={loading}>
         {isMobile ? (
           backups.length === 0 ? (
-            <Empty description="暂无备份文件" />
+            <Empty description={t('dbBackup.emptyBackups')} />
           ) : (
             <div className="space-y-3">
               {backups.map((record) => (
@@ -338,7 +341,7 @@ export const DatabaseBackupManager = () => {
                         icon={<CloudDownloadOutlined />}
                         onClick={() => handleDownload(record.filename)}
                       >
-                        下载
+                        {t('dbBackup.btnDownload')}
                       </Button>
                       <Button
                         type="link"
@@ -346,14 +349,14 @@ export const DatabaseBackupManager = () => {
                         icon={<ReloadOutlined />}
                         onClick={() => openRestoreModal(record)}
                       >
-                        还原
+                        {t('dbBackup.btnRestore')}
                       </Button>
                       <Popconfirm
-                        title="确定删除此备份？"
+                        title={t('dbBackup.confirmDeleteOne')}
                         onConfirm={() => handleDelete(record.filename)}
                       >
                         <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-                          删除
+                          {t('dbBackup.btnDelete')}
                         </Button>
                       </Popconfirm>
                     </div>
@@ -370,7 +373,7 @@ export const DatabaseBackupManager = () => {
             rowSelection={rowSelection}
             size="small"
             pagination={false}
-            locale={{ emptyText: '暂无备份文件' }}
+            locale={{ emptyText: t('dbBackup.emptyBackups') }}
           />
         )}
       </Spin>
@@ -378,13 +381,13 @@ export const DatabaseBackupManager = () => {
       {/* 批量操作 */}
       {selectedRowKeys.length > 0 && (
         <div className="mt-3 flex items-center gap-4">
-          <span className="text-gray-500 dark:text-gray-400">已选中 {selectedRowKeys.length} 项</span>
+          <span className="text-gray-500 dark:text-gray-400">{t('dbBackup.selectedCount', { count: selectedRowKeys.length })}</span>
           <Popconfirm
-            title={`确定删除选中的 ${selectedRowKeys.length} 个备份？`}
+            title={t('dbBackup.confirmDeleteBatch', { count: selectedRowKeys.length })}
             onConfirm={handleBatchDelete}
           >
             <Button danger size="small" icon={<DeleteOutlined />}>
-              批量删除
+              {t('dbBackup.btnBatchDelete')}
             </Button>
           </Popconfirm>
           {selectedRowKeys.length === 1 && (
@@ -393,7 +396,7 @@ export const DatabaseBackupManager = () => {
               icon={<ReloadOutlined />}
               onClick={() => openRestoreModal(backups.find(b => b.filename === selectedRowKeys[0]))}
             >
-              还原选中
+              {t('dbBackup.btnRestoreSelected')}
             </Button>
           )}
         </div>
@@ -404,7 +407,7 @@ export const DatabaseBackupManager = () => {
         title={
           <span className="text-orange-500">
             <ReloadOutlined className="mr-2" />
-            🔄 还原数据库备份
+            {t('dbBackup.restoreModalTitle')}
           </span>
         }
         open={restoreModalVisible}
@@ -417,52 +420,52 @@ export const DatabaseBackupManager = () => {
             setRestoreModalVisible(false)
             setRestoreConfirmText('')
           }}>
-            取消
+            {t('dbBackup.btnCancel')}
           </Button>,
           <Button
             key="confirm"
             type="primary"
             danger
             loading={restoring}
-            disabled={restoreConfirmText !== '确认还原备份'}
+            disabled={restoreConfirmText !== t('dbBackup.restoreConfirmKeyword')}
             onClick={handleRestore}
           >
-            确认还原
+            {t('dbBackup.btnConfirmRestore')}
           </Button>,
         ]}
       >
         {restoreTarget && (
           <div>
-            <p className="mb-3">您即将从备份文件还原数据库：</p>
+            <p className="mb-3">{t('dbBackup.restoreDesc')}</p>
             <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-4 border border-gray-200 dark:border-gray-700">
               <div className="mb-1">📄 {restoreTarget.filename}</div>
-              <div className="mb-1">📅 创建时间: {formatDate(restoreTarget.created_at)}</div>
-              <div className="mb-1">📦 文件大小: {formatSize(restoreTarget.size)}</div>
+              <div className="mb-1">{t('dbBackup.labelCreatedAt')}{formatDate(restoreTarget.created_at)}</div>
+              <div className="mb-1">{t('dbBackup.labelFileSize')}{formatSize(restoreTarget.size)}</div>
               {restoreTarget.db_type && (
-                <div>🗄️ 数据库类型: {restoreTarget.db_type.toUpperCase()}</div>
+                <div>{t('dbBackup.labelDbType')}{restoreTarget.db_type.toUpperCase()}</div>
               )}
             </div>
             <Alert
               type="error"
               showIcon
               icon={<ExclamationCircleOutlined />}
-              message="❌ 危险操作警告"
+              message={t('dbBackup.alertDangerTitle')}
               description={
                 <div>
-                  <p>此操作将 <strong>完全覆盖</strong> 当前数据库中的所有数据！</p>
-                  <p>还原后无法撤销，请确保您了解此操作的后果。</p>
-                  <p className="mt-2 text-gray-500">建议：在还原前先创建一个当前数据库的备份。</p>
+                  <p>{t('dbBackup.alertDangerDesc1')}</p>
+                  <p>{t('dbBackup.alertDangerDesc2')}</p>
+                  <p className="mt-2 text-gray-500">{t('dbBackup.alertDangerDesc3')}</p>
                 </div>
               }
               className="mb-4"
             />
             <div>
-              <p className="mb-2">请输入 「<strong>确认还原备份</strong>」 以继续：</p>
+              <p className="mb-2">{t('dbBackup.confirmInputHint')}</p>
               <Input
                 value={restoreConfirmText}
                 onChange={(e) => setRestoreConfirmText(e.target.value)}
-                placeholder="输入：确认还原备份"
-                status={restoreConfirmText && restoreConfirmText !== '确认还原备份' ? 'error' : ''}
+                placeholder={t('dbBackup.confirmInputPlaceholder')}
+                status={restoreConfirmText && restoreConfirmText !== t('dbBackup.restoreConfirmKeyword') ? 'error' : ''}
               />
             </div>
           </div>
@@ -474,7 +477,7 @@ export const DatabaseBackupManager = () => {
         title={
           <span>
             <UploadOutlined className="mr-2" />
-            上传备份文件
+            {t('dbBackup.uploadModalTitle')}
           </span>
         }
         open={uploadModalVisible}
@@ -487,7 +490,7 @@ export const DatabaseBackupManager = () => {
             setUploadModalVisible(false)
             setUploadFile(null)
           }}>
-            取消
+            {t('dbBackup.btnCancel')}
           </Button>,
           <Button
             key="confirm"
@@ -496,14 +499,14 @@ export const DatabaseBackupManager = () => {
             disabled={!uploadFile}
             onClick={handleUpload}
           >
-            确认上传
+            {t('dbBackup.btnConfirmUpload')}
           </Button>,
         ]}
       >
         <div className="py-2">
           {/* 文件选择 */}
           <div className="mb-4">
-            <p className="mb-2 font-medium">选择备份文件：</p>
+            <p className="mb-2 font-medium">{t('dbBackup.labelSelectFile')}</p>
             <input
               type="file"
               accept=".gz"
@@ -521,16 +524,16 @@ export const DatabaseBackupManager = () => {
           {/* 选中文件信息 */}
           {uploadFile && (
             <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-4 border border-gray-200 dark:border-gray-700">
-              <div className="mb-1">📄 选中文件: {uploadFile.name}</div>
-              <div>📦 文件大小: {formatSize(uploadFile.size)}</div>
+              <div className="mb-1">{t('dbBackup.labelSelectedFile')}{uploadFile.name}</div>
+              <div>{t('dbBackup.labelFileSize')}{formatSize(uploadFile.size)}</div>
             </div>
           )}
 
           <Alert
             type="info"
             showIcon
-            message="提示"
-            description="上传的备份文件将保存到服务器备份目录中，您可以随时使用该文件进行数据库还原。"
+            message={t('dbBackup.alertUploadTitle')}
+            description={t('dbBackup.alertUploadDesc')}
           />
         </div>
       </Modal>

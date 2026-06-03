@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Tabs } from 'antd';
+import { useTranslation } from 'react-i18next';
 import LibraryScan from './components/LibraryScan';
 import LocalScan from './components/LocalScan';
 import { MobileTabs } from '@/components/MobileTabs';
@@ -7,18 +8,19 @@ import { useAtomValue } from 'jotai';
 import { isMobileAtom } from '../../../store/index.js';
 
 const MediaFetch = () => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('library-scan');
   const isMobile = useAtomValue(isMobileAtom);
 
   const items = [
     {
       key: 'library-scan',
-      label: '媒体库读取',
+      label: t('mediaFetch.libraryScanTab'),
       children: <LibraryScan />,
     },
     {
       key: 'local-scan',
-      label: '本地扫描',
+      label: t('mediaFetch.localScanTab'),
       children: <LocalScan />,
     },
   ];

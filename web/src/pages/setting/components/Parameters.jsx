@@ -12,6 +12,8 @@ import { GenericConfigItem } from './GenericConfigItem'
 import { DatabaseBackupManager } from './DatabaseBackupManager'
 import { DatabaseInfoPanel } from './DatabaseInfoPanel'
 import { SortablePriorityList } from '../../../components/SortablePriorityList'
+import { useTranslation } from 'react-i18next'
+import { getLocalizedField } from '../../../utils/i18nDynamic'
 
 // GitHub Token 的特殊配置（使用自定义 API）
 const GITHUB_TOKEN_CONFIG = {
@@ -33,6 +35,7 @@ const CUSTOM_COMPONENT_TYPES = {
 }
 
 export const Parameters = () => {
+  const { t } = useTranslation()
   const [schema, setSchema] = useState([])
   const [loading, setLoading] = useState(true)
   const isMobile = useAtomValue(isMobileAtom)
@@ -65,7 +68,7 @@ export const Parameters = () => {
   if (loading) {
     return (
       <div className="flex justify-center items-center py-12">
-        <Spin tip="加载中..." />
+        <Spin tip={t('parameters.loading')} />
       </div>
     )
   }
@@ -73,7 +76,7 @@ export const Parameters = () => {
   if (!schema || schema.length === 0) {
     return (
       <Empty
-        description="暂无可调整的配置项"
+        description={t('parameters.noConfig')}
         className="py-12"
       />
     )
@@ -88,7 +91,20 @@ export const Parameters = () => {
     // 新格式：customComponent 是对象 { type, props }
     if (group.customComponent && typeof group.customComponent === 'object') {
       CustomComponent = CUSTOM_COMPONENT_TYPES[group.customComponent.type]
-      customComponentProps = group.customComponent.props || {}
+      const rawProps = group.customComponent.props || {}
+      // 本地化 props 中的文本字段
+      customComponentProps = {
+        ...rawProps,
+        title: getLocalizedField(rawProps, 'title'),
+        description: getLocalizedField(rawProps, 'description'),
+        tips: getLocalizedField(rawProps, 'tips'),
+        // 本地化 availableItems 中的 name/description
+        availableItems: rawProps.availableItems?.map(item => ({
+          ...item,
+          name: getLocalizedField(item, 'name'),
+          description: getLocalizedField(item, 'description'),
+        })),
+      }
     }
     // 旧格式兼容：通过 group.key 匹配
     else if (CUSTOM_COMPONENTS_BY_KEY[group.key]) {
@@ -101,7 +117,7 @@ export const Parameters = () => {
 
     return {
       key: group.key,
-      label: group.label,
+      label: getLocalizedField(group, 'label'),
       children: (
         <div className="py-2 pb-4">
           {/* 数据库标签页顶部显示连接信息 */}

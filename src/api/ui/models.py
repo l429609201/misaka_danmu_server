@@ -201,6 +201,51 @@ class GlobalFilterSettings(BaseModel):
     eng: str
 
 
+
+class SingleEpisodeFilterSettings(BaseModel):
+    """单剧分集过滤配置"""
+    content: str = ""
+
+
+
+class GlobalEpisodeTitleFilterSettings(BaseModel):
+    """兜底全局分集标题过滤配置"""
+    enabled: bool = False
+    regex: str = ""
+
+
+class RegexTestPattern(BaseModel):
+    """正则测试条目"""
+    label: str = ""
+    pattern: str = ""
+
+
+class RegexTestRequest(BaseModel):
+    """正则测试请求"""
+    text: str = ""
+    patterns: List[RegexTestPattern] = Field(default_factory=list)
+
+
+class RegexTestMatch(BaseModel):
+    """正则测试命中项"""
+    label: str = ""
+    pattern: str = ""
+    matchedText: str = ""
+
+
+class RegexTestInvalid(BaseModel):
+    """无效正则项"""
+    label: str = ""
+    pattern: str = ""
+    error: str = ""
+
+
+class RegexTestResponse(BaseModel):
+    """正则测试响应"""
+    matched: bool = False
+    matches: List[RegexTestMatch] = Field(default_factory=list)
+    invalids: List[RegexTestInvalid] = Field(default_factory=list)
+
 class RateLimitProviderStatus(BaseModel):
     """流控提供商状态"""
     providerName: str

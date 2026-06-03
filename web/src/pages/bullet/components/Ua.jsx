@@ -22,8 +22,10 @@ import dayjs from 'dayjs'
 import { MyIcon } from '@/components/MyIcon.jsx'
 import { useModal } from '../../../ModalContext'
 import { useMessage } from '../../../MessageContext'
+import { useTranslation } from 'react-i18next'
 
 export const Ua = () => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [mode, setMode] = useState('off')
 
@@ -36,13 +38,13 @@ export const Ua = () => {
 
   const columns = [
     {
-      title: 'UA字符串',
+      title: t('bullet.uaColumnString'),
       dataIndex: 'uaString',
       key: 'uaString',
       width: 150,
     },
     {
-      title: '创建时间',
+      title: t('bullet.uaColumnCreated'),
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 200,
@@ -53,7 +55,7 @@ export const Ua = () => {
       },
     },
     {
-      title: '操作',
+      title: t('bullet.uaColumnAction'),
       width: 60,
       fixed: 'right',
       render: (_, record) => {
@@ -85,29 +87,29 @@ export const Ua = () => {
   const handleEdit = async () => {
     try {
       await setUaMode({ value: mode })
-      messageApi.success('保存成功')
+      messageApi.success(t('bullet.saveSuccess'))
     } catch (error) {
-      messageApi.error('保存失败')
+      messageApi.error(t('bullet.saveFailed'))
     }
   }
 
   const handleDelete = async record => {
     modalApi.confirm({
-      title: '删除',
+      title: t('bullet.uaDeleteTitle'),
       zIndex: 1002,
-      content: <div>您确定要删除{record.uaString}吗？</div>,
-      okText: '确认',
-      cancelText: '取消',
+      content: <div>{t('bullet.uaDeleteConfirm', { ua: record.uaString })}</div>,
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           await deleteUaRule({
             id: record.id,
           })
           handleList()
-          messageApi.success('删除成功')
+          messageApi.success(t('bullet.uaDeleteSuccess'))
         } catch (error) {
           console.error(error)
-          messageApi.error('删除失败')
+          messageApi.error(t('bullet.uaDeleteFailed'))
         }
       },
     })
@@ -117,7 +119,7 @@ export const Ua = () => {
     try {
       if (addLoading) return
       if (!uakeyword) {
-        messageApi.error('请输入UA关键词')
+        messageApi.error(t('bullet.uaInputRequired'))
         return
       }
       setAddLoading(true)
@@ -125,7 +127,7 @@ export const Ua = () => {
         uaString: uakeyword,
       })
     } catch (error) {
-      messageApi.error('添加失败')
+      messageApi.error(t('bullet.uaAddFailed'))
     } finally {
       setUakeyword('')
       handleList()
@@ -139,19 +141,19 @@ export const Ua = () => {
       setUaRules(res.data)
       setOpen(true)
     } catch (error) {
-      messageApi.error('获取失败')
+      messageApi.error(t('bullet.uaGetFailed'))
     }
   }
 
   return (
     <div className="my-6">
-      <Card title="全局 User-Agent 过滤">
+      <Card title={t('bullet.uaTitle')}>
         <div className="mb-4">
-          对所有通过Token的访问请求进行UA过滤。模式为 "off" 时不过滤。
+          {t('bullet.uaDesc')}
         </div>
         <Row gutter={[12, 12]}>
           <Col md={2} xs={6}>
-            <div className="leading-8">过滤模式</div>
+            <div className="leading-8">{t('bullet.uaFilterMode')}</div>
           </Col>
           <Col md={10} xs={18}>
             <Select
@@ -162,41 +164,41 @@ export const Ua = () => {
               value={['off', 'blacklist', 'whitelist'].includes(mode) ? mode : 'off'}
               loading={loading}
               options={[
-                { value: 'off', label: '关闭 (Off)' },
-                { value: 'blacklist', label: '黑名单 (Blacklist)' },
-                { value: 'whitelist', label: '白名单 (Whitelist)' },
+                { value: 'off', label: t('bullet.uaModeOff') },
+                { value: 'blacklist', label: t('bullet.uaModeBlacklist') },
+                { value: 'whitelist', label: t('bullet.uaModeWhitelist') },
               ]}
             />
           </Col>
           <Col md={6} xs={12} className="mt-3 md:mt-0">
             <Button type="primary" block onClick={handleEdit} loading={loading}>
-              保存模式
+              {t('bullet.uaSaveMode')}
             </Button>
           </Col>
           <Col md={6} xs={12} className="mt-3 md:mt-0">
             <Button type="primary" block onClick={handleList}>
-              名单管理
+              {t('bullet.uaManageList')}
             </Button>
           </Col>
         </Row>
       </Card>
       <Modal
-        title="管理UA名单"
+        title={t('bullet.uaManageTitle')}
         open={open}
-        cancelText="取消"
-        okText="确认"
+        cancelText={t('common.cancel')}
+        okText={t('common.confirm')}
         footer={null}
         onCancel={() => setOpen(false)}
       >
         <div className="flex items-center justify-start my-4 gap-2">
-          <div>添加UA字符串</div>
+          <div>{t('bullet.uaAddTitle')}</div>
           <Input
-            placeholder="请输入要匹配的UA关键字"
+            placeholder={t('bullet.uaPlaceholder')}
             value={uakeyword}
             onChange={e => setUakeyword(e.target.value)}
           />
           <Button type="primary" onClick={handleAdd} loading={addLoading}>
-            添加
+            {t('bullet.uaAdd')}
           </Button>
         </div>
         <Table

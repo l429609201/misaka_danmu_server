@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>批量管理 - 全页面设计稿</title>
+<style>
+:root{--p:#6366f1;--p2:#818cf8;--pbg:rgba(99,102,241,.07);--ok:#22c55e;--warn:#f59e0b;--err:#ef4444;--r:12px;--r2:16px;--blue:#3b82f6;--purple:#a855f7;--cyan:#06b6d4}
+[data-theme="dark"]{--bg:#0c0e16;--surface:#151823;--card:#1a1e2e;--card-hover:#1f2438;--bdr:rgba(255,255,255,.06);--t:#e2e8f0;--t2:#94a3b8;--t3:#64748b;--hover:rgba(255,255,255,.03);--row-hover:rgba(99,102,241,.04);--shadow:0 2px 8px rgba(0,0,0,.3)}
+[data-theme="light"]{--bg:#f5f7fa;--surface:#fff;--card:#fff;--card-hover:#f8fafc;--bdr:rgba(0,0,0,.07);--t:#1e293b;--t2:#475569;--t3:#94a3b8;--hover:rgba(0,0,0,.02);--row-hover:rgba(99,102,241,.04);--shadow:0 2px 8px rgba(0,0,0,.06)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t);min-height:100vh}
+
+/* 切换控件 */
+.ctrl-bar{position:fixed;top:16px;right:16px;display:flex;gap:8px;z-index:999}
+.ctrl-btn{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid var(--bdr);background:var(--surface);color:var(--t2);cursor:pointer;transition:.15s}
+.ctrl-btn:hover{color:var(--t)}.ctrl-btn.active{background:var(--pbg);color:var(--p2);border-color:rgba(99,102,241,.3)}
+
+/* 页面布局 */
+.page{max-width:1280px;margin:0 auto;padding:32px 40px}
+.page-header{margin-bottom:24px}
+.breadcrumb{font-size:13px;color:var(--t3);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.breadcrumb a{color:var(--p2);text-decoration:none}.breadcrumb a:hover{text-decoration:underline}
+.page-title-row{display:flex;align-items:center;gap:14px}
+.page-title{font-size:24px;font-weight:800;letter-spacing:-.3px}
+.task-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap;border:1px solid}
+.task-chip.on{background:rgba(34,197,94,.08);color:var(--ok);border-color:rgba(34,197,94,.2)}
+.task-chip.off{background:rgba(239,68,68,.06);color:var(--err);border-color:rgba(239,68,68,.15)}
+.task-chip.warn{background:rgba(245,158,11,.06);color:var(--warn);border-color:rgba(245,158,11,.15)}
+.chip-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0}
+.task-chip.on .chip-dot{animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.chip-sub{opacity:.6;font-weight:400}
+.page-desc{font-size:13px;color:var(--t3);margin-top:6px}
+
+/* 统计卡片 */
+.stat-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stat-card{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r2);padding:20px;position:relative;overflow:hidden;transition:all .2s}
+.stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadow);background:var(--card-hover)}
+.stat-icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:12px}
+.stat-label{font-size:12px;color:var(--t3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}
+.stat-value{font-size:28px;font-weight:800;line-height:1}
+.stat-change{font-size:11px;margin-top:6px;display:flex;align-items:center;gap:4px}
+
+/* 主内容区 */
+.main-area{display:grid;grid-template-columns:1fr 280px;gap:20px}
+.content-panel{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r2);overflow:hidden}
+.side-panel{display:flex;flex-direction:column;gap:16px}
+
+/* 表格工具栏 */
+.table-toolbar{padding:16px 20px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--bdr)}
+.pill{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:500;border:1px solid var(--bdr);background:transparent;color:var(--t2);cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:4px}
+.pill:hover{background:var(--hover);color:var(--t)}
+.pill.active{background:var(--pbg);color:var(--p2);border-color:rgba(99,102,241,.3)}
+.toolbar-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.search-box{padding:5px 14px;border-radius:20px;font-size:12px;border:1px solid var(--bdr);background:transparent;color:var(--t);outline:none;width:180px;transition:.2s}
+.search-box:focus{border-color:rgba(99,102,241,.4);box-shadow:0 0 0 3px rgba(99,102,241,.08)}
+.search-box::placeholder{color:var(--t3)}
+
+/* 表格 */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{padding:10px 16px;text-align:left;color:var(--t3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--bdr);white-space:nowrap;position:sticky;top:0;background:var(--card);z-index:1}
+th.sortable{cursor:pointer;user-select:none;transition:.15s}
+th.sortable:hover{color:var(--t)}
+.sort-icon{font-size:10px;opacity:.3;margin-left:2px}
+.sort-icon.active{opacity:1;color:var(--p2)}
+tbody tr{border-bottom:1px solid var(--bdr);transition:background .1s;cursor:default}
+tbody tr:hover{background:var(--row-hover)}
+tbody tr:last-child{border-bottom:none}
+td{padding:12px 16px;vertical-align:middle}
+.ckbox{display:flex;align-items:center;cursor:pointer}
+.ckbox input{display:none}
+.ck{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--t3);display:flex;align-items:center;justify-content:center;transition:.15s;font-size:10px;color:transparent}
+.ckbox input:checked+.ck{background:var(--p);border-color:var(--p);color:#fff}
+.ckbox input:checked+.ck::after{content:"✓"}
+.anime-cell{display:flex;align-items:center;gap:10px;min-width:200px}
+.anime-poster{width:36px;height:50px;border-radius:6px;object-fit:cover;background:var(--bdr)}
+.anime-info{display:flex;flex-direction:column;gap:2px;min-width:0}
+.anime-name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+.anime-tags{display:flex;gap:4px}
+.tag{font-size:10px;font-weight:600;padding:1px 7px;border-radius:5px;letter-spacing:.2px}
+.tag.tv{background:rgba(99,102,241,.1);color:var(--p2)}
+.tag.movie{background:rgba(168,85,247,.1);color:#c084fc}
+.tag.season{background:rgba(6,182,212,.1);color:var(--cyan)}
+.tag.source{background:rgba(100,116,139,.08);color:var(--t2)}
+.ep-text{color:var(--t2);font-size:12px;white-space:nowrap}
+.miss-text{font-size:11px;color:var(--t3);white-space:nowrap}
+.miss-pills{display:flex;gap:4px;flex-wrap:wrap}
+.mp{font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600;font-family:'SF Mono','Fira Code',monospace;letter-spacing:.3px}
+.mp.warn{background:rgba(245,158,11,.1);color:var(--warn)}
+.mp.err{background:rgba(239,68,68,.1);color:var(--err)}
+/* Toggle 按钮 */
+.tgl{width:28px;height:24px;border:1px solid var(--bdr);border-radius:6px;background:transparent;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;transition:.15s;filter:grayscale(1);opacity:.35;gap:2px}
+.tgl:hover{opacity:.6;background:var(--hover)}
+.tgl.on{filter:none;opacity:1;background:var(--pbg);border-color:rgba(99,102,241,.25)}
+.tgl.dd-trigger{width:auto;padding:0 8px}
+.dd-arrow{font-size:9px;opacity:.4}
+.tgl.sm{width:24px;height:20px;font-size:11px}
+/* 多源下拉面板 */
+.dd-wrap{position:relative;display:inline-block}
+.dd-panel{display:none;position:absolute;top:calc(100% + 4px);left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--bdr);border-radius:10px;padding:6px;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:150px}
+.dd-panel.show{display:block}
+.dd-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 8px;border-radius:6px;font-size:12px;color:var(--t2);transition:.1s}
+.dd-row:hover{background:var(--hover)}
+.dd-row span{font-weight:500}
+.multi-badge{font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(99,102,241,.08);color:var(--p2);font-weight:600;margin-left:2px}
+.time-text{color:var(--t3);font-size:12px;white-space:nowrap}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+.status-dot.ok{background:var(--ok);box-shadow:0 0 6px rgba(34,197,94,.4)}
+.status-dot.err{background:var(--err);box-shadow:0 0 6px rgba(239,68,68,.4)}
+.status-dot.idle{background:var(--t3)}
+.fail-tag{font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(239,68,68,.1);color:var(--err);margin-left:6px}
+.op-btn{width:28px;height:28px;border:none;background:transparent;color:var(--t3);cursor:pointer;border-radius:6px;font-size:16px;display:flex;align-items:center;justify-content:center;transition:.15s}
+.op-btn:hover{background:var(--hover);color:var(--t)}
+
+/* 分页 */
+.table-footer{padding:12px 20px;border-top:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--t3)}
+.pager{display:flex;gap:4px}
+.pg{width:28px;height:28px;border-radius:6px;border:1px solid var(--bdr);background:transparent;color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;transition:.15s}
+.pg:hover{background:var(--hover);color:var(--t)}
+.pg.active{background:var(--p);border-color:var(--p);color:#fff}
+
+/* 侧边栏 — 批量操作 */
+.side-card{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r2);padding:20px}
+.side-title{font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.side-title .dot{width:4px;height:16px;border-radius:2px;background:var(--p)}
+.batch-count{font-size:32px;font-weight:800;color:var(--p2);line-height:1;margin-bottom:4px}
+.batch-label{font-size:12px;color:var(--t3);margin-bottom:16px}
+.batch-btns{display:flex;flex-direction:column;gap:8px}
+.bbtn{padding:10px 16px;border-radius:10px;font-size:13px;font-weight:500;border:1px solid var(--bdr);background:transparent;color:var(--t2);cursor:pointer;transition:.15s;display:flex;align-items:center;gap:8px}
+.bbtn:hover{background:var(--hover);color:var(--t)}
+.bbtn.accent{border-color:rgba(99,102,241,.2);color:var(--p2)}.bbtn.accent:hover{background:var(--pbg)}
+.bbtn.danger{border-color:rgba(239,68,68,.15);color:var(--err)}.bbtn.danger:hover{background:rgba(239,68,68,.06)}
+.bbtn-icon{font-size:16px;width:20px;text-align:center}
+.bbtn-sep{height:1px;background:var(--bdr);margin:4px 0}
+
+/* 侧边栏 — 追更动态 */
+.timeline{display:flex;flex-direction:column;gap:0}
+.tl-item{display:flex;gap:10px;padding:8px 0;font-size:12px;position:relative}
+.tl-dot-wrap{display:flex;flex-direction:column;align-items:center;width:16px;flex-shrink:0}
+.tl-dot{width:8px;height:8px;border-radius:50%;background:var(--p);margin-top:4px}
+.tl-line{flex:1;width:1px;background:var(--bdr);margin-top:4px}
+.tl-item:last-child .tl-line{display:none}
+.tl-content{flex:1;min-width:0}
+.tl-title{font-weight:500;color:var(--t)}
+.tl-time{font-size:11px;color:var(--t3);margin-top:2px}
+</style>
+</head>
+<body>
+
+<div class="ctrl-bar">
+  <button class="ctrl-btn" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'">🌗 切换主题</button>
+</div>
+
+<div class="page">
+  <!-- 页头 -->
+  <div class="page-header">
+    <div class="breadcrumb"><a href="#">弹幕库</a> <span>/</span> <span>批量管理</span></div>
+    <div class="page-title-row">
+      <h1 class="page-title">批量管理</h1>
+      <div class="task-chip on"><span class="chip-dot"></span>追更已启用 <span class="chip-sub">· 下次 06-01 14:30</span></div>
+    </div>
+    <p class="page-desc">管理所有源的追更、标记、完结状态，支持批量操作</p>
+  </div>
+
+  <!-- 统计卡片 -->
+  <div class="stat-cards">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:rgba(99,102,241,.1);color:var(--p2)">📦</div>
+      <div class="stat-label">全部源</div>
+      <div class="stat-value">48</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:rgba(59,130,246,.1);color:var(--blue)">🔄</div>
+      <div class="stat-label">追更中</div>
+      <div class="stat-value">12</div>
+      <div class="stat-change" style="color:var(--ok)">↑ 2 本周新增</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:rgba(245,158,11,.1);color:var(--warn)">⭐</div>
+      <div class="stat-label">已标记</div>
+      <div class="stat-value">8</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:rgba(34,197,94,.1);color:var(--ok)">✅</div>
+      <div class="stat-label">已完结</div>
+      <div class="stat-value">6</div>
+    </div>
+  </div>
+
+  <!-- 主内容区 -->
+  <div class="main-area">
+    <!-- 左：表格面板 -->
+    <div class="content-panel">
+      <div class="table-toolbar">
+        <button class="pill active">全部 48</button>
+        <button class="pill">类型 ▾</button>
+        <button class="pill">追更 ▾</button>
+        <button class="pill">标记 ▾</button>
+        <button class="pill">完结 ▾</button>
+        <div class="toolbar-right">
+          <input class="search-box" placeholder="🔍  搜索标题 / 源名...">
+          <button class="pill">创建时间 ↓</button>
+        </div>
+      </div>
+      <div class="table-wrap" style="max-height:520px;overflow-y:auto">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:40px"><label class="ckbox"><input type="checkbox"><span class="ck"></span></label></th>
+              <th class="sortable">作品 <span class="sort-icon">⇅</span></th>
+              <th class="sortable">进度 <span class="sort-icon">⇅</span></th>
+              <th class="sortable">缺失集 <span class="sort-icon">⇅</span></th>
+              <th class="sortable">追更 <span class="sort-icon">⇅</span></th>
+              <th class="sortable">标记 <span class="sort-icon">⇅</span></th>
+              <th class="sortable">完结 <span class="sort-icon">⇅</span></th>
+              <th class="sortable">最近更新 <span class="sort-icon active">↓</span></th>
+              <th style="width:40px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- 单源 — 铃芽之旅 -->
+            <tr>
+              <td><label class="ckbox"><input type="checkbox" checked><span class="ck"></span></label></td>
+              <td><div class="anime-cell"><div class="anime-poster"></div><div class="anime-info"><span class="anime-name">铃芽之旅</span><div class="anime-tags"><span class="tag movie">电影/剧场版</span><span class="tag source">tencent</span></div></div></div></td>
+              <td class="ep-text">1 / 1 集</td>
+              <td class="miss-text">—</td>
+              <td><button class="tgl on">🔄</button></td>
+              <td><button class="tgl on">⭐</button></td>
+              <td><button class="tgl on">✅</button></td>
+              <td class="time-text">05-27 20:10<br><span class="fail-tag">失败 2/10</span></td>
+              <td><button class="op-btn">⋮</button></td>
+            </tr>
+            <!-- 多源 — 葬送的芙莉莲 2源 -->
+            <tr>
+              <td><label class="ckbox"><input type="checkbox"><span class="ck"></span></label></td>
+              <td><div class="anime-cell"><div class="anime-poster"></div><div class="anime-info"><span class="anime-name">葬送的芙莉莲</span><div class="anime-tags"><span class="tag tv">电视节目</span><span class="tag season">S1</span><span class="multi-badge">2 个源</span></div></div></div></td>
+              <td class="ep-text">28 / 28 集</td>
+              <td class="miss-text">—</td>
+              <td><div class="dd-wrap"><button class="tgl on dd-trigger" onclick="toggleDD(this)">🔄 <span class="dd-arrow">▾</span></button><div class="dd-panel"><div class="dd-row"><span>bilibili</span><button class="tgl sm on">🔄</button></div><div class="dd-row"><span>tencent</span><button class="tgl sm">🔄</button></div></div></div></td>
+              <td><div class="dd-wrap"><button class="tgl on dd-trigger" onclick="toggleDD(this)">⭐ <span class="dd-arrow">▾</span></button><div class="dd-panel"><div class="dd-row"><span>bilibili</span><button class="tgl sm on">⭐</button></div><div class="dd-row"><span>tencent</span><button class="tgl sm">⭐</button></div></div></div></td>
+              <td><div class="dd-wrap"><button class="tgl dd-trigger" onclick="toggleDD(this)">✅ <span class="dd-arrow">▾</span></button><div class="dd-panel"><div class="dd-row"><span>bilibili</span><button class="tgl sm">✅</button></div><div class="dd-row"><span>tencent</span><button class="tgl sm">✅</button></div></div></div></td>
+              <td class="time-text">05-29 09:15</td>
+              <td><button class="op-btn">⋮</button></td>
+            </tr>
+            <!-- 多源 — 无职转生 2源 有缺失 -->
+            <tr>
+              <td><label class="ckbox"><input type="checkbox"><span class="ck"></span></label></td>
+              <td><div class="anime-cell"><div class="anime-poster"></div><div class="anime-info"><span class="anime-name">无职转生</span><div class="anime-tags"><span class="tag tv">电视节目</span><span class="tag season">S2</span><span class="multi-badge">2 个源</span></div></div></div></td>
+              <td class="ep-text">22 / 24 集</td>
+              <td><div class="miss-pills"><span class="mp warn">E05</span><span class="mp warn">E12</span></div></td>
+              <td><div class="dd-wrap"><button class="tgl on dd-trigger" onclick="toggleDD(this)">🔄 <span class="dd-arrow">▾</span></button><div class="dd-panel"><div class="dd-row"><span>bilibili</span><button class="tgl sm on">🔄</button></div><div class="dd-row"><span>iqiyi</span><button class="tgl sm">🔄</button></div></div></div></td>
+              <td><div class="dd-wrap"><button class="tgl dd-trigger" onclick="toggleDD(this)">⭐ <span class="dd-arrow">▾</span></button><div class="dd-panel"><div class="dd-row"><span>bilibili</span><button class="tgl sm">⭐</button></div><div class="dd-row"><span>iqiyi</span><button class="tgl sm on">⭐</button></div></div></div></td>
+              <td><div class="dd-wrap"><button class="tgl dd-trigger" onclick="toggleDD(this)">✅ <span class="dd-arrow">▾</span></button><div class="dd-panel"><div class="dd-row"><span>bilibili</span><button class="tgl sm">✅</button></div><div class="dd-row"><span>iqiyi</span><button class="tgl sm">✅</button></div></div></div></td>
+              <td class="time-text">05-28 14:30</td>
+              <td><button class="op-btn">⋮</button></td>
+            </tr>
+            <!-- 单源 — 进击的巨人 -->
+            <tr>
+              <td><label class="ckbox"><input type="checkbox"><span class="ck"></span></label></td>
+              <td><div class="anime-cell"><div class="anime-poster"></div><div class="anime-info"><span class="anime-name">进击的巨人 最终季</span><div class="anime-tags"><span class="tag tv">电视节目</span><span class="tag season">S4</span><span class="tag source">bilibili</span></div></div></div></td>
+              <td class="ep-text">16 / 16 集</td>
+              <td class="miss-text">—</td>
+              <td><button class="tgl">🔄</button></td>
+              <td><button class="tgl">⭐</button></td>
+              <td><button class="tgl on">✅</button></td>
+              <td class="time-text">05-20 11:05</td>
+              <td><button class="op-btn">⋮</button></td>
+            </tr>
+            <!-- 单源 — 我推的孩子 有缺失 -->
+            <tr>
+              <td><label class="ckbox"><input type="checkbox"><span class="ck"></span></label></td>
+              <td><div class="anime-cell"><div class="anime-poster"></div><div class="anime-info"><span class="anime-name">我推的孩子</span><div class="anime-tags"><span class="tag tv">电视节目</span><span class="tag season">S2</span><span class="tag source">mgtv</span></div></div></div></td>
+              <td class="ep-text">10 / 13 集</td>
+              <td><div class="miss-pills"><span class="mp err">E03</span><span class="mp err">E07</span><span class="mp err">E11</span></div></td>
+              <td><button class="tgl on">🔄</button></td>
+              <td><button class="tgl">⭐</button></td>
+              <td><button class="tgl">✅</button></td>
+              <td class="time-text">05-30 08:22</td>
+              <td><button class="op-btn">⋮</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-footer">
+        <span>共 48 项 · 已选 <b style="color:var(--p2)">3</b> 项</span>
+        <div class="pager">
+          <button class="pg active">1</button>
+          <button class="pg">2</button>
+          <button class="pg">3</button>
+          <button class="pg">›</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右：侧边栏 -->
+    <div class="side-panel">
+      <!-- 批量操作卡 -->
+      <div class="side-card">
+        <div class="side-title"><span class="dot"></span>批量操作</div>
+        <div class="batch-count">3</div>
+        <div class="batch-label">个源已选中</div>
+        <div class="batch-btns">
+          <button class="bbtn"><span class="bbtn-icon">☑️</span>全选当前页</button>
+          <button class="bbtn"><span class="bbtn-icon">⬜</span>取消全选</button>
+          <div class="bbtn-sep"></div>
+          <button class="bbtn accent"><span class="bbtn-icon">🔄</span>批量追更 ▾</button>
+          <button class="bbtn accent"><span class="bbtn-icon">⭐</span>批量标记 ▾</button>
+          <button class="bbtn accent"><span class="bbtn-icon">✅</span>批量完结 ▾</button>
+          <div class="bbtn-sep"></div>
+          <button class="bbtn danger"><span class="bbtn-icon">🗑</span>批量删除</button>
+        </div>
+      </div>
+      <!-- 追更动态卡 -->
+      <div class="side-card">
+        <div class="side-title"><span class="dot"></span>追更动态</div>
+        <div class="timeline">
+          <div class="tl-item">
+            <div class="tl-dot-wrap"><div class="tl-dot" style="background:var(--ok)"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><div class="tl-title">葬送的芙莉莲 更新至 28 集</div><div class="tl-time">05-29 09:15</div></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot-wrap"><div class="tl-dot" style="background:var(--ok)"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><div class="tl-title">我推的孩子 更新至 13 集</div><div class="tl-time">05-30 08:22</div></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot-wrap"><div class="tl-dot" style="background:var(--err)"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><div class="tl-title">铃芽之旅 追更失败 <span class="fail-tag">2/10</span></div><div class="tl-time">05-27 20:10</div></div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot-wrap"><div class="tl-dot" style="background:var(--ok)"></div><div class="tl-line"></div></div>
+            <div class="tl-content"><div class="tl-title">无职转生 更新至 24 集</div><div class="tl-time">05-28 14:30</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleTheme(){document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'}
+function toggleDD(btn){
+  // 关闭其他所有下拉
+  document.querySelectorAll('.dd-panel.show').forEach(p=>{if(p!==btn.nextElementSibling)p.classList.remove('show')})
+  btn.nextElementSibling.classList.toggle('show')
+}
+// 点击外部关闭下拉
+document.addEventListener('click',e=>{if(!e.target.closest('.dd-wrap'))document.querySelectorAll('.dd-panel.show').forEach(p=>p.classList.remove('show'))})
+</script>
+</body>
+</html>

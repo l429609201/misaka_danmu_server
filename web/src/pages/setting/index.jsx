@@ -10,49 +10,23 @@ import Security from './components/Security'
 import { MobileTabs } from '@/components/MobileTabs'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../store'
+import { useTranslation } from 'react-i18next'
 
 export const Setting = () => {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const key = searchParams.get('key') || 'parameters'
   const navigate = useNavigate()
   const isMobile = useAtomValue(isMobileAtom)
 
   const tabItems = [
-    {
-      label: '参数配置',
-      key: 'parameters',
-      children: <Parameters />,
-    },
-    {
-      label: '代理设置',
-      key: 'proxy',
-      children: <Proxy />,
-    },
-    {
-      label: 'Webhook',
-      key: 'webhook',
-      children: <Webhook />,
-    },
-    {
-      label: '通知与交互',
-      key: 'notification',
-      children: <Notification />,
-    },
-    {
-      label: '识别词配置',
-      key: 'recognition',
-      children: <Recognition />,
-    },
-    {
-      label: 'AI辅助增强',
-      key: 'automatch',
-      children: <AutoMatchSetting />,
-    },
-    {
-      label: '安全',
-      key: 'security',
-      children: <Security />,
-    },
+    { label: t('settingPage.parameters'), key: 'parameters', children: <Parameters /> },
+    { label: t('settingPage.proxy'), key: 'proxy', children: <Proxy /> },
+    { label: t('settingPage.webhook'), key: 'webhook', children: <Webhook /> },
+    { label: t('settingPage.notification'), key: 'notification', children: <Notification /> },
+    { label: t('settingPage.recognition'), key: 'recognition', children: <Recognition /> },
+    { label: t('settingPage.automatch'), key: 'automatch', children: <AutoMatchSetting /> },
+    { label: t('settingPage.security'), key: 'security', children: <Security /> },
   ]
 
   const handleTabChange = (newKey) => {

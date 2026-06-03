@@ -3,8 +3,10 @@ import { useEffect, useState } from 'react'
 import { useMessage } from '../../../MessageContext'
 import { getRecognition, setRecognition, testRecognition, generateRegex } from '../../../apis'
 import { RobotOutlined } from '@ant-design/icons'
+import { useTranslation } from 'react-i18next'
 
 export const Recognition = () => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [isSaveLoading, setIsSaveLoading] = useState(false)
   const [isTestLoading, setIsTestLoading] = useState(false)
@@ -41,12 +43,12 @@ export const Recognition = () => {
       const response = await setRecognition({ content: text })
       if (response.data?.warnings && response.data.warnings.length > 0) {
         const warningMessages = response.data.warnings.join('\n')
-        messageApi.warning(`保存成功，但发现以下问题：\n${warningMessages}`, 8)
+        messageApi.warning(t('recognition.saveSuccessWithWarnings', { warnings: warningMessages }), 8)
       } else {
-        messageApi.success('保存成功')
+        messageApi.success(t('recognition.saveSuccess'))
       }
     } catch (error) {
-      messageApi.error('保存失败')
+      messageApi.error(t('recognition.saveFailed'))
     } finally {
       setIsSaveLoading(false)
     }
@@ -54,7 +56,7 @@ export const Recognition = () => {
 
   const handleAiGenerate = async () => {
     if (!aiDesc.trim()) {
-      messageApi.warning('请输入需求描述')
+      messageApi.warning(t('recognition.aiInputDescription'))
       return
     }
     setAiLoading(true)
@@ -64,10 +66,10 @@ export const Recognition = () => {
       if (res.data?.regex) {
         setAiResult(res.data.regex)
       } else {
-        messageApi.error('AI 未能生成有效的配置规则')
+        messageApi.error(t('recognition.aiNoValidConfig'))
       }
     } catch (e) {
-      messageApi.error(e?.response?.data?.detail || 'AI 生成失败')
+      messageApi.error(e?.response?.data?.detail || t('recognition.aiGenFailed'))
     } finally {
       setAiLoading(false)
     }
@@ -79,12 +81,12 @@ export const Recognition = () => {
     setAiModalOpen(false)
     setAiDesc('')
     setAiResult('')
-    messageApi.success('已应用 AI 生成的配置')
+    messageApi.success(t('recognition.aiConfigApplied'))
   }
 
   const handleTest = async () => {
     if (!testTitle.trim()) {
-      messageApi.warning('请输入要测试的标题')
+      messageApi.warning(t('recognition.testInputTitle'))
       return
     }
     try {
@@ -98,7 +100,7 @@ export const Recognition = () => {
       })
       setTestResult(res.data)
     } catch (error) {
-      messageApi.error(`测试失败: ${error.message || '未知错误'}`)
+      messageApi.error(t('recognition.testFailed', { error: error.message || t('common.unknown') }))
     } finally {
       setIsTestLoading(false)
     }
@@ -106,12 +108,12 @@ export const Recognition = () => {
 
   return (
     <div className="my-6 space-y-4">
-      <Card loading={loading} title="自定义识别词配置">
+      <Card loading={loading} title={t('recognition.title')}>
         <Collapse
           ghost
           items={[{
             key: 'help',
-            label: <span className="text-sm opacity-75"><strong>📖 配置说明（点击展开）</strong></span>,
+            label: <span className="text-sm opacity-75"><strong>{t('recognition.helpLabel')}</strong></span>,
             children: (
               <div className="text-sm opacity-75 space-y-3">
                 <div className="bg-blue-50 dark:bg-blue-950/30 p-3 rounded">
@@ -149,14 +151,14 @@ export const Recognition = () => {
           className="mb-4"
         />
         <div className="flex justify-end mb-2">
-          <Tooltip title="使用 AI 根据自然语言描述生成识别词配置">
+          <Tooltip title={t('recognition.aiTooltip')}>
             <Button
               type="link"
               size="small"
               icon={<RobotOutlined />}
               onClick={() => setAiModalOpen(true)}
             >
-              AI 生成
+              {t('recognition.aiGenerate')}
             </Button>
           </Tooltip>
         </div>
@@ -173,63 +175,63 @@ BLOCK:预告
         />
         <div className="flex justify-end mt-4">
           <Button type="primary" onClick={handleSave} loading={isSaveLoading}>
-            保存修改
+            {t('recognition.saveChanges')}
           </Button>
         </div>
       </Card>
 
-      <Card title="🧪 规则测试工具" size="small">
+      <Card title={t('recognition.testCardTitle')} size="small">
         <div className="space-y-3">
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex-1 min-w-[200px]">
-              <div className="text-xs text-gray-500 mb-1">标题</div>
+              <div className="text-xs text-gray-500 mb-1">{t('recognition.labelTitle')}</div>
               <Input
                 value={testTitle}
                 onChange={e => setTestTitle(e.target.value)}
-                placeholder="输入要测试的标题"
+                placeholder={t('recognition.labelTitle')}
                 onPressEnter={handleTest}
               />
             </div>
             <div className="w-20">
-              <div className="text-xs text-gray-500 mb-1">季度</div>
+              <div className="text-xs text-gray-500 mb-1">{t('recognition.labelSeason')}</div>
               <InputNumber value={testSeason} onChange={setTestSeason} min={1} className="w-full" />
             </div>
             <div className="w-20">
-              <div className="text-xs text-gray-500 mb-1">集数</div>
+              <div className="text-xs text-gray-500 mb-1">{t('recognition.labelEpisode')}</div>
               <InputNumber value={testEpisode} onChange={setTestEpisode} min={1} className="w-full" />
             </div>
             <div className="w-32">
-              <div className="text-xs text-gray-500 mb-1">数据源</div>
-              <Input value={testSource} onChange={e => setTestSource(e.target.value)} placeholder="可选" />
+              <div className="text-xs text-gray-500 mb-1">{t('recognition.labelSource')}</div>
+              <Input value={testSource} onChange={e => setTestSource(e.target.value)} placeholder={t('recognition.sourcePlaceholder')} />
             </div>
             <div className="w-36">
-              <div className="text-xs text-gray-500 mb-1">阶段</div>
+              <div className="text-xs text-gray-500 mb-1">{t('recognition.labelStage')}</div>
               <Select value={testStage} onChange={setTestStage} className="w-full" options={[
-                { value: 'all', label: '全部' },
-                { value: 'preprocess', label: '搜索预处理' },
-                { value: 'postprocess', label: '入库后处理' },
+                { value: 'all', label: t('recognition.optionAll') },
+                { value: 'preprocess', label: t('recognition.optionPreprocess') },
+                { value: 'postprocess', label: t('recognition.optionPostprocess') },
               ]} />
             </div>
-            <Button type="primary" onClick={handleTest} loading={isTestLoading}>测试</Button>
+            <Button type="primary" onClick={handleTest} loading={isTestLoading}>{t('recognition.btnTest')}</Button>
           </div>
 
           {testResult && (
             <div className={`p-3 rounded border ${testResult.matched ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
               <div className="flex items-center gap-2 mb-2">
                 <Tag color={testResult.matched ? 'green' : 'default'}>
-                  {testResult.matched ? '✓ 命中规则' : '○ 未命中'}
+                  {testResult.matched ? t('recognition.testHit') : t('recognition.testMiss')}
                 </Tag>
               </div>
               <div className="text-sm space-y-1">
                 <div className="flex gap-2">
-                  <span className="text-gray-500 w-12 shrink-0">标题:</span>
+                  <span className="text-gray-500 w-12 shrink-0">{t('recognition.labelResultTitle')}</span>
                   <span>{testResult.originalTitle}</span>
                   {testResult.originalTitle !== testResult.processedTitle && (
                     <><span className="text-gray-400">→</span><span className="font-semibold text-green-600">{testResult.processedTitle}</span></>
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <span className="text-gray-500 w-12 shrink-0">季/集:</span>
+                  <span className="text-gray-500 w-12 shrink-0">{t('recognition.labelResultSeason')}</span>
                   <span>S{String(testResult.originalSeason ?? '?').padStart(2, '0')}E{String(testResult.originalEpisode ?? '?').padStart(2, '0')}</span>
                   {(testResult.originalSeason !== testResult.processedSeason || testResult.originalEpisode !== testResult.processedEpisode) && (
                     <><span className="text-gray-400">→</span><span className="font-semibold text-green-600">S{String(testResult.processedSeason ?? '?').padStart(2, '0')}E{String(testResult.processedEpisode ?? '?').padStart(2, '0')}</span></>
@@ -237,7 +239,7 @@ BLOCK:预告
                 </div>
                 {testResult.matchedRules?.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
-                    <div className="text-xs text-gray-500 mb-1">命中规则:</div>
+                    <div className="text-xs text-gray-500 mb-1">{t('recognition.hitRules')}</div>
                     {testResult.matchedRules.map((rule, i) => (
                       <div key={i} className="text-xs text-gray-600 dark:text-gray-400 pl-2">• {rule}</div>
                     ))}
@@ -250,7 +252,7 @@ BLOCK:预告
       </Card>
 
       <Modal
-        title={<><RobotOutlined /> AI 识别词配置助手</>}
+        title={<><RobotOutlined /> {t('recognition.aiAssistantTitle')}</>}
         open={aiModalOpen}
         onCancel={() => { setAiModalOpen(false); setAiResult('') }}
         footer={null}
@@ -260,7 +262,7 @@ BLOCK:预告
         <div className="space-y-4">
           <div>
             <div className="text-sm text-gray-600 mb-2">
-              用自然语言描述你的需求，AI 会按照识别词 DSL 语法生成对应的配置规则。
+              {t('recognition.aiDesc')}
             </div>
             <Input.TextArea
               value={aiDesc}
@@ -277,20 +279,20 @@ BLOCK:预告
               loading={aiLoading}
               onClick={handleAiGenerate}
             >
-              生成
+              {t('recognition.generate')}
             </Button>
           </div>
           {aiResult && (
             <div>
-              <div className="text-sm text-gray-600 mb-1">{text.trim() ? '合并后的完整配置：' : '生成结果：'}</div>
+              <div className="text-sm text-gray-600 mb-1">{text.trim() ? t('recognition.mergedResult') : t('recognition.generateResult')}</div>
               <div className="bg-gray-50 border rounded p-3 font-mono text-sm whitespace-pre-wrap" style={{ maxHeight: 300, overflow: 'auto' }}>
                 {aiResult}
               </div>
               <div className="flex justify-end mt-3">
                 <Space>
-                  <Button onClick={() => setAiResult('')}>清除</Button>
+                  <Button onClick={() => setAiResult('')}>{t('recognition.clear')}</Button>
                   <Button type="primary" onClick={handleApplyAiResult}>
-                    应用配置
+                    {t('recognition.applyConfig')}
                   </Button>
                 </Space>
               </div>

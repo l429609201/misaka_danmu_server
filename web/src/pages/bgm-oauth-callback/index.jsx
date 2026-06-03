@@ -7,10 +7,12 @@
  */
 import { useEffect, useState } from 'react'
 import { Spin, Result, Button } from 'antd'
+import { useTranslation } from 'react-i18next'
 import Cookies from 'js-cookie'
 import api from '../../apis/fetch'
 
 export default function BgmOAuthCallback() {
+  const { t } = useTranslation()
   const [status, setStatus] = useState('loading') // loading | success | error
   const [message, setMessage] = useState('')
 
@@ -21,13 +23,13 @@ export default function BgmOAuthCallback() {
 
     if (!code) {
       setStatus('error')
-      setMessage('授权码为空，请重新授权')
+      setMessage(t('bgmOAuth.codeEmpty'))
       return
     }
 
     if (!state) {
       setStatus('error')
-      setMessage('state 参数缺失，请重新授权')
+      setMessage(t('bgmOAuth.stateMissing'))
       return
     }
 
@@ -47,7 +49,7 @@ export default function BgmOAuthCallback() {
         const data = res.data
         if (data.success) {
           setStatus('success')
-          setMessage('Bangumi 授权成功')
+          setMessage(t('bgmOAuth.authSuccess'))
           // 通知父窗口
           try {
             if (window.opener) {
@@ -59,12 +61,12 @@ export default function BgmOAuthCallback() {
           }
         } else {
           setStatus('error')
-          setMessage(data.message || '授权失败')
+          setMessage(data.message || t('bgmOAuth.authFailed'))
         }
       })
       .catch(err => {
         setStatus('error')
-        setMessage(err.message || '请求失败，请重试')
+        setMessage(err.message || t('bgmOAuth.requestFailed'))
       })
   }, [])
 
@@ -91,23 +93,23 @@ export default function BgmOAuthCallback() {
         {status === 'loading' && (
           <div>
             <Spin size="large" />
-            <p style={{ marginTop: 16, color: '#666' }}>正在完成授权...</p>
+            <p style={{ marginTop: 16, color: '#666' }}>{t('bgmOAuth.authorizing')}</p>
           </div>
         )}
         {status === 'success' && (
           <Result
             status="success"
-            title="授权成功"
-            subTitle={message || '窗口将自动关闭...'}
-            extra={<Button onClick={handleClose}>关闭窗口</Button>}
+            title={t('bgmOAuth.successTitle')}
+            subTitle={message || t('bgmOAuth.autoClose')}
+            extra={<Button onClick={handleClose}>{t('bgmOAuth.closeWindow')}</Button>}
           />
         )}
         {status === 'error' && (
           <Result
             status="error"
-            title="授权失败"
+            title={t('bgmOAuth.failedTitle')}
             subTitle={message}
-            extra={<Button onClick={handleClose}>关闭窗口</Button>}
+            extra={<Button onClick={handleClose}>{t('bgmOAuth.closeWindow')}</Button>}
           />
         )}
       </div>

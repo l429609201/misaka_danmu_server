@@ -5,12 +5,15 @@ import { getConfig, setConfig } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store'
+import { useTranslation } from 'react-i18next'
+import { getLocalizedField, localizeItems } from '../../../utils/i18nDynamic'
 
 /**
  * 通用配置项组件
  * 根据配置的 type 自动渲染对应的输入组件
  */
 export const GenericConfigItem = ({ config }) => {
+  const { t } = useTranslation()
   const [value, setValue] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -55,7 +58,7 @@ export const GenericConfigItem = ({ config }) => {
       const res = await config.verifyApi({ token: val })
       setVerifyInfo(res.data)
     } catch (err) {
-      setVerifyInfo({ valid: false, error: err.response?.data?.detail || '验证失败' })
+      setVerifyInfo({ valid: false, error: err.response?.data?.detail || t('genericConfig.verifyFailed') })
     }
   }
 
@@ -68,13 +71,13 @@ export const GenericConfigItem = ({ config }) => {
       } else {
         await setConfig(config.key, value)
       }
-      messageApi.success('保存成功')
+      messageApi.success(t('genericConfig.saveSuccess'))
       // 保存后验证
       if (config.verifyApi) {
         await verifyValue(value)
       }
     } catch (err) {
-      messageApi.error(err.response?.data?.detail || '保存失败')
+      messageApi.error(err.response?.data?.detail || t('genericConfig.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -83,7 +86,7 @@ export const GenericConfigItem = ({ config }) => {
   // 根据类型渲染输入组件
   const renderInput = () => {
     const commonProps = {
-      placeholder: config.placeholder,
+      placeholder: getLocalizedField(config, 'placeholder'),
       disabled: loading,
       className: 'flex-1',
     }
@@ -110,7 +113,7 @@ export const GenericConfigItem = ({ config }) => {
             value={value ? Number(value) : undefined}
             min={config.min}
             max={config.max}
-            addonAfter={config.suffix}
+            addonAfter={getLocalizedField(config, 'suffix')}
             onChange={(val) => setValue(val?.toString() ?? '')}
             style={{ width: '100%' }}
           />
@@ -141,8 +144,11 @@ export const GenericConfigItem = ({ config }) => {
             {...commonProps}
             value={value || undefined}
             onChange={(val) => setValue(val)}
-            options={config.options?.map(opt => 
-              typeof opt === 'string' ? { value: opt, label: opt } : opt
+            options={localizeItems(
+              config.options?.map(opt =>
+                typeof opt === 'string' ? { value: opt, label: opt } : opt
+              ),
+              ['label']
             )}
             style={{ width: '100%' }}
           />
@@ -166,11 +172,11 @@ export const GenericConfigItem = ({ config }) => {
     if (verifyInfo.valid) {
       return (
         <div className="mt-2">
-          <Tag icon={<CheckCircleOutlined />} color="success">Token 有效</Tag>
+          <Tag icon={<CheckCircleOutlined />} color="success">{t('genericConfig.tokenValid')}</Tag>
           <div className="text-sm text-gray-500 mt-1">
-            <div>用户: {verifyInfo.username}</div>
-            <div>剩余配额: {verifyInfo.rateLimit?.remaining} / {verifyInfo.rateLimit?.limit}</div>
-            <div>重置时间: {new Date(verifyInfo.rateLimit?.reset * 1000).toLocaleString()}</div>
+            <div>{t('genericConfig.user')}: {verifyInfo.username}</div>
+            <div>{t('genericConfig.remainingQuota')}: {verifyInfo.rateLimit?.remaining} / {verifyInfo.rateLimit?.limit}</div>
+            <div>{t('genericConfig.resetTime')}: {new Date(verifyInfo.rateLimit?.reset * 1000).toLocaleString()}</div>
           </div>
         </div>
       )
@@ -178,7 +184,7 @@ export const GenericConfigItem = ({ config }) => {
       return (
         <div className="mt-2">
           <Tag icon={<CloseCircleOutlined />} color="error">
-            {verifyInfo.error || 'Token 无效'}
+            {verifyInfo.error || t('genericConfig.tokenInvalid')}
           </Tag>
         </div>
       )
@@ -189,16 +195,16 @@ export const GenericConfigItem = ({ config }) => {
 
   return (
     <div className={isMobile ? 'mb-4' : 'mb-6'}>
-      <div className="mb-1 font-medium">{config.label}</div>
-      {config.description && (
-        <div className="text-sm text-gray-500 mb-2">{config.description}</div>
+      <div className="mb-1 font-medium">{getLocalizedField(config, 'label')}</div>
+      {getLocalizedField(config, 'description') && (
+        <div className="text-sm text-gray-500 mb-2">{getLocalizedField(config, 'description')}</div>
       )}
       {isBoolean ? (
         // 开关类型：始终横排，开关在左，保存按钮在右
         <div className="flex items-center justify-between">
           {renderInput()}
           <Button type="primary" onClick={handleSave} loading={saving}>
-            保存
+            {t('genericConfig.save')}
           </Button>
         </div>
       ) : isMobile ? (
@@ -209,7 +215,7 @@ export const GenericConfigItem = ({ config }) => {
             {renderVerifyInfo()}
           </div>
           <Button type="primary" onClick={handleSave} loading={saving} block>
-            保存
+            {t('genericConfig.save')}
           </Button>
         </div>
       ) : (
@@ -220,7 +226,7 @@ export const GenericConfigItem = ({ config }) => {
             {renderVerifyInfo()}
           </div>
           <Button type="primary" onClick={handleSave} loading={saving}>
-            保存
+            {t('genericConfig.save')}
           </Button>
         </div>
       )}

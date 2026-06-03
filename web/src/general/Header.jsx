@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef, useLayoutEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { RoutePaths } from './RoutePaths.jsx'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -15,6 +16,7 @@ import SessionManager from '@/components/SessionManager'
 import VersionModal from '@/components/VersionModal'
 import ThemeColorPicker from '@/components/ThemeColorPicker'
 import PageStylePicker from '@/components/PageStylePicker'
+import LanguagePicker from '@/components/LanguagePicker'
 import RealtimeLogModal from '@/components/RealtimeLogModal'
 import CacheManagerModal from '@/components/CacheManagerModal'
 import HistoryLogModal from '@/components/HistoryLogModal'
@@ -74,57 +76,87 @@ const DocsIcon = () => (
 )
 
 const navItems = [
-  { key: RoutePaths.HOME, label: '首页', icon: 'home', iconfontIcon: 'icon-home' },
-  { key: RoutePaths.LIBRARY, label: '弹幕库', icon: 'tvlibrary', iconfontIcon: 'icon-tvlibrary' },
-  { key: RoutePaths.TASK, label: '任务管理器', icon: 'renwu', iconfontIcon: 'icon-renwu', children: [
-    { key: 'task', label: '进行中的任务' },
-    { key: 'webhook', label: 'Webhook 任务' },
-    { key: 'schedule', label: '定时任务' },
-    { key: 'ratelimit', label: '流控面板' },
+  { key: RoutePaths.HOME, label: 'nav.home', icon: 'home', iconfontIcon: 'icon-home' },
+  { key: RoutePaths.LIBRARY, label: 'nav.library', icon: 'tvlibrary', iconfontIcon: 'icon-tvlibrary', children: [
+    { key: 'library', label: 'libraryPage.pageTitle', icon: 'kufangguanli' },
+    { key: 'batch', label: 'libraryPage.btnBatchManage', icon: 'piliangguanli' },
+  ] },
+  { key: RoutePaths.TASK, label: 'nav.task', icon: 'renwu', iconfontIcon: 'icon-renwu', children: [
+    { key: 'task', label: 'nav.taskRunning', icon: 'tongji-jinhangzhongderenwushuliang' },
+    { key: 'webhook', label: 'nav.taskWebhook', icon: 'Webhookrenwu', iconSize: 28, iconClassName: 'ml-px' },
+    { key: 'schedule', label: 'nav.taskSchedule', icon: 'dingshirenwu' },
+    { key: 'ratelimit', label: 'nav.taskRatelimit', icon: 'liukong' },
   ]},
-  { key: RoutePaths.BULLET, label: '弹幕', icon: 'danmu', iconfontIcon: 'icon-danmu', children: [
-    { key: 'token', label: 'Token管理' },
-    { key: 'output', label: '弹幕输出配置' },
-    { key: 'storage', label: '弹幕存储配置' },
-    { key: 'fallback', label: '设置' },
+  { key: RoutePaths.BULLET, label: 'nav.bullet', icon: 'danmu', iconfontIcon: 'icon-danmu', children: [
+    { key: 'token', label: 'nav.bulletToken', icon: 'tokenguanli' },
+    { key: 'output', label: 'nav.bulletOutput', icon: 'shuchupeizhi' },
+    { key: 'storage', label: 'nav.bulletStorage', icon: 'cunchupeizhi' },
+    { key: 'fallback', label: 'nav.bulletFallback', icon: 'sanfangyunpeizhi' },
   ]},
-  { key: RoutePaths.MEDIA_FETCH, label: '媒体获取', icon: 'movie', iconfontIcon: 'icon-movie', children: [
-    { key: 'library-scan', label: '媒体库读取' },
-    { key: 'local-scan', label: '本地扫描' },
+  { key: RoutePaths.MEDIA_FETCH, label: 'nav.mediaFetch', icon: 'movie', iconfontIcon: 'icon-movie', children: [
+    { key: 'library-scan', label: 'nav.mediaLibraryScan', icon: 'meitiduqu', iconSize: 28 , iconClassName: 'ml-px' },
+    { key: 'local-scan', label: 'nav.mediaLocalScan', icon: 'bendiduqu' },
   ]},
-  { key: RoutePaths.SOURCE, label: '搜索源', icon: 'search', iconfontIcon: 'icon-search', children: [
-    { key: 'scrapers', label: '弹幕搜索源' },
-    { key: 'metadata', label: '元信息搜索源' },
-    { key: 'global-filter', label: '设置' },
+  { key: RoutePaths.SOURCE, label: 'nav.source', icon: 'search', iconfontIcon: 'icon-search', children: [
+    { key: 'scrapers', label: 'nav.sourceScrapers', icon: 'accurate-search' },
+    { key: 'metadata', label: 'nav.sourceMetadata', icon: 'accurate-search-full' },
+    { key: 'global-filter', label: 'nav.sourceGlobalFilter', icon: 'guolvshezhi' },
   ]},
-  { key: RoutePaths.CONTROL, label: '外部控制', icon: 'controlapi', iconfontIcon: 'icon-controlapi', children: [
-    { key: 'apikey', label: 'API密钥' },
-    { key: 'settings', label: '设置' },
-    { key: 'apilogs', label: 'API访问日志' },
-    { key: 'mcp', label: 'MCP' },
-    { key: 'apidoc', label: 'API文档' },
+  { key: RoutePaths.CONTROL, label: 'nav.control', icon: 'controlapi', iconfontIcon: 'icon-controlapi', children: [
+    { key: 'apikey', label: 'nav.controlApikey', icon: 'API' },
+    { key: 'settings', label: 'nav.controlSettings', icon: 'canshupeizhi' },
+    { key: 'apilogs', label: 'nav.controlApilogs', icon: 'APIrizhi' },
+    { key: 'mcp', label: 'nav.controlMcp', icon: 'MCP' },
+    { key: 'apidoc', label: 'nav.controlApidoc', icon: 'kuaijierukou_apiwendang' },
   ]},
-  { key: RoutePaths.SETTING, label: '设置', icon: 'setting', iconfontIcon: 'icon-setting', children: [
-    { key: 'parameters', label: '参数配置' },
-    { key: 'proxy', label: '代理设置' },
-    { key: 'webhook', label: 'Webhook' },
-    { key: 'notification', label: '通知与交互' },
-    { key: 'recognition', label: '识别词配置' },
-    { key: 'automatch', label: 'AI辅助增强' },
+  { key: RoutePaths.SETTING, label: 'nav.setting', icon: 'setting', iconfontIcon: 'icon-setting', children: [
+    { key: 'parameters', label: 'nav.settingParameters', icon: 'canshupeizhi' },
+    { key: 'proxy', label: 'nav.settingProxy', icon: 'dailipeizhi' },
+    { key: 'webhook', label: 'nav.settingWebhook', icon: 'webhookpeizhi' },
+    { key: 'notification', label: 'nav.settingNotification', icon: 'jiaohu' },
+    { key: 'recognition', label: 'nav.settingRecognition', icon: 'renlianshibie_o' },
+    { key: 'automatch', label: 'nav.settingAutomatch', icon: 'ai' },
   ]},
 ]
 
 // 导航图标统一样式
-// compact=true 时固定 box 尺寸（icon-only 模式需要对齐）
-// compact=false 时只设字号，宽高自然流动（避免亚像素裁切导致模糊）
-const navIconStyle = (size, scale, compact = false) => ({
-  fontSize: size,
-  ...(compact ? { width: size + 2, height: size + 2 } : {}),
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  ...(scale ? { transform: `scale(${scale})` } : {}),
-})
+// icon+文字模式：字体图标按普通字符渲染（保留字体 hinting，最清晰），不强制 flex 居中
+// icon-only 模式：固定整数 box 居中对齐
+const navIconStyle = (size, scale, compact = false) => {
+  if (compact) {
+    return {
+      fontSize: size,
+      lineHeight: 1,
+      width: size + 2,
+      height: size + 2,
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...(scale ? { transform: `scale(${scale})` } : {}),
+    }
+  }
+  // 非 compact：按字符自然渲染，避免 inline-flex 居中导致字形亚像素模糊
+  return {
+    fontSize: size,
+    lineHeight: 1,
+    display: 'inline-block',
+    verticalAlign: 'middle',
+  }
+}
+
+const getChildNavigatePath = (parentItem, childKey) => {
+  if (parentItem?.key === RoutePaths.LIBRARY) {
+    return childKey === 'batch' ? RoutePaths.BATCH_MANAGE : RoutePaths.LIBRARY
+  }
+  return `${parentItem.key}?key=${childKey}`
+}
+
+const getNavChildActiveKey = (parentItem, location, subKey) => {
+  if (parentItem?.key === RoutePaths.LIBRARY) {
+    return location.pathname === RoutePaths.BATCH_MANAGE ? 'batch' : 'library'
+  }
+  return subKey
+}
 
 
 const FloatingMenu = ({ trigger, items, onItemClick, activeKey }) => {
@@ -182,7 +214,9 @@ const FloatingMenu = ({ trigger, items, onItemClick, activeKey }) => {
                   }}
                 >
                   <div className="flex items-center justify-start gap-2">
-                    <MyIcon icon={item.icon} size={20} />
+                    <span className="inline-flex w-7 shrink-0 items-center justify-center">
+                      <MyIcon icon={item.icon} size={item.iconSize || 20} className={item.iconClassName} />
+                    </span>
                     <div>{item.label}</div>
                   </div>
                 </button>
@@ -196,6 +230,7 @@ const FloatingMenu = ({ trigger, items, onItemClick, activeKey }) => {
 }
 
 export const Header = () => {
+  const { t } = useTranslation()
   const [isMobile, setIsMobile] = useAtom(isMobileAtom)
   const location = useLocation()
   const navigate = useNavigate()
@@ -257,12 +292,12 @@ export const Header = () => {
               </div>
               <div className="flex items-center justify-center gap-3 ml-auto">
                 <RateLimitIndicator />
-                <Tooltip title="实时日志">
+                <Tooltip title={t('header.realtimeLog')}>
                   <div onClick={() => setRealtimeLogOpen(true)} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 18 }}>
                     <RealtimeLogIcon />
                   </div>
                 </Tooltip>
-                <Tooltip title="历史日志">
+                <Tooltip title={t('header.historyLog')}>
                   <div onClick={() => setHistoryLogOpen(true)} className="cursor-pointer" style={{ color: '#8B7355', fontSize: 18 }}>
                     <HistoryLogIcon />
                   </div>
@@ -288,7 +323,7 @@ export const Header = () => {
                   </a>
                 </Tooltip>
                 {docsUrl && (
-                  <Tooltip title="文档">
+                  <Tooltip title={t('header.docs')}>
                     <a
                       href={docsUrl}
                       target="_blank"
@@ -348,17 +383,21 @@ export const Header = () => {
 }
 
 const MobileHeader = ({ activeKey }) => {
+  const { t } = useTranslation()
   const mobileNavItems = [
     ...navItems.slice(0, 3), // 首页、弹幕库、任务管理器直接显示
-    { key: 'user', label: '我的', icon: 'user', children: navItems.slice(3) }, // 其余的放在"我的"菜单下
+    { key: 'user', label: 'nav.my', icon: 'user', children: navItems.slice(3) }, // 其余的放在"我的"菜单下
   ]
   const navigate = useNavigate()
+  const location = useLocation()
+
   const [searchParams] = useSearchParams()
   const subKey = searchParams.get('key') // 当前 URL 中的子标签 key
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false)
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false)
   const [isThemeColorOpen, setIsThemeColorOpen] = useState(false)
   const [isPageStyleOpen, setIsPageStyleOpen] = useState(false)
+  const [isLanguageOpen, setIsLanguageOpen] = useState(false)
   const [isCacheModalOpen, setIsCacheModalOpen] = useState(false)
   const [passwordForm] = Form.useForm()
   const [passwordLoading, setPasswordLoading] = useState(false)
@@ -402,9 +441,9 @@ const MobileHeader = ({ activeKey }) => {
     try {
       setRestartLoading(true)
       await restartService()
-      messageApi.success('重启指令已发送，请稍候...')
+      messageApi.success(t('header.restartSent'))
     } catch (error) {
-      messageApi.error(error.response?.data?.detail || '重启失败')
+      messageApi.error(error.response?.data?.detail || t('header.restartFailed'))
     } finally {
       setRestartLoading(false)
     }
@@ -414,14 +453,14 @@ const MobileHeader = ({ activeKey }) => {
     try {
       setPasswordLoading(true)
       await changePassword(values)
-      messageApi.success('密码修改成功')
+      messageApi.success(t('header.passwordChangeSuccess'))
       setIsPasswordModalOpen(false)
       passwordForm.resetFields()
     } catch (error) {
       // 优先从 error.response.data.detail 获取（直接来自后端）
       const detail = error.response?.data?.detail || error.detail
 
-      let errorMsg = '密码修改失败'
+      let errorMsg = t('header.passwordChangeFailed')
 
       if (Array.isArray(detail)) {
         // Pydantic 422 验证错误：[{loc, msg, type}, ...]
@@ -451,6 +490,8 @@ const MobileHeader = ({ activeKey }) => {
       setIsThemeColorOpen(true)
     } else if (item.key === 'page-style') {
       setIsPageStyleOpen(true)
+    } else if (item.key === 'language') {
+      setIsLanguageOpen(true)
     } else if (item.key === 'cache-manager') {
       setIsCacheModalOpen(true)
     } else if (item.key === 'clear-browser-cache') {
@@ -462,13 +503,13 @@ const MobileHeader = ({ activeKey }) => {
       // 导航到该页面的第一个子页面
       const navItem = navItems.find(n => n.key === item.key)
       if (navItem?.children?.length) {
-        navigate(`${item.key}?key=${navItem.children[0].key}`)
+        navigate(getChildNavigatePath(navItem, navItem.children[0].key))
       } else {
         navigate(item.key)
       }
     } else if (parentItem) {
       // 非"我的"菜单的子项（如任务管理器的子项），导航到父路径+子key
-      navigate(`${parentItem.key}?key=${item.key}`)
+      navigate(getChildNavigatePath(parentItem, item.key))
     } else {
       navigate(item.key)
     }
@@ -477,7 +518,7 @@ const MobileHeader = ({ activeKey }) => {
   // 计算"我的"菜单的显示标签
   const userMenuItem = mobileNavItems.find(it => it.key === 'user')
   const activeChildItem = userMenuItem?.children?.find(child => child.key === activeKey)
-  const userMenuLabel = activeChildItem ? activeChildItem.label : '我的'
+  const userMenuLabel = activeChildItem ? t(activeChildItem.label) : t('nav.my')
 
   return (
     <>
@@ -497,7 +538,7 @@ const MobileHeader = ({ activeKey }) => {
                   <div>
                     <MyIcon icon={it.icon} size={26} />
                   </div>
-                  <div className="text-xs">{it.label}</div>
+                  <div className="text-xs">{t(it.label)}</div>
                 </div>
               ) : (
                 <FloatingMenu
@@ -514,70 +555,77 @@ const MobileHeader = ({ activeKey }) => {
                       <div>
                         <MyIcon icon={it.icon} size={26} />
                       </div>
-                      <div className="text-xs">{it.key === 'user' ? userMenuLabel : it.label}</div>
+                      <div className="text-xs">{it.key === 'user' ? userMenuLabel : t(it.label)}</div>
                     </div>
                   }
                   items={[
                     ...it.children.map(o => ({
                       key: o.key,
-                      label: o.label,
+                      label: t(o.label),
                       icon: o.icon,
+                      iconSize: o.iconSize,
+                      iconClassName: o.iconClassName,
                     })),
                     ...(it.key === 'user' ? [
                       {
                         key: 'theme-color',
-                        label: '主题色',
+                        label: t('header.themeColor'),
                         icon: 'MenuIcon-gexinghua-heise',
                       },
                       {
                         key: 'page-style',
-                        label: '页面样式',
+                        label: t('header.pageStyle'),
                         icon: 'fengge',
                       },
                       {
+                        key: 'language',
+                        label: t('header.language'),
+                        icon: 'yuyan',
+                      },
+                      {
                         key: 'session-manager',
-                        label: '会话管理',
+                        label: t('header.sessionManager'),
                         icon: 'huihuaguanli',
                       },
                       {
                         key: 'change-password',
-                        label: '修改密码',
+                        label: t('header.changePassword'),
                         icon: 'key',
                       },
                       {
                         key: 'cache-manager',
-                        label: '缓存管理',
+                        label: t('header.cacheManager'),
                         icon: 'refresh',
                       },
                       {
                         key: 'clear-browser-cache',
-                        label: '清理浏览器缓存',
+                        label: t('header.clearBrowserCache'),
                         icon: 'refresh',
                       },
                       ...(dockerAvailable ? [{
                         key: 'restart-service',
                         label: (
                           <Popconfirm
-                            title="确认重启"
-                            description="确定要重启服务吗？"
+                            title={t('header.restartConfirmTitle')}
+                            description={t('header.restartConfirmDesc')}
                             onConfirm={handleRestart}
-                            okText="确定"
-                            cancelText="取消"
+                            okText={t('common.confirm')}
+                            cancelText={t('common.cancel')}
                           >
-                            <span>重启服务</span>
+                            <span>{t('header.restartService')}</span>
                           </Popconfirm>
                         ),
                         icon: 'zhongqi',
                       }] : []),
                       {
                         key: 'logout',
-                        label: '退出登录',
+                        label: t('header.logout'),
                         icon: 'tuichudenglu',
                       },
                     ] : []),
                   ]}
                   onItemClick={(item) => handleMenuItemClick(item, it)}
-                  activeKey={it.key === 'user' ? activeKey : subKey}
+                  activeKey={it.key === 'user' ? activeKey : getNavChildActiveKey(it, location, subKey)}
                 />
               )}
             </>
@@ -587,7 +635,7 @@ const MobileHeader = ({ activeKey }) => {
 
       {/* 修改密码弹框 */}
       <Modal
-        title="修改密码"
+        title={t('header.changePassword')}
         open={isPasswordModalOpen}
         onCancel={() => {
           setIsPasswordModalOpen(false)
@@ -603,12 +651,12 @@ const MobileHeader = ({ activeKey }) => {
         >
           <Form.Item
             name="oldPassword"
-            label="当前密码"
-            rules={[{ required: true, message: '请输入当前密码' }]}
+            label={t('header.currentPassword')}
+            rules={[{ required: true, message: t('header.inputCurrentPassword') }]}
           >
             <Input.Password
               prefix={<LockOutlined />}
-              placeholder="请输入当前密码"
+              placeholder={t('header.inputCurrentPassword')}
               iconRender={(visible) =>
                 visible ? <EyeOutlined /> : <EyeInvisibleOutlined />
               }
@@ -621,12 +669,12 @@ const MobileHeader = ({ activeKey }) => {
 
           <Form.Item
             name="newPassword"
-            label="新密码"
-            rules={[{ required: true, message: '请输入新密码' }]}
+            label={t('header.newPassword')}
+            rules={[{ required: true, message: t('header.inputNewPassword') }]}
           >
             <Input.Password
               prefix={<LockOutlined />}
-              placeholder="请输入新密码"
+              placeholder={t('header.inputNewPassword')}
               iconRender={(visible) =>
                 visible ? <EyeOutlined /> : <EyeInvisibleOutlined />
               }
@@ -639,23 +687,23 @@ const MobileHeader = ({ activeKey }) => {
 
           <Form.Item
             name="confirmPassword"
-            label="确认新密码"
+            label={t('header.confirmNewPassword')}
             dependencies={['newPassword']}
             rules={[
-              { required: true, message: '请确认新密码' },
+              { required: true, message: t('header.confirmInputNewPassword') },
               ({ getFieldValue }) => ({
                 validator(_, value) {
                   if (!value || getFieldValue('newPassword') === value) {
                     return Promise.resolve()
                   }
-                  return Promise.reject(new Error('两次输入的密码不一致'))
+                  return Promise.reject(new Error(t('header.passwordNotMatch')))
                 },
               }),
             ]}
           >
             <Input.Password
               prefix={<LockOutlined />}
-              placeholder="请再次输入新密码"
+              placeholder={t('header.confirmInputNewPassword')}
               iconRender={(visible) =>
                 visible ? <EyeOutlined /> : <EyeInvisibleOutlined />
               }
@@ -674,10 +722,10 @@ const MobileHeader = ({ activeKey }) => {
                   passwordForm.resetFields()
                 }}
               >
-                取消
+                {t('common.cancel')}
               </Button>
               <Button type="primary" htmlType="submit" loading={passwordLoading}>
-                确认修改
+                {t('header.confirmChange')}
               </Button>
             </Space>
           </Form.Item>
@@ -702,6 +750,12 @@ const MobileHeader = ({ activeKey }) => {
         onClose={() => setIsPageStyleOpen(false)}
       />
 
+      {/* 语言切换弹窗 */}
+      <LanguagePicker
+        open={isLanguageOpen}
+        onClose={() => setIsLanguageOpen(false)}
+      />
+
       {/* 缓存管理弹窗 */}
       <CacheManagerModal
         open={isCacheModalOpen}
@@ -712,14 +766,20 @@ const MobileHeader = ({ activeKey }) => {
 }
 
 const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick, onRealtimeLog, onHistoryLog }) => {
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const userinfo = useAtomValue(userinfoAtom)
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const subKey = searchParams.get('key')
+
   const messageApi = useMessage()
   const setUserinfo = useSetAtom(userinfoAtom)
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false)
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false)
   const [isThemeColorOpen, setIsThemeColorOpen] = useState(false)
   const [isPageStyleOpen, setIsPageStyleOpen] = useState(false)
+  const [isLanguageOpen, setIsLanguageOpen] = useState(false)
   const [isCacheModalOpen, setIsCacheModalOpen] = useState(false)
   const [form] = Form.useForm()
   const [showPassword1, setShowPassword1] = useState(false)
@@ -734,23 +794,31 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
   const navContainerRef = useRef(null)
   const navMeasureRef = useRef(null)
 
-  useEffect(() => {
+  // 检测导航是否需要切换到 icon-only 模式
+  const checkNavCompact = useCallback(() => {
     const container = navContainerRef.current
     const measure = navMeasureRef.current
     if (!container || !measure) return
+    const available = container.clientWidth
+    const natural = measure.scrollWidth
+    setCompactNav(available < natural)
+  }, [])
 
-    const ro = new ResizeObserver(() => {
-      // 可用宽度 = 容器被 flex 分配的实际宽度
-      const available = container.clientWidth
-      // 自然宽度 = 隐藏的测量行（icon+文字完整渲染）的 scrollWidth
-      const natural = measure.scrollWidth
-      setCompactNav(available < natural)
-    })
+  useEffect(() => {
+    const container = navContainerRef.current
+    if (!container) return
+
+    const ro = new ResizeObserver(checkNavCompact)
     ro.observe(container)
-    // 也监听父容器大小变化
     if (container.parentElement) ro.observe(container.parentElement)
     return () => ro.disconnect()
-  }, [])
+  }, [checkNavCompact])
+
+  // 语言切换时重新检测导航宽度（文字长度变化）
+  useEffect(() => {
+    // 延迟一帧让 DOM 先更新完文字内容
+    requestAnimationFrame(checkNavCompact)
+  }, [i18n.language, checkNavCompact])
 
   // 检查 Docker 套接字是否可用
   useEffect(() => {
@@ -784,9 +852,9 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
     try {
       setRestartLoading(true)
       await restartService()
-      messageApi.success('重启指令已发送，请稍候...')
+      messageApi.success(t('header.restartSent'))
     } catch (error) {
-      messageApi.error(error.response?.data?.detail || '重启失败')
+      messageApi.error(error.response?.data?.detail || t('header.restartFailed'))
     } finally {
       setRestartLoading(false)
     }
@@ -797,13 +865,13 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
       setIsLoading(true)
       await changePassword(values)
       form.resetFields()
-      messageApi.success('修改成功')
+      messageApi.success(t('header.changeSuccess'))
       setIsPasswordModalOpen(false)
     } catch (error) {
       // 优先从 error.response.data.detail 获取（直接来自后端）
       const detail = error.response?.data?.detail || error.detail
 
-      let errorMsg = '修改失败'
+      let errorMsg = t('header.changeFailed')
 
       if (Array.isArray(detail)) {
         // Pydantic 422 验证错误：[{loc, msg, type}, ...]
@@ -842,7 +910,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                   className={`iconfont ${it.iconfontIcon}`}
                   style={navIconStyle(16, it.iconScale)}
                 />
-                <span>{it.label}</span>
+                <span>{t(it.label)}</span>
               </div>
             ))}
           </div>
@@ -861,12 +929,25 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                       key={it.key}
                       menu={{
                         items: [
-                          { key: '_title', type: 'group', label: (<div className="font-bold text-sm" style={{ color: 'var(--ant-color-text)' }}>{it.label}</div>) },
+                          { key: '_title', type: 'group', label: (<div className="font-bold text-sm" style={{ color: 'var(--ant-color-text)' }}>{t(it.label)}</div>) },
                           { type: 'divider' },
-                          ...it.children.map(child => ({ key: child.key, label: child.label })),
+                          ...it.children.map(child => ({
+                            key: child.key,
+                            label: (
+                              <span className="inline-flex items-center gap-2">
+                                {child.icon && (
+                                  <span className="inline-flex w-7 shrink-0 items-center justify-center">
+                                    <MyIcon icon={child.icon} size={child.iconSize || 20} className={child.iconClassName} />
+                                  </span>
+                                )}
+                                <span>{t(child.label)}</span>
+                              </span>
+                            ),
+                          })),
                         ],
+                        selectedKeys: [getNavChildActiveKey(it, location, subKey)],
                         onClick: ({ key: childKey }) => {
-                          if (childKey !== '_title') navigate(`${it.key}?key=${childKey}`)
+                          if (childKey !== '_title') navigate(getChildNavigatePath(it, childKey))
                         },
                       }}
                     >
@@ -887,7 +968,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                 }
                 // 无子项时用 Tooltip
                 return (
-                  <Tooltip key={it.key} title={it.label}>
+                  <Tooltip key={it.key} title={t(it.label)}>
                     <div
                       className={classNames(
                         'cursor-pointer mx-0.5 p-1.5 rounded-md transition-colors hover:bg-[var(--ant-color-bg-text-hover)]',
@@ -912,10 +993,20 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     menu={{
                       items: it.children.map(child => ({
                         key: child.key,
-                        label: child.label,
+                        label: (
+                          <span className="inline-flex items-center gap-2">
+                            {child.icon && (
+                              <span className="inline-flex w-7 shrink-0 items-center justify-center">
+                                <MyIcon icon={child.icon} size={child.iconSize || 20} className={child.iconClassName} />
+                              </span>
+                            )}
+                            <span>{t(child.label)}</span>
+                          </span>
+                        ),
                       })),
+                      selectedKeys: [getNavChildActiveKey(it, location, subKey)],
                       onClick: ({ key: childKey }) => {
-                        navigate(`${it.key}?key=${childKey}`)
+                        navigate(getChildNavigatePath(it, childKey))
                       },
                     }}
                   >
@@ -930,7 +1021,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                         className={`iconfont ${it.iconfontIcon}`}
                         style={navIconStyle(16, it.iconScale)}
                       />
-                      <span>{it.label}</span>
+                      <span>{t(it.label)}</span>
                     </div>
                   </Dropdown>
                 )
@@ -948,19 +1039,19 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     className={`iconfont ${it.iconfontIcon}`}
                     style={navIconStyle(16, it.iconScale)}
                   />
-                  <span>{it.label}</span>
+                  <span>{t(it.label)}</span>
                 </div>
               )
             })}
           </div>
           <div className="flex items-center justify-center gap-4 ml-auto flex-shrink-0">
             <RateLimitIndicator />
-            <Tooltip title="实时日志">
+            <Tooltip title={t('header.realtimeLog')}>
               <div onClick={onRealtimeLog} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 20 }}>
                 <RealtimeLogIcon />
               </div>
             </Tooltip>
-            <Tooltip title="历史日志">
+            <Tooltip title={t('header.historyLog')}>
               <div onClick={onHistoryLog} className="cursor-pointer" style={{ color: '#8B7355', fontSize: 20 }}>
                 <HistoryLogIcon />
               </div>
@@ -986,7 +1077,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
               </a>
             </Tooltip>
             {docsUrl && (
-              <Tooltip title="文档">
+              <Tooltip title={t('header.docs')}>
                 <a
                   href={docsUrl}
                   target="_blank"
@@ -1013,7 +1104,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     icon: <MyIcon icon="MenuIcon-gexinghua-heise" size={16} />,
                     label: (
                       <div onClick={() => setIsThemeColorOpen(true)} className="text-base">
-                        主题色
+                        {t('header.themeColor')}
                       </div>
                     ),
                   },
@@ -1022,7 +1113,16 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     icon: <MyIcon icon="fengge" size={16} />,
                     label: (
                       <div onClick={() => setIsPageStyleOpen(true)} className="text-base">
-                        页面样式
+                        {t('header.pageStyle')}
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'language',
+                    icon: <MyIcon icon="yuyan" size={16} />,
+                    label: (
+                      <div onClick={() => setIsLanguageOpen(true)} className="text-base">
+                        {t('header.language')}
                       </div>
                     ),
                   },
@@ -1031,7 +1131,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     icon: <MyIcon icon="huihuaguanli" size={16} />,
                     label: (
                       <div onClick={() => setIsSessionModalOpen(true)} className="text-base">
-                        会话管理
+                        {t('header.sessionManager')}
                       </div>
                     ),
                   },
@@ -1040,7 +1140,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     icon: <MyIcon icon="key" size={16} />,
                     label: (
                       <div onClick={() => setIsPasswordModalOpen(true)} className="text-base">
-                        修改密码
+                        {t('header.changePassword')}
                       </div>
                     ),
                   },
@@ -1049,7 +1149,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     icon: <MyIcon icon="refresh" size={16} />,
                     label: (
                       <div onClick={() => setIsCacheModalOpen(true)} className="text-base">
-                        缓存管理
+                        {t('header.cacheManager')}
                       </div>
                     ),
                   },
@@ -1058,7 +1158,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     icon: <MyIcon icon="refresh" size={16} />,
                     label: (
                       <div onClick={clearBrowserCache} className="text-base">
-                        清理浏览器缓存
+                        {t('header.clearBrowserCache')}
                       </div>
                     ),
                   },
@@ -1067,13 +1167,13 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     icon: <MyIcon icon="zhongqi" size={16} />,
                     label: (
                       <Popconfirm
-                        title="确认重启"
-                        description="确定要重启服务吗？"
+                        title={t('header.restartConfirmTitle')}
+                        description={t('header.restartConfirmDesc')}
                         onConfirm={handleRestart}
-                        okText="确定"
-                        cancelText="取消"
+                        okText={t('common.confirm')}
+                        cancelText={t('common.cancel')}
                       >
-                        <div className="text-base">重启服务</div>
+                        <div className="text-base">{t('header.restartService')}</div>
                       </Popconfirm>
                     ),
                   }] : []),
@@ -1082,7 +1182,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     icon: <MyIcon icon="tuichudenglu" size={16} />,
                     label: (
                       <div onClick={onLogout} className="text-base">
-                        退出登录
+                        {t('header.logout')}
                       </div>
                     ),
                   },
@@ -1100,7 +1200,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
       </div>
 
       <Modal
-        title="修改密码"
+        title={t('header.changePassword')}
         open={isPasswordModalOpen}
         onCancel={() => {
           setIsPasswordModalOpen(false)
@@ -1110,7 +1210,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
         width={500}
       >
         <div className="mb-4">
-          如果您是使用初始随机密码登录的，建议您在此修改为自己的密码。
+          {t('header.passwordChangeTip')}
         </div>
         <Form
           form={form}
@@ -1119,12 +1219,12 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
         >
           <Form.Item
             name="oldPassword"
-            label="当前密码"
-            rules={[{ required: true, message: '请输入当前密码' }]}
+            label={t('header.currentPassword')}
+            rules={[{ required: true, message: t('header.inputCurrentPassword') }]}
           >
             <Input.Password
               prefix={<LockOutlined className="text-gray-400" />}
-              placeholder="请输入当前密码"
+              placeholder={t('header.inputCurrentPassword')}
               visibilityToggle={{
                 visible: showPassword1,
                 onVisibleChange: setShowPassword1,
@@ -1136,12 +1236,12 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
           </Form.Item>
           <Form.Item
             name="newPassword"
-            label="新密码"
-            rules={[{ required: true, message: '请输入新密码' }]}
+            label={t('header.newPassword')}
+            rules={[{ required: true, message: t('header.inputNewPassword') }]}
           >
             <Input.Password
               prefix={<LockOutlined className="text-gray-400" />}
-              placeholder="请输入新密码"
+              placeholder={t('header.inputNewPassword')}
               visibilityToggle={{
                 visible: showPassword2,
                 onVisibleChange: setShowPassword2,
@@ -1153,26 +1253,26 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
           </Form.Item>
           <Form.Item
             name="checkPassword"
-            label="确认新密码"
+            label={t('header.confirmNewPassword')}
             dependencies={['newPassword']}
             rules={[
               {
                 required: true,
-                message: '请输入新密码',
+                message: t('header.inputNewPassword'),
               },
               ({ getFieldValue }) => ({
                 validator(_, value) {
                   if (!value || getFieldValue('newPassword') === value) {
                     return Promise.resolve()
                   }
-                  return Promise.reject(new Error('新密码不匹配'))
+                  return Promise.reject(new Error(t('header.passwordMismatch')))
                 },
               }),
             ]}
           >
             <Input.Password
               prefix={<LockOutlined className="text-gray-400" />}
-              placeholder="请输入新密码"
+              placeholder={t('header.inputNewPassword')}
               visibilityToggle={{
                 visible: showPassword3,
                 onVisibleChange: setShowPassword3,
@@ -1189,10 +1289,10 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                 setIsPasswordModalOpen(false)
                 form.resetFields()
               }}>
-                取消
+                {t('common.cancel')}
               </Button>
               <Button type="primary" htmlType="submit" loading={isLoading}>
-                确认修改
+                {t('header.confirmChange')}
               </Button>
             </div>
           </Form.Item>
@@ -1215,6 +1315,12 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
       <PageStylePicker
         open={isPageStyleOpen}
         onClose={() => setIsPageStyleOpen(false)}
+      />
+
+      {/* 语言切换弹窗 */}
+      <LanguagePicker
+        open={isLanguageOpen}
+        onClose={() => setIsLanguageOpen(false)}
       />
 
       {/* 缓存管理弹窗 */}

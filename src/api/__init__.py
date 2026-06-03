@@ -7,7 +7,7 @@ from src.api.ui import (
     anime, source, episode, search, import_api, task,
     token, config_extra, settings, scheduled_task, webhook, system, auth_extra,
     local_danmaku, scraper_resources, parameters, danmaku_storage, backup, danmaku_edit,
-    local_episode_group, poster, notification_routes, anime_group, auth_mfa
+    local_episode_group, poster, notification_routes, anime_group, auth_mfa, calendar
 )
 
 # This router aggregates all non-dandanplay API endpoints.
@@ -67,6 +67,9 @@ api_router.include_router(notification_routes.webhook_router, tags=["Notificatio
 
 # 弹幕库分组端点
 api_router.include_router(anime_group.router, prefix="/ui", tags=["AnimeGroup"], include_in_schema=False)
+
+# 日历视图端点
+api_router.include_router(calendar.router, prefix="/ui", tags=["Calendar"], include_in_schema=False)
 
 api_router.include_router(webhook_router, prefix="/webhook", tags=["Webhook"], include_in_schema=False)
 

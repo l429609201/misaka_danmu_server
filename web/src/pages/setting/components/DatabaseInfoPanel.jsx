@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Card, Row, Col, Statistic, Progress, Tag, Spin, Descriptions } from 'antd'
 import {
   DatabaseOutlined,
@@ -18,28 +19,29 @@ const DB_TYPE_MAP = {
 }
 
 // 缓存后端类型 → 显示信息
-const CACHE_TYPE_MAP = {
+const getCacheTypeMap = (t) => ({
   redis: { label: 'Redis', color: '#dc382d' },
-  memory: { label: '内存缓存', color: '#52c41a' },
-  hybrid: { label: '混合缓存', color: '#1677ff' },
-  database: { label: '数据库缓存', color: '#722ed1' },
-}
+  memory: { label: t('dbInfo.cacheMemory'), color: '#52c41a' },
+  hybrid: { label: t('dbInfo.cacheHybrid'), color: '#1677ff' },
+  database: { label: t('dbInfo.cacheDatabase'), color: '#722ed1' },
+})
 
 /** 格式化运行时长 */
-const formatUptime = (seconds) => {
+const formatUptime = (seconds, t) => {
   if (!seconds && seconds !== 0) return '-'
   const d = Math.floor(seconds / 86400)
   const h = Math.floor((seconds % 86400) / 3600)
   const m = Math.floor((seconds % 3600) / 60)
-  if (d > 0) return `${d}天 ${h}小时`
-  if (h > 0) return `${h}小时 ${m}分钟`
-  return `${m}分钟`
+  if (d > 0) return t('dbInfo.uptimeDays', { d, h })
+  if (h > 0) return t('dbInfo.uptimeHours', { h, m })
+  return t('dbInfo.uptimeMinutes', { m })
 }
 
 /**
  * 数据库与缓存连接信息面板 — 图表 + 详细信息
  */
 export const DatabaseInfoPanel = () => {
+  const { t } = useTranslation()
   const [info, setInfo] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -60,7 +62,7 @@ export const DatabaseInfoPanel = () => {
     return (
       <div className="flex items-center gap-2 mb-5 py-4">
         <Spin size="small" />
-        <span className="text-gray-400 text-sm">加载连接信息...</span>
+        <span className="text-gray-400 text-sm">{t('dbInfo.loadingText')}</span>
       </div>
     )
   }
@@ -68,7 +70,7 @@ export const DatabaseInfoPanel = () => {
   if (!info) return null
 
   const dbMeta = DB_TYPE_MAP[info.dbType] || { label: info.dbType, color: '#666' }
-  const cacheMeta = CACHE_TYPE_MAP[info.cacheBackend] || { label: info.cacheBackend, color: '#666' }
+  const cacheMeta = getCacheTypeMap(t)[info.cacheBackend] || { label: info.cacheBackend, color: '#666' }
 
   // 连接池使用率
   // overflow 负数表示基础池还有空余槽位（如 -3 表示还有3个槽位没创建连接）
@@ -95,7 +97,7 @@ export const DatabaseInfoPanel = () => {
             title={
               <span className="inline-flex items-center gap-2">
                 <DatabaseOutlined />
-                <span>数据库</span>
+                <span>{t('dbInfo.titleDatabase')}</span>
                 <Tag color={dbMeta.color} className="!ml-1">{dbMeta.label}</Tag>
               </span>
             }
@@ -116,34 +118,34 @@ export const DatabaseInfoPanel = () => {
                   strokeColor={poolPercent > 80 ? '#ff4d4f' : poolPercent > 50 ? '#faad14' : '#52c41a'}
                   format={(p) => <span className="text-xs font-medium">{p}%</span>}
                 />
-                <div className="text-xs text-gray-400 mt-1">连接池</div>
+                <div className="text-xs text-gray-400 mt-1">{t('dbInfo.labelPool')}</div>
               </Col>
               {/* 统计数字 */}
               <Col xs={16} sm={18}>
                 <Row gutter={[12, 8]}>
                   <Col span={6}>
-                    <Statistic title="活跃" value={info.dbActiveConnections} valueStyle={{ fontSize: 20, color: '#1677ff' }} />
+                    <Statistic title={t('dbInfo.statActive')} value={info.dbActiveConnections} valueStyle={{ fontSize: 20, color: '#1677ff' }} />
                   </Col>
                   <Col span={6}>
-                    <Statistic title="空闲" value={info.dbIdleConnections} valueStyle={{ fontSize: 20, color: '#52c41a' }} />
+                    <Statistic title={t('dbInfo.statIdle')} value={info.dbIdleConnections} valueStyle={{ fontSize: 20, color: '#52c41a' }} />
                   </Col>
                   <Col span={6}>
-                    <Statistic title="未使用" value={Math.max(0, info.dbPoolSize - info.dbActiveConnections - info.dbIdleConnections)} valueStyle={{ fontSize: 20, color: '#d9d9d9' }} />
+                    <Statistic title={t('dbInfo.statUnused')} value={Math.max(0, info.dbPoolSize - info.dbActiveConnections - info.dbIdleConnections)} valueStyle={{ fontSize: 20, color: '#d9d9d9' }} />
                   </Col>
                   <Col span={6}>
-                    <Statistic title="溢出" value={actualOverflow} valueStyle={{ fontSize: 20, color: actualOverflow > 0 ? '#faad14' : undefined }} />
+                    <Statistic title={t('dbInfo.statOverflow')} value={actualOverflow} valueStyle={{ fontSize: 20, color: actualOverflow > 0 ? '#faad14' : undefined }} />
                   </Col>
                 </Row>
               </Col>
             </Row>
             {/* 连接详情 */}
             <Descriptions size="small" column={2} className="mt-3" colon={false}>
-              <Descriptions.Item label="地址">{info.dbHost}:{info.dbPort}</Descriptions.Item>
-              <Descriptions.Item label="数据库">{info.dbName}</Descriptions.Item>
-              <Descriptions.Item label="池大小">{info.dbPoolSize}</Descriptions.Item>
-              <Descriptions.Item label="最大溢出">{info.dbMaxOverflow}</Descriptions.Item>
-              <Descriptions.Item label="回收时间">{info.dbPoolRecycle}s</Descriptions.Item>
-              <Descriptions.Item label="池类型">{info.dbPoolType}</Descriptions.Item>
+              <Descriptions.Item label={t('dbInfo.labelAddress')}>{info.dbHost}:{info.dbPort}</Descriptions.Item>
+              <Descriptions.Item label={t('dbInfo.labelDbName')}>{info.dbName}</Descriptions.Item>
+              <Descriptions.Item label={t('dbInfo.labelPoolSize')}>{info.dbPoolSize}</Descriptions.Item>
+              <Descriptions.Item label={t('dbInfo.labelMaxOverflow')}>{info.dbMaxOverflow}</Descriptions.Item>
+              <Descriptions.Item label={t('dbInfo.labelRecycleTime')}>{info.dbPoolRecycle}s</Descriptions.Item>
+              <Descriptions.Item label={t('dbInfo.labelPoolType')}>{info.dbPoolType}</Descriptions.Item>
             </Descriptions>
           </Card>
         </Col>
@@ -156,7 +158,7 @@ export const DatabaseInfoPanel = () => {
             title={
               <span className="inline-flex items-center gap-2">
                 {showRedis ? <CloudServerOutlined /> : <HddOutlined />}
-                <span>缓存</span>
+                <span>{t('dbInfo.titleCache')}</span>
                 <Tag color={showRedis ? '#dc382d' : cacheMeta.color} className="!ml-1">
                   {showRedis ? 'Redis' : cacheMeta.label}
                 </Tag>
@@ -166,7 +168,7 @@ export const DatabaseInfoPanel = () => {
                     color="success"
                     className="!text-xs"
                   >
-                    已连接
+                    {t('dbInfo.tagConnected')}
                   </Tag>
                 )}
               </span>
@@ -193,29 +195,29 @@ export const DatabaseInfoPanel = () => {
                         </span>
                       )}
                     />
-                    <div className="text-xs text-gray-400 mt-1">内存</div>
+                    <div className="text-xs text-gray-400 mt-1">{t('dbInfo.labelMemory')}</div>
                   </Col>
                   {/* Redis 统计 */}
                   <Col xs={16} sm={18}>
                     <Row gutter={[12, 8]}>
                       <Col span={8}>
                         <Statistic
-                          title="键数量"
+                          title={t('dbInfo.statKeys')}
                           value={info.redisTotalKeys ?? 0}
                           valueStyle={{ fontSize: 20, color: '#1677ff' }}
                         />
                       </Col>
                       <Col span={8}>
                         <Statistic
-                          title="客户端"
+                          title={t('dbInfo.statClients')}
                           value={info.redisConnectedClients ?? 0}
                           valueStyle={{ fontSize: 20 }}
                         />
                       </Col>
                       <Col span={8}>
                         <Statistic
-                          title="运行时长"
-                          value={formatUptime(info.redisUptimeSeconds)}
+                          title={t('dbInfo.statUptime')}
+                          value={formatUptime(info.redisUptimeSeconds, t)}
                           valueStyle={{ fontSize: 14 }}
                         />
                       </Col>
@@ -224,23 +226,23 @@ export const DatabaseInfoPanel = () => {
                 </Row>
                 {/* Redis 详情 */}
                 <Descriptions size="small" column={2} className="mt-3" colon={false}>
-                  <Descriptions.Item label="地址">{info.redisUrl || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="版本">{info.redisVersion || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="已用内存">{info.redisMemoryUsed || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="内存上限">{info.redisMemoryMax || '无限制'}</Descriptions.Item>
-                  <Descriptions.Item label="缓存后端">{info.cacheBackend}</Descriptions.Item>
-                  <Descriptions.Item label="配置模式">
-                    {info.cacheBackend === 'redis' ? '纯 Redis' : '混合模式'}
+                  <Descriptions.Item label={t('dbInfo.labelAddress')}>{info.redisUrl || '-'}</Descriptions.Item>
+                  <Descriptions.Item label={t('dbInfo.labelVersion')}>{info.redisVersion || '-'}</Descriptions.Item>
+                  <Descriptions.Item label={t('dbInfo.labelMemUsed')}>{info.redisMemoryUsed || '-'}</Descriptions.Item>
+                  <Descriptions.Item label={t('dbInfo.labelMemMax')}>{info.redisMemoryMax || t('dbInfo.labelMemMaxUnlimited')}</Descriptions.Item>
+                  <Descriptions.Item label={t('dbInfo.labelCacheBackend')}>{info.cacheBackend}</Descriptions.Item>
+                  <Descriptions.Item label={t('dbInfo.labelCacheMode')}>
+                    {info.cacheBackend === 'redis' ? t('dbInfo.cacheModeRedis') : t('dbInfo.cacheModeHybrid')}
                   </Descriptions.Item>
                 </Descriptions>
               </>
             ) : (
               <div className="py-4 text-center text-gray-400">
                 {info.cacheBackend === 'hybrid'
-                  ? '混合模式：内存 L1 + 数据库 L2'
+                  ? t('dbInfo.descHybrid')
                   : info.cacheBackend === 'memory'
-                    ? '纯内存缓存模式'
-                    : '数据库缓存模式'}
+                    ? t('dbInfo.descMemory')
+                    : t('dbInfo.descDatabase')}
               </div>
             )}
           </Card>

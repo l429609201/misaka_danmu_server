@@ -33,8 +33,9 @@ def normalize_ip(ip_str: str) -> str:
 # 需要捕获响应的路径前缀
 _CAPTURE_PREFIXES = ("/api/control/", "/api/mcp/", "/api/v1/")
 
-# 404→403 保护不应拦截的路径（MCP 子应用由 fastapi-mcp 挂载，路由机制不同）
-_SKIP_404_PREFIXES = ("/api/mcp",)
+# 404→403 保护不应拦截的路径（MCP 子应用由 fastapi-mcp 挂载，路由机制不同；
+# 日历海报端点为公开懒加载图片，无海报时返回 404/204 属正常，不应转 403）
+_SKIP_404_PREFIXES = ("/api/mcp", "/api/ui/calendar/tmdb-poster")
 
 
 async def capture_api_response(request: Request, call_next):

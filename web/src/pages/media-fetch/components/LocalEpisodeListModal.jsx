@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Modal, Table, Button, Space, message, Popconfirm } from 'antd';
 import { DeleteOutlined, EditOutlined, ImportOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { getLocalSeasonEpisodes, deleteLocalItem, importLocalItems } from '../../../apis';
 import MediaItemEditor from './MediaItemEditor';
 
 const LocalEpisodeListModal = ({ visible, season, onClose, onRefresh }) => {
+  const { t } = useTranslation();
   const [episodes, setEpisodes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({
@@ -35,7 +37,7 @@ const LocalEpisodeListModal = ({ visible, season, onClose, onRefresh }) => {
         total: data.total,
       });
     } catch (error) {
-      message.error('加载分集列表失败');
+      message.error(t('mediaFetch.episodeListModal.loadFailed'));
       console.error(error);
     } finally {
       setLoading(false);
@@ -50,49 +52,49 @@ const LocalEpisodeListModal = ({ visible, season, onClose, onRefresh }) => {
   const handleDelete = async (record) => {
     try {
       await deleteLocalItem(record.id);
-      message.success('删除成功');
+      message.success(t('mediaFetch.episodeListModal.deleteSuccess'));
       loadEpisodes(pagination.current, pagination.pageSize);
       onRefresh?.();
     } catch (error) {
-      message.error('删除失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.episodeListModal.deleteFailed') + (error.message || t('mediaFetch.episodeListModal.unknownError')));
     }
   };
 
   const handleImport = async (record) => {
     try {
       const res = await importLocalItems({ itemIds: [record.id] });
-      message.success(res.data.message || '导入任务已提交');
+      message.success(res.data.message || t('mediaFetch.episodeListModal.importSubmitted'));
       loadEpisodes(pagination.current, pagination.pageSize);
       onRefresh?.();
     } catch (error) {
-      message.error('导入失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.episodeListModal.importFailed') + (error.message || t('mediaFetch.episodeListModal.unknownError')));
     }
   };
 
   const columns = [
     {
-      title: '集数',
+      title: t('mediaFetch.episodeListModal.colEpisode'),
       dataIndex: 'episode',
       key: 'episode',
       width: '15%',
-      render: (ep) => `第 ${ep} 集`,
+      render: (ep) => t('mediaFetch.episodeListModal.episodeNum', { ep }),
     },
     {
-      title: '文件路径',
+      title: t('mediaFetch.episodeListModal.colFilePath'),
       dataIndex: 'filePath',
       key: 'filePath',
       width: '37.5%',
       ellipsis: true,
     },
     {
-      title: '状态',
+      title: t('mediaFetch.episodeListModal.colStatus'),
       dataIndex: 'isImported',
       key: 'isImported',
       width: '11.25%',
-      render: (imported) => (imported ? '已导入' : '未导入'),
+      render: (imported) => (imported ? t('mediaFetch.episodeListModal.imported') : t('mediaFetch.episodeListModal.notImported')),
     },
     {
-      title: '操作',
+      title: t('mediaFetch.episodeListModal.colAction'),
       key: 'action',
       width: '20%',
       render: (_, record) => (
@@ -104,14 +106,14 @@ const LocalEpisodeListModal = ({ visible, season, onClose, onRefresh }) => {
             onClick={() => handleImport(record)}
             disabled={record.isImported}
           >
-            导入
+            {t('mediaFetch.episodeListModal.import')}
           </Button>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
-            编辑
+            {t('mediaFetch.episodeListModal.edit')}
           </Button>
-          <Popconfirm title="确定要删除吗?" onConfirm={() => handleDelete(record)} okText="确定" cancelText="取消">
+          <Popconfirm title={t('mediaFetch.episodeListModal.confirmDelete')} onConfirm={() => handleDelete(record)} okText={t('mediaFetch.episodeListModal.confirm')} cancelText={t('mediaFetch.episodeListModal.cancel')}>
             <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
+              {t('mediaFetch.episodeListModal.delete')}
             </Button>
           </Popconfirm>
         </Space>
@@ -122,7 +124,7 @@ const LocalEpisodeListModal = ({ visible, season, onClose, onRefresh }) => {
   return (
     <>
       <Modal
-        title={season ? `${season.title} - 第 ${season.season} 季` : '分集列表'}
+        title={season ? t('mediaFetch.episodeListModal.seasonTitle', { title: season.title, season: season.season }) : t('mediaFetch.episodeListModal.defaultTitle')}
         open={visible}
         onCancel={onClose}
         footer={null}
@@ -136,7 +138,7 @@ const LocalEpisodeListModal = ({ visible, season, onClose, onRefresh }) => {
           pagination={{
             ...pagination,
             showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 集`,
+            showTotal: (total) => t('mediaFetch.episodeListModal.totalEpisodes', { total }),
             onChange: (page, pageSize) => loadEpisodes(page, pageSize),
           }}
         />

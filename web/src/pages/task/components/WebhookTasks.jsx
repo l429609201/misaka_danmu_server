@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { List, Button, Tag, Space, Card, Checkbox, Empty, Tooltip, Input, Modal } from 'antd'
 import { DeleteOutlined, CheckOutlined, MinusOutlined, PlayCircleOutlined, SearchOutlined, ClearOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { useTranslation } from 'react-i18next'
 import { getWebhookTasks, deleteWebhookTasks, runWebhookTasksNow, clearAllWebhookTasks } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
 import { useModal } from '../../../ModalContext'
@@ -13,17 +14,18 @@ const getStatusTagType = status => {
   return 'default'
 }
 
-const translateStatus = status => {
+const translateStatus = (status, t) => {
   const statusMap = {
-    pending: '待处理',
-    submitted: '已提交',
-    processing: '处理中',
-    failed: '失败',
+    pending: t('webhookTasks.statusPending'),
+    submitted: t('webhookTasks.statusSubmitted'),
+    processing: t('webhookTasks.statusProcessing'),
+    failed: t('webhookTasks.statusFailed'),
   }
   return statusMap[status] || status
 }
 
 export const WebhookTasks = () => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [taskList, setTaskList] = useState([])
   const [selectedTasks, setSelectedTasks] = useState([])
@@ -49,7 +51,7 @@ export const WebhookTasks = () => {
       setTaskList(data.list || [])
       setPagination(prev => ({ ...prev, total: data.total || 0 }))
     } catch (error) {
-      messageApi.error('获取 Webhook 任务列表失败')
+      messageApi.error(t('webhookTasks.fetchFailed'))
     } finally {
       setLoading(false)
     }
@@ -75,17 +77,17 @@ export const WebhookTasks = () => {
 
   const handleBulkDelete = () => {
     modalApi.confirm({
-      title: '批量删除任务',
-      content: `确定要删除选中的 ${selectedTasks.length} 个任务吗？`,
+      title: t('webhookTasks.bulkDeleteTitle'),
+      content: t('webhookTasks.bulkDeleteContent', { count: selectedTasks.length }),
       onOk: async () => {
         try {
           const ids = selectedTasks.map(task => task.id)
           await deleteWebhookTasks({ ids })
-          messageApi.success('批量删除成功')
+          messageApi.success(t('webhookTasks.bulkDeleteSuccess'))
           setSelectedTasks([])
           fetchTasks()
         } catch (error) {
-          messageApi.error('批量删除失败')
+          messageApi.error(t('webhookTasks.bulkDeleteFailed'))
         }
       },
     })
@@ -93,18 +95,18 @@ export const WebhookTasks = () => {
 
   const handleRunNow = () => {
     modalApi.confirm({
-      title: '立即执行任务',
-      content: `确定要立即执行选中的 ${selectedTasks.length} 个待处理任务吗？`,
+      title: t('webhookTasks.runNowTitle'),
+      content: t('webhookTasks.runNowContent', { count: selectedTasks.length }),
       onOk: async () => {
         try {
           const ids = selectedTasks.map(task => task.id)
           await runWebhookTasksNow({ ids })
-          messageApi.success('任务已提交执行')
+          messageApi.success(t('webhookTasks.runNowSuccess'))
           setSelectedTasks([])
           // 刷新列表以更新状态
           fetchTasks()
         } catch (error) {
-          messageApi.error('提交执行失败')
+          messageApi.error(t('webhookTasks.runNowFailed'))
         }
       },
     })
@@ -112,17 +114,17 @@ export const WebhookTasks = () => {
 
   const handleClearAll = () => {
     modalApi.confirm({
-      title: '清空所有任务',
-      content: `确定要清空所有 ${pagination.total} 个待处理任务吗？此操作不可撤销！`,
+      title: t('webhookTasks.clearAllTitle'),
+      content: t('webhookTasks.clearAllContent', { count: pagination.total }),
       okType: 'danger',
       onOk: async () => {
         try {
           const { data } = await clearAllWebhookTasks()
-          messageApi.success(data.message || '清空成功')
+          messageApi.success(data.message || t('webhookTasks.clearSuccess'))
           setSelectedTasks([])
           fetchTasks()
         } catch (error) {
-          messageApi.error('清空失败')
+          messageApi.error(t('webhookTasks.clearFailed'))
         }
       },
     })
@@ -136,10 +138,10 @@ export const WebhookTasks = () => {
     <div className="my-6">
       <Card
         loading={loading}
-        title="Webhook 任务列表"
+        title={t('webhookTasks.cardTitle')}
         extra={
           <Space>
-            <Tooltip title="全选/取消全选">
+            <Tooltip title={t('webhookTasks.selectAllTip')}>
               <Button
                 type="default"
                 shape="circle"
@@ -154,7 +156,7 @@ export const WebhookTasks = () => {
                 onClick={handleSelectAll}
               />
             </Tooltip>
-            <Tooltip title="立即执行选中任务">
+            <Tooltip title={t('webhookTasks.runSelectedTip')}>
               <Button
                 type="primary"
                 shape="circle"
@@ -163,7 +165,7 @@ export const WebhookTasks = () => {
                 onClick={handleRunNow}
               />
             </Tooltip>
-            <Tooltip title="批量删除">
+            <Tooltip title={t('webhookTasks.bulkDeleteTip')}>
               <Button
                 danger
                 type="primary"
@@ -173,7 +175,7 @@ export const WebhookTasks = () => {
                 onClick={handleBulkDelete}
               />
             </Tooltip>
-            <Tooltip title="清空所有任务">
+            <Tooltip title={t('webhookTasks.clearAllTip')}>
               <Button
                 danger
                 type="primary"
@@ -183,7 +185,7 @@ export const WebhookTasks = () => {
                 onClick={handleClearAll}
               />
             </Tooltip>
-            <Tooltip title="搜索任务">
+            <Tooltip title={t('webhookTasks.searchTip')}>
               <Button
                 type="default"
                 shape="circle"
@@ -221,7 +223,7 @@ export const WebhookTasks = () => {
                     className="!cursor-pointer hover:!bg-gray-100"
                     extra={
                       <Tag color={getStatusTagType(item.status)}>
-                        {translateStatus(item.status)}
+                        {translateStatus(item.status, t)}
                       </Tag>
                     }
                   >
@@ -232,14 +234,14 @@ export const WebhookTasks = () => {
                       />
                       <div className="text-base mb-1">{item.taskTitle}</div>
                       <div className="text-gray-500 text-sm">
-                        <span>来源: {item.webhookSource}</span>
+                        <span>{t('webhookTasks.source')}{item.webhookSource}</span>
                         <span className="mx-2">|</span>
                         <span>
-                          接收于: {dayjs(item.receptionTime).format('YYYY-MM-DD HH:mm:ss')}
+                          {t('webhookTasks.receivedAt')}{dayjs(item.receptionTime).format('YYYY-MM-DD HH:mm:ss')}
                         </span>
                         <span className="mx-2">|</span>
                         <span>
-                          计划于: {dayjs(item.executeTime).format('YYYY-MM-DD HH:mm:ss')}
+                          {t('webhookTasks.scheduledAt')}{dayjs(item.executeTime).format('YYYY-MM-DD HH:mm:ss')}
                         </span>
                       </div>
                     </div>
@@ -248,14 +250,14 @@ export const WebhookTasks = () => {
               }}
             />
           ) : (
-            <Empty description="没有待处理的 Webhook 任务" />
+            <Empty description={t('webhookTasks.emptyDesc')} />
           )}
         </div>
       </Card>
 
       {/* 搜索模态框 */}
       <Modal
-        title="搜索任务"
+        title={t('webhookTasks.searchTitle')}
         open={searchModalVisible}
         onCancel={() => setSearchModalVisible(false)}
         onOk={() => {
@@ -263,12 +265,12 @@ export const WebhookTasks = () => {
           setPagination(prev => ({ ...prev, current: 1 }))
           setSearchModalVisible(false)
         }}
-        okText="搜索"
-        cancelText="取消"
+        okText={t('webhookTasks.search')}
+        cancelText={t('webhookTasks.cancel')}
       >
         <div className="py-4">
           <Input
-            placeholder="请输入任务标题关键词"
+            placeholder={t('webhookTasks.searchPlaceholder')}
             value={tempSearchTerm}
             onChange={(e) => setTempSearchTerm(e.target.value)}
             onPressEnter={() => {
@@ -281,7 +283,7 @@ export const WebhookTasks = () => {
           />
           {searchTerm && (
             <div className="mt-2 text-sm text-gray-500">
-              当前搜索: "{searchTerm}"
+              {t('webhookTasks.currentSearch')}"{searchTerm}"
             </div>
           )}
         </div>

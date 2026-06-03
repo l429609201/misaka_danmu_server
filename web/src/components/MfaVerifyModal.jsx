@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Modal, Input, Button, Space, Typography, Divider, message } from 'antd'
 import { SafetyOutlined, KeyOutlined } from '@ant-design/icons'
 import { mfaVerify, getPasskeyAuthOptions } from '../apis'
@@ -15,6 +16,7 @@ const { Text } = Typography
  *  - onSuccess(tokenData): MFA 验证成功，返回 JWT 数据
  */
 export const MfaVerifyModal = ({ open, onCancel, onSuccess, mfaTypes = [], mfaToken = '', username = '' }) => {
+  const { t } = useTranslation()
   const [otpCode, setOtpCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [passkeyLoading, setPasskeyLoading] = useState(false)
@@ -26,7 +28,7 @@ export const MfaVerifyModal = ({ open, onCancel, onSuccess, mfaTypes = [], mfaTo
   // TOTP 验证 → 直接调 /mfa/verify 拿 JWT
   const handleTotpVerify = useCallback(async () => {
     if (!otpCode || otpCode.length !== 6) {
-      message.warning('请输入6位验证码')
+      message.warning(t('mfa.inputCode'))
       return
     }
     setLoading(true)
@@ -34,16 +36,16 @@ export const MfaVerifyModal = ({ open, onCancel, onSuccess, mfaTypes = [], mfaTo
       const res = await mfaVerify({ mfa_token: mfaToken, otp_code: otpCode })
       onSuccess(res.data)
     } catch (err) {
-      message.error(err.detail || err.message || '验证码错误')
+      message.error(err.detail || err.message || t('mfa.codeError'))
     } finally {
       setLoading(false)
     }
-  }, [otpCode, mfaToken, onSuccess])
+  }, [otpCode, mfaToken, onSuccess, t])
 
   // PassKey 验证 → WebAuthn + /mfa/verify 拿 JWT
   const handlePasskeyVerify = useCallback(async () => {
     if (!isPasskeySupported()) {
-      message.error('PassKey 仅在 HTTPS 模式下可用')
+      message.error(t('mfa.passkeyHttpsOnly'))
       return
     }
 
@@ -85,15 +87,15 @@ export const MfaVerifyModal = ({ open, onCancel, onSuccess, mfaTypes = [], mfaTo
       onSuccess(res.data)
     } catch (err) {
       if (err.name === 'NotAllowedError') {
-        message.info('PassKey 验证已取消')
+        message.info(t('mfa.passkeyCancelled'))
       } else {
         console.error('PassKey 验证失败:', err)
-        message.error('PassKey 验证失败: ' + (err.detail || err.message || '未知错误'))
+        message.error(t('mfa.passkeyFailed') + ': ' + (err.detail || err.message || t('mfa.unknownError')))
       }
     } finally {
       setPasskeyLoading(false)
     }
-  }, [username, mfaToken, onSuccess])
+  }, [username, mfaToken, onSuccess, t])
 
   const handleKeyDown = e => {
     if (e.key === 'Enter' && hasTotp) {
@@ -103,7 +105,7 @@ export const MfaVerifyModal = ({ open, onCancel, onSuccess, mfaTypes = [], mfaTo
 
   return (
     <Modal
-      title="两步验证"
+      title={t('mfa.title')}
       open={open}
       onCancel={onCancel}
       footer={null}
@@ -112,17 +114,17 @@ export const MfaVerifyModal = ({ open, onCancel, onSuccess, mfaTypes = [], mfaTo
     >
       <div className="py-4">
         <Text type="secondary">
-          您的账户已开启多因素认证，请完成验证以继续登录。
+          {t('mfa.desc')}
         </Text>
 
         {hasTotp && (
           <div className="mt-4">
-            <Text strong><SafetyOutlined className="mr-1" />验证器验证码</Text>
+            <Text strong><SafetyOutlined className="mr-1" />{t('mfa.codeLabel')}</Text>
             <div className="mt-2 flex flex-col gap-2 sm:flex-row">
               <Input
                 id="one-time-code"
                 name="one-time-code"
-                placeholder="请输入6位验证码"
+                placeholder={t('mfa.inputCode')}
                 maxLength={6}
                 value={otpCode}
                 onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))}
@@ -141,14 +143,14 @@ export const MfaVerifyModal = ({ open, onCancel, onSuccess, mfaTypes = [], mfaTo
                 onClick={handleTotpVerify}
                 className="w-full sm:w-auto sm:min-w-20"
               >
-                验证
+                {t('mfa.verify')}
               </Button>
             </div>
           </div>
         )}
 
         {hasTotp && hasPasskey && (
-          <Divider plain>或</Divider>
+          <Divider plain>{t('mfa.or')}</Divider>
         )}
 
         {hasPasskey && (
@@ -160,7 +162,7 @@ export const MfaVerifyModal = ({ open, onCancel, onSuccess, mfaTypes = [], mfaTo
               loading={passkeyLoading}
               onClick={handlePasskeyVerify}
             >
-              使用 PassKey 验证
+              {t('mfa.usePasskey')}
             </Button>
           </div>
         )}

@@ -190,6 +190,9 @@ class AnimeMetadata(Base):
     mediaServerType: Mapped[Optional[str]] = mapped_column("media_server_type", String(50))
     mediaServerSeriesId: Mapped[Optional[str]] = mapped_column("media_server_series_id", String(500))
     mediaServerSeasonId: Mapped[Optional[str]] = mapped_column("media_server_season_id", String(500))
+    traktId: Mapped[Optional[str]] = mapped_column("trakt_id", String(500))
+    airWeekday: Mapped[Optional[int]] = mapped_column("air_weekday", Integer)  # 1=周一 ... 7=周日
+    airTime: Mapped[Optional[str]] = mapped_column("air_time", String(10))  # HH:MM 格式，如 "22:00"
 
     anime: Mapped["Anime"] = relationship(back_populates="metadataRecord")
 
@@ -261,6 +264,20 @@ class OauthState(Base):
     stateKey: Mapped[str] = mapped_column("state_key", String(500), primary_key=True)
     userId: Mapped[int] = mapped_column("user_id", BigInteger)
     expiresAt: Mapped[datetime] = mapped_column("expires_at", NaiveDateTime, index=True)
+    provider: Mapped[Optional[str]] = mapped_column(String(50), default="bangumi")  # 'bangumi' or 'trakt'
+
+class OauthCredential(Base):
+    """通用 OAuth 凭证表 — 用于存储所有第三方平台的授权信息"""
+    __tablename__ = "oauth_credentials"
+    userId: Mapped[int] = mapped_column("user_id", BigInteger, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(50), primary_key=True)  # 'trakt', 'anilist', 'mal', ...
+    providerUserId: Mapped[Optional[str]] = mapped_column("provider_user_id", String(500))
+    providerUsername: Mapped[Optional[str]] = mapped_column("provider_username", String(500))
+    accessToken: Mapped[str] = mapped_column("access_token", TEXT)
+    refreshToken: Mapped[Optional[str]] = mapped_column("refresh_token", TEXT)
+    expiresAt: Mapped[Optional[datetime]] = mapped_column("expires_at", NaiveDateTime)
+    authorizedAt: Mapped[Optional[datetime]] = mapped_column("authorized_at", NaiveDateTime)
+    extraData: Mapped[Optional[str]] = mapped_column("extra_data", TEXT)  # JSON，各平台特有数据
 
 class AnimeAlias(Base):
     __tablename__ = "anime_aliases"
@@ -498,3 +515,89 @@ class NotificationChannel(Base):
     eventsConfig: Mapped[Optional[str]] = mapped_column("events_config", TEXT, default="{}")  # JSON - 事件订阅
     createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now)
     updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime, default=get_now, onupdate=get_now)
+
+
+class ExternalCalendarItem(Base):
+    """通用外部日历条目表 - 持久化所有外部元数据源（Bangumi/Trakt/...）拉取的日历数据。
+
+    设计原则：
+    1. 与本地番表（anime/anime_sources/episode）完全独立 —— 物理上不污染本地追更数据
+    2. 通过 (provider, externalId) 联合唯一约束去重
+    3. 跨源 ID 字段（bangumiId/traktId/tmdbId/imdbId）都加索引，支持快速反查
+    4. 平台特有字段塞入 extraData (JSON)，保证表结构通用
+    5. fetchedAt 标记数据新鲜度，配合上层缓存与定时清理形成三层数据架构
+
+    用途：
+    - 日历视图 weekly 接口的外部番数据来源
+    - 订阅推荐、智能匹配、AI 检索等模块的复用数据底座
+    - 长期累积可做趋势分析（季节流行度、订阅热度等）
+    """
+    __tablename__ = "external_calendar_item"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    # === 数据源标识 ===
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)                   # 'bangumi' | 'trakt' | ...
+    externalId: Mapped[str] = mapped_column("external_id", String(100), nullable=False)  # 该 provider 下的唯一 ID
+
+    # === 核心展示字段 ===
+    animeTitle: Mapped[str] = mapped_column("anime_title", String(500), nullable=False)
+    titleZh: Mapped[Optional[str]] = mapped_column("title_zh", String(500))             # 中文标题（懒加载填充，TMDB 中文）
+    animeType: Mapped[str] = mapped_column("anime_type", String(20), default="tv_series")
+    season: Mapped[Optional[int]] = mapped_column(Integer)
+    year: Mapped[Optional[int]] = mapped_column(Integer)
+
+    # === 播出信息 ===
+    airWeekday: Mapped[Optional[int]] = mapped_column("air_weekday", Integer)           # 1=周一 ... 7=周日
+    airTime: Mapped[Optional[str]] = mapped_column("air_time", String(10))              # "HH:MM"
+    airDate: Mapped[Optional[str]] = mapped_column("air_date", String(10))              # "YYYY-MM-DD"
+
+    # === 集数信息 ===
+    episodeCount: Mapped[Optional[int]] = mapped_column("episode_count", Integer)        # 总集数
+    latestEpisodeIndex: Mapped[Optional[int]] = mapped_column("latest_episode_index", Integer)  # 最新一集序号
+
+    # === 媒体资源 ===
+    imageUrl: Mapped[Optional[str]] = mapped_column("image_url", String(512))
+    rating: Mapped[Optional[float]] = mapped_column(DECIMAL(3, 1))                       # 评分 0.0~10.0
+
+    # === 跨源 ID 映射（都加索引，支持反查） ===
+    bangumiId: Mapped[Optional[str]] = mapped_column("bangumi_id", String(100), index=True)
+    traktId: Mapped[Optional[str]] = mapped_column("trakt_id", String(100), index=True)
+    tmdbId: Mapped[Optional[str]] = mapped_column("tmdb_id", String(100), index=True)
+    imdbId: Mapped[Optional[str]] = mapped_column("imdb_id", String(100))
+
+    # === 与本地库的强关联（订阅导入成功后回写） ===
+    localAnimeId: Mapped[Optional[int]] = mapped_column("local_anime_id", BigInteger, index=True, nullable=True)
+    localSourceId: Mapped[Optional[int]] = mapped_column("local_source_id", BigInteger, index=True, nullable=True)
+
+    # === 平台用户私人状态（OAuth 绑定的 BGM/Trakt 账号下的「我在看」记录） ===
+    # 与本地 anime_sources.incrementalRefreshEnabled 完全独立 —— 这里仅反映平台账号的标记
+    platformWatchStatus: Mapped[Optional[str]] = mapped_column(
+        "platform_watch_status", String(20), index=True
+    )  # 'watching' | 'wish' | 'done' | 'on_hold' | 'dropped' | None
+    platformWatchedEpisodes: Mapped[Optional[int]] = mapped_column(
+        "platform_watched_episodes", Integer
+    )  # 平台上记录看到第几集
+    platformRating: Mapped[Optional[float]] = mapped_column(
+        "platform_rating", DECIMAL(3, 1)
+    )  # 用户在平台上给的评分
+
+    # === 平台特有数据（JSON 序列化字符串） ===
+    extraData: Mapped[Optional[str]] = mapped_column("extra_data", TEXT)
+
+    # === 缓存元信息 ===
+    fetchedAt: Mapped[datetime] = mapped_column("fetched_at", NaiveDateTime, default=get_now, nullable=False)
+    updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime, default=get_now, onupdate=get_now, nullable=False)
+
+    # === 订阅意向字段 ===
+    isSubscribed: Mapped[bool] = mapped_column("is_subscribed", Boolean, default=False, nullable=False)
+    subscriptionStatus: Mapped[Optional[str]] = mapped_column("subscription_status", String(20), nullable=True)  # 'pending' | 'importing' | 'imported' | 'failed'
+    subscriptionFailureCount: Mapped[int] = mapped_column("subscription_failure_count", Integer, default=0, nullable=False)
+    subscriptionLastAttemptAt: Mapped[Optional[datetime]] = mapped_column("subscription_last_attempt_at", NaiveDateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint('provider', 'external_id', name='idx_external_provider_external_unique'),
+        Index('idx_external_provider_weekday', 'provider', 'air_weekday'),  # 按 provider+周几快速查
+        Index('idx_external_fetched_at', 'fetched_at'),                      # 过期清理用
+        Index('idx_external_subscription_status', 'is_subscribed', 'subscription_status'),  # 订阅扫描用
+    )

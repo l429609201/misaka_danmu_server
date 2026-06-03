@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Table, Button, Space, Input, message, Checkbox, Popconfirm, Tag } from 'antd';
 import { SearchOutlined, DeleteOutlined, EditOutlined, ImportOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { getSeasonEpisodes, deleteMediaItem, batchDeleteMediaItems, importMediaItems } from '../../../apis';
 import MediaItemEditor from './MediaItemEditor';
 
 const { Search } = Input;
 
 const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh }) => {
+  const { t } = useTranslation();
   const [episodes, setEpisodes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
@@ -31,7 +33,7 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
         total: data.total || 0,
       });
     } catch (error) {
-      message.error('加载分集列表失败');
+      message.error(t('mediaFetch.episodeListModal.loadFailed'));
       console.error(error);
     } finally {
       setLoading(false);
@@ -55,11 +57,11 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
   const handleDelete = async (record) => {
     try {
       await deleteMediaItem(record.id);
-      message.success('删除成功');
+      message.success(t('mediaFetch.episodeListModal.deleteSuccess'));
       loadEpisodes(pagination.current, pagination.pageSize);
       if (onRefresh) onRefresh();
     } catch (error) {
-      message.error('删除失败');
+      message.error(t('mediaFetch.episodeListModal.deleteFailed').replace(': ', ''));
       console.error(error);
     }
   };
@@ -67,18 +69,18 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
   // 批量删除
   const handleBatchDelete = async () => {
     if (selectedRowKeys.length === 0) {
-      message.warning('请先选择要删除的集');
+      message.warning(t('mediaFetch.episodeListModal.selectDeleteWarning'));
       return;
     }
 
     try {
       await batchDeleteMediaItems({ itemIds: selectedRowKeys });
-      message.success('删除成功');
+      message.success(t('mediaFetch.episodeListModal.deleteSuccess'));
       setSelectedRowKeys([]);
       loadEpisodes(pagination.current, pagination.pageSize);
       if (onRefresh) onRefresh();
     } catch (error) {
-      message.error('批量删除失败');
+      message.error(t('mediaFetch.episodeListModal.batchDeleteFailed'));
       console.error(error);
     }
   };
@@ -98,18 +100,18 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
   // 批量导入
   const handleBatchImport = async () => {
     if (selectedRowKeys.length === 0) {
-      message.warning('请先选择要导入的集');
+      message.warning(t('mediaFetch.episodeListModal.selectImportWarning'));
       return;
     }
 
     try {
       const res = await importMediaItems({ itemIds: selectedRowKeys });
-      message.success(res.data.message || '导入任务已提交');
+      message.success(res.data.message || t('mediaFetch.episodeListModal.importSubmitted'));
       setSelectedRowKeys([]);
       loadEpisodes(pagination.current, pagination.pageSize);
       if (onRefresh) onRefresh();
     } catch (error) {
-      message.error('批量导入失败');
+      message.error(t('mediaFetch.episodeListModal.batchImportFailed'));
       console.error(error);
     }
   };
@@ -129,15 +131,15 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
 
   const columns = [
     {
-      title: '集数',
+      title: t('mediaFetch.episodeListModal.colEpisode'),
       dataIndex: 'episode',
       key: 'episode',
       width: '10%',
       sorter: (a, b) => a.episode - b.episode,
-      render: (episode) => `第 ${episode} 集`,
+      render: (episode) => t('mediaFetch.episodeListModal.episodeNum', { ep: episode }),
     },
     {
-      title: '标题',
+      title: t('mediaFetch.episodeListModal.colTitle'),
       dataIndex: 'title',
       key: 'title',
       width: '25%',
@@ -164,20 +166,20 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
       render: (imdbId) => imdbId || '-',
     },
     {
-      title: '状态',
+      title: t('mediaFetch.episodeListModal.colStatus'),
       dataIndex: 'isImported',
       key: 'isImported',
       width: '10%',
       render: (isImported) => {
         return isImported ? (
-          <Tag color="success">已导入</Tag>
+          <Tag color="success">{t('mediaFetch.episodeListModal.imported2')}</Tag>
         ) : (
-          <Tag>未导入</Tag>
+          <Tag>{t('mediaFetch.episodeListModal.notImported2')}</Tag>
         );
       },
     },
     {
-      title: '操作',
+      title: t('mediaFetch.episodeListModal.colAction'),
       key: 'action',
       width: '16%',
       render: (_, record) => (
@@ -188,7 +190,7 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
             icon={<EditOutlined />}
             onClick={() => handleEdit(record)}
           >
-            编辑
+            {t('mediaFetch.episodeListModal.edit')}
           </Button>
           <Button
             type="link"
@@ -197,23 +199,23 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
             onClick={() => {
               importMediaItems({ itemIds: [record.id] })
                 .then((res) => {
-                  message.success(res.data.message || '导入任务已提交');
+                  message.success(res.data.message || t('mediaFetch.episodeListModal.importSubmitted'));
                   loadEpisodes(pagination.current, pagination.pageSize);
                   if (onRefresh) onRefresh();
                 })
-                .catch(() => message.error('导入失败'));
+                .catch(() => message.error(t('mediaFetch.episodeListModal.importFailed').replace(': ', '')));
             }}
           >
-            导入
+            {t('mediaFetch.episodeListModal.import')}
           </Button>
           <Popconfirm
-            title="确定要删除这一集吗?"
+            title={t('mediaFetch.episodeListModal.confirmDeleteEpisode')}
             onConfirm={() => handleDelete(record)}
-            okText="确定"
-            cancelText="取消"
+            okText={t('mediaFetch.episodeListModal.confirm')}
+            cancelText={t('mediaFetch.episodeListModal.cancel')}
           >
             <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
+              {t('mediaFetch.episodeListModal.delete')}
             </Button>
           </Popconfirm>
         </Space>
@@ -231,13 +233,13 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
   return (
     <>
       <Modal
-        title={`《${title}》- 第 ${season} 季`}
+        title={t('mediaFetch.episodeListModal.serverSeasonTitle', { title, season })}
         open={visible}
         onCancel={onClose}
         width={1200}
         footer={[
           <Button key="close" onClick={onClose}>
-            关闭
+            {t('mediaFetch.episodeListModal.close')}
           </Button>,
         ]}
       >
@@ -245,7 +247,7 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
           {/* 搜索和操作栏 */}
           <Space style={{ width: '100%', justifyContent: 'space-between' }}>
             <Search
-              placeholder="搜索集数、标题、ID..."
+              placeholder={t('mediaFetch.episodeListModal.searchPlaceholder')}
               allowClear
               style={{ width: 300 }}
               value={searchText}
@@ -259,13 +261,13 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
                 onClick={handleBatchImport}
                 disabled={selectedRowKeys.length === 0}
               >
-                批量导入 ({selectedRowKeys.length})
+                {t('mediaFetch.episodeListModal.batchImport', { count: selectedRowKeys.length })}
               </Button>
               <Popconfirm
-                title={`确定要删除选中的 ${selectedRowKeys.length} 集吗?`}
+                title={t('mediaFetch.episodeListModal.confirmBatchDelete', { count: selectedRowKeys.length })}
                 onConfirm={handleBatchDelete}
-                okText="确定"
-                cancelText="取消"
+                okText={t('mediaFetch.episodeListModal.confirm')}
+                cancelText={t('mediaFetch.episodeListModal.cancel')}
                 disabled={selectedRowKeys.length === 0}
               >
                 <Button
@@ -273,7 +275,7 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
                   icon={<DeleteOutlined />}
                   disabled={selectedRowKeys.length === 0}
                 >
-                  批量删除 ({selectedRowKeys.length})
+                  {t('mediaFetch.episodeListModal.batchDelete', { count: selectedRowKeys.length })}
                 </Button>
               </Popconfirm>
             </Space>
@@ -290,7 +292,7 @@ const EpisodeListModal = ({ visible, onClose, serverId, title, season, onRefresh
               ...pagination,
               showSizeChanger: true,
               showQuickJumper: true,
-              showTotal: (total) => `共 ${total} 集`,
+              showTotal: (total) => t('mediaFetch.episodeListModal.totalEpisodes', { total }),
             }}
             onChange={handleTableChange}
             size="small"

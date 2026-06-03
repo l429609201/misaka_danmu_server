@@ -6,6 +6,7 @@ src/**/.DS_Store
 
 .vscode
 config/
+!config/config.example.yml
 
 .augment/rules/rules.md
 .cunzhi-memory/metadata.json

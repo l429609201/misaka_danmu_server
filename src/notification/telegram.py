@@ -72,6 +72,8 @@ class TelegramChannel(BaseNotificationChannel):
                 "label": "Bot Token",
                 "type": "password",
                 "description": "从 @BotFather 获取的 Bot Token",
+                "description_en": "Bot Token obtained from @BotFather",
+                "description_tw": "從 @BotFather 取得的 Bot Token",
                 "placeholder": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
                 "required": True,
             },
@@ -80,59 +82,89 @@ class TelegramChannel(BaseNotificationChannel):
                 "label": "Chat ID",
                 "type": "string",
                 "description": "默认消息接收者的 Chat ID，用于接收系统通知",
+                "description_en": "Default Chat ID for receiving system notifications",
+                "description_tw": "預設訊息接收者的 Chat ID，用於接收系統通知",
                 "placeholder": "123456789",
             },
             {
                 "key": "admin_ids",
                 "label": "管理员用户ID",
+                "label_en": "Admin User IDs",
+                "label_tw": "管理員使用者ID",
                 "type": "string",
                 "description": "拥有管理权限的用户ID，多个用逗号分隔",
+                "description_en": "User IDs with admin privileges, separated by commas",
+                "description_tw": "擁有管理權限的使用者ID，多個用逗號分隔",
                 "placeholder": "123456789,987654321",
             },
             {
                 "key": "allowed_ids",
                 "label": "允许的用户ID",
+                "label_en": "Allowed User IDs",
+                "label_tw": "允許的使用者ID",
                 "type": "string",
                 "description": "允许使用 Bot 交互的用户ID，多个用逗号分隔。留空则仅管理员可用",
+                "description_en": "User IDs allowed to interact with the Bot, separated by commas. Leave empty for admin-only",
+                "description_tw": "允許使用 Bot 互動的使用者ID，多個用逗號分隔。留空則僅管理員可用",
                 "placeholder": "",
             },
             {
                 "key": "mode",
                 "label": "交互模式",
+                "label_en": "Interaction Mode",
+                "label_tw": "互動模式",
                 "type": "switch",
                 "description": "消息接收方式",
-                "switchLabels": {"checked": "Webhook", "unchecked": "轮询"},
+                "description_en": "Message receiving method",
+                "description_tw": "訊息接收方式",
+                "switchLabels": {"checked": "Webhook", "unchecked": "轮询", "unchecked_en": "Polling", "unchecked_tw": "輪詢"},
                 "switchValues": {"checked": "webhook", "unchecked": "polling"},
                 "default": "polling",
             },
             {
                 "key": "webhook_base_url",
                 "label": "外部访问地址",
+                "label_en": "External Access URL",
+                "label_tw": "外部存取位址",
                 "type": "string",
                 "description": "你的服务器公网地址（如 https://my-domain.com），系统会自动拼接完整回调路径",
+                "description_en": "Your server's public URL (e.g. https://my-domain.com). The system will auto-append the callback path.",
+                "description_tw": "你的伺服器公網位址（如 https://my-domain.com），系統會自動拼接完整回呼路徑",
                 "placeholder": "https://your-domain.com",
                 "visibleWhen": {"mode": "webhook"},
             },
             {
                 "key": "tunnel_enabled",
                 "label": "启用 VPS 隧道连接",
+                "label_en": "Enable VPS Tunnel",
+                "label_tw": "啟用 VPS 隧道連接",
                 "type": "boolean",
                 "description": "启用后，弹幕库将通过上方「外部访问地址」建立 WebSocket 反向隧道，将 Telegram 回调转发到本地（无需公网 IP）",
+                "description_en": "When enabled, a WebSocket reverse tunnel is established via the external URL to forward Telegram callbacks locally (no public IP needed).",
+                "description_tw": "啟用後，彈幕庫將透過上方「外部存取位址」建立 WebSocket 反向隧道，將 Telegram 回呼轉發到本地（無需公網 IP）",
                 "default": False,
                 "visibleWhen": {"mode": "webhook"},
             },
             {
                 "key": "telegram_api_proxy",
                 "label": "API 出网代理地址",
+                "label_en": "API Outbound Proxy",
+                "label_tw": "API 出網代理位址",
                 "type": "string",
                 "description": "填入 VPS 地址（如 http://vps.example.com），Bot 的 API 请求将通过 VPS 出网，解决国内 IP 被封锁的问题。留空则直连 api.telegram.org",
+                "description_en": "Enter VPS address (e.g. http://vps.example.com). Bot API requests will go through VPS to bypass IP blocks. Leave empty to connect directly to api.telegram.org.",
+                "description_tw": "填入 VPS 位址（如 http://vps.example.com），Bot 的 API 請求將透過 VPS 出網，解決國內 IP 被封鎖的問題。留空則直連 api.telegram.org",
                 "placeholder": "http://your-vps.com",
             },
             {
                 "key": "log_raw",
                 "label": "记录原始交互",
+                "label_en": "Log Raw Interactions",
+                "label_tw": "記錄原始互動",
                 "type": "boolean",
                 "description": "启用后，Bot 的所有收发消息将记录到 config/logs/bot_raw.log 文件中，用于调试",
+                "description_en": "When enabled, all Bot messages will be logged to config/logs/bot_raw.log for debugging.",
+                "description_tw": "啟用後，Bot 的所有收發訊息將記錄到 config/logs/bot_raw.log 檔案中，用於除錯",
                 "default": False,
             },
         ]
@@ -251,7 +283,7 @@ class TelegramChannel(BaseNotificationChannel):
 
         # ── 命令处理 ──
         @bot.message_handler(commands=[
-            'start', 'help', 'search', 'tasks', 'tokens',
+            'start', 'help', 'status', 'sh', 'search', 'tasks', 'tokens',
             'auto', 'refresh', 'url', 'cache', 'cancel'
         ])
         def handle_command(message):
@@ -374,6 +406,54 @@ class TelegramChannel(BaseNotificationChannel):
             markup.row(*btn_row)
         return markup
 
+    async def _edit_with_retry(self, chat_id, message_id, text,
+                               markup=None, parse_mode=None,
+                               max_retries: int = 3, retry_delay: float = 5.0) -> bool:
+        """带重试的消息编辑，网络瞬断时自动重试。返回是否成功。"""
+        for attempt in range(max_retries):
+            try:
+                await asyncio.to_thread(
+                    self._bot.edit_message_text,
+                    text=text,
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=markup,
+                    parse_mode=parse_mode,
+                )
+                return True
+            except Exception as edit_err:
+                err_str = str(edit_err).lower()
+                if "message is not modified" in err_str:
+                    return True  # 内容未变化，视为成功
+                elif "no text in the message" in err_str:
+                    try:
+                        await asyncio.to_thread(
+                            self._bot.edit_message_caption,
+                            caption=text,
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            reply_markup=markup,
+                            parse_mode=parse_mode,
+                        )
+                        return True
+                    except Exception as cap_err:
+                        if "message is not modified" in str(cap_err).lower():
+                            return True
+                        # caption 编辑失败也重试
+                elif "connection" in err_str or "timeout" in err_str or "reset" in err_str:
+                    # 网络瞬断，等待后重试
+                    if attempt < max_retries - 1:
+                        self.logger.warning(
+                            f"编辑消息网络异常 (第{attempt+1}次)，{retry_delay}秒后重试: "
+                            f"{type(edit_err).__name__}"
+                        )
+                        await asyncio.sleep(retry_delay)
+                        continue
+                else:
+                    # 其他错误直接抛出
+                    raise edit_err
+        return False
+
     async def _render_result(self, result: CommandResult, chat_id: int,
                              reply_to_message_id: int = None):
         """根据 CommandResult 渲染消息（发送新消息或编辑已有消息）
@@ -390,34 +470,21 @@ class TelegramChannel(BaseNotificationChannel):
 
             if result.edit_message_id:
                 self._log_raw("⬆ 编辑消息", {"chat_id": chat_id, "message_id": result.edit_message_id, "text": result.text[:200]})
-                try:
-                    await asyncio.to_thread(
-                        self._bot.edit_message_text,
-                        text=result.text,
-                        chat_id=chat_id,
-                        message_id=result.edit_message_id,
-                        reply_markup=markup,
-                        parse_mode=parse_mode,
+                success = await self._edit_with_retry(
+                    chat_id, result.edit_message_id, result.text,
+                    markup=markup, parse_mode=parse_mode,
+                )
+                if not success:
+                    # 重试全部失败，降级为发新消息
+                    self.logger.warning(f"编辑消息重试全部失败，降级为发新消息")
+                    sent = await asyncio.to_thread(
+                        self._bot.send_message, chat_id, result.text,
+                        reply_markup=markup, parse_mode=parse_mode,
                     )
-                except Exception as edit_err:
-                    err_str = str(edit_err).lower()
-                    if "message is not modified" in err_str:
-                        pass
-                    elif "no text in the message" in err_str:
-                        try:
-                            await asyncio.to_thread(
-                                self._bot.edit_message_caption,
-                                caption=result.text,
-                                chat_id=chat_id,
-                                message_id=result.edit_message_id,
-                                reply_markup=markup,
-                                parse_mode=parse_mode,
-                            )
-                        except Exception as cap_err:
-                            if "message is not modified" not in str(cap_err).lower():
-                                raise
-                    else:
-                        raise
+                    if result.task_id and sent and hasattr(self.service, '_task_progress_tg_msg'):
+                        self.service._task_progress_tg_msg.setdefault(
+                            result.task_id, {}
+                        )[self.channel_id] = sent.message_id
             else:
                 cover_url = ""
                 if result.articles:
@@ -556,42 +623,20 @@ class TelegramChannel(BaseNotificationChannel):
         markup = self._build_inline_markup(raw_markup) if raw_markup else None
         try:
             if edit_message_id:
-                # 尝试 edit 已有消息
-                try:
-                    await asyncio.to_thread(
-                        self._bot.edit_message_text,
-                        text=caption,
-                        chat_id=chat_id,
-                        message_id=edit_message_id,
-                        parse_mode="Markdown",
-                        reply_markup=markup,
+                # 尝试 edit 已有消息（带重试）
+                success = await self._edit_with_retry(
+                    chat_id, edit_message_id, caption,
+                    markup=markup, parse_mode="Markdown",
+                )
+                if not success:
+                    # 重试全部失败，降级为发新消息
+                    self.logger.warning(f"edit_message_text 重试全部失败，降级为发新消息")
+                    sent = await asyncio.to_thread(
+                        self._bot.send_message, chat_id, caption,
+                        parse_mode="Markdown", reply_markup=markup,
                     )
-                except Exception as edit_err:
-                    err_str = str(edit_err).lower()
-                    if "message is not modified" in err_str:
-                        pass  # 内容未变化，静默忽略
-                    elif "no text in the message" in err_str:
-                        try:
-                            await asyncio.to_thread(
-                                self._bot.edit_message_caption,
-                                caption=caption,
-                                chat_id=chat_id,
-                                message_id=edit_message_id,
-                                parse_mode="Markdown",
-                                reply_markup=markup,
-                            )
-                        except Exception as cap_err:
-                            if "message is not modified" not in str(cap_err).lower():
-                                self.logger.warning(f"edit_message_caption 失败: {cap_err}")
-                    else:
-                        self.logger.warning(f"edit_message_text 失败，将发新消息: {edit_err}")
-                        # edit 失败时降级为发新消息；若为 Markdown 解析失败则去掉 parse_mode
-                        is_parse_err = "can't parse entities" in err_str
-                        fallback_mode = None if is_parse_err else "Markdown"
-                        fallback_text = f"{title}\n{text}" if (is_parse_err and title) else caption
-                        sent = await asyncio.to_thread(self._bot.send_message, chat_id, fallback_text, parse_mode=fallback_mode, reply_markup=markup)
-                        if msg_id_out is not None and sent:
-                            msg_id_out.append(sent.message_id)
+                    if msg_id_out is not None and sent:
+                        msg_id_out.append(sent.message_id)
             elif image:
                 # 有封面图：发带图片的消息，正文作为 caption
                 try:

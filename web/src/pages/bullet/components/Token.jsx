@@ -34,8 +34,10 @@ import { useMessage } from '../../../MessageContext'
 import { ResponsiveTable } from '@/components/ResponsiveTable'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store'
+import { useTranslation } from 'react-i18next'
 
 export const Token = ({ domain }) => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [tokenList, setTokenList] = useState([])
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -69,7 +71,7 @@ export const Token = ({ domain }) => {
       setTokenLogs(res.data)
       setLogsOpen(true)
     } catch (error) {
-      messageApi.error('获取日志失败')
+      messageApi.error(t('bullet.tokenGetLogFailed'))
     }
   }
 
@@ -80,27 +82,27 @@ export const Token = ({ domain }) => {
       })
       getTokens()
     } catch (error) {
-      messageApi.error('操作失败')
+      messageApi.error(t('bullet.tokenOperationFailed'))
     }
   }
 
   const handleDelete = record => {
     modalApi.confirm({
-      title: '删除',
+      title: t('bullet.tokenDeleteTitle'),
       zIndex: 1002,
-      content: <Typography.Text>您确定要删除{record.name}吗？</Typography.Text>,
-      okText: '确认',
-      cancelText: '取消',
+      content: <Typography.Text>{t('bullet.tokenDeleteConfirm', { name: record.name })}</Typography.Text>,
+      okText: t('bullet.tokenConfirm'),
+      cancelText: t('bullet.tokenCancel'),
       onOk: async () => {
         try {
           await deleteToken({
             tokenId: record.id,
           })
           getTokens()
-          messageApi.success('删除成功')
+          messageApi.success(t('bullet.tokenDeleteSuccess'))
         } catch (error) {
           console.error(error)
-          messageApi.error('删除失败')
+          messageApi.error(t('bullet.tokenDeleteFailed'))
         }
       },
     })
@@ -135,15 +137,15 @@ export const Token = ({ domain }) => {
       setConfirmLoading(true)
       if (isEditing && editingRecord) {
         await editToken({ ...values, id: editingRecord.id })
-        messageApi.success('编辑成功')
+        messageApi.success(t('bullet.tokenEditSuccess'))
       } else {
         await addToken(values)
-        messageApi.success('添加成功')
+        messageApi.success(t('bullet.tokenAddSuccess'))
       }
       setIsModalOpen(false)
       getTokens()
     } catch (error) {
-      messageApi.error(error?.detail || '操作失败')
+      messageApi.error(error?.detail || t('bullet.tokenOperationFailed'))
     } finally {
       setConfirmLoading(false)
     }
@@ -153,11 +155,11 @@ export const Token = ({ domain }) => {
     if (!editingRecord) return
     try {
       await resetTokenCounter({ id: editingRecord.id })
-      messageApi.success('调用次数已重置为0')
+      messageApi.success(t('bullet.tokenResetSuccess'))
       setIsModalOpen(false)
       getTokens()
     } catch (error) {
-      messageApi.error('重置失败')
+      messageApi.error(t('bullet.tokenResetFailed'))
     }
   }
 
@@ -167,7 +169,7 @@ export const Token = ({ domain }) => {
 
   const columns = [
     {
-      title: '名称',
+      title: t('bullet.tokenColumnName'),
       dataIndex: 'name',
       key: 'name',
       width: 100,
@@ -190,13 +192,13 @@ export const Token = ({ domain }) => {
       },
     },
     {
-      title: '状态',
+      title: t('bullet.tokenColumnStatus'),
       width: 150,
       dataIndex: 'isEnabled',
       key: 'isEnabled',
       render: (_, record) => {
         if (!record.isEnabled) {
-          return <Tag color="red">禁用</Tag>
+          return <Tag color="red">{t('bullet.tokenStatusDisabled')}</Tag>
         }
 
         const isInfinite = record.dailyCallLimit === -1
@@ -225,7 +227,7 @@ export const Token = ({ domain }) => {
       },
     },
     {
-      title: '创建时间',
+      title: t('bullet.tokenColumnCreated'),
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 180,
@@ -236,7 +238,7 @@ export const Token = ({ domain }) => {
       },
     },
     {
-      title: '有效期',
+      title: t('bullet.tokenColumnValidity'),
       dataIndex: 'expiresAt',
       key: 'expiresAt',
       width: 180,
@@ -245,19 +247,19 @@ export const Token = ({ domain }) => {
           <Typography.Text>
             {!!record.expiresAt
               ? dayjs(record.expiresAt).format('YYYY-MM-DD HH:mm:ss')
-              : '永久'}
+              : t('bullet.tokenValidityPermanent')}
           </Typography.Text>
         )
       },
     },
     {
-      title: '操作',
+      title: t('bullet.tokenColumnAction'),
       width: 160,
       fixed: 'right',
       render: (_, record) => {
         return (
           <Space>
-            <Tooltip title="编辑">
+            <Tooltip title={t('bullet.tokenTipEdit')}>
               <span
                 className="cursor-pointer hover:text-primary text-gray-600 dark:text-gray-400"
                 onClick={() => handleOpenModal(true, record)}
@@ -265,20 +267,20 @@ export const Token = ({ domain }) => {
                 <MyIcon icon="edit" size={20}></MyIcon>
               </span>
             </Tooltip>
-            <Tooltip title="复制">
+            <Tooltip title={t('bullet.tokenTipCopy')}>
               <span
                 className="cursor-pointer hover:text-primary text-gray-600 dark:text-gray-400"
                 onClick={() => {
                   copy(
                     `${domain || window.location.origin}/api/v1/${record.token}`
                   )
-                  messageApi.success('复制成功')
+                  messageApi.success(t('bullet.tokenCopySuccess'))
                 }}
               >
                 <MyIcon icon="copy" size={20}></MyIcon>
               </span>
             </Tooltip>
-            <Tooltip title="Token访问日志">
+            <Tooltip title={t('bullet.tokenTipLog')}>
               <span
                 className="cursor-pointer hover:text-primary text-gray-600 dark:text-gray-400"
                 onClick={() => handleTokenLogs(record)}
@@ -286,7 +288,7 @@ export const Token = ({ domain }) => {
                 <MyIcon icon="rizhi" size={20}></MyIcon>
               </span>
             </Tooltip>
-            <Tooltip title="切换启用状态">
+            <Tooltip title={t('bullet.tokenTipToggle')}>
               <span
                 className="cursor-pointer hover:text-primary text-gray-600 dark:text-gray-400"
                 onClick={() => {
@@ -302,7 +304,7 @@ export const Token = ({ domain }) => {
                 </div>
               </span>
             </Tooltip>
-            <Tooltip title="删除Token">
+            <Tooltip title={t('bullet.tokenTipDelete')}>
               <span
                 className="cursor-pointer hover:text-primary text-gray-600 dark:text-gray-400"
                 onClick={() => handleDelete(record)}
@@ -341,18 +343,18 @@ export const Token = ({ domain }) => {
     const hasRequest = log.requestHeaders || log.requestBody
     const hasResponse = log.responseHeaders || log.responseBody
     if (!hasRequest && !hasResponse) {
-      return <div className="text-xs text-gray-400 py-2">暂无详细请求/响应记录</div>
+      return <div className="text-xs text-gray-400 py-2">{t('bullet.tokenLogEmpty')}</div>
     }
     const items = []
     if (hasRequest) {
       items.push({
         key: 'request',
-        label: '📤 请求信息',
+        label: t('bullet.tokenLogRequestInfo'),
         children: (
           <div>
-            {log.method && <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">方法: <Tag color="blue" size="small">{log.method}</Tag></div>}
-            <DetailBlock label="请求头" content={log.requestHeaders} />
-            <DetailBlock label="请求内容" content={log.requestBody} />
+            {log.method && <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{t('bullet.tokenLogMethod')}: <Tag color="blue" size="small">{log.method}</Tag></div>}
+            <DetailBlock label={t('bullet.tokenLogRequestHeaders')} content={log.requestHeaders} />
+            <DetailBlock label={t('bullet.tokenLogRequestBody')} content={log.requestBody} />
           </div>
         ),
       })
@@ -360,12 +362,12 @@ export const Token = ({ domain }) => {
     if (hasResponse) {
       items.push({
         key: 'response',
-        label: '📥 响应信息',
+        label: t('bullet.tokenLogResponseInfo'),
         children: (
           <div>
-            {log.statusCode && <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">状态码: <Tag color={log.statusCode >= 400 ? 'red' : 'green'}>{log.statusCode}</Tag></div>}
-            <DetailBlock label="响应头" content={log.responseHeaders} />
-            <DetailBlock label="响应内容" content={log.responseBody} />
+            {log.statusCode && <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{t('bullet.tokenLogStatusCode')}: <Tag color={log.statusCode >= 400 ? 'red' : 'green'}>{log.statusCode}</Tag></div>}
+            <DetailBlock label={t('bullet.tokenLogResponseHeaders')} content={log.responseHeaders} />
+            <DetailBlock label={t('bullet.tokenLogResponseBody')} content={log.responseBody} />
           </div>
         ),
       })
@@ -375,27 +377,27 @@ export const Token = ({ domain }) => {
 
   const logsColumns = [
     {
-      title: '访问时间',
+      title: t('bullet.tokenLogColumnTime'),
       dataIndex: 'accessTime',
       key: 'accessTime',
       width: 180,
       render: (_, record) => dayjs(record.accessTime).format('YYYY-MM-DD HH:mm:ss'),
     },
     {
-      title: 'IP地址',
+      title: t('bullet.tokenLogColumnIp'),
       dataIndex: 'ipAddress',
       key: 'ipAddress',
       width: 150,
     },
     {
-      title: '方法',
+      title: t('bullet.tokenLogColumnMethod'),
       dataIndex: 'method',
       key: 'method',
       width: 70,
       render: (_, record) => record.method ? <Tag color="blue">{record.method}</Tag> : '-',
     },
     {
-      title: '状态',
+      title: t('bullet.tokenLogColumnStatus'),
       dataIndex: 'status',
       key: 'status',
       width: 120,
@@ -405,7 +407,7 @@ export const Token = ({ domain }) => {
       },
     },
     {
-      title: '路径',
+      title: t('bullet.tokenLogColumnPath'),
       dataIndex: 'path',
       key: 'path',
       width: 250,
@@ -433,11 +435,11 @@ export const Token = ({ domain }) => {
     <div className="my-6">
       <Card
         loading={loading}
-        title="弹幕Token管理"
+        title={t('bullet.tokenCardTitle')}
         extra={
           <>
             <Button type="primary" onClick={() => handleOpenModal(false)}>
-              添加Token
+              {t('bullet.tokenAddBtn')}
             </Button>
           </>
         }
@@ -467,9 +469,9 @@ export const Token = ({ domain }) => {
                     <div className="text-sm space-y-1">
                       <div className="flex items-center gap-2">
                         {isEnabled ? (
-                          <Tag color="green">启用</Tag>
+                          <Tag color="green">{t('bullet.tokenStatusEnabled')}</Tag>
                         ) : (
-                          <Tag color="red">禁用</Tag>
+                          <Tag color="red">{t('bullet.tokenStatusDisabled')}</Tag>
                         )}
                       </div>
                                             <div className="text-gray-600 dark:text-gray-400">
@@ -484,17 +486,17 @@ export const Token = ({ domain }) => {
                         />
                       </div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">
-                        创建时间: {dayjs(record.createdAt).format('YYYY-MM-DD HH:mm:ss')}
+                        {t('bullet.tokenMobileCreated')}: {dayjs(record.createdAt).format('YYYY-MM-DD HH:mm:ss')}
                       </div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">
-                        有效期: {!!record.expiresAt
+                        {t('bullet.tokenMobileValidity')}: {!!record.expiresAt
                           ? dayjs(record.expiresAt).format('YYYY-MM-DD HH:mm:ss')
-                          : '永久'}
+                          : t('bullet.tokenValidityPermanent')}
                       </div>
                       {isEnabled && (
                         <div>
                           <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                            今日调用: {record.dailyCallCount} / {limitText}
+                            {t('bullet.tokenMobileTodayCall')}: {record.dailyCallCount} / {limitText}
                           </div>
                           <Progress percent={percent} size="small" />
                         </div>
@@ -508,7 +510,7 @@ export const Token = ({ domain }) => {
                     icon={<MyIcon icon="edit" size={16} />}
                     onClick={() => handleOpenModal(true, record)}
                   >
-                    编辑
+                    {t('bullet.tokenEditBtn')}
                   </Button>
                   <Button
                     size="small"
@@ -517,24 +519,24 @@ export const Token = ({ domain }) => {
                       copy(
                         `${domain || window.location.origin}/api/v1/${record.token}`
                       )
-                      messageApi.success('复制成功')
+                      messageApi.success(t('bullet.tokenCopySuccess'))
                     }}
                   >
-                    复制
+                    {t('bullet.tokenCopyBtn')}
                   </Button>
                   <Button
                     size="small"
                     icon={<MyIcon icon="rizhi" size={16} />}
                     onClick={() => handleTokenLogs(record)}
                   >
-                    日志
+                    {t('bullet.tokenLogBtn')}
                   </Button>
                   <Button
                     size="small"
                     icon={isEnabled ? <MyIcon icon="pause" size={16} /> : <MyIcon icon="start" size={16} />}
                     onClick={() => handleToggleStatus(record)}
                   >
-                    {isEnabled ? '禁用' : '启用'}
+                    {isEnabled ? t('bullet.tokenStatusDisabled') : t('bullet.tokenStatusEnabled')}
                   </Button>
                   <Button
                     size="small"
@@ -542,7 +544,7 @@ export const Token = ({ domain }) => {
                     icon={<MyIcon icon="delete" size={16} />}
                     onClick={() => handleDelete(record)}
                   >
-                    删除
+                    {t('bullet.tokenDeleteBtn')}
                   </Button>
                 </div>
               </div>
@@ -551,30 +553,30 @@ export const Token = ({ domain }) => {
         />
       </Card>
       <Modal
-        title={isEditing ? '编辑Token' : '添加新Token'}
+        title={isEditing ? t('bullet.tokenModalEditTitle') : t('bullet.tokenModalAddTitle')}
         open={isModalOpen}
         onOk={handleSave}
         confirmLoading={confirmLoading}
-        cancelText="取消"
-        okText="确认"
+        cancelText={t('bullet.tokenCancel')}
+        okText={t('bullet.tokenConfirm')}
         onCancel={() => setIsModalOpen(false)}
         footer={
           <div className="flex justify-between">
             <div>
               {isEditing && (
                 <Button danger onClick={handleResetCounter}>
-                  重置调用次数
+                  {t('bullet.tokenResetCounter')}
                 </Button>
               )}
             </div>
             <div>
-              <Button onClick={() => setIsModalOpen(false)}>取消</Button>
+              <Button onClick={() => setIsModalOpen(false)}>{t('bullet.tokenCancel')}</Button>
               <Button
                 type="primary"
                 onClick={handleSave}
                 loading={confirmLoading}
               >
-                确认
+                {t('bullet.tokenConfirm')}
               </Button>
             </div>
           </div>
@@ -583,56 +585,56 @@ export const Token = ({ domain }) => {
         <Form form={form} layout="vertical">
           <Form.Item
             name="name"
-            label="名称"
-            rules={[{ required: true, message: '请输入名称' }]}
+            label={t('bullet.tokenFieldName')}
+            rules={[{ required: true, message: t('bullet.tokenNameRequired') }]}
             className="mb-4"
           >
-            <Input placeholder="例如：我的dandanplay客户端" />
+            <Input placeholder={t('bullet.tokenNamePlaceholder')} />
           </Form.Item>
           <Form.Item
             name="validityPeriod"
-            label="有效期"
-            rules={[{ required: true, message: '请选择有效期' }]}
+            label={t('bullet.tokenFieldValidity')}
+            rules={[{ required: true, message: t('bullet.tokenValidityRequired') }]}
             className="mb-4"
           >
             <Select
               options={[
-                isEditing && { value: 'custom', label: '不改变当前有效期' },
-                { value: 'permanent', label: '永久' },
-                { value: '1d', label: '1 天' },
-                { value: '7d', label: '7 天' },
-                { value: '30d', label: '30 天' },
-                { value: '180d', label: '6 个月' },
-                { value: '365d', label: '1 年' },
+                isEditing && { value: 'custom', label: t('bullet.tokenValidityCustom') },
+                { value: 'permanent', label: t('bullet.tokenValidityPermanent') },
+                { value: '1d', label: t('bullet.tokenValidity1d') },
+                { value: '7d', label: t('bullet.tokenValidity7d') },
+                { value: '30d', label: t('bullet.tokenValidity30d') },
+                { value: '180d', label: t('bullet.tokenValidity180d') },
+                { value: '365d', label: t('bullet.tokenValidity365d') },
               ].filter(Boolean)}
             />
           </Form.Item>
           <Form.Item
             name="dailyCallLimit"
-            label="每日调用上限"
-            tooltip="设置此Token每日可调用的总次数。-1 代表无限次。"
+            label={t('bullet.tokenFieldDailyLimit')}
+            tooltip={t('bullet.tokenDailyLimitTip')}
             className="mb-4"
           >
             <InputNumber
               min={-1}
               style={{ width: '100%' }}
-              placeholder="默认为500, -1为无限"
+              placeholder={t('bullet.tokenDailyLimitPlaceholder')}
             />
           </Form.Item>
           <Form.Item
             name="customToken"
-            label="自定义Token"
-            tooltip="自定义Token字符串，仅允许字母、数字、下划线和短横线（5~100字符）。留空则自动生成。"
+            label={t('bullet.tokenFieldCustomToken')}
+            tooltip={t('bullet.tokenCustomTokenTip')}
             className="mb-4"
             rules={[
               {
                 pattern: /^[a-zA-Z0-9_-]*$/,
-                message: '仅允许字母、数字、下划线和短横线',
+                message: t('bullet.tokenCustomTokenPattern'),
               },
               {
                 validator: (_, value) => {
                   if (value && value.length > 0 && value.length < 5) {
-                    return Promise.reject('Token 长度至少 5 个字符')
+                    return Promise.reject(t('bullet.tokenCustomTokenMinLen'))
                   }
                   return Promise.resolve()
                 },
@@ -640,7 +642,7 @@ export const Token = ({ domain }) => {
             ]}
           >
             <Input
-              placeholder={isEditing ? '留空保持当前Token不变' : '留空自动生成'}
+              placeholder={isEditing ? t('bullet.tokenCustomTokenEditPlaceholder') : t('bullet.tokenCustomTokenAddPlaceholder')}
               maxLength={100}
               allowClear
             />
@@ -650,15 +652,15 @@ export const Token = ({ domain }) => {
       <Modal
         title={
           <div className="flex items-center gap-3">
-            <Typography.Text>Token访问日志</Typography.Text>
-            <Tag color="blue">{tokenLogs.length} 条</Tag>
+            <Typography.Text>{t('bullet.tokenLogModalTitle')}</Typography.Text>
+            <Tag color="blue">{t('bullet.tokenLogCount', { count: tokenLogs.length })}</Tag>
           </div>
         }
         width={isMobile ? '100%' : '90vw'}
         style={isMobile ? {} : { maxWidth: 1400 }}
         open={logsOpen}
-        cancelText="取消"
-        okText="确认"
+        cancelText={t('bullet.tokenCancel')}
+        okText={t('bullet.tokenConfirm')}
         onCancel={() => setLogsOpen(false)}
         onOk={() => setLogsOpen(false)}
         styles={isMobile ? { body: { height: 'calc(100vh - 200px)' } } : { body: { maxHeight: '70vh', overflow: 'auto' } }}
@@ -695,7 +697,7 @@ export const Token = ({ domain }) => {
                         </Typography.Text>
                       </div>
                       <div className="flex items-start gap-3">
-                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0 mt-1">路径:</span>
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0 mt-1">{t('bullet.tokenLogPath')}:</span>
                         <Typography.Text code className="text-xs break-all flex-1">
                           {log.path}
                         </Typography.Text>
@@ -710,13 +712,13 @@ export const Token = ({ domain }) => {
                       )}
                       {log.method && (
                         <div className="flex items-center gap-3">
-                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0">方法:</span>
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0">{t('bullet.tokenLogMethodLabel')}:</span>
                           <Tag color="blue" size="small">{log.method}</Tag>
                         </div>
                       )}
                       {log.requestBody && (
                         <div className="flex items-start gap-3">
-                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0 mt-1">请求:</span>
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-8 shrink-0 mt-1">{t('bullet.tokenLogRequest')}:</span>
                           <Typography.Text code className="text-xs break-all flex-1" style={{ maxHeight: 80, overflow: 'auto' }}>
                             {log.requestBody}
                           </Typography.Text>

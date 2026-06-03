@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Form, Input, Select, Switch, Button, message } from 'antd';
 import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { createMediaServer, updateMediaServer, testMediaServerConnection, deleteMediaServer } from '../../../apis';
 
 const { Option } = Select;
 
 const ServerConfigPanel = ({ visible, server, onClose, onSaved }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -53,9 +55,9 @@ const ServerConfigPanel = ({ visible, server, onClose, onSaved }) => {
         const res = await testMediaServerConnection(tempServer.data.id);
         const result = res.data;
         if (result.success) {
-          message.success('连接成功!');
+          message.success(t('mediaFetch.serverConfig.connectSuccess'));
         } else {
-          message.error('连接失败: ' + (result.message || '未知错误'));
+          message.error(t('mediaFetch.serverConfig.connectFailed') + (result.message || t('mediaFetch.serverConfig.unknownError')));
         }
 
         // 如果是新增模式，删除临时服务器
@@ -63,13 +65,13 @@ const ServerConfigPanel = ({ visible, server, onClose, onSaved }) => {
           await deleteMediaServer(tempServer.data.id);
         }
       } catch (tempError) {
-        message.error('测试失败: ' + (tempError.message || '未知错误'));
+        message.error(t('mediaFetch.serverConfig.testFailed') + (tempError.message || t('mediaFetch.serverConfig.unknownError')));
       }
     } catch (error) {
       if (error.errorFields) {
-        message.warning('请先填写必填字段');
+        message.warning(t('mediaFetch.serverConfig.fillRequiredFirst'));
       } else {
-        message.error('测试失败: ' + (error.message || '未知错误'));
+        message.error(t('mediaFetch.serverConfig.testFailed') + (error.message || t('mediaFetch.serverConfig.unknownError')));
       }
     } finally {
       setTesting(false);
@@ -84,19 +86,19 @@ const ServerConfigPanel = ({ visible, server, onClose, onSaved }) => {
       if (server) {
         // 更新
         await updateMediaServer(server.id, values);
-        message.success('服务器配置已更新');
+        message.success(t('mediaFetch.serverConfig.serverUpdated'));
       } else {
         // 创建
         await createMediaServer(values);
-        message.success('服务器已添加');
+        message.success(t('mediaFetch.serverConfig.serverAdded'));
       }
 
       onSaved();
     } catch (error) {
       if (error.errorFields) {
-        message.warning('请填写所有必填字段');
+        message.warning(t('mediaFetch.serverConfig.fillAllRequired'));
       } else {
-        message.error('保存失败: ' + (error.message || '未知错误'));
+        message.error(t('mediaFetch.serverConfig.saveFailed') + (error.message || t('mediaFetch.serverConfig.unknownError')));
       }
     } finally {
       setLoading(false);
@@ -105,19 +107,19 @@ const ServerConfigPanel = ({ visible, server, onClose, onSaved }) => {
 
   return (
     <Modal
-      title={server ? '编辑媒体服务器' : '添加媒体服务器'}
+      title={server ? t('mediaFetch.serverConfig.editTitle') : t('mediaFetch.serverConfig.addTitle')}
       open={visible}
       onCancel={onClose}
       width={600}
       footer={[
         <Button key="cancel" onClick={onClose}>
-          取消
+          {t('mediaFetch.serverConfig.cancel')}
         </Button>,
         <Button key="test" onClick={handleTest} loading={testing}>
-          测试连接
+          {t('mediaFetch.serverConfig.testConnection')}
         </Button>,
         <Button key="submit" type="primary" onClick={handleSubmit} loading={loading}>
-          保存
+          {t('mediaFetch.serverConfig.save')}
         </Button>,
       ]}
     >
@@ -126,19 +128,19 @@ const ServerConfigPanel = ({ visible, server, onClose, onSaved }) => {
         layout="vertical"
       >
         <Form.Item
-          label="服务器名称"
+          label={t('mediaFetch.serverConfig.serverName')}
           name="name"
-          rules={[{ required: true, message: '请输入服务器名称' }]}
+          rules={[{ required: true, message: t('mediaFetch.serverConfig.serverNameRequired') }]}
         >
-          <Input placeholder="例如: 我的Emby服务器" />
+          <Input placeholder={t('mediaFetch.serverConfig.serverNamePlaceholder')} />
         </Form.Item>
 
         <Form.Item
-          label="服务器类型"
+          label={t('mediaFetch.serverConfig.serverType')}
           name="providerName"
-          rules={[{ required: true, message: '请选择服务器类型' }]}
+          rules={[{ required: true, message: t('mediaFetch.serverConfig.serverTypeRequired') }]}
         >
-          <Select placeholder="请选择">
+          <Select placeholder={t('mediaFetch.serverConfig.selectPlaceholder')}>
             <Option value="emby">Emby</Option>
             <Option value="jellyfin">Jellyfin</Option>
             <Option value="plex">Plex</Option>
@@ -146,11 +148,11 @@ const ServerConfigPanel = ({ visible, server, onClose, onSaved }) => {
         </Form.Item>
 
         <Form.Item
-          label="服务器地址"
+          label={t('mediaFetch.serverConfig.serverAddress')}
           name="url"
           rules={[
-            { required: true, message: '请输入服务器地址' },
-            { type: 'url', message: '请输入有效的URL' }
+            { required: true, message: t('mediaFetch.serverConfig.serverAddressRequired') },
+            { type: 'url', message: t('mediaFetch.serverConfig.urlInvalid') }
           ]}
         >
           <Input placeholder="http://localhost:8096" />
@@ -159,10 +161,10 @@ const ServerConfigPanel = ({ visible, server, onClose, onSaved }) => {
         <Form.Item
           label="API Token"
           name="apiToken"
-          rules={[{ required: true, message: '请输入API Token' }]}
+          rules={[{ required: true, message: t('mediaFetch.serverConfig.apiTokenRequired') }]}
         >
           <Input
-            placeholder="请输入API Token"
+            placeholder={t('mediaFetch.serverConfig.apiTokenPlaceholder')}
             type={showToken ? 'text' : 'password'}
             suffix={
               showToken ? (
@@ -175,11 +177,11 @@ const ServerConfigPanel = ({ visible, server, onClose, onSaved }) => {
         </Form.Item>
 
         <Form.Item
-          label="启用状态"
+          label={t('mediaFetch.serverConfig.enableStatus')}
           name="isEnabled"
           valuePropName="checked"
         >
-          <Switch checkedChildren="启用" unCheckedChildren="禁用" />
+          <Switch checkedChildren={t('mediaFetch.serverConfig.enable')} unCheckedChildren={t('mediaFetch.serverConfig.disable')} />
         </Form.Item>
       </Form>
     </Modal>

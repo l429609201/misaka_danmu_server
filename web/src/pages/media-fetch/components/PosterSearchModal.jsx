@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, Input, Button, List, Tag, Image, Space, Spin, message, Empty, Tooltip } from 'antd';
 import { SearchOutlined, CheckOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { useAtomValue } from 'jotai';
 import { isMobileAtom } from '../../../../store/index.js';
 import {
@@ -13,6 +14,7 @@ import {
  * 支持: TMDB, 豆瓣, Bangumi, TVDB, IMDB, Fanart.tv
  */
 const PosterSearchModal = ({ visible, onClose, onSelect, defaultKeyword, tmdbId, tvdbId, mediaType }) => {
+  const { t } = useTranslation();
   const [keyword, setKeyword] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -31,7 +33,7 @@ const PosterSearchModal = ({ visible, onClose, onSelect, defaultKeyword, tmdbId,
 
   const handleSearch = useCallback(async () => {
     if (!keyword.trim()) {
-      message.warning('请输入搜索关键词');
+      message.warning(t('mediaFetch.posterSearch.enterKeyword'));
       return;
     }
 
@@ -112,7 +114,7 @@ const PosterSearchModal = ({ visible, onClose, onSelect, defaultKeyword, tmdbId,
         setSourceStatus(prev => ({ ...prev, [task.name]: 'done' }));
         return parsed;
       } catch (e) {
-        console.warn(`${task.name} 搜索失败:`, e);
+        console.warn(`${task.name} ${t('mediaFetch.posterSearch.searchFailed')}`, e);
         status[task.name] = 'error';
         setSourceStatus(prev => ({ ...prev, [task.name]: 'error' }));
         return [];
@@ -144,7 +146,7 @@ const PosterSearchModal = ({ visible, onClose, onSelect, defaultKeyword, tmdbId,
 
   return (
     <Modal
-      title="搜索海报"
+      title={t('mediaFetch.posterSearch.title')}
       open={visible}
       onCancel={onClose}
       footer={null}
@@ -153,14 +155,14 @@ const PosterSearchModal = ({ visible, onClose, onSelect, defaultKeyword, tmdbId,
     >
       <Space.Compact style={{ width: '100%', marginBottom: 16 }}>
         <Input
-          placeholder="输入关键词搜索海报"
+          placeholder={t('mediaFetch.posterSearch.keywordPlaceholder')}
           value={keyword}
           onChange={e => setKeyword(e.target.value)}
           onPressEnter={handleSearch}
           allowClear
         />
         <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch} loading={loading}>
-          搜索
+          {t('mediaFetch.posterSearch.search')}
         </Button>
       </Space.Compact>
 
@@ -180,9 +182,9 @@ const PosterSearchModal = ({ visible, onClose, onSelect, defaultKeyword, tmdbId,
       {/* 搜索结果列表 */}
       <div style={{ maxHeight: isMobile ? '60vh' : 500, overflowY: 'auto' }}>
         {loading && results.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 40 }}><Spin tip="搜索中..." /></div>
+          <div style={{ textAlign: 'center', padding: 40 }}><Spin tip={t('mediaFetch.posterSearch.searching')} /></div>
         ) : results.length === 0 && Object.keys(sourceStatus).length > 0 ? (
-          <Empty description="未找到海报" />
+          <Empty description={t('mediaFetch.posterSearch.noPoster')} />
         ) : (
           <List
             dataSource={results}
@@ -223,7 +225,7 @@ const PosterSearchModal = ({ visible, onClose, onSelect, defaultKeyword, tmdbId,
                         icon={<CheckOutlined />}
                         onClick={() => handleSelect(item)}
                       >
-                        使用此海报
+                        {t('mediaFetch.posterSearch.usePoster')}
                       </Button>
                     </div>
                   </div>

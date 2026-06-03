@@ -14,10 +14,12 @@ import {
 } from '../../../apis'
 import { base64urlToBuffer, bufferToBase64url } from '../../../components/MfaVerifyModal'
 import { isPasskeySupported } from '../../../utils/passkey'
+import { useTranslation } from 'react-i18next'
 
 const { Text, Paragraph } = Typography
 
 const Security = () => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [mfaStatus, setMfaStatus] = useState({ totpEnabled: false, passkeyCount: 0, passkeys: [] })
 
@@ -55,7 +57,7 @@ const Security = () => {
       const res = await setupTotp()
       setTotpSetupData(res.data)
     } catch (err) {
-      message.error(err.response?.data?.detail || '生成 TOTP 密钥失败')
+      message.error(err.response?.data?.detail || t('security.setupTotpFailed'))
     } finally {
       setTotpSetupLoading(false)
     }
@@ -63,36 +65,36 @@ const Security = () => {
 
   const handleVerifyTotp = async () => {
     if (!totpCode || totpCode.length !== 6) {
-      message.warning('请输入6位验证码')
+      message.warning(t('security.inputCode6'))
       return
     }
     try {
       await verifyTotpSetup({ code: totpCode })
-      message.success('TOTP 两步验证已启用！')
+      message.success(t('security.totpEnabledSuccess'))
       setTotpSetupData(null)
       setTotpCode('')
       fetchStatus()
     } catch (err) {
-      message.error(err.response?.data?.detail || '验证码错误')
+      message.error(err.response?.data?.detail || t('security.codeError'))
     }
   }
 
   const handleDisableTotp = async () => {
     try {
       await disableTotp({ password: disablePassword })
-      message.success('TOTP 两步验证已关闭')
+      message.success(t('security.totpDisabledSuccess'))
       setDisableModalOpen(false)
       setDisablePassword('')
       fetchStatus()
     } catch (err) {
-      message.error(err.response?.data?.detail || '关闭失败')
+      message.error(err.response?.data?.detail || t('security.disableFailed'))
     }
   }
 
   // ========== PassKey ==========
   const handleRegisterPasskey = async () => {
     if (!isPasskeySupported()) {
-      message.error('PassKey 仅在 HTTPS 模式下可用')
+      message.error(t('security.passkeyHttpsOnlyError'))
       return
     }
     setRegisterLoading(true)
@@ -118,15 +120,15 @@ const Security = () => {
         },
       })
 
-      const deviceName = prompt('请为此 PassKey 命名（如：我的电脑）', '未命名设备')
-      await verifyPasskeyRegister({ credential: credJSON, deviceName: deviceName || '未命名设备' })
-      message.success('PassKey 注册成功！')
+      const deviceName = prompt(t('security.promptDeviceName'), t('security.promptDefaultName'))
+      await verifyPasskeyRegister({ credential: credJSON, deviceName: deviceName || t('security.promptDefaultName') })
+      message.success(t('security.passkeyRegisterSuccess'))
       fetchStatus()
     } catch (err) {
       if (err.name === 'NotAllowedError') {
-        message.info('PassKey 注册已取消')
+        message.info(t('security.passkeyRegisterCancelled'))
       } else {
-        message.error('PassKey 注册失败，请重试')
+        message.error(t('security.passkeyRegisterFailed'))
       }
     } finally {
       setRegisterLoading(false)
@@ -137,21 +139,21 @@ const Security = () => {
     if (!renameTarget || !newDeviceName.trim()) return
     try {
       await renamePasskey(renameTarget.id, { deviceName: newDeviceName.trim() })
-      message.success('重命名成功')
+      message.success(t('security.renameSuccess'))
       setRenameModalOpen(false)
       fetchStatus()
     } catch (err) {
-      message.error('重命名失败')
+      message.error(t('security.renameFailed'))
     }
   }
 
   const handleDelete = async (id) => {
     try {
       await deletePasskey(id)
-      message.success('PassKey 已删除')
+      message.success(t('security.deleteSuccess'))
       fetchStatus()
     } catch (err) {
-      message.error('删除失败')
+      message.error(t('security.deleteFailed'))
     }
   }
 
@@ -160,21 +162,21 @@ const Security = () => {
   return (
     <div className="space-y-6">
       {/* TOTP 两步验证 */}
-      <Card title={<><SafetyOutlined className="mr-2" />TOTP 两步验证</>} size="small">
+      <Card title={<><SafetyOutlined className="mr-2" />{t('security.totpTitle')}</>} size="small">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <Text>使用验证器 App 生成一次性验证码</Text>
+            <Text>{t('security.totpDesc')}</Text>
             <br />
-            <Text type="secondary">支持 Google Authenticator、Microsoft Authenticator 等</Text>
+            <Text type="secondary">{t('security.totpSupportedApps')}</Text>
           </div>
           {mfaStatus.totpEnabled ? (
             <Space>
-              <Tag color="green" icon={<CheckCircleOutlined />}>已启用</Tag>
-              <Button danger size="small" onClick={() => setDisableModalOpen(true)}>关闭</Button>
+              <Tag color="green" icon={<CheckCircleOutlined />}>{t('security.totpEnabled')}</Tag>
+              <Button danger size="small" onClick={() => setDisableModalOpen(true)}>{t('security.btnDisable')}</Button>
             </Space>
           ) : (
             <Button type="primary" size="small" onClick={handleSetupTotp} loading={totpSetupLoading}>
-              启用
+              {t('security.btnEnable')}
             </Button>
           )}
         </div>
@@ -182,29 +184,29 @@ const Security = () => {
         {/* TOTP 设置流程 */}
         {totpSetupData && (
           <div className="border rounded-lg p-4 mt-2">
-            <Text strong>1. 使用验证器 App 扫描二维码：</Text>
+            <Text strong>{t('security.totpStep1')}</Text>
             <div className="flex justify-center my-4">
               <QRCode value={totpSetupData.uri} size={200} />
             </div>
-            <Text type="secondary">或手动输入密钥：</Text>
+            <Text type="secondary">{t('security.totpManualKey')}</Text>
             <Paragraph copyable className="font-mono bg-gray-50 dark:bg-gray-800 p-2 rounded mt-1">
               {totpSetupData.secret}
             </Paragraph>
             <Divider />
-            <Text strong>2. 输入验证器显示的6位验证码：</Text>
+            <Text strong>{t('security.totpStep2')}</Text>
             <div className="mt-2">
               <Space.Compact>
                 <Input
-                  placeholder="6位验证码"
+                  placeholder={t('security.totpCodePlaceholder')}
                   maxLength={6}
                   value={totpCode}
                   onChange={e => setTotpCode(e.target.value.replace(/\D/g, ''))}
                   onPressEnter={handleVerifyTotp}
                   style={{ width: 160 }}
                 />
-                <Button type="primary" onClick={handleVerifyTotp}>确认启用</Button>
+                <Button type="primary" onClick={handleVerifyTotp}>{t('security.btnConfirmEnable')}</Button>
               </Space.Compact>
-              <Button type="link" onClick={() => { setTotpSetupData(null); setTotpCode('') }}>取消</Button>
+              <Button type="link" onClick={() => { setTotpSetupData(null); setTotpCode('') }}>{t('security.btnCancel')}</Button>
             </div>
           </div>
         )}
@@ -212,7 +214,7 @@ const Security = () => {
 
       {/* PassKey */}
       <Card
-        title={<><KeyOutlined className="mr-2" />PassKey / 生物识别</>}
+        title={<><KeyOutlined className="mr-2" />{t('security.passkeyTitle')}</>}
         size="small"
         extra={
           isPasskeySupported() && mfaStatus.totpEnabled ? (
@@ -223,7 +225,7 @@ const Security = () => {
               onClick={handleRegisterPasskey}
               loading={registerLoading}
             >
-              注册新 PassKey
+              {t('security.btnRegisterPasskey')}
             </Button>
           ) : null
         }
@@ -232,32 +234,32 @@ const Security = () => {
           <div className="text-center py-6">
             <Text type="secondary">
               <SafetyOutlined className="mr-1" />
-              PassKey 仅在 HTTPS 模式下可用
+              {t('security.passkeyHttpsOnly')}
             </Text>
             <br />
             <Text type="secondary" className="text-xs">
-              请通过 HTTPS 反向代理访问，以避免与同 IP 不同端口的其它应用冲突
+              {t('security.passkeyHttpsHint')}
             </Text>
           </div>
         ) : !mfaStatus.totpEnabled ? (
           <div className="text-center py-6">
             <Text type="secondary">
               <SafetyOutlined className="mr-1" />
-              请先启用 TOTP 两步验证后才能注册 PassKey
+              {t('security.passkeyRequireTotp')}
             </Text>
             <br />
             <Text type="secondary" className="text-xs">
-              这是为了确保您在 PassKey 不可用时仍有备用验证方式
+              {t('security.passkeyRequireTotpHint')}
             </Text>
           </div>
         ) : (
           <>
             <Text type="secondary" className="block mb-4">
-              使用指纹、面容识别或硬件安全密钥进行快速验证
+              {t('security.passkeyDesc')}
             </Text>
 
         {mfaStatus.passkeys.length === 0 ? (
-          <Empty description="暂无已注册的 PassKey" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <Empty description={t('security.passkeyEmpty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <List
             dataSource={mfaStatus.passkeys}
@@ -273,24 +275,24 @@ const Security = () => {
                       setRenameModalOpen(true)
                     }}
                   >
-                    重命名
+                    {t('security.btnRename')}
                   </Button>,
-                  <Popconfirm title="确定删除此 PassKey？" onConfirm={() => handleDelete(item.id)}>
-                    <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                  <Popconfirm title={t('security.confirmDeletePasskey')} onConfirm={() => handleDelete(item.id)}>
+                    <Button size="small" danger icon={<DeleteOutlined />}>{t('security.btnDelete')}</Button>
                   </Popconfirm>,
                 ]}
               >
                 <List.Item.Meta
                   avatar={<KeyOutlined style={{ fontSize: 20, marginTop: 4 }} />}
-                  title={item.deviceName || '未命名设备'}
+                  title={item.deviceName || t('security.unnamedDevice')}
                   description={
                     <Space size="small" wrap>
                       <Text type="secondary">
-                        注册于 {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '-'}
+                        {t('security.registeredAt', { date: item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '-' })}
                       </Text>
                       {item.lastUsedAt && (
                         <Text type="secondary">
-                          · 最后使用 {new Date(item.lastUsedAt).toLocaleDateString()}
+                          {t('security.lastUsedAt', { date: new Date(item.lastUsedAt).toLocaleDateString() })}
                         </Text>
                       )}
                     </Space>
@@ -306,24 +308,24 @@ const Security = () => {
 
       {/* 关闭 TOTP 弹窗 */}
       <Modal
-        title="关闭两步验证"
+        title={t('security.disableTotpTitle')}
         open={disableModalOpen}
         onCancel={() => { setDisableModalOpen(false); setDisablePassword('') }}
         onOk={handleDisableTotp}
-        okText="确认关闭"
+        okText={t('security.btnConfirmDisable')}
         okButtonProps={{ danger: true }}
       >
-        <Text>关闭两步验证将降低账户安全性。请输入当前密码确认：</Text>
+        <Text>{t('security.disableTotpDesc')}</Text>
         {mfaStatus.passkeyCount > 0 && (
           <div className="mt-2 px-3 py-2 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
             <Text type="warning" className="text-sm">
-              ⚠️ 关闭 TOTP 将同时删除已注册的 {mfaStatus.passkeyCount} 个 PassKey
+              {t('security.disableTotpPasskeyWarning', { count: mfaStatus.passkeyCount })}
             </Text>
           </div>
         )}
         <Input.Password
           className="mt-3"
-          placeholder="当前密码"
+          placeholder={t('security.currentPasswordPlaceholder')}
           value={disablePassword}
           onChange={e => setDisablePassword(e.target.value)}
         />
@@ -331,13 +333,13 @@ const Security = () => {
 
       {/* 重命名 PassKey 弹窗 */}
       <Modal
-        title="重命名 PassKey"
+        title={t('security.renameTotpTitle')}
         open={renameModalOpen}
         onCancel={() => setRenameModalOpen(false)}
         onOk={handleRename}
       >
         <Input
-          placeholder="设备名称"
+          placeholder={t('security.deviceNamePlaceholder')}
           value={newDeviceName}
           onChange={e => setNewDeviceName(e.target.value)}
         />

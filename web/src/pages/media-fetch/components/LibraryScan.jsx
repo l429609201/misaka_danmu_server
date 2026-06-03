@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, Select, Button, message, Space, Checkbox, Row, Col, Tag, Divider, Typography, Alert, Popconfirm, Grid, Segmented, InputNumber, Popover, Modal } from 'antd';
 import { CalendarOutlined } from '@ant-design/icons';
 import { ReloadOutlined, PlusOutlined, ScanOutlined, SettingOutlined, SaveOutlined, DatabaseOutlined, DeleteOutlined, ImportOutlined, EyeOutlined, EyeInvisibleOutlined, VideoCameraOutlined, PlaySquareOutlined, EditOutlined, CloudDownloadOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import ServerConfigPanel from './ServerConfigPanel';
 import MediaItemList from './MediaItemList';
 import { getMediaServers, scanMediaServer, getMediaServerLibraries, updateMediaServer, batchDeleteMediaItems, importMediaItems, deleteMediaServer, getUnimportedCount, importAllUnimported } from '../../../apis';
@@ -10,6 +11,7 @@ const { Option } = Select;
 const { Title, Text } = Typography;
 
 const LibraryScan = () => {
+  const { t } = useTranslation();
   const [servers, setServers] = useState([]);
   const [selectedServerId, setSelectedServerId] = useState(null);
   const [libraries, setLibraries] = useState([]);
@@ -44,7 +46,7 @@ const LibraryScan = () => {
         }
       }
     } catch (error) {
-      message.error('加载服务器列表失败');
+      message.error(t('mediaFetch.libraryScan.loadServersFailed'));
       console.error(error);
     } finally {
       setLoading(false);
@@ -103,7 +105,7 @@ const LibraryScan = () => {
         setSelectedLibraryIds(data.length > 0 ? [data[0].id] : []);
       }
     } catch (error) {
-      message.error('加载媒体库列表失败');
+      message.error(t('mediaFetch.libraryScan.loadLibrariesFailed'));
       console.error(error);
       setLibraries([]);
       setSelectedLibraryIds([]);
@@ -115,7 +117,7 @@ const LibraryScan = () => {
   // 保存媒体库选择
   const handleSaveLibraries = async () => {
     if (!selectedServerId) {
-      message.warning('请先选择媒体服务器');
+      message.warning(t('mediaFetch.libraryScan.scanTipNoServer'));
       return;
     }
 
@@ -124,11 +126,11 @@ const LibraryScan = () => {
       await updateMediaServer(selectedServerId, {
         selectedLibraries: selectedLibraryIds
       });
-      message.success('媒体库选择已保存');
+      message.success(t('mediaFetch.libraryScan.saveLibrariesSuccess'));
       // 重新加载服务器列表以更新配置
       await loadServers();
     } catch (error) {
-      message.error('保存失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.libraryScan.saveFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
       console.error(error);
     } finally {
       setSavingLibraries(false);
@@ -138,14 +140,14 @@ const LibraryScan = () => {
   // 扫描媒体库
   const handleScan = async () => {
     if (!selectedServerId) {
-      message.warning('请先选择媒体服务器');
+      message.warning(t('mediaFetch.libraryScan.scanTipNoServer'));
       return;
     }
 
     // 检查是否有有效的媒体库选择
     const validSelections = selectedLibraryIds.filter(id => libraries.some(lib => lib.id === id));
     if (validSelections.length === 0) {
-      message.warning('请至少选择一个有效的媒体库');
+      message.warning(t('mediaFetch.libraryScan.scanTipNoLibraryShort'));
       // 自动选择第一个有效的媒体库
       if (libraries.length > 0) {
         setSelectedLibraryIds([libraries[0].id]);
@@ -157,12 +159,12 @@ const LibraryScan = () => {
     try {
       const res = await scanMediaServer(selectedServerId, validSelections);
       const result = res.data;
-      message.success(result.message || '扫描任务已提交');
+      message.success(result.message || t('mediaFetch.libraryScan.scanSubmitted'));
       // 触发列表刷新
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
       // axios拦截器已统一转换为message字段
-      message.error('扫描失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.libraryScan.scanFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
       console.error(error);
     } finally {
       setLoading(false);
@@ -177,7 +179,7 @@ const LibraryScan = () => {
 
   const handleEditServer = () => {
     if (!selectedServerId) {
-      message.warning('请先选择媒体服务器');
+      message.warning(t('mediaFetch.libraryScan.scanTipNoServer'));
       return;
     }
     const server = servers.find(s => s.id === selectedServerId);
@@ -193,18 +195,18 @@ const LibraryScan = () => {
   // 删除服务器
   const handleDeleteServer = async () => {
     if (!selectedServerId) {
-      message.warning('请先选择媒体服务器');
+      message.warning(t('mediaFetch.libraryScan.scanTipNoServer'));
       return;
     }
 
     try {
       await deleteMediaServer(selectedServerId);
-      message.success('服务器已删除');
+      message.success(t('mediaFetch.libraryScan.serverDeleted'));
       setSelectedServerId(null);
       // 重新加载服务器列表
       await loadServers();
     } catch (error) {
-      message.error('删除服务器失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.libraryScan.deleteServerFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
       console.error(error);
     }
   };
@@ -212,7 +214,7 @@ const LibraryScan = () => {
   // 批量删除媒体项目
   const handleBatchDelete = async () => {
     if (selectedMediaItems.length === 0) {
-      message.warning('请先选择要删除的项目');
+      message.warning(t('mediaFetch.libraryScan.selectDeleteWarning'));
       return;
     }
 
@@ -260,7 +262,7 @@ const LibraryScan = () => {
     });
 
     if (itemIds.length === 0 && shows.length === 0 && seasons.length === 0) {
-      message.warning('没有可删除的项目');
+      message.warning(t('mediaFetch.libraryScan.noDeletableItems'));
       return;
     }
 
@@ -271,12 +273,12 @@ const LibraryScan = () => {
       if (seasons.length > 0) payload.seasons = seasons;
 
       await batchDeleteMediaItems(payload);
-      message.success(`成功删除 ${selectedMediaItems.length} 个项目`);
+      message.success(t('mediaFetch.libraryScan.batchDeleteSuccess', { count: selectedMediaItems.length }));
       setSelectedMediaItems([]);
       // 触发列表刷新
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
-      message.error('批量删除失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.libraryScan.batchDeleteFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
       console.error(error);
     }
   };
@@ -284,7 +286,7 @@ const LibraryScan = () => {
   // 批量导入媒体项目
   const handleImport = async () => {
     if (selectedMediaItems.length === 0) {
-      message.warning('请先选择要导入的项目');
+      message.warning(t('mediaFetch.libraryScan.selectImportWarning'));
       return;
     }
 
@@ -332,7 +334,7 @@ const LibraryScan = () => {
     });
 
     if (itemIds.length === 0 && shows.length === 0 && seasons.length === 0) {
-      message.warning('没有可导入的项目');
+      message.warning(t('mediaFetch.libraryScan.noImportableItems'));
       return;
     }
 
@@ -344,12 +346,12 @@ const LibraryScan = () => {
 
       const res = await importMediaItems(payload);
       const result = res.data;
-      message.success(result.message || '导入任务已提交');
+      message.success(result.message || t('mediaFetch.libraryScan.importSubmitted'));
       setSelectedMediaItems([]);
       // 触发列表刷新
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
-      message.error('批量导入失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.libraryScan.batchImportFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
       console.error(error);
     }
   };
@@ -357,7 +359,7 @@ const LibraryScan = () => {
   // 一键导入全部未导入
   const handleImportAllUnimported = async () => {
     if (!selectedServerId) {
-      message.warning('请先选择媒体服务器');
+      message.warning(t('mediaFetch.libraryScan.scanTipNoServer'));
       return;
     }
 
@@ -367,29 +369,29 @@ const LibraryScan = () => {
       const count = countRes.data.count;
 
       if (count === 0) {
-        message.info('当前没有未导入的媒体项');
+        message.info(t('mediaFetch.libraryScan.noUnimported'));
         return;
       }
 
       // 弹出确认框
       Modal.confirm({
-        title: '一键导入全部未导入',
-        content: `当前有 ${count} 个未导入的媒体项，确定要全部导入吗？导入过程可能需要较长时间。`,
-        okText: '确定导入',
-        cancelText: '取消',
+        title: t('mediaFetch.libraryScan.importAllTitle'),
+        content: t('mediaFetch.libraryScan.importAllContent', { count }),
+        okText: t('mediaFetch.libraryScan.confirmImport'),
+        cancelText: t('mediaFetch.libraryScan.cancel'),
         onOk: async () => {
           try {
             const res = await importAllUnimported({ serverId: selectedServerId });
-            message.success(res.data.message || '导入任务已提交');
+            message.success(res.data.message || t('mediaFetch.libraryScan.importSubmitted'));
             setRefreshTrigger(prev => prev + 1);
           } catch (error) {
-            message.error('导入失败: ' + (error.message || '未知错误'));
+            message.error(t('mediaFetch.libraryScan.importFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
             console.error(error);
           }
         }
       });
     } catch (error) {
-      message.error('获取未导入数量失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.libraryScan.getUnimportedFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
       console.error(error);
     }
   };
@@ -410,9 +412,9 @@ const LibraryScan = () => {
       <div style={{ textAlign: 'center', marginBottom: '32px' }}>
         <Title level={2} style={{ marginBottom: '8px' }}>
           <DatabaseOutlined style={{ marginRight: '12px' }} />
-          媒体库扫描
+          {t('mediaFetch.libraryScan.pageTitle')}
         </Title>
-        <Text type="secondary">连接您的媒体服务器，扫描并导入媒体内容</Text>
+        <Text type="secondary">{t('mediaFetch.libraryScan.pageSubtitle')}</Text>
       </div>
 
       {/* 服务器配置卡片 */}
@@ -420,7 +422,7 @@ const LibraryScan = () => {
         title={
           <Space>
             <SettingOutlined />
-            <span>服务器配置</span>
+            <span>{t('mediaFetch.libraryScan.serverConfig')}</span>
           </Space>
         }
         style={{ marginBottom: '24px' }}
@@ -431,14 +433,14 @@ const LibraryScan = () => {
                 icon={<PlusOutlined />}
                 onClick={handleAddServer}
               >
-                添加服务器
+                {t('mediaFetch.libraryScan.addServer')}
               </Button>
               <Button
                 icon={<ReloadOutlined />}
                 onClick={loadServers}
                 loading={loading}
               >
-                刷新
+                {t('mediaFetch.libraryScan.refresh')}
               </Button>
             </Space>
           )
@@ -452,7 +454,7 @@ const LibraryScan = () => {
                 onClick={handleAddServer}
                 size="large"
               >
-                添加
+                {t('mediaFetch.libraryScan.add')}
               </Button>
               <Button
                 icon={<ReloadOutlined />}
@@ -460,7 +462,7 @@ const LibraryScan = () => {
                 loading={loading}
                 size="large"
               >
-                刷新
+                {t('mediaFetch.libraryScan.refresh')}
               </Button>
             </Space>
           </div>
@@ -469,11 +471,11 @@ const LibraryScan = () => {
           <Col xs={24} md={12}>
             <div style={{ marginBottom: '16px' }}>
               <Text strong style={{ display: 'block', marginBottom: '8px' }}>
-                选择媒体服务器
+                {t('mediaFetch.libraryScan.selectServer')}
               </Text>
               <Select
                 style={{ width: '100%' }}
-                placeholder="请选择媒体服务器"
+                placeholder={t('mediaFetch.libraryScan.selectServerPlaceholder')}
                 value={selectedServerId}
                 onChange={setSelectedServerId}
                 loading={loading}
@@ -486,7 +488,7 @@ const LibraryScan = () => {
                       <Tag size="small" color={server.isEnabled ? 'green' : 'red'}>
                         {server.providerName}
                       </Tag>
-                      {!server.isEnabled && <Tag size="small" color="orange">已禁用</Tag>}
+                      {!server.isEnabled && <Tag size="small" color="orange">{t('mediaFetch.libraryScan.disabled')}</Tag>}
                     </Space>
                   </Option>
                 ))}
@@ -543,7 +545,7 @@ const LibraryScan = () => {
                               {currentServer.providerName}
                             </Tag>
                             <Tag color={currentServer.isEnabled ? 'success' : 'warning'} size="small">
-                              {currentServer.isEnabled ? '已启用' : '已禁用'}
+                              {currentServer.isEnabled ? t('mediaFetch.libraryScan.enabled') : t('mediaFetch.libraryScan.disabled')}
                             </Tag>
                           </div>
                         </div>
@@ -557,14 +559,14 @@ const LibraryScan = () => {
                         icon={<EditOutlined />}
                         size="small"
                         onClick={handleEditServer}
-                        title="编辑服务器"
+                        title={t('mediaFetch.libraryScan.editServer')}
                       />
                       <Popconfirm
-                        title={`确定要删除服务器 "${currentServer.name}" 吗？`}
-                        description="此操作不可撤销，将删除该服务器的所有配置。"
+                        title={t('mediaFetch.libraryScan.deleteServerConfirm', { name: currentServer.name })}
+                        description={t('mediaFetch.libraryScan.deleteServerDesc')}
                         onConfirm={handleDeleteServer}
-                        okText="确定删除"
-                        cancelText="取消"
+                        okText={t('mediaFetch.libraryScan.confirmDelete')}
+                        cancelText={t('mediaFetch.libraryScan.cancel')}
                         okButtonProps={{ danger: true }}
                       >
                         <Button
@@ -572,7 +574,7 @@ const LibraryScan = () => {
                           danger
                           icon={<DeleteOutlined />}
                           size="small"
-                          title="删除服务器"
+                          title={t('mediaFetch.libraryScan.deleteServer')}
                         />
                       </Popconfirm>
                     </Space>
@@ -583,7 +585,7 @@ const LibraryScan = () => {
                     <div style={{ marginBottom: '16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Text type="secondary" style={{ fontSize: screens.xs ? '11px' : '12px', minWidth: screens.xs ? '50px' : '60px', flexShrink: 0 }}>
-                          服务器地址:
+                          {t('mediaFetch.libraryScan.serverAddress')}
                         </Text>
                         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                           <Text
@@ -605,7 +607,7 @@ const LibraryScan = () => {
                             icon={showServerUrl ? <EyeInvisibleOutlined /> : <EyeOutlined />}
                             onClick={() => setShowServerUrl(!showServerUrl)}
                             style={{ padding: '2px 4px', height: '24px', minWidth: '24px', flexShrink: 0 }}
-                            title={showServerUrl ? '隐藏地址' : '显示地址'}
+                            title={showServerUrl ? t('mediaFetch.libraryScan.hideAddress') : t('mediaFetch.libraryScan.showAddress')}
                           />
                         </div>
                       </div>
@@ -615,13 +617,13 @@ const LibraryScan = () => {
                   {/* 服务器未启用提示 */}
                   {!currentServer.isEnabled && (
                     <Alert
-                      message="服务器未启用"
-                      description="请先启用该媒体服务器以进行扫描操作"
+                      message={t('mediaFetch.libraryScan.serverDisabledTitle')}
+                      description={t('mediaFetch.libraryScan.serverDisabledDesc')}
                       type="warning"
                       showIcon
                       action={
                         <Button size="small" onClick={handleEditServer}>
-                          立即配置
+                          {t('mediaFetch.libraryScan.configureNow')}
                         </Button>
                       }
                       style={{ marginTop: '16px' }}
@@ -634,12 +636,12 @@ const LibraryScan = () => {
 
           <Col xs={24} md={12}>
             <div style={{ padding: '20px', borderRadius: '8px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <Title level={4} style={{ marginBottom: '12px' }}>操作说明</Title>
+              <Title level={4} style={{ marginBottom: '12px' }}>{t('mediaFetch.libraryScan.instructions')}</Title>
               <Space direction="vertical" size="small">
-                <Text>1. 选择已配置的媒体服务器</Text>
-                <Text>2. 配置要扫描的媒体库</Text>
-                <Text>3. 保存配置并开始扫描</Text>
-                <Text>4. 查看扫描结果和导入媒体</Text>
+                <Text>{t('mediaFetch.libraryScan.instruction1')}</Text>
+                <Text>{t('mediaFetch.libraryScan.instruction2')}</Text>
+                <Text>{t('mediaFetch.libraryScan.instruction3')}</Text>
+                <Text>{t('mediaFetch.libraryScan.instruction4')}</Text>
               </Space>
             </div>
           </Col>
@@ -652,7 +654,7 @@ const LibraryScan = () => {
           title={
             <Space>
               <DatabaseOutlined />
-              <span>媒体库配置</span>
+              <span>{t('mediaFetch.libraryScan.libraryConfig')}</span>
             </Space>
           }
           style={{ marginBottom: '24px' }}
@@ -664,7 +666,7 @@ const LibraryScan = () => {
                   onClick={handleEditServer}
                   disabled={!selectedServerId}
                 >
-                  编辑服务器
+                  {t('mediaFetch.libraryScan.editServer')}
                 </Button>
                 <Button
                   type="primary"
@@ -673,13 +675,13 @@ const LibraryScan = () => {
                   disabled={!selectedServerId || selectedLibraryIds.length === 0 || !selectedLibraryIds.some(id => libraries.some(lib => lib.id === id)) || isServerDisabled}
                   loading={loading}
                   title={
-                    !selectedServerId ? '请先选择媒体服务器' :
-                    selectedLibraryIds.length === 0 ? `已选择 ${selectedLibraryIds.length} 个媒体库，请至少选择一个` :
-                    isServerDisabled ? '服务器未启用，请先启用服务器' :
-                    '开始扫描媒体库'
+                    !selectedServerId ? t('mediaFetch.libraryScan.scanTipNoServer') :
+                    selectedLibraryIds.length === 0 ? t('mediaFetch.libraryScan.scanTipNoLibrary', { count: selectedLibraryIds.length }) :
+                    isServerDisabled ? t('mediaFetch.libraryScan.scanTipDisabled') :
+                    t('mediaFetch.libraryScan.scanTipStart')
                   }
                 >
-                  {screens.xs ? '扫描' : '开始扫描'}
+                  {screens.xs ? t('mediaFetch.libraryScan.scan') : t('mediaFetch.libraryScan.startScan')}
                 </Button>
               </Space>
             )
@@ -694,7 +696,7 @@ const LibraryScan = () => {
                   disabled={!selectedServerId}
                   size="large"
                 >
-                  编辑
+                  {t('mediaFetch.libraryScan.edit')}
                 </Button>
                 <Button
                   type="primary"
@@ -704,39 +706,39 @@ const LibraryScan = () => {
                   loading={loading}
                   size="large"
                   title={
-                    !selectedServerId ? '请先选择媒体服务器' :
-                    selectedLibraryIds.length === 0 ? '请至少选择一个媒体库' :
-                    isServerDisabled ? '服务器未启用，请先启用服务器' :
-                    '开始扫描媒体库'
+                    !selectedServerId ? t('mediaFetch.libraryScan.scanTipNoServer') :
+                    selectedLibraryIds.length === 0 ? t('mediaFetch.libraryScan.scanTipNoLibraryShort') :
+                    isServerDisabled ? t('mediaFetch.libraryScan.scanTipDisabled') :
+                    t('mediaFetch.libraryScan.scanTipStart')
                   }
                 >
-                  扫描
+                  {t('mediaFetch.libraryScan.scan')}
                 </Button>
               </Space>
             </div>
           )}
           {isServerDisabled ? (
             <Alert
-              message="服务器未启用"
-              description="请先启用该媒体服务器或选择其他服务器"
+              message={t('mediaFetch.libraryScan.serverDisabledTitle')}
+              description={t('mediaFetch.libraryScan.serverDisabledDesc2')}
               type="warning"
               showIcon
               action={
                 <Button size="small" onClick={handleEditServer}>
-                  {screens.xs ? '配置' : '配置服务器'}
+                  {screens.xs ? t('mediaFetch.libraryScan.configure') : t('mediaFetch.libraryScan.configureServer')}
                 </Button>
               }
             />
           ) : loadingLibraries ? (
             <div style={{ textAlign: 'center', padding: '40px' }}>
               <div style={{ fontSize: '16px', color: '#666', marginBottom: '16px' }}>
-                正在加载媒体库列表...
+                {t('mediaFetch.libraryScan.loadingLibraries')}
               </div>
             </div>
           ) : libraries.length === 0 ? (
             <Alert
-              message="未找到媒体库"
-              description="该服务器可能没有配置媒体库，或连接出现问题"
+              message={t('mediaFetch.libraryScan.noLibraryTitle')}
+              description={t('mediaFetch.libraryScan.noLibraryDesc')}
               type="info"
               showIcon
             />
@@ -744,7 +746,7 @@ const LibraryScan = () => {
             <>
               <div style={{ marginBottom: '20px' }}>
                 <Text strong style={{ fontSize: '16px' }}>
-                  已选择 {selectedLibraryIds.length} 个媒体库
+                  {t('mediaFetch.libraryScan.selectedLibraries', { count: selectedLibraryIds.length })}
                 </Text>
                 <Divider />
               </div>
@@ -798,7 +800,7 @@ const LibraryScan = () => {
                         </div>
                         {library.episodeCount && (
                           <Text type="secondary" style={{ fontSize: '12px', marginTop: '8px' }}>
-                            {library.episodeCount} 个项目
+                            {t('mediaFetch.libraryScan.itemsCount', { count: library.episodeCount })}
                           </Text>
                         )}
                       </div>
@@ -819,7 +821,7 @@ const LibraryScan = () => {
                       setSelectedLibraryIds(allIds);
                     }}
                   >
-                    全选
+                    {t('mediaFetch.libraryScan.selectAll')}
                   </Button>
                   <Button
                     type="default"
@@ -833,7 +835,7 @@ const LibraryScan = () => {
                       }
                     }}
                   >
-                    清空
+                    {t('mediaFetch.libraryScan.clear')}
                   </Button>
                   <Button
                     type="default"
@@ -842,7 +844,7 @@ const LibraryScan = () => {
                     loading={savingLibraries}
                     onClick={handleSaveLibraries}
                   >
-                    {screens.xs ? '保存' : '保存配置'}
+                    {screens.xs ? t('mediaFetch.libraryScan.save') : t('mediaFetch.libraryScan.saveConfig')}
                   </Button>
                 </Space>
               </div>
@@ -857,9 +859,9 @@ const LibraryScan = () => {
           title={
             <Space>
               <ScanOutlined />
-              <span>扫描结果</span>
+              <span>{t('mediaFetch.libraryScan.scanResult')}</span>
               {selectedMediaItems.length > 0 && (
-                <Tag color="blue">{selectedMediaItems.length} 已选中</Tag>
+                <Tag color="blue">{t('mediaFetch.libraryScan.selected', { count: selectedMediaItems.length })}</Tag>
               )}
             </Space>
           }
@@ -871,9 +873,9 @@ const LibraryScan = () => {
                   value={mediaTypeFilter}
                   onChange={setMediaTypeFilter}
                   options={[
-                    { label: '全部', value: 'all' },
-                    { label: '电影', value: 'movie', icon: <VideoCameraOutlined /> },
-                    { label: '电视节目', value: 'tv_series', icon: <PlaySquareOutlined /> },
+                    { label: t('mediaFetch.libraryScan.filterAll'), value: 'all' },
+                    { label: t('mediaFetch.libraryScan.filterMovie'), value: 'movie', icon: <VideoCameraOutlined /> },
+                    { label: t('mediaFetch.libraryScan.filterTvSeries'), value: 'tv_series', icon: <PlaySquareOutlined /> },
                   ]}
                 />
                 <Popover
@@ -883,7 +885,7 @@ const LibraryScan = () => {
                     <Space direction="vertical" size="small">
                       <Space size="small" align="center">
                         <InputNumber
-                          placeholder="起始年份"
+                          placeholder={t('mediaFetch.libraryScan.yearFrom')}
                           value={yearFrom}
                           onChange={setYearFrom}
                           min={1900}
@@ -893,7 +895,7 @@ const LibraryScan = () => {
                         />
                         <span>~</span>
                         <InputNumber
-                          placeholder="结束年份"
+                          placeholder={t('mediaFetch.libraryScan.yearTo')}
                           value={yearTo}
                           onChange={setYearTo}
                           min={1900}
@@ -912,7 +914,7 @@ const LibraryScan = () => {
                           }}
                           style={{ padding: 0 }}
                         >
-                          清空筛选
+                          {t('mediaFetch.libraryScan.clearFilter')}
                         </Button>
                       )}
                     </Space>
@@ -923,15 +925,15 @@ const LibraryScan = () => {
                     size="small"
                   >
                     {yearFrom || yearTo
-                      ? `年份: ${yearFrom || '?'}~${yearTo || '?'}`
-                      : '年份'}
+                      ? t('mediaFetch.libraryScan.yearLabel', { from: yearFrom || '?', to: yearTo || '?' })
+                      : t('mediaFetch.libraryScan.year')}
                   </Button>
                 </Popover>
                 <Popconfirm
-                  title={`确定要删除选中的 ${selectedMediaItems.length} 个项目吗?`}
+                  title={t('mediaFetch.libraryScan.deleteSelectedConfirm', { count: selectedMediaItems.length })}
                   onConfirm={handleBatchDelete}
-                  okText="确定"
-                  cancelText="取消"
+                  okText={t('mediaFetch.libraryScan.confirm')}
+                  cancelText={t('mediaFetch.libraryScan.cancel')}
                   disabled={selectedMediaItems.length === 0}
                 >
                   <Button
@@ -939,7 +941,7 @@ const LibraryScan = () => {
                     icon={<DeleteOutlined />}
                     disabled={selectedMediaItems.length === 0}
                   >
-                    删除选中
+                    {t('mediaFetch.libraryScan.deleteSelected')}
                   </Button>
                 </Popconfirm>
                 <Button
@@ -948,14 +950,14 @@ const LibraryScan = () => {
                   onClick={handleImport}
                   disabled={selectedMediaItems.length === 0}
                 >
-                  导入选中
+                  {t('mediaFetch.libraryScan.importSelected')}
                 </Button>
                 <Button
                   icon={<CloudDownloadOutlined />}
                   onClick={handleImportAllUnimported}
                   disabled={!selectedServerId}
                 >
-                  导入全部未导入
+                  {t('mediaFetch.libraryScan.importAllUnimported')}
                 </Button>
               </Space>
             )
@@ -971,7 +973,7 @@ const LibraryScan = () => {
                     <Space direction="vertical" size="small">
                       <Space size="small" align="center">
                         <InputNumber
-                          placeholder="起始年份"
+                          placeholder={t('mediaFetch.libraryScan.yearFrom')}
                           value={yearFrom}
                           onChange={setYearFrom}
                           min={1900}
@@ -981,7 +983,7 @@ const LibraryScan = () => {
                         />
                         <span>~</span>
                         <InputNumber
-                          placeholder="结束年份"
+                          placeholder={t('mediaFetch.libraryScan.yearTo')}
                           value={yearTo}
                           onChange={setYearTo}
                           min={1900}
@@ -1000,7 +1002,7 @@ const LibraryScan = () => {
                           }}
                           style={{ padding: 0 }}
                         >
-                          清空筛选
+                          {t('mediaFetch.libraryScan.clearFilter')}
                         </Button>
                       )}
                     </Space>
@@ -1011,15 +1013,15 @@ const LibraryScan = () => {
                     size="middle"
                   >
                     {yearFrom || yearTo
-                      ? `${yearFrom || '?'}~${yearTo || '?'}`
-                      : '年份'}
+                      ? t('mediaFetch.libraryScan.yearLabelShort', { from: yearFrom || '?', to: yearTo || '?' })
+                      : t('mediaFetch.libraryScan.year')}
                   </Button>
                 </Popover>
                 <Popconfirm
-                  title={`确定要删除选中的 ${selectedMediaItems.length} 个项目吗?`}
+                  title={t('mediaFetch.libraryScan.deleteSelectedConfirm', { count: selectedMediaItems.length })}
                   onConfirm={handleBatchDelete}
-                  okText="确定"
-                  cancelText="取消"
+                  okText={t('mediaFetch.libraryScan.confirm')}
+                  cancelText={t('mediaFetch.libraryScan.cancel')}
                   disabled={selectedMediaItems.length === 0}
                 >
                   <Button
@@ -1028,7 +1030,7 @@ const LibraryScan = () => {
                     disabled={selectedMediaItems.length === 0}
                     size="middle"
                   >
-                    删除
+                    {t('mediaFetch.libraryScan.delete')}
                   </Button>
                 </Popconfirm>
                 <Button
@@ -1038,7 +1040,7 @@ const LibraryScan = () => {
                   disabled={selectedMediaItems.length === 0}
                   size="middle"
                 >
-                  导入
+                  {t('mediaFetch.libraryScan.import')}
                 </Button>
                 <Button
                   icon={<CloudDownloadOutlined />}
@@ -1046,7 +1048,7 @@ const LibraryScan = () => {
                   disabled={!selectedServerId}
                   size="middle"
                 >
-                  全部导入
+                  {t('mediaFetch.libraryScan.importAll')}
                 </Button>
               </Space>
             </div>

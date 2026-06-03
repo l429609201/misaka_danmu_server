@@ -515,7 +515,11 @@ class DatabaseBackupJob(BaseJob):
     """
     job_type = "databaseBackup"
     job_name = "数据库备份"
+    job_name_en = "Database Backup"
+    job_name_tw = "資料庫備份"
     description = "定期备份数据库数据为 JSON 格式，支持跨数据库（MySQL/PostgreSQL）还原。"
+    description_en = "Periodically backup database data in JSON format, supporting cross-database (MySQL/PostgreSQL) restoration."
+    description_tw = "定期備份資料庫資料為 JSON 格式，支援跨資料庫（MySQL/PostgreSQL）還原。"
 
     async def run(self, session: AsyncSession, progress_callback: Callable):
         """

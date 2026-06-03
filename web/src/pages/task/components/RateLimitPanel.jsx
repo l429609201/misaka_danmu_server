@@ -1,5 +1,6 @@
 import { useRateLimitSSE } from '../../../hooks/useRateLimitSSE'
 import { MyIcon } from '@/components/MyIcon'
+import { useTranslation } from 'react-i18next'
 import {
   Card,
   Table,
@@ -13,31 +14,25 @@ import {
 
 const { Title, Paragraph } = Typography
 
-const periodLabelMap = {
-  second: '秒',
-  minute: '分钟',
-  hour: '小时',
-  day: '天',
-}
-
 export const RateLimitPanel = () => {
+  const { t } = useTranslation()
   const { data: status, loading } = useRateLimitSSE()
 
   return (
     <div className="my-6">
       <Card loading={loading}>
         <Typography>
-          <Title level={4}>流控状态面板</Title>
+          <Title level={4}>{t('rateLimitPanel.title')}</Title>
           <Paragraph>
-            此面板实时显示全局、弹幕下载和后备调用的速率限制状态。
+            {t('rateLimitPanel.desc')}
           </Paragraph>
         </Typography>
         {status && (
           <>
             {status.verificationFailed && (
               <Alert
-                message="严重安全警告"
-                description="流控配置文件验证失败或缺失。为保证安全，所有弹幕下载请求已被自动阻止。"
+                message={t('rateLimitPanel.securityWarning')}
+                description={t('rateLimitPanel.securityWarningDesc')}
                 type="error"
                 showIcon
                 className="!mb-4"
@@ -49,13 +44,13 @@ export const RateLimitPanel = () => {
               <Row gutter={16}>
                 <Col xs={24} sm={12}>
                   <Statistic
-                    title="流控状态"
+                    title={t('rateLimitPanel.statusLabel')}
                     value={
                       status.verificationFailed
-                        ? '验证失败'
+                        ? t('rateLimitPanel.verifyFailed')
                         : status.enabled
-                          ? '已启用'
-                          : '已禁用'
+                          ? t('rateLimitPanel.enabled')
+                          : t('rateLimitPanel.disabled')
                     }
                     valueStyle={{
                       color: status.verificationFailed
@@ -68,7 +63,7 @@ export const RateLimitPanel = () => {
                 </Col>
                 <Col xs={24} sm={12}>
                   <Statistic.Countdown
-                    title="重置倒计时"
+                    title={t('rateLimitPanel.resetCountdown')}
                     value={Date.now() + status.secondsUntilReset * 1000}
                     format="HH:mm:ss"
                   />
@@ -80,12 +75,12 @@ export const RateLimitPanel = () => {
             <Row gutter={[16, 16]} className="!mb-6">
               {/* 左侧卡片 - 弹幕下载流控 */}
               <Col xs={24} lg={12}>
-                <Card type="inner" title={<span><MyIcon icon="celve-cebiandaohang-liukongcelve" size={16} style={{ marginRight: 6 }} />弹幕下载流控</span>} className={status.verificationFailed ? 'opacity-50' : ''} style={{ height: '100%' }}>
+                <Card type="inner" title={<span><MyIcon icon="celve-cebiandaohang-liukongcelve" size={16} style={{ marginRight: 6 }} />{t('rateLimitPanel.danmakuRateLimit')}</span>} className={status.verificationFailed ? 'opacity-50' : ''} style={{ height: '100%' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <span><strong>弹幕下载详情:</strong></span>
-                        <span>{status.globalRequestCount} 次 / {status.globalLimit} 次</span>
+                        <span><strong>{t('rateLimitPanel.danmakuDetail')}</strong></span>
+                        <span>{status.globalRequestCount} {t('rateLimitPanel.timesUnit')} / {status.globalLimit} {t('rateLimitPanel.timesUnit')}</span>
                       </div>
                       <Progress
                         percent={status.globalLimit > 0 ? (status.globalRequestCount / status.globalLimit) * 100 : 0}
@@ -113,12 +108,12 @@ export const RateLimitPanel = () => {
 
               {/* 右侧卡片 - 后备调用流控 */}
               <Col xs={24} lg={12}>
-                <Card type="inner" title={<span><MyIcon icon="liukongcelvefuwubeifen" size={16} style={{ marginRight: 6 }} />后备调用流控</span>} className={status.verificationFailed ? 'opacity-50' : ''} style={{ height: '100%' }}>
+                <Card type="inner" title={<span><MyIcon icon="liukongcelvefuwubeifen" size={16} style={{ marginRight: 6 }} />{t('rateLimitPanel.fallbackRateLimit')}</span>} className={status.verificationFailed ? 'opacity-50' : ''} style={{ height: '100%' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <span><strong>后备流控详情:</strong></span>
-                        <span>{status.fallback?.totalCount || 0} 次 / {status.fallback?.totalLimit || 0} 次</span>
+                        <span><strong>{t('rateLimitPanel.fallbackDetail')}</strong></span>
+                        <span>{status.fallback?.totalCount || 0} {t('rateLimitPanel.timesUnit')} / {status.fallback?.totalLimit || 0} {t('rateLimitPanel.timesUnit')}</span>
                       </div>
                       <Progress
                         percent={status.fallback?.totalLimit > 0 ? (status.fallback.totalCount / status.fallback.totalLimit) * 100 : 0}
@@ -139,9 +134,9 @@ export const RateLimitPanel = () => {
                       />
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '12px', height: '32px' }}>
-                      <strong><MyIcon icon="liukongcelve" size={15} style={{ marginRight: 4 }} />调用统计:</strong>
-                      <span>匹配: {status.fallback?.matchCount || 0} 次</span>
-                      <span>搜索: {status.fallback?.searchCount || 0} 次</span>
+                      <strong><MyIcon icon="liukongcelve" size={15} style={{ marginRight: 4 }} />{t('rateLimitPanel.callStats')}</strong>
+                      <span>{t('rateLimitPanel.matchCount', { count: status.fallback?.matchCount || 0 })}</span>
+                      <span>{t('rateLimitPanel.searchCount', { count: status.fallback?.searchCount || 0 })}</span>
                     </div>
                   </div>
                 </Card>
@@ -149,35 +144,94 @@ export const RateLimitPanel = () => {
             </Row>
 
             {/* 底部表格区 - 各源流控详情 */}
-            <Card type="inner" title="各源流控详情" className={status.verificationFailed ? 'opacity-50' : ''}>
+            <Card type="inner" title={t('rateLimitPanel.sourceRateLimit')} className={status.verificationFailed ? 'opacity-50' : ''}>
               <Table
                 columns={[
                   {
-                    title: '源名称',
+                    title: t('rateLimitPanel.colSourceName'),
                     dataIndex: 'providerName',
                     key: 'providerName',
                     width: 100,
                     render: (_, record) => record.displayName || record.providerName,
                   },
                   {
-                    title: '总计/配额',
-                    key: 'usage',
-                    width: 100,
-                    align: 'center',
-                    render: (_, record) =>
-                      `${record.requestCount} / ${record.quota}`,
+                    title: t('rateLimitPanel.colUsage'),
+                    key: 'progress',
+                    render: (_, record) => {
+                      const isUnlimited = record.quota === '∞' || record.quota === Infinity
+                      const label = isUnlimited
+                        ? `${record.requestCount} / ∞`
+                        : `${record.requestCount} / ${record.quota}`
+                      // 无限额：以全局配额为参考基准显示实际用量进度
+                      // 有配额：正常比例
+                      let percent
+                      if (isUnlimited) {
+                        const refLimit = status.globalLimit || 100
+                        percent = record.requestCount > 0
+                          ? Math.max(3, Math.min(95, Math.round((record.requestCount / refLimit) * 100)))
+                          : 0
+                      } else {
+                        percent = Math.min(100, Math.round((record.requestCount / record.quota) * 100))
+                      }
+                      // 颜色：有配额且接近/超限用警告色，其余用主题色
+                      const isWarning = !isUnlimited && percent >= 80
+                      const isDanger = !isUnlimited && percent >= 100
+                      const barBg = isUnlimited
+                        ? 'color-mix(in srgb, var(--color-primary) 18%, var(--ant-color-bg-container, #fff))'
+                        : isDanger
+                          ? 'rgba(255, 77, 79, 0.15)'
+                          : isWarning
+                            ? 'rgba(250, 173, 20, 0.15)'
+                            : 'color-mix(in srgb, var(--color-primary) 18%, var(--ant-color-bg-container, #fff))'
+                      const barFill = isUnlimited
+                        ? 'color-mix(in srgb, var(--color-primary) 45%, var(--ant-color-bg-container, #fff))'
+                        : isDanger ? '#ff4d4f' : isWarning ? '#faad14' : 'var(--color-primary)'
+                      const textColor = isUnlimited
+                        ? 'color-mix(in srgb, var(--color-primary) 70%, transparent)'
+                        : isDanger ? '#ff4d4f' : isWarning ? '#faad14' : 'var(--color-primary)'
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ flex: 1, height: 8, borderRadius: 4, overflow: 'hidden', background: barBg }}>
+                            <div style={{
+                              width: `${percent}%`, height: '100%', background: barFill,
+                              borderRadius: 4, transition: 'width 0.5s ease',
+                            }} />
+                          </div>
+                          <span style={{ fontSize: 12, color: textColor, fontWeight: 500, whiteSpace: 'nowrap', minWidth: 50, textAlign: 'right' }}>
+                            {label}
+                          </span>
+                        </div>
+                      )
+                    },
                   },
                   {
-                    title: '状态',
+                    title: t('rateLimitPanel.colStatus'),
                     key: 'status',
                     width: 80,
                     align: 'center',
                     render: (_, record) => {
-                      if (record.quota === '∞') return '正常'
+                      const isUnlimited = record.quota === '∞' || record.quota === Infinity
+                      if (isUnlimited) {
+                        return (
+                          <span style={{ color: 'var(--color-primary)', fontSize: 12, opacity: 0.7 }}>
+                            ● {t('rateLimitPanel.statusNormal')}
+                          </span>
+                        )
+                      }
                       const percent = (record.requestCount / record.quota) * 100
-                      if (percent >= 100) return '🔴 已满'
-                      if (percent >= 80) return '🟡 接近'
-                      return '🟢 正常'
+                      const isDanger = percent >= 100
+                      const isWarning = percent >= 80
+                      const color = isDanger ? '#ff4d4f' : isWarning ? '#faad14' : 'var(--color-primary)'
+                      const label = isDanger
+                        ? t('rateLimitPanel.statusFull')
+                        : isWarning
+                          ? t('rateLimitPanel.statusNear')
+                          : t('rateLimitPanel.statusOk')
+                      return (
+                        <span style={{ color, fontSize: 12 }}>
+                          ● {label}
+                        </span>
+                      )
                     },
                   },
                 ]}

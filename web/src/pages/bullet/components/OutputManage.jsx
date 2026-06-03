@@ -26,6 +26,7 @@ import {
   generateRegex,
 } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
+import { useTranslation } from 'react-i18next'
 
 const { TextArea } = Input
 
@@ -77,6 +78,7 @@ const paletteToServer = (palette) => {
 }
 
 export const OutputManage = () => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [limit, setLimit] = useState('-1')
   const [mergeEnabled, setMergeEnabled] = useState(false)
@@ -128,7 +130,7 @@ export const OutputManage = () => {
         setLikesStyle(rawStyle.data?.value || 'heart_white')
       }
     } catch (e) {
-      messageApi.error('获取配置失败')
+      messageApi.error(t('bullet.outputGetFailed'))
     } finally {
       setLoading(false)
     }
@@ -145,9 +147,9 @@ export const OutputManage = () => {
         setDanmakuLikesOutputEnabled({ value: likesStyle !== 'off' ? 'true' : 'false' }),
         setDanmakuLikesStyle({ value: likesStyle !== 'off' ? likesStyle : 'heart_white' }),
       ])
-      messageApi.success('弹幕输出配置已保存')
+      messageApi.success(t('bullet.outputSaveSuccess'))
     } catch (e) {
-      messageApi.error('保存失败')
+      messageApi.error(t('bullet.saveFailed'))
     } finally {
       setSaveLoading(false)
     }
@@ -160,9 +162,9 @@ export const OutputManage = () => {
         setDanmakuRandomColorMode({ value: colorMode }),
         setDanmakuRandomColorPalette({ value: paletteToServer(palette) }),
       ])
-      messageApi.success('随机颜色配置已保存')
+      messageApi.success(t('bullet.colorSaveSuccess'))
     } catch (e) {
-      messageApi.error('保存随机颜色配置失败')
+      messageApi.error(t('bullet.colorSaveFailed'))
     } finally {
       setColorSaveLoading(false)
     }
@@ -175,9 +177,9 @@ export const OutputManage = () => {
         setDanmakuBlacklistEnabled({ value: blacklistEnabled ? 'true' : 'false' }),
         setDanmakuBlacklistPatterns({ value: blacklistPatterns }),
       ])
-      messageApi.success('弹幕黑名单配置已保存')
+      messageApi.success(t('bullet.blacklistSaveSuccess'))
     } catch (e) {
-      messageApi.error('保存弹幕黑名单配置失败')
+      messageApi.error(t('bullet.blacklistSaveFailed'))
     } finally {
       setBlacklistSaveLoading(false)
     }
@@ -185,7 +187,7 @@ export const OutputManage = () => {
 
   const handleAiGenerate = async () => {
     if (!aiRegexDesc.trim()) {
-      messageApi.warning('请输入描述')
+      messageApi.warning(t('bullet.aiInputRequired'))
       return
     }
     setAiRegexLoading(true)
@@ -195,10 +197,10 @@ export const OutputManage = () => {
       if (res.data?.regex) {
         setAiRegexResult(res.data.regex)
       } else {
-        messageApi.error('AI 未能生成有效的正则表达式')
+        messageApi.error(t('bullet.aiInvalidResult'))
       }
     } catch (e) {
-      messageApi.error(e?.response?.data?.detail || 'AI 正则生成失败')
+      messageApi.error(e?.response?.data?.detail || t('bullet.aiGenerateFailed'))
     } finally {
       setAiRegexLoading(false)
     }
@@ -210,13 +212,13 @@ export const OutputManage = () => {
     setAiRegexModalOpen(false)
     setAiRegexDesc('')
     setAiRegexResult('')
-    messageApi.success('已应用 AI 生成的规则')
+    messageApi.success(t('bullet.aiApplied'))
   }
 
   const addColorToPalette = (color) => {
     const hex = color.toLowerCase()
     if (palette.includes(hex)) {
-      messageApi.info('该颜色已存在')
+      messageApi.info(t('bullet.colorExists'))
       return
     }
     setPalette(prev => [...prev, hex])
@@ -237,81 +239,80 @@ export const OutputManage = () => {
 
   return (
     <div className="my-6">
-      <Card loading={loading} title="弹幕输出配置">
-        <div>在这里调整弹幕 API 的输出行为。</div>
+      <Card loading={loading} title={t('bullet.outputTitle')}>
+        <div>{t('bullet.outputDesc')}</div>
         <div className="my-4">
           <div className="flex items-center justify-between gap-4 mb-2 flex-wrap">
             <div className="flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-2">
-                <span>弹幕输出上限</span>
+                <span>{t('bullet.outputLimit')}</span>
                 <InputNumber value={limit} onChange={v => setLimit(v)} />
               </div>
               <div className="flex items-center gap-2">
-                <span>合并输出</span>
+                <span>{t('bullet.outputMerge')}</span>
                 <Switch
                   checked={mergeEnabled}
                   onChange={setMergeEnabled}
                 />
-                <Tooltip title="启用后，将所有源的弹幕合并后再进行均衡采样输出，而不是每个源单独采样">
+                <Tooltip title={t('bullet.outputMergeTip')}>
                   <QuestionCircleOutlined className="text-gray-400 cursor-help" />
                 </Tooltip>
               </div>
               <div className="flex items-center gap-2">
-                <span>输出点赞状态</span>
+                <span>{t('bullet.outputLikes')}</span>
                 <Select
                   value={likesStyle}
                   style={{ width: 175 }}
                   onChange={setLikesStyle}
                   options={[
-                    { label: '🚫 关闭', value: 'off' },
-                    { label: '🤍/🔥 默认', value: 'heart_white' },
-                    { label: '❤️/🔥 红心', value: 'heart_red' },
-                    { label: '♡/🔥 空心', value: 'heart_outline' },
-                    { label: '[👍]/[🔥] 方括号', value: 'like_bracket' },
-                    { label: '(点赞)/(热门) 文字', value: 'text' },
-                    { label: '+数字 纯数字', value: 'num_only' },
+                    { label: t('bullet.outputLikesOff'), value: 'off' },
+                    { label: t('bullet.outputLikesHeartWhite'), value: 'heart_white' },
+                    { label: t('bullet.outputLikesHeartRed'), value: 'heart_red' },
+                    { label: t('bullet.outputLikesHeartOutline'), value: 'heart_outline' },
+                    { label: t('bullet.outputLikesBracket'), value: 'like_bracket' },
+                    { label: t('bullet.outputLikesText'), value: 'text' },
+                    { label: t('bullet.outputLikesNumOnly'), value: 'num_only' },
                   ]}
                 />
-                <Tooltip title="选择点赞数的显示样式，达到热度阈值时显示🔥。选择「关闭」则不显示点赞信息">
+                <Tooltip title={t('bullet.outputLikesTip')}>
                   <QuestionCircleOutlined className="text-gray-400 cursor-help" />
                 </Tooltip>
               </div>
             </div>
           </div>
-          <div className="text-sm text-gray-600">
-            设置弹幕 API 返回的最大数量。-1 表示无限制。为防止客户端卡顿，建议设置 1000-5000。
-            当弹幕总数超过限制时，系统按时间段均匀采样，确保弹幕在视频时长中分布均匀。
+          <div className="text-sm text-gray-600" style={{ whiteSpace: 'pre-line' }}>
+            {t('bullet.outputLimitDesc')}
           </div>
         </div>
         <div className="my-4">
           <div className="flex items-center gap-4 mb-2 flex-wrap">
             <div className="flex items-center gap-2">
-              <span>简繁转换</span>
+              <span>{t('bullet.outputConvert')}</span>
               <Select
                 value={chConvert}
                 style={{ width: 150 }}
                 onChange={setChConvert}
                 options={[
-                  { label: '不转换', value: '0' },
-                  { label: '转换为简体', value: '1' },
-                  { label: '转换为繁体', value: '2' },
+                  { label: t('bullet.outputConvertNone'), value: '0' },
+                  { label: t('bullet.outputConvertSimplified'), value: '1' },
+                  { label: t('bullet.outputConvertTraditional'), value: '2' },
                 ]}
               />
             </div>
             <div className="flex items-center gap-2">
-              <span>优先级</span>
+              <span>{t('bullet.outputPriority')}</span>
               <Segmented
                 value={chConvertPriority}
                 onChange={setChConvertPriority}
                 options={[
-                  { label: '服务端优先', value: 'server' },
-                  { label: '播放器优先', value: 'player' },
+                  { label: t('bullet.outputPriorityServer'), value: 'server' },
+                  { label: t('bullet.outputPriorityPlayer'), value: 'player' },
                 ]}
               />
               <Tooltip title={
                 <div>
-                  <div><b>服务端优先</b>：始终使用此处配置，忽略播放器传入的参数</div>
-                  <div><b>播放器优先</b>：播放器明确指定转换模式时覆盖此处配置；未指定时使用此处配置作为默认值</div>
+                  <div>{t('bullet.outputPriorityServerDesc')}</div>
+                  <div>{t('bullet.outputPriorityPlayerDesc')}</div>
                 </div>
               }>
                 <QuestionCircleOutlined className="text-gray-400 cursor-help" />
@@ -319,7 +320,7 @@ export const OutputManage = () => {
             </div>
           </div>
           <div className="text-sm text-gray-600">
-            控制弹幕输出时的简繁体转换行为。大多数播放器默认不指定转换模式，此时服务端配置生效。
+            {t('bullet.outputConvertDesc')}
           </div>
         </div>
         <div className="flex items-center justify-end gap-3">
@@ -328,28 +329,28 @@ export const OutputManage = () => {
             loading={saveLoading}
             onClick={handleSaveLimit}
           >
-            保存输出配置
+            {t('bullet.outputSave')}
           </Button>
         </div>
       </Card>
 
-      <Card loading={loading} title="随机弹幕颜色" className="mt-4">
+      <Card loading={loading} title={t('bullet.colorTitle')} className="mt-4">
         <div className="text-sm text-gray-600 mb-3">
-          可配置随机色板和生效模式。默认不改色。
+          {t('bullet.colorDesc')}
         </div>
         <div className="flex flex-wrap items-center gap-4 mb-4">
           <div className="flex items-center gap-2">
-            <span>模式</span>
+            <span>{t('bullet.colorMode')}</span>
             <Select
               value={colorMode}
               style={{ width: 220 }}
               onChange={setColorMode}
               options={[
-                { label: '不使用', value: 'off' },
-                { label: '白色弹幕变随机颜色', value: 'white_to_random' },
-                { label: '全部随机上色', value: 'all_random' },
-                { label: '全部变白色', value: 'all_white' },
-                { label: '仅上色点赞/重复弹幕', value: 'highlight_only' },
+                { label: t('bullet.colorModeOff'), value: 'off' },
+                { label: t('bullet.colorModeWhiteToRandom'), value: 'white_to_random' },
+                { label: t('bullet.colorModeAllRandom'), value: 'all_random' },
+                { label: t('bullet.colorModeAllWhite'), value: 'all_white' },
+                { label: t('bullet.colorModeHighlightOnly'), value: 'highlight_only' },
               ]}
             />
           </div>
@@ -361,7 +362,7 @@ export const OutputManage = () => {
               value={colorPickerValue}
               showText
               presets={[
-                { label: '默认色板', colors: DEFAULT_COLOR_PALETTE },
+                { label: t('bullet.colorDefaultPalette'), colors: DEFAULT_COLOR_PALETTE },
               ]}
               onChange={(_, hex) => setColorPickerValue(hex)}
             />
@@ -369,7 +370,7 @@ export const OutputManage = () => {
               onClick={() => addColorToPalette(colorPickerValue)}
               disabled={!colorPickerValue}
             >
-              添加到色板
+              {t('bullet.colorAddToPalette')}
             </Button>
             <Button
               onClick={() => {
@@ -378,13 +379,13 @@ export const OutputManage = () => {
                 addColorToPalette(next)
               }}
             >
-              随机一个颜色
+              {t('bullet.colorRandomOne')}
             </Button>
           </div>
         </div>
 
         <div className="mb-3">
-          <div className="mb-2 text-sm text-gray-700">当前随机颜色序列</div>
+          <div className="mb-2 text-sm text-gray-700">{t('bullet.colorCurrentSequence')}</div>
           <div className="flex flex-wrap gap-2">
             {palette.map(color => (
               <Tag
@@ -411,19 +412,19 @@ export const OutputManage = () => {
             loading={colorSaveLoading}
             onClick={handleSaveColor}
           >
-            保存随机颜色
+            {t('bullet.colorSave')}
           </Button>
         </div>
       </Card>
 
-      <Card loading={loading} title="弹幕输出黑名单" className="mt-4">
+      <Card loading={loading} title={t('bullet.blacklistTitle')} className="mt-4">
         <div className="text-sm text-gray-600 mb-4">
-          使用正则表达式过滤弹幕内容。启用后，匹配黑名单规则的弹幕将被拦截，不会输出到客户端。
+          {t('bullet.blacklistDesc')}
         </div>
 
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-3">
-            <span>启用黑名单过滤</span>
+            <span>{t('bullet.blacklistEnable')}</span>
             <Switch
               checked={blacklistEnabled}
               onChange={setBlacklistEnabled}
@@ -431,9 +432,9 @@ export const OutputManage = () => {
           </div>
 
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-700">黑名单规则（正则表达式）</span>
+            <span className="text-sm text-gray-700">{t('bullet.blacklistRules')}</span>
             <Space size="small">
-              <Tooltip title="填充推荐的默认过滤规则（会覆盖当前内容）">
+              <Tooltip title={t('bullet.blacklistFillDefaultTip')}>
                 <Button
                   type="link"
                   size="small"
@@ -444,21 +445,21 @@ export const OutputManage = () => {
                         const res = await getDanmakuBlacklistDefaults()
                         const patterns = res.data?.patterns || ''
                         if (!patterns) {
-                          messageApi.warning('未获取到默认规则')
+                          messageApi.warning(t('bullet.blacklistNoDefault'))
                           return
                         }
                         setBlacklistPatterns(patterns)
-                        messageApi.success('已填充默认黑名单规则')
+                        messageApi.success(t('bullet.blacklistFillSuccess'))
                       } catch (e) {
-                        messageApi.error('获取默认规则失败')
+                        messageApi.error(t('bullet.blacklistFillFailed'))
                       }
                     }
                     if (blacklistPatterns.trim()) {
                       Modal.confirm({
-                        title: '填充默认配置',
-                        content: '当前已有规则内容，填充默认配置将覆盖现有内容。是否继续？',
-                        okText: '覆盖',
-                        cancelText: '取消',
+                        title: t('bullet.blacklistFillTitle'),
+                        content: t('bullet.blacklistFillContent'),
+                        okText: t('bullet.blacklistFillOk'),
+                        cancelText: t('common.cancel'),
                         onOk: fillDefaults,
                       })
                     } else {
@@ -466,10 +467,10 @@ export const OutputManage = () => {
                     }
                   }}
                 >
-                  填充默认配置
+                  {t('bullet.blacklistFillDefault')}
                 </Button>
               </Tooltip>
-              <Tooltip title="使用 AI 根据自然语言描述生成正则表达式">
+              <Tooltip title={t('bullet.blacklistAiTip')}>
                 <Button
                   type="link"
                   size="small"
@@ -477,7 +478,7 @@ export const OutputManage = () => {
                   disabled={!blacklistEnabled}
                   onClick={() => setAiRegexModalOpen(true)}
                 >
-                  AI 生成
+                  {t('bullet.blacklistAiGenerate')}
                 </Button>
               </Tooltip>
             </Space>
@@ -485,18 +486,18 @@ export const OutputManage = () => {
           <TextArea
             value={blacklistPatterns}
             onChange={e => setBlacklistPatterns(e.target.value)}
-            placeholder="支持两种格式：&#10;1. 单行格式：用 | 分隔多个规则，如：广告|推广|666&#10;2. 多行格式：每行一个正则表达式"
+            placeholder={t('bullet.blacklistPlaceholder')}
             rows={6}
             disabled={!blacklistEnabled}
             style={{ fontFamily: 'monospace', fontSize: '12px' }}
           />
 
           <div className="mt-2 text-xs text-gray-500">
-            <div>• 默认过滤规则参考hills TG群群友分享过滤规则</div>
-            <div>• 支持单行格式（用 | 分隔）或多行格式（每行一个规则）</div>
-            <div>• 不区分大小写，自动匹配弹幕内容</div>
-            <div>• 示例（单行）：<code className="bg-gray-100 px-1">广告|推广|666</code></div>
-            <div>• 示例（多行）：每行写一个规则，# 开头的行为注释</div>
+            <div>{t('bullet.blacklistHint1')}</div>
+            <div>{t('bullet.blacklistHint2')}</div>
+            <div>{t('bullet.blacklistHint3')}</div>
+            <div>{t('bullet.blacklistHint4')}<code className="bg-gray-100 px-1">广告|推广|666</code></div>
+            <div>{t('bullet.blacklistHint5')}</div>
           </div>
         </div>
 
@@ -506,13 +507,13 @@ export const OutputManage = () => {
             loading={blacklistSaveLoading}
             onClick={handleSaveBlacklist}
           >
-            保存黑名单配置
+            {t('bullet.blacklistSave')}
           </Button>
         </div>
       </Card>
 
       <Modal
-        title={<><RobotOutlined /> AI 正则生成助手</>}
+        title={<><RobotOutlined /> {t('bullet.aiTitle')}</>}
         open={aiRegexModalOpen}
         onCancel={() => { setAiRegexModalOpen(false); setAiRegexResult('') }}
         footer={null}
@@ -521,12 +522,12 @@ export const OutputManage = () => {
         <div className="space-y-4">
           <div>
             <div className="text-sm text-gray-600 mb-2">
-              用自然语言描述你想过滤的内容，AI 会帮你生成对应的正则表达式。
+              {t('bullet.aiDesc')}
             </div>
             <TextArea
               value={aiRegexDesc}
               onChange={e => setAiRegexDesc(e.target.value)}
-              placeholder="例如：过滤掉包含 抽奖、红包、转发抽奖 的弹幕"
+              placeholder={t('bullet.aiPlaceholder')}
               rows={3}
               onPressEnter={e => { if (!e.shiftKey) { e.preventDefault(); handleAiGenerate() } }}
             />
@@ -538,20 +539,20 @@ export const OutputManage = () => {
               loading={aiRegexLoading}
               onClick={handleAiGenerate}
             >
-              生成
+              {t('bullet.aiGenerate')}
             </Button>
           </div>
           {aiRegexResult && (
             <div>
-              <div className="text-sm text-gray-600 mb-1">{blacklistPatterns.trim() ? '合并后的完整规则：' : '生成结果：'}</div>
+              <div className="text-sm text-gray-600 mb-1">{blacklistPatterns.trim() ? t('bullet.aiMergedResult') : t('bullet.aiResult')}</div>
               <div className="bg-gray-50 border rounded p-3 font-mono text-sm break-all" style={{ maxHeight: 200, overflow: 'auto' }}>
                 {aiRegexResult}
               </div>
               <div className="flex justify-end mt-3">
                 <Space>
-                  <Button onClick={() => setAiRegexResult('')}>清除</Button>
+                  <Button onClick={() => setAiRegexResult('')}>{t('bullet.aiClear')}</Button>
                   <Button type="primary" onClick={handleApplyAiRegex}>
-                    应用规则
+                    {t('bullet.aiApply')}
                   </Button>
                 </Space>
               </div>

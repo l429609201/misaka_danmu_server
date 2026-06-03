@@ -359,6 +359,9 @@ class IncrementalRefreshAnimeGroup(BaseModel):
     animeId: int
     animeTitle: str
     animeType: str  # tv_series, movie, ova, other
+    season: int = 1
+    imageUrl: Optional[str] = None
+    localImagePath: Optional[str] = None
     sources: List[IncrementalRefreshSourceInfo]
 
 

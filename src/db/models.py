@@ -599,7 +599,11 @@ class ScheduledTaskInfo(ScheduledTaskCreate):
 class AvailableJobInfo(BaseModel):
     jobType: str
     name: str
+    name_en: str = ""
+    name_tw: str = ""
     description: str = ""
+    description_en: str = ""
+    description_tw: str = ""
     isSystemTask: bool = False
     configSchema: list = []
 

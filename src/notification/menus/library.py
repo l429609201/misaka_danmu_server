@@ -248,16 +248,29 @@ class LibraryMenuMixin:
         mode = params[1] if len(params) > 1 else "all"
 
         if mode == "input":
-            conv = self.get_conversation(user_id)
-            data = conv.data if conv else {}
-            data["source_id"] = source_id
-            self.set_conversation(user_id, "refresh_episode_range", data,
-                                  chat_id=kw.get("chat_id"))
-            return CommandResult(
-                text="✏️ 选择刷新 — 请输入要刷新的集数范围：\n"
-                     "格式: 1,3,5  /  7-13  /  all（全部）",
-                edit_message_id=kw.get("message_id"),
-            )
+            # 获取分集列表，构建内联键盘选集界面
+            try:
+                from src.db import crud
+                async with self._session_factory() as session:
+                    ep_result = await crud.get_episodes_for_source(session, source_id)
+                episodes = ep_result.get("episodes", [])
+                if not episodes:
+                    return CommandResult(text="暂无分集数据。", edit_message_id=kw.get("message_id"))
+                conv = self.get_conversation(user_id)
+                data = conv.data if conv else {}
+                data["source_id"] = source_id
+                data["episodes"] = [
+                    {"idx": e.get("episodeIndex", 0), "id": e["episodeId"],
+                     "title": e.get("title", ""), "count": e.get("commentCount", 0)}
+                    for e in episodes
+                ]
+                data["selected"] = []  # 选中的 episodeIndex 列表
+                data["ep_page"] = 0
+                data["mode"] = "refresh"
+                self.set_conversation(user_id, "ep_select", data, chat_id=kw.get("chat_id"))
+                return self._build_ep_select_page(data, edit_message_id=kw.get("message_id"))
+            except Exception as e:
+                return CommandResult(text=f"获取分集列表失败: {e}", edit_message_id=kw.get("message_id"))
         return await self._do_refresh_source(source_id, None, kw.get("message_id"))
 
     async def _do_refresh_source(self, source_id: int, episode_range: str = None,
@@ -324,7 +337,234 @@ class LibraryMenuMixin:
         episode_range = None if text.strip().lower() == "all" else text.strip()
         return await self._do_refresh_source(source_id, episode_range)
 
-    # ── 删除源 ──
+    # ── 内联键盘选集（刷新/删除共用） ──
+
+    EP_SELECT_PAGE_SIZE = 10  # 每页 10 集（2行×5个）
+
+    @staticmethod
+    def _compact_range(indices: list) -> str:
+        """将集数列表格式化为紧凑范围: [1,2,3,5,7,8] → '1-3,5,7-8'"""
+        if not indices:
+            return ""
+        nums = sorted(set(indices))
+        ranges = []
+        start = prev = nums[0]
+        for n in nums[1:]:
+            if n == prev + 1:
+                prev = n
+            else:
+                ranges.append(f"{start}-{prev}" if prev > start else str(start))
+                start = prev = n
+        ranges.append(f"{start}-{prev}" if prev > start else str(start))
+        return ",".join(ranges)
+
+    def _build_ep_select_page(self, data: dict, edit_message_id: int = None) -> CommandResult:
+        """构建集数选择内联键盘
+
+        两种模式：
+        - 单选模式（默认）：点击数字直接执行刷新/删除该集
+        - 批量模式：点击数字切换选中，确认后批量执行
+
+        布局：
+        - 第1行：集1-5
+        - 第2行：集6-10
+        - 第3行：上下页
+        - 第4行：开启批量选择 | 全选 | 返回
+        - 第5行（批量模式有选中时）：确认按钮
+        """
+        episodes = data.get("episodes", [])
+        selected = set(data.get("selected", []))
+        page = data.get("ep_page", 0)
+        mode = data.get("mode", "refresh")  # refresh / delete
+        batch = data.get("batch", False)
+        source_id = data.get("source_id", 0)
+        anime_id = data.get("anime_id", 0)
+        title = data.get("title", "未知")
+        provider = data.get("provider", "")
+
+        total = len(episodes)
+        total_pages = max(1, (total + self.EP_SELECT_PAGE_SIZE - 1) // self.EP_SELECT_PAGE_SIZE)
+        start = page * self.EP_SELECT_PAGE_SIZE
+        end = min(start + self.EP_SELECT_PAGE_SIZE, total)
+        page_eps = episodes[start:end]
+
+        # 标题
+        mode_icon = "🔄" if mode == "refresh" else "🗑️"
+        mode_verb = "刷新" if mode == "refresh" else "删除"
+        header = f"{mode_icon} 选择{mode_verb} — {title}"
+        if provider:
+            header += f" [{provider}]"
+
+        if batch and selected:
+            compact = self._compact_range(list(selected))
+            header += f"\n已选: {compact} ({len(selected)}集)"
+        elif batch:
+            header += f"\n批量选择模式 (第{page+1}/{total_pages}页)"
+        else:
+            header += f"\n点击集数直接{mode_verb} (第{page+1}/{total_pages}页)"
+
+        # 当前页分集详情列表
+        header += "\n"
+        for ep in page_eps:
+            idx = ep["idx"]
+            ep_title = ep.get("title", "")
+            count = ep.get("count", 0)
+            # 批量模式标记选中
+            mark = "✅" if (batch and idx in selected) else "▪️"
+            line = f"{mark} E{idx}"
+            if ep_title:
+                line += f"  {ep_title}"
+            line += f"  ({count}条)"
+            header += f"\n{line}"
+
+        buttons = []
+
+        # 第1-2行：集数按钮
+        for row_start in range(0, len(page_eps), 5):
+            row = []
+            for ep in page_eps[row_start:row_start + 5]:
+                idx = ep["idx"]
+                if batch:
+                    is_sel = idx in selected
+                    label = f"✅{idx}" if is_sel else str(idx)
+                    row.append({"text": label, "callback_data": f"ref_ep_tog:{idx}"})
+                else:
+                    # 单选模式：点击直接执行
+                    row.append({"text": str(idx), "callback_data": f"ref_ep_do:{idx}"})
+            buttons.append(row)
+
+        # 第3行：翻页
+        nav = []
+        if page > 0:
+            nav.append({"text": "⬅️ 上一页", "callback_data": f"ref_ep_pg:{page - 1}"})
+        if page < total_pages - 1:
+            nav.append({"text": "➡️ 下一页", "callback_data": f"ref_ep_pg:{page + 1}"})
+        if nav:
+            buttons.append(nav)
+
+        # 第4行
+        if batch:
+            all_selected = len(selected) == total
+            action_row = [
+                {"text": "📋 批量输入", "callback_data": "ref_ep_none:batch"},
+                {"text": "❎ 取消全选" if all_selected else "☑️ 全选",
+                 "callback_data": "ref_ep_none:clear" if all_selected else "ref_ep_all:all"},
+                {"text": "🔙 返回", "callback_data": f"refresh_source:{anime_id}:{source_id}"},
+            ]
+        else:
+            action_row = [
+                {"text": "📋 开启批量选择", "callback_data": "ref_ep_batch:on"},
+                {"text": "☑️ 全选", "callback_data": "ref_ep_all:all"},
+                {"text": "🔙 返回", "callback_data": f"refresh_source:{anime_id}:{source_id}"},
+            ]
+        buttons.append(action_row)
+
+        # 第5行：确认按钮（批量模式有选中时）
+        if batch and selected:
+            confirm_label = f"✅ 确认{mode_verb} ({len(selected)}集)"
+            buttons.append([{"text": confirm_label, "callback_data": "ref_ep_ok:confirm"}])
+
+        return CommandResult(
+            text=header,
+            reply_markup=buttons,
+            edit_message_id=edit_message_id,
+        )
+
+    async def cb_ref_ep_toggle(self, params, user_id, channel, **kw):
+        """批量模式：切换单集选中状态"""
+        ep_idx = int(params[0]) if params else 0
+        conv = self.get_conversation(user_id)
+        if not conv or conv.state != "ep_select":
+            return CommandResult(text="", answer_callback_text="操作已过期")
+        selected = set(conv.data.get("selected", []))
+        if ep_idx in selected:
+            selected.discard(ep_idx)
+        else:
+            selected.add(ep_idx)
+        conv.data["selected"] = list(selected)
+        return self._build_ep_select_page(conv.data, edit_message_id=kw.get("message_id"))
+
+    async def cb_ref_ep_do(self, params, user_id, channel, **kw):
+        """单选模式：点击集数直接执行刷新/删除"""
+        ep_idx = int(params[0]) if params else 0
+        conv = self.get_conversation(user_id)
+        if not conv or conv.state != "ep_select":
+            return CommandResult(text="", answer_callback_text="操作已过期")
+        data = conv.data
+        source_id = data.get("source_id", 0)
+        anime_id = data.get("anime_id", 0)
+        mode = data.get("mode", "refresh")
+        self.clear_conversation(user_id)
+        episode_range = str(ep_idx)
+        if mode == "refresh":
+            return await self._do_refresh_source(source_id, episode_range, kw.get("message_id"))
+        else:
+            return await self._do_delete_source_episodes(source_id, anime_id, episode_range)
+
+    async def cb_ref_ep_batch(self, params, user_id, channel, **kw):
+        """开启批量选择模式"""
+        conv = self.get_conversation(user_id)
+        if not conv or conv.state != "ep_select":
+            return CommandResult(text="", answer_callback_text="操作已过期")
+        conv.data["batch"] = True
+        conv.data["selected"] = []
+        return self._build_ep_select_page(conv.data, edit_message_id=kw.get("message_id"))
+
+    async def cb_ref_ep_page(self, params, user_id, channel, **kw):
+        """翻页"""
+        page = int(params[0]) if params else 0
+        conv = self.get_conversation(user_id)
+        if not conv or conv.state != "ep_select":
+            return CommandResult(text="", answer_callback_text="操作已过期")
+        conv.data["ep_page"] = page
+        return self._build_ep_select_page(conv.data, edit_message_id=kw.get("message_id"))
+
+    async def cb_ref_ep_all(self, params, user_id, channel, **kw):
+        """全选（自动进入批量模式）"""
+        conv = self.get_conversation(user_id)
+        if not conv or conv.state != "ep_select":
+            return CommandResult(text="", answer_callback_text="操作已过期")
+        all_indices = [ep["idx"] for ep in conv.data.get("episodes", [])]
+        conv.data["selected"] = all_indices
+        conv.data["batch"] = True
+        return self._build_ep_select_page(conv.data, edit_message_id=kw.get("message_id"))
+
+    async def cb_ref_ep_none(self, params, user_id, channel, **kw):
+        """取消全选 或 切换到批量文本输入"""
+        action = params[0] if params else "clear"
+        conv = self.get_conversation(user_id)
+        if not conv or conv.state != "ep_select":
+            return CommandResult(text="", answer_callback_text="操作已过期")
+        if action == "batch":
+            data = conv.data
+            mode = data.get("mode", "refresh")
+            state = "refresh_episode_range" if mode == "refresh" else "delete_episode_range"
+            self.set_conversation(user_id, state, data, chat_id=kw.get("chat_id"))
+            return CommandResult(
+                text="✏️ 请输入集数范围：\n格式: 1,3,5  /  7-13  /  all（全部）",
+                edit_message_id=kw.get("message_id"),
+            )
+        conv.data["selected"] = []
+        return self._build_ep_select_page(conv.data, edit_message_id=kw.get("message_id"))
+
+    async def cb_ref_ep_ok(self, params, user_id, channel, **kw):
+        """确认批量选择 → 执行刷新或删除"""
+        conv = self.get_conversation(user_id)
+        if not conv or conv.state != "ep_select":
+            return CommandResult(text="", answer_callback_text="操作已过期")
+        data = conv.data
+        selected = set(data.get("selected", []))
+        if not selected:
+            return CommandResult(text="", answer_callback_text="请至少选择一集")
+        source_id = data.get("source_id", 0)
+        anime_id = data.get("anime_id", 0)
+        mode = data.get("mode", "refresh")
+        self.clear_conversation(user_id)
+        episode_range = ",".join(str(i) for i in sorted(selected))
+        if mode == "refresh":
+            return await self._do_refresh_source(source_id, episode_range, kw.get("message_id"))
+        else:
+            return await self._do_delete_source_episodes(source_id, anime_id, episode_range)
 
     async def cb_delete_source_do(self, params, user_id, channel, **kw):
         """点击「删除源」→ 弹出确认框"""
@@ -440,18 +680,30 @@ class LibraryMenuMixin:
             return CommandResult(text=f"❌ 提交删除任务失败: {e}")
 
     async def cb_delete_ep_range(self, params, user_id, channel, **kw):
-        """「选择删除」→ 进入集数范围输入状态"""
+        """「选择删除」→ 内联键盘选集界面"""
         source_id = int(params[0]) if params else 0
-        conv = self.get_conversation(user_id)
-        data = conv.data if conv else {}
-        data["source_id"] = source_id
-        self.set_conversation(user_id, "delete_episode_range", data,
-                              chat_id=kw.get("chat_id"))
-        return CommandResult(
-            text="✏️ 选择删除 — 请输入要删除的集数范围：\n"
-                 "格式: 1,3,5  /  7-13  /  all（全部）",
-            edit_message_id=kw.get("message_id"),
-        )
+        try:
+            from src.db import crud
+            async with self._session_factory() as session:
+                ep_result = await crud.get_episodes_for_source(session, source_id)
+            episodes = ep_result.get("episodes", [])
+            if not episodes:
+                return CommandResult(text="暂无分集数据。", edit_message_id=kw.get("message_id"))
+            conv = self.get_conversation(user_id)
+            data = conv.data if conv else {}
+            data["source_id"] = source_id
+            data["episodes"] = [
+                {"idx": e.get("episodeIndex", 0), "id": e["episodeId"],
+                 "title": e.get("title", ""), "count": e.get("commentCount", 0)}
+                for e in episodes
+            ]
+            data["selected"] = []
+            data["ep_page"] = 0
+            data["mode"] = "delete"
+            self.set_conversation(user_id, "ep_select", data, chat_id=kw.get("chat_id"))
+            return self._build_ep_select_page(data, edit_message_id=kw.get("message_id"))
+        except Exception as e:
+            return CommandResult(text=f"获取分集列表失败: {e}", edit_message_id=kw.get("message_id"))
 
     async def _text_delete_episode_range(self, text: str, user_id: str, channel, **kw):
         """集数范围输入 → 执行删除"""
