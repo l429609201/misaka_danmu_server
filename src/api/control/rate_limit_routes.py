@@ -146,6 +146,10 @@ async def get_rate_limit_status(
         session_factory = request.app.state.db_session_factory
         try:
             while True:
+                # 主动检测客户端是否断开，优雅退出避免 CancelledError 打断数据库操作
+                if await request.is_disconnected():
+                    logger.debug("SSE流控状态推送: 客户端已断开连接，停止推送")
+                    break
                 try:
                     async with session_factory() as loop_session:
                         status_data = await _get_rate_limit_status_data(loop_session, scraper_manager, rate_limiter)
@@ -154,13 +158,14 @@ async def get_rate_limit_status(
 
                     await asyncio.sleep(1)
 
+                except asyncio.CancelledError:
+                    break
                 except Exception as e:
-                    logger.error(f"SSE流控状态推送出错: {e}", exc_info=True)
+                    logger.error(f"SSE流控状态推送出错: {e}")
                     await asyncio.sleep(1)
 
-        except asyncio.CancelledError:
-            logger.info("SSE流控状态推送已取消(客户端断开连接)")
-            raise
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
 
     return StreamingResponse(
         event_generator(),
