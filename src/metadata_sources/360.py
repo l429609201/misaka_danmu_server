@@ -684,7 +684,7 @@ class So360MetadataSource(BaseMetadataSource):
                         if isinstance(episode, dict):
                             episode_url = episode.get('url', '')
                         elif isinstance(episode, str):
-                            episode_url = episode
+                            episode_url = item.playlinks.get(item.seriesSite, '') if item.playlinks else ''
                         else:
                             continue
                         if episode_url:
