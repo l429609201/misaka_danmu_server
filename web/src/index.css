@@ -548,24 +548,24 @@ html body .ant-typography a {
 
 /* FloatingMenu（移动端上拉菜单）液态玻璃化 */
 html[data-page-style="liquid-glass"] .floating-menu-panel {
-  background: rgba(255, 255, 255, 0.55) !important;
-  backdrop-filter: blur(20px) saturate(160%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.6) !important;
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.7) !important;
   border-radius: 20px !important;
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
 }
 html[data-page-style="liquid-glass"].dark .floating-menu-panel {
-  background: rgba(30, 41, 59, 0.55) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(30, 41, 59, 0.82) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
   border-radius: 20px !important;
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+    0 8px 32px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
 }
 
 
@@ -738,16 +738,16 @@ html[data-page-style="liquid-glass"].dark .ant-picker {
 
 /* 顶部导航栏玻璃化 */
 html[data-page-style="liquid-glass"] .bg-base-bg.fixed.top-0 {
-  background: rgba(255, 255, 255, 0.6) !important;
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
 }
 html[data-page-style="liquid-glass"].dark .bg-base-bg.fixed.top-0 {
-  background: rgba(15, 23, 42, 0.6) !important;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.8) !important;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* 底部移动导航栏（悬浮胶囊样式，所有模式下都生效） */
@@ -767,18 +767,18 @@ html[data-page-style="liquid-glass"].dark .bg-base-bg.fixed.top-0 {
 
 /* 底部移动导航栏 — 液态玻璃模式下更通透 */
 html[data-page-style="liquid-glass"] .mobile-nav-floating {
-  background: rgba(255, 255, 255, 0.55) !important;
-  border: 1px solid rgba(255, 255, 255, 0.6) !important;
+  background: rgba(255, 255, 255, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.7) !important;
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
 }
 html[data-page-style="liquid-glass"].dark .mobile-nav-floating {
-  background: rgba(30, 41, 59, 0.55) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(30, 41, 59, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
 }
 
 /* 底部移动导航栏玻璃化 */
