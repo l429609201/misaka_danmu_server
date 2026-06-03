@@ -600,7 +600,7 @@ const MobileHeader = ({ activeKey }) => {
                       {
                         key: 'clear-browser-cache',
                         label: t('header.clearBrowserCache'),
-                        icon: 'refresh',
+                        icon: 'qinglihuancun',
                       },
                       ...(dockerAvailable ? [{
                         key: 'restart-service',
@@ -1155,7 +1155,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                   },
                   {
                     key: 'clearCache',
-                    icon: <MyIcon icon="refresh" size={16} />,
+                    icon: <MyIcon icon="qinglihuancun" size={16} />,
                     label: (
                       <div onClick={clearBrowserCache} className="text-base">
                         {t('header.clearBrowserCache')}

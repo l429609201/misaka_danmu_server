@@ -573,7 +573,6 @@ html[data-page-style="liquid-glass"].dark .floating-menu-panel {
 html[data-page-style="liquid-glass"] .ant-card,
 html[data-page-style="liquid-glass"] .ant-modal-content,
 html[data-page-style="liquid-glass"] .ant-drawer-content,
-html[data-page-style="liquid-glass"] .ant-dropdown-menu,
 html[data-page-style="liquid-glass"] .ant-popover-inner,
 html[data-page-style="liquid-glass"] .ant-tooltip-inner,
 html[data-page-style="liquid-glass"] .ant-message-notice-content,
@@ -586,6 +585,18 @@ html[data-page-style="liquid-glass"] .ant-notification-notice {
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+}
+
+/* 下拉菜单：毛玻璃 + 更高不透明度（防止文字透穿） */
+html[data-page-style="liquid-glass"] .ant-dropdown .ant-dropdown-menu {
+  background: rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.7) !important;
+  border-radius: 16px !important;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
 }
 
 /* Tooltip 小一点的圆角，避免气泡过圆 + 箭头颜色适配 */
@@ -675,7 +686,6 @@ html[data-page-style="liquid-glass"] .ant-list-item {
 html[data-page-style="liquid-glass"].dark .ant-card,
 html[data-page-style="liquid-glass"].dark .ant-modal-content,
 html[data-page-style="liquid-glass"].dark .ant-drawer-content,
-html[data-page-style="liquid-glass"].dark .ant-dropdown-menu,
 html[data-page-style="liquid-glass"].dark .ant-popover-inner,
 html[data-page-style="liquid-glass"].dark .ant-tooltip-inner,
 html[data-page-style="liquid-glass"].dark .ant-message-notice-content,
@@ -688,6 +698,18 @@ html[data-page-style="liquid-glass"].dark .ant-notification-notice {
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+/* 暗色下拉菜单：毛玻璃 + 更高不透明度 */
+html[data-page-style="liquid-glass"].dark .ant-dropdown .ant-dropdown-menu {
+  background: rgba(30, 41, 59, 0.82) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 16px !important;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
 }
 html[data-page-style="liquid-glass"].dark .ant-tooltip-inner {
   border-radius: 12px !important;
