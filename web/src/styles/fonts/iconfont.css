@@ -1,8 +1,8 @@
 @font-face {
   font-family: "iconfont"; /* Project id 4997004 */
-  src: url('iconfont.woff2?t=1780357256276') format('woff2'),
-       url('iconfont.woff?t=1780357256276') format('woff'),
-       url('iconfont.ttf?t=1780357256276') format('truetype');
+  src: url('iconfont.woff2?t=1780483869584') format('woff2'),
+       url('iconfont.woff?t=1780483869584') format('woff'),
+       url('iconfont.ttf?t=1780483869584') format('truetype');
 }
 
 .iconfont {
@@ -11,6 +11,11 @@
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+
+.icon-qinglihuancun:before {
+  content: "\e616";
 }
 
 .icon-guolvshezhi:before {
