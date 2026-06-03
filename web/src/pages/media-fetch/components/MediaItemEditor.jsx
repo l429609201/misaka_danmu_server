@@ -1,12 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Modal, Form, Input, InputNumber, Select, Button, Space, Image, message, Tooltip } from 'antd';
 import { SearchOutlined, LinkOutlined, EyeOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { updateMediaItem, updateLocalItem, getLocalImage, downloadPosterToLocal } from '../../../apis';
 import PosterSearchModal from './PosterSearchModal';
 
 const { Option } = Select;
 
 const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) => {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [mediaType, setMediaType] = useState('tv_series');
@@ -63,13 +65,13 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
       } else {
         await updateMediaItem(item.id, values);
       }
-      message.success('更新成功');
+      message.success(t('mediaFetch.mediaItemEditor.updateSuccess'));
       onSaved();
     } catch (error) {
       if (error.errorFields) {
-        message.warning('请填写所有必填字段');
+        message.warning(t('mediaFetch.mediaItemEditor.fillRequired'));
       } else {
-        message.error('更新失败: ' + (error.message || '未知错误'));
+        message.error(t('mediaFetch.mediaItemEditor.updateFailed') + (error.message || t('mediaFetch.mediaItemEditor.unknownError')));
       }
     } finally {
       setLoading(false);
@@ -79,14 +81,14 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
   // 海报搜索选中回调
   const handlePosterSelect = (posterUrl) => {
     form.setFieldsValue({ posterUrl });
-    message.success('已填入海报URL');
+    message.success(t('mediaFetch.mediaItemEditor.posterFilled'));
   };
 
   // URL直搜：下载网络图片到本地
   const handleDownloadToLocal = async () => {
     const posterUrl = form.getFieldValue('posterUrl');
     if (!posterUrl) {
-      message.warning('请先填写海报URL');
+      message.warning(t('mediaFetch.mediaItemEditor.fillPosterUrlFirst'));
       return;
     }
     const title = form.getFieldValue('title');
@@ -105,12 +107,12 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
       if (data?.localImagePath) {
         setLocalImagePath(data.localImagePath);
         setLocalImageAnimeId(data.animeId);
-        message.success('海报已下载到本地');
+        message.success(t('mediaFetch.mediaItemEditor.posterDownloaded'));
       } else {
-        message.error('下载失败');
+        message.error(t('mediaFetch.mediaItemEditor.downloadFailed'));
       }
     } catch (error) {
-      message.error('下载失败: ' + (error?.response?.data?.detail || error.message || '未知错误'));
+      message.error(t('mediaFetch.mediaItemEditor.downloadFailedWith') + (error?.response?.data?.detail || error.message || t('mediaFetch.mediaItemEditor.unknownError')));
     } finally {
       setDownloadingLocal(false);
     }
@@ -119,7 +121,7 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
   return (
     <>
     <Modal
-      title="编辑媒体项"
+      title={t('mediaFetch.mediaItemEditor.title')}
       open={visible}
       onCancel={onClose}
       onOk={handleSubmit}
@@ -131,17 +133,17 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
         layout="vertical"
       >
         <Form.Item
-          label="标题"
+          label={t('mediaFetch.mediaItemEditor.labelTitle')}
           name="title"
-          rules={[{ required: true, message: '请输入标题' }]}
+          rules={[{ required: true, message: t('mediaFetch.mediaItemEditor.titleRequired') }]}
         >
           <Input />
         </Form.Item>
 
         <Form.Item
-          label="类型"
+          label={t('mediaFetch.mediaItemEditor.labelType')}
           name="mediaType"
-          rules={[{ required: true, message: '请选择类型' }]}
+          rules={[{ required: true, message: t('mediaFetch.mediaItemEditor.typeRequired') }]}
         >
           <Select onChange={(value) => {
             setMediaType(value);
@@ -150,37 +152,37 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
               form.setFieldsValue({ season: null, episode: null });
             }
           }}>
-            <Option value="movie">电影</Option>
-            <Option value="tv_series">电视节目</Option>
+            <Option value="movie">{t('mediaFetch.mediaItemEditor.movie')}</Option>
+            <Option value="tv_series">{t('mediaFetch.mediaItemEditor.tvSeries')}</Option>
           </Select>
         </Form.Item>
 
         <Form.Item
-          label="季度"
+          label={t('mediaFetch.mediaItemEditor.labelSeason')}
           name="season"
         >
           <InputNumber
             min={0}
             style={{ width: '100%' }}
             disabled={mediaType === 'movie'}
-            placeholder={mediaType === 'movie' ? '电影无需填写季度' : ''}
+            placeholder={mediaType === 'movie' ? t('mediaFetch.mediaItemEditor.movieNoSeason') : ''}
           />
         </Form.Item>
 
         <Form.Item
-          label="集数"
+          label={t('mediaFetch.mediaItemEditor.labelEpisode')}
           name="episode"
         >
           <InputNumber
             min={1}
             style={{ width: '100%' }}
             disabled={mediaType === 'movie'}
-            placeholder={mediaType === 'movie' ? '电影无需填写集数' : ''}
+            placeholder={mediaType === 'movie' ? t('mediaFetch.mediaItemEditor.movieNoEpisode') : ''}
           />
         </Form.Item>
 
         <Form.Item
-          label="年份"
+          label={t('mediaFetch.mediaItemEditor.labelYear')}
           name="year"
         >
           <InputNumber min={1900} max={2100} style={{ width: '100%' }} />
@@ -207,18 +209,18 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
           <Input placeholder="例如: tt1234567" />
         </Form.Item>
 
-        <Form.Item label="海报URL">
+        <Form.Item label={t('mediaFetch.mediaItemEditor.posterUrl')}>
           <Space.Compact style={{ width: '100%' }}>
             <Form.Item name="posterUrl" noStyle>
               <Input placeholder="https://..." style={{ flex: 1 }} />
             </Form.Item>
-            <Tooltip title="搜索海报">
+            <Tooltip title={t('mediaFetch.mediaItemEditor.searchPoster')}>
               <Button
                 icon={<SearchOutlined />}
                 onClick={() => setPosterSearchVisible(true)}
               />
             </Tooltip>
-            <Tooltip title="URL直搜（下载到本地）">
+            <Tooltip title={t('mediaFetch.mediaItemEditor.urlDirectSearch')}>
               <Button
                 icon={<LinkOutlined />}
                 loading={downloadingLocal}
@@ -229,14 +231,14 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
         </Form.Item>
 
         {/* 本地海报行 */}
-        <Form.Item label="本地海报">
+        <Form.Item label={t('mediaFetch.mediaItemEditor.localPoster')}>
           <Space style={{ width: '100%' }}>
             <Input
-              value={localImagePath || '暂无'}
+              value={localImagePath || t('mediaFetch.mediaItemEditor.none')}
               readOnly
               style={{ flex: 1, minWidth: 300, color: localImagePath ? undefined : 'var(--text-tertiary, #999)' }}
             />
-            <Tooltip title="预览海报">
+            <Tooltip title={t('mediaFetch.mediaItemEditor.previewPoster')}>
               <Button
                 icon={<EyeOutlined />}
                 disabled={!localImagePath}
@@ -248,9 +250,9 @@ const MediaItemEditor = ({ visible, item, onClose, onSaved, isLocal = false }) =
 
         {isLocal && (
           <Form.Item
-            label="弹幕文件存储路径"
+            label={t('mediaFetch.mediaItemEditor.danmakuFilePath')}
             name="filePath"
-            tooltip="弹幕XML文件的存储路径，修改后会更新数据库记录（不会移动实际文件）"
+            tooltip={t('mediaFetch.mediaItemEditor.danmakuFilePathTip')}
           >
             <Input placeholder="例如: D:\Danmaku\xxx.xml" />
           </Form.Item>

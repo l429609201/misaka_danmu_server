@@ -4,6 +4,7 @@
  */
 import { Form, Input, Switch, Button, Alert } from 'antd'
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   EyeInvisibleOutlined,
   EyeOutlined,
@@ -20,6 +21,8 @@ import {
   getTmdbConfig,
   getTvdbConfig,
   getDoubanConfig,
+  getTraktAuthStatus,
+  logoutTraktAuth,
 } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
 import { useModal } from '../../../ModalContext'
@@ -29,6 +32,7 @@ import dayjs from 'dayjs'
  * Bangumi 配置组件
  */
 export function BangumiConfig({ form }) {
+  const { t } = useTranslation()
   const messageApi = useMessage()
   const { confirm: showModal } = useModal()
   const [authMode, setAuthMode] = useState('token') // 'token' or 'oauth'
@@ -95,6 +99,8 @@ export function BangumiConfig({ form }) {
         bangumiToken: config.bangumiToken || '',
         bangumiClientId: config.bangumiClientId || '',
         bangumiClientSecret: config.bangumiClientSecret || '',
+        bangumiApiBaseUrl: config.bangumiApiBaseUrl || 'https://api.bgm.tv',
+        bangumiImageBaseUrl: config.bangumiImageBaseUrl || 'https://lain.bgm.tv',
         authMode: mode, // 保存到表单中
       })
 
@@ -102,7 +108,7 @@ export function BangumiConfig({ form }) {
 
       // 如果 token 被自动刷新,显示提示
       if (auth?.refreshed) {
-        messageApi.success('授权已自动延长')
+        messageApi.success(t('metadataConfig.authExtended'))
       }
     } catch (error) {
       console.error('加载 Bangumi 配置失败:', error)
@@ -123,7 +129,7 @@ export function BangumiConfig({ form }) {
       const res = await getBangumiAuthUrl({ redirect_uri: redirectUri })
       const authUrl = res.data?.url || res.url
       if (!authUrl) {
-        messageApi.error('获取授权链接失败: 返回的URL为空')
+        messageApi.error(t('metadataConfig.getAuthUrlFailedEmpty'))
         return
       }
 
@@ -142,7 +148,7 @@ export function BangumiConfig({ form }) {
 
       // 检测弹窗是否被拦截
       if (!oauthPopupRef.current || oauthPopupRef.current.closed) {
-        messageApi.error('弹窗被浏览器拦截，请允许弹窗后重试')
+        messageApi.error(t('metadataConfig.popupBlocked'))
         return
       }
 
@@ -155,21 +161,21 @@ export function BangumiConfig({ form }) {
       }, 500)
     } catch (error) {
       const detail = error.response?.data?.detail || error.message
-      messageApi.error(`获取授权链接失败: ${detail}`)
+      messageApi.error(`${t('metadataConfig.getAuthUrlFailed')}: ${detail}`)
     }
   }
 
   const handleLogout = () => {
     showModal({
-      title: '注销',
-      content: '确定要注销 Bangumi 授权吗？',
+      title: t('metadataConfig.logout'),
+      content: t('metadataConfig.confirmLogoutBangumi'),
       onOk: async () => {
         try {
           await logoutBangumiAuth()
           loadConfig()
-          messageApi.success('已注销授权')
+          messageApi.success(t('metadataConfig.loggedOut'))
         } catch (error) {
-          messageApi.error(`注销失败: ${error.message}`)
+          messageApi.error(`${t('metadataConfig.logoutFailed')}: ${error.message}`)
         }
       },
     })
@@ -182,13 +188,13 @@ export function BangumiConfig({ form }) {
       setRefreshing(true)
       const res = await refreshBangumiAuth()
       if (res.data?.success) {
-        messageApi.success('授权已续期')
+        messageApi.success(t('metadataConfig.authRenewed'))
         loadConfig()
       } else {
-        messageApi.error(res.data?.message || '续期失败，请重新授权')
+        messageApi.error(res.data?.message || t('metadataConfig.renewFailedReauth'))
       }
     } catch (error) {
-      messageApi.error(`续期失败: ${error?.response?.data?.detail || error.message}`)
+      messageApi.error(`${t('metadataConfig.renewFailed')}: ${error?.response?.data?.detail || error.message}`)
     } finally {
       setRefreshing(false)
     }
@@ -197,13 +203,13 @@ export function BangumiConfig({ form }) {
   return (
     <div className="space-y-4">
       <Alert
-        message="Bangumi API 配置"
+        message={t('metadataConfig.bangumiApiConfig')}
         description={
           <div className="space-y-1">
-            <div>Bangumi 是一个动画、漫画、游戏等 ACG 作品的数据库，可以提供作品的元数据信息。</div>
+            <div>{t('metadataConfig.bangumiDesc')}</div>
             <div className="text-xs space-y-1 mt-2">
-              <div>• <span className="font-medium">Access Token</span>: 有效期最长1年，配置简单，推荐使用</div>
-              <div>• <span className="font-medium">OAuth 授权</span>: 有效期约7天，支持自动刷新（剩余≤3天时自动延长）</div>
+              <div>• <span className="font-medium">Access Token</span>: {t('metadataConfig.bangumiTokenDescBody')}</div>
+              <div>• <span className="font-medium">OAuth 授权</span>: {t('metadataConfig.bangumiOAuthDescBody')}</div>
             </div>
           </div>
         }
@@ -211,16 +217,32 @@ export function BangumiConfig({ form }) {
         showIcon
       />
 
+      <Form.Item
+        name="bangumiApiBaseUrl"
+        label={t('metadataConfig.apiDomain')}
+        tooltip={t('metadataConfig.bangumiApiDomainTip')}
+      >
+        <Input placeholder="https://api.bgm.tv" />
+      </Form.Item>
+
+      <Form.Item
+        name="bangumiImageBaseUrl"
+        label={t('metadataConfig.imageDomain')}
+        tooltip={t('metadataConfig.bangumiImageDomainTip')}
+      >
+        <Input placeholder="https://lain.bgm.tv" />
+      </Form.Item>
+
       {/* 隐藏的 authMode 字段 */}
       <Form.Item name="authMode" hidden>
         <Input />
       </Form.Item>
 
       {/* 认证方式选择 */}
-      <Form.Item label="认证方式">
+      <Form.Item label={t('metadataConfig.authMethod')}>
         <Switch
-          checkedChildren="OAuth 授权"
-          unCheckedChildren="Access Token"
+          checkedChildren={t('metadataConfig.oauthAuth')}
+          unCheckedChildren={t('metadataConfig.accessToken')}
           checked={authMode === 'oauth'}
           onChange={(checked) => {
             const mode = checked ? 'oauth' : 'token'
@@ -247,19 +269,19 @@ export function BangumiConfig({ form }) {
                 </a>
               </span>
             }
-            tooltip="在 bgm.tv/dev/app 创建应用后获取"
+            tooltip={t('metadataConfig.appIdTip')}
           >
-            <Input placeholder="请输入 App ID" />
+            <Input placeholder={t('metadataConfig.inputAppId')} />
           </Form.Item>
 
           <Form.Item
             name="bangumiClientSecret"
             label="App Secret"
-            tooltip="应用的密钥，请妥善保管"
+            tooltip={t('metadataConfig.appSecretTip')}
           >
             <Input.Password
               prefix={<LockOutlined />}
-              placeholder="请输入 App Secret"
+              placeholder={t('metadataConfig.inputAppSecret')}
               visibilityToggle={{
                 visible: showPassword,
                 onVisibleChange: setShowPassword,
@@ -288,11 +310,11 @@ export function BangumiConfig({ form }) {
               </a>
             </span>
           }
-          tooltip="有效期最长1年的访问令牌，在 next.bgm.tv/demo/access-token 获取"
+          tooltip={t('metadataConfig.accessTokenTip')}
         >
           <Input.Password
             prefix={<KeyOutlined />}
-            placeholder="请输入 Access Token"
+            placeholder={t('metadataConfig.inputAccessToken')}
             visibilityToggle={{
               visible: showToken,
               onVisibleChange: setShowToken,
@@ -307,7 +329,7 @@ export function BangumiConfig({ form }) {
       {/* OAuth 授权状态 */}
       {authMode === 'oauth' && (
         <div className="border rounded p-4">
-          <div className="font-medium mb-3">授权状态</div>
+          <div className="font-medium mb-3">{t('metadataConfig.authStatus')}</div>
           {authInfo.isAuthenticated ? (
             <div className="space-y-3">
               {/* 用户信息卡片 */}
@@ -360,7 +382,7 @@ export function BangumiConfig({ form }) {
                               : 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
                           }`}
                         >
-                          {isExpired ? '⚠️ 已过期' : isExpiringSoon ? `⚠️ ${daysLeft}天` : `✓ ${daysLeft}天`}
+                          {isExpired ? t('metadataConfig.expired') : isExpiringSoon ? t('metadataConfig.expiringSoon', { days: daysLeft }) : t('metadataConfig.valid', { days: daysLeft })}
                         </div>
                       )
                     })()}
@@ -387,7 +409,7 @@ export function BangumiConfig({ form }) {
                       rel="noopener noreferrer"
                       className="text-blue-500 hover:text-blue-600 hover:underline"
                     >
-                      主页 ↗
+                      {t('metadataConfig.homepage')}
                     </a>
                   )}
                 </div>
@@ -403,29 +425,29 @@ export function BangumiConfig({ form }) {
                   return (
                     showRenewButton && (
                       <Button size="small" type="primary" loading={refreshing} onClick={handleRefreshToken}>
-                        延长授权
+                        {t('metadataConfig.extendAuth')}
                       </Button>
                     )
                   )
                 })()}
                 <Button size="small" danger onClick={handleLogout}>
-                  注销
+                  {t('metadataConfig.logout')}
                 </Button>
               </div>
             </div>
           ) : authInfo.isExpired ? (
             <div className="text-center py-4">
-              <div className="mb-2 text-orange-500 font-medium">⚠️ 授权已过期</div>
-              <div className="mb-3 text-sm text-gray-500">请重新授权以继续使用 Bangumi 功能</div>
+              <div className="mb-2 text-orange-500 font-medium">{t('metadataConfig.authExpiredTitle')}</div>
+              <div className="mb-3 text-sm text-gray-500">{t('metadataConfig.reauthTip')}</div>
               <Button type="primary" onClick={handleOAuthLogin}>
-                重新授权
+                {t('metadataConfig.reauth')}
               </Button>
             </div>
           ) : (
             <div className="text-center py-4">
-              <div className="mb-3 text-sm text-gray-500">当前未授权。授权后可使用更多功能。</div>
+              <div className="mb-3 text-sm text-gray-500">{t('metadataConfig.notAuthorizedTip')}</div>
               <Button type="primary" onClick={handleOAuthLogin}>
-                通过 Bangumi 登录
+                {t('metadataConfig.loginViaBangumi')}
               </Button>
             </div>
           )}
@@ -439,6 +461,7 @@ export function BangumiConfig({ form }) {
  * TMDB 配置组件
  */
 export function TMDBConfig({ form }) {
+  const { t } = useTranslation()
   useEffect(() => {
     loadConfig()
   }, [])
@@ -460,8 +483,8 @@ export function TMDBConfig({ form }) {
   return (
     <div className="space-y-4">
       <Alert
-        message="TMDB 配置"
-        description="The Movie Database (TMDB) 是一个电影和电视节目的数据库，可以提供作品的元数据信息。"
+        message={t('metadataConfig.tmdbConfig')}
+        description={t('metadataConfig.tmdbDesc')}
         type="info"
         showIcon
       />
@@ -480,37 +503,37 @@ export function TMDBConfig({ form }) {
             </a>
           </span>
         }
-        rules={[{ required: true, message: '请输入 TMDB API Key' }]}
+        rules={[{ required: true, message: t('metadataConfig.inputTmdbApiKey') }]}
       >
         <Input.Password
-          placeholder="请输入 TMDB API Key"
+          placeholder={t('metadataConfig.inputTmdbApiKey')}
           prefix={<KeyOutlined />}
         />
       </Form.Item>
       <div className="text-gray-500 text-sm -mt-2">
-        在{' '}
+        {t('metadataConfig.atText')}{' '}
         <a
           href="https://www.themoviedb.org/settings/api"
           target="_blank"
           rel="noopener noreferrer"
         >
-          TMDB 设置页面
+          {t('metadataConfig.tmdbSettingsPage')}
         </a>{' '}
-        获取 API Key
+        {t('metadataConfig.getApiKey')}
       </div>
 
       <Form.Item
         name="tmdbApiBaseUrl"
-        label="API 域名"
-        rules={[{ required: true, message: '请输入 TMDB API 域名' }]}
+        label={t('metadataConfig.apiDomain')}
+        rules={[{ required: true, message: t('metadataConfig.inputTmdbApiDomain') }]}
       >
         <Input placeholder="https://api.themoviedb.org" />
       </Form.Item>
 
       <Form.Item
         name="tmdbImageBaseUrl"
-        label="图片域名"
-        rules={[{ required: true, message: '请输入 TMDB 图片域名' }]}
+        label={t('metadataConfig.imageDomain')}
+        rules={[{ required: true, message: t('metadataConfig.inputTmdbImageDomain') }]}
       >
         <Input placeholder="https://image.tmdb.org" />
       </Form.Item>
@@ -522,6 +545,7 @@ export function TMDBConfig({ form }) {
  * TVDB 配置组件
  */
 export function TVDBConfig({ form }) {
+  const { t } = useTranslation()
   useEffect(() => {
     loadConfig()
   }, [])
@@ -541,8 +565,8 @@ export function TVDBConfig({ form }) {
   return (
     <div className="space-y-4">
       <Alert
-        message="TVDB 配置"
-        description="The TVDB 是一个电视节目的数据库，可以提供电视节目的元数据信息。"
+        message={t('metadataConfig.tvdbConfig')}
+        description={t('metadataConfig.tvdbDesc')}
         type="info"
         showIcon
       />
@@ -561,23 +585,23 @@ export function TVDBConfig({ form }) {
             </a>
           </span>
         }
-        rules={[{ required: true, message: '请输入 TVDB API Key' }]}
+        rules={[{ required: true, message: t('metadataConfig.inputTvdbApiKey') }]}
       >
         <Input.Password
-          placeholder="请输入 TVDB API Key"
+          placeholder={t('metadataConfig.inputTvdbApiKey')}
           prefix={<KeyOutlined />}
         />
       </Form.Item>
       <div className="text-gray-500 text-sm -mt-2">
-        在{' '}
+        {t('metadataConfig.atText')}{' '}
         <a
           href="https://thetvdb.com/dashboard/account/apikeys"
           target="_blank"
           rel="noopener noreferrer"
         >
-          TVDB API Keys 页面
+          {t('metadataConfig.tvdbApiKeysPage')}
         </a>{' '}
-        获取 API Key
+        {t('metadataConfig.getApiKey')}
       </div>
     </div>
   )
@@ -587,6 +611,7 @@ export function TVDBConfig({ form }) {
  * 豆瓣配置组件
  */
 export function DoubanConfig({ form }) {
+  const { t } = useTranslation()
   useEffect(() => {
     loadConfig()
   }, [])
@@ -606,8 +631,8 @@ export function DoubanConfig({ form }) {
   return (
     <div className="space-y-4">
       <Alert
-        message="豆瓣配置"
-        description="豆瓣是一个提供书籍、电影、音乐等作品信息的社区网站，可以提供作品的元数据信息。"
+        message={t('metadataConfig.doubanConfig')}
+        description={t('metadataConfig.doubanDesc')}
         type="info"
         showIcon
       />
@@ -617,13 +642,13 @@ export function DoubanConfig({ form }) {
         label="Cookie"
       >
         <Input.TextArea
-          placeholder="请输入豆瓣 Cookie"
+          placeholder={t('metadataConfig.inputDoubanCookie')}
           rows={4}
         />
       </Form.Item>
       <div className="text-gray-500 text-sm -mt-2">
-        <div>在浏览器中登录豆瓣后，打开开发者工具 (F12)，在 Network 标签页中找到任意请求，复制 Cookie 值</div>
-        <div className="mt-1">Cookie 格式示例: bid=xxx; dbcl2=xxx; ...</div>
+        <div>{t('metadataConfig.doubanCookieTip')}</div>
+        <div className="mt-1">{t('metadataConfig.doubanCookieExample')}</div>
       </div>
     </div>
   )
@@ -633,6 +658,7 @@ export function DoubanConfig({ form }) {
  * IMDb配置组件
  */
 export function ImdbConfig({ form }) {
+  const { t } = useTranslation()
   const [useApi, setUseApi] = useState(true)
 
   useEffect(() => {
@@ -644,13 +670,13 @@ export function ImdbConfig({ form }) {
   return (
     <div className="space-y-4">
       <Alert
-        message="IMDb 配置"
+        message={t('metadataConfig.imdbConfig')}
         description={
           <div className="space-y-1">
-            <div>IMDb 是全球最大的电影数据库，提供电影、电视节目等作品的元数据信息。</div>
+            <div>{t('metadataConfig.imdbDesc')}</div>
             <div className="text-xs space-y-1 mt-2">
-              <div>• <span className="font-medium">第三方API</span>: 使用 api.imdbapi.dev，速度快，推荐使用</div>
-              <div>• <span className="font-medium">官方网站</span>: HTML解析官方网站，更稳定但速度较慢</div>
+              <div>• <span className="font-medium">{t('metadataConfig.thirdPartyApi')}</span>: {t('metadataConfig.imdbApiDescBody')}</div>
+              <div>• <span className="font-medium">{t('metadataConfig.officialWebsite')}</span>: {t('metadataConfig.imdbWebDescBody')}</div>
             </div>
           </div>
         }
@@ -659,10 +685,10 @@ export function ImdbConfig({ form }) {
       />
 
       {/* 数据源选择 */}
-      <Form.Item label="数据源">
+      <Form.Item label={t('metadataConfig.dataSource')}>
         <Switch
-          checkedChildren="第三方API"
-          unCheckedChildren="官方网站"
+          checkedChildren={t('metadataConfig.thirdPartyApi')}
+          unCheckedChildren={t('metadataConfig.officialWebsite')}
           checked={useApi}
           onChange={(checked) => {
             setUseApi(checked)
@@ -675,17 +701,117 @@ export function ImdbConfig({ form }) {
       <div className="flex items-center justify-start flex-wrap md:flex-nowrap gap-2 mb-4">
         <Form.Item
           name="imdbEnableFallback"
-          label="启用兜底"
+          label={t('metadataConfig.enableFallback')}
           valuePropName="checked"
           className="min-w-[100px] shrink-0 !mb-0"
         >
           <Switch />
         </Form.Item>
         <div className="w-full text-gray-500">
-          当主方式失败时,自动尝试另一种方式。默认开启。
+          {t('metadataConfig.fallbackTip')}
         </div>
       </div>
     </div>
   )
 }
 
+
+
+/**
+ * Trakt 配置组件 — CF Worker OAuth 认证方式
+ */
+const TRAKT_OAUTH_WORKER_URL = 'https://danmu-api.misaka10876.top'
+
+export function TraktConfig({ form }) {
+  const { t } = useTranslation()
+  const messageApi = useMessage()
+  const { confirm: showModal } = useModal()
+  const [authInfo, setAuthInfo] = useState({})
+
+  useEffect(() => {
+    loadAuth()
+
+    // 监听 OAuth 回调弹窗的完成消息
+    const handleMessage = (event) => {
+      if (event.data === 'TRAKT-OAUTH-COMPLETE') {
+        loadAuth()
+        messageApi.success(t('metadataConfig.traktAuthSuccess'))
+      }
+    }
+    window.addEventListener('message', handleMessage)
+
+    return () => {
+      window.removeEventListener('message', handleMessage)
+    }
+  }, [])
+
+  const loadAuth = async () => {
+    try {
+      const res = await getTraktAuthStatus()
+      setAuthInfo(res.data || res)
+    } catch (e) { console.error('Failed to load Trakt auth:', e) }
+  }
+
+  const handleOAuthLogin = () => {
+    const redirectUri = `${window.location.origin}/trakt-oauth-callback`
+    const loginUrl = `${TRAKT_OAUTH_WORKER_URL}/oauth/login?provider=trakt&redirect_uri=${encodeURIComponent(redirectUri)}`
+
+    const width = 600
+    const height = 700
+    const left = window.screen.width / 2 - width / 2
+    const top = window.screen.height / 2 - height / 2
+    window.open(loginUrl, 'trakt-oauth', `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`)
+  }
+
+  const handleLogout = () => {
+    showModal({
+      title: t('metadataConfig.logout'),
+      content: t('metadataConfig.confirmLogoutTrakt'),
+      onOk: async () => {
+        try {
+          await logoutTraktAuth()
+          loadAuth()
+          messageApi.success(t('metadataConfig.loggedOut'))
+        } catch (e) { messageApi.error(e.message) }
+      }
+    })
+  }
+
+  return (
+    <div className="space-y-4">
+      <Alert
+        message="Trakt API"
+        description={
+          <div className="space-y-1">
+            <div>{t('metadataConfig.traktDesc')}</div>
+            <div className="text-xs mt-1 text-gray-400">{t('metadataConfig.traktAuthPopupTip')}</div>
+          </div>
+        }
+        type="info"
+        showIcon
+      />
+
+      {/* 授权状态 */}
+      <div className="border rounded p-4">
+        <div className="font-medium mb-3">{t('metadataConfig.authStatus')}</div>
+        {authInfo.isAuthenticated ? (
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-green-500">✓</span>
+              <span className="font-medium">{t('metadataConfig.authorized')}</span>
+              {authInfo.providerUsername && <span className="text-gray-500 text-sm">({authInfo.providerUsername})</span>}
+            </div>
+            <Button danger size="small" onClick={handleLogout}>{t('metadataConfig.logout')}</Button>
+          </div>
+        ) : (
+          <div className="text-center py-4">
+            <div className="mb-3 text-sm text-gray-500">{t('metadataConfig.traktNotAuthorized')}</div>
+            <Button type="primary" onClick={handleOAuthLogin}>
+              {t('metadataConfig.loginViaTrakt')}
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

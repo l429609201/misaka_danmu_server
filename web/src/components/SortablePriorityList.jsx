@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Switch, Spin, Tag, Tooltip } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { HolderOutlined, InfoCircleOutlined } from '@ant-design/icons'
 import {
   DndContext,
@@ -19,6 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { getConfig, setConfig } from '../apis'
 import { useMessage } from '../MessageContext'
+import { getLocalizedField } from '../utils/i18nDynamic'
 
 /**
  * 拖拽项组件
@@ -59,9 +61,9 @@ const SortableItem = ({ item, onToggle, showSwitch = true }) => {
           <HolderOutlined />
         </span>
         <div>
-          <div className="font-medium" style={{ color: 'var(--color-text)' }}>{item.name}</div>
-          {item.description && (
-            <div className="text-xs" style={{ color: 'var(--color-text-secondary, #999)' }}>{item.description}</div>
+          <div className="font-medium" style={{ color: 'var(--color-text)' }}>{getLocalizedField(item, 'name')}</div>
+          {getLocalizedField(item, 'description') && (
+            <div className="text-xs" style={{ color: 'var(--color-text-secondary, #999)' }}>{getLocalizedField(item, 'description')}</div>
           )}
         </div>
       </div>
@@ -92,18 +94,20 @@ const SortableItem = ({ item, onToggle, showSwitch = true }) => {
 export const SortablePriorityList = ({
   configKey,
   availableItems = [],
-  title = '优先级配置',
+  title,
   titleIcon = '🔢',
   description = '',
   tips = [],
   showSwitch = true,
   onConfigChange,
 }) => {
+  const { t } = useTranslation()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [activeId, setActiveId] = useState(null)
   const messageApi = useMessage()
+  const displayTitle = title ?? t('sortablePriority.defaultTitle')
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
@@ -151,10 +155,10 @@ export const SortablePriorityList = ({
       setSaving(true)
       const configValue = JSON.stringify(newItems.map(i => ({ key: i.key, enabled: i.enabled })))
       await setConfig(configKey, configValue)
-      messageApi.success('保存成功')
+      messageApi.success(t('common.save_success'))
       onConfigChange?.(newItems)
     } catch (err) {
-      messageApi.error('保存失败: ' + (err.response?.data?.detail || err.message))
+      messageApi.error(t('common.save_failed') + ': ' + (err.response?.data?.detail || err.message))
     } finally {
       setSaving(false)
     }
@@ -193,14 +197,14 @@ export const SortablePriorityList = ({
     <div className="mt-6 pt-6" style={{ borderTop: '1px solid var(--color-border)' }}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h3 className="text-base font-medium m-0">{titleIcon} {title}</h3>
+          <h3 className="text-base font-medium m-0">{titleIcon} {displayTitle}</h3>
           {description && (
             <Tooltip title={description}>
               <InfoCircleOutlined style={{ color: 'var(--color-text-secondary, #999)' }} />
             </Tooltip>
           )}
         </div>
-        {saving && <Tag color="processing">保存中...</Tag>}
+        {saving && <Tag color="processing">{t('sortablePriority.saving')}</Tag>}
       </div>
 
       {description && (
@@ -239,9 +243,9 @@ export const SortablePriorityList = ({
               <div className="flex items-center gap-3">
                 <HolderOutlined style={{ color: 'var(--color-text-secondary, #999)' }} />
                 <div>
-                  <div className="font-medium" style={{ color: 'var(--color-text)' }}>{activeItem.name}</div>
-                  {activeItem.description && (
-                    <div className="text-xs" style={{ color: 'var(--color-text-secondary, #999)' }}>{activeItem.description}</div>
+                  <div className="font-medium" style={{ color: 'var(--color-text)' }}>{getLocalizedField(activeItem, 'name')}</div>
+                  {getLocalizedField(activeItem, 'description') && (
+                    <div className="text-xs" style={{ color: 'var(--color-text-secondary, #999)' }}>{getLocalizedField(activeItem, 'description')}</div>
                   )}
                 </div>
               </div>
@@ -258,7 +262,7 @@ export const SortablePriorityList = ({
             color: 'var(--color-text-secondary, #999)',
           }}
         >
-          <div className="font-medium mb-1">💡 使用说明</div>
+          <div className="font-medium mb-1">💡 {t('sortablePriority.usageTip')}</div>
           <ul className="list-disc list-inside space-y-1 m-0">
             {tips.map((tip, index) => (
               <li key={index}>{tip}</li>

@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional, Set
 import logging
 import time
 
+from src.notification.messages.base import RenderedMessage
+
 
 # ═══════════════════════════════════════════
 # 渠道能力系统
@@ -160,6 +162,28 @@ class BaseNotificationChannel(ABC):
         返回 True 表示已处理，False 表示不支持。
         """
         return False
+
+    async def send_rendered(self, rendered: RenderedMessage):
+        """发送标准渲染消息。
+
+        默认实现将 RenderedMessage 转发到 send_message，
+        保持与旧渠道实现的兼容性。子类可覆写以获得更精细的控制。
+        """
+        title = rendered.title
+        body = rendered.body
+        kwargs = {}
+        if rendered.image:
+            kwargs["image"] = rendered.image
+        if rendered.buttons:
+            kwargs["reply_markup"] = rendered.buttons
+        if rendered.edit_message_id:
+            kwargs["edit_message_id"] = rendered.edit_message_id
+        kwargs.update(rendered.metadata)
+        await self.send_message(title=title, text=body, **kwargs)
+
+    async def edit_rendered(self, rendered: RenderedMessage):
+        """编辑已有消息。默认无操作，支持编辑的渠道覆写。"""
+        pass
 
     async def send_quick(self, text: str, chat_id=None) -> Optional[int]:
         """发送一条快速消息并返回 message_id（用于后续 edit）。

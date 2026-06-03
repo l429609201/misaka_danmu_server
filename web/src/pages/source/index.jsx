@@ -6,8 +6,10 @@ import { GlobalFilter } from './components/GlobalFilter'
 import { MobileTabs } from '@/components/MobileTabs'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../store/index.js'
+import { useTranslation } from 'react-i18next'
 
 export const Source = () => {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const key = searchParams.get('key') || 'scrapers'
   const navigate = useNavigate()
@@ -15,17 +17,17 @@ export const Source = () => {
 
   const tabItems = [
     {
-      label: '弹幕搜索源',
+      label: t('sourcePage.danmakuSource'),
       key: 'scrapers',
       children: <Scrapers></Scrapers>,
     },
     {
-      label: '元信息搜索源',
+      label: t('sourcePage.metadataSource'),
       key: 'metadata',
       children: <Metadata></Metadata>,
     },
     {
-      label: '设置',
+      label: t('sourcePage.settings'),
       key: 'global-filter',
       children: <GlobalFilter />,
     },

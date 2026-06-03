@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Modal, Table, Button, Input, Select, Space, Tag, Popconfirm, message, Statistic, Row, Col, Card, Tooltip } from 'antd'
 import { DeleteOutlined, ReloadOutlined, ClearOutlined, SearchOutlined, DatabaseOutlined } from '@ant-design/icons'
 import { getCacheStats, getCacheList, clearCache, deleteCacheKey } from '@/apis'
@@ -12,6 +13,7 @@ const REGION_COLORS = {
 }
 
 export default function CacheManagerModal({ open, onClose }) {
+  const { t } = useTranslation()
   const [stats, setStats] = useState({ total: 0, regions: {} })
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
@@ -48,50 +50,50 @@ export default function CacheManagerModal({ open, onClose }) {
   const handleDeleteKey = async (key, itemRegion) => {
     try {
       await deleteCacheKey(key, itemRegion)
-      message.success('已删除')
+      message.success(t('cacheManager.deleted'))
       fetchStats()
       fetchItems(pagination.current)
     } catch {
-      message.error('删除失败')
+      message.error(t('cacheManager.deleteFailed'))
     }
   }
 
   const handleClearRegion = async (r) => {
     try {
       const res = await clearCache(r)
-      message.success(`已清除 ${res.data.cleared} 条缓存`)
+      message.success(t('cacheManager.clearedCount', { count: res.data.cleared }))
       fetchStats()
       fetchItems(1)
     } catch {
-      message.error('清除失败')
+      message.error(t('cacheManager.clearFailed'))
     }
   }
 
   const handleClearAll = async () => {
     try {
       const res = await clearCache(undefined)
-      message.success(`已清除全部 ${res.data.cleared} 条缓存`)
+      message.success(t('cacheManager.clearedAllCount', { count: res.data.cleared }))
       fetchStats()
       fetchItems(1)
     } catch {
-      message.error('清除失败')
+      message.error(t('cacheManager.clearFailed'))
     }
   }
 
   const columns = [
     ...(region === 'all' ? [{
-      title: '区域',
+      title: t('cacheManager.region'),
       dataIndex: 'region',
       width: 100,
       render: (r) => <Tag color={REGION_COLORS[r] || 'default'}>{r}</Tag>,
     }] : []),
     {
-      title: '键',
+      title: t('cacheManager.key'),
       dataIndex: 'key',
       ellipsis: true,
     },
     {
-      title: '键值',
+      title: t('cacheManager.value'),
       dataIndex: 'value_preview',
       ellipsis: true,
       render: (text) => (
@@ -101,10 +103,10 @@ export default function CacheManagerModal({ open, onClose }) {
       ),
     },
     {
-      title: '操作',
+      title: t('common.operation'),
       width: 80,
       render: (_, record) => (
-        <Popconfirm title="确认删除？" onConfirm={() => handleDeleteKey(record.key, record.region)} okText="确定" cancelText="取消">
+        <Popconfirm title={t('common.delete_confirm')} onConfirm={() => handleDeleteKey(record.key, record.region)} okText={t('common.confirm')} cancelText={t('common.cancel')}>
           <Button type="link" danger size="small" icon={<DeleteOutlined />} />
         </Popconfirm>
       ),
@@ -115,15 +117,15 @@ export default function CacheManagerModal({ open, onClose }) {
 
   // 区域选项：全部 + 各个有数据的 region
   const regionOptions = [
-    { label: `全部 (${stats.total})`, value: 'all' },
+    { label: t('cacheManager.allWithCount', { count: stats.total }), value: 'all' },
     ...Object.entries(stats.regions || {}).map(([r, count]) => ({ label: `${r} (${count})`, value: r })),
   ]
 
-  const clearLabel = region === 'all' ? '全部' : region
+  const clearLabel = region === 'all' ? t('cacheManager.all') : region
 
   return (
     <Modal
-      title={<><DatabaseOutlined /> 缓存管理</>}
+      title={<><DatabaseOutlined /> {t('cacheManager.title')}</>}
       open={open}
       onCancel={onClose}
       footer={null}
@@ -133,7 +135,7 @@ export default function CacheManagerModal({ open, onClose }) {
       {/* 统计卡片 */}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col span={6}>
-          <Card size="small"><Statistic title="总计" value={stats.total} /></Card>
+          <Card size="small"><Statistic title={t('cacheManager.total')} value={stats.total} /></Card>
         </Col>
         {Object.entries(stats.regions || {}).map(([r, count]) => (
           <Col span={6} key={r}>
@@ -147,10 +149,10 @@ export default function CacheManagerModal({ open, onClose }) {
       {/* 工具栏 */}
       <Space style={{ marginBottom: 12 }} wrap>
         <Select value={region} onChange={v => { setRegion(v); setSearch('') }} options={regionOptions} style={{ width: 180 }} />
-        <Input placeholder="搜索键" value={search} onChange={e => setSearch(e.target.value)} onPressEnter={handleSearch} prefix={<SearchOutlined />} style={{ width: 200 }} allowClear />
-        <Button icon={<ReloadOutlined />} onClick={() => { fetchStats(); fetchItems(1) }}>刷新</Button>
-        <Popconfirm title={`清除 ${clearLabel} 缓存？`} onConfirm={() => region === 'all' ? handleClearAll() : handleClearRegion(region)} okText="确定" cancelText="取消">
-          <Button icon={<ClearOutlined />} danger>清除{clearLabel}</Button>
+        <Input placeholder={t('cacheManager.searchKey')} value={search} onChange={e => setSearch(e.target.value)} onPressEnter={handleSearch} prefix={<SearchOutlined />} style={{ width: 200 }} allowClear />
+        <Button icon={<ReloadOutlined />} onClick={() => { fetchStats(); fetchItems(1) }}>{t('common.refresh')}</Button>
+        <Popconfirm title={t('cacheManager.clearConfirm', { region: clearLabel })} onConfirm={() => region === 'all' ? handleClearAll() : handleClearRegion(region)} okText={t('common.confirm')} cancelText={t('common.cancel')}>
+          <Button icon={<ClearOutlined />} danger>{t('cacheManager.clearWithRegion', { region: clearLabel })}</Button>
         </Popconfirm>
       </Space>
 
@@ -164,7 +166,7 @@ export default function CacheManagerModal({ open, onClose }) {
         pagination={{
           ...pagination,
           showSizeChanger: true,
-          showTotal: t => `共 ${t} 条`,
+          showTotal: tc => t('cacheManager.totalCount', { count: tc }),
           onChange: (page, size) => fetchItems(page, size),
         }}
       />

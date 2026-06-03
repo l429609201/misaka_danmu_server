@@ -343,11 +343,25 @@ async def get_repo_refs(
                         branches = [b["name"] for b in resp.json()]
                 except Exception as e:
                     logger.warning(f"获取 GitHub 分支列表失败: {e}")
-                # 获取最近5个 tag
+                # 获取最近5个 tag，并为每个 tag 获取其 min_server_version
                 try:
                     resp = await client.get(f"https://api.github.com/repos/{owner}/{repo}/tags?per_page=5")
                     if resp.status_code == 200:
-                        tags = [t["name"] for t in resp.json()]
+                        tag_names = [t["name"] for t in resp.json()]
+                        # 并发获取每个 tag 的 package.json 中的 min_server_version
+                        async def _get_tag_min_ver(tag_name):
+                            try:
+                                pkg_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{tag_name}/package.json"
+                                pkg_resp = await client.get(pkg_url)
+                                if pkg_resp.status_code == 200:
+                                    return pkg_resp.json().get("min_server_version")
+                            except Exception:
+                                pass
+                            return None
+
+                        import asyncio as _aio
+                        min_vers = await _aio.gather(*[_get_tag_min_ver(t) for t in tag_names])
+                        tags = [{"name": t, "minServerVersion": v} for t, v in zip(tag_names, min_vers)]
                 except Exception as e:
                     logger.warning(f"获取 GitHub 标签列表失败: {e}")
             elif gitee_info:
@@ -361,7 +375,21 @@ async def get_repo_refs(
                 try:
                     resp = await client.get(f"https://gitee.com/api/v5/repos/{owner}/{repo}/tags?per_page=5")
                     if resp.status_code == 200:
-                        tags = [t["name"] for t in resp.json()]
+                        tag_names = [t["name"] for t in resp.json()]
+                        # 并发获取每个 tag 的 package.json 中的 min_server_version
+                        async def _get_gitee_tag_min_ver(tag_name):
+                            try:
+                                pkg_url = f"https://gitee.com/{owner}/{repo}/raw/{tag_name}/package.json"
+                                pkg_resp = await client.get(pkg_url)
+                                if pkg_resp.status_code == 200:
+                                    return pkg_resp.json().get("min_server_version")
+                            except Exception:
+                                pass
+                            return None
+
+                        import asyncio as _aio
+                        min_vers = await _aio.gather(*[_get_gitee_tag_min_ver(t) for t in tag_names])
+                        tags = [{"name": t, "minServerVersion": v} for t, v in zip(tag_names, min_vers)]
                 except Exception as e:
                     logger.warning(f"获取 Gitee 标签列表失败: {e}")
     except Exception as e:

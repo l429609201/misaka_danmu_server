@@ -66,6 +66,7 @@ async def auto_search_and_import_task(
     rate_limiter: Optional[RateLimiter] = None,
     api_key: Optional[str] = None,
     title_recognition_manager: Optional[TitleRecognitionManager] = None,
+    oauth_user: Optional[models.User] = None,
 ):
     """
     全自动搜索并导入的核心任务逻辑。
@@ -110,8 +111,8 @@ async def auto_search_and_import_task(
         year: Optional[int] = None
         tmdb_id, bangumi_id, douban_id, tvdb_id, imdb_id = None, None, None, None, None
 
-        # 为后台任务创建一个虚拟用户对象
-        user = models.User(id=1, username="admin")
+        # 为后台任务创建用户上下文：优先使用提交订阅的真实用户，避免 Trakt/Bangumi OAuth 读取不到授权
+        user = oauth_user or models.User(id=1, username="admin")
 
         # 1. 获取元数据和别名
         details: Optional[models.MetadataDetailsResponse] = None
@@ -346,7 +347,8 @@ async def auto_search_and_import_task(
                         title_recognition_manager=title_recognition_manager,
                         is_fallback=False,
                         preassignedAnimeId=anime_id_to_use,
-                        selectedEpisodes=selected_episodes
+                        selectedEpisodes=selected_episodes,
+                        enable_incremental_refresh=bool(payload.enableIncrementalRefresh),
                     )
 
                     # 构建任务标题
@@ -378,7 +380,8 @@ async def auto_search_and_import_task(
                         "tmdbId": tmdb_id,
                         "imdbId": imdb_id,
                         "tvdbId": tvdb_id,
-                        "bangumiId": bangumi_id
+                        "bangumiId": bangumi_id,
+                        "enableIncrementalRefresh": bool(payload.enableIncrementalRefresh),
                     }
 
                     execution_task_id, _ = await task_manager.submit_task(
@@ -423,7 +426,7 @@ async def auto_search_and_import_task(
 
         # 🚀 名称转换功能 - 检测非中文标题并尝试转换为中文（在预处理规则之前执行）
         # 创建一个虚拟用户用于元数据调用
-        auto_import_user = models.User(id=0, username="auto_import")
+        auto_import_user = oauth_user or models.User(id=0, username="auto_import")
         convert_to_chinese_title = _get_convert_to_chinese_title()
         converted_title, conversion_applied = await convert_to_chinese_title(
             main_title,
@@ -939,7 +942,8 @@ async def auto_search_and_import_task(
             rate_limiter=rate_limiter,
             title_recognition_manager=title_recognition_manager,
             is_fallback=False,
-            selectedEpisodes=selected_episodes
+            selectedEpisodes=selected_episodes,
+            enable_incremental_refresh=bool(payload.enableIncrementalRefresh),
         )
 
         # 构建任务标题
@@ -973,7 +977,8 @@ async def auto_search_and_import_task(
             "tmdbId": tmdb_id,
             "imdbId": imdb_id,
             "tvdbId": tvdb_id,
-            "bangumiId": bangumi_id
+            "bangumiId": bangumi_id,
+            "enableIncrementalRefresh": bool(payload.enableIncrementalRefresh),
         }
 
         execution_task_id, _ = await task_manager.submit_task(

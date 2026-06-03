@@ -2,8 +2,10 @@ import { Button, Card, Input, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { setCustomDomain } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
+import { useTranslation } from 'react-i18next'
 
 export const Domain = ({ domain: propDomain, onDomainChange }) => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [domain, setDomain] = useState(propDomain || '')
   const messageApi = useMessage()
@@ -16,31 +18,30 @@ export const Domain = ({ domain: propDomain, onDomainChange }) => {
   const handleEdit = async () => {
     try {
       await setCustomDomain({ value: domain })
-      messageApi.success('保存成功')
+      messageApi.success(t('bullet.saveSuccess'))
       // 通知父组件更新 domain
       if (onDomainChange) {
         onDomainChange(domain)
       }
     } catch (error) {
-      messageApi.error('保存失败')
+      messageApi.error(t('bullet.saveFailed'))
     }
   }
 
   return (
     <div className="my-6">
-      <Card loading={loading} title="自定义域名设置">
+      <Card loading={loading} title={t('bullet.domainTitle')}>
         <div>
-          设置后，复制按钮将自动拼接 "http(s)://域名(ip):端口(port)/api/v1/Token值"
-          格式的完整URL。
+          {t('bullet.domainDesc')}
         </div>
         <div className="flex items-center justify-start mt-4">
           <Input
-            placeholder="请输入自定义域名"
+            placeholder={t('bullet.domainPlaceholder')}
             value={domain}
             onChange={e => setDomain(e.target.value)}
           />
           <Button type="primary" className="ml-2" onClick={handleEdit}>
-            修改
+            {t('bullet.domainSave')}
           </Button>
         </div>
       </Card>

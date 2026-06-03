@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { Modal, Button, Radio, Switch, Empty, Spin, Progress, Tag, Space, Tooltip, Typography } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { ExclamationCircleOutlined } from '@ant-design/icons'
 import { scanDuplicates, batchMergeAnimes } from '../apis'
 import { useMessage } from '../MessageContext'
@@ -9,6 +10,7 @@ const { Text } = Typography
 
 // 阶段: idle → scanning → preview → confirming → merging → done
 export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
+  const { t } = useTranslation()
   const messageApi = useMessage()
   const [stage, setStage] = useState('idle') // idle | scanning | preview | confirming | merging | done
   const [strict, setStrict] = useState(true)
@@ -39,7 +41,7 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
       const data = res.data
       if (!data.groups?.length) {
         setStage('idle')
-        messageApi.success('没有发现重复项，弹幕库中所有媒体都是唯一的')
+        messageApi.success(t('scanDuplicates.noDuplicates'))
         return
       }
       setGroups(data.groups)
@@ -52,7 +54,7 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
       setSelections(defaultSelections)
       setStage('preview')
     } catch (e) {
-      messageApi.error('扫描失败: ' + (e.message || '未知错误'))
+      messageApi.error(t('scanDuplicates.scanFailed') + ': ' + (e.message || t('scanDuplicates.unknownError')))
       setStage('idle')
     }
   }
@@ -72,12 +74,12 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
       setMergeProgress({ current: operations.length, total: operations.length })
       setStage('done')
       if (res.data.failCount > 0) {
-        messageApi.warning(`合并完成: ${res.data.successCount} 成功, ${res.data.failCount} 失败`)
+        messageApi.warning(t('scanDuplicates.mergeDoneWithFail', { success: res.data.successCount, fail: res.data.failCount }))
       } else {
-        messageApi.success(`合并完成: ${res.data.successCount} 组全部成功`)
+        messageApi.success(t('scanDuplicates.mergeDoneAllSuccess', { success: res.data.successCount }))
       }
     } catch (e) {
-      messageApi.error('合并失败: ' + (e.message || '未知错误'))
+      messageApi.error(t('scanDuplicates.mergeFailed') + ': ' + (e.message || t('scanDuplicates.unknownError')))
       setStage('preview')
     }
   }
@@ -92,22 +94,22 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
   const renderIdle = () => (
     <div className="text-center py-8">
       <div className="mb-4 text-gray-500">
-        基于 TMDB ID 识别弹幕库中的重复条目，将多个相同作品合并为一个。
+        {t('scanDuplicates.idleDesc')}
       </div>
       <div className="flex items-center justify-center gap-2 mb-6">
-        <Text>模式：</Text>
+        <Text>{t('scanDuplicates.mode')}</Text>
         <Switch
           checked={strict}
           onChange={setStrict}
-          checkedChildren="严格"
-          unCheckedChildren="宽松"
+          checkedChildren={t('scanDuplicates.strict')}
+          unCheckedChildren={t('scanDuplicates.loose')}
         />
-        <Tooltip title="严格模式按 TMDB ID + 季度 匹配；宽松模式仅按 TMDB ID 匹配（适用于剧集组导致季度不同的情况）">
+        <Tooltip title={t('scanDuplicates.modeTip')}>
           <ExclamationCircleOutlined className="text-gray-400" />
         </Tooltip>
       </div>
       <Button type="primary" size="large" onClick={handleScan}>
-        开始扫描
+        {t('scanDuplicates.startScan')}
       </Button>
     </div>
   )
@@ -115,7 +117,7 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
   const renderScanning = () => (
     <div className="text-center py-12">
       <Spin size="large" />
-      <div className="mt-4 text-gray-500">正在扫描弹幕库...</div>
+      <div className="mt-4 text-gray-500">{t('scanDuplicates.scanning')}</div>
     </div>
   )
 
@@ -124,12 +126,12 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
     <div>
       <div className="mb-3 flex items-center justify-between">
         <Text type="secondary">
-          发现 {groups.length} 组重复媒体，共涉及 {groups.reduce((s, g) => s + g.items.length, 0)} 个条目
+          {t('scanDuplicates.foundGroups', { groups: groups.length, items: groups.reduce((s, g) => s + g.items.length, 0) })}
         </Text>
         <div className="flex items-center gap-2">
-          <Text type="secondary">模式：</Text>
+          <Text type="secondary">{t('scanDuplicates.mode')}</Text>
           <Switch checked={strict} onChange={(v) => { setStrict(v); handleScan() }}
-            checkedChildren="严格" unCheckedChildren="宽松" size="small" />
+            checkedChildren={t('scanDuplicates.strict')} unCheckedChildren={t('scanDuplicates.loose')} size="small" />
         </div>
       </div>
       <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
@@ -138,7 +140,7 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
             <div className="font-medium mb-2 flex items-center gap-2">
               <Tag color="blue">TMDB: {group.tmdbId}</Tag>
               {group.season != null && <Tag>Season {String(group.season).padStart(2, '0')}</Tag>}
-              <Text type="secondary" className="text-xs">({group.items.length} 个条目)</Text>
+              <Text type="secondary" className="text-xs">{t('scanDuplicates.itemCount', { count: group.items.length })}</Text>
             </div>
             <Radio.Group
               value={selections[gi]}
@@ -162,12 +164,12 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
                     <div className="flex-1 min-w-0">
                       <div className="font-medium truncate">{item.title}</div>
                       <div className="text-xs text-gray-500">
-                        ID:{item.animeId} · S{String(item.season).padStart(2, '0')} · {item.sourceCount}个源
-                        {item.year ? ` · ${item.year}年` : ''}
+                        ID:{item.animeId} · S{String(item.season).padStart(2, '0')} · {t('scanDuplicates.sourceCount', { count: item.sourceCount })}
+                        {item.year ? ` · ${t('scanDuplicates.yearSuffix', { year: item.year })}` : ''}
                       </div>
                     </div>
                     {selections[gi] === item.animeId && (
-                      <Tag color="green" className="shrink-0">保留</Tag>
+                      <Tag color="green" className="shrink-0">{t('scanDuplicates.keep')}</Tag>
                     )}
                   </div>
                 ))}
@@ -184,7 +186,7 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
     <div>
       <div className="mb-3 flex items-center gap-2 text-orange-500">
         <ExclamationCircleOutlined />
-        <Text strong>即将执行以下合并操作：</Text>
+        <Text strong>{t('scanDuplicates.confirmTip')}</Text>
       </div>
       <div className="space-y-2 max-h-[50vh] overflow-y-auto">
         {groups.map((group, gi) => {
@@ -192,16 +194,16 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
           const sources = group.items.filter(i => i.animeId !== selections[gi])
           return (
             <div key={gi} className="border rounded p-2 dark:border-gray-700 text-sm">
-              <div className="font-medium">{gi + 1}. {target?.title || '未知'} (TMDB: {group.tmdbId})</div>
+              <div className="font-medium">{gi + 1}. {target?.title || t('scanDuplicates.unknown')} (TMDB: {group.tmdbId})</div>
               <div className="text-gray-500 ml-4">
-                {sources.map(s => `ID:${s.animeId} ${s.title}`).join('、')} → 合并到 → ID:{target?.animeId}
+                {sources.map(s => `ID:${s.animeId} ${s.title}`).join('、')} → {t('scanDuplicates.mergeTo')} → ID:{target?.animeId}
               </div>
             </div>
           )
         })}
       </div>
       <div className="mt-3 text-orange-500 text-sm">
-        ⚠️ 此操作不可撤销，被合并条目将被删除，其数据源和弹幕文件将转移到保留条目下。
+        {t('scanDuplicates.irreversibleTip')}
       </div>
     </div>
   )
@@ -210,7 +212,7 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
   const renderMerging = () => (
     <div className="text-center py-8">
       <Progress percent={mergeProgress.total ? Math.round((mergeProgress.current / mergeProgress.total) * 100) : 0} />
-      <div className="mt-2 text-gray-500">正在合并... {mergeProgress.current}/{mergeProgress.total}</div>
+      <div className="mt-2 text-gray-500">{t('scanDuplicates.merging')} {mergeProgress.current}/{mergeProgress.total}</div>
     </div>
   )
 
@@ -218,41 +220,41 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
   const renderDone = () => (
     <div className="text-center py-8">
       <div className="text-4xl mb-4">🎉</div>
-      <div className="text-lg font-medium mb-2">合并完成</div>
+      <div className="text-lg font-medium mb-2">{t('scanDuplicates.mergeComplete')}</div>
       <div className="text-gray-500">
-        成功 {mergeResults.filter(r => r.success).length} 项
+        {t('scanDuplicates.successCount', { count: mergeResults.filter(r => r.success).length })}
         {mergeResults.some(r => !r.success) && (
-          <span className="text-red-500">，失败 {mergeResults.filter(r => !r.success).length} 项</span>
+          <span className="text-red-500">{t('scanDuplicates.failCount', { count: mergeResults.filter(r => !r.success).length })}</span>
         )}
       </div>
     </div>
   )
 
   const getTitle = () => {
-    if (stage === 'confirming') return '确认合并'
-    if (stage === 'merging') return '合并中...'
-    if (stage === 'done') return '合并完成'
-    return '扫描重复项'
+    if (stage === 'confirming') return t('scanDuplicates.titleConfirm')
+    if (stage === 'merging') return t('scanDuplicates.titleMerging')
+    if (stage === 'done') return t('scanDuplicates.titleDone')
+    return t('scanDuplicates.titleScan')
   }
 
   const getFooter = () => {
     if (stage === 'idle' || stage === 'scanning') return null
     if (stage === 'preview') return (
       <Space>
-        <Button onClick={handleClose}>取消</Button>
+        <Button onClick={handleClose}>{t('common.cancel')}</Button>
         <Button type="primary" danger onClick={() => setStage('confirming')}>
-          合并选中 ({groups.length}组)
+          {t('scanDuplicates.mergeSelected', { count: groups.length })}
         </Button>
       </Space>
     )
     if (stage === 'confirming') return (
       <Space>
-        <Button onClick={() => setStage('preview')}>返回</Button>
-        <Button type="primary" danger onClick={handleMerge}>确认合并</Button>
+        <Button onClick={() => setStage('preview')}>{t('common.back')}</Button>
+        <Button type="primary" danger onClick={handleMerge}>{t('scanDuplicates.titleConfirm')}</Button>
       </Space>
     )
     if (stage === 'merging') return null
-    if (stage === 'done') return <Button type="primary" onClick={handleClose}>关闭</Button>
+    if (stage === 'done') return <Button type="primary" onClick={handleClose}>{t('common.close')}</Button>
   }
 
   return (

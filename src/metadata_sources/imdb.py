@@ -205,6 +205,8 @@ class ImdbApiDevClient:
 
 class ImdbMetadataSource(BaseMetadataSource):
     provider_name = "imdb"
+    config_keys = ["imdbUseApi", "imdbEnableFallback"]
+    bool_config_keys = ["imdbUseApi", "imdbEnableFallback"]
     test_url = "https://www.imdb.com"
 
     # 配置字段 (格式: "config_key": ("UI标签", "字段类型", "提示信息"))

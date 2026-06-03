@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { Form, Input, InputNumber, Modal, Select, message } from 'antd'
+import { useTranslation } from 'react-i18next'
 import { createAnimeEntry } from '../apis'
 import { useMessage } from '../MessageContext'
 
 export const CreateAnimeModal = ({ open, onCancel, onSuccess }) => {
+  const { t } = useTranslation()
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const messageApi = useMessage()
@@ -14,13 +16,13 @@ export const CreateAnimeModal = ({ open, onCancel, onSuccess }) => {
       setLoading(true)
       const res = await createAnimeEntry(values)
       if (res.data) {
-        messageApi.success('作品创建成功！')
+        messageApi.success(t('createAnime.createSuccess'))
         onSuccess(res.data) // 将新创建的作品数据传递回去，以便刷新列表
         form.resetFields()
       }
     } catch (error) {
       console.error('创建作品失败:', error)
-      messageApi.error(error.detail || '创建作品失败，请检查日志')
+      messageApi.error(error.detail || t('createAnime.createFailed'))
     } finally {
       setLoading(false)
     }
@@ -28,7 +30,7 @@ export const CreateAnimeModal = ({ open, onCancel, onSuccess }) => {
 
   return (
     <Modal
-      title="新建作品条目"
+      title={t('createAnime.title')}
       open={open}
       onOk={handleOk}
       onCancel={onCancel}
@@ -43,28 +45,28 @@ export const CreateAnimeModal = ({ open, onCancel, onSuccess }) => {
       >
         <Form.Item
           name="title"
-          label="作品标题"
-          rules={[{ required: true, message: '请输入作品标题！' }]}
+          label={t('createAnime.animeTitle')}
+          rules={[{ required: true, message: t('createAnime.inputTitle') }]}
         >
-          <Input placeholder="例如：亮剑" />
+          <Input placeholder={t('createAnime.titlePlaceholder')} />
         </Form.Item>
         <Form.Item
           name="type"
-          label="类型"
-          rules={[{ required: true, message: '请选择作品类型！' }]}
+          label={t('createAnime.type')}
+          rules={[{ required: true, message: t('createAnime.selectType') }]}
           initialValue="tv_series"
         >
           <Select>
-            <Select.Option value="tv_series">电视剧/番剧</Select.Option>
-            <Select.Option value="movie">电影/剧场版</Select.Option>
+            <Select.Option value="tv_series">{t('createAnime.tvSeries')}</Select.Option>
+            <Select.Option value="movie">{t('createAnime.movie')}</Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item name="season" label="季度" initialValue={1}>
+        <Form.Item name="season" label={t('createAnime.season')} initialValue={1}>
           <InputNumber min={0} style={{ width: '100%' }} />
         </Form.Item>
-        <Form.Item name="year" label="年份">
+        <Form.Item name="year" label={t('createAnime.year')}>
           <InputNumber
-            placeholder="例如：2005"
+            placeholder={t('createAnime.yearPlaceholder')}
             min={1900}
             max={new Date().getFullYear() + 5}
             style={{ width: '100%' }}

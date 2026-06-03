@@ -1,12 +1,14 @@
 import { useThemeMode } from '../ThemeProvider'
+import { useTranslation } from 'react-i18next'
 
 const DarkModeToggle = () => {
+  const { t } = useTranslation()
   const { isDark, toggleDarkMode } = useThemeMode()
   return (
     <button
       onClick={toggleDarkMode}
       className="p-2 rounded-full bg-base-hover transition-colors"
-      aria-label={isDark ? '切换到浅色模式' : '切换到暗黑模式'}
+      aria-label={isDark ? t('common.lightMode') : t('common.darkMode')}
     >
       {isDark ? (
         <svg

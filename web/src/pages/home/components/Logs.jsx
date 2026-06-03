@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getLogs } from '../../../apis'
 import { useState } from 'react'
 import { useRef } from 'react'
@@ -11,26 +12,33 @@ import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store'
 
 export const Logs = () => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [logs, setLogs] = useState([])
   const abortControllerRef = useRef(null)
   const [messageApi, contextHolder] = message.useMessage()
   const isMobile = useAtomValue(isMobileAtom)
+  const [connected, setConnected] = useState(false)
 
-  useEffect(() => {
-    // 获取token
+  const connectSSE = () => {
+    // 断开旧连接
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
     const token = Cookies.get('danmu_token')
     if (!token) {
-      messageApi.error('未登录,无法连接日志流')
+      messageApi.error(t('home.notLoggedIn'))
       setLoading(false)
       return
     }
 
-    // 创建AbortController用于取消连接
+    setLoading(true)
+    setConnected(false)
+
     const abortController = new AbortController()
     abortControllerRef.current = abortController
 
-    // 使用fetch-event-source建立SSE连接（开发环境会通过Vite代理）
     fetchEventSource('/api/ui/logs/stream', {
       signal: abortController.signal,
       headers: {
@@ -39,28 +47,32 @@ export const Logs = () => {
       onopen: async response => {
         if (response.ok) {
           setLoading(false)
+          setConnected(true)
         } else {
-          throw new Error(`连接失败: ${response.status}`)
+          throw new Error(`${t('home.connectFailed')}: ${response.status}`)
         }
       },
       onmessage: event => {
         const newLog = event.data.trim()
         if (!newLog) return
-        setLogs(prevLogs => [newLog, ...prevLogs].slice(0, 200)) // 保持最多200条
+        setLogs(prevLogs => [newLog, ...prevLogs].slice(0, 200))
       },
       onerror: error => {
         console.error('SSE连接错误:', error)
-        messageApi.warning('日志流连接出错')
+        setConnected(false)
         setLoading(false)
-        throw error // 抛出错误以停止重连
+        throw error
       },
     }).catch(error => {
       if (error.name !== 'AbortError') {
         console.error('SSE流错误:', error)
+        setConnected(false)
       }
     })
+  }
 
-    // 清理函数
+  useEffect(() => {
+    connectSSE()
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
@@ -83,7 +95,7 @@ export const Logs = () => {
   const copyLogLine = async (logText) => {
     try {
       await navigator.clipboard.writeText(logText)
-      messageApi.success('日志已复制到剪贴板')
+      messageApi.success(t('home.logCopied'))
     } catch (error) {
       // 降级方案：使用传统方法
       const textArea = document.createElement('textarea')
@@ -92,9 +104,9 @@ export const Logs = () => {
       textArea.select()
       try {
         document.execCommand('copy')
-        messageApi.success('日志已复制到剪贴板')
+        messageApi.success(t('home.logCopied'))
       } catch (fallbackError) {
-        messageApi.error('复制失败')
+        messageApi.error(t('home.copyFailed'))
       }
       document.body.removeChild(textArea)
     }
@@ -112,13 +124,28 @@ export const Logs = () => {
       <div className="my-6">
         <Card
           loading={loading}
-          title="日志/状态 (实时)"
+          title={t('home.logStatus')}
           extra={
-            <Tooltip title="导出日志">
-              <div onClick={exportLogs} className="cursor-pointer hover:text-primary">
-                <ExportOutlined />
-              </div>
-            </Tooltip>
+            <div className="flex items-center gap-3">
+              <Tooltip title={connected ? t('realtimeLog.connected') : t('realtimeLog.clickToReconnect')}>
+                <div
+                  onClick={() => { if (!connected) connectSSE() }}
+                  className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-lg transition-colors ${
+                    connected
+                      ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'
+                      : 'text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-500/10 cursor-pointer hover:bg-red-100 dark:hover:bg-red-500/20'
+                  }`}
+                >
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                  {connected ? t('realtimeLog.connected') : t('realtimeLog.disconnected')}
+                </div>
+              </Tooltip>
+              <Tooltip title={t('home.exportLog')}>
+                <div onClick={exportLogs} className="cursor-pointer hover:text-primary">
+                  <ExportOutlined />
+                </div>
+              </Tooltip>
+            </div>
           }
         >
           <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
@@ -166,7 +193,7 @@ export const Logs = () => {
                       e.stopPropagation()
                       copyLogLine(it)
                     }}
-                    title="复制日志"
+                    title={t('home.copyLog')}
                   />
                 </div>
               </div>

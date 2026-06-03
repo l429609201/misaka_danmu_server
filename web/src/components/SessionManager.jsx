@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Modal, Card, Button, Spin, Empty, Tag, Popconfirm, Tooltip } from 'antd'
 import {
   DesktopOutlined,
@@ -17,13 +18,13 @@ import dayjs from 'dayjs'
 /**
  * 解析 User-Agent 获取设备/浏览器信息
  */
-const parseUserAgent = (ua) => {
-  if (!ua) return { browser: '未知浏览器', os: '未知系统', isMobile: false }
+const parseUserAgent = (ua, t) => {
+  if (!ua) return { browser: t('sessionManager.unknownBrowser'), os: t('sessionManager.unknownOs'), isMobile: false }
 
   const isMobile = /Mobile|Android|iPhone|iPad/i.test(ua)
 
   // 解析浏览器
-  let browser = '未知浏览器'
+  let browser = t('sessionManager.unknownBrowser')
   if (ua.includes('Edg/')) browser = 'Edge'
   else if (ua.includes('Chrome/')) browser = 'Chrome'
   else if (ua.includes('Firefox/')) browser = 'Firefox'
@@ -31,7 +32,7 @@ const parseUserAgent = (ua) => {
   else if (ua.includes('Opera') || ua.includes('OPR/')) browser = 'Opera'
 
   // 解析操作系统
-  let os = '未知系统'
+  let os = t('sessionManager.unknownOs')
   if (ua.includes('Windows')) os = 'Windows'
   else if (ua.includes('Mac OS')) os = 'macOS'
   else if (ua.includes('Linux')) os = 'Linux'
@@ -52,18 +53,19 @@ const formatTime = (time) => {
 /**
  * 计算过期状态
  */
-const getExpireStatus = (expiresAt, isRevoked) => {
-  if (isRevoked) return { text: '已撤销', color: 'red' }
-  if (!expiresAt) return { text: '永不过期', color: 'green' }
+const getExpireStatus = (expiresAt, isRevoked, t) => {
+  if (isRevoked) return { text: t('sessionManager.revoked'), color: 'red' }
+  if (!expiresAt) return { text: t('sessionManager.neverExpire'), color: 'green' }
   const now = dayjs()
   const expire = dayjs(expiresAt)
-  if (expire.isBefore(now)) return { text: '已过期', color: 'red' }
+  if (expire.isBefore(now)) return { text: t('sessionManager.expired'), color: 'red' }
   const diff = expire.diff(now, 'day')
-  if (diff < 1) return { text: `${expire.diff(now, 'hour')}小时后过期`, color: 'orange' }
-  return { text: `${diff}天后过期`, color: 'blue' }
+  if (diff < 1) return { text: t('sessionManager.expireInHours', { hours: expire.diff(now, 'hour') }), color: 'orange' }
+  return { text: t('sessionManager.expireInDays', { days: diff }), color: 'blue' }
 }
 
 const SessionManager = ({ open, onClose }) => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [sessions, setSessions] = useState([])
   const [currentJti, setCurrentJti] = useState(null)
@@ -77,7 +79,7 @@ const SessionManager = ({ open, onClose }) => {
       setSessions(res.data.sessions || [])
       setCurrentJti(res.data.currentJti)
     } catch (error) {
-      messageApi.error('获取会话列表失败')
+      messageApi.error(t('sessionManager.fetchFailed'))
     } finally {
       setLoading(false)
     }
@@ -93,10 +95,10 @@ const SessionManager = ({ open, onClose }) => {
     try {
       setRevoking(sessionId)
       await revokeSession(sessionId)
-      messageApi.success('已踢出该设备')
+      messageApi.success(t('sessionManager.kickedDevice'))
       fetchSessions()
     } catch (error) {
-      messageApi.error(error.response?.data?.detail || '操作失败')
+      messageApi.error(error.response?.data?.detail || t('sessionManager.operationFailed'))
     } finally {
       setRevoking(null)
     }
@@ -106,10 +108,10 @@ const SessionManager = ({ open, onClose }) => {
     try {
       setRevoking('all')
       const res = await revokeOtherSessions()
-      messageApi.success(`已踢出 ${res.data.revokedCount} 个其他设备`)
+      messageApi.success(t('sessionManager.kickedOthers', { count: res.data.revokedCount }))
       fetchSessions()
     } catch (error) {
-      messageApi.error(error.response?.data?.detail || '操作失败')
+      messageApi.error(error.response?.data?.detail || t('sessionManager.operationFailed'))
     } finally {
       setRevoking(null)
     }
@@ -123,11 +125,11 @@ const SessionManager = ({ open, onClose }) => {
   const footerContent = otherActiveSessions.length > 0 && !loading ? (
     <div className="flex justify-end">
       <Popconfirm
-        title="确定踢出所有其他设备？"
-        description={`将踢出 ${otherActiveSessions.length} 个其他设备`}
+        title={t('sessionManager.kickAllConfirm')}
+        description={t('sessionManager.kickAllDesc', { count: otherActiveSessions.length })}
         onConfirm={handleRevokeOthers}
-        okText="确定"
-        cancelText="取消"
+        okText={t('common.confirm')}
+        cancelText={t('common.cancel')}
         icon={<ExclamationCircleOutlined style={{ color: 'red' }} />}
       >
         <Button
@@ -135,7 +137,7 @@ const SessionManager = ({ open, onClose }) => {
           danger
           loading={revoking === 'all'}
         >
-          踢出所有其他设备
+          {t('sessionManager.kickAll')}
         </Button>
       </Popconfirm>
     </div>
@@ -143,7 +145,7 @@ const SessionManager = ({ open, onClose }) => {
 
   return (
     <Modal
-      title="会话管理"
+      title={t('sessionManager.title')}
       open={open}
       onCancel={onClose}
       footer={footerContent}
@@ -151,7 +153,7 @@ const SessionManager = ({ open, onClose }) => {
       styles={{ body: { maxHeight: '60vh', overflowY: 'auto' } }}
     >
       <div className="mb-4 text-gray-500 text-sm">
-        管理您的登录会话，可以查看所有已登录的设备并踢出可疑设备。
+        {t('sessionManager.desc')}
       </div>
 
       {loading ? (
@@ -159,12 +161,12 @@ const SessionManager = ({ open, onClose }) => {
           <Spin size="large" />
         </div>
       ) : activeSessions.length === 0 ? (
-        <Empty description="暂无活跃会话" />
+        <Empty description={t('sessionManager.noActiveSession')} />
       ) : (
         <div className="space-y-3">
           {activeSessions.map((session) => {
-            const { browser, os, isMobile } = parseUserAgent(session.userAgent)
-            const expireStatus = getExpireStatus(session.expiresAt, session.isRevoked)
+            const { browser, os, isMobile } = parseUserAgent(session.userAgent, t)
+            const expireStatus = getExpireStatus(session.expiresAt, session.isRevoked, t)
             const isCurrent = session.jti === currentJti
             const isWhitelist = session.isWhitelist
 
@@ -178,38 +180,38 @@ const SessionManager = ({ open, onClose }) => {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2 flex-wrap">
                       {isWhitelist ? (
-                        <Tooltip title="IP白名单免登录会话">
+                        <Tooltip title={t('sessionManager.whitelistSession')}>
                           <SafetyCertificateOutlined className="text-green-500" />
                         </Tooltip>
                       ) : (
                         isMobile ? <MobileOutlined /> : <DesktopOutlined />
                       )}
                       <span className="font-medium">{browser} / {os}</span>
-                      {isWhitelist && <Tag color="green" icon={<SafetyCertificateOutlined />}>白名单</Tag>}
-                      {isCurrent && <Tag color="blue">当前会话</Tag>}
+                      {isWhitelist && <Tag color="green" icon={<SafetyCertificateOutlined />}>{t('sessionManager.whitelist')}</Tag>}
+                      {isCurrent && <Tag color="blue">{t('sessionManager.currentSession')}</Tag>}
                       <Tag color={expireStatus.color}>{expireStatus.text}</Tag>
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
                       <div className="flex items-center gap-1">
                         <GlobalOutlined />
-                        <span>IP: {session.ipAddress || '未知'}</span>
+                        <span>IP: {session.ipAddress || t('sessionManager.unknown')}</span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <span className="ml-3.5">UA: {session.userAgent || '未知'}</span>
+                        <span className="ml-3.5">UA: {session.userAgent || t('sessionManager.unknown')}</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <ClockCircleOutlined />
-                        <span>登录时间: {formatTime(session.createdAt)}</span>
+                        <span>{t('sessionManager.loginTime')}: {formatTime(session.createdAt)}</span>
                       </div>
                     </div>
                   </div>
                   {!isCurrent && (
                     <Popconfirm
-                      title="确定踢出此设备？"
-                      description={isWhitelist ? "白名单会话踢出后，同IP同浏览器访问会自动重建" : "该设备将需要重新登录"}
+                      title={t('sessionManager.kickConfirm')}
+                      description={isWhitelist ? t('sessionManager.kickWhitelistDesc') : t('sessionManager.kickNormalDesc')}
                       onConfirm={() => handleRevokeSession(session.id)}
-                      okText="确定"
-                      cancelText="取消"
+                      okText={t('common.confirm')}
+                      cancelText={t('common.cancel')}
                     >
                       <Button
                         type="text"
@@ -217,7 +219,7 @@ const SessionManager = ({ open, onClose }) => {
                         icon={<DeleteOutlined />}
                         loading={revoking === session.id}
                       >
-                        踢出
+                        {t('sessionManager.kick')}
                       </Button>
                     </Popconfirm>
                   )}

@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 
-from ..orm_models import User, BangumiAuth, OauthState
+from ..orm_models import User, BangumiAuth, OauthState, OauthCredential
 from src.core.timezone import get_now
 from src.core import settings
 from src.utils.otp import encrypt_otp_secret, decrypt_otp_secret
@@ -187,4 +187,68 @@ async def delete_bangumi_auth(session: AsyncSession, user_id: int) -> bool:
         await session.commit()
         return True
     return False
+
+
+
+# --- Generic OAuth Credential Management ---
+
+async def get_oauth_credential(session: AsyncSession, user_id: int, provider: str) -> Dict[str, Any]:
+    """获取用户在某平台的 OAuth 授权状态。"""
+    from sqlalchemy import and_
+    stmt = select(OauthCredential).where(
+        and_(OauthCredential.userId == user_id, OauthCredential.provider == provider)
+    )
+    cred = (await session.execute(stmt)).scalar_one_or_none()
+    if cred:
+        return {
+            "isAuthenticated": True,
+            "provider": cred.provider,
+            "providerUsername": cred.providerUsername,
+            "providerUserId": cred.providerUserId,
+            "expiresAt": cred.expiresAt,
+            "authorizedAt": cred.authorizedAt,
+        }
+    return {"isAuthenticated": False, "provider": provider}
+
+
+async def save_oauth_credential(session: AsyncSession, user_id: int, provider: str, data: Dict[str, Any]):
+    """保存或更新某平台的 OAuth 授权信息。"""
+    from sqlalchemy import and_
+    stmt = select(OauthCredential).where(
+        and_(OauthCredential.userId == user_id, OauthCredential.provider == provider)
+    )
+    cred = (await session.execute(stmt)).scalar_one_or_none()
+    if cred:
+        for key, value in data.items():
+            if hasattr(cred, key):
+                setattr(cred, key, value)
+    else:
+        data["userId"] = user_id
+        data["provider"] = provider
+        new_cred = OauthCredential(**data)
+        session.add(new_cred)
+    await session.commit()
+
+
+async def delete_oauth_credential(session: AsyncSession, user_id: int, provider: str) -> bool:
+    """删除某平台的 OAuth 授权信息。"""
+    from sqlalchemy import and_
+    stmt = select(OauthCredential).where(
+        and_(OauthCredential.userId == user_id, OauthCredential.provider == provider)
+    )
+    cred = (await session.execute(stmt)).scalar_one_or_none()
+    if cred:
+        await session.delete(cred)
+        await session.commit()
+        return True
+    return False
+
+
+async def get_oauth_credential_with_token(session: AsyncSession, user_id: int, provider: str) -> Optional[OauthCredential]:
+    """获取完整的 OAuth 凭证对象（含 token），用于 API 调用。"""
+    from sqlalchemy import and_
+    stmt = select(OauthCredential).where(
+        and_(OauthCredential.userId == user_id, OauthCredential.provider == provider)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
 

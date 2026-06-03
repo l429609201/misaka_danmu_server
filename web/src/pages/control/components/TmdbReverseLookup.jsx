@@ -15,10 +15,12 @@ import {
   getTmdbReverseLookupConfig,
   saveTmdbReverseLookupConfig,
 } from '../../../apis'
+import { useTranslation } from 'react-i18next'
 
 const { Text } = Typography
 
 export const TmdbReverseLookup = () => {
+  const { t } = useTranslation()
   const [isLoading, setLoading] = useState(true)
   const [isSaving, setSaving] = useState(false)
   const messageApi = useMessage()
@@ -31,7 +33,7 @@ export const TmdbReverseLookup = () => {
   const availableSources = [
     { value: 'imdb', label: 'IMDB' },
     { value: 'tvdb', label: 'TVDB' },
-    { value: 'douban', label: '豆瓣' },
+    { value: 'douban', label: t('control.sourceDouban') },
     { value: 'bangumi', label: 'Bangumi' },
   ]
 
@@ -40,7 +42,7 @@ export const TmdbReverseLookup = () => {
       const response = await getTmdbReverseLookupConfig()
       return response.data
     } catch (error) {
-      messageApi.error('获取TMDB反查配置失败')
+      messageApi.error(t('control.tmdbGetConfigFailed'))
       return { enabled: false, sources: ['imdb', 'tvdb'] }
     }
   }
@@ -60,7 +62,7 @@ export const TmdbReverseLookup = () => {
       const config = await getConfig()
       form.setFieldsValue(config)
     } catch (error) {
-      messageApi.error('加载TMDB反查配置失败')
+      messageApi.error(t('control.tmdbLoadConfigFailed'))
     } finally {
       setLoading(false)
     }
@@ -71,9 +73,9 @@ export const TmdbReverseLookup = () => {
       setSaving(true)
       const values = await form.validateFields()
       await saveConfig(values)
-      messageApi.success('TMDB反查配置已保存')
+      messageApi.success(t('control.tmdbSaveSuccess'))
     } catch (error) {
-      messageApi.error('保存TMDB反查配置失败')
+      messageApi.error(t('control.tmdbSaveFailed'))
     } finally {
       setSaving(false)
     }
@@ -93,10 +95,10 @@ export const TmdbReverseLookup = () => {
 
   return (
     <div className="my-6">
-      <Card title="TMDB反查配置">
+      <Card title={t('control.tmdbCardTitle')}>
         <Alert
-          message="功能说明"
-          description="当使用TVDB、IMDB、豆瓣、Bangumi等ID搜索时，如果获取到的标题不是中文，系统会自动通过这些ID反查TMDB获取中文标题，提高搜索准确性。"
+          message={t('control.tmdbFuncDesc')}
+          description={t('control.tmdbFuncDescContent')}
           type="info"
           showIcon
           className="!mb-4"
@@ -110,7 +112,7 @@ export const TmdbReverseLookup = () => {
         >
           <Form.Item
             name="enabled"
-            label="启用TMDB反查"
+            label={t('control.tmdbEnable')}
             valuePropName="checked"
           >
             <Switch />
@@ -119,8 +121,8 @@ export const TmdbReverseLookup = () => {
           {enabled && (
             <Form.Item
               name="sources"
-              label="启用反查的元数据源"
-              tooltip="选择哪些元数据源在获取非中文标题时触发TMDB反查"
+              label={t('control.tmdbEnableSources')}
+              tooltip={t('control.tmdbSourcesTip')}
             >
               <Checkbox.Group
                 options={availableSources}
@@ -132,9 +134,9 @@ export const TmdbReverseLookup = () => {
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit" loading={isSaving}>
-                保存配置
+                {t('control.settingsSaveConfig')}
               </Button>
-              <Button onClick={loadConfig}>重置</Button>
+              <Button onClick={loadConfig}>{t('control.settingsReset')}</Button>
             </Space>
           </Form.Item>
         </Form>
@@ -142,13 +144,13 @@ export const TmdbReverseLookup = () => {
         {enabled && (
           <div className="mt-4 p-4 bg-base-bg rounded">
             <Text strong className="te">
-              工作流程：
+              {t('control.tmdbWorkflow')}
             </Text>
             <ol className="p-0 mt-2 text-sm">
-              <li>1. 使用选中的元数据源ID进行搜索</li>
-              <li>2. 检测获取到的标题是否为中文</li>
-              <li>3. 如果不是中文，通过该ID反查TMDB获取中文标题</li>
-              <li>4. 使用中文标题进行后续的全网搜索和识别词匹配</li>
+              <li>{t('control.tmdbWorkflow1')}</li>
+              <li>{t('control.tmdbWorkflow2')}</li>
+              <li>{t('control.tmdbWorkflow3')}</li>
+              <li>{t('control.tmdbWorkflow4')}</li>
             </ol>
           </div>
         )}

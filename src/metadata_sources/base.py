@@ -14,6 +14,11 @@ class BaseMetadataSource(ABC):
 
     # 每个子类必须定义自己的提供商名称
     provider_name: str
+    # 用户可配置的 config key 列表，子类自行声明
+    # API 层的 GET/PUT 配置接口会自动读写这些 key，无需在 API 层硬编码
+    config_keys: List[str] = []
+    # 布尔类型的 config key（存储为字符串 "true"/"false"，读取时自动转换）
+    bool_config_keys: List[str] = []
     # 新增：声明可配置字段 { "db_key": ("UI标签", "类型", "提示") }
     configurable_fields: Dict[str, Tuple[str, str, str]] = {}
     # 新增：是否支持获取分集URL (用于补充源功能)
@@ -173,6 +178,18 @@ class BaseMetadataSource(ABC):
 
         Returns:
             匹配到的 ProviderSearchInfo 列表（无需去重，基类会处理）
+        """
+        return []
+
+    async def get_calendar(self, user: models.User) -> List[Dict[str, Any]]:
+        """获取该元数据源的日历/日程数据。
+
+        返回条目列表，每个条目至少包含：
+        - title: 标题
+        - airWeekday: 播出星期 (1=周一 ... 7=周日)
+        - origin: 来源标识 (= provider_name)
+        - isLocal: False
+        以及其他可选字段（imageUrl, rating, bangumiId, traktId 等）
         """
         return []
 

@@ -4,38 +4,33 @@
  * - 卡片模式：平铺 grid，分组头是宽行，组内是卡片
  * - 拖拽：整行/整卡可拖，条目拖到条目上弹窗创建分组
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Input, Modal, Tag, Tooltip, Space, Table, Dropdown, theme, Button } from 'antd'
 import { FolderOutlined, RightOutlined, DownOutlined, MenuOutlined } from '@ant-design/icons'
 import {
-  DndContext, DragOverlay, TouchSensor, MouseSensor,
+  DndContext, TouchSensor, MouseSensor,
   useSensor, useSensors, closestCenter,
   useDraggable, useDroppable,
 } from '@dnd-kit/core'
 import { MyIcon } from '@/components/MyIcon'
-
-// 自定义 modifier：让 DragOverlay 跟随光标（以激活点为基准），而非原始元素左上角
-const snapToCursorModifier = ({ activatorEvent, activeNodeRect, transform }) => {
-  if (activatorEvent && activeNodeRect) {
-    const isTouch = 'touches' in activatorEvent || 'changedTouches' in activatorEvent
-    const clientX = isTouch
-      ? (activatorEvent.touches?.[0]?.clientX ?? activatorEvent.changedTouches?.[0]?.clientX ?? 0)
-      : activatorEvent.clientX
-    const clientY = isTouch
-      ? (activatorEvent.touches?.[0]?.clientY ?? activatorEvent.changedTouches?.[0]?.clientY ?? 0)
-      : activatorEvent.clientY
-    // 让 overlay 左上角对准激活点，再由 CSS transform 将其居中
-    return {
-      ...transform,
-      x: transform.x + (clientX - activeNodeRect.left),
-      y: transform.y + (clientY - activeNodeRect.top),
-    }
-  }
-  return transform
-}
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../store/index.js'
 import dayjs from 'dayjs'
+import { useTranslation } from 'react-i18next'
+
+const DRAG_OVERLAY_SCALE = 0.9
+
+const getActivatorClientPoint = (event) => {
+  if (!event) return null
+  const touch = event.touches?.[0] || event.changedTouches?.[0]
+  if (touch) return { x: touch.clientX, y: touch.clientY }
+  if (typeof event.clientX === 'number' && typeof event.clientY === 'number') {
+    return { x: event.clientX, y: event.clientY }
+  }
+  return null
+}
+
+
 
 const getImageSrc = (r) => {
   let src = r.localImagePath || r.imageUrl
@@ -146,14 +141,15 @@ const typeIconMap = {
 }
 
 const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished, isDragging, isMobile }) => {
+  const { t } = useTranslation()
   const imageSrc = getImageSrc(record)
   const hasFav = record.sources?.some(s => s.isFavorited)
   const hasInc = record.sources?.some(s => s.incrementalRefreshEnabled)
   const allFin = record.sources?.length > 0 && record.sources.every(s => s.isFinished)
   const menuItems = [
-    { key: 'fav', label: hasFav ? '取消标记' : '标记', icon: <MyIcon icon={hasFav ? 'favorites-fill' : 'favorites'} size={15} />, onClick: () => onFavorite?.(record) },
-    { key: 'inc', label: hasInc ? '取消追更' : '追更', icon: <MyIcon icon={hasInc ? 'zengliang' : 'clock'} size={15} />, onClick: () => onIncremental?.(record) },
-    { key: 'fin', label: allFin ? '取消完结' : '完结', icon: <MyIcon icon={allFin ? 'wanjie1' : 'wanjie'} size={15} />, onClick: () => onFinished?.(record) },
+    { key: 'fav', label: hasFav ? t('libraryGroup.menuUnFav') : t('libraryGroup.menuFav'), icon: <MyIcon icon={hasFav ? 'favorites-fill' : 'favorites'} size={15} />, onClick: () => onFavorite?.(record) },
+    { key: 'inc', label: hasInc ? t('libraryGroup.menuUnInc') : t('libraryGroup.menuInc'), icon: <MyIcon icon={hasInc ? 'zengliang' : 'clock'} size={15} />, onClick: () => onIncremental?.(record) },
+    { key: 'fin', label: allFin ? t('libraryGroup.menuUnFin') : t('libraryGroup.menuFin'), icon: <MyIcon icon={allFin ? 'wanjie1' : 'wanjie'} size={15} />, onClick: () => onFinished?.(record) },
   ]
   return (
     <div className="group relative flex flex-col rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:shadow-md transition-shadow select-none"
@@ -210,7 +206,7 @@ const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncreme
         <div className="text-xs text-gray-400 flex items-center gap-1">
           {record.year && <span>{record.year}</span>}
           {record.type !== 'movie' && record.season && <><span>·</span><span>S{record.season}</span></>}
-          {record.episodeCount > 0 && <><span>·</span><span>{record.episodeCount}集</span></>}
+          {record.episodeCount > 0 && <><span>·</span><span>{t('libraryGroup.episodeUnit', { count: record.episodeCount })}</span></>}
         </div>
       </div>
     </div>
@@ -245,6 +241,7 @@ const DroppableCardItem = ({ record, children }) => {
 
 // ---- 移动端列表模式：大卡片样式（复原旧版 renderCard 风格，集成拖拽）----
 const MobileLibraryCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished }) => {
+  const { t } = useTranslation()
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `anime-${record.animeId}`,
     data: { type: 'anime', animeId: record.animeId, groupId: record.groupId ?? null },
@@ -274,14 +271,14 @@ const MobileLibraryCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, o
         <div className="flex-1 space-y-2 min-w-0">
           <div className="font-bold text-base line-clamp-2">{record.title}</div>
           <div className="flex flex-wrap gap-1">
-            <Tag color="blue" style={{ fontSize: 12 }}>{typeIconMap[record.type] === 'movie' ? '电影/剧场版' : record.type === 'tv_series' ? '电视节目' : record.type === 'ova' ? 'OVA' : '其他'}</Tag>
-            {record.type !== 'movie' && record.season > 1 && <Tag style={{ fontSize: 12 }}>第{record.season}季</Tag>}
-            {record.year && <Tag style={{ fontSize: 12 }}>{record.year}年</Tag>}
+            <Tag color="blue" style={{ fontSize: 12 }}>{typeIconMap[record.type] === 'movie' ? t('libraryGroup.typeMovie') : record.type === 'tv_series' ? t('libraryGroup.typeTv') : record.type === 'ova' ? t('libraryGroup.typeOva') : t('libraryGroup.typeOther')}</Tag>
+            {record.type !== 'movie' && record.season > 1 && <Tag style={{ fontSize: 12 }}>{t('libraryGroup.seasonTag', { season: record.season })}</Tag>}
+            {record.year && <Tag style={{ fontSize: 12 }}>{t('libraryGroup.yearTag', { year: record.year })}</Tag>}
           </div>
           <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 gap-1">
-            <span>集数: {record.episodeCount || 0}</span>
+            <span>{t('libraryGroup.episodeCount', { count: record.episodeCount || 0 })}</span>
             <span className="mx-1">·</span>
-            <span>源: {record.sourceCount || 0}</span>
+            <span>{t('libraryGroup.sourceCount', { count: record.sourceCount || 0 })}</span>
             {/* 状态图标：放在源数量右边 */}
             {(hasFav || hasInc || allFin) && (
               <>
@@ -298,18 +295,18 @@ const MobileLibraryCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, o
       <div className="flex justify-around pt-2 mt-2 border-t border-gray-200 dark:border-gray-700"
         onClick={e => e.stopPropagation()}>
         <Button size="small" type="text" icon={<MyIcon icon="edit" size={16} />}
-          onClick={() => onEdit?.(record)}>编辑</Button>
+          onClick={() => onEdit?.(record)}>{t('libraryGroup.btnEdit')}</Button>
         <Button size="small" type="text" icon={<MyIcon icon="book" size={16} />}
-          onClick={() => onNavigate?.(record)}>详情</Button>
+          onClick={() => onNavigate?.(record)}>{t('libraryGroup.btnDetail')}</Button>
         <Dropdown menu={{ items: [
-          { key: 'fav', label: hasFav ? '取消标记' : '标记', icon: <MyIcon icon={hasFav ? 'favorites-fill' : 'favorites'} size={15} />, onClick: () => onFavorite?.(record) },
-          { key: 'inc', label: hasInc ? '取消追更' : '追更', icon: <MyIcon icon={hasInc ? 'zengliang' : 'clock'} size={15} />, onClick: () => onIncremental?.(record) },
-          { key: 'fin', label: allFin ? '取消完结' : '完结', icon: <MyIcon icon={allFin ? 'wanjie1' : 'wanjie'} size={15} />, onClick: () => onFinished?.(record) },
+          { key: 'fav', label: hasFav ? t('libraryGroup.menuUnFav') : t('libraryGroup.menuFav'), icon: <MyIcon icon={hasFav ? 'favorites-fill' : 'favorites'} size={15} />, onClick: () => onFavorite?.(record) },
+          { key: 'inc', label: hasInc ? t('libraryGroup.menuUnInc') : t('libraryGroup.menuInc'), icon: <MyIcon icon={hasInc ? 'zengliang' : 'clock'} size={15} />, onClick: () => onIncremental?.(record) },
+          { key: 'fin', label: allFin ? t('libraryGroup.menuUnFin') : t('libraryGroup.menuFin'), icon: <MyIcon icon={allFin ? 'wanjie1' : 'wanjie'} size={15} />, onClick: () => onFinished?.(record) },
         ]}} trigger={['click']}>
-          <Button size="small" type="text" icon={<MenuOutlined />}>更多</Button>
+          <Button size="small" type="text" icon={<MenuOutlined />}>{t('libraryGroup.btnMore')}</Button>
         </Dropdown>
         <Button size="small" type="text" danger icon={<MyIcon icon="delete" size={16} />}
-          onClick={() => onDelete?.(record)}>删除</Button>
+          onClick={() => onDelete?.(record)}>{t('libraryGroup.btnDelete')}</Button>
       </div>
     </div>
   )
@@ -317,6 +314,7 @@ const MobileLibraryCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, o
 
 // ---- 折叠状态的分组卡片（同时是可投放区域）----
 const CollapsedGroupDropzone = ({ group, items, onToggle, onDelete, headerBg, isMobile }) => {
+  const { t } = useTranslation()
   const { isOver, setNodeRef } = useDroppable({
     id: `group-${group.id}`,
     data: { type: 'group', groupId: group.id },
@@ -353,18 +351,18 @@ const CollapsedGroupDropzone = ({ group, items, onToggle, onDelete, headerBg, is
             <div className="flex items-center gap-1 flex-wrap">
               <FolderOutlined style={{ color: '#faad14', fontSize: 18 }} />
               <span className="font-bold" style={{ fontSize: 16 }}>{group.name}</span>
-              <Tag color="orange" style={{ fontSize: 13 }}>{items.length}部</Tag>
+              <Tag color="orange" style={{ fontSize: 13 }}>{t('libraryGroup.partCount', { count: items.length })}</Tag>
             </div>
             {isOver
-              ? <div style={{ fontSize: 13, color: '#1677ff', fontWeight: 500 }}>松开以加入此分组</div>
-              : <div style={{ fontSize: 13, color: '#aaa' }}>点击展开 · 向上拖拽可加入</div>
+              ? <div style={{ fontSize: 13, color: '#1677ff', fontWeight: 500 }}>{t('libraryGroup.dropToJoin')}</div>
+              : <div style={{ fontSize: 13, color: '#aaa' }}>{t('libraryGroup.clickExpandDrag')}</div>
             }
           </div>
         </div>
         {/* 操作按钮行 */}
         <div className="flex justify-center gap-2 pt-2 mt-2 border-t border-gray-200 dark:border-gray-700">
           <Button size="small" type="text" danger icon={<MyIcon icon="delete" size={16} />}
-            onClick={e => { e.stopPropagation(); onDelete() }}>解散分组</Button>
+            onClick={e => { e.stopPropagation(); onDelete() }}>{t('libraryGroup.btnDissolveGroup')}</Button>
         </div>
       </div>
     )
@@ -401,16 +399,16 @@ const CollapsedGroupDropzone = ({ group, items, onToggle, onDelete, headerBg, is
           <FolderOutlined style={{ color: '#faad14', fontSize: 13 }} />
           <RightOutlined style={{ fontSize: 9, color: '#aaa' }} />
           <span style={{ fontWeight: 600, fontSize: 13 }}>{group.name}</span>
-          <Tag color="default" style={{ marginLeft: 2 }}>{items.length} 个条目</Tag>
+          <Tag color="default" style={{ marginLeft: 2 }}>{t('libraryGroup.itemCount', { count: items.length })}</Tag>
         </div>
         {/* 收录时间显示在第二行（副标题），避免与 Table 固定右列对齐问题 */}
         {items.length > 0 && (() => {
           const latestAt = items.reduce((max, r) => (!max || r.createdAt > max ? r.createdAt : max), null)
           return <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>
-            最新收录：{dayjs(latestAt).format('YYYY-MM-DD HH:mm')}
+            {t('libraryGroup.latestCollected', { time: dayjs(latestAt).format('YYYY-MM-DD HH:mm') })}
           </div>
         })()}
-        {isOver && <div style={{ fontSize: 11, color: '#1677ff', marginTop: 2 }}>松开以加入此分组</div>}
+        {isOver && <div style={{ fontSize: 11, color: '#1677ff', marginTop: 2 }}>{t('libraryGroup.dropToJoin')}</div>}
       </div>
       <Button
         size="small"
@@ -420,7 +418,7 @@ const CollapsedGroupDropzone = ({ group, items, onToggle, onDelete, headerBg, is
         style={{ flexShrink: 0, marginRight: 40 }}
         onClick={e => { e.stopPropagation(); onDelete() }}
       >
-        拆分分组
+        {t('libraryGroup.btnSplitGroup')}
       </Button>
     </div>
   )
@@ -428,6 +426,7 @@ const CollapsedGroupDropzone = ({ group, items, onToggle, onDelete, headerBg, is
 
 // ---- 拆分投放区（拖出分组时显示在全局列头上方）----
 const UngroupDropzone = ({ visible, children }) => {
+  const { t } = useTranslation()
   const { isOver, setNodeRef } = useDroppable({
     id: 'ungroup-zone',
     data: { type: 'ungroup' },
@@ -451,7 +450,7 @@ const UngroupDropzone = ({ visible, children }) => {
           transition: 'all 0.15s',
         }}>
           <span style={{ fontSize: 18 }}>📤</span>
-          <span>拖到此处拆分出分组</span>
+          <span>{t('libraryGroup.dropToSplit')}</span>
         </div>
       )}
     </div>
@@ -460,6 +459,7 @@ const UngroupDropzone = ({ visible, children }) => {
 
 // ---- 移动端专用：固定悬浮拆分投放区（position:fixed，覆盖在顶部控制区域上方）----
 const MobileUngroupOverlay = ({ visible }) => {
+  const { t } = useTranslation()
   const { isOver, setNodeRef } = useDroppable({
     id: 'ungroup-zone',
     data: { type: 'ungroup' },
@@ -493,13 +493,14 @@ const MobileUngroupOverlay = ({ visible }) => {
       }}
     >
       <span style={{ fontSize: 22 }}>📤</span>
-      <span>拖到此处拆分出分组</span>
+      <span>{t('libraryGroup.dropToSplit')}</span>
     </div>
   )
 }
 
 // ---- 卡片模式：折叠分组卡片（卡片样式，2×2 海报拼图，支持 drop）----
 const CollapsedGroupCard = ({ group, items, onClick, onDelete }) => {
+  const { t } = useTranslation()
   const { isOver, setNodeRef } = useDroppable({
     id: `group-${group.id}`,
     data: { type: 'group', groupId: group.id },
@@ -543,13 +544,13 @@ const CollapsedGroupCard = ({ group, items, onClick, onDelete }) => {
         {/* 拖拽悬停提示层 */}
         {isOver && (
           <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center z-10 pointer-events-none">
-            <span className="text-xs text-blue-600 dark:text-blue-400 font-medium bg-white/90 dark:bg-gray-600/90 px-2 py-1 rounded">加入此分组</span>
+            <span className="text-xs text-blue-600 dark:text-blue-400 font-medium bg-white/90 dark:bg-gray-600/90 px-2 py-1 rounded">{t('libraryGroup.joinThisGroup')}</span>
           </div>
         )}
         {/* 悬浮操作层 */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-200 flex items-end justify-end p-2 opacity-0 group-hover:opacity-100">
           <Space size={6} onClick={e => e.stopPropagation()}>
-            <Tooltip title="解散分组">
+            <Tooltip title={t('libraryGroup.tipDissolveGroup')}>
               <span className="w-7 h-7 bg-white/90 dark:bg-gray-600/90 rounded flex items-center justify-center cursor-pointer hover:bg-white dark:hover:bg-gray-500 hover:text-red-500"
                 onClick={onDelete}>
                 <MyIcon icon="delete" size={14} />
@@ -568,7 +569,7 @@ const CollapsedGroupCard = ({ group, items, onClick, onDelete }) => {
           </div>
         </Tooltip>
         <div className="text-xs text-gray-400">
-          {items.length} 个条目
+          {t('libraryGroup.itemCount', { count: items.length })}
         </div>
       </div>
     </div>
@@ -581,12 +582,17 @@ const LibraryGroupView = ({
   onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished,
   onSetGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onDeleteGroupSilent,
 }) => {
+  const { t } = useTranslation()
   const { token } = theme.useToken()
   const { toggle, isCollapsed } = useGroupCollapse()
 
   // 卡片模式：分组详情视图状态
   const [viewingGroupId, setViewingGroupId] = useState(null)
   const [activeItem, setActiveItem] = useState(null)
+  const [activeDragRect, setActiveDragRect] = useState(null)
+  const [activeDragOffset, setActiveDragOffset] = useState({ x: 0, y: 0 })
+  const [activeDragHtml, setActiveDragHtml] = useState('')
+  const [dragCursor, setDragCursor] = useState(null)
   const [isDraggingFromGroup, setIsDraggingFromGroup] = useState(false)
   const [nameModalOpen, setNameModalOpen] = useState(false)
   const [pendingInfo, setPendingInfo] = useState(null)
@@ -602,16 +608,55 @@ const LibraryGroupView = ({
     }),
   )
 
-  const handleDragStart = ({ active }) => {
+
+  useEffect(() => {
+    if (!activeItem) return undefined
+
+    const updateCursor = (event) => {
+      const point = getActivatorClientPoint(event)
+      if (point) setDragCursor(point)
+    }
+
+    window.addEventListener('pointermove', updateCursor, { passive: true })
+    window.addEventListener('mousemove', updateCursor, { passive: true })
+    window.addEventListener('touchmove', updateCursor, { passive: true })
+
+    return () => {
+      window.removeEventListener('pointermove', updateCursor)
+      window.removeEventListener('mousemove', updateCursor)
+      window.removeEventListener('touchmove', updateCursor)
+    }
+  }, [activeItem])
+
+  const handleDragStart = ({ active, activatorEvent }) => {
     const item = list.find(a => `anime-${a.animeId}` === active.id) || null
+    const initialRect = active.rect.current?.initial
+    const rowNode = item ? document.querySelector(`tr[data-row-key="${item.animeId}"]`) : null
+    const rowRect = rowNode?.getBoundingClientRect()
+    const dragRect = initialRect || rowRect
+    const cursorPoint = getActivatorClientPoint(activatorEvent)
     setActiveItem(item)
+    setActiveDragRect(dragRect ? { width: dragRect.width, height: dragRect.height } : { width: 360, height: 88 })
+    setActiveDragOffset(cursorPoint && dragRect
+      ? { x: cursorPoint.x - dragRect.left, y: cursorPoint.y - dragRect.top }
+      : { x: 0, y: 0 })
+    setActiveDragHtml(rowNode?.outerHTML || '')
+    setDragCursor(cursorPoint)
     // 如果拖拽的条目属于某个分组，标记为"从分组拖出"
     setIsDraggingFromGroup(!!(item?.groupId))
   }
 
-  const handleDragEnd = ({ active, over }) => {
+  const clearDragState = () => {
     setActiveItem(null)
+    setActiveDragRect(null)
+    setActiveDragOffset({ x: 0, y: 0 })
+    setActiveDragHtml('')
+    setDragCursor(null)
     setIsDraggingFromGroup(false)
+  }
+
+  const handleDragEnd = ({ active, over }) => {
+    clearDragState()
     if (!over || !active) return
     const draggedId = Number(active.id.replace('anime-', ''))
     const dragged = list.find(a => a.animeId === draggedId)
@@ -698,11 +743,11 @@ const LibraryGroupView = ({
           <FolderOutlined style={{ color: '#faad14', fontSize: 14 }} />
           <DownOutlined style={{ fontSize: 9, color: '#aaa' }} />
           <GroupNameEditor group={g} onRename={onRenameGroup} />
-          <Tag color="default" style={{ marginLeft: 2 }}>{items.length} 个条目</Tag>
+          <Tag color="default" style={{ marginLeft: 2 }}>{t('libraryGroup.itemCount', { count: items.length })}</Tag>
           {isMobile
             ? <Button size="small" type="text" danger icon={<MyIcon icon="delete" size={15} />}
                 style={{ marginLeft: 'auto' }}
-                onClick={e => { e.stopPropagation(); onDeleteGroup(g) }}>拆分分组</Button>
+                onClick={e => { e.stopPropagation(); onDeleteGroup(g) }}>{t('libraryGroup.btnSplitGroup')}</Button>
             : <Button
                 size="small"
                 type="text"
@@ -711,7 +756,7 @@ const LibraryGroupView = ({
                 style={{ marginLeft: 'auto', marginRight: 56 }}
                 onClick={e => { e.stopPropagation(); onDeleteGroup(g) }}
               >
-                拆分分组
+                {t('libraryGroup.btnSplitGroup')}
               </Button>
           }
         </div>
@@ -722,6 +767,7 @@ const LibraryGroupView = ({
               </DroppableCardItem>
             ))}</div>
           : <Table
+              className="library-table"
               dataSource={items}
               columns={columns}
               loading={false}
@@ -790,6 +836,7 @@ const LibraryGroupView = ({
               ))}</div>
             : <Table
                 key={chunk.key}
+                className="library-table"
                 dataSource={records}
                 columns={columns}
                 loading={false}
@@ -834,17 +881,17 @@ const LibraryGroupView = ({
                 className="cursor-pointer hover:text-primary text-gray-500 text-sm"
                 onClick={() => setViewingGroupId(null)}
               >
-                弹幕库
+                {t('libraryGroup.pageTitle')}
               </span>
               <span className="text-gray-300 text-sm">/</span>
               <FolderOutlined style={{ color: '#faad14', fontSize: 13 }} />
-              <span style={{ fontWeight: 600, fontSize: 14 }}>{viewingGroup?.name || '分组'}</span>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>{viewingGroup?.name || t('libraryGroup.groupFallback')}</span>
               <Tag color="orange" style={{ marginLeft: 2 }}>{groupItems.length}</Tag>
               <div style={{ flex: 1 }} />
-              <Button size="small" onClick={() => setViewingGroupId(null)}>返回</Button>
+              <Button size="small" onClick={() => setViewingGroupId(null)}>{t('libraryGroup.btnBack')}</Button>
               <Button size="small" danger icon={<MyIcon icon="delete" size={14} />}
                 onClick={() => { onDeleteGroup(viewingGroup); setViewingGroupId(null) }}>
-                解散分组
+                {t('libraryGroup.btnDissolveGroup')}
               </Button>
             </div>
           ) : (
@@ -854,17 +901,17 @@ const LibraryGroupView = ({
                   className="cursor-pointer hover:text-primary text-gray-500 text-sm"
                   onClick={() => setViewingGroupId(null)}
                 >
-                  弹幕库
+                  {t('libraryGroup.pageTitle')}
                 </span>
                 <span className="text-gray-300 text-sm">/</span>
                 <FolderOutlined style={{ color: '#faad14', fontSize: 13 }} />
-                <span style={{ fontWeight: 600, fontSize: 14 }}>{viewingGroup?.name || '分组'}</span>
+                <span style={{ fontWeight: 600, fontSize: 14 }}>{viewingGroup?.name || t('libraryGroup.groupFallback')}</span>
                 <Tag color="orange" style={{ marginLeft: 2 }}>{groupItems.length}</Tag>
                 <div style={{ flex: 1 }} />
-                <Button size="small" onClick={() => setViewingGroupId(null)}>返回</Button>
+                <Button size="small" onClick={() => setViewingGroupId(null)}>{t('libraryGroup.btnBack')}</Button>
                 <Button size="small" danger icon={<MyIcon icon="delete" size={14} />}
                   onClick={() => { onDeleteGroup(viewingGroup); setViewingGroupId(null) }}>
-                  解散分组
+                  {t('libraryGroup.btnDissolveGroup')}
                 </Button>
               </div>
             </UngroupDropzone>
@@ -919,11 +966,12 @@ const LibraryGroupView = ({
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter}
-      onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={clearDragState}>
       {/* 卡片模式无需列头；列表模式统一显示一个全局列头（拖拽时变为拆分区）；移动端不显示列头 */}
       {viewMode !== 'card' && !isMobile && (
         <UngroupDropzone visible={isDraggingFromGroup}>
           <Table
+            className="library-table"
             dataSource={[]}
             columns={columns}
             loading={false}
@@ -942,19 +990,36 @@ const LibraryGroupView = ({
       {/* 移动端：拖拽分组内条目时，固定悬浮在顶部控制区域上方的拆分投放区 */}
       {isMobile && <MobileUngroupOverlay visible={isDraggingFromGroup} />}
 
-      <DragOverlay modifiers={[snapToCursorModifier]}>
-        {activeItem && (
-          <div className="bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md px-3 py-1.5 border border-blue-100 dark:border-gray-600"
-            style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: 13, fontWeight: 500, transform: 'translate(-50%, -50%)' }}>
-            {activeItem.title}
-          </div>
-        )}
-      </DragOverlay>
+      {activeItem && dragCursor && (
+        <div
+          className="pointer-events-none library-drag-overlay"
+          style={{
+            position: 'fixed',
+            left: dragCursor.x - activeDragOffset.x * DRAG_OVERLAY_SCALE - (isMobile ? 70 : 70),
+            top: dragCursor.y - activeDragOffset.y * DRAG_OVERLAY_SCALE - (isMobile ? 170 : 170),
+            width: activeDragRect?.width || 360,
+            height: activeDragRect?.height || 88,
+            zIndex: 9999,
+            transform: `scale(${DRAG_OVERLAY_SCALE})`,
+            transformOrigin: 'top left',
+          }}
+        >
+          {activeDragHtml ? (
+            <table style={{ width: '100%', height: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+              <tbody dangerouslySetInnerHTML={{ __html: activeDragHtml }} />
+            </table>
+          ) : (
+            <div className="h-full flex items-center px-4 text-sm font-medium truncate">
+              {activeItem.title}
+            </div>
+          )}
+        </div>
+      )}
 
-      <Modal title="为新分组命名" open={nameModalOpen}
+      <Modal title={t('libraryGroup.nameGroupTitle')} open={nameModalOpen}
         onOk={confirmCreate} onCancel={() => { setNameModalOpen(false); setPendingInfo(null) }}
-        okText="创建" cancelText="取消" okButtonProps={{ disabled: !newGroupName.trim() }}>
-        <Input placeholder="请输入分组名称" value={newGroupName}
+        okText={t('libraryGroup.btnCreate')} cancelText={t('common.cancel')} okButtonProps={{ disabled: !newGroupName.trim() }}>
+        <Input placeholder={t('libraryGroup.placeholderGroupName')} value={newGroupName}
           onChange={e => setNewGroupName(e.target.value)} onPressEnter={confirmCreate} autoFocus />
       </Modal>
     </DndContext>

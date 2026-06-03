@@ -9,4 +9,6 @@ export const RoutePaths = {
   SETTING: '/setting',
   CONTROL: '/control',
   BGM_OAUTH_CALLBACK: '/bgm-oauth-callback',
+  TRAKT_OAUTH_CALLBACK: '/trakt-oauth-callback',
+  BATCH_MANAGE: '/library/batch-manage',
 }

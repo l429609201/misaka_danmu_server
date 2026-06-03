@@ -9,12 +9,14 @@ import { QuestionCircleOutlined, SaveOutlined, ThunderboltOutlined, CheckCircleO
 import AIMetrics from './AIMetrics'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store/index.js'
+import { useTranslation } from 'react-i18next'
 
 const CustomSwitch = (props) => {
   return <Switch {...props} />
 }
 
 const AutoMatchSetting = () => {
+  const { t } = useTranslation()
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -171,7 +173,7 @@ const AutoMatchSetting = () => {
       }
     } catch (error) {
       console.error('加载配置失败:', error)
-      message.error(`加载配置失败: ${error?.response?.data?.message || error?.message || error?.detail || String(error) || '未知错误'}`)
+      message.error(t('autoMatch.loadFailed', { error: error?.response?.data?.message || error?.message || error?.detail || String(error) || t('common.unknown') }))
     } finally {
       setLoading(false)
     }
@@ -269,7 +271,7 @@ const AutoMatchSetting = () => {
         setConfig('aiThinkingEnabled', values.aiThinkingEnabled ? 'true' : 'false')
       ])
 
-      message.success('AI连接配置保存成功')
+      message.success(t('autoMatch.saveConnectionSuccess'))
 
       // 保存成功后重新加载余额
       if (selectedProvider?.supportBalance) {
@@ -277,7 +279,7 @@ const AutoMatchSetting = () => {
       }
     } catch (error) {
       console.error('保存配置失败:', error)
-      message.error(`保存失败: ${error?.response?.data?.message || error?.message || '未知错误'}`)
+      message.error(t('autoMatch.saveFailed', { error: error?.response?.data?.message || error?.message || t('common.unknown') }))
     } finally {
       setSaving(false)
     }
@@ -305,10 +307,10 @@ const AutoMatchSetting = () => {
         setConfig('aiEpisodeGroupPrompt', values.aiEpisodeGroupPrompt || '')
       ])
 
-      message.success('AI自动匹配配置保存成功')
+      message.success(t('autoMatch.saveMatchSuccess'))
     } catch (error) {
       console.error('保存配置失败:', error)
-      message.error(`保存失败: ${error?.response?.data?.message || error?.message || '未知错误'}`)
+      message.error(t('autoMatch.saveFailed', { error: error?.response?.data?.message || error?.message || t('common.unknown') }))
     } finally {
       setSaving(false)
     }
@@ -331,10 +333,10 @@ const AutoMatchSetting = () => {
         setConfig('aiNameConversionPrompt', values.aiNameConversionPrompt || '')
       ])
 
-      message.success('AI识别增强配置保存成功')
+      message.success(t('autoMatch.saveRecognitionSuccess'))
     } catch (error) {
       console.error('保存配置失败:', error)
-      message.error(`保存失败: ${error?.response?.data?.message || error?.message || '未知错误'}`)
+      message.error(t('autoMatch.saveFailed', { error: error?.response?.data?.message || error?.message || t('common.unknown') }))
     } finally {
       setSaving(false)
     }
@@ -343,14 +345,14 @@ const AutoMatchSetting = () => {
   // 获取模型名称占位符
   const getModelPlaceholder = (provider) => {
     const providerConfig = aiProviders.find(p => p.id === provider)
-    return providerConfig?.modelPlaceholder || '请输入模型名称'
+    return providerConfig?.modelPlaceholder || t('autoMatch.modelPlaceholder')
   }
 
   // 刷新模型列表
   const handleRefreshModels = async () => {
     const currentProvider = form.getFieldValue('aiProvider')
     if (!currentProvider) {
-      message.warning('请先选择AI提供商')
+      message.warning(t('autoMatch.selectProviderFirst'))
       return
     }
 
@@ -372,14 +374,14 @@ const AutoMatchSetting = () => {
 
         const newCount = response.data.newCount || 0
         if (newCount > 0) {
-          message.success(`刷新成功！发现 ${newCount} 个新模型`)
+          message.success(t('autoMatch.refreshModelsNewCount', { count: newCount }))
         } else {
-          message.success('刷新成功！模型列表已是最新')
+          message.success(t('autoMatch.refreshModelsLatest'))
         }
       }
     } catch (error) {
       console.error('刷新模型列表失败:', error)
-      message.error('刷新失败: ' + (error.response?.data?.detail || error.message))
+      message.error(t('autoMatch.refreshModelsFailed', { error: error.response?.data?.detail || error.message }))
     } finally {
       setRefreshingModels(false)
     }
@@ -398,7 +400,7 @@ const AutoMatchSetting = () => {
         <div>
           <div style={{ fontWeight: 500 }}>
             {model.label}
-            {model.isNew && <span style={{ marginLeft: '8px', color: '#52c41a', fontSize: '12px' }}>新</span>}
+            {model.isNew && <span style={{ marginLeft: '8px', color: '#52c41a', fontSize: '12px' }}>{t('autoMatch.modelNew')}</span>}
           </div>
           {model.description && (
             <div style={{ fontSize: '12px', color: '#999' }}>{model.description}</div>
@@ -411,7 +413,7 @@ const AutoMatchSetting = () => {
   // 获取Base URL占位符
   const getBaseUrlPlaceholder = (provider) => {
     const providerConfig = aiProviders.find(p => p.id === provider)
-    return providerConfig?.baseUrlPlaceholder || '可选,用于自定义接口地址'
+    return providerConfig?.baseUrlPlaceholder || t('autoMatch.baseUrlPlaceholder')
   }
 
   // 测试AI连接
@@ -423,7 +425,7 @@ const AutoMatchSetting = () => {
       const values = form.getFieldsValue(['aiProvider', 'aiApiKey', 'aiBaseUrl', 'aiModel'])
 
       if (!values.aiProvider || !values.aiApiKey || !values.aiModel) {
-        message.warning('请先填写AI提供商、API密钥和模型名称')
+        message.warning(t('autoMatch.testRequiredFields'))
         return
       }
 
@@ -437,17 +439,17 @@ const AutoMatchSetting = () => {
       setTestResult(response.data)
 
       if (response.data.success) {
-        message.success(`测试成功! 响应时间: ${response.data.latency}ms`)
+        message.success(t('autoMatch.testSuccess', { latency: response.data.latency }))
       } else {
-        message.error('测试失败,请查看详细信息')
+        message.error(t('autoMatch.testFailed'))
       }
     } catch (error) {
       setTestResult({
         success: false,
-        message: '测试请求失败',
-        error: error?.response?.data?.message || error?.message || error?.detail || String(error) || '未知错误'
+        message: t('autoMatch.testRequestFailed'),
+        error: error?.response?.data?.message || error?.message || error?.detail || String(error) || t('common.unknown')
       })
-      message.error(`测试失败: ${error?.response?.data?.message || error?.message || error?.detail || String(error) || '未知错误'}`)
+      message.error(t('autoMatch.loadFailed', { error: error?.response?.data?.message || error?.message || error?.detail || String(error) || t('common.unknown') }))
     } finally {
       setTesting(false)
     }
@@ -461,13 +463,13 @@ const AutoMatchSetting = () => {
 
       if (defaultValue) {
         form.setFieldValue(promptKey, defaultValue)
-        message.success('已填充默认提示词')
+        message.success(t('autoMatch.fillDefaultSuccess'))
       } else {
-        message.error('未找到默认提示词')
+        message.error(t('autoMatch.fillDefaultNotFound'))
       }
     } catch (error) {
       console.error('获取默认提示词失败:', error)
-      message.error(`获取默认提示词失败: ${error?.response?.data?.message || error?.message || '未知错误'}`)
+      message.error(t('autoMatch.fillDefaultFailed', { error: error?.response?.data?.message || error?.message || t('common.unknown') }))
     }
   }
 
@@ -497,18 +499,18 @@ const AutoMatchSetting = () => {
         >
           <Tabs defaultActiveKey="connection">
             {/* 标签页1: AI连接配置 */}
-            <TabPane tab="AI连接配置" key="connection">
+            <TabPane tab={t('autoMatch.tabConnection')} key="connection">
               <Form.Item
                 name="aiProvider"
                 label={
                   <Space>
-                    <span>AI提供商</span>
-                    <Tooltip title="选择AI服务提供商。不同提供商支持不同的模型和功能。">
+                    <span>{t('autoMatch.labelProvider')}</span>
+                    <Tooltip title={t('autoMatch.tooltipProvider')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
                 }
-                rules={[{ required: matchMode === 'ai', message: '请选择AI提供商' }]}
+                rules={[{ required: matchMode === 'ai', message: t('autoMatch.ruleProvider') }]}
               >
                 <Select loading={providersLoading} onChange={handleProviderChange}>
                   {aiProviders.map(provider => (
@@ -523,13 +525,13 @@ const AutoMatchSetting = () => {
                 name="aiApiKey"
                 label={
                   <Space>
-                    <span>API密钥</span>
-                    <Tooltip title="从AI服务提供商获取的API密钥。必填项。">
+                    <span>{t('autoMatch.labelApiKey')}</span>
+                    <Tooltip title={t('autoMatch.tooltipApiKey')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
                 }
-                rules={[{ required: matchMode === 'ai', message: '请输入API密钥' }]}
+                rules={[{ required: matchMode === 'ai', message: t('autoMatch.ruleApiKey') }]}
               >
                 <Input.Password placeholder="sk-..." />
               </Form.Item>
@@ -545,8 +547,8 @@ const AutoMatchSetting = () => {
                     name="aiBaseUrl"
                     label={
                       <Space>
-                        <span>Base URL</span>
-                        <Tooltip title="自定义API接口地址。通常用于第三方兼容接口或代理服务。留空使用默认地址。">
+                        <span>{t('autoMatch.labelBaseUrl')}</span>
+                        <Tooltip title={t('autoMatch.tooltipBaseUrl')}>
                           <QuestionCircleOutlined />
                         </Tooltip>
                       </Space>
@@ -569,8 +571,8 @@ const AutoMatchSetting = () => {
                   <Form.Item
                     label={
                       <Space>
-                        <span>模型名称</span>
-                        <Tooltip title="AI模型的名称。不同模型有不同的性能和价格。可从下拉列表选择或自定义输入。">
+                        <span>{t('autoMatch.labelModel')}</span>
+                        <Tooltip title={t('autoMatch.tooltipModel')}>
                           <QuestionCircleOutlined />
                         </Tooltip>
                       </Space>
@@ -580,7 +582,7 @@ const AutoMatchSetting = () => {
                       <Form.Item
                         name="aiModel"
                         noStyle
-                        rules={[{ required: matchMode === 'ai', message: '请输入模型名称' }]}
+                        rules={[{ required: matchMode === 'ai', message: t('autoMatch.ruleModel') }]}
                       >
                         <AutoComplete
                           style={{ flex: 1 }}
@@ -596,14 +598,14 @@ const AutoMatchSetting = () => {
                           onBlur={() => setModelDropdownOpen(false)}
                         />
                       </Form.Item>
-                      <Tooltip title="从AI提供商API获取最新模型列表">
+                      <Tooltip title={t('autoMatch.tooltipRefreshModels')}>
                         <Button
                           icon={<ReloadOutlined />}
                           loading={refreshingModels}
                           onClick={handleRefreshModels}
                           disabled={!getFieldValue('aiProvider')}
                         >
-                          刷新
+                          {t('autoMatch.btnRefreshModels')}
                         </Button>
                       </Tooltip>
                     </Space.Compact>
@@ -613,14 +615,14 @@ const AutoMatchSetting = () => {
 
               {/* 余额卡片 - 根据选中的提供商配置决定是否显示 */}
               {selectedProvider?.supportBalance && (
-                <Form.Item label="账户余额">
+                <Form.Item label={t('autoMatch.labelBalance')}>
                   <Space direction="vertical" style={{ width: '100%' }}>
                     {/* 余额卡片 */}
                     <Card size="small" style={{ marginBottom: '16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontWeight: 500 }}>💰 账户余额</span>
-                          <Tooltip title={`查询 ${selectedProvider.displayName} 账户余额`}>
+                          <span style={{ fontWeight: 500 }}>{t('autoMatch.balanceTitle')}</span>
+                          <Tooltip title={t('autoMatch.tooltipBalance', { name: selectedProvider.displayName })}>
                             <QuestionCircleOutlined />
                           </Tooltip>
                         </div>
@@ -630,7 +632,7 @@ const AutoMatchSetting = () => {
                           loading={balanceLoading}
                           icon={<ReloadOutlined />}
                         >
-                          刷新
+                          {t('autoMatch.btnRefreshBalance')}
                         </Button>
                       </div>
 
@@ -644,7 +646,7 @@ const AutoMatchSetting = () => {
                         <Row gutter={16}>
                           <Col span={8}>
                             <Statistic
-                              title="总余额"
+                              title={t('autoMatch.balanceTotal')}
                               value={balanceInfo.data.total_balance}
                               prefix={balanceInfo.data.currency === 'CNY' ? '¥' : '$'}
                               precision={2}
@@ -652,7 +654,7 @@ const AutoMatchSetting = () => {
                           </Col>
                           <Col span={8}>
                             <Statistic
-                              title="赠金余额"
+                              title={t('autoMatch.balanceGranted')}
                               value={balanceInfo.data.granted_balance}
                               prefix={balanceInfo.data.currency === 'CNY' ? '¥' : '$'}
                               precision={2}
@@ -660,7 +662,7 @@ const AutoMatchSetting = () => {
                           </Col>
                           <Col span={8}>
                             <Statistic
-                              title="充值余额"
+                              title={t('autoMatch.balanceToppedUp')}
                               value={balanceInfo.data.topped_up_balance}
                               prefix={balanceInfo.data.currency === 'CNY' ? '¥' : '$'}
                               precision={2}
@@ -669,7 +671,7 @@ const AutoMatchSetting = () => {
                         </Row>
                       ) : (
                         <div style={{ color: '#999', textAlign: 'center' }}>
-                          点击刷新按钮查询余额
+                          {t('autoMatch.balancePlaceholder')}
                         </div>
                       )}
                     </Card>
@@ -712,7 +714,7 @@ const AutoMatchSetting = () => {
                   size="large"
                   style={{ minWidth: '150px', width: isMobile ? '100%' : 'auto' }}
                 >
-                  测试 AI 连接
+                  {t('autoMatch.btnTestConnection')}
                 </Button>
 
                 <div style={{
@@ -723,14 +725,14 @@ const AutoMatchSetting = () => {
                   width: isMobile ? '100%' : 'auto',
                   justifyContent: isMobile ? 'center' : 'flex-start'
                 }}>
-                  <span style={{ fontSize: '14px', whiteSpace: 'nowrap' }}>记录响应</span>
+                  <span style={{ fontSize: '14px', whiteSpace: 'nowrap' }}>{t('autoMatch.labelLogResponse')}</span>
                   <Form.Item name="aiLogRawResponse" valuePropName="checked" noStyle>
                     <CustomSwitch
-                      checkedChildren="记录"
-                      unCheckedChildren="不记录"
+                      checkedChildren={t('autoMatch.switchLogOn')}
+                      unCheckedChildren={t('autoMatch.switchLogOff')}
                     />
                   </Form.Item>
-                  <Tooltip title="启用后，AI的所有原始响应将被记录到 config/logs/ai_responses.log 文件中，用于调试。">
+                  <Tooltip title={t('autoMatch.tooltipLogResponse')}>
                     <QuestionCircleOutlined style={{ color: '#999' }} />
                   </Tooltip>
                 </div>
@@ -745,14 +747,14 @@ const AutoMatchSetting = () => {
                       width: isMobile ? '100%' : 'auto',
                       justifyContent: isMobile ? 'center' : 'flex-start'
                     }}>
-                      <span style={{ fontSize: '14px', whiteSpace: 'nowrap' }}>思考模式</span>
+                      <span style={{ fontSize: '14px', whiteSpace: 'nowrap' }}>{t('autoMatch.labelThinking')}</span>
                       <Form.Item name="aiThinkingEnabled" valuePropName="checked" noStyle>
                         <CustomSwitch
-                          checkedChildren="开启"
-                          unCheckedChildren="关闭"
+                          checkedChildren={t('autoMatch.switchThinkingOn')}
+                          unCheckedChildren={t('autoMatch.switchThinkingOff')}
                         />
                       </Form.Item>
-                      <Tooltip title="启用后，DeepSeek 模型在输出最终答案前会先进行思维链推理，可提升准确性但会增加耗时和 token 消耗。思考内容会记录到 ai_responses.log 中。">
+                      <Tooltip title={t('autoMatch.tooltipThinking')}>
                         <QuestionCircleOutlined style={{ color: '#999' }} />
                       </Tooltip>
                     </div>
@@ -767,27 +769,27 @@ const AutoMatchSetting = () => {
                   size="large"
                   style={{ minWidth: '150px', width: isMobile ? '100%' : 'auto' }}
                 >
-                  保存 AI 连接配置
+                  {t('autoMatch.btnSaveConnection')}
                 </Button>
               </div>
             </TabPane>
 
             {/* 标签页2: AI自动匹配 */}
-            <TabPane tab="AI自动匹配" key="match">
+            <TabPane tab={t('autoMatch.tabMatch')} key="match">
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={8}>
                   <Card size="small" style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 500 }}>匹配模式</span>
-                        <Tooltip title="AI智能匹配: 使用大语言模型理解上下文,综合考虑标题、类型、季度、年份、集数和精确标记等因素,选择最佳匹配结果。传统匹配: 基于标题相似度和类型匹配的算法,快速但可能不够精准。">
+                        <span style={{ fontWeight: 500 }}>{t('autoMatch.labelMatchMode')}</span>
+                        <Tooltip title={t('autoMatch.tooltipMatchMode')}>
                           <QuestionCircleOutlined />
                         </Tooltip>
                       </div>
                       <Form.Item name="aiMatchEnabled" valuePropName="checked" noStyle>
                         <CustomSwitch
-                          checkedChildren="AI智能匹配"
-                          unCheckedChildren="传统匹配"
+                          checkedChildren={t('autoMatch.switchAiMatch')}
+                          unCheckedChildren={t('autoMatch.switchTraditional')}
                           checked={matchMode === 'ai'}
                           onChange={checked => {
                             setMatchMode(checked ? 'ai' : 'traditional')
@@ -802,8 +804,8 @@ const AutoMatchSetting = () => {
                   <Card size="small" style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 500 }}>传统匹配兜底</span>
-                        <Tooltip title={matchMode === 'traditional' ? '传统匹配模式下无需兜底' : '当AI匹配失败时,自动降级到传统匹配算法,确保功能可用性'}>
+                        <span style={{ fontWeight: 500 }}>{t('autoMatch.labelFallback')}</span>
+                        <Tooltip title={matchMode === 'traditional' ? t('autoMatch.tooltipFallbackTraditional') : t('autoMatch.tooltipFallbackAi')}>
                           <QuestionCircleOutlined />
                         </Tooltip>
                       </div>
@@ -817,8 +819,8 @@ const AutoMatchSetting = () => {
                   <Card size="small" style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 500 }}>AI剧集组选择</span>
-                        <Tooltip title="当作品有TMDB ID但缺少剧集组映射时,使用AI自动从TMDB剧集组列表中选择最佳匹配。启用后可实现等价集数映射（如S01E26↔S02E01），提高跨季弹幕匹配准确率。">
+                        <span style={{ fontWeight: 500 }}>{t('autoMatch.labelEpisodeGroup')}</span>
+                        <Tooltip title={t('autoMatch.tooltipEpisodeGroup')}>
                           <QuestionCircleOutlined />
                         </Tooltip>
                       </div>
@@ -835,7 +837,7 @@ const AutoMatchSetting = () => {
 
               {/* 季度映射配置 */}
               <Card
-                title="季度映射"
+                title={t('autoMatch.cardSeasonMapping')}
                 size="small"
                 style={{ marginBottom: '16px' }}
               >
@@ -846,39 +848,39 @@ const AutoMatchSetting = () => {
                         <Card size="small" style={{ marginBottom: '16px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 500 }}>主页搜索</span>
-                              <Tooltip title="启用后，主页搜索时会通过元数据源获取季度名称">
+                              <span style={{ fontWeight: 500 }}>{t('autoMatch.labelHomeSearch')}</span>
+                              <Tooltip title={t('autoMatch.tooltipHomeSearch')}>
                                 <QuestionCircleOutlined />
                               </Tooltip>
                             </div>
                             <Form.Item name="homeSearchEnableTmdbSeasonMapping" valuePropName="checked" noStyle>
-                              <CustomSwitch checkedChildren="启用" unCheckedChildren="关闭" />
+                              <CustomSwitch checkedChildren={t('autoMatch.switchEnable')} unCheckedChildren={t('autoMatch.switchDisable')} />
                             </Form.Item>
                           </div>
                         </Card>
                         <Card size="small" style={{ marginBottom: '16px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 500 }}>后备搜索</span>
-                              <Tooltip title="启用后，后备搜索时会通过元数据源获取季度名称">
+                              <span style={{ fontWeight: 500 }}>{t('autoMatch.labelFallbackSearch')}</span>
+                              <Tooltip title={t('autoMatch.tooltipFallbackSearch')}>
                                 <QuestionCircleOutlined />
                               </Tooltip>
                             </div>
                             <Form.Item name="fallbackSearchEnableTmdbSeasonMapping" valuePropName="checked" noStyle>
-                              <CustomSwitch checkedChildren="启用" unCheckedChildren="关闭" />
+                              <CustomSwitch checkedChildren={t('autoMatch.switchEnable')} unCheckedChildren={t('autoMatch.switchDisable')} />
                             </Form.Item>
                           </div>
                         </Card>
                         <Card size="small" style={{ marginBottom: '16px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 500 }}>后备匹配</span>
-                              <Tooltip title="启用后，匹配后备时会通过元数据源获取季度名称">
+                              <span style={{ fontWeight: 500 }}>{t('autoMatch.labelMatchFallback')}</span>
+                              <Tooltip title={t('autoMatch.tooltipMatchFallback')}>
                                 <QuestionCircleOutlined />
                               </Tooltip>
                             </div>
                             <Form.Item name="matchFallbackEnableTmdbSeasonMapping" valuePropName="checked" noStyle>
-                              <CustomSwitch checkedChildren="启用" unCheckedChildren="关闭" />
+                              <CustomSwitch checkedChildren={t('autoMatch.switchEnable')} unCheckedChildren={t('autoMatch.switchDisable')} />
                             </Form.Item>
                           </div>
                         </Card>
@@ -887,39 +889,39 @@ const AutoMatchSetting = () => {
                         <Card size="small" style={{ marginBottom: '16px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 500 }}>Webhook</span>
-                              <Tooltip title="启用后，Webhook导入时会通过元数据源获取季度名称">
+                              <span style={{ fontWeight: 500 }}>{t('autoMatch.labelWebhook')}</span>
+                              <Tooltip title={t('autoMatch.tooltipWebhook')}>
                                 <QuestionCircleOutlined />
                               </Tooltip>
                             </div>
                             <Form.Item name="webhookEnableTmdbSeasonMapping" valuePropName="checked" noStyle>
-                              <CustomSwitch checkedChildren="启用" unCheckedChildren="关闭" />
+                              <CustomSwitch checkedChildren={t('autoMatch.switchEnable')} unCheckedChildren={t('autoMatch.switchDisable')} />
                             </Form.Item>
                           </div>
                         </Card>
                         <Card size="small" style={{ marginBottom: '16px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 500 }}>外部控制-搜索媒体</span>
-                              <Tooltip title="启用后，外部控制搜索媒体时会通过元数据源获取季度名称">
+                              <span style={{ fontWeight: 500 }}>{t('autoMatch.labelExternalSearch')}</span>
+                              <Tooltip title={t('autoMatch.tooltipExternalSearch')}>
                                 <QuestionCircleOutlined />
                               </Tooltip>
                             </div>
                             <Form.Item name="externalSearchEnableTmdbSeasonMapping" valuePropName="checked" noStyle>
-                              <CustomSwitch checkedChildren="启用" unCheckedChildren="关闭" />
+                              <CustomSwitch checkedChildren={t('autoMatch.switchEnable')} unCheckedChildren={t('autoMatch.switchDisable')} />
                             </Form.Item>
                           </div>
                         </Card>
                         <Card size="small" style={{ marginBottom: '16px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 500 }}>外部控制-全自动导入</span>
-                              <Tooltip title="启用后，外部控制全自动导入时会通过元数据源获取季度名称">
+                              <span style={{ fontWeight: 500 }}>{t('autoMatch.labelAutoImport')}</span>
+                              <Tooltip title={t('autoMatch.tooltipAutoImport')}>
                                 <QuestionCircleOutlined />
                               </Tooltip>
                             </div>
                             <Form.Item name="autoImportEnableTmdbSeasonMapping" valuePropName="checked" noStyle>
-                              <CustomSwitch checkedChildren="启用" unCheckedChildren="关闭" />
+                              <CustomSwitch checkedChildren={t('autoMatch.switchEnable')} unCheckedChildren={t('autoMatch.switchDisable')} />
                             </Form.Item>
                           </div>
                         </Card>
@@ -930,8 +932,8 @@ const AutoMatchSetting = () => {
                     <Card size="small" style={{ marginBottom: '16px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                          <span style={{ fontWeight: 500 }}>元数据源选择</span>
-                          <Tooltip title="选择用于季度映射的元数据源。只能选择一个源。">
+                          <span style={{ fontWeight: 500 }}>{t('autoMatch.labelMetadataSource')}</span>
+                          <Tooltip title={t('autoMatch.tooltipMetadataSource')}>
                             <QuestionCircleOutlined />
                           </Tooltip>
                         </div>
@@ -941,7 +943,7 @@ const AutoMatchSetting = () => {
                               { value: 'tmdb', label: 'TMDB' },
                               { value: 'tvdb', label: 'TVDB' },
                               { value: 'imdb', label: 'IMDB' },
-                              { value: 'douban', label: '豆瓣' },
+                              { value: 'douban', label: t('autoMatch.labelDouban') },
                               { value: 'bangumi', label: 'Bangumi' }
                             ].map(source => (
                               <div
@@ -972,27 +974,27 @@ const AutoMatchSetting = () => {
                 </Row>
               </Card>
 
-              {/* 提示词配置区域 - 下拉框切换 */}
+              {/* 提示词配置区域 */}
               <Card size="small" style={{ marginTop: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <Space>
-                    <span style={{ fontWeight: 500 }}>提示词配置</span>
+                    <span style={{ fontWeight: 500 }}>{t('autoMatch.labelPromptConfig')}</span>
                     <Select
                       value={selectedMatchPromptType}
                       onChange={setSelectedMatchPromptType}
                       style={{ width: 200 }}
                       disabled={matchMode !== 'ai'}
                     >
-                      <Option value="aiPrompt">AI匹配提示词</Option>
-                      <Option value="seasonMappingPrompt">AI季度映射提示词</Option>
-                      <Option value="aiEpisodeGroupPrompt">AI剧集组选择提示词</Option>
+                      <Option value="aiPrompt">{t('autoMatch.optionAiPrompt')}</Option>
+                      <Option value="seasonMappingPrompt">{t('autoMatch.optionSeasonMappingPrompt')}</Option>
+                      <Option value="aiEpisodeGroupPrompt">{t('autoMatch.optionEpisodeGroupPrompt')}</Option>
                     </Select>
                     <Tooltip title={
                       selectedMatchPromptType === 'aiPrompt'
-                        ? "用于指导AI如何选择最佳匹配结果的提示词。留空使用默认提示词。高级用户可自定义以优化匹配效果。"
+                        ? t('autoMatch.tooltipAiPrompt')
                         : selectedMatchPromptType === 'seasonMappingPrompt'
-                        ? "用于指导AI从元数据源搜索结果中选择最佳匹配的提示词。留空使用默认提示词。"
-                        : "用于指导AI从TMDB剧集组列表中选择最佳匹配的提示词。留空使用默认提示词。"
+                        ? t('autoMatch.tooltipSeasonMappingPrompt')
+                        : t('autoMatch.tooltipEpisodeGroupPrompt')
                     }>
                       <QuestionCircleOutlined />
                     </Tooltip>
@@ -1005,94 +1007,55 @@ const AutoMatchSetting = () => {
                       selectedMatchPromptType === 'aiEpisodeGroupPrompt' && !episodeGroupEnabled
                     )}
                   >
-                    填充默认提示词
+                    {t('autoMatch.btnFillDefault')}
                   </Button>
                 </div>
 
                 {/* AI匹配提示词 */}
-                <Form.Item
-                  name="aiPrompt"
-                  noStyle
-                >
-                  <TextArea
-                    rows={10}
-                    placeholder="留空使用默认提示词..."
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: '12px',
-                      display: selectedMatchPromptType === 'aiPrompt' ? 'block' : 'none'
-                    }}
-                    disabled={matchMode !== 'ai'}
-                  />
+                <Form.Item name="aiPrompt" noStyle>
+                  <TextArea rows={10} placeholder={t('autoMatch.promptPlaceholder')}
+                    style={{ fontFamily: 'monospace', fontSize: '12px', display: selectedMatchPromptType === 'aiPrompt' ? 'block' : 'none' }}
+                    disabled={matchMode !== 'ai'} />
                 </Form.Item>
 
                 {/* AI季度映射提示词 */}
-                <Form.Item
-                  name="seasonMappingPrompt"
-                  noStyle
-                >
-                  <TextArea
-                    rows={10}
-                    placeholder="留空使用默认提示词..."
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: '12px',
-                      display: selectedMatchPromptType === 'seasonMappingPrompt' ? 'block' : 'none'
-                    }}
-                    disabled={matchMode !== 'ai'}
-                  />
+                <Form.Item name="seasonMappingPrompt" noStyle>
+                  <TextArea rows={10} placeholder={t('autoMatch.promptPlaceholder')}
+                    style={{ fontFamily: 'monospace', fontSize: '12px', display: selectedMatchPromptType === 'seasonMappingPrompt' ? 'block' : 'none' }}
+                    disabled={matchMode !== 'ai'} />
                 </Form.Item>
 
                 {/* AI剧集组选择提示词 */}
-                <Form.Item
-                  name="aiEpisodeGroupPrompt"
-                  noStyle
-                >
-                  <TextArea
-                    rows={10}
-                    placeholder="留空使用默认提示词..."
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: '12px',
-                      display: selectedMatchPromptType === 'aiEpisodeGroupPrompt' ? 'block' : 'none'
-                    }}
-                    disabled={matchMode !== 'ai' || !episodeGroupEnabled}
-                  />
+                <Form.Item name="aiEpisodeGroupPrompt" noStyle>
+                  <TextArea rows={10} placeholder={t('autoMatch.promptPlaceholder')}
+                    style={{ fontFamily: 'monospace', fontSize: '12px', display: selectedMatchPromptType === 'aiEpisodeGroupPrompt' ? 'block' : 'none' }}
+                    disabled={matchMode !== 'ai' || !episodeGroupEnabled} />
                 </Form.Item>
               </Card>
 
               {/* 保存按钮 */}
               <div style={{ marginTop: '24px', textAlign: 'center' }}>
-                <Button
-                  type="primary"
-                  icon={<SaveOutlined />}
-                  onClick={handleSaveMatchConfig}
-                  loading={saving}
-                  size="large"
-                  style={{ minWidth: '200px' }}
-                >
-                  保存 AI 自动匹配配置
+                <Button type="primary" icon={<SaveOutlined />} onClick={handleSaveMatchConfig}
+                  loading={saving} size="large" style={{ minWidth: '200px' }}>
+                  {t('autoMatch.btnSaveMatch')}
                 </Button>
               </div>
             </TabPane>
 
             {/* 标签页3: AI识别增强 */}
-            <TabPane tab="AI识别增强" key="recognition">
+            <TabPane tab={t('autoMatch.tabRecognition')} key="recognition">
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={6}>
                   <Card size="small" style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 500 }}>AI辅助识别</span>
-                        <Tooltip title="使用AI从标题中提取结构化信息(作品名称、季度、类型等),提高TMDB搜索准确率。应用于TMDB自动刮削定时任务。">
+                        <span style={{ fontWeight: 500 }}>{t('autoMatch.labelAiAssist')}</span>
+                        <Tooltip title={t('autoMatch.tooltipAiAssist')}>
                           <QuestionCircleOutlined />
                         </Tooltip>
                       </div>
                       <Form.Item name="aiRecognitionEnabled" valuePropName="checked" noStyle>
-                        <CustomSwitch
-                          disabled={matchMode !== 'ai'}
-                          onChange={(checked) => setRecognitionEnabled(checked)}
-                        />
+                        <CustomSwitch disabled={matchMode !== 'ai'} onChange={(checked) => setRecognitionEnabled(checked)} />
                       </Form.Item>
                     </div>
                   </Card>
@@ -1101,8 +1064,8 @@ const AutoMatchSetting = () => {
                   <Card size="small" style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 500 }}>AI别名修正</span>
-                        <Tooltip title="使用AI修正已有的错误别名(例如中文别名字段写入了非中文内容)。启用后,TMDB自动刮削任务会强制更新所有别名字段。注意:已锁定的别名不会被修正。">
+                        <span style={{ fontWeight: 500 }}>{t('autoMatch.labelAliasCorrection')}</span>
+                        <Tooltip title={t('autoMatch.tooltipAliasCorrection')}>
                           <QuestionCircleOutlined />
                         </Tooltip>
                       </div>
@@ -1116,16 +1079,13 @@ const AutoMatchSetting = () => {
                   <Card size="small" style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 500 }}>AI别名扩展</span>
-                        <Tooltip title="当元数据源返回非中文标题时，使用AI生成可能的别名（中文、罗马音、英文缩写等），然后在Bangumi/Douban中搜索以获取中文标题。应用于外部控制API全自动导入、Webhook自动导入等场景。">
+                        <span style={{ fontWeight: 500 }}>{t('autoMatch.labelAliasExpansion')}</span>
+                        <Tooltip title={t('autoMatch.tooltipAliasExpansion')}>
                           <QuestionCircleOutlined />
                         </Tooltip>
                       </div>
                       <Form.Item name="aiAliasExpansionEnabled" valuePropName="checked" noStyle>
-                        <CustomSwitch
-                          disabled={matchMode !== 'ai'}
-                          onChange={(checked) => setAliasExpansionEnabled(checked)}
-                        />
+                        <CustomSwitch disabled={matchMode !== 'ai'} onChange={(checked) => setAliasExpansionEnabled(checked)} />
                       </Form.Item>
                     </div>
                   </Card>
@@ -1134,53 +1094,40 @@ const AutoMatchSetting = () => {
                   <Card size="small" style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 500 }}>AI名称转换</span>
-                        <Tooltip title="在搜索前将非中文搜索词（英文、日文、罗马音等）转换为中文名称，提高在中文弹幕源中的搜索准确率。当元数据源查询失败时作为兜底方案。">
+                        <span style={{ fontWeight: 500 }}>{t('autoMatch.labelNameConversion')}</span>
+                        <Tooltip title={t('autoMatch.tooltipNameConversion')}>
                           <QuestionCircleOutlined />
                         </Tooltip>
                       </div>
                       <Form.Item name="aiNameConversionEnabled" valuePropName="checked" noStyle>
-                        <CustomSwitch
-                          disabled={matchMode !== 'ai'}
-                          onChange={(checked) => setNameConversionEnabled(checked)}
-                        />
+                        <CustomSwitch disabled={matchMode !== 'ai'} onChange={(checked) => setNameConversionEnabled(checked)} />
                       </Form.Item>
                     </div>
                   </Card>
                 </Col>
               </Row>
 
-              {/* 提示词配置区域 - 下拉框切换 */}
+              {/* 提示词配置区域 */}
               <Card size="small" style={{ marginTop: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <Space>
-                    <span style={{ fontWeight: 500 }}>提示词配置</span>
-                    <Select
-                      value={selectedPromptType}
-                      onChange={setSelectedPromptType}
-                      style={{ width: 200 }}
-                      disabled={matchMode !== 'ai'}
-                    >
-                      <Option value="aiRecognitionPrompt">AI识别提示词</Option>
-                      <Option value="aiAliasValidationPrompt">AI别名验证提示词</Option>
-                      <Option value="aiAliasExpansionPrompt">AI别名扩展提示词</Option>
-                      <Option value="aiNameConversionPrompt">AI名称转换提示词</Option>
+                    <span style={{ fontWeight: 500 }}>{t('autoMatch.labelPromptConfig')}</span>
+                    <Select value={selectedPromptType} onChange={setSelectedPromptType} style={{ width: 200 }} disabled={matchMode !== 'ai'}>
+                      <Option value="aiRecognitionPrompt">{t('autoMatch.optionAiRecognitionPrompt')}</Option>
+                      <Option value="aiAliasValidationPrompt">{t('autoMatch.optionAiAliasValidationPrompt')}</Option>
+                      <Option value="aiAliasExpansionPrompt">{t('autoMatch.optionAiAliasExpansionPrompt')}</Option>
+                      <Option value="aiNameConversionPrompt">{t('autoMatch.optionAiNameConversionPrompt')}</Option>
                     </Select>
                     <Tooltip title={
-                      selectedPromptType === 'aiRecognitionPrompt'
-                        ? "用于指导AI如何从标题中提取结构化信息的提示词。留空使用默认提示词。"
-                        : selectedPromptType === 'aiAliasValidationPrompt'
-                        ? "用于指导AI如何验证和分类别名的提示词。AI会识别别名的语言类型并验证是否真正属于该作品。"
-                        : selectedPromptType === 'aiAliasExpansionPrompt'
-                        ? "用于指导AI如何生成可能的别名的提示词。AI会生成中文译名、罗马音、英文缩写等别名。"
-                        : "用于指导AI如何将非中文名称转换为中文名称的提示词。"
+                      selectedPromptType === 'aiRecognitionPrompt' ? t('autoMatch.tooltipAiRecognitionPrompt')
+                        : selectedPromptType === 'aiAliasValidationPrompt' ? t('autoMatch.tooltipAiAliasValidationPrompt')
+                        : selectedPromptType === 'aiAliasExpansionPrompt' ? t('autoMatch.tooltipAiAliasExpansionPrompt')
+                        : t('autoMatch.tooltipAiNameConversionPrompt')
                     }>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
-                  <Button
-                    size="small"
-                    icon={<ReloadOutlined />}
+                  <Button size="small" icon={<ReloadOutlined />}
                     onClick={() => handleFillDefaultPrompt(selectedPromptType)}
                     disabled={matchMode !== 'ai' || (
                       (selectedPromptType === 'aiRecognitionPrompt' && !recognitionEnabled) ||
@@ -1189,100 +1136,43 @@ const AutoMatchSetting = () => {
                       (selectedPromptType === 'aiNameConversionPrompt' && !nameConversionEnabled)
                     )}
                   >
-                    填充默认提示词
+                    {t('autoMatch.btnFillDefault')}
                   </Button>
                 </div>
 
-                {/* AI识别提示词 */}
-                <Form.Item
-                  name="aiRecognitionPrompt"
-                  noStyle
-                  style={{ display: selectedPromptType === 'aiRecognitionPrompt' ? 'block' : 'none' }}
-                >
-                  <TextArea
-                    rows={10}
-                    placeholder="留空使用默认提示词..."
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: '12px',
-                      display: selectedPromptType === 'aiRecognitionPrompt' ? 'block' : 'none'
-                    }}
-                    disabled={matchMode !== 'ai' || !recognitionEnabled}
-                  />
+                <Form.Item name="aiRecognitionPrompt" noStyle style={{ display: selectedPromptType === 'aiRecognitionPrompt' ? 'block' : 'none' }}>
+                  <TextArea rows={10} placeholder={t('autoMatch.promptPlaceholder')}
+                    style={{ fontFamily: 'monospace', fontSize: '12px', display: selectedPromptType === 'aiRecognitionPrompt' ? 'block' : 'none' }}
+                    disabled={matchMode !== 'ai' || !recognitionEnabled} />
                 </Form.Item>
-
-                {/* AI别名验证提示词 */}
-                <Form.Item
-                  name="aiAliasValidationPrompt"
-                  noStyle
-                  style={{ display: selectedPromptType === 'aiAliasValidationPrompt' ? 'block' : 'none' }}
-                >
-                  <TextArea
-                    rows={10}
-                    placeholder="留空使用默认提示词..."
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: '12px',
-                      display: selectedPromptType === 'aiAliasValidationPrompt' ? 'block' : 'none'
-                    }}
-                    disabled={matchMode !== 'ai' || !recognitionEnabled}
-                  />
+                <Form.Item name="aiAliasValidationPrompt" noStyle style={{ display: selectedPromptType === 'aiAliasValidationPrompt' ? 'block' : 'none' }}>
+                  <TextArea rows={10} placeholder={t('autoMatch.promptPlaceholder')}
+                    style={{ fontFamily: 'monospace', fontSize: '12px', display: selectedPromptType === 'aiAliasValidationPrompt' ? 'block' : 'none' }}
+                    disabled={matchMode !== 'ai' || !recognitionEnabled} />
                 </Form.Item>
-
-                {/* AI别名扩展提示词 */}
-                <Form.Item
-                  name="aiAliasExpansionPrompt"
-                  noStyle
-                  style={{ display: selectedPromptType === 'aiAliasExpansionPrompt' ? 'block' : 'none' }}
-                >
-                  <TextArea
-                    rows={10}
-                    placeholder="留空使用默认提示词..."
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: '12px',
-                      display: selectedPromptType === 'aiAliasExpansionPrompt' ? 'block' : 'none'
-                    }}
-                    disabled={matchMode !== 'ai' || !aliasExpansionEnabled}
-                  />
+                <Form.Item name="aiAliasExpansionPrompt" noStyle style={{ display: selectedPromptType === 'aiAliasExpansionPrompt' ? 'block' : 'none' }}>
+                  <TextArea rows={10} placeholder={t('autoMatch.promptPlaceholder')}
+                    style={{ fontFamily: 'monospace', fontSize: '12px', display: selectedPromptType === 'aiAliasExpansionPrompt' ? 'block' : 'none' }}
+                    disabled={matchMode !== 'ai' || !aliasExpansionEnabled} />
                 </Form.Item>
-
-                {/* AI名称转换提示词 */}
-                <Form.Item
-                  name="aiNameConversionPrompt"
-                  noStyle
-                  style={{ display: selectedPromptType === 'aiNameConversionPrompt' ? 'block' : 'none' }}
-                >
-                  <TextArea
-                    rows={10}
-                    placeholder="留空使用默认提示词..."
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: '12px',
-                      display: selectedPromptType === 'aiNameConversionPrompt' ? 'block' : 'none'
-                    }}
-                    disabled={matchMode !== 'ai' || !nameConversionEnabled}
-                  />
+                <Form.Item name="aiNameConversionPrompt" noStyle style={{ display: selectedPromptType === 'aiNameConversionPrompt' ? 'block' : 'none' }}>
+                  <TextArea rows={10} placeholder={t('autoMatch.promptPlaceholder')}
+                    style={{ fontFamily: 'monospace', fontSize: '12px', display: selectedPromptType === 'aiNameConversionPrompt' ? 'block' : 'none' }}
+                    disabled={matchMode !== 'ai' || !nameConversionEnabled} />
                 </Form.Item>
               </Card>
 
               {/* 保存按钮 */}
               <div style={{ marginTop: '24px', textAlign: 'center' }}>
-                <Button
-                  type="primary"
-                  icon={<SaveOutlined />}
-                  onClick={handleSaveRecognitionConfig}
-                  loading={saving}
-                  size="large"
-                  style={{ minWidth: '200px' }}
-                >
-                  保存 AI 识别增强配置
+                <Button type="primary" icon={<SaveOutlined />} onClick={handleSaveRecognitionConfig}
+                  loading={saving} size="large" style={{ minWidth: '200px' }}>
+                  {t('autoMatch.btnSaveRecognition')}
                 </Button>
               </div>
             </TabPane>
 
             {/* 标签页4: AI使用统计 */}
-            <TabPane tab="AI使用统计" key="metrics">
+            <TabPane tab={t('autoMatch.tabMetrics')} key="metrics">
               <AIMetrics />
             </TabPane>
           </Tabs>
@@ -1290,45 +1180,27 @@ const AutoMatchSetting = () => {
 
         {/* 说明文字 */}
         <div className="mt-6 p-4 rounded" style={{ backgroundColor: 'var(--color-card)' }}>
-          <h4 className="mt-0" style={{ color: 'var(--color-text)' }}>功能说明</h4>
+          <h4 className="mt-0" style={{ color: 'var(--color-text)' }}>{t('autoMatch.descTitle')}</h4>
           <ul style={{ marginBottom: 0, paddingLeft: 20, color: 'var(--color-text)' }}>
+            <li dangerouslySetInnerHTML={{ __html: t('autoMatch.descTraditional') }} />
+            <li dangerouslySetInnerHTML={{ __html: t('autoMatch.descAiMatch') }} />
+            <li dangerouslySetInnerHTML={{ __html: t('autoMatch.descAiRecognition') }} />
+            <li dangerouslySetInnerHTML={{ __html: t('autoMatch.descAliasCorrection') }} />
+            <li dangerouslySetInnerHTML={{ __html: t('autoMatch.descAliasExpansion') }} />
+            <li dangerouslySetInnerHTML={{ __html: t('autoMatch.descNameConversion') }} />
+            <li dangerouslySetInnerHTML={{ __html: t('autoMatch.descFallback') }} />
+            <li dangerouslySetInnerHTML={{ __html: t('autoMatch.descEpisodeGroup') }} />
             <li>
-              <strong>传统匹配</strong>: 基于标题相似度和类型匹配的算法,快速但可能不够精准
-            </li>
-            <li>
-              <strong>AI智能匹配</strong>: 使用大语言模型理解上下文,综合考虑标题、类型、季度、年份、集数和精确标记等因素,选择最佳匹配结果
-            </li>
-            <li>
-              <strong>AI辅助识别</strong>: 使用AI从标题中提取结构化信息(作品名称、季度、类型等),提高TMDB搜索准确率。应用于TMDB自动刮削定时任务
-            </li>
-            <li>
-              <strong>AI别名修正</strong>: 使用AI修正已有的错误别名(例如中文别名字段写入了非中文内容)。启用后会强制更新所有别名字段,但已锁定的别名不会被修正
-            </li>
-            <li>
-              <strong>AI别名扩展</strong>: 当元数据源返回非中文标题时,使用AI生成可能的别名(中文译名、罗马音、英文缩写等),然后在Bangumi/Douban中搜索以获取中文标题
-            </li>
-            <li>
-              <strong>AI名称转换</strong>: 在搜索前将非中文搜索词(英文、日文、罗马音等)转换为中文名称,提高在中文弹幕源中的搜索准确率。当元数据源查询失败时作为兜底方案
-            </li>
-            <li>
-              <strong>传统匹配兜底</strong>: 当AI匹配失败时,自动降级到传统匹配算法,确保功能可用性(仅AI模式下可用)
-            </li>
-            <li>
-              <strong>AI剧集组选择</strong>: 当作品有TMDB ID但缺少剧集组映射时,使用AI自动从TMDB剧集组列表中选择最佳匹配,实现等价集数映射(如S01E26↔S02E01),提高跨季弹幕匹配准确率
-            </li>
-            <li>
-              <strong>应用场景</strong>:
+              <span dangerouslySetInnerHTML={{ __html: t('autoMatch.descScenes') }} />
               <ul>
-                <li>AI智能匹配: 外部控制API全自动导入、Webhook自动导入、匹配后备机制</li>
-                <li>AI辅助识别: TMDB自动刮削与剧集组映射定时任务</li>
-                <li>AI别名扩展: 外部控制API全自动导入、Webhook自动导入等场景（当元数据源返回非中文标题时）</li>
-                <li>AI名称转换: 弹幕搜索时将非中文搜索词转换为中文（元数据源查询失败时的兜底）</li>
-                <li>AI剧集组选择: 弹幕匹配时自动选择TMDB剧集组,实现跨季等价集数映射</li>
+                <li>{t('autoMatch.descSceneAiMatch')}</li>
+                <li>{t('autoMatch.descSceneAiRecognition')}</li>
+                <li>{t('autoMatch.descSceneAliasExpansion')}</li>
+                <li>{t('autoMatch.descSceneNameConversion')}</li>
+                <li>{t('autoMatch.descSceneEpisodeGroup')}</li>
               </ul>
             </li>
-            <li>
-              <strong>精确标记优先</strong>: AI会优先选择被用户标记为"精确"的数据源
-            </li>
+            <li dangerouslySetInnerHTML={{ __html: t('autoMatch.descPrecision') }} />
           </ul>
         </div>
       </Card>

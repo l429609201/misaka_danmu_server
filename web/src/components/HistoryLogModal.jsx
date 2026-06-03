@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Modal, Drawer, Button, Tooltip, message, Empty, Input, Spin, Select, Card } from 'antd'
 import { CopyOutlined, ExportOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -10,6 +11,7 @@ import { isMobileAtom } from '../../store'
 const MEMORY_LOG_KEY = '__memory__'
 
 export default function HistoryLogModal({ open, onClose }) {
+  const { t } = useTranslation()
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -34,12 +36,12 @@ export default function HistoryLogModal({ open, onClose }) {
     if (selectedFile === MEMORY_LOG_KEY) {
       getLogs()
         .then(res => setLogs(Array.isArray(res) ? res : (res?.data ?? [])))
-        .catch(() => messageApi.error('获取日志失败'))
+        .catch(() => messageApi.error(t('historyLog.fetchFailed')))
         .finally(() => setLoading(false))
     } else {
       getLogFileContent(selectedFile)
         .then(res => setLogs(Array.isArray(res) ? res : (res?.data ?? [])))
-        .catch(() => messageApi.error('获取日志文件失败'))
+        .catch(() => messageApi.error(t('historyLog.fetchFileFailed')))
         .finally(() => setLoading(false))
     }
   }
@@ -84,14 +86,14 @@ export default function HistoryLogModal({ open, onClose }) {
   const copyLogLine = async (logText) => {
     try {
       await navigator.clipboard.writeText(logText)
-      messageApi.success('日志已复制到剪贴板')
+      messageApi.success(t('historyLog.copied'))
     } catch {
       const textArea = document.createElement('textarea')
       textArea.value = logText
       document.body.appendChild(textArea)
       textArea.select()
-      try { document.execCommand('copy'); messageApi.success('日志已复制到剪贴板') }
-      catch { messageApi.error('复制失败') }
+      try { document.execCommand('copy'); messageApi.success(t('historyLog.copied')) }
+      catch { messageApi.error(t('historyLog.copyFailed')) }
       document.body.removeChild(textArea)
     }
   }
@@ -99,8 +101,8 @@ export default function HistoryLogModal({ open, onClose }) {
   const copyAll = async () => {
     try {
       await navigator.clipboard.writeText(filtered.join('\n'))
-      messageApi.success('已复制全部日志')
-    } catch { messageApi.error('复制失败') }
+      messageApi.success(t('historyLog.copiedAll'))
+    } catch { messageApi.error(t('historyLog.copyFailed')) }
   }
 
   // 按级别返回边框色和背景色
@@ -119,7 +121,7 @@ export default function HistoryLogModal({ open, onClose }) {
   const stripLevelTag = (text) => text.replace(/\s*\[(DEBUG|INFO|WARNING|ERROR)\]\s*/, ' ')
 
   const fileOptions = [
-    { label: '内存日志 (实时缓存)', value: MEMORY_LOG_KEY },
+    { label: t('historyLog.memoryLog'), value: MEMORY_LOG_KEY },
     ...logFiles.map(f => ({
       label: `${f.name} (${formatSize(f.size)})`,
       value: f.name,
@@ -128,22 +130,22 @@ export default function HistoryLogModal({ open, onClose }) {
 
   const actionButtons = (
     <div className="flex gap-1">
-      <Tooltip title="刷新"><Button size="small" type="text" icon={<ReloadOutlined />} onClick={fetchLogs} loading={loading} /></Tooltip>
-      <Tooltip title="复制全部"><Button size="small" type="text" icon={<CopyOutlined />} onClick={copyAll} /></Tooltip>
-      <Tooltip title="导出"><Button size="small" type="text" icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
+      <Tooltip title={t('historyLog.refresh')}><Button size="small" type="text" icon={<ReloadOutlined />} onClick={fetchLogs} loading={loading} /></Tooltip>
+      <Tooltip title={t('historyLog.copyAll')}><Button size="small" type="text" icon={<CopyOutlined />} onClick={copyAll} /></Tooltip>
+      <Tooltip title={t('historyLog.export')}><Button size="small" type="text" icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
     </div>
   )
 
   const footerNode = (
     <div className="flex items-center justify-between">
       <span className="text-xs text-gray-400">
-        共 {filtered.length} 条{search ? ` (过滤自 ${logs.length} 条)` : ''}
+        {search ? t('historyLog.filteredFrom', { count: filtered.length, total: logs.length }) : t('historyLog.totalCount', { count: filtered.length })}
       </span>
       {!isMobile && (
         <div className="flex gap-2">
-          <Tooltip title="刷新"><Button icon={<ReloadOutlined />} onClick={fetchLogs} loading={loading} /></Tooltip>
-          <Tooltip title="复制全部"><Button icon={<CopyOutlined />} onClick={copyAll} /></Tooltip>
-          <Tooltip title="导出"><Button icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
+          <Tooltip title={t('historyLog.refresh')}><Button icon={<ReloadOutlined />} onClick={fetchLogs} loading={loading} /></Tooltip>
+          <Tooltip title={t('historyLog.copyAll')}><Button icon={<CopyOutlined />} onClick={copyAll} /></Tooltip>
+          <Tooltip title={t('historyLog.export')}><Button icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
         </div>
       )}
     </div>
@@ -160,7 +162,7 @@ export default function HistoryLogModal({ open, onClose }) {
           style={isMobile ? { flex: '1 1 0', minWidth: 0 } : { minWidth: 240 }}
         />
         <Input
-          placeholder="搜索..."
+          placeholder={t('historyLog.searchPlaceholder')}
           prefix={<SearchOutlined className="text-gray-400" />}
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -176,7 +178,7 @@ export default function HistoryLogModal({ open, onClose }) {
           >
             {filtered.length === 0 ? (
               <div className="flex items-center justify-center" style={{ height: '30vh' }}>
-                <Empty description={<span className="text-gray-400">{search ? '无匹配日志' : '暂无日志'}</span>} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                <Empty description={<span className="text-gray-400">{search ? t('historyLog.noMatchLog') : t('historyLog.noLog')}</span>} image={Empty.PRESENTED_IMAGE_SIMPLE} />
               </div>
             ) : (
               filtered.map((line, i) => {
@@ -198,7 +200,7 @@ export default function HistoryLogModal({ open, onClose }) {
                       icon={<CopyOutlined />}
                       className={`shrink-0 opacity-0 group-hover:opacity-100 transition-opacity ${isMobile ? 'opacity-60' : ''}`}
                       onClick={(e) => { e.stopPropagation(); copyLogLine(line) }}
-                      title="复制日志"
+                      title={t('historyLog.copyLog')}
                     />
                   </div>
                 </div>
@@ -216,7 +218,7 @@ export default function HistoryLogModal({ open, onClose }) {
       {contextHolder}
       {isMobile ? (
         <Drawer
-          title="历史日志"
+          title={t('historyLog.title')}
           placement="bottom"
           height="85%"
           open={open}
@@ -230,7 +232,7 @@ export default function HistoryLogModal({ open, onClose }) {
         </Drawer>
       ) : (
         <Modal
-          title="历史日志"
+          title={t('historyLog.title')}
           open={open}
           onCancel={onClose}
           width="90%"

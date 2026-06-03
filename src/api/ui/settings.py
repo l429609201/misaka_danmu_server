@@ -3,6 +3,12 @@ Settings相关的API端点
 """
 import asyncio
 import logging
+import re
+
+try:
+    import regex as _regex_module
+except ImportError:
+    _regex_module = re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -15,7 +21,9 @@ from src.api.dependencies import get_config_manager, get_title_recognition_manag
 from .models import (
     TitleRecognitionContent, TitleRecognitionUpdateResponse,
     TitleRecognitionTestRequest, TitleRecognitionTestResponse,
-    GlobalFilterSettings, WebhookSettings
+    GlobalFilterSettings, SingleEpisodeFilterSettings,
+    GlobalEpisodeTitleFilterSettings, RegexTestRequest, RegexTestResponse,
+    RegexTestMatch, RegexTestInvalid, WebhookSettings
 )
 
 logger = logging.getLogger(__name__)
@@ -237,6 +245,37 @@ async def get_global_filter_defaults(
 
     return {"cn": cn_default, "eng": eng_default}
 
+@router.post("/settings/regex-test", response_model=RegexTestResponse, summary="使用后端 Python regex 测试正则")
+async def test_regex_patterns(
+    payload: RegexTestRequest,
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """使用后端 Python regex 模块测试一组正则是否命中指定文本。"""
+    text = payload.text or ""
+    matches = []
+    invalids = []
+    for item in payload.patterns:
+        pattern = (item.pattern or "").strip()
+        if not pattern:
+            continue
+        try:
+            match = _regex_module.search(pattern, text, _regex_module.IGNORECASE)
+            if match:
+                matches.append(RegexTestMatch(
+                    label=item.label,
+                    pattern=pattern,
+                    matchedText=match.group(0),
+                ))
+        except Exception as e:
+            invalids.append(RegexTestInvalid(
+                label=item.label,
+                pattern=pattern,
+                error=str(e),
+            ))
+    return RegexTestResponse(matched=bool(matches), matches=matches, invalids=invalids)
+
+
+
 
 @router.get("/settings/danmaku-blacklist/defaults", summary="获取弹幕黑名单的默认规则")
 async def get_danmaku_blacklist_defaults(
@@ -263,6 +302,61 @@ async def update_global_filter_settings(
     await config.setValue("search_result_global_blacklist_eng", payload.eng)
     return {"message": "全局过滤规则已更新。"}
 
+
+@router.get("/settings/single-episode-filter", response_model=SingleEpisodeFilterSettings, summary="获取单剧分集过滤规则")
+async def get_single_episode_filter_settings(
+    config: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """获取单剧分集过滤文本配置。"""
+    content = await config.get("singleEpisodeFilterRules", "")
+    return SingleEpisodeFilterSettings(content=content)
+
+
+@router.put("/settings/single-episode-filter", summary="更新单剧分集过滤规则")
+async def update_single_episode_filter_settings(
+    payload: SingleEpisodeFilterSettings,
+    config: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """更新单剧分集过滤文本配置。"""
+    await config.setValue("singleEpisodeFilterRules", payload.content)
+    return {"message": "单剧分集过滤规则已更新。"}
+
+
+
+DEFAULT_EPISODE_TITLE_FILTER_REGEX = r"""(特别|惊喜|纳凉)?企划(?!(书|案|部))|合伙人手记|超前(营业|vlog)?|速览|vlog|(?<!(Chain|Chemical|Nuclear|连锁|化学|核|生化|生理|应激))reaction|(?<!(单))纯享|加更(版|篇)?|抢先(看|版|集|篇)?|(?<!(被|争|谁))抢[先鲜](?!(一步|手|攻|了|告|言|机|话))|抢鲜|预告(?!(函|信|书|犯))|(?<!(死亡|恐怖|灵异|怪谈))花絮(独家)?|(?<!(一|直))直拍|(制作|拍摄|幕后|花絮|未播|独家|演员|导演|主创|杀青|探班|收官|开播|先导|彩蛋|NG|回顾|高光|个人|主创)特辑|(?<!(行动|计划|游戏|任务|危机|神秘|黄金))彩蛋|(?<!(嫌疑人|证人|家属|律师|警方|凶手|死者))专访|(?<!(证人))采访(?!(吸血鬼|鬼))|(正式|角色|先导|概念|首曝|定档|剧情|动画|宣传|主题曲|印象)[\s\.]*[PpＰｐ][VvＶｖ]|(?<!(鸦|雪|纸|相|照|图|名|大))片花|(?<!(退居|回归|走向|转战|隐身|藏身|的))幕后(?!(主谋|主使|黑手|真凶|玩家|老板|金主|英雄|功臣|推手|大佬|操纵|交易|策划|博弈|BOSS|真相))(故事|花絮|独家)?|衍生(?!(品|物|兽))|番外(?!(地|人))|直播(陪看|回顾)?|直播(?!(.*(事件|杀人|自杀|谋杀|犯罪|现场|游戏|挑战)))|未播(片段)?|会员(专享|加长|尊享|专属|版)?|(?<!(提取|吸收|生命|魔法|修护|美白))精华|看点|速看|解读(?!.*(密文|密码|密电|电报|档案|书信|遗书|碑文|代码|信号|暗号|讯息|谜题|人心|唇语|真相|谜团|梦境))|(?<!(案情|人生|死前|历史|世纪))回顾|影评|解说|吐槽|(?<!(年终|季度|库存|资产|物资|财务|收获|战利))盘点|拍摄花絮|制作花絮|幕后花絮|未播花絮|独家花絮|花絮特辑|先导预告|终极预告|正式预告|官方预告|彩蛋片段|删减片段|未播片段|番外彩蛋|精彩片段|精彩看点|精彩集锦|看点解析|看点预告|NG镜头|NG花絮|番外篇|番外特辑|制作特辑|拍摄特辑|幕后特辑|导演特辑|演员特辑|片尾曲|(?<!(生命|生活|情感|爱情|一段|小|意外))插曲|高光回顾|背景音乐|OST|音乐MV|歌曲MV|前季回顾|剧情回顾|往期回顾|内容总结|剧情盘点|精选合集|剪辑合集|混剪视频|独家专访|演员访谈|导演访谈|主创访谈|媒体采访|发布会采访|陪看(记)?|试看版|短剧|精编|(?<!(Love|Disney|One|C|Note|S\d+|\+|&|\s))Plus|独家版|(?<!(导演|加长|周年))特别版(?!(图|画))|短片|(?<!(新闻|紧急|临时|召开|破坏|大闹|澄清|道歉|新品|产品|事故))发布会|解忧局|走心局|火锅局|巅峰时刻|坞里都知道|福持目标坞民|福利(?!(院|会|主义|课))篇|(福利|加更|番外|彩蛋|衍生|特别|收官|游戏|整蛊|日常)篇|独家(?!(记忆|试爱|报道|秘方|占有|宠爱|恩宠))|.{2,}(?<!(市|分|警|总|省|卫|药|政|监|结|大|开|破|布|僵|困|骗|赌|胜|败|定|乱|危|迷|谜|入|搅|设|中|残|平|和|终|变|对|安|做|书|画|察|务|案|通|信|育|商|象|源|业|冰))局(?!(长|座|势|面|部|内|外|中|限|促|气))|(?<!(重症|隔离|实验|心理|审讯|单向|术后))观察室|上班那点事儿|周top|赛段|VLOG|(?<!(大案|要案|刑侦|侦查|破案|档案|风云|历史|战争|探案|自然|人文|科学|医学|地理|宇宙|赛事|世界杯|奥运))全纪录|开播|先导|总宣|展演|集锦|旅行日记|精彩分享|剧情揭秘(?!(者|人))|(?:^|】\s*|\]\s*)(?:[SC]|SP|OP|ED|PV)\d+(?:[\s:：\.\-]|$)"""
+
+
+@router.get("/settings/global-episode-title-filter", response_model=GlobalEpisodeTitleFilterSettings, summary="获取兜底全局分集标题过滤配置")
+async def get_global_episode_title_filter(
+    config: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """获取兜底全局分集标题过滤的开关和正则。"""
+    enabled = await config.get("globalEpisodeTitleFilterEnabled", "false")
+    regex = await config.get("globalEpisodeTitleFilterRegex", "")
+    return GlobalEpisodeTitleFilterSettings(enabled=enabled == "true", regex=regex)
+
+
+@router.get("/settings/global-episode-title-filter/defaults", summary="获取兜底分集标题过滤的默认正则")
+async def get_global_episode_title_filter_defaults(
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """返回硬编码的默认兜底分集标题过滤正则。"""
+    return {"regex": DEFAULT_EPISODE_TITLE_FILTER_REGEX}
+
+
+@router.put("/settings/global-episode-title-filter", summary="更新兜底全局分集标题过滤配置")
+async def update_global_episode_title_filter(
+    payload: GlobalEpisodeTitleFilterSettings,
+    config: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """更新兜底全局分集标题过滤的开关和正则。"""
+    await config.setValue("globalEpisodeTitleFilterEnabled", "true" if payload.enabled else "false")
+    await config.setValue("globalEpisodeTitleFilterRegex", payload.regex)
+    return {"message": "兜底全局分集标题过滤配置已更新。"}
 
 
 @router.get("/settings/webhook", response_model=WebhookSettings, summary="获取Webhook设置")

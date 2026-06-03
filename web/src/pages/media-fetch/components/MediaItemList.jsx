@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Space, Input, message, Checkbox, Popconfirm, Tag, List, Row, Col, Dropdown, Segmented, Pagination, Popover } from 'antd';
 import { SearchOutlined, DeleteOutlined, EditOutlined, ImportOutlined, FolderOpenOutlined, AppstoreOutlined, TableOutlined, MoreOutlined, VideoCameraOutlined, PlaySquareOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { getMediaWorks, deleteMediaItem, batchDeleteMediaItems, importMediaItems } from '../../../apis';
 import MediaItemEditor from './MediaItemEditor';
 import EpisodeListModal from './EpisodeListModal';
 import { useDefaultPageSize } from '../../../hooks/useDefaultPageSize';
 
 const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelectionChange, mediaTypeFilter: externalMediaTypeFilter, yearFrom, yearTo }) => {
+  const { t } = useTranslation();
   // 从后端配置获取默认分页大小
   const defaultPageSize = useDefaultPageSize('mediaItems');
 
@@ -64,7 +66,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
         total: data.total,
       });
     } catch (error) {
-      message.error('加载作品列表失败');
+      message.error(t('mediaFetch.mediaItemList.loadFailed'));
       console.error(error);
     } finally {
       setLoading(false);
@@ -105,7 +107,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           importedCount: work.importedCount,
           children: seasons.map(s => ({
             key: `season-${work.title}-S${s.season}`,
-            title: `第 ${s.season} 季 (${s.episodeCount}集)`,
+            title: t('mediaFetch.mediaItemList.seasonLabel', { season: s.season, count: s.episodeCount }),
             season: s.season,
             episodeCount: s.episodeCount,
             importedCount: s.importedCount,
@@ -161,16 +163,16 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
   // 处理删除
   const handleDelete = async (record) => {
     if (record.isGroup) {
-      message.warning('不能删除分组,请删除具体的项目');
+      message.warning(t('mediaFetch.mediaItemList.cantDeleteGroup'));
       return;
     }
 
     try {
       await deleteMediaItem(record.id);
-      message.success('删除成功');
+      message.success(t('mediaFetch.mediaItemList.deleteSuccess'));
       loadItems(pagination.current, pagination.pageSize);
     } catch (error) {
-      message.error('删除失败');
+      message.error(t('mediaFetch.mediaItemList.deleteFailed'));
       console.error(error);
     }
   };
@@ -178,7 +180,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
   // 批量删除
   const handleBatchDelete = async () => {
     if (selectedRowKeys.length === 0) {
-      message.warning('请先选择要删除的项目');
+      message.warning(t('mediaFetch.mediaItemList.selectDeleteWarning'));
       return;
     }
 
@@ -226,7 +228,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
     });
 
     if (itemIds.length === 0 && shows.length === 0 && seasons.length === 0) {
-      message.warning('没有可删除的项目');
+      message.warning(t('mediaFetch.mediaItemList.noDeletableItems'));
       return;
     }
 
@@ -237,11 +239,11 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
       if (seasons.length > 0) payload.seasons = seasons;
 
       await batchDeleteMediaItems(payload);
-      message.success('删除成功');
+      message.success(t('mediaFetch.mediaItemList.deleteSuccess'));
       setSelectedRowKeys([]);
       loadItems(pagination.current, pagination.pageSize);
     } catch (error) {
-      message.error('批量删除失败');
+      message.error(t('mediaFetch.mediaItemList.batchDeleteFailed'));
       console.error(error);
     }
   };
@@ -261,7 +263,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
   // 处理编辑
   const handleEdit = (record) => {
     if (record.isGroup) {
-      message.warning('不能编辑分组');
+      message.warning(t('mediaFetch.mediaItemList.cantEditGroup'));
       return;
     }
     setEditingItem(record);
@@ -276,7 +278,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
   // 处理导入
   const handleImport = async () => {
     if (selectedRowKeys.length === 0) {
-      message.warning('请先选择要导入的项目');
+      message.warning(t('mediaFetch.mediaItemList.selectImportWarning'));
       return;
     }
 
@@ -317,7 +319,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
     });
 
     if (itemIds.length === 0 && shows.length === 0 && seasons.length === 0) {
-      message.warning('没有可导入的项目');
+      message.warning(t('mediaFetch.mediaItemList.noImportableItems'));
       return;
     }
 
@@ -329,11 +331,11 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
 
       const res = await importMediaItems(payload);
       const result = res.data;
-      message.success(result.message || '导入任务已提交');
+      message.success(result.message || t('mediaFetch.mediaItemList.importSubmitted'));
       setSelectedRowKeys([]);
       loadItems(pagination.current, pagination.pageSize);
     } catch (error) {
-      message.error('导入失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.mediaItemList.importFailedWith') + (error.message || t('mediaFetch.mediaItemList.unknownError')));
       console.error(error);
     }
   };
@@ -351,7 +353,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
   // 表格列定义
   const columns = [
     {
-      title: '标题',
+      title: t('mediaFetch.mediaItemList.colTitle'),
       dataIndex: 'title',
       key: 'title',
       width: '30%',
@@ -373,29 +375,29 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
       },
     },
     {
-      title: '类型',
+      title: t('mediaFetch.mediaItemList.colType'),
       dataIndex: 'mediaType',
       key: 'mediaType',
       width: '10%',
       render: (type) => {
         const typeMap = {
-          movie: '电影',
-          tv_series: '电视节目',
-          tv_show: '电视节目',
+          movie: t('mediaFetch.mediaItemList.typeMovie'),
+          tv_series: t('mediaFetch.mediaItemList.typeTvSeries'),
+          tv_show: t('mediaFetch.mediaItemList.typeTvSeries'),
           tv_season: '-',
         };
         return typeMap[type] || type;
       },
     },
     {
-      title: '年份',
+      title: t('mediaFetch.mediaItemList.colYear'),
       dataIndex: 'year',
       key: 'year',
       width: '10%',
       render: (year) => year || '-',
     },
     {
-      title: '状态',
+      title: t('mediaFetch.mediaItemList.colStatus'),
       dataIndex: 'isImported',
       key: 'isImported',
       width: '10%',
@@ -405,24 +407,24 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           const total = record.episodeCount;
           if (imported !== undefined && total !== undefined) {
             if (imported === total && total > 0) {
-              return <Tag color="success">全部已导入</Tag>;
+              return <Tag color="success">{t('mediaFetch.mediaItemList.allImported')}</Tag>;
             } else if (imported > 0) {
               return <Tag color="processing">{imported}/{total}</Tag>;
             } else {
-              return <Tag>未导入</Tag>;
+              return <Tag>{t('mediaFetch.mediaItemList.notImported')}</Tag>;
             }
           }
           return '-';
         }
         return isImported ? (
-          <Tag color="success">已导入</Tag>
+          <Tag color="success">{t('mediaFetch.mediaItemList.imported')}</Tag>
         ) : (
-          <Tag>未导入</Tag>
+          <Tag>{t('mediaFetch.mediaItemList.notImported')}</Tag>
         );
       },
     },
     {
-      title: '操作',
+      title: t('mediaFetch.mediaItemList.colAction'),
       key: 'action',
       width: '20%',
       render: (_, record) => {
@@ -431,7 +433,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           return (
             <Space size="small">
               <Popconfirm
-                title={`确定要删除《${record.title}》的所有集吗?`}
+                title={t('mediaFetch.mediaItemList.confirmDeleteShow', { title: record.title })}
                 onConfirm={() => {
                   // 删除整部剧集
                   batchDeleteMediaItems({
@@ -441,16 +443,16 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                     }]
                   })
                     .then(() => {
-                      message.success(`成功删除《${record.title}》`);
+                      message.success(t('mediaFetch.mediaItemList.deleteShowSuccess', { title: record.title }));
                       loadItems(pagination.current, pagination.pageSize);
                     })
-                    .catch(() => message.error('删除失败'));
+                    .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
                 }}
-                okText="确定"
-                cancelText="取消"
+                okText={t('mediaFetch.mediaItemList.confirm')}
+                cancelText={t('mediaFetch.mediaItemList.cancel')}
               >
                 <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-                  删除整部
+                  {t('mediaFetch.mediaItemList.deleteWhole')}
                 </Button>
               </Popconfirm>
               <Button
@@ -466,13 +468,13 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                     }]
                   })
                     .then((res) => {
-                      message.success(res.data.message || '导入任务已提交');
+                      message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
                       loadItems(pagination.current, pagination.pageSize);
                     })
-                    .catch(() => message.error('导入失败'));
+                    .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
                 }}
               >
-                导入整部
+                {t('mediaFetch.mediaItemList.importWhole')}
               </Button>
             </Space>
           );
@@ -483,7 +485,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           return (
             <Space size="small">
               <Popconfirm
-                title={`确定要删除第${record.season}季的所有集吗?`}
+                title={t('mediaFetch.mediaItemList.confirmDeleteSeason', { season: record.season })}
                 onConfirm={() => {
                   // 删除该季度
                   // 需要找到父级的title
@@ -498,17 +500,17 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                       }]
                     })
                       .then(() => {
-                        message.success(`成功删除第${record.season}季`);
+                        message.success(t('mediaFetch.mediaItemList.deleteSeasonSuccess', { season: record.season }));
                         loadItems(pagination.current, pagination.pageSize);
                       })
-                      .catch(() => message.error('删除失败'));
+                      .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
                   }
                 }}
-                okText="确定"
-                cancelText="取消"
+                okText={t('mediaFetch.mediaItemList.confirm')}
+                cancelText={t('mediaFetch.mediaItemList.cancel')}
               >
                 <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-                  删除整季
+                  {t('mediaFetch.mediaItemList.deleteSeasonAct')}
                 </Button>
               </Popconfirm>
               <Button
@@ -529,14 +531,14 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                       }]
                     })
                       .then((res) => {
-                        message.success(res.data.message || '导入任务已提交');
+                        message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
                         loadItems(pagination.current, pagination.pageSize);
                       })
-                      .catch(() => message.error('导入失败'));
+                      .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
                   }
                 }}
               >
-                导入整季
+                {t('mediaFetch.mediaItemList.importSeasonAct')}
               </Button>
             </Space>
           );
@@ -556,13 +558,13 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                     itemIds: [record.id]
                   })
                     .then((res) => {
-                      message.success(res.data.message || '导入任务已提交');
+                      message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
                       loadItems(pagination.current, pagination.pageSize);
                     })
-                    .catch((error) => message.error('导入失败: ' + (error.message || '未知错误')));
+                    .catch((error) => message.error(t('mediaFetch.mediaItemList.importFailedWith') + (error.message || t('mediaFetch.mediaItemList.unknownError'))));
                 }}
               >
-                导入
+                {t('mediaFetch.mediaItemList.import')}
               </Button>
               <Button
                 type="link"
@@ -570,13 +572,13 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 icon={<EditOutlined />}
                 onClick={() => handleEdit(record)}
               >
-                编辑
+                {t('mediaFetch.mediaItemList.edit')}
               </Button>
               <Popconfirm
-                title="确定要删除吗?"
+                title={t('mediaFetch.mediaItemList.confirmDelete')}
                 onConfirm={() => handleDelete(record)}
-                okText="确定"
-                cancelText="取消"
+                okText={t('mediaFetch.mediaItemList.confirm')}
+                cancelText={t('mediaFetch.mediaItemList.cancel')}
               >
                 <Button
                   type="link"
@@ -584,7 +586,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                   danger
                   icon={<DeleteOutlined />}
                 >
-                  删除
+                  {t('mediaFetch.mediaItemList.delete')}
                 </Button>
               </Popconfirm>
             </Space>
@@ -600,13 +602,13 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
               icon={<EditOutlined />}
               onClick={() => handleEdit(record)}
             >
-              编辑
+              {t('mediaFetch.mediaItemList.edit')}
             </Button>
             <Popconfirm
-              title="确定要删除吗?"
+              title={t('mediaFetch.mediaItemList.confirmDelete')}
               onConfirm={() => handleDelete(record)}
-              okText="确定"
-              cancelText="取消"
+              okText={t('mediaFetch.mediaItemList.confirm')}
+              cancelText={t('mediaFetch.mediaItemList.cancel')}
             >
               <Button
                 type="link"
@@ -614,7 +616,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 danger
                 icon={<DeleteOutlined />}
               >
-                删除
+                {t('mediaFetch.mediaItemList.delete')}
               </Button>
             </Popconfirm>
           </Space>
@@ -649,17 +651,17 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
               }]
             })
               .then((res) => {
-                message.success(res.data.message || '导入任务已提交');
+                message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
                 loadItems(pagination.current, pagination.pageSize);
               })
-              .catch(() => message.error('导入失败'));
+              .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
           }}
         >
-          导入整部
+          {t('mediaFetch.mediaItemList.importWhole')}
         </Button>,
         <Popconfirm
           key="delete-show"
-          title={`确定要删除《${record.title}》的所有集吗?`}
+          title={t('mediaFetch.mediaItemList.confirmDeleteShow', { title: record.title })}
           onConfirm={() => {
             // 删除整部剧集
             batchDeleteMediaItems({
@@ -669,16 +671,16 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
               }]
             })
               .then(() => {
-                message.success(`成功删除《${record.title}》`);
+                message.success(t('mediaFetch.mediaItemList.deleteShowSuccess', { title: record.title }));
                 loadItems(pagination.current, pagination.pageSize);
               })
-              .catch(() => message.error('删除失败'));
+              .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
           }}
-          okText="确定"
-          cancelText="取消"
+          okText={t('mediaFetch.mediaItemList.confirm')}
+          cancelText={t('mediaFetch.mediaItemList.cancel')}
         >
           <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-            删除整部
+            {t('mediaFetch.mediaItemList.deleteWhole')}
           </Button>
         </Popconfirm>
       ];
@@ -706,14 +708,14 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 }]
               })
                 .then((res) => {
-                  message.success(res.data.message || '导入任务已提交');
+                  message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
                   loadItems(pagination.current, pagination.pageSize);
                 })
-                .catch(() => message.error('导入失败'));
+                .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
             }
           }}
         >
-          导入整季
+          {t('mediaFetch.mediaItemList.importSeasonAct')}
         </Button>,
         <Button
           key="edit-season"
@@ -722,11 +724,11 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           icon={<EditOutlined />}
           onClick={() => handleEdit(record)}
         >
-          编辑
+          {t('mediaFetch.mediaItemList.edit')}
         </Button>,
         <Popconfirm
           key="delete-season"
-          title={`确定要删除第${record.season}季的所有集吗?`}
+          title={t('mediaFetch.mediaItemList.confirmDeleteSeason', { season: record.season })}
           onConfirm={() => {
             // 删除该季度
             // 需要找到父级的title
@@ -741,17 +743,17 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 }]
               })
                 .then(() => {
-                  message.success(`成功删除第${record.season}季`);
+                  message.success(t('mediaFetch.mediaItemList.deleteSeasonSuccess', { season: record.season }));
                   loadItems(pagination.current, pagination.pageSize);
                 })
-                .catch(() => message.error('删除失败'));
+                .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
             }
           }}
-          okText="确定"
-          cancelText="取消"
+          okText={t('mediaFetch.mediaItemList.confirm')}
+          cancelText={t('mediaFetch.mediaItemList.cancel')}
         >
           <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-            删除整季
+            {t('mediaFetch.mediaItemList.deleteSeasonAct')}
           </Button>
         </Popconfirm>
       ];
@@ -771,13 +773,13 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
               itemIds: [record.id]
             })
               .then((res) => {
-                message.success(res.data.message || '导入任务已提交');
+                message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
                 loadItems(pagination.current, pagination.pageSize);
               })
-              .catch((error) => message.error('导入失败: ' + (error.message || '未知错误')));
+              .catch((error) => message.error(t('mediaFetch.mediaItemList.importFailedWith') + (error.message || t('mediaFetch.mediaItemList.unknownError'))));
           }}
         >
-          导入
+          {t('mediaFetch.mediaItemList.import')}
         </Button>,
         <Button
           key="edit-movie"
@@ -786,14 +788,14 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           icon={<EditOutlined />}
           onClick={() => handleEdit(record)}
         >
-          编辑
+          {t('mediaFetch.mediaItemList.edit')}
         </Button>,
         <Popconfirm
           key="delete-movie"
-          title="确定要删除吗?"
+          title={t('mediaFetch.mediaItemList.confirmDelete')}
           onConfirm={() => handleDelete(record)}
-          okText="确定"
-          cancelText="取消"
+          okText={t('mediaFetch.mediaItemList.confirm')}
+          cancelText={t('mediaFetch.mediaItemList.cancel')}
         >
           <Button
             type="link"
@@ -801,7 +803,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
             danger
             icon={<DeleteOutlined />}
           >
-            删除
+            {t('mediaFetch.mediaItemList.delete')}
           </Button>
         </Popconfirm>
       ];
@@ -816,14 +818,14 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
         icon={<EditOutlined />}
         onClick={() => handleEdit(record)}
       >
-        编辑
+        {t('mediaFetch.mediaItemList.edit')}
       </Button>,
       <Popconfirm
         key="delete-episode"
-        title="确定要删除吗?"
+        title={t('mediaFetch.mediaItemList.confirmDelete')}
         onConfirm={() => handleDelete(record)}
-        okText="确定"
-        cancelText="取消"
+        okText={t('mediaFetch.mediaItemList.confirm')}
+        cancelText={t('mediaFetch.mediaItemList.cancel')}
       >
         <Button
           type="link"
@@ -831,7 +833,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           danger
           icon={<DeleteOutlined />}
         >
-          删除
+          {t('mediaFetch.mediaItemList.delete')}
         </Button>
       </Popconfirm>
     ];
@@ -846,7 +848,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
         {
           key: 'import-show',
           icon: <ImportOutlined />,
-          label: '导入整部',
+          label: t('mediaFetch.mediaItemList.importWhole'),
           onClick: () => {
             importMediaItems({
               shows: [{
@@ -855,16 +857,16 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
               }]
             })
               .then((res) => {
-                message.success(res.data.message || '导入任务已提交');
+                message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
                 loadItems(pagination.current, pagination.pageSize);
               })
-              .catch(() => message.error('导入失败'));
+              .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
           }
         },
         {
           key: 'delete-show',
           icon: <DeleteOutlined />,
-          label: '删除整部',
+          label: t('mediaFetch.mediaItemList.deleteWhole'),
           danger: true,
           onClick: () => {
             // 这里会触发Popconfirm，但为了简化，我们直接执行
@@ -875,10 +877,10 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
               }]
             })
               .then(() => {
-                message.success(`成功删除《${record.title}》`);
+                message.success(t('mediaFetch.mediaItemList.deleteShowSuccess', { title: record.title }));
                 loadItems(pagination.current, pagination.pageSize);
               })
-              .catch(() => message.error('删除失败'));
+              .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
           }
         }
       );
@@ -887,7 +889,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
         {
           key: 'import-season',
           icon: <ImportOutlined />,
-          label: '导入整季',
+          label: t('mediaFetch.mediaItemList.importSeasonAct'),
           onClick: () => {
             const parentKey = record.key.substring(0, record.key.lastIndexOf('-'));
             const parent = findItemByKey(items, parentKey);
@@ -900,23 +902,23 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 }]
               })
                 .then((res) => {
-                  message.success(res.data.message || '导入任务已提交');
+                  message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
                   loadItems(pagination.current, pagination.pageSize);
                 })
-                .catch(() => message.error('导入失败'));
+                .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
             }
           }
         },
         {
           key: 'edit-season',
           icon: <EditOutlined />,
-          label: '编辑',
+          label: t('mediaFetch.mediaItemList.edit'),
           onClick: () => handleEdit(record)
         },
         {
           key: 'delete-season',
           icon: <DeleteOutlined />,
-          label: '删除整季',
+          label: t('mediaFetch.mediaItemList.deleteSeasonAct'),
           danger: true,
           onClick: () => {
             const parentKey = record.key.substring(0, record.key.lastIndexOf('-'));
@@ -930,10 +932,10 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 }]
               })
                 .then(() => {
-                  message.success(`成功删除第${record.season}季`);
+                  message.success(t('mediaFetch.mediaItemList.deleteSeasonSuccess', { season: record.season }));
                   loadItems(pagination.current, pagination.pageSize);
                 })
-                .catch(() => message.error('删除失败'));
+                .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
             }
           }
         }
@@ -943,28 +945,28 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
         {
           key: 'import-movie',
           icon: <ImportOutlined />,
-          label: '导入',
+          label: t('mediaFetch.mediaItemList.import'),
           onClick: () => {
             importMediaItems({
               itemIds: [record.id]
             })
               .then((res) => {
-                message.success(res.data.message || '导入任务已提交');
+                message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
                 loadItems(pagination.current, pagination.pageSize);
               })
-              .catch((error) => message.error('导入失败: ' + (error.message || '未知错误')));
+              .catch((error) => message.error(t('mediaFetch.mediaItemList.importFailedWith') + (error.message || t('mediaFetch.mediaItemList.unknownError'))));
           }
         },
         {
           key: 'edit-movie',
           icon: <EditOutlined />,
-          label: '编辑',
+          label: t('mediaFetch.mediaItemList.edit'),
           onClick: () => handleEdit(record)
         },
         {
           key: 'delete-movie',
           icon: <DeleteOutlined />,
-          label: '删除',
+          label: t('mediaFetch.mediaItemList.delete'),
           danger: true,
           onClick: () => handleDelete(record)
         }
@@ -975,13 +977,13 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
         {
           key: 'edit-episode',
           icon: <EditOutlined />,
-          label: '编辑',
+          label: t('mediaFetch.mediaItemList.edit'),
           onClick: () => handleEdit(record)
         },
         {
           key: 'delete-episode',
           icon: <DeleteOutlined />,
-          label: '删除',
+          label: t('mediaFetch.mediaItemList.delete'),
           danger: true,
           onClick: () => handleDelete(record)
         }
@@ -1009,8 +1011,8 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
       <Card
         title={
           <div>
-            <span className="desktop-only">媒体项列表</span>
-            <span className="mobile-only">媒体列表</span>
+            <span className="desktop-only">{t('mediaFetch.mediaItemList.titleDesktop')}</span>
+            <span className="mobile-only">{t('mediaFetch.mediaItemList.titleMobile')}</span>
           </div>
         }
         extra={
@@ -1022,7 +1024,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 onClick={() => setViewMode('table')}
                 size="small"
               >
-                表格
+                {t('mediaFetch.mediaItemList.table')}
               </Button>
               <Button
                 icon={<AppstoreOutlined />}
@@ -1030,7 +1032,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 onClick={() => setViewMode('card')}
                 size="small"
               >
-                卡片
+                {t('mediaFetch.mediaItemList.card')}
               </Button>
               <Popover
                 trigger="click"
@@ -1044,7 +1046,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                   <div style={{ width: 250 }}>
                     <Space direction="vertical" style={{ width: '100%' }}>
                       <Input
-                        placeholder="搜索标题..."
+                        placeholder={t('mediaFetch.mediaItemList.searchTitlePlaceholder')}
                         value={searchInput}
                         onChange={(e) => setSearchInput(e.target.value)}
                         onPressEnter={() => {
@@ -1061,7 +1063,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                             setSearchText('');
                           }}
                         >
-                          清除
+                          {t('mediaFetch.mediaItemList.clear')}
                         </Button>
                         <Button
                           type="primary"
@@ -1071,7 +1073,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                             setSearchText(searchInput);
                           }}
                         >
-                          搜索
+                          {t('mediaFetch.mediaItemList.search')}
                         </Button>
                       </div>
                     </Space>
@@ -1079,7 +1081,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 )}
               >
                 <Button icon={<SearchOutlined />} size="small">
-                  搜索{searchText && <span className="ml-1 text-blue-500">({searchText})</span>}
+                  {t('mediaFetch.mediaItemList.search')}{searchText && <span className="ml-1 text-blue-500">({searchText})</span>}
                 </Button>
               </Popover>
             </Space>
@@ -1098,7 +1100,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 block
                 style={{ height: '44px', fontSize: '16px' }}
               >
-                表格
+                {t('mediaFetch.mediaItemList.table')}
               </Button>
             </Col>
             <Col span={12}>
@@ -1110,7 +1112,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 block
                 style={{ height: '44px', fontSize: '16px' }}
               >
-                卡片
+                {t('mediaFetch.mediaItemList.card')}
               </Button>
             </Col>
           </Row>
@@ -1127,7 +1129,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 <div style={{ width: 250 }}>
                   <Space direction="vertical" style={{ width: '100%' }}>
                     <Input
-                      placeholder="搜索标题..."
+                      placeholder={t('mediaFetch.mediaItemList.searchTitlePlaceholder')}
                       value={searchInput}
                       onChange={(e) => setSearchInput(e.target.value)}
                       onPressEnter={() => {
@@ -1144,7 +1146,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                           setSearchText('');
                         }}
                       >
-                        清除
+                        {t('mediaFetch.mediaItemList.clear')}
                       </Button>
                       <Button
                         type="primary"
@@ -1154,7 +1156,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                           setSearchText(searchInput);
                         }}
                       >
-                        搜索
+                        {t('mediaFetch.mediaItemList.search')}
                       </Button>
                     </div>
                   </Space>
@@ -1162,7 +1164,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
               )}
             >
               <Button icon={<SearchOutlined />} size="large" block style={{ height: '44px', fontSize: '16px' }}>
-                搜索{searchText && <span className="ml-1 text-blue-500">({searchText})</span>}
+                {t('mediaFetch.mediaItemList.search')}{searchText && <span className="ml-1 text-blue-500">({searchText})</span>}
               </Button>
             </Popover>
           </div>
@@ -1224,15 +1226,15 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                             {item.isGroup ? (
                               item.importedCount !== undefined && item.episodeCount !== undefined ? (
                                 item.importedCount === item.episodeCount && item.episodeCount > 0 ?
-                                  <Tag color="success" style={{ marginLeft: 4 }}>全部已导入</Tag> :
+                                  <Tag color="success" style={{ marginLeft: 4 }}>{t('mediaFetch.mediaItemList.allImported')}</Tag> :
                                 item.importedCount > 0 ?
                                   <Tag color="processing" style={{ marginLeft: 4 }}>{item.importedCount}/{item.episodeCount}</Tag> :
-                                  <Tag style={{ marginLeft: 4 }}>未导入</Tag>
+                                  <Tag style={{ marginLeft: 4 }}>{t('mediaFetch.mediaItemList.notImported')}</Tag>
                               ) : null
                             ) : (
                               item.isImported ?
-                                <Tag color="success" style={{ marginLeft: 4 }}>已导入</Tag> :
-                                <Tag style={{ marginLeft: 4 }}>未导入</Tag>
+                                <Tag color="success" style={{ marginLeft: 4 }}>{t('mediaFetch.mediaItemList.imported')}</Tag> :
+                                <Tag style={{ marginLeft: 4 }}>{t('mediaFetch.mediaItemList.notImported')}</Tag>
                             )}
                           </div>
                           {item.year && <div style={{ color: 'var(--color-text-secondary)' }}>{item.year}</div>}

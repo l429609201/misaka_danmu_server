@@ -15,6 +15,11 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSON
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+# 启动预处理：检查配置文件、环境变量、打印来源日志
+# 必须在 settings 导入之前调用，确保配置文件存在
+from src.core.bootstrap import preload_config
+preload_config()
+
 # 内部模块导入 - 使用聚合式导入
 from src.core import settings
 from src.core.default_configs import get_default_configs

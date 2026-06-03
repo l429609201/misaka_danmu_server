@@ -552,35 +552,17 @@ async def set_provider_settings(
     providerName: str,
     settings: Dict[str, Any],
     current_user: models.User = Depends(security.get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    config_manager: ConfigManager = Depends(get_config_manager),
+    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager)
 ):
-    """批量更新指定元数据源的相关配置。"""
-    config_keys_map = {
-        "tmdb": ["tmdbApiKey", "tmdbApiBaseUrl", "tmdbImageBaseUrl"],
-        "bangumi": ["bangumiClientId", "bangumiClientSecret", "bangumiToken", "authMode"],
-        "douban": "doubanCookie", # 单值配置
-        "tvdb": "tvdbApiKey",   # 单值配置
-    }
-
-    if providerName in ["douban", "tvdb"]:
-        key = config_keys_map.get(providerName)
-        if key:
-            # 修复：使用正确的字段名获取配置值
-            if providerName == "tvdb":
-                value = settings.get("tvdbApiKey", "")
-            elif providerName == "douban":
-                value = settings.get("doubanCookie", "")
-            else:
-                value = settings.get("value", "")
-            await config_manager.setValue(configKey=key, configValue=value)
-    else:
-        keys_to_update = config_keys_map.get(providerName, [])
-        tasks = [
-            config_manager.setValue(configKey=key, configValue=settings[key])
-            for key in keys_to_update if key in settings
-        ]
-        if tasks:
-            await asyncio.gather(*tasks)
+    """批量更新指定元数据源的相关配置。config keys 从源类自动获取，无需硬编码。"""
+    keys_to_update = metadata_manager.get_config_keys(providerName)
+    tasks = [
+        config_manager.setValue(configKey=key, configValue=settings[key])
+        for key in keys_to_update if key in settings
+    ]
+    if tasks:
+        await asyncio.gather(*tasks)
     logger.info(f"用户 '{current_user.username}' 更新了元数据源 '{providerName}' 的配置。")
 
 

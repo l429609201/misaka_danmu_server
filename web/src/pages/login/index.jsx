@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Form, Input, Button, Card, Divider } from 'antd'
+import { useTranslation } from 'react-i18next'
+import { Form, Input, Button, Card, Divider, Dropdown } from 'antd'
 import {
   UserOutlined,
   LockOutlined,
@@ -7,6 +8,8 @@ import {
   EyeInvisibleOutlined,
   KeyOutlined,
   ClearOutlined,
+  GlobalOutlined,
+  DownOutlined,
 } from '@ant-design/icons'
 import { login, autoLogin, getUserInfo, getPasskeyLoginOptions, verifyPasskeyLogin } from '../../apis'
 import { useNavigate } from 'react-router-dom'
@@ -15,8 +18,10 @@ import { useMessage } from '../../MessageContext'
 import { MfaVerifyModal, base64urlToBuffer, bufferToBase64url } from '../../components/MfaVerifyModal'
 import { clearBrowserCache } from '../../utils/clearCache'
 import { isPasskeySupported } from '../../utils/passkey'
+import { SUPPORTED_LANGUAGES } from '../../i18n'
 
 export const Login = () => {
+  const { t, i18n } = useTranslation()
   const [form] = Form.useForm()
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -28,6 +33,33 @@ export const Login = () => {
   const [passkeyLoginLoading, setPasskeyLoginLoading] = useState(false)
   const navigate = useNavigate()
   const messageApi = useMessage()
+
+  const currentLanguage = SUPPORTED_LANGUAGES.find(lang => lang.key === i18n.resolvedLanguage)
+    || SUPPORTED_LANGUAGES.find(lang => lang.key === i18n.language)
+    || SUPPORTED_LANGUAGES[0]
+  const getLanguageSymbol = (key) => {
+    if (key === 'en') return 'EN'
+    if (key === 'zh-TW') return '繁'
+    return '简'
+  }
+  const languageMenuItems = SUPPORTED_LANGUAGES.map(lang => {
+    const selected = currentLanguage.key === lang.key
+    return {
+      key: lang.key,
+      label: (
+        <span className={`flex items-center gap-2 min-w-32 ${selected ? 'font-semibold text-primary' : ''}`}>
+          <span className={`inline-flex h-5 w-5 items-center justify-center rounded-md text-[10px] ${selected ? 'bg-primary text-white' : 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-300'}`}>
+            {selected ? '✓' : getLanguageSymbol(lang.key)}
+          </span>
+          <span>{lang.name}</span>
+        </span>
+      ),
+    }
+  })
+  const handleLanguageChange = ({ key }) => {
+    i18n.changeLanguage(key)
+  }
+
 
   // 页面加载时先校验已保存登录状态，失效后再尝试白名单自动登录
   useEffect(() => {
@@ -66,7 +98,7 @@ export const Login = () => {
           sameSite: 'lax'
         })
         if (!cancelled) {
-          messageApi.success('白名单自动登录成功！')
+          messageApi.success(t('login.whitelistLoginSuccess'))
           navigate('/')
         }
       } catch (error) {
@@ -95,7 +127,7 @@ export const Login = () => {
       secure: location.protocol === 'https:',
       sameSite: 'lax'
     })
-    messageApi.success('登录成功！')
+    messageApi.success(t('login.loginSuccess'))
     navigate('/')
   }, [messageApi, navigate])
 
@@ -108,7 +140,7 @@ export const Login = () => {
       if (res.data.accessToken) {
         saveTokenAndNavigate(res.data.accessToken, res.data.expiresIn)
       } else {
-        messageApi.error('登录失败，请检查用户名或密码')
+        messageApi.error(t('login.loginFailed'))
       }
     } catch (error) {
       // 检查是否是 403 MFA 要求
@@ -119,10 +151,10 @@ export const Login = () => {
         setMfaModalOpen(true)
       } else if (error.code === 429) {
         // 暴力破解防护：登录次数过多
-        messageApi.error(error.message || '登录失败次数过多，请稍后重试')
+        messageApi.error(error.message || t('login.tooManyAttempts'))
       } else {
         console.error('登录失败:', error)
-        messageApi.error('登录失败，请检查用户名或密码')
+        messageApi.error(t('login.loginFailed'))
       }
     } finally {
       setIsLoading(false)
@@ -140,7 +172,7 @@ export const Login = () => {
   // PassKey 无密码直接登录
   const handlePasskeyLogin = useCallback(async () => {
     if (!isPasskeySupported()) {
-      messageApi.error('PassKey 仅在 HTTPS 模式下可用')
+      messageApi.error(t('login.passkeyHttpsOnly'))
       return
     }
     setPasskeyLoginLoading(true)
@@ -179,10 +211,10 @@ export const Login = () => {
       }
     } catch (err) {
       if (err.name === 'NotAllowedError') {
-        messageApi.info('PassKey 登录已取消')
+        messageApi.info(t('login.passkeyCancelled'))
       } else {
         console.error('PassKey 登录失败:', err)
-        messageApi.error('PassKey 登录失败，请重试')
+        messageApi.error(t('login.passkeyFailed'))
       }
     } finally {
       setPasskeyLoginLoading(false)
@@ -195,29 +227,51 @@ export const Login = () => {
       {checkingWhitelist ? (
         <Card className="w-full max-w-md rounded-xl shadow-lg overflow-hidden mx-auto">
           <div className="text-center py-12">
-            <p className="text-base-text text-lg">正在检查白名单...</p>
+            <p className="text-base-text text-lg">{t('login.checkingWhitelist')}</p>
           </div>
         </Card>
       ) : (
         /* 登录卡片容器 */
         <Card className="w-full max-w-md rounded-xl shadow-lg overflow-hidden mx-auto relative px-2 sm:px-0">
-          {/* 卡片右上角：清理浏览器缓存 */}
+          {/* 卡片左上角：清理浏览器缓存 */}
           <Button
             type="link"
             size="small"
             icon={<ClearOutlined />}
             onClick={clearBrowserCache}
-            className="!absolute top-3 right-3 z-10 sm:top-4 sm:right-4"
+            className="!absolute top-3 left-3 z-10 !px-1 !text-gray-400 hover:!text-primary sm:top-4 sm:left-4"
           >
-            清理浏览器缓存
+            {t('login.clearBrowserCache')}
           </Button>
+
+          {/* 卡片右上角：语言切换 */}
+          <Dropdown
+            trigger={['click']}
+            placement="bottomRight"
+            menu={{
+              items: languageMenuItems,
+              selectedKeys: [currentLanguage.key],
+              onClick: handleLanguageChange,
+            }}
+          >
+            <button
+              type="button"
+              className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white/90 px-2.5 py-1.5 text-xs font-medium text-gray-600 shadow-sm transition hover:border-primary/40 hover:text-primary dark:border-white/10 dark:bg-white/8 dark:text-gray-300 dark:hover:border-primary/50 sm:top-4 sm:right-4"
+            >
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-primary/10 px-1 text-[10px] font-bold text-primary">
+                {getLanguageSymbol(currentLanguage.key)}
+              </span>
+              <span>{currentLanguage.name}</span>
+              <DownOutlined className="text-[10px] opacity-70" />
+            </button>
+          </Dropdown>
 
           {/* 登录标题区域 */}
           <div className="text-center mb-8 pt-4">
             <h2 className="text-[clamp(1.5rem,3vw,2rem)] font-bold text-base-text">
-              账户登录
+              {t('login.accountLogin')}
             </h2>
-            <p className="text-base-text mt-2">请输入您的账号信息以继续</p>
+            <p className="text-base-text mt-2">{t('login.inputAccountTip')}</p>
           </div>
 
           {/* 表单区域 */}
@@ -231,13 +285,13 @@ export const Login = () => {
             {/* 用户名输入 */}
             <Form.Item
               name="username"
-              label="用户名"
-              rules={[{ required: true, message: '请输入用户名' }]}
+              label={t('login.username')}
+              rules={[{ required: true, message: t('login.inputUsername') }]}
               className="mb-4"
             >
               <Input
                 prefix={<UserOutlined className="text-gray-400" />}
-                placeholder="请输入用户名"
+                placeholder={t('login.inputUsername')}
                 autoComplete="username"
               />
             </Form.Item>
@@ -245,13 +299,13 @@ export const Login = () => {
             {/* 密码输入 */}
             <Form.Item
               name="password"
-              label="密码"
-              rules={[{ required: true, message: '请输入密码' }]}
+              label={t('login.password')}
+              rules={[{ required: true, message: t('login.inputPassword') }]}
               className="mb-6"
             >
               <Input.Password
                 prefix={<LockOutlined className="text-gray-400" />}
-                placeholder="请输入密码"
+                placeholder={t('login.inputPassword')}
                 autoComplete="current-password"
                 visibilityToggle={{
                   visible: showPassword,
@@ -264,17 +318,18 @@ export const Login = () => {
             </Form.Item>
 
             {/* 登录按钮 */}
-            <Form.Item>
+            <Form.Item className="!mb-2">
               <Button block type="primary" htmlType="submit" loading={isLoading}>
-                登录
+                {t('login.login')}
               </Button>
             </Form.Item>
+
           </Form>
 
           {/* PassKey 无密码登录（仅 HTTPS 模式可用） */}
           {isPasskeySupported() && (
             <>
-              <Divider plain className="!mt-0 !mb-3 px-6">或</Divider>
+              <Divider plain className="!mt-0 !mb-3 px-6">{t('login.or')}</Divider>
               <div className="px-6 pb-6">
                 <Button
                   block
@@ -282,7 +337,7 @@ export const Login = () => {
                   loading={passkeyLoginLoading}
                   onClick={handlePasskeyLogin}
                 >
-                  使用 PassKey 登录
+                  {t('login.loginWithPasskey')}
                 </Button>
               </div>
             </>

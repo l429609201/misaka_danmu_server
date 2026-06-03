@@ -4,7 +4,11 @@ Search相关的API端点
 import asyncio
 import logging
 import re
-from typing import Optional, List
+try:
+    import regex as _regex_module
+except ImportError:
+    _regex_module = re
+from typing import Any, Dict, Optional, List
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -52,6 +56,153 @@ def _extract_filter_metadata(items) -> dict:
         'available_providers': sorted(providers),
         'available_types': sorted(types),
     }
+
+def _normalize_filter_value(value: Any) -> str:
+    """把过滤参数标准化为稳定缓存 key 片段。"""
+    if value is None or value == "":
+        return "all"
+    return str(value).strip().lower().replace(":", "_").replace("/", "_").replace(" ", "_")
+
+
+def _build_page_cache_key(
+    cache_key: str,
+    episode: Optional[int],
+    page: int,
+    page_size: int,
+    type_filter: Optional[str],
+    year_filter: Optional[int],
+    provider_filter: Optional[str],
+    title_filter: Optional[str],
+) -> str:
+    return ":".join([
+        "provider_search_page",
+        _normalize_filter_value(cache_key),
+        f"ep={episode or 'all'}",
+        f"type={_normalize_filter_value(type_filter)}",
+        f"year={_normalize_filter_value(year_filter)}",
+        f"provider={_normalize_filter_value(provider_filter)}",
+        f"title={_normalize_filter_value(title_filter)}",
+        f"p={page}",
+        f"ps={page_size}",
+    ])
+
+
+def _apply_filters_to_dicts(
+    results: List[Dict[str, Any]],
+    type_filter: Optional[str],
+    year_filter: Optional[int],
+    provider_filter: Optional[str],
+    title_filter: Optional[str],
+    episode: Optional[int],
+) -> List[Dict[str, Any]]:
+    title_kw = title_filter.lower() if title_filter else None
+    filtered = []
+    for item in results:
+        if type_filter and item.get("type") != type_filter:
+            continue
+        if year_filter and item.get("year") != year_filter:
+            continue
+        if provider_filter and item.get("provider") != provider_filter:
+            continue
+        if title_kw and title_kw not in (item.get("title") or "").lower():
+            continue
+        if episode is not None:
+            item = {**item, "currentEpisodeIndex": episode}
+        filtered.append(item)
+    return filtered
+
+
+def _paginate_dicts(items: List[Dict[str, Any]], page: int, page_size: int) -> List[Dict[str, Any]]:
+    start = (page - 1) * page_size
+    return items[start:start + page_size]
+
+
+def _parse_metadata_block(block: str) -> Dict[str, str]:
+    """解析类似 {[rules=xxx;provider=xxx;mediaId=xxx]} 的配置块。"""
+    text = block.strip()
+    if not (text.startswith("{[") and text.endswith("]}")):
+        return {}
+    text = text[2:-2].strip()
+    data: Dict[str, str] = {}
+    for part in text.split(";"):
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key:
+            data[key] = value
+    return data
+
+
+def _parse_single_episode_filter_rules(content: str) -> List[Dict[str, str]]:
+    """解析单剧过滤文本配置。格式：作品匹配词 => {[rules=正则;provider=可选;mediaId=可选]}"""
+    rules: List[Dict[str, str]] = []
+    if not content:
+        return rules
+    for line_num, raw_line in enumerate(content.splitlines(), 1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if " => " not in line:
+            logger.warning(f"单剧过滤配置第{line_num}行缺少 =>，已跳过: {line}")
+            continue
+        title_pattern, block = line.split(" => ", 1)
+        title_pattern = title_pattern.strip()
+        meta = _parse_metadata_block(block)
+        rule_pattern = meta.get("rules", "").strip()
+        if not title_pattern or not rule_pattern:
+            logger.warning(f"单剧过滤配置第{line_num}行缺少作品匹配词或 rules，已跳过: {line}")
+            continue
+        rules.append({
+            "title": title_pattern,
+            "rules": rule_pattern,
+            "provider": meta.get("provider", "").strip(),
+            "mediaId": meta.get("mediaId", "").strip(),
+        })
+    return rules
+
+
+def _apply_single_episode_filter(
+    episodes: List[models.ProviderEpisodeInfo],
+    rules: List[Dict[str, str]],
+    title: Optional[str],
+    provider: str,
+    media_id: str,
+) -> List[models.ProviderEpisodeInfo]:
+    if not rules or not title:
+        return episodes
+    filtered = episodes
+    for rule in rules:
+        if rule["title"].lower() not in title.lower():
+            continue
+        if rule.get("provider") and rule["provider"] != provider:
+            continue
+        if rule.get("mediaId") and rule["mediaId"] != media_id:
+            continue
+        pattern = rule["rules"]
+        before_count = len(filtered)
+        kept = []
+        removed_titles = []
+        for episode in filtered:
+            episode_title = episode.title or ""
+            try:
+                matched = re.search(pattern, episode_title, re.IGNORECASE) is not None
+            except re.error as e:
+                logger.warning(f"单剧过滤规则正则无效，已跳过: {pattern} ({e})")
+                matched = False
+            if matched:
+                removed_titles.append(episode_title)
+            else:
+                kept.append(episode)
+        if removed_titles:
+            logger.info(
+                f"单剧过滤命中: title={title}, provider={provider}, mediaId={media_id}, "
+                f"rule={rule['title']}，过滤 {len(removed_titles)}/{before_count} 集: {removed_titles[:20]}"
+            )
+        filtered = kept
+    return filtered
+
 
 @router.get(
     "/search/anime",
@@ -179,43 +330,54 @@ async def search_anime_provider(
         if cached_supplemental_results is None:
             cached_supplemental_results = await crud.get_cache(session, f"search:{supplemental_cache_key}")
 
+        page_cache_key = _build_page_cache_key(
+            cache_key, episode_to_filter, page, pageSize,
+            typeFilter, yearFilter, providerFilter, titleFilter,
+        )
+        cached_page_data = None
+        if _backend is not None:
+            try:
+                cached_page_data = await _backend.get(page_cache_key, region="search")
+            except Exception as e:
+                logger.warning(f"分页缓存读取失败，回退到数据库: {e}")
+        if cached_page_data is None:
+            cached_page_data = await crud.get_cache(session, f"search:{page_cache_key}")
+        if cached_page_data is not None:
+            logger.info(f"搜索分页缓存命中: '{page_cache_key}'")
+            timer.step_end(details="分页缓存命中")
+            timer.finish()
+            return UIProviderSearchResponse(**cached_page_data)
+
         if cached_results_data is not None and cached_supplemental_results is not None:
-            logger.info(f"搜索缓存命中: '{cache_key}'")
-            timer.step_end(details="缓存命中")
-            # 缓存数据已排序和过滤，只需更新当前请求的集数信息
-            results = [models.ProviderSearchInfo.model_validate(item) for item in cached_results_data]
-            for item in results:
-                item.currentEpisodeIndex = episode_to_filter
-
-            # 过滤处理
-            filtered_results = results
-            if typeFilter:
-                filtered_results = [item for item in filtered_results if item.type == typeFilter]
-            if yearFilter:
-                filtered_results = [item for item in filtered_results if item.year == yearFilter]
-            if providerFilter:
-                filtered_results = [item for item in filtered_results if item.provider == providerFilter]
-            if titleFilter:
-                filtered_results = [item for item in filtered_results if titleFilter.lower() in item.title.lower()]
-
-            # 分页处理
-            total = len(filtered_results)
-            start_idx = (page - 1) * pageSize
-            end_idx = start_idx + pageSize
-            paginated_results = filtered_results[start_idx:end_idx]
-
-            timer.finish()  # 打印计时报告
-            filter_metadata = _extract_filter_metadata(results)
-            return UIProviderSearchResponse(
-                results=[item.model_dump() for item in paginated_results],
-                supplemental_results=[models.ProviderSearchInfo.model_validate(item).model_dump() for item in cached_supplemental_results],
-                search_season=season_to_filter,
-                search_episode=episode_to_filter,
-                total=total,
-                page=page,
-                pageSize=pageSize,
-                **filter_metadata
+            logger.info(f"搜索全量缓存命中: '{cache_key}'")
+            timer.step_end(details="全量缓存命中")
+            base_results = list(cached_results_data or [])
+            filtered_results = _apply_filters_to_dicts(
+                base_results, typeFilter, yearFilter, providerFilter, titleFilter, episode_to_filter,
             )
+            total = len(filtered_results)
+            paginated_results = _paginate_dicts(filtered_results, page, pageSize)
+            filter_metadata = _extract_filter_metadata(base_results)
+            response_payload = {
+                "results": paginated_results,
+                "supplemental_results": list(cached_supplemental_results or []),
+                "search_season": season_to_filter,
+                "search_episode": episode_to_filter,
+                "total": total,
+                "page": page,
+                "pageSize": pageSize,
+                **filter_metadata,
+            }
+            if _backend is not None:
+                try:
+                    await _backend.set(page_cache_key, response_payload, ttl=10800, region="search")
+                except Exception as e:
+                    logger.warning(f"分页缓存写入失败，回退到数据库: {e}")
+                    await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
+            else:
+                await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
+            timer.finish()
+            return UIProviderSearchResponse(**response_payload)
 
         timer.step_end(details="缓存未命中")
         logger.info(f"搜索缓存未命中: '{cache_key}'，正在执行完整搜索流程...")
@@ -233,7 +395,7 @@ async def search_anime_provider(
 
         logger.info(f"用户 '{current_user.username}' 正在搜索: '{keyword}' (解析为: title='{search_title}', season={season_to_filter}, episode={episode_to_filter})")
 
-        
+
 
         # 第一次检查:在所有搜索之前检查是否有弹幕源
         if not manager.has_enabled_scrapers:
@@ -465,10 +627,10 @@ async def search_anime_provider(
                 # 85 的阈值可以在保留强相关的同时，过滤掉大部分无关结果。
                 matched = False
                 for alias in normalized_filter_aliases:
-                    cache_key = (normalized_item_title, alias)
-                    if cache_key not in similarity_cache:
-                        similarity_cache[cache_key] = fuzz.partial_ratio(normalized_item_title, alias)
-                    if similarity_cache[cache_key] > 85:
+                    similarity_key = (normalized_item_title, alias)
+                    if similarity_key not in similarity_cache:
+                        similarity_cache[similarity_key] = fuzz.partial_ratio(normalized_item_title, alias)
+                    if similarity_cache[similarity_key] > 85:
                         matched = True
                         break
 
@@ -517,14 +679,14 @@ async def search_anime_provider(
         original_count = len(results)
         # 当指定季度时，我们只关心电视剧类型
         filtered_by_type = [item for item in results if item.type == 'tv_series']
-        
+
         # 然后在电视剧类型中，我们按季度号过滤
         filtered_by_season = []
         for item in filtered_by_type:
             # 使用模型中已解析好的 season 字段进行比较
             if item.season == season_to_filter:
                 filtered_by_season.append(item)
-        
+
         logger.info(f"根据指定的季度 ({season_to_filter}) 进行过滤，从 {original_count} 个结果中保留了 {len(filtered_by_season)} 个。")
         results = filtered_by_season
 
@@ -656,16 +818,30 @@ async def search_anime_provider(
 
     timer.finish()  # 打印搜索计时报告
     filter_metadata = _extract_filter_metadata(sorted_results)
-    return UIProviderSearchResponse(
-        results=[item.model_dump() for item in paginated_results],
-        supplemental_results=[item.model_dump() for item in supplemental_results] if supplemental_results else [],
-        search_season=season_to_filter,
-        search_episode=episode_to_filter,
-        total=total,
-        page=page,
-        pageSize=pageSize,
-        **filter_metadata
+    response_payload = {
+        "results": [item.model_dump() for item in paginated_results],
+        "supplemental_results": [item.model_dump() for item in supplemental_results] if supplemental_results else [],
+        "search_season": season_to_filter,
+        "search_episode": episode_to_filter,
+        "total": total,
+        "page": page,
+        "pageSize": pageSize,
+        **filter_metadata,
+    }
+    page_cache_key = _build_page_cache_key(
+        cache_key, episode_to_filter, page, pageSize,
+        typeFilter, yearFilter, providerFilter, titleFilter,
     )
+    _backend = get_cache_backend()
+    if _backend is not None:
+        try:
+            await _backend.set(page_cache_key, response_payload, ttl=10800, region="search")
+        except Exception as e:
+            logger.warning(f"分页缓存写入失败，回退到数据库: {e}")
+            await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
+    else:
+        await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
+    return UIProviderSearchResponse(**response_payload)
 
 
 
@@ -674,12 +850,35 @@ async def get_episodes_for_search_result(
     provider: str = Query(...),
     media_id: str = Query(...),
     media_type: Optional[str] = Query(None), # Pass media_type to help scraper
+    title: Optional[str] = Query(None, description="搜索结果标题，用于匹配单剧过滤规则"),
     manager: ScraperManager = Depends(get_scraper_manager),
+    config_manager: ConfigManager = Depends(get_config_manager),
     current_user: models.User = Depends(security.get_current_user)
 ):
     """为指定的搜索结果获取完整的分集列表。自动识别补充源mediaId并路由。"""
     try:
         episodes = await manager.get_episodes_routed(provider, media_id, db_media_type=media_type)
+        # 单剧过滤
+        filter_content = await config_manager.get("singleEpisodeFilterRules", "")
+        filter_rules = _parse_single_episode_filter_rules(filter_content)
+        episodes = _apply_single_episode_filter(episodes, filter_rules, title, provider, media_id)
+        # 兜底全局分集标题过滤
+        global_filter_enabled = await config_manager.get("globalEpisodeTitleFilterEnabled", "false")
+        if global_filter_enabled == "true":
+            global_filter_regex = await config_manager.get("globalEpisodeTitleFilterRegex", "")
+            if global_filter_regex.strip():
+                before_count = len(episodes)
+                kept = []
+                for ep in episodes:
+                    ep_title = ep.title or ""
+                    try:
+                        if not _regex_module.search(global_filter_regex, ep_title, _regex_module.IGNORECASE):
+                            kept.append(ep)
+                    except _regex_module.error:
+                        kept.append(ep)
+                if len(kept) < before_count:
+                    logger.info(f"兜底全局分集标题过滤: provider={provider}, mediaId={media_id}, 过滤 {before_count - len(kept)}/{before_count} 集")
+                episodes = kept
         return episodes
     except httpx.RequestError as e:
         # 新增：捕获网络错误

@@ -101,7 +101,8 @@ async def get_anime_source_info(session: AsyncSession, source_id: int) -> Option
             AnimeSource.id.label("sourceId"), AnimeSource.animeId.label("animeId"), AnimeSource.providerName.label("providerName"),
             AnimeSource.mediaId.label("mediaId"), AnimeSource.sourceOrder.label("sourceOrder"), Anime.year,
             Anime.title, Anime.type, Anime.season, Anime.imageUrl.label("imageUrl"),
-            AnimeMetadata.tmdbId.label("tmdbId"), AnimeMetadata.bangumiId.label("bangumiId")
+            AnimeMetadata.tmdbId.label("tmdbId"), AnimeMetadata.bangumiId.label("bangumiId"),
+            AnimeMetadata.airWeekday.label("airWeekday"),
         )
         .join(Anime, AnimeSource.animeId == Anime.id)
         .join(AnimeMetadata, Anime.id == AnimeMetadata.animeId, isouter=True)
@@ -254,8 +255,9 @@ async def toggle_source_incremental_refresh(session: AsyncSession, source_id: in
     # 切换当前源的追更状态
     source.incrementalRefreshEnabled = not source.incrementalRefreshEnabled
 
-    # 如果开启了追更，则关闭同一番剧下其他源的追更
+    # 如果开启了追更，则关闭同一番剧下其他源的追更，并解除当前源完结标记
     if source.incrementalRefreshEnabled:
+        source.isFinished = False
         stmt = (
             update(AnimeSource)
             .where(AnimeSource.animeId == source.animeId, AnimeSource.id != source_id)
@@ -293,6 +295,67 @@ async def get_sources_with_incremental_refresh_enabled(session: AsyncSession) ->
     stmt = select(AnimeSource.id).where(AnimeSource.incrementalRefreshEnabled == True)
     result = await session.execute(stmt)
     return result.scalars().all()
+
+
+
+async def get_calendar_sources(session: AsyncSession) -> List[Dict[str, Any]]:
+    """获取所有追更中且未完结的源，连同日程信息，用于日历视图。"""
+    stmt = (
+        select(
+            AnimeSource.id.label("sourceId"),
+            AnimeSource.providerName.label("providerName"),
+            Anime.id.label("animeId"),
+            Anime.title.label("animeTitle"),
+            Anime.type.label("animeType"),
+            Anime.season,
+            Anime.imageUrl.label("imageUrl"),
+            Anime.localImagePath.label("localImagePath"),
+            Anime.episodeCount.label("episodeCount"),
+            AnimeMetadata.airWeekday.label("airWeekday"),
+            AnimeMetadata.airTime.label("airTime"),
+            AnimeMetadata.bangumiId.label("bangumiId"),
+            AnimeMetadata.traktId.label("traktId"),
+            AnimeMetadata.tmdbId.label("tmdbId"),
+            func.max(Episode.episodeIndex).label("latestEpisodeIndex"),
+        )
+        .join(Anime, AnimeSource.animeId == Anime.id)
+        .outerjoin(AnimeMetadata, Anime.id == AnimeMetadata.animeId)
+        .outerjoin(Episode, AnimeSource.id == Episode.sourceId)
+        .where(AnimeSource.incrementalRefreshEnabled == True)
+        .where(AnimeSource.isFinished == False)
+        .group_by(AnimeSource.id)
+    )
+    result = await session.execute(stmt)
+    rows = result.mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def update_air_schedule(session: AsyncSession, anime_id: int, air_weekday: Optional[int], air_time: Optional[str]):
+    """更新番剧的播出日程信息。"""
+    stmt = select(AnimeMetadata).where(AnimeMetadata.animeId == anime_id)
+    meta = (await session.execute(stmt)).scalar_one_or_none()
+    if meta:
+        meta.airWeekday = air_weekday
+        meta.airTime = air_time
+        await session.commit()
+
+
+async def update_metadata_ids(session: AsyncSession, anime_id: int, **kwargs):
+    """更新番剧的元数据 ID（bangumiId, traktId, tmdbId 等）和日程信息。
+
+    用法: await update_metadata_ids(session, anime_id, bangumiId="12345", airWeekday=6)
+    """
+    stmt = select(AnimeMetadata).where(AnimeMetadata.animeId == anime_id)
+    meta = (await session.execute(stmt)).scalar_one_or_none()
+    if not meta:
+        # 如果没有 metadata 记录，创建一个
+        meta = AnimeMetadata(animeId=anime_id)
+        session.add(meta)
+    allowed_fields = {"bangumiId", "traktId", "tmdbId", "imdbId", "tvdbId", "doubanId", "airWeekday", "airTime"}
+    for key, value in kwargs.items():
+        if key in allowed_fields and value is not None:
+            setattr(meta, key, value)
+    await session.commit()
 
 # --- Scheduled Tasks ---
 
@@ -365,6 +428,9 @@ async def get_incremental_refresh_sources_grouped(
             Anime.id.label("animeId"),
             Anime.title.label("animeTitle"),
             Anime.type.label("animeType"),
+            Anime.season.label("animeSeason"),
+            Anime.imageUrl.label("imageUrl"),
+            Anime.localImagePath.label("localImagePath"),
             AnimeSource.id.label("sourceId"),
             AnimeSource.providerName.label("providerName"),
             AnimeSource.isFavorited.label("isFavorited"),
@@ -432,6 +498,9 @@ async def get_incremental_refresh_sources_grouped(
                 "animeId": anime_id,
                 "animeTitle": row["animeTitle"],
                 "animeType": row["animeType"],
+                "season": row["animeSeason"],
+                "imageUrl": row["imageUrl"],
+                "localImagePath": row["localImagePath"],
                 "sources": []
             }
         grouped[anime_id]["sources"].append({

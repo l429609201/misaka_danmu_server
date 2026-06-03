@@ -9,6 +9,7 @@ import {
   getAnimeLibrary,
 } from '../../../apis'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Button,
   Card,
@@ -72,15 +73,16 @@ import { useMessage } from '../../../MessageContext'
 const IMPORT_MODE = [
   {
     key: 'separate',
-    label: '作为多个独立条目导入',
+    label: 'searchResult.importSeparate',
   },
   {
     key: 'merge',
-    label: '统一导入为单个条目',
+    label: 'searchResult.importMerge',
   },
 ]
 
 export const SearchResult = () => {
+  const { t } = useTranslation()
   const [form] = Form.useForm()
   const title = useWatch('title', form)
   const tmdbid = useWatch('tmdbid', form)
@@ -314,10 +316,10 @@ export const SearchResult = () => {
     const uniqueTitles = new Set(selectList.map(item => item.title))
     if (uniqueTitles.size === 1) {
       setImportMode('merge')
-      return `您选择了 ${selectList.length} 个标题相同的条目。请确认导入模式。`
+      return t('searchResult.sameTitle', { count: selectList.length })
     } else {
       setImportMode('separate')
-      return `检测到您选择的媒体标题不一致。请指定导入模式。`
+      return t('searchResult.diffTitle')
     }
   }, [selectList])
 
@@ -372,9 +374,9 @@ export const SearchResult = () => {
         supplementProvider: supplement?.enabled ? supplement.provider : undefined,
         supplementMediaId: supplement?.enabled ? supplement.mediaId : undefined,
       })
-      messageApi.success(res.data.message || '导入成功')
+      messageApi.success(res.data.message || t('searchResult.importSuccess'))
     } catch (error) {
-      messageApi.error(`提交导入任务失败: ${error.detail || error}`)
+      messageApi.error(`${t('searchResult.importTaskFailed')}: ${error.detail || error}`)
     } finally {
       setLoading(false)
     }
@@ -397,9 +399,9 @@ export const SearchResult = () => {
           episodes: editEpisodeList ?? [],
         })
       )
-      messageApi.success(res.data?.message || '编辑导入任务已提交。')
+      messageApi.success(res.data?.message || t('searchResult.editImportSubmitted'))
     } catch (error) {
-      messageApi.error(`提交导入任务失败: ${error.message}`)
+      messageApi.error(`${t('searchResult.importTaskFailed')}: ${error.message}`)
     } finally {
       setEditConfirmLoading(false)
       setEditImportOpen(false)
@@ -415,7 +417,7 @@ export const SearchResult = () => {
     let tmdbparams = {}
     if (importMode === 'merge') {
       if (!title) {
-        messageApi.error('最终导入名称不能为空。')
+        messageApi.error(t('searchResult.finalNameRequired'))
         return
       }
       tmdbparams = {
@@ -423,16 +425,15 @@ export const SearchResult = () => {
       }
     }
     modalApi.confirm({
-      title: '批量导入',
+      title: t('searchResult.batchImport'),
       zIndex: 1002,
       content: (
         <div>
-          确定要将 {selectList.length} 个条目
-          {importMode === 'merge' ? '合并' : '分开'}导入吗？
+          {t('searchResult.batchImportConfirm', { count: selectList.length, mode: importMode === 'merge' ? t('searchResult.modeMerge') : t('searchResult.modeSeparate') })}
         </div>
       ),
-      okText: '确认',
-      cancelText: '取消',
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           setConfirmLoading(true)
@@ -461,19 +462,19 @@ export const SearchResult = () => {
 
           if (successCount > 0) {
             if (failedCount > 0) {
-              messageApi.warning(`已提交 ${successCount} 个任务，${failedCount} 个任务提交失败，请在任务管理器中查看进度。`)
+              messageApi.warning(t('searchResult.batchSubmittedPartial', { success: successCount, failed: failedCount }))
             } else {
-              messageApi.success('批量导入任务已提交，请在任务管理器中查看进度。')
+              messageApi.success(t('searchResult.batchSubmittedAll'))
             }
           } else {
-            messageApi.error('所有任务提交失败')
+            messageApi.error(t('searchResult.allTasksFailed'))
           }
 
           setSelectList([])
           setConfirmLoading(false)
           setBatchOpen(false)
         } catch (err) {
-          messageApi.error('批量导入失败')
+          messageApi.error(t('searchResult.batchImportFailed'))
         } finally {
           setConfirmLoading(false)
           setBatchOpen(false)
@@ -497,10 +498,10 @@ export const SearchResult = () => {
         setTmdbResult(res?.data || [])
         setTmdbOpen(true)
       } else {
-        messageApi.error('没有找到相关内容')
+        messageApi.error(t('searchResult.noContent'))
       }
     } catch (error) {
-      messageApi.error('TMDB搜索失败')
+      messageApi.error(t('searchResult.tmdbSearchFailed'))
     } finally {
       setSearchTmdbLoading(false)
     }
@@ -552,7 +553,7 @@ export const SearchResult = () => {
         label: (
           <>
             <MyIcon icon="tvlibrary" size={16} className="mr-2" />
-            所有类型
+            {t('searchResult.allTypes')}
           </>
         ),
       },
@@ -561,7 +562,7 @@ export const SearchResult = () => {
         label: (
           <>
             <MyIcon icon="movie" size={16} className="mr-2" />
-            电影/剧场版
+            {t('searchResult.movieType')}
           </>
         ),
       },
@@ -570,7 +571,7 @@ export const SearchResult = () => {
         label: (
           <>
             <MyIcon icon="tv" size={16} className="mr-2" />
-            电视节目
+            {t('searchResult.tvType')}
           </>
         ),
       },
@@ -581,8 +582,8 @@ export const SearchResult = () => {
   // 年份筛选菜单
   const yearMenu = {
     items: [
-      { key: 'all', label: '所有年份' },
-      ...years.map(year => ({ key: year, label: `${year}年` })),
+      { key: 'all', label: t('searchResult.allYears') },
+      ...years.map(year => ({ key: year, label: t('searchResult.yearSuffix', { year }) })),
     ],
     onClick: ({ key }) => handleFilterChange('yearFilter', key === 'all' ? 'all' : Number(key)),
   }
@@ -590,7 +591,7 @@ export const SearchResult = () => {
   // 来源筛选菜单
   const providerMenu = {
     items: [
-      { key: 'all', label: '所有来源' },
+      { key: 'all', label: t('searchResult.allProviders') },
       ...providers.map(p => ({
         key: p,
         label: p.charAt(0).toUpperCase() + p.slice(1),
@@ -792,10 +793,10 @@ export const SearchResult = () => {
         return (
           <div className="mt-2 p-2 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center gap-2">
             <span className="text-sm text-gray-500 dark:text-gray-400 shrink-0">
-              找到补充源:
+              {t('searchResult.foundSupplement')}
             </span>
             <Select
-              placeholder="选择补充源"
+              placeholder={t('searchResult.selectSupplement')}
               value={selectedProvider}
               onChange={value => {
                 // 如果选择了补充源
@@ -856,7 +857,7 @@ export const SearchResult = () => {
                   }
                 }}
               >
-                使用补充源分集列表
+                {t('searchResult.useSupplementEpisodes')}
               </Checkbox>
             )}
           </div>
@@ -871,7 +872,7 @@ export const SearchResult = () => {
     <>
       {lastSearchResultData && (
         <div className="border-t border-base-border mt-6 pt-6">
-          <div className="text-lg font-semibold mb-4">搜索结果</div>
+          <div className="text-lg font-semibold mb-4">{t('searchResult.searchResultTitle')}</div>
           <div>
             <div className="mb-6">
               {isMobile ? (
@@ -889,20 +890,20 @@ export const SearchResult = () => {
                       disabled={!renderData.length}
                     >
                       {selectList.length === renderData.length && renderData.length
-                        ? '取消全选'
-                        : '全选'}
+                        ? t('searchResult.unselectAll')
+                        : t('searchResult.selectAll')}
                     </Button>
                     <Dropdown menu={typeMenu}>
                       <Button className="w-full">
                         {typeFilter === 'all' ? (
                           <>
                             <MyIcon icon="tvlibrary" size={16} className="mr-1" />
-                            类型
+                            {t('searchResult.type')}
                           </>
                         ) : typeFilter === DANDAN_TYPE_MAPPING.movie ? (
                           <>
                             <MyIcon icon="movie" size={16} className="mr-1" />
-                            电影
+                            {t('searchResult.movie')}
                           </>
                         ) : (
                           <>
@@ -914,13 +915,13 @@ export const SearchResult = () => {
                     </Dropdown>
                     <Dropdown menu={yearMenu} disabled={!years.length}>
                       <Button icon={<CalendarOutlined />} className="w-full">
-                        {yearFilter === 'all' ? '年份' : `${yearFilter}年`}
+                        {yearFilter === 'all' ? t('searchResult.year') : t('searchResult.yearSuffix', { year: yearFilter })}
                       </Button>
                     </Dropdown>
                     <Dropdown menu={providerMenu} disabled={!providers.length}>
                       <Button icon={<CloudServerOutlined />} className="w-full">
                         {providerFilter === 'all'
-                          ? '来源'
+                          ? t('searchResult.provider')
                           : providerFilter.charAt(0).toUpperCase() +
                             providerFilter.slice(1)}
                       </Button>
@@ -932,22 +933,22 @@ export const SearchResult = () => {
                       content={
                         <div style={{ width: 250 }}>
                           <Input.Search
-                            placeholder="输入标题关键词过滤"
+                            placeholder={t('searchResult.filterPlaceholder')}
                             allowClear
                             value={keyword}
                             onChange={e => setKeyword(e.target.value)}
                             onSearch={value => handleFilterChange('titleFilter', value)}
-                            enterButton="过滤"
+                            enterButton={t('searchResult.filter')}
                             autoFocus
                           />
                         </div>
                       }
-                      title="过滤结果"
+                      title={t('searchResult.filterResult')}
                       trigger="click"
                       placement="bottom"
                     >
                       <Button icon={<SearchOutlined />} className="w-full">
-                        {keyword ? `过滤: ${keyword.length > 5 ? keyword.slice(0, 5) + '...' : keyword}` : '过滤'}
+                        {keyword ? t('searchResult.filterPrefix', { keyword: keyword.length > 5 ? keyword.slice(0, 5) + '...' : keyword }) : t('searchResult.filter')}
                       </Button>
                     </Popover>
                     <Button
@@ -967,21 +968,21 @@ export const SearchResult = () => {
                         setTypeFilter('all')
                       }}
                     >
-                      清除
+                      {t('searchResult.clear')}
                     </Button>
                     <Button
                       className="w-full"
                       type="primary"
                       onClick={() => {
                         if (selectList.length === 0) {
-                          messageApi.error('请选择要导入的媒体')
+                          messageApi.error(t('searchResult.selectMedia'))
                           return
                         }
                         setBatchOpen(true)
                       }}
                       disabled={!renderData.length}
                     >
-                      批量导入
+                      {t('searchResult.batchImport')}
                     </Button>
                   </div>
                 </div>
@@ -998,38 +999,38 @@ export const SearchResult = () => {
                     disabled={!renderData.length}
                   >
                     {selectList.length === renderData.length && renderData.length
-                      ? '取消全选'
-                      : '全选'}
+                      ? t('searchResult.unselectAll')
+                      : t('searchResult.selectAll')}
                   </Button>
                   <Dropdown menu={typeMenu}>
                     <Button>
                       {typeFilter === 'all' ? (
                         <>
                           <MyIcon icon="tvlibrary" size={16} className="mr-1" />
-                          按类型
+                          {t('searchResult.byType')}
                         </>
                       ) : typeFilter === DANDAN_TYPE_MAPPING.movie ? (
                         <>
                           <MyIcon icon="movie" size={16} className="mr-1" />
-                          电影/剧场版
+                          {t('searchResult.movieType')}
                         </>
                       ) : (
                         <>
                           <MyIcon icon="tv" size={16} className="mr-1" />
-                          电视节目
+                          {t('searchResult.tvType')}
                         </>
                       )}
                     </Button>
                   </Dropdown>
                   <Dropdown menu={yearMenu} disabled={!years.length}>
                     <Button icon={<CalendarOutlined />}>
-                      {yearFilter === 'all' ? '按年份' : `${yearFilter}年`}
+                      {yearFilter === 'all' ? t('searchResult.byYear') : t('searchResult.yearSuffix', { year: yearFilter })}
                     </Button>
                   </Dropdown>
                   <Dropdown menu={providerMenu} disabled={!providers.length}>
                     <Button icon={<CloudServerOutlined />}>
                       {providerFilter === 'all'
-                        ? '按来源'
+                        ? t('searchResult.byProvider')
                         : providerFilter.charAt(0).toUpperCase() +
                           providerFilter.slice(1)}
                     </Button>
@@ -1038,22 +1039,22 @@ export const SearchResult = () => {
                     content={
                       <div style={{ width: 250 }}>
                         <Input.Search
-                          placeholder="输入标题关键词过滤"
+                          placeholder={t('searchResult.filterPlaceholder')}
                           allowClear
                           value={keyword}
                           onChange={e => setKeyword(e.target.value)}
                           onSearch={value => handleFilterChange('titleFilter', value)}
-                          enterButton="过滤"
+                          enterButton={t('searchResult.filter')}
                           autoFocus
                         />
                       </div>
                     }
-                    title="过滤结果"
+                    title={t('searchResult.filterResult')}
                     trigger="click"
                     placement="bottomRight"
                   >
                     <Button icon={<SearchOutlined />}>
-                      {keyword ? `过滤: ${keyword.length > 5 ? keyword.slice(0, 5) + '...' : keyword}` : '过滤'}
+                      {keyword ? t('searchResult.filterPrefix', { keyword: keyword.length > 5 ? keyword.slice(0, 5) + '...' : keyword }) : t('searchResult.filter')}
                     </Button>
                   </Popover>
                   <Button
@@ -1073,20 +1074,20 @@ export const SearchResult = () => {
                       setTypeFilter('all')
                     }}
                   >
-                    清除结果
+                    {t('searchResult.clearResult')}
                   </Button>
                   <Button
                     type="primary"
                     onClick={() => {
                       if (selectList.length === 0) {
-                        messageApi.error('请选择要导入的媒体')
+                        messageApi.error(t('searchResult.selectMedia'))
                         return
                       }
                       setBatchOpen(true)
                     }}
                     disabled={!renderData.length}
                   >
-                    批量导入
+                    {t('searchResult.batchImport')}
                   </Button>
                 </div>
               )}
@@ -1095,25 +1096,25 @@ export const SearchResult = () => {
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <div className="text-sm text-gray-500">
               {autoLoadMode ? (
-                <>已加载 {accumulatedResults.length} / {total} 条结果</>
+                <>{t('searchResult.loadedCount', { loaded: accumulatedResults.length, total })}</>
               ) : (
                 <>
-                  共 {total} 条结果
-                  {total > 0 && ` (第 ${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, total)} 条)`}
+                  {t('searchResult.totalCount', { total })}
+                  {total > 0 && t('searchResult.rangeInfo', { start: (currentPage - 1) * pageSize + 1, end: Math.min(currentPage * pageSize, total) })}
                 </>
               )}
             </div>
             <div className={`flex items-center ${isMobile ? 'gap-1' : 'gap-2'}`}>
-              <span className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-sm'}`}>显示</span>
+              <span className={`text-gray-500 ${isMobile ? 'text-xs' : 'text-sm'}`}>{t('searchResult.show')}</span>
               <Select
                 value={autoLoadMode ? 'auto' : pageSize}
                 onChange={handleModeChange}
                 options={[
-                  { label: '10条/页', value: 10 },
-                  { label: '20条/页', value: 20 },
-                  { label: '50条/页', value: 50 },
-                  { label: '100条/页', value: 100 },
-                  { label: '自动加载', value: 'auto' },
+                  { label: t('searchResult.perPage', { size: 10 }), value: 10 },
+                  { label: t('searchResult.perPage', { size: 20 }), value: 20 },
+                  { label: t('searchResult.perPage', { size: 50 }), value: 50 },
+                  { label: t('searchResult.perPage', { size: 100 }), value: 100 },
+                  { label: t('searchResult.autoLoad'), value: 'auto' },
                 ]}
                 size="small"
                 className={isMobile ? 'mobile-select-compact' : ''}
@@ -1125,7 +1126,7 @@ export const SearchResult = () => {
           <Spin spinning={paginationLoading}>
           <div
             ref={scrollContainerRef}
-            className="overflow-y-auto overflow-x-hidden border border-gray-200 rounded-lg"
+            className="overflow-y-auto overflow-x-hidden border border-gray-200 rounded-lg px-1 py-1"
             style={{ maxHeight: '600px' }}
           >
           {!!renderData?.length ? (
@@ -1135,7 +1136,7 @@ export const SearchResult = () => {
               dataSource={renderData}
               footer={autoLoadMode && hasMore ? (
                 <div className="text-center py-4 text-gray-500">
-                  {paginationLoading ? '加载中...' : '滚动加载更多'}
+                  {paginationLoading ? t('searchResult.loadingMore') : t('searchResult.scrollLoadMore')}
                 </div>
               ) : null}
               renderItem={item => {
@@ -1143,21 +1144,21 @@ export const SearchResult = () => {
                 return (
                   <List.Item
                     key={`${item.mediaId}-${item.provider}`}
-                    style={{ paddingLeft: isMobile ? 8 : 16, paddingRight: isMobile ? 8 : 16 }}
+                    className={`!px-3 !py-3 md:!px-4 !rounded-xl !border !mb-1.5 transition-all cursor-pointer relative ${isActive ? '!border-blue-500 !bg-blue-50/60 dark:!bg-blue-900/20' : '!border-gray-200 dark:!border-white/10 hover:!border-blue-300'}`}
+                    onClick={() =>
+                      setSelectList(list => {
+                        return list.includes(item)
+                          ? list.filter(i => i !== item)
+                          : [...list, item]
+                      })
+                    }
                   >
+                    {isActive && (
+                      <div className="absolute top-1 right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs z-10">✓</div>
+                    )}
                     <Row gutter={[8, 8]}>
                       <Col md={15} xs={24}>
-                        <div
-                          className="flex items-center justify-start relative cursor-pointer"
-                          onClick={() =>
-                            setSelectList(list => {
-                              return list.includes(item)
-                                ? list.filter(i => i !== item)
-                                : [...list, item]
-                            })
-                          }
-                        >
-                          <Checkbox checked={isActive} />
+                        <div className="flex items-center justify-start relative">
                           <img
                             width={60}
                             alt="logo"
@@ -1179,7 +1180,7 @@ export const SearchResult = () => {
                                   rel="noopener noreferrer"
                                   onClick={(e) => e.stopPropagation()}
                                   className="ml-2 text-blue-500 hover:text-blue-700 inline-flex items-center"
-                                  title="在平台打开"
+                                  title={t('searchResult.openInPlatform')}
                                 >
                                   <LinkOutlined style={{ fontSize: '18px' }} />
                                 </a>
@@ -1187,27 +1188,27 @@ export const SearchResult = () => {
                             </div>
                             <div className="flex items-center flex-wrap gap-2">
                               <Tag color="magenta">
-                                源：{item.provider ?? '未知'}
+                                {t('searchResult.sourceLabel', { value: item.provider ?? t('searchResult.unknown') })}
                               </Tag>
                               <Tag color="volcano">
-                                年份：{item.year ?? '未知'}
+                                {t('searchResult.yearLabel', { value: item.year ?? t('searchResult.unknown') })}
                               </Tag>
                               {item.type !== 'movie' && (
                                 <Tag color="orange">
-                                  季度：{item.season ?? '未知'}
+                                  {t('searchResult.seasonLabel', { value: item.season ?? t('searchResult.unknown') })}
                                 </Tag>
                               )}
                               <Tag color="gold">
-                                总集数：{item.episodeCount ?? 0}
+                                {t('searchResult.totalEpisodesLabel', { value: item.episodeCount ?? 0 })}
                               </Tag>
                               {searchEpisode && (
                                 <Tag color="cyan">
-                                  单集获取：{searchEpisode}
+                                  {t('searchResult.singleEpisode', { value: searchEpisode })}
                                 </Tag>
                               )}
                               {item.supplementSource && (
                                 <Tag color="purple">
-                                  {item.supplementSource} 补充
+                                  {t('searchResult.supplementTag', { source: item.supplementSource })}
                                 </Tag>
                               )}
                             </div>
@@ -1278,7 +1279,7 @@ export const SearchResult = () => {
                             }
                           }}
                         >
-                          编辑导入
+                          {t('searchResult.editImport')}
                         </Button>
                       </Col>
                       <Col md={4} xs={11}>
@@ -1291,7 +1292,7 @@ export const SearchResult = () => {
                             handleImportDanmu(item)
                           }}
                         >
-                          直接导入
+                          {t('searchResult.directImport')}
                         </Button>
                       </Col>
                     </Row>
@@ -1300,7 +1301,7 @@ export const SearchResult = () => {
               }}
             />
           ) : (
-            <Empty description="暂无搜索结果" />
+            <Empty description={t('searchResult.noResult')} />
           )}
           </div>
           </Spin>
@@ -1323,17 +1324,17 @@ export const SearchResult = () => {
         </div>
       )}
       <Modal
-        title="批量导入确认"
+        title={t('searchResult.batchImportConfirmTitle')}
         open={batchOpen}
         onOk={handleBatchImport}
         confirmLoading={confirmLoading}
-        cancelText="取消"
-        okText="确认"
+        cancelText={t('common.cancel')}
+        okText={t('common.confirm')}
         onCancel={() => setBatchOpen(false)}
       >
         <div>
           <div className="mb-2">{importModeText}</div>
-          <div className="text-base mb-2 font-bold">已选择的条目</div>
+          <div className="text-base mb-2 font-bold">{t('searchResult.selectedItems')}</div>
           <div className="max-h-[300px] overflow-y-auto">
             {selectList.map((item, index) => {
               return (
@@ -1350,19 +1351,19 @@ export const SearchResult = () => {
                     )}
                   </div>
                   <div className="flex items-center flex-wrap gap-2">
-                    <Tag color="magenta">源：{item.provider ?? '未知'}</Tag>
-                    <Tag color="volcano">年份：{item.year ?? '未知'}</Tag>
-                    <Tag color="orange">季度：{item.season ?? '未知'}</Tag>
-                    <Tag color="gold">总集数：{item.episodeCount ?? 0}</Tag>
+                    <Tag color="magenta">{t('searchResult.sourceLabel', { value: item.provider ?? t('searchResult.unknown') })}</Tag>
+                    <Tag color="volcano">{t('searchResult.yearLabel', { value: item.year ?? t('searchResult.unknown') })}</Tag>
+                    <Tag color="orange">{t('searchResult.seasonLabel', { value: item.season ?? t('searchResult.unknown') })}</Tag>
+                    <Tag color="gold">{t('searchResult.totalEpisodesLabel', { value: item.episodeCount ?? 0 })}</Tag>
                     {item.supplementSource && (
-                      <Tag color="purple">{item.supplementSource} 补充</Tag>
+                      <Tag color="purple">{t('searchResult.supplementTag', { source: item.supplementSource })}</Tag>
                     )}
                   </div>
                 </div>
               )
             })}
           </div>
-          <div className="text-base my-3 font-bold">导入模式</div>
+          <div className="text-base my-3 font-bold">{t('searchResult.importModeLabel')}</div>
           <Radio.Group
             value={importMode}
             onChange={e => setImportMode(e.target.value)}
@@ -1370,7 +1371,7 @@ export const SearchResult = () => {
           >
             {IMPORT_MODE.map(item => (
               <Radio key={item.key} value={item.key}>
-                {item.label}
+                {t(item.label)}
               </Radio>
             ))}
           </Radio.Group>
@@ -1378,26 +1379,26 @@ export const SearchResult = () => {
             <Form form={form} layout="horizontal">
               <Form.Item
                 name="title"
-                label="最终导入名称"
-                rules={[{ required: true, message: '请输入最终导入名称' }]}
+                label={t('searchResult.finalImportName')}
+                rules={[{ required: true, message: t('searchResult.inputFinalName') }]}
               >
                 <Input.Search
-                  placeholder="请输入最终导入名称"
+                  placeholder={t('searchResult.inputFinalName')}
                   allowClear
-                  enterButton="搜索"
+                  enterButton={t('searchResult.search')}
                   loading={searchTmdbLoading}
                   onSearch={onTmdbSearch}
                 />
               </Form.Item>
-              <Form.Item name="tmdbid" label="最终TMDB ID">
-                <Input disabled placeholder="从TMDB搜索选择后自动填充" />
+              <Form.Item name="tmdbid" label={t('searchResult.finalTmdbId')}>
+                <Input disabled placeholder={t('searchResult.tmdbAutoFill')} />
               </Form.Item>
             </Form>
           )}
         </div>
       </Modal>
       <Modal
-        title="批量导入搜索 TMDB ID"
+        title={t('searchResult.tmdbModalTitle')}
         open={tmdbOpen}
         footer={null}
         onCancel={() => setTmdbOpen(false)}
@@ -1421,7 +1422,7 @@ export const SearchResult = () => {
                       <div className="text-xl font-bold mb-3">
                         {item.title || item.name}
                       </div>
-                      <div>ID: {item.id}</div>
+                      <div>{t('searchResult.idLabel', { id: item.id })}</div>
                       {!!item.details && (
                         <div className="text-sm mt-2 line-clamp-4">
                           {item.details}
@@ -1439,7 +1440,7 @@ export const SearchResult = () => {
                         setTmdbOpen(false)
                       }}
                     >
-                      选择
+                      {t('searchResult.select')}
                     </Button>
                   </div>
                 </div>
@@ -1449,7 +1450,7 @@ export const SearchResult = () => {
         />
       </Modal>
       <Modal
-        title={`编辑导入: ${editItem.title}`}
+        title={t('searchResult.editImportTitle', { title: editItem.title })}
         open={editImportOpen}
         onCancel={() => {
           setEditImportOpen(false)
@@ -1464,7 +1465,7 @@ export const SearchResult = () => {
             onClick={handleToggleOrder}
             style={{ float: 'left' }}
           >
-            {episodeOrder === 'asc' ? '正序' : '倒序'}
+            {episodeOrder === 'asc' ? t('searchResult.asc') : t('searchResult.desc')}
           </Button>,
           <Button key="cancel" onClick={() => {
             setEditImportOpen(false)
@@ -1472,7 +1473,7 @@ export const SearchResult = () => {
             setEditMediaType('tv_series')
             setEditSeason(1)
           }}>
-            取消
+            {t('common.cancel')}
           </Button>,
           <Button
             key="submit"
@@ -1482,7 +1483,7 @@ export const SearchResult = () => {
               handleImportEdit()
             }}
           >
-            确认导入
+            {t('searchResult.confirmImport')}
           </Button>,
         ]}
         styles={{ body: { overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: isMobile ? '75vh' : '70vh', padding: isMobile ? '12px 16px' : undefined } }}
@@ -1490,10 +1491,10 @@ export const SearchResult = () => {
           {isMobile ? (
             <div className="space-y-3 mb-3 shrink-0">
               <div>
-                <div className="font-medium text-sm mb-2">作品标题</div>
+                <div className="font-medium text-sm mb-2">{t('searchResult.animeTitle')}</div>
                 <Input
                   value={editAnimeTitle || editItem.title}
-                  placeholder="请输入作品标题"
+                  placeholder={t('searchResult.inputAnimeTitle')}
                   onChange={e => {
                     setEditAnimeTitle(e.target.value)
                   }}
@@ -1505,11 +1506,11 @@ export const SearchResult = () => {
                   onClick={() => setReshuffleOpen(true)}
                   className="mt-2"
                 >
-                  重整分集导入
+                  {t('searchResult.reshuffleImport')}
                 </Button>
               </div>
               <div>
-                <div className="font-medium text-sm mb-2">类型 / 季度</div>
+                <div className="font-medium text-sm mb-2">{t('searchResult.typeSeasonLabel')}</div>
                 <div className="flex items-center justify-between">
                   <Segmented
                     value={editMediaType}
@@ -1518,12 +1519,12 @@ export const SearchResult = () => {
                       if (value === 'movie') setEditSeason(1)
                     }}
                     options={[
-                      { label: <span className="inline-flex items-center gap-1"><MyIcon icon="movie" size={14} /> 电影</span>, value: 'movie' },
-                      { label: <span className="inline-flex items-center gap-1"><MyIcon icon="tv" size={14} /> 电视节目</span>, value: 'tv_series' },
+                      { label: <span className="inline-flex items-center gap-1"><MyIcon icon="movie" size={14} /> {t('searchResult.movie')}</span>, value: 'movie' },
+                      { label: <span className="inline-flex items-center gap-1"><MyIcon icon="tv" size={14} /> {t('searchResult.tvType')}</span>, value: 'tv_series' },
                     ]}
                   />
                   <div className="flex items-center gap-2">
-                    <span className="text-sm">季度:</span>
+                    <span className="text-sm">{t('searchResult.seasonColon')}</span>
                     <InputNumber
                       value={editSeason}
                       onChange={value => setEditSeason(value)}
@@ -1536,9 +1537,9 @@ export const SearchResult = () => {
                 </div>
               </div>
               <div>
-                <div className="font-medium text-sm mb-2">集数区间</div>
+                <div className="font-medium text-sm mb-2">{t('searchResult.episodeRange')}</div>
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-sm">从</span>
+                  <span className="text-sm">{t('searchResult.from')}</span>
                   <InputNumber
                     className="flex-1"
                     value={range[0]}
@@ -1547,7 +1548,7 @@ export const SearchResult = () => {
                     max={range[1]}
                     step={1}
                   />
-                  <span className="text-sm">到</span>
+                  <span className="text-sm">{t('searchResult.to')}</span>
                   <InputNumber
                     className="flex-1"
                     value={range[1]}
@@ -1568,18 +1569,18 @@ export const SearchResult = () => {
                     })
                   }}
                 >
-                  确认区间
+                  {t('searchResult.confirmRange')}
                 </Button>
               </div>
             </div>
           ) : (
             <>
               <div className="flex items-wrap md:flex-nowrap justify-between items-center gap-3 my-6 shrink-0">
-                <div className="shrink-0">作品标题:</div>
+                <div className="shrink-0">{t('searchResult.animeTitleColon')}</div>
                 <div className="w-full">
                   <Input
                     value={editAnimeTitle || editItem.title}
-                    placeholder="请输入作品标题"
+                    placeholder={t('searchResult.inputAnimeTitle')}
                     onChange={e => {
                       setEditAnimeTitle(e.target.value)
                     }}
@@ -1592,7 +1593,7 @@ export const SearchResult = () => {
                   icon={<ReloadOutlined />}
                   className="shrink-0"
                 >
-                  重整分集导入
+                  {t('searchResult.reshuffleImport')}
                 </Button>
               </div>
               <div className="flex items-wrap md:flex-nowrap justify-between items-center gap-3 my-6 shrink-0">
@@ -1604,13 +1605,13 @@ export const SearchResult = () => {
                       if (value === 'movie') setEditSeason(1)
                     }}
                     options={[
-                      { label: <span className="inline-flex items-center gap-1"><MyIcon icon="movie" size={14} /> 电影</span>, value: 'movie' },
-                      { label: <span className="inline-flex items-center gap-1"><MyIcon icon="tv" size={14} /> 电视节目</span>, value: 'tv_series' },
+                      { label: <span className="inline-flex items-center gap-1"><MyIcon icon="movie" size={14} /> {t('searchResult.movie')}</span>, value: 'movie' },
+                      { label: <span className="inline-flex items-center gap-1"><MyIcon icon="tv" size={14} /> {t('searchResult.tvType')}</span>, value: 'tv_series' },
                     ]}
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="shrink-0">季度:</span>
+                  <span className="shrink-0">{t('searchResult.seasonColon')}</span>
                   <InputNumber
                     value={editSeason}
                     onChange={value => setEditSeason(value)}
@@ -1622,10 +1623,10 @@ export const SearchResult = () => {
                 </div>
               </div>
               <div className="flex items-wrap md:flex-nowrap justify-between items-center gap-3 my-6 shrink-0">
-                <div className="shrink-0">集数区间:</div>
+                <div className="shrink-0">{t('searchResult.episodeRangeColon')}</div>
                 <div className="w-full flex items-center justify-between flex-wrap md:flex-nowrap gap-2">
                   <div className="flex items-center justify-start gap-2">
-                    <span>从</span>
+                    <span>{t('searchResult.from')}</span>
                     <InputNumber
                       value={range[0]}
                       onChange={value => setRange(r => [value, r[1]])}
@@ -1636,7 +1637,7 @@ export const SearchResult = () => {
                         width: '100%',
                       }}
                     />
-                    <span>到</span>
+                    <span>{t('searchResult.to')}</span>
                     <InputNumber
                       value={range[1]}
                       onChange={value => setRange(r => [r[0], value])}
@@ -1659,7 +1660,7 @@ export const SearchResult = () => {
                       })
                     }}
                   >
-                    确认区间
+                    {t('searchResult.confirmRange')}
                   </Button>
                 </div>
               </div>
@@ -1717,10 +1718,10 @@ export const SearchResult = () => {
               <Dropdown
                 menu={{
                   items: [
-                    { key: '5', label: '5 条/页' },
-                    { key: '10', label: '10 条/页' },
-                    { key: '20', label: '20 条/页' },
-                    { key: '50', label: '50 条/页' },
+                    { key: '5', label: t('searchResult.perPage', { size: 5 }) },
+                    { key: '10', label: t('searchResult.perPage', { size: 10 }) },
+                    { key: '20', label: t('searchResult.perPage', { size: 20 }) },
+                    { key: '50', label: t('searchResult.perPage', { size: 50 }) },
                   ],
                   selectedKeys: [String(episodePageSize)],
                   onClick: ({ key }) => {
@@ -1731,7 +1732,7 @@ export const SearchResult = () => {
                 trigger={['click']}
               >
                 <Button size="small" className="shrink-0">
-                  {episodePageSize} 条/页 <DownOutlined />
+                  {t('searchResult.perPage', { size: episodePageSize })} <DownOutlined />
                 </Button>
               </Dropdown>
             </div>
@@ -1739,7 +1740,7 @@ export const SearchResult = () => {
       </Modal>
       {/* 重整分集导入子弹窗 */}
       <Modal
-        title="重整分集导入"
+        title={t('searchResult.reshuffleImport')}
         open={reshuffleOpen}
         onCancel={() => {
           setReshuffleOpen(false)
@@ -1754,7 +1755,7 @@ export const SearchResult = () => {
             setReshuffleResults([])
             setSelectedReshuffleItem(null)
           }}>
-            取消
+            {t('common.cancel')}
           </Button>,
           <Button
             key="confirm"
@@ -1771,7 +1772,7 @@ export const SearchResult = () => {
                 })
                 if (!res.data?.length) {
                   messageApi.error(
-                    `所选条目 "${selectedReshuffleItem.title}" 没有任何已存在的分集。`
+                    t('searchResult.noExistingEpisodes', { title: selectedReshuffleItem.title })
                   )
                   return
                 }
@@ -1783,28 +1784,28 @@ export const SearchResult = () => {
                   existingIndices.has(it.episodeIndex)
                 ).length
                 messageApi.success(
-                  `重整完成！根据 "${selectedReshuffleItem.title}" 的库内记录，移除了 ${removedCount} 个已存在的分集。`
+                  t('searchResult.reshuffleDone', { title: selectedReshuffleItem.title, count: removedCount })
                 )
                 setReshuffleOpen(false)
                 setReshuffleKeyword('')
                 setReshuffleResults([])
                 setSelectedReshuffleItem(null)
               } catch (error) {
-                messageApi.error(`查询已存在分集失败: ${error.message}`)
+                messageApi.error(`${t('searchResult.queryExistingFailed')}: ${error.message}`)
               } finally {
                 setReshuffleConfirmLoading(false)
               }
             }}
           >
-            确认过滤
+            {t('searchResult.confirmFilter')}
           </Button>,
         ]}
       >
         <div className="mb-3" style={{ color: 'var(--color-text)' }}>
-          💡 选择库内已有条目，将自动移除已存在的分集
+          {t('searchResult.reshuffleTip')}
         </div>
         <Input.Search
-          placeholder="搜索库内条目..."
+          placeholder={t('searchResult.searchLibraryItem')}
           allowClear
           enterButton={<SearchOutlined />}
           loading={reshuffleLoading}
@@ -1820,7 +1821,7 @@ export const SearchResult = () => {
               const res = await getAnimeLibrary({ keyword: value.trim(), pageSize: 20 })
               setReshuffleResults(res.data?.list || [])
             } catch (error) {
-              messageApi.error('搜索失败')
+              messageApi.error(t('searchResult.searchFailed'))
             } finally {
               setReshuffleLoading(false)
             }
@@ -1857,7 +1858,7 @@ export const SearchResult = () => {
                         {item.type === 'movie' ? <MyIcon icon="movie" size={14} className="ml-1" /> : <MyIcon icon="tv" size={14} className="ml-1" />}
                         {item.type !== 'movie' && ` (S${String(item.season).padStart(2, '0')})`}
                         <span className="text-gray-400 ml-2 text-sm">
-                          {item.year ? `${item.year}年` : ''} · {item.episodeCount}集
+                          {item.year ? t('searchResult.yearSuffix', { year: item.year }) : ''} · {t('searchResult.totalEpisodesLabel', { value: item.episodeCount })}
                         </span>
                       </span>
                     </Radio>
@@ -1867,7 +1868,7 @@ export const SearchResult = () => {
             </Radio.Group>
           ) : (
             reshuffleKeyword && !reshuffleLoading && (
-              <Empty description="未找到匹配的条目" />
+              <Empty description={t('searchResult.noMatchItem')} />
             )
           )}
         </Card>

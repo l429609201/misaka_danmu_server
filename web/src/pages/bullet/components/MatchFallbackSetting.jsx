@@ -5,8 +5,10 @@ import { useMessage } from '../../../MessageContext'
 import { QuestionCircleOutlined } from '@ant-design/icons'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store'
+import { useTranslation } from 'react-i18next'
 
 export const MatchFallbackSetting = () => {
+  const { t } = useTranslation()
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(true)
   const [blacklistSaving, setBlacklistSaving] = useState(false)
@@ -50,7 +52,7 @@ export const MatchFallbackSetting = () => {
         danmakuAutoRefreshDays: parseInt(autoRefreshRes.data?.value || '0', 10) || 0
       })
     } catch (error) {
-      messageApi.error('获取设置失败')
+      messageApi.error(t('bullet.fallbackGetFailed'))
     } finally {
       setLoading(false)
     }
@@ -76,31 +78,31 @@ export const MatchFallbackSetting = () => {
     try {
       if ('matchFallbackEnabled' in changedValues) {
         await setMatchFallback({ value: String(changedValues.matchFallbackEnabled) })
-        messageApi.success('匹配后备开关已保存')
+        messageApi.success(t('bullet.fallbackMatchSaved'))
       }
       if ('searchFallbackEnabled' in changedValues) {
         await setSearchFallback({ value: String(changedValues.searchFallbackEnabled) })
-        messageApi.success('后备搜索开关已保存')
+        messageApi.success(t('bullet.fallbackSearchSaved'))
       }
       if ('externalApiFallbackEnabled' in changedValues) {
         await setConfig('externalApiFallbackEnabled', String(changedValues.externalApiFallbackEnabled))
-        messageApi.success('顺延机制已保存')
+        messageApi.success(t('bullet.fallbackCascadeSaved'))
       }
       if ('preDownloadNextEpisodeEnabled' in changedValues) {
         await setConfig('preDownloadNextEpisodeEnabled', String(changedValues.preDownloadNextEpisodeEnabled))
-        messageApi.success('预下载设置已保存')
+        messageApi.success(t('bullet.fallbackPredownloadSaved'))
       }
       if ('parallelSearchEnabled' in changedValues) {
         await setConfig('parallelSearchEnabled', String(changedValues.parallelSearchEnabled))
-        messageApi.success('并行搜索设置已保存')
+        messageApi.success(t('bullet.fallbackParallelSaved'))
       }
       if ('danmakuAutoRefreshDays' in changedValues) {
         await setConfig('danmakuAutoRefreshDays', String(changedValues.danmakuAutoRefreshDays ?? 0))
-        messageApi.success('弹幕自动刷新设置已保存')
+        messageApi.success(t('bullet.fallbackAutoRefreshSaved'))
       }
       // 黑名单不自动保存，需要点击保存按钮
     } catch (error) {
-      messageApi.error('保存设置失败')
+      messageApi.error(t('bullet.fallbackSaveFailed'))
       fetchSettings()
     }
   }
@@ -110,9 +112,9 @@ export const MatchFallbackSetting = () => {
       setBlacklistSaving(true)
       const values = form.getFieldsValue()
       await setMatchFallbackBlacklist({ value: values.matchFallbackBlacklist || '' })
-      messageApi.success('黑名单已保存')
+      messageApi.success(t('bullet.fallbackBlacklistSaved'))
     } catch (error) {
-      messageApi.error('保存黑名单失败')
+      messageApi.error(t('bullet.fallbackBlacklistSaveFailed'))
     } finally {
       setBlacklistSaving(false)
     }
@@ -124,16 +126,16 @@ export const MatchFallbackSetting = () => {
       const values = form.getFieldsValue()
       const tokensValue = JSON.stringify(values.matchFallbackTokens || [])
       await setMatchFallbackTokens({ value: tokensValue })
-      messageApi.success('Token配置已保存')
+      messageApi.success(t('bullet.fallbackTokenSaved'))
     } catch (error) {
-      messageApi.error('保存Token配置失败')
+      messageApi.error(t('bullet.fallbackTokenSaveFailed'))
     } finally {
       setTokensSaving(false)
     }
   }
 
   return (
-    <Card title="配置" loading={loading}>
+    <Card title={t('bullet.fallbackTitle')} loading={loading}>
       <Form
         form={form}
         onValuesChange={handleValueChange}
@@ -155,9 +157,9 @@ export const MatchFallbackSetting = () => {
               <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', marginBottom: '16px' }}>
                 <Form.Item
                   name="matchFallbackEnabled"
-                  label="启用后备匹配"
+                  label={t('bullet.fallbackEnableMatch')}
                   valuePropName="checked"
-                  tooltip="启用后，当播放客户端尝试使用match接口时，接口在本地库中找不到任何结果时，系统将自动触发一个后台任务，尝试从全网搜索并导入对应的弹幕。"
+                  tooltip={t('bullet.fallbackEnableMatchTip')}
                   style={{ flex: 1 }}
                 >
                   <Switch />
@@ -165,9 +167,9 @@ export const MatchFallbackSetting = () => {
 
                 <Form.Item
                   name="searchFallbackEnabled"
-                  label="启用后备搜索"
+                  label={t('bullet.fallbackEnableSearch')}
                   valuePropName="checked"
-                  tooltip="启用后，当使用search/anime接口搜索时，如果本地库中没有结果，系统将自动触发全网搜索并返回搜索结果。用户可以直接选择搜索结果进行下载。"
+                  tooltip={t('bullet.fallbackEnableSearchTip')}
                   style={{ flex: 1 }}
                 >
                   <Switch />
@@ -193,8 +195,8 @@ export const MatchFallbackSetting = () => {
                           name="externalApiFallbackEnabled"
                           label={
                             <div className="flex items-center gap-2">
-                              <span>启用顺延机制</span>
-                              <Tooltip title="当选中的源没有有效分集时（如只有预告片被过滤掉），自动尝试下一个候选源，提高导入成功率。关闭此选项时，将使用传统的单源选择模式。">
+                              <span>{t('bullet.fallbackEnableCascade')}</span>
+                              <Tooltip title={t('bullet.fallbackEnableCascadeTip')}>
                                 <QuestionCircleOutlined />
                               </Tooltip>
                             </div>
@@ -209,8 +211,8 @@ export const MatchFallbackSetting = () => {
                           name="preDownloadNextEpisodeEnabled"
                           label={
                             <div className="flex items-center gap-2">
-                              <span>启用预下载</span>
-                              <Tooltip title="启用后，当播放当前集时，系统会自动在后台下载下一集的弹幕（如果下一集存在且没有弹幕）。需要启用匹配后备或后备搜索。">
+                              <span>{t('bullet.fallbackEnablePredownload')}</span>
+                              <Tooltip title={t('bullet.fallbackEnablePredownloadTip')}>
                                 <QuestionCircleOutlined />
                               </Tooltip>
                             </div>
@@ -227,8 +229,8 @@ export const MatchFallbackSetting = () => {
                           name="parallelSearchEnabled"
                           label={
                             <div className="flex items-center gap-2">
-                              <span>启用并行搜索</span>
-                              <Tooltip title="启用后，搜索弹幕时会同时检索本地库和在线源站，将库内已有的分集和源站补充的分集合并为完整列表返回。例如库内只有1-5集，源站有25集，搜索结果将展示完整的1-25集。需要启用后备搜索。">
+                              <span>{t('bullet.fallbackEnableParallel')}</span>
+                              <Tooltip title={t('bullet.fallbackEnableParallelTip')}>
                                 <QuestionCircleOutlined />
                               </Tooltip>
                             </div>
@@ -245,15 +247,15 @@ export const MatchFallbackSetting = () => {
                           name="danmakuAutoRefreshDays"
                           label={
                             <div className="flex items-center gap-2">
-                              <span>弹幕自动刷新间隔（天）</span>
-                              <Tooltip title="当播放客户端请求弹幕时，若距上次获取超过设定天数，将自动触发弹幕刷新。设为 0 则禁用此功能。">
+                              <span>{t('bullet.fallbackAutoRefresh')}</span>
+                              <Tooltip title={t('bullet.fallbackAutoRefreshTip')}>
                                 <QuestionCircleOutlined />
                               </Tooltip>
                             </div>
                           }
                           style={{ flex: 1 }}
                         >
-                          <InputNumber min={0} max={365} precision={0} style={{ width: '100%' }} placeholder="0（禁用）" />
+                          <InputNumber min={0} max={365} precision={0} style={{ width: '100%' }} placeholder={t('bullet.fallbackAutoRefreshPlaceholder')} />
                         </Form.Item>
                       </div>
                     </>
@@ -265,9 +267,9 @@ export const MatchFallbackSetting = () => {
             <>
               <Form.Item
                 name="matchFallbackEnabled"
-                label="启用匹配后备"
+                label={t('bullet.fallbackEnableMatch')}
                 valuePropName="checked"
-                tooltip="启用后，当播放客户端尝试使用match接口时，接口在本地库中找不到任何结果时，系统将自动触发一个后台任务，尝试从全网搜索并导入对应的弹幕。"
+                tooltip={t('bullet.fallbackEnableMatchTip')}
                 style={isMobile ? {} : { flex: 1 }}
               >
                 <Switch />
@@ -275,9 +277,9 @@ export const MatchFallbackSetting = () => {
 
               <Form.Item
                 name="searchFallbackEnabled"
-                label="启用后备搜索"
+                label={t('bullet.fallbackEnableSearch')}
                 valuePropName="checked"
-                tooltip="启用后，当使用search/anime接口搜索时，如果本地库中没有结果，系统将自动触发全网搜索并返回搜索结果。用户可以直接选择搜索结果进行下载。"
+                tooltip={t('bullet.fallbackEnableSearchTip')}
                 style={isMobile ? {} : { flex: 1 }}
               >
                 <Switch />
@@ -300,8 +302,8 @@ export const MatchFallbackSetting = () => {
                       name="externalApiFallbackEnabled"
                       label={
                         <div className="flex items-center gap-2">
-                          <span>启用顺延机制</span>
-                          <Tooltip title="当选中的源没有有效分集时（如只有预告片被过滤掉），自动尝试下一个候选源，提高导入成功率。关闭此选项时，将使用传统的单源选择模式。">
+                          <span>{t('bullet.fallbackEnableCascade')}</span>
+                          <Tooltip title={t('bullet.fallbackEnableCascadeTip')}>
                             <QuestionCircleOutlined />
                           </Tooltip>
                         </div>
@@ -332,8 +334,8 @@ export const MatchFallbackSetting = () => {
                       name="preDownloadNextEpisodeEnabled"
                       label={
                         <div className="flex items-center gap-2">
-                          <span>启用预下载</span>
-                          <Tooltip title="启用后，当播放当前集时，系统会自动在后台下载下一集的弹幕（如果下一集存在且没有弹幕）。需要启用匹配后备或后备搜索。">
+                          <span>{t('bullet.fallbackEnablePredownload')}</span>
+                          <Tooltip title={t('bullet.fallbackEnablePredownloadTip')}>
                             <QuestionCircleOutlined />
                           </Tooltip>
                         </div>
@@ -364,8 +366,8 @@ export const MatchFallbackSetting = () => {
                       name="parallelSearchEnabled"
                       label={
                         <div className="flex items-center gap-2">
-                          <span>启用并行搜索</span>
-                          <Tooltip title="启用后，搜索弹幕时会同时检索本地库和在线源站，将库内已有的分集和源站补充的分集合并为完整列表返回。需要启用后备搜索。">
+                          <span>{t('bullet.fallbackEnableParallel')}</span>
+                          <Tooltip title={t('bullet.fallbackEnableParallelTip')}>
                             <QuestionCircleOutlined />
                           </Tooltip>
                         </div>
@@ -383,14 +385,14 @@ export const MatchFallbackSetting = () => {
                 name="danmakuAutoRefreshDays"
                 label={
                   <div className="flex items-center gap-2">
-                    <span>弹幕自动刷新间隔（天）</span>
-                    <Tooltip title="当播放客户端请求弹幕时，若距上次获取超过设定天数，将自动触发弹幕刷新。设为 0 则禁用此功能。">
+                    <span>{t('bullet.fallbackAutoRefresh')}</span>
+                    <Tooltip title={t('bullet.fallbackAutoRefreshTip')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </div>
                 }
               >
-                <InputNumber min={0} max={365} precision={0} style={{ width: '100%' }} placeholder="0（禁用）" />
+                <InputNumber min={0} max={365} precision={0} style={{ width: '100%' }} placeholder={t('bullet.fallbackAutoRefreshPlaceholder')} />
               </Form.Item>
 
             </>
@@ -411,8 +413,8 @@ export const MatchFallbackSetting = () => {
               <Form.Item
                 label={
                   <Space>
-                    后备功能 Token 授权
-                    <Tooltip title="选择允许触发匹配后备功能的Token。如果不选择任何Token，则所有Token都可以触发后备功能。只有被选中的Token才能在匹配失败时自动触发后备搜索任务。">
+                    {t('bullet.fallbackTokenAuth')}
+                    <Tooltip title={t('bullet.fallbackTokenAuthTip')}>
                       <QuestionCircleOutlined />
                     </Tooltip>
                   </Space>
@@ -430,8 +432,8 @@ export const MatchFallbackSetting = () => {
                   {tokenList.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
                       <div className="text-lg mb-2">📝</div>
-                      <div>暂无可用Token</div>
-                      <div className="text-sm mt-1">请先创建API Token</div>
+                      <div>{t('bullet.fallbackNoToken')}</div>
+                      <div className="text-sm mt-1">{t('bullet.fallbackCreateToken')}</div>
                     </div>
                   ) : (
                     <>
@@ -474,7 +476,7 @@ export const MatchFallbackSetting = () => {
                                     <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
                                       token.isEnabled ? 'bg-green-500' : 'bg-red-500'
                                     }`}></span>
-                                    {token.isEnabled ? '启用' : '禁用'}
+                                    {token.isEnabled ? t('bullet.fallbackTokenEnabled') : t('bullet.fallbackTokenDisabled')}
                                   </div>
                                 </div>
                               </div>
@@ -490,7 +492,7 @@ export const MatchFallbackSetting = () => {
                           disabled={isTokenSelectionDisabled}
                           className="min-w-[100px]"
                         >
-                          保存配置
+                          {t('bullet.fallbackSaveConfig')}
                         </Button>
                       </div>
                     </>
@@ -504,8 +506,8 @@ export const MatchFallbackSetting = () => {
         <Form.Item
           label={
             <Space>
-              后备匹配黑名单
-              <Tooltip title="使用正则表达式过滤文件名，匹配的文件不会触发后备机制。例如：预告|广告|花絮 可以过滤包含这些关键词的文件。留空表示不过滤。">
+              {t('bullet.fallbackBlacklistTitle')}
+              <Tooltip title={t('bullet.fallbackBlacklistTip')}>
                 <QuestionCircleOutlined />
               </Tooltip>
             </Space>
@@ -517,7 +519,7 @@ export const MatchFallbackSetting = () => {
               className={isMobile ? "mb-0" : "flex-1 mb-0"}
             >
               <Input.TextArea
-                placeholder="输入正则表达式，例如：预告|广告|花絮"
+                placeholder={t('bullet.fallbackBlacklistPlaceholder')}
                 rows={isMobile ? 3 : 1}
                 className="resize-none"
               />
@@ -529,7 +531,7 @@ export const MatchFallbackSetting = () => {
               className={isMobile ? "w-full" : ""}
               style={isMobile ? {} : { height: '32px', minHeight: '32px', minWidth: '100px' }}
             >
-              保存黑名单
+              {t('bullet.fallbackSaveBlacklist')}
             </Button>
           </div>
         </Form.Item>

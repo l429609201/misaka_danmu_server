@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Modal, Button, Space, Typography, message } from 'antd';
 import { FolderOpenOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import Cookies from 'js-cookie';
 import {
   FullFileBrowser,
@@ -14,12 +15,12 @@ import { browseDirectory } from '../../../apis';
 import { createFolder, deleteFolder } from '../../../apis';
 import './DirectoryBrowser.css';
 
-// 定义中文文件操作
-const ChineseActions = {
+// 定义文件操作（接收 t 函数用于国际化）
+const createFileActions = (t) => ({
   EnableListView: defineFileAction({
     ...ChonkyActions.EnableListView,
     button: {
-      name: '列表视图',
+      name: t('mediaFetch.directoryBrowser.listView'),
       toolbar: true,
       contextMenu: false,
       icon: ChonkyActions.EnableListView.button?.icon || 'list',
@@ -28,7 +29,7 @@ const ChineseActions = {
   EnableGridView: defineFileAction({
     ...ChonkyActions.EnableGridView,
     button: {
-      name: '网格视图',
+      name: t('mediaFetch.directoryBrowser.gridView'),
       toolbar: true,
       contextMenu: false,
       icon: ChonkyActions.EnableGridView.button?.icon || 'th',
@@ -37,7 +38,7 @@ const ChineseActions = {
   SortFilesByName: defineFileAction({
     ...ChonkyActions.SortFilesByName,
     button: {
-      name: '按名称排序',
+      name: t('mediaFetch.directoryBrowser.sortByName'),
       toolbar: true,
       contextMenu: false,
     },
@@ -45,7 +46,7 @@ const ChineseActions = {
   SortFilesByDate: defineFileAction({
     ...ChonkyActions.SortFilesByDate,
     button: {
-      name: '按日期排序',
+      name: t('mediaFetch.directoryBrowser.sortByDate'),
       toolbar: true,
       contextMenu: false,
     },
@@ -53,7 +54,7 @@ const ChineseActions = {
   SortFilesBySize: defineFileAction({
     ...ChonkyActions.SortFilesBySize,
     button: {
-      name: '按大小排序',
+      name: t('mediaFetch.directoryBrowser.sortBySize'),
       toolbar: true,
       contextMenu: false,
     },
@@ -61,7 +62,7 @@ const ChineseActions = {
   ToggleShowFoldersFirst: defineFileAction({
     ...ChonkyActions.ToggleShowFoldersFirst,
     button: {
-      name: '文件夹优先',
+      name: t('mediaFetch.directoryBrowser.foldersFirst'),
       toolbar: true,
       contextMenu: false,
     },
@@ -69,7 +70,7 @@ const ChineseActions = {
   CreateFolder: defineFileAction({
     ...ChonkyActions.CreateFolder,
     button: {
-      name: '新建文件夹',
+      name: t('mediaFetch.directoryBrowser.newFolder'),
       toolbar: false,
       contextMenu: true,
       icon: 'folder', // 尝试简单的folder图标
@@ -80,13 +81,13 @@ const ChineseActions = {
     requiresSelection: true,
     fileFilter: (file) => FileHelper.isDirectory(file), // 只对文件夹显示
     button: {
-      name: '删除文件夹',
+      name: t('mediaFetch.directoryBrowser.deleteFolder'),
       toolbar: false,
       contextMenu: true,
       icon: 'trash',
     },
   }),
-};
+});
 
 // 设置Chonky默认配置
 setChonkyDefaults({
@@ -104,8 +105,8 @@ const formatFileSize = (bytes) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 };
 
-// 定义中文国际化配置
-const createChineseI18n = (isMobile) => ({
+// 定义国际化配置（接收 t 函数）
+const createChonkyI18n = (isMobile, t) => ({
   locale: 'zh',
   formatters: {
     formatFileModDate: (intl, file) => {
@@ -123,44 +124,33 @@ const createChineseI18n = (isMobile) => ({
   },
   messages: {
     // Chonky UI 翻译字符串
-    'chonky.toolbar.searchPlaceholder': '搜索',
-    'chonky.toolbar.visibleFileCount': `{fileCount, plural,
-      one {# 个文件}
-      other {# 个文件}
-    }`,
-    'chonky.toolbar.selectedFileCount': `{fileCount, plural,
-      =0 {未选}
-      one {选#个}
-      other {选#个}
-    }`,
-    'chonky.toolbar.hiddenFileCount': `{fileCount, plural,
-      =0 {}
-      one {# 已隐藏}
-      other {# 已隐藏}
-    }`,
-    'chonky.fileList.nothingToShow': '这里空空如也！',
-    'chonky.contextMenu.browserMenuShortcut': 'Alt+鼠标右键：显示浏览器菜单',
-    'chonky.contextMenu.multipleSelection': '已选择 {count} 项',
-    'chonky.contextMenu.emptySelection': '未选择任何项目',
+    'chonky.toolbar.searchPlaceholder': t('mediaFetch.directoryBrowser.search'),
+    'chonky.toolbar.visibleFileCount': t('mediaFetch.directoryBrowser.visibleFileCount'),
+    'chonky.toolbar.selectedFileCount': t('mediaFetch.directoryBrowser.selectedFileCount'),
+    'chonky.toolbar.hiddenFileCount': t('mediaFetch.directoryBrowser.hiddenFileCount'),
+    'chonky.fileList.nothingToShow': t('mediaFetch.directoryBrowser.nothingToShow'),
+    'chonky.contextMenu.browserMenuShortcut': t('mediaFetch.directoryBrowser.browserMenuShortcut'),
+    'chonky.contextMenu.multipleSelection': t('mediaFetch.directoryBrowser.multipleSelection'),
+    'chonky.contextMenu.emptySelection': t('mediaFetch.directoryBrowser.noSelection'),
 
     // 文件操作翻译字符串 - 电脑端隐藏actions和options按钮组
-    [`chonky.actionGroups.Actions`]: isMobile ? '操作' : '',
-    [`chonky.actionGroups.Options`]: isMobile ? '选项' : '',
-    [`chonky.actions.${ChonkyActions.OpenParentFolder.id}.button.name`]: '打开上级文件夹',
-    [`chonky.actions.${ChonkyActions.CreateFolder.id}.button.name`]: '新建文件夹',
-    [`chonky.actions.${ChonkyActions.CreateFolder.id}.button.tooltip`]: '创建新文件夹',
-    [`chonky.actions.delete_folder.button.name`]: '删除文件夹',
-    [`chonky.actions.delete_folder.button.tooltip`]: '删除选中的文件夹',
-    [`chonky.actions.${ChonkyActions.OpenSelection.id}.button.name`]: '打开选中项',
-    [`chonky.actions.${ChonkyActions.SelectAllFiles.id}.button.name`]: '全选文件',
-    [`chonky.actions.${ChonkyActions.ClearSelection.id}.button.name`]: '清除选择',
-    [`chonky.actions.${ChonkyActions.EnableListView.id}.button.name`]: '列表视图',
-    [`chonky.actions.${ChonkyActions.EnableGridView.id}.button.name`]: '网格视图',
-    [`chonky.actions.${ChonkyActions.SortFilesByName.id}.button.name`]: '按名称排序',
-    [`chonky.actions.${ChonkyActions.SortFilesByDate.id}.button.name`]: '按日期排序',
-    [`chonky.actions.${ChonkyActions.SortFilesBySize.id}.button.name`]: '按大小排序',
-    [`chonky.actions.${ChonkyActions.ToggleHiddenFiles.id}.button.name`]: '隐藏文件',
-    [`chonky.actions.${ChonkyActions.ToggleShowFoldersFirst.id}.button.name`]: '文件夹优先',
+    [`chonky.actionGroups.Actions`]: isMobile ? t('mediaFetch.directoryBrowser.actions') : '',
+    [`chonky.actionGroups.Options`]: isMobile ? t('mediaFetch.directoryBrowser.options') : '',
+    [`chonky.actions.${ChonkyActions.OpenParentFolder.id}.button.name`]: t('mediaFetch.directoryBrowser.openParentFolder'),
+    [`chonky.actions.${ChonkyActions.CreateFolder.id}.button.name`]: t('mediaFetch.directoryBrowser.newFolder'),
+    [`chonky.actions.${ChonkyActions.CreateFolder.id}.button.tooltip`]: t('mediaFetch.directoryBrowser.createFolder'),
+    [`chonky.actions.delete_folder.button.name`]: t('mediaFetch.directoryBrowser.deleteFolder'),
+    [`chonky.actions.delete_folder.button.tooltip`]: t('mediaFetch.directoryBrowser.deleteSelectedFolder'),
+    [`chonky.actions.${ChonkyActions.OpenSelection.id}.button.name`]: t('mediaFetch.directoryBrowser.openSelection'),
+    [`chonky.actions.${ChonkyActions.SelectAllFiles.id}.button.name`]: t('mediaFetch.directoryBrowser.selectAll'),
+    [`chonky.actions.${ChonkyActions.ClearSelection.id}.button.name`]: t('mediaFetch.directoryBrowser.clearSelection'),
+    [`chonky.actions.${ChonkyActions.EnableListView.id}.button.name`]: t('mediaFetch.directoryBrowser.listView'),
+    [`chonky.actions.${ChonkyActions.EnableGridView.id}.button.name`]: t('mediaFetch.directoryBrowser.gridView'),
+    [`chonky.actions.${ChonkyActions.SortFilesByName.id}.button.name`]: t('mediaFetch.directoryBrowser.sortByName'),
+    [`chonky.actions.${ChonkyActions.SortFilesByDate.id}.button.name`]: t('mediaFetch.directoryBrowser.sortByDate'),
+    [`chonky.actions.${ChonkyActions.SortFilesBySize.id}.button.name`]: t('mediaFetch.directoryBrowser.sortBySize'),
+    [`chonky.actions.${ChonkyActions.ToggleHiddenFiles.id}.button.name`]: t('mediaFetch.directoryBrowser.hiddenFiles'),
+    [`chonky.actions.${ChonkyActions.ToggleShowFoldersFirst.id}.button.name`]: t('mediaFetch.directoryBrowser.foldersFirst'),
   },
 });
 
@@ -182,9 +172,9 @@ const convertToChonkyFiles = (apiFiles) => {
 };
 
 // 创建文件夹链
-const createFolderChain = (currentPath) => {
+const createFolderChain = (currentPath, rootName) => {
   if (!currentPath) {
-    return [{ id: 'root', name: '根目录', isDir: true }];
+    return [{ id: 'root', name: rootName, isDir: true }];
   }
 
   // 检测路径分隔符
@@ -211,7 +201,7 @@ const createFolderChain = (currentPath) => {
   }
 
   // Unix/Linux路径
-  const chain = [{ id: '/', name: '根目录', isDir: true }];
+  const chain = [{ id: '/', name: rootName, isDir: true }];
   let currentId = '/';
 
   for (const part of parts) {
@@ -227,6 +217,7 @@ const createFolderChain = (currentPath) => {
 };
 
 const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory', fileFilter }) => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [currentPath, setCurrentPath] = useState('/');
   const [files, setFiles] = useState([]);
@@ -291,7 +282,7 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
 
       // 检查token是否存在
       if (!token) {
-        message.error('请先登录');
+        message.error(t('mediaFetch.directoryBrowser.pleaseLogin'));
         return;
       }
 
@@ -315,8 +306,8 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
     } catch (error) {
       console.error('加载目录失败:', error);
       console.error('错误详情:', error.response);
-      const errorMessage = error.response?.data?.detail || error.message || '未知错误';
-      message.error('加载目录失败：' + errorMessage);
+      const errorMessage = error.response?.data?.detail || error.message || t('mediaFetch.directoryBrowser.unknownError');
+      message.error(t('mediaFetch.directoryBrowser.loadDirFailed') + errorMessage);
     } finally {
       setLoading(false);
     }
@@ -325,7 +316,7 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
   // 处理创建文件夹
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
-      message.warning('请输入文件夹名称');
+      message.warning(t('mediaFetch.directoryBrowser.folderNameRequired'));
       return;
     }
 
@@ -334,13 +325,13 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
       const separator = normalizedCurrentPath.includes('\\') ? '\\' : '/';
       const newFolderPath = normalizedCurrentPath ? `${normalizedCurrentPath}${separator}${newFolderName.trim()}` : newFolderName.trim();
       const res = await createFolder(normalizedCurrentPath, newFolderName.trim());
-      message.success(res.data.message || '文件夹创建成功');
+      message.success(res.data.message || t('mediaFetch.directoryBrowser.folderCreated'));
       setCreateFolderVisible(false);
       setNewFolderName('');
       // 定位到新创建的文件夹 - 使用正确的路径分隔符
       setCurrentPath(newFolderPath);
     } catch (error) {
-      message.error('创建文件夹失败：' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.directoryBrowser.createFolderFailed') + (error.message || t('mediaFetch.directoryBrowser.unknownError')));
       console.error(error);
     }
   };
@@ -351,21 +342,21 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
     const folderName = normalizedPath.split('/').pop() || normalizedPath.split('\\').pop();
 
     Modal.confirm({
-      title: '确认删除文件夹',
-      content: `确定要删除文件夹 "${folderName}" 吗？此操作不可逆。`,
-      okText: '删除',
+      title: t('mediaFetch.directoryBrowser.confirmDeleteFolder'),
+      content: t('mediaFetch.directoryBrowser.deleteFolderContent', { name: folderName }),
+      okText: t('mediaFetch.directoryBrowser.delete'),
       okType: 'danger',
-      cancelText: '取消',
+      cancelText: t('mediaFetch.directoryBrowser.cancel'),
       onOk: async () => {
         try {
           const res = await deleteFolder(normalizedPath);
-          message.success(res.data.message || '文件夹删除成功');
+          message.success(res.data.message || t('mediaFetch.directoryBrowser.folderDeleted'));
           // 重新加载目录
           await loadDirectory(currentPath);
         } catch (error) {
           console.error('删除文件夹失败:', error);
-          const errorMessage = error.response?.data?.detail || error.message || '未知错误';
-          message.error('删除文件夹失败：' + errorMessage);
+          const errorMessage = error.response?.data?.detail || error.message || t('mediaFetch.directoryBrowser.unknownError');
+          message.error(t('mediaFetch.directoryBrowser.deleteFolderFailed') + errorMessage);
         }
       },
       onCancel: () => {
@@ -375,18 +366,21 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
 
 
   // 创建文件夹链
-  const folderChain = useMemo(() => createFolderChain(currentPath), [currentPath]);
+  const folderChain = useMemo(() => createFolderChain(currentPath, t('mediaFetch.directoryBrowser.rootDir')), [currentPath, t]);
+
+  // 创建文件操作（依赖 t）
+  const fileActionsMap = useMemo(() => createFileActions(t), [t]);
 
   // 选择当前目录 / 选择文件
   const handleSelectCurrent = () => {
     if (selectMode === 'file') {
       // 文件选择模式：必须选中一个非目录文件
       if (!selectedFile || selectedFile.isDir) {
-        message.warning('请先选择一个文件');
+        message.warning(t('mediaFetch.directoryBrowser.selectFileFirst'));
         return;
       }
       if (fileFilter && !selectedFile.name?.toLowerCase().endsWith(fileFilter.toLowerCase())) {
-        message.warning(`请选择 ${fileFilter} 格式的文件`);
+        message.warning(t('mediaFetch.directoryBrowser.selectFileFormat', { format: fileFilter }));
         return;
       }
       const pathToSelect = selectedFile.id.replace(/^\/+/, '/');
@@ -425,7 +419,7 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
           }}>
             <FolderOpenOutlined style={{ fontSize: '16px' }} />
           </div>
-          <span>目录浏览器</span>
+          <span>{t('mediaFetch.directoryBrowser.title')}</span>
         </div>
       }
       open={visible}
@@ -470,7 +464,7 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
               fontSize: '14px'
             }}
           >
-            取消
+            {t('mediaFetch.directoryBrowser.cancel')}
           </Button>
           <Button
             type="primary"
@@ -487,8 +481,8 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
             }}
           >
             {selectMode === 'file'
-              ? (selectedFile && !selectedFile.isDir ? '选择此文件' : '请选择文件')
-              : (selectedFile && selectedFile.isDir ? '选择选中目录' : '选择当前目录')
+              ? (selectedFile && !selectedFile.isDir ? t('mediaFetch.directoryBrowser.selectThisFile') : t('mediaFetch.directoryBrowser.pleaseSelectFile'))
+              : (selectedFile && selectedFile.isDir ? t('mediaFetch.directoryBrowser.selectSelectedDir') : t('mediaFetch.directoryBrowser.selectCurrentDir'))
             }
           </Button>
         </div>
@@ -510,18 +504,18 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
             ...(isMobile ? [
               // 手机端保留默认的下拉菜单，并添加创建文件夹
               ChonkyActions.OpenFiles,
-              ChineseActions.CreateFolder,
-              ChineseActions.DeleteFolder,
+              fileActionsMap.CreateFolder,
+              fileActionsMap.DeleteFolder,
             ] : [
               // 电脑端保留自定义中文按钮
-              ChineseActions.EnableListView,
-              ChineseActions.EnableGridView,
-              ChineseActions.SortFilesByName,
-              ChineseActions.SortFilesByDate,
-              ChineseActions.SortFilesBySize,
-              ChineseActions.ToggleShowFoldersFirst,
-              ChineseActions.CreateFolder,
-              ChineseActions.DeleteFolder,
+              fileActionsMap.EnableListView,
+              fileActionsMap.EnableGridView,
+              fileActionsMap.SortFilesByName,
+              fileActionsMap.SortFilesByDate,
+              fileActionsMap.SortFilesBySize,
+              fileActionsMap.ToggleShowFoldersFirst,
+              fileActionsMap.CreateFolder,
+              fileActionsMap.DeleteFolder,
             ]),
           ]}
           // 电脑端完全禁用默认action，手机端显示默认action
@@ -566,11 +560,11 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
               }
             }
             // 处理创建文件夹
-            else if (data.id === ChineseActions.CreateFolder.id) {
+            else if (data.id === fileActionsMap.CreateFolder.id) {
               setCreateFolderVisible(true);
             }
             // 处理删除文件夹
-            else if (data.id === ChineseActions.DeleteFolder.id) {
+            else if (data.id === fileActionsMap.DeleteFolder.id) {
               // 对于需要选择的action，使用 selectedFilesForAction
               const selectedFiles = data.state.selectedFilesForAction || [];
               const targetFile = selectedFiles.length > 0 ? selectedFiles[0] : null;
@@ -578,11 +572,11 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
               if (targetFile && FileHelper.isDirectory(targetFile)) {
                 handleDeleteFolder(targetFile.id);
               } else {
-                message.warning('请先选择一个文件夹');
+                message.warning(t('mediaFetch.directoryBrowser.selectFolderFirst'));
               }
             }
           }}
-          i18n={createChineseI18n(isMobile)}
+          i18n={createChonkyI18n(isMobile, t)}
           defaultFileViewActionId={ChonkyActions.EnableListView.id}
           disableSelection={false}
           disableDragAndDrop={true}
@@ -590,28 +584,28 @@ const DirectoryBrowser = ({ visible, onClose, onSelect, selectMode = 'directory'
 
         {/* 创建文件夹对话框 */}
         <Modal
-          title="新建文件夹"
+          title={t('mediaFetch.directoryBrowser.newFolderTitle')}
           open={createFolderVisible}
           onOk={handleCreateFolder}
           onCancel={() => {
             setCreateFolderVisible(false);
             setNewFolderName('');
           }}
-          okText="创建"
-          cancelText="取消"
+          okText={t('mediaFetch.directoryBrowser.create')}
+          cancelText={t('mediaFetch.directoryBrowser.cancel')}
           width={400}
         >
           <div style={{ marginTop: '16px' }}>
-            <Typography.Text>在当前目录创建新文件夹：</Typography.Text>
+            <Typography.Text>{t('mediaFetch.directoryBrowser.createInCurrentDir')}</Typography.Text>
             <div style={{ marginTop: '12px' }}>
               <Typography.Text type="secondary" style={{ fontSize: '12px' }}>
-                当前路径: {currentPath}
+                {t('mediaFetch.directoryBrowser.currentPath')}{currentPath}
               </Typography.Text>
             </div>
             <div style={{ marginTop: '16px' }}>
               <input
                 type="text"
-                placeholder="请输入文件夹名称"
+                placeholder={t('mediaFetch.directoryBrowser.folderNamePlaceholder')}
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 style={{

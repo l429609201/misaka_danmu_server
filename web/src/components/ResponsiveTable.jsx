@@ -1,6 +1,7 @@
 import React from 'react'
 import { Table, Card, Space, Empty } from 'antd'
 import { useAtomValue } from 'jotai'
+import { useTranslation } from 'react-i18next'
 import { isMobileAtom } from '../../store/index.js'
 import classNames from 'classnames'
 
@@ -28,9 +29,11 @@ export const ResponsiveTable = ({
   onRow,
   tableProps = {},
   cardProps = {},
-  emptyText = '暂无数据',
+  emptyText,
 }) => {
+  const { t } = useTranslation()
   const isMobile = useAtomValue(isMobileAtom)
+  const emptyDesc = emptyText ?? t('common.noData')
 
   if (isMobile) {
     // 移动端卡片视图
@@ -39,7 +42,7 @@ export const ResponsiveTable = ({
         {loading ? (
           <Card loading={loading} />
         ) : dataSource.length === 0 ? (
-          <Empty description={emptyText} />
+          <Empty description={emptyDesc} />
         ) : (
           <>
             {dataSource.map((item, index) => {
@@ -64,7 +67,7 @@ export const ResponsiveTable = ({
                       className="px-4 py-2 bg-primary text-white rounded"
                       onClick={() => pagination.onChange(pagination.current - 1, pagination.pageSize)}
                     >
-                      上一页
+                      {t('common.prevPage')}
                     </button>
                   )}
                   <span className="px-4 py-2">
@@ -75,7 +78,7 @@ export const ResponsiveTable = ({
                       className="px-4 py-2 bg-primary text-white rounded"
                       onClick={() => pagination.onChange(pagination.current + 1, pagination.pageSize)}
                     >
-                      下一页
+                      {t('common.nextPage')}
                     </button>
                   )}
                 </Space>

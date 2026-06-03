@@ -59,7 +59,7 @@ async def manual_import_task(
             episode_db_id = await crud.create_episode_if_not_exists(session, animeId, sourceId, episodeIndex, final_title, "from_xml", "custom_xml")
             added_count = await crud.save_danmaku_for_episode(session, episode_db_id, comments, config_manager)
             await session.commit()
-            raise TaskSuccess(f"手动导入完成，从XML新增 {added_count} 条弹幕。")
+            raise TaskSuccess(f"手动导入完成，从XML共获取 {added_count} 条弹幕。" if added_count > 0 else "手动导入完成，XML中暂无有效弹幕。")
 
         # Case 2: Scraper source with URL
         # 自定义源 URL 导入时，scraperProvider 为前端解析出的真实平台名
@@ -112,7 +112,7 @@ async def manual_import_task(
         episode_db_id = await crud.create_episode_if_not_exists(session, animeId, sourceId, episodeIndex, final_title, content, episode_id_for_comments)
         added_count = await crud.save_danmaku_for_episode(session, episode_db_id, comments, config_manager)
         await session.commit()
-        raise TaskSuccess(f"手动导入完成，新增 {added_count} 条弹幕。")
+        raise TaskSuccess(f"手动导入完成，共获取 {added_count} 条弹幕。" if added_count > 0 else "手动导入完成，暂无弹幕数据。")
     except TaskSuccess:
         raise
     except Exception as e:
@@ -220,7 +220,8 @@ async def batch_manual_import_task(
             await session.rollback()
             i += 1 # 处理失败，移动到下一个
 
-    final_message = f"批量导入完成。共处理 {total_items} 个条目，新增 {total_added_comments} 条弹幕。"
+    comment_part = f"共获取 {total_added_comments} 条弹幕" if total_added_comments > 0 else "暂无弹幕数据"
+    final_message = f"批量导入完成。共处理 {total_items} 个条目，{comment_part}。"
     if skipped_items > 0:
         final_message += f" {skipped_items} 个因已存在而被跳过。"
     if failed_items > 0:

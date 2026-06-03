@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Modal, Table, Button, Space, message, Popconfirm, Radio, Select } from 'antd';
 import { DeleteOutlined, EditOutlined, ImportOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { getLocalMovieFiles, deleteLocalItem, importLocalItems, addSourceToAnime } from '../../../apis';
 import MediaItemEditor from './MediaItemEditor';
 
-// 来源标签选项(仅用于显示)
-const SOURCE_LABELS = [
-  { value: 'unknown', label: '未知来源' },
+// 来源标签选项(仅用于显示，标签文案通过 t 国际化)
+const getSourceLabels = (t) => [
+  { value: 'unknown', label: t('mediaFetch.localMovieFiles.unknownSource') },
   { value: 'bilibili', label: 'Bilibili' },
   { value: 'tencent', label: '腾讯视频' },
   { value: 'iqiyi', label: '爱奇艺' },
@@ -45,6 +46,8 @@ const generateMediaId = (sourceLabel) => {
 };
 
 const LocalMovieFilesModal = ({ visible, movie, onClose, onRefresh }) => {
+  const { t } = useTranslation();
+  const SOURCE_LABELS = useMemo(() => getSourceLabels(t), [t]);
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState({
@@ -96,7 +99,7 @@ const LocalMovieFilesModal = ({ visible, movie, onClose, onRefresh }) => {
         setSelectedFileId(firstNotImported ? firstNotImported.id : data.list[0].id);
       }
     } catch (error) {
-      message.error('加载文件列表失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.localMovieFiles.loadFilesFailed') + (error.message || t('mediaFetch.localMovieFiles.unknownError')));
     } finally {
       setLoading(false);
     }
@@ -105,11 +108,11 @@ const LocalMovieFilesModal = ({ visible, movie, onClose, onRefresh }) => {
   const handleDelete = async (id) => {
     try {
       await deleteLocalItem(id);
-      message.success('删除成功');
+      message.success(t('mediaFetch.localMovieFiles.deleteSuccess'));
       loadFiles(pagination.current, pagination.pageSize);
       onRefresh?.();
     } catch (error) {
-      message.error('删除失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.localMovieFiles.deleteFailed') + (error.message || t('mediaFetch.localMovieFiles.unknownError')));
     }
   };
 
@@ -120,13 +123,13 @@ const LocalMovieFilesModal = ({ visible, movie, onClose, onRefresh }) => {
 
   const handleImport = async () => {
     if (!selectedFileId) {
-      message.warning('请选择要导入的文件');
+      message.warning(t('mediaFetch.localMovieFiles.selectFileToImport'));
       return;
     }
 
     const config = fileSourceConfig[selectedFileId];
     if (!config) {
-      message.error('文件配置丢失');
+      message.error(t('mediaFetch.localMovieFiles.configLost'));
       return;
     }
 
@@ -139,11 +142,11 @@ const LocalMovieFilesModal = ({ visible, movie, onClose, onRefresh }) => {
           mediaId: config.mediaId,
         }]
       });
-      message.success(res.data.message || '导入任务已提交');
+      message.success(res.data.message || t('mediaFetch.localMovieFiles.importSubmitted'));
       onClose();
       onRefresh?.();
     } catch (error) {
-      message.error('导入失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.localMovieFiles.importFailed') + (error.message || t('mediaFetch.localMovieFiles.unknownError')));
     }
   };
 
@@ -160,7 +163,7 @@ const LocalMovieFilesModal = ({ visible, movie, onClose, onRefresh }) => {
 
   const columns = [
     {
-      title: '选择',
+      title: t('mediaFetch.localMovieFiles.colSelect'),
       key: 'select',
       width: '6%',
       render: (_, record) => (
@@ -171,14 +174,14 @@ const LocalMovieFilesModal = ({ visible, movie, onClose, onRefresh }) => {
       ),
     },
     {
-      title: '文件路径',
+      title: t('mediaFetch.localMovieFiles.colFilePath'),
       dataIndex: 'filePath',
       key: 'filePath',
       width: '35%',
       ellipsis: true,
     },
     {
-      title: '来源标签',
+      title: t('mediaFetch.localMovieFiles.colSourceLabel'),
       key: 'sourceLabel',
       width: '15%',
       render: (_, record) => {
@@ -195,7 +198,7 @@ const LocalMovieFilesModal = ({ visible, movie, onClose, onRefresh }) => {
       },
     },
     {
-      title: 'NFO路径',
+      title: t('mediaFetch.localMovieFiles.colNfoPath'),
       dataIndex: 'nfoPath',
       key: 'nfoPath',
       width: '25%',
@@ -203,24 +206,24 @@ const LocalMovieFilesModal = ({ visible, movie, onClose, onRefresh }) => {
       render: (path) => path || '-',
     },
     {
-      title: '状态',
+      title: t('mediaFetch.localMovieFiles.colStatus'),
       dataIndex: 'isImported',
       key: 'isImported',
       width: '10%',
-      render: (imported) => (imported ? '已导入' : '未导入'),
+      render: (imported) => (imported ? t('mediaFetch.localMovieFiles.imported') : t('mediaFetch.localMovieFiles.notImported')),
     },
   ];
 
   return (
     <>
       <Modal
-        title={movie ? `${movie.title}${movie.year ? ` (${movie.year})` : ''} - 选择弹幕文件` : '选择弹幕文件'}
+        title={movie ? t('mediaFetch.localMovieFiles.selectFileTitle', { title: `${movie.title}${movie.year ? ` (${movie.year})` : ''}` }) : t('mediaFetch.localMovieFiles.defaultTitle')}
         open={visible}
         onCancel={onClose}
         width={1000}
         footer={[
           <Button key="cancel" onClick={onClose}>
-            取消
+            {t('mediaFetch.localMovieFiles.cancel')}
           </Button>,
           <Button
             key="import"
@@ -229,7 +232,7 @@ const LocalMovieFilesModal = ({ visible, movie, onClose, onRefresh }) => {
             onClick={handleImport}
             disabled={!selectedFileId}
           >
-            导入选中的文件
+            {t('mediaFetch.localMovieFiles.importSelected')}
           </Button>,
         ]}
       >
@@ -241,7 +244,7 @@ const LocalMovieFilesModal = ({ visible, movie, onClose, onRefresh }) => {
           pagination={{
             ...pagination,
             showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 个文件`,
+            showTotal: (total) => t('mediaFetch.localMovieFiles.totalFiles', { total }),
             onChange: (page, pageSize) => loadFiles(page, pageSize),
           }}
         />

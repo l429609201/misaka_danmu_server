@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Modal, Drawer, Input, Switch, Button, Checkbox, Collapse, Tag, Spin, Empty, Space, message, Alert, Dropdown, Pagination, Popover } from 'antd'
 import { SyncOutlined, ClockCircleOutlined, WarningOutlined, CheckCircleOutlined, CloseCircleOutlined, DownOutlined, SearchOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useAtomValue } from 'jotai'
@@ -24,6 +25,7 @@ import { MyIcon } from '@/components/MyIcon'
  * 追更与标记管理弹窗组件
  */
 export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
+  const { t } = useTranslation()
   const isMobile = useAtomValue(isMobileAtom)
   // 从后端配置获取默认分页大小
   const defaultPageSize = useDefaultPageSize('refreshModal')
@@ -86,7 +88,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
       })
       setTaskStatus(statusRes?.data || null)
     } catch (error) {
-      message.error('加载数据失败: ' + error.message)
+      message.error(t('incrementalRefresh.loadFailed') + ': ' + error.message)
     } finally {
       setLoading(false)
     }
@@ -141,10 +143,10 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
 
   // 排序选项配置（与弹幕库风格一致）
   const SORT_OPTIONS = [
-    { key: 'created', label: '入库时间' },
-    { key: 'title',   label: '标题排序' },
+    { key: 'created', label: t('incrementalRefresh.sortCreated') },
+    { key: 'title',   label: t('incrementalRefresh.sortTitle') },
   ]
-  const currentSortLabel = SORT_OPTIONS.find(o => o.key === sortBy)?.label || '排序'
+  const currentSortLabel = SORT_OPTIONS.find(o => o.key === sortBy)?.label || t('incrementalRefresh.sort')
 
   const sortDropdownItems = {
     items: SORT_OPTIONS.map(opt => {
@@ -221,7 +223,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
     try {
       await toggleSourceIncremental({ sourceId })
     } catch (error) {
-      message.error('操作失败: ' + error.message)
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + error.message)
       fetchData() // 失败时重新获取数据恢复状态
     }
   }
@@ -256,7 +258,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
     try {
       await toggleSourceFavorite({ sourceId })
     } catch (error) {
-      message.error('操作失败: ' + error.message)
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + error.message)
       fetchData() // 失败时重新获取数据恢复状态
     }
   }
@@ -278,7 +280,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
     try {
       await toggleSourceFinished({ sourceId })
     } catch (error) {
-      message.error('操作失败: ' + error.message)
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + error.message)
       fetchData()
     }
   }
@@ -286,17 +288,17 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
   // 批量开启追更
   const handleBatchEnableRefresh = async () => {
     if (selectedSourceIds.length === 0) {
-      message.warning('请先选择源')
+      message.warning(t('incrementalRefresh.selectSourceFirst'))
       return
     }
     setOperationLoading(true)
     try {
       await batchToggleIncrementalRefresh({ sourceIds: selectedSourceIds, enabled: true })
-      message.success('批量开启成功')
+      message.success(t('incrementalRefresh.batchEnableSuccess'))
       setSelectedSourceIds([])
       fetchData()
     } catch (error) {
-      message.error('操作失败: ' + error.message)
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + error.message)
     } finally {
       setOperationLoading(false)
     }
@@ -305,17 +307,17 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
   // 批量关闭追更
   const handleBatchDisableRefresh = async () => {
     if (selectedSourceIds.length === 0) {
-      message.warning('请先选择源')
+      message.warning(t('incrementalRefresh.selectSourceFirst'))
       return
     }
     setOperationLoading(true)
     try {
       await batchToggleIncrementalRefresh({ sourceIds: selectedSourceIds, enabled: false })
-      message.success('批量关闭成功')
+      message.success(t('incrementalRefresh.batchDisableSuccess'))
       setSelectedSourceIds([])
       fetchData()
     } catch (error) {
-      message.error('操作失败: ' + error.message)
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + error.message)
     } finally {
       setOperationLoading(false)
     }
@@ -324,17 +326,17 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
   // 批量设置标记
   const handleBatchSetFavorite = async () => {
     if (selectedSourceIds.length === 0) {
-      message.warning('请先选择源')
+      message.warning(t('incrementalRefresh.selectSourceFirst'))
       return
     }
     setOperationLoading(true)
     try {
       await batchSetFavorite({ sourceIds: selectedSourceIds })
-      message.success('批量标记成功')
+      message.success(t('incrementalRefresh.batchFavoriteSuccess'))
       setSelectedSourceIds([])
       fetchData()
     } catch (error) {
-      message.error('操作失败: ' + error.message)
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + error.message)
     } finally {
       setOperationLoading(false)
     }
@@ -343,17 +345,17 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
   // 批量取消标记
   const handleBatchUnsetFavorite = async () => {
     if (selectedSourceIds.length === 0) {
-      message.warning('请先选择源')
+      message.warning(t('incrementalRefresh.selectSourceFirst'))
       return
     }
     setOperationLoading(true)
     try {
       await batchUnsetFavorite({ sourceIds: selectedSourceIds })
-      message.success('批量取消标记成功')
+      message.success(t('incrementalRefresh.batchUnfavoriteSuccess'))
       setSelectedSourceIds([])
       fetchData()
     } catch (error) {
-      message.error('操作失败: ' + error.message)
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + error.message)
     } finally {
       setOperationLoading(false)
     }
@@ -362,17 +364,17 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
   // 批量标记完结
   const handleBatchSetFinished = async () => {
     if (selectedSourceIds.length === 0) {
-      message.warning('请先选择源')
+      message.warning(t('incrementalRefresh.selectSourceFirst'))
       return
     }
     setOperationLoading(true)
     try {
       await batchSetSourceFinished({ sourceIds: selectedSourceIds })
-      message.success('批量标记完结成功')
+      message.success(t('incrementalRefresh.batchFinishedSuccess'))
       setSelectedSourceIds([])
       fetchData()
     } catch (error) {
-      message.error('操作失败: ' + error.message)
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + error.message)
     } finally {
       setOperationLoading(false)
     }
@@ -381,17 +383,17 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
   // 批量取消完结
   const handleBatchUnsetFinished = async () => {
     if (selectedSourceIds.length === 0) {
-      message.warning('请先选择源')
+      message.warning(t('incrementalRefresh.selectSourceFirst'))
       return
     }
     setOperationLoading(true)
     try {
       await batchUnsetSourceFinished({ sourceIds: selectedSourceIds })
-      message.success('批量取消完结成功')
+      message.success(t('incrementalRefresh.batchUnfinishedSuccess'))
       setSelectedSourceIds([])
       fetchData()
     } catch (error) {
-      message.error('操作失败: ' + error.message)
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + error.message)
     } finally {
       setOperationLoading(false)
     }
@@ -400,7 +402,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
   // 打开批量删除确认弹窗
   const openDeleteModal = () => {
     if (selectedSourceIds.length === 0) {
-      message.warning('请先选择源')
+      message.warning(t('incrementalRefresh.selectSourceFirst'))
       return
     }
     setDeleteModalOpen(true)
@@ -412,7 +414,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
     try {
       const deletedCount = selectedSourceIds.length
       await deleteAnimeSource({ sourceIds: selectedSourceIds, deleteFiles })
-      message.success(`批量删除任务已提交，共 ${deletedCount} 个源`)
+      message.success(t('incrementalRefresh.batchDeleteSubmitted', { count: deletedCount }))
       setSelectedSourceIds([])
       setDeleteModalOpen(false)
       setDeleteFiles(true)  // 重置为默认值
@@ -427,7 +429,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
         fetchData()
       }
     } catch (error) {
-      message.error('操作失败: ' + error.message)
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + error.message)
     } finally {
       setOperationLoading(false)
     }
@@ -460,8 +462,8 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
         <Alert
           type="warning"
           icon={<WarningOutlined />}
-          message="增量追更定时任务未配置"
-          description="请在设置中配置增量追更定时任务，否则追更功能不会自动执行。"
+          message={t('incrementalRefresh.taskNotConfigured')}
+          description={t('incrementalRefresh.taskNotConfiguredDesc')}
           showIcon
           style={{ marginBottom: 12 }}
           banner
@@ -475,13 +477,13 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
         icon={taskStatus.enabled ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
         message={
           <span>
-            追更任务：{taskStatus.enabled ? '已启用' : '已禁用'}
+            {t('incrementalRefresh.refreshTask')}{taskStatus.enabled ? t('incrementalRefresh.enabled') : t('incrementalRefresh.disabled')}
             {taskStatus.cronExpression && (
               <span className="text-xs text-gray-400 ml-2">{taskStatus.cronExpression}</span>
             )}
             {taskStatus.nextRunTime && taskStatus.enabled && (
               <span className="text-xs text-gray-400 ml-2">
-                下次 {dayjs(taskStatus.nextRunTime).format('MM-DD HH:mm')}
+                {t('incrementalRefresh.nextRun')} {dayjs(taskStatus.nextRunTime).format('MM-DD HH:mm')}
               </span>
             )}
           </span>
@@ -503,15 +505,15 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium text-sm">{source.providerName}</span>
-          <span className="text-xs text-gray-400">第{source.episodeCount}集</span>
+          <span className="text-xs text-gray-400">{t('incrementalRefresh.episodeCount', { count: source.episodeCount })}</span>
           {source.incrementalRefreshEnabled && source.incrementalRefreshFailures > 0 && (
             <Tag color="error" bordered={false} style={{ fontSize: 11, lineHeight: '18px', padding: '0 6px', margin: 0 }}>
-              失败{source.incrementalRefreshFailures}/{stats.maxFailures}
+              {t('incrementalRefresh.failureCount', { failures: source.incrementalRefreshFailures, max: stats.maxFailures })}
             </Tag>
           )}
           {source.lastRefreshLatestEpisodeAt && (
             <span className="text-xs text-gray-400 hidden sm:inline">
-              追更于 {dayjs(source.lastRefreshLatestEpisodeAt).format('MM-DD HH:mm')}
+              {t('incrementalRefresh.refreshedAt', { time: dayjs(source.lastRefreshLatestEpisodeAt).format('MM-DD HH:mm') })}
             </span>
           )}
         </div>
@@ -519,22 +521,22 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
       <Space size={4}>
         <Switch
           size="small"
-          checkedChildren="追更"
-          unCheckedChildren="追更"
+          checkedChildren={t('incrementalRefresh.refresh')}
+          unCheckedChildren={t('incrementalRefresh.refresh')}
           checked={source.incrementalRefreshEnabled}
           onChange={() => handleToggleRefresh(source.sourceId)}
         />
         <Switch
           size="small"
-          checkedChildren="标记"
-          unCheckedChildren="标记"
+          checkedChildren={t('incrementalRefresh.favorite')}
+          unCheckedChildren={t('incrementalRefresh.favorite')}
           checked={source.isFavorited}
           onChange={() => handleToggleFavorite(source.sourceId)}
         />
         <Switch
           size="small"
-          checkedChildren="完结"
-          unCheckedChildren="完结"
+          checkedChildren={t('incrementalRefresh.finished')}
+          unCheckedChildren={t('incrementalRefresh.finished')}
           checked={source.isFinished}
           onChange={() => handleToggleFinished(source.sourceId)}
         />
@@ -550,9 +552,9 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
 
       {/* 统计信息 */}
       <div className="mb-3 text-sm text-gray-500">
-        共 <span className="font-medium text-gray-700 dark:text-gray-300">{stats.totalSources}</span> 个源，
-        追更 <span className="font-medium text-blue-500">{stats.refreshEnabled}</span>，
-        标记 <span className="font-medium text-green-500">{stats.favorited}</span>
+        {t('incrementalRefresh.totalSources', { count: stats.totalSources })}
+        {t('incrementalRefresh.refreshing', { count: stats.refreshEnabled })}
+        {t('incrementalRefresh.favorited', { count: stats.favorited })}
       </div>
 
       {/* 筛选器 */}
@@ -560,9 +562,9 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
         <Dropdown
           menu={{
             items: [
-              { key: 'all', label: '全部类型' },
-              { key: 'movie', label: '电影' },
-              { key: 'tv_series', label: '电视节目' },
+              { key: 'all', label: t('incrementalRefresh.allTypes') },
+              { key: 'movie', label: t('incrementalRefresh.movie') },
+              { key: 'tv_series', label: t('incrementalRefresh.tvSeries') },
             ],
             selectedKeys: [typeFilter],
             onClick: ({ key }) => handleTypeFilterChange(key),
@@ -570,15 +572,15 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
           trigger={['click']}
         >
           <Button size="small" type={typeFilter !== 'all' ? 'primary' : 'default'} ghost={typeFilter !== 'all'}>
-            {typeFilter === 'all' ? '类型' : typeFilter === 'movie' ? '电影' : '电视'} <DownOutlined />
+            {typeFilter === 'all' ? t('incrementalRefresh.type') : typeFilter === 'movie' ? t('incrementalRefresh.movie') : t('incrementalRefresh.tv')} <DownOutlined />
           </Button>
         </Dropdown>
         <Dropdown
           menu={{
             items: [
-              { key: 'all', label: '全部' },
-              { key: 'enabled', label: '已追更' },
-              { key: 'disabled', label: '未追更' },
+              { key: 'all', label: t('incrementalRefresh.all') },
+              { key: 'enabled', label: t('incrementalRefresh.refreshed') },
+              { key: 'disabled', label: t('incrementalRefresh.notRefreshed') },
             ],
             selectedKeys: [refreshFilter],
             onClick: ({ key }) => handleRefreshFilterChange(key),
@@ -586,15 +588,15 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
           trigger={['click']}
         >
           <Button size="small" type={refreshFilter !== 'all' ? 'primary' : 'default'} ghost={refreshFilter !== 'all'}>
-            {refreshFilter === 'all' ? '追更' : refreshFilter === 'enabled' ? '已追更' : '未追更'} <DownOutlined />
+            {refreshFilter === 'all' ? t('incrementalRefresh.refresh') : refreshFilter === 'enabled' ? t('incrementalRefresh.refreshed') : t('incrementalRefresh.notRefreshed')} <DownOutlined />
           </Button>
         </Dropdown>
         <Dropdown
           menu={{
             items: [
-              { key: 'all', label: '全部' },
-              { key: 'favorited', label: '已标记' },
-              { key: 'unfavorited', label: '未标记' },
+              { key: 'all', label: t('incrementalRefresh.all') },
+              { key: 'favorited', label: t('incrementalRefresh.favoritedFilter') },
+              { key: 'unfavorited', label: t('incrementalRefresh.unfavorited') },
             ],
             selectedKeys: [favoriteFilter],
             onClick: ({ key }) => handleFavoriteFilterChange(key),
@@ -602,15 +604,15 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
           trigger={['click']}
         >
           <Button size="small" type={favoriteFilter !== 'all' ? 'primary' : 'default'} ghost={favoriteFilter !== 'all'}>
-            {favoriteFilter === 'all' ? '标记' : favoriteFilter === 'favorited' ? '已标记' : '未标记'} <DownOutlined />
+            {favoriteFilter === 'all' ? t('incrementalRefresh.favorite') : favoriteFilter === 'favorited' ? t('incrementalRefresh.favoritedFilter') : t('incrementalRefresh.unfavorited')} <DownOutlined />
           </Button>
         </Dropdown>
         <Dropdown
           menu={{
             items: [
-              { key: 'all', label: '全部' },
-              { key: 'finished', label: '已完结' },
-              { key: 'unfinished', label: '未完结' },
+              { key: 'all', label: t('incrementalRefresh.all') },
+              { key: 'finished', label: t('incrementalRefresh.finishedFilter') },
+              { key: 'unfinished', label: t('incrementalRefresh.unfinished') },
             ],
             selectedKeys: [finishedFilter],
             onClick: ({ key }) => handleFinishedFilterChange(key),
@@ -618,7 +620,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
           trigger={['click']}
         >
           <Button size="small" type={finishedFilter !== 'all' ? 'primary' : 'default'} ghost={finishedFilter !== 'all'}>
-            {finishedFilter === 'all' ? '完结' : finishedFilter === 'finished' ? '已完结' : '未完结'} <DownOutlined />
+            {finishedFilter === 'all' ? t('incrementalRefresh.finished') : finishedFilter === 'finished' ? t('incrementalRefresh.finishedFilter') : t('incrementalRefresh.unfinished')} <DownOutlined />
           </Button>
         </Dropdown>
         <Dropdown menu={sortDropdownItems} trigger={['click']}>
@@ -634,7 +636,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
             content={
               <div style={{ width: 220 }}>
                 <Input
-                  placeholder="搜索番剧或源名称..."
+                  placeholder={t('incrementalRefresh.searchPlaceholder')}
                   allowClear
                   value={searchKeyword}
                   onChange={(e) => setSearchKeyword(e.target.value)}
@@ -643,12 +645,12 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
                 />
               </div>
             }
-            title="搜索"
+            title={t('incrementalRefresh.search')}
             trigger="click"
             placement="bottom"
           >
             <Button size="small" icon={<SearchOutlined />} type={searchKeyword ? 'primary' : 'default'} ghost={!!searchKeyword}>
-              {searchKeyword ? `${searchKeyword.length > 4 ? searchKeyword.slice(0, 4) + '...' : searchKeyword}` : '搜索'}
+              {searchKeyword ? `${searchKeyword.length > 4 ? searchKeyword.slice(0, 4) + '...' : searchKeyword}` : t('incrementalRefresh.search')}
             </Button>
           </Popover>
         )}
@@ -659,7 +661,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
         {loading ? (
           <div className="flex justify-center py-8"><Spin /></div>
         ) : animeGroups.length === 0 ? (
-          <Empty description="暂无数据" />
+          <Empty description={t('incrementalRefresh.noData')} />
         ) : (
           <Collapse
             bordered={false}
@@ -673,10 +675,10 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
                     background: group.animeType === 'movie' ? 'var(--ant-purple-1, #f9f0ff)' : 'var(--ant-blue-1, #e6f4ff)',
                     color: group.animeType === 'movie' ? 'var(--ant-purple-6, #722ed1)' : 'var(--ant-blue-6, #1677ff)',
                   }}>
-                    {group.animeType === 'movie' ? '电影' : 'TV'}
+                    {group.animeType === 'movie' ? t('incrementalRefresh.movie') : 'TV'}
                   </span>
                   <span className="font-medium text-sm">{group.animeTitle}</span>
-                  <span className="text-xs text-gray-400">{group.sources.length}源</span>
+                  <span className="text-xs text-gray-400">{t('incrementalRefresh.sourcesCount', { count: group.sources.length })}</span>
                 </div>
               ),
               children: group.sources.map(source => renderSourceItem(source, group.animeTitle)),
@@ -700,10 +702,10 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
           <Dropdown
             menu={{
               items: [
-                { key: '10', label: '10 条/页' },
-                { key: '20', label: '20 条/页' },
-                { key: '50', label: '50 条/页' },
-                { key: '100', label: '100 条/页' },
+                { key: '10', label: t('incrementalRefresh.perPage', { size: 10 }) },
+                { key: '20', label: t('incrementalRefresh.perPage', { size: 20 }) },
+                { key: '50', label: t('incrementalRefresh.perPage', { size: 50 }) },
+                { key: '100', label: t('incrementalRefresh.perPage', { size: 100 }) },
               ],
               selectedKeys: [String(pageSize)],
               onClick: ({ key }) => handlePageSizeChange(Number(key)),
@@ -711,7 +713,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
             trigger={['click']}
           >
             <Button size="small">
-              {pageSize} 条/页 <DownOutlined />
+              {t('incrementalRefresh.perPage', { size: pageSize })} <DownOutlined />
             </Button>
           </Dropdown>
         </div>
@@ -722,14 +724,14 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
         {/* 第一行：已选数量 + 搜索（移动端） */}
         <div className="flex items-center gap-2 mb-2">
           <span className="text-gray-500 text-sm">
-            已选 <span className="font-medium text-blue-500">{selectedSourceIds.length}</span> 项
+            {t('incrementalRefresh.selectedCount', { count: selectedSourceIds.length })}
           </span>
           {isMobile && (
             <Popover
               content={
                 <div style={{ width: 220 }}>
                   <Input
-                    placeholder="搜索番剧或源名称..."
+                    placeholder={t('incrementalRefresh.searchPlaceholder')}
                     allowClear
                     value={searchKeyword}
                     onChange={(e) => setSearchKeyword(e.target.value)}
@@ -738,12 +740,12 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
                   />
                 </div>
               }
-              title="搜索"
+              title={t('incrementalRefresh.search')}
               trigger="click"
               placement="top"
             >
               <Button size="small" icon={<SearchOutlined />} className="ml-auto">
-                {searchKeyword ? `搜索: ${searchKeyword.length > 4 ? searchKeyword.slice(0, 4) + '...' : searchKeyword}` : '搜索'}
+                {searchKeyword ? t('incrementalRefresh.searchPrefix', { keyword: searchKeyword.length > 4 ? searchKeyword.slice(0, 4) + '...' : searchKeyword }) : t('incrementalRefresh.search')}
               </Button>
             </Popover>
           )}
@@ -756,14 +758,14 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
               <Dropdown
                 menu={{
                   items: [
-                    { key: 'selectAll', label: '全选当前页', onClick: handleSelectAll },
-                    { key: 'deselectAll', label: '取消全选', onClick: handleDeselectAll },
+                    { key: 'selectAll', label: t('incrementalRefresh.selectAllPage'), onClick: handleSelectAll },
+                    { key: 'deselectAll', label: t('incrementalRefresh.deselectAll'), onClick: handleDeselectAll },
                   ],
                 }}
                 trigger={['click']}
               >
                 <Button size="small" className="flex-1">
-                  操作 <DownOutlined />
+                  {t('incrementalRefresh.operation')} <DownOutlined />
                 </Button>
               </Dropdown>
               <Button
@@ -775,7 +777,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
                 className="flex-1"
                 onClick={openDeleteModal}
               >
-                批量删除
+                {t('incrementalRefresh.batchDelete')}
               </Button>
             </div>
             {/* 第二行：批量追更 + 批量标记 */}
@@ -783,43 +785,43 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
               <Dropdown
                 menu={{
                   items: [
-                    { key: 'enable', label: '批量开启', onClick: handleBatchEnableRefresh, disabled: selectedSourceIds.length === 0 },
-                    { key: 'disable', label: '批量关闭', onClick: handleBatchDisableRefresh, disabled: selectedSourceIds.length === 0 },
+                    { key: 'enable', label: t('incrementalRefresh.batchEnable'), onClick: handleBatchEnableRefresh, disabled: selectedSourceIds.length === 0 },
+                    { key: 'disable', label: t('incrementalRefresh.batchDisable'), onClick: handleBatchDisableRefresh, disabled: selectedSourceIds.length === 0 },
                   ],
                 }}
                 trigger={['click']}
                 disabled={operationLoading}
               >
                 <Button size="small" loading={operationLoading} className="flex-1">
-                  批量追更 <DownOutlined />
+                  {t('incrementalRefresh.batchRefresh')} <DownOutlined />
                 </Button>
               </Dropdown>
               <Dropdown
                 menu={{
                   items: [
-                    { key: 'set', label: '批量开启', onClick: handleBatchSetFavorite, disabled: selectedSourceIds.length === 0 },
-                    { key: 'unset', label: '批量关闭', onClick: handleBatchUnsetFavorite, disabled: selectedSourceIds.length === 0 },
+                    { key: 'set', label: t('incrementalRefresh.batchEnable'), onClick: handleBatchSetFavorite, disabled: selectedSourceIds.length === 0 },
+                    { key: 'unset', label: t('incrementalRefresh.batchDisable'), onClick: handleBatchUnsetFavorite, disabled: selectedSourceIds.length === 0 },
                   ],
                 }}
                 trigger={['click']}
                 disabled={operationLoading}
               >
                 <Button size="small" loading={operationLoading} className="flex-1">
-                  批量标记 <DownOutlined />
+                  {t('incrementalRefresh.batchFavorite')} <DownOutlined />
                 </Button>
               </Dropdown>
               <Dropdown
                 menu={{
                   items: [
-                    { key: 'set', label: '批量完结', onClick: handleBatchSetFinished, disabled: selectedSourceIds.length === 0 },
-                    { key: 'unset', label: '批量取消', onClick: handleBatchUnsetFinished, disabled: selectedSourceIds.length === 0 },
+                    { key: 'set', label: t('incrementalRefresh.batchSetFinished'), onClick: handleBatchSetFinished, disabled: selectedSourceIds.length === 0 },
+                    { key: 'unset', label: t('incrementalRefresh.batchUnsetFinished'), onClick: handleBatchUnsetFinished, disabled: selectedSourceIds.length === 0 },
                   ],
                 }}
                 trigger={['click']}
                 disabled={operationLoading}
               >
                 <Button size="small" loading={operationLoading} className="flex-1">
-                  批量完结 <DownOutlined />
+                  {t('incrementalRefresh.batchFinished')} <DownOutlined />
                 </Button>
               </Dropdown>
             </div>
@@ -830,56 +832,56 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
             <Dropdown
               menu={{
                 items: [
-                  { key: 'selectAll', label: '全选当前页', onClick: handleSelectAll },
-                  { key: 'deselectAll', label: '取消全选', onClick: handleDeselectAll },
+                  { key: 'selectAll', label: t('incrementalRefresh.selectAllPage'), onClick: handleSelectAll },
+                  { key: 'deselectAll', label: t('incrementalRefresh.deselectAll'), onClick: handleDeselectAll },
                 ],
               }}
               trigger={['click']}
             >
               <Button size="small">
-                操作 <DownOutlined />
+                {t('incrementalRefresh.operation')} <DownOutlined />
               </Button>
             </Dropdown>
             <Dropdown
               menu={{
                 items: [
-                  { key: 'enable', label: '批量开启', onClick: handleBatchEnableRefresh, disabled: selectedSourceIds.length === 0 },
-                  { key: 'disable', label: '批量关闭', onClick: handleBatchDisableRefresh, disabled: selectedSourceIds.length === 0 },
+                  { key: 'enable', label: t('incrementalRefresh.batchEnable'), onClick: handleBatchEnableRefresh, disabled: selectedSourceIds.length === 0 },
+                  { key: 'disable', label: t('incrementalRefresh.batchDisable'), onClick: handleBatchDisableRefresh, disabled: selectedSourceIds.length === 0 },
                 ],
               }}
               trigger={['click']}
               disabled={operationLoading}
             >
               <Button size="small" loading={operationLoading}>
-                批量追更 <DownOutlined />
+                {t('incrementalRefresh.batchRefresh')} <DownOutlined />
               </Button>
             </Dropdown>
             <Dropdown
               menu={{
                 items: [
-                  { key: 'set', label: '批量开启', onClick: handleBatchSetFavorite, disabled: selectedSourceIds.length === 0 },
-                  { key: 'unset', label: '批量关闭', onClick: handleBatchUnsetFavorite, disabled: selectedSourceIds.length === 0 },
+                  { key: 'set', label: t('incrementalRefresh.batchEnable'), onClick: handleBatchSetFavorite, disabled: selectedSourceIds.length === 0 },
+                  { key: 'unset', label: t('incrementalRefresh.batchDisable'), onClick: handleBatchUnsetFavorite, disabled: selectedSourceIds.length === 0 },
                 ],
               }}
               trigger={['click']}
               disabled={operationLoading}
             >
               <Button size="small" loading={operationLoading}>
-                批量标记 <DownOutlined />
+                {t('incrementalRefresh.batchFavorite')} <DownOutlined />
               </Button>
             </Dropdown>
             <Dropdown
               menu={{
                 items: [
-                  { key: 'set', label: '批量完结', onClick: handleBatchSetFinished, disabled: selectedSourceIds.length === 0 },
-                  { key: 'unset', label: '批量取消', onClick: handleBatchUnsetFinished, disabled: selectedSourceIds.length === 0 },
+                  { key: 'set', label: t('incrementalRefresh.batchSetFinished'), onClick: handleBatchSetFinished, disabled: selectedSourceIds.length === 0 },
+                  { key: 'unset', label: t('incrementalRefresh.batchUnsetFinished'), onClick: handleBatchUnsetFinished, disabled: selectedSourceIds.length === 0 },
                 ],
               }}
               trigger={['click']}
               disabled={operationLoading}
             >
               <Button size="small" loading={operationLoading}>
-                批量完结 <DownOutlined />
+                {t('incrementalRefresh.batchFinished')} <DownOutlined />
               </Button>
             </Dropdown>
             <Button
@@ -890,7 +892,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
               disabled={selectedSourceIds.length === 0}
               onClick={openDeleteModal}
             >
-              批量删除
+              {t('incrementalRefresh.batchDelete')}
             </Button>
           </Space>
         )}
@@ -901,29 +903,29 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
   // 删除确认弹窗
   const renderDeleteModal = () => (
     <Modal
-      title="批量删除确认"
+      title={t('incrementalRefresh.deleteConfirmTitle')}
       open={deleteModalOpen}
       onCancel={() => {
         setDeleteModalOpen(false)
         setDeleteFiles(true)
       }}
       onOk={handleBatchDelete}
-      okText="确定删除"
-      cancelText="取消"
+      okText={t('incrementalRefresh.confirmDelete')}
+      cancelText={t('common.cancel')}
       okButtonProps={{ danger: true, loading: operationLoading }}
     >
       <div className="py-4">
-        <p className="mb-4">确定要删除选中的 <strong>{selectedSourceIds.length}</strong> 个源吗？</p>
+        <p className="mb-4" dangerouslySetInnerHTML={{ __html: t('incrementalRefresh.deleteConfirmContent', { count: `<strong>${selectedSourceIds.length}</strong>` }) }} />
         <div className="flex items-center gap-2">
           <Checkbox
             checked={deleteFiles}
             onChange={(e) => setDeleteFiles(e.target.checked)}
           >
-            同时删除弹幕XML文件
+            {t('incrementalRefresh.deleteFilesToo')}
           </Checkbox>
         </div>
         <p className="text-gray-500 text-sm mt-2">
-          {deleteFiles ? '将删除源及其关联的弹幕文件' : '仅删除数据库记录，保留弹幕文件'}
+          {deleteFiles ? t('incrementalRefresh.deleteWithFiles') : t('incrementalRefresh.deleteRecordOnly')}
         </p>
       </div>
     </Modal>
@@ -934,7 +936,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
     return (
       <>
         <Drawer
-          title="批量管理"
+          title={t('incrementalRefresh.title')}
           placement="bottom"
           onClose={onCancel}
           open={open}
@@ -950,7 +952,7 @@ export const IncrementalRefreshModal = ({ open, onCancel, onSuccess }) => {
   return (
     <>
       <Modal
-        title="批量管理"
+        title={t('incrementalRefresh.title')}
         open={open}
         onCancel={onCancel}
         footer={null}

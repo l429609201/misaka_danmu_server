@@ -15,8 +15,10 @@ import {
 import { useEffect, useState } from 'react'
 import { getProxyConfig, setProxyConfig, testProxy } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
+import { useTranslation } from 'react-i18next'
 
 export const Proxy = () => {
+  const { t } = useTranslation()
   const [proxyMode, setProxyMode] = useState('none')
   const [loading, setLoading] = useState(true)
   const [form] = Form.useForm()
@@ -48,9 +50,9 @@ export const Proxy = () => {
       setProxyMode(values.proxyMode)
       await setProxyConfig(values)
       setIsSaveLoading(false)
-      messageApi.success('保存成功')
+      messageApi.success(t('proxy.saveSuccess'))
     } catch (error) {
-      messageApi.error('保存失败')
+      messageApi.error(t('proxy.saveFailed'))
     } finally {
       setIsSaveLoading(false)
     }
@@ -88,7 +90,7 @@ export const Proxy = () => {
       })
       setTestResult(res.data)
     } catch (error) {
-      messageApi.error('测试请求失败')
+      messageApi.error(t('proxy.testRequestFailed'))
     } finally {
       setIsTestLoading(false)
     }
@@ -98,16 +100,16 @@ export const Proxy = () => {
     const isSuccess = result.status === 'success'
     const color = isSuccess ? 'green' : 'red'
     const text = isSuccess
-      ? `成功 (${result.latency.toFixed(0)} ms)`
-      : `失败: ${result.error}`
+      ? t('proxy.testSuccess', { latency: result.latency.toFixed(0) })
+      : t('proxy.testFailed', { error: result.error })
     return <Tag color={color}>{text}</Tag>
   }
 
   return (
     <div className="my-6">
-      <Card loading={loading} title="代理配置">
+      <Card loading={loading} title={t('proxy.title')}>
         <div className="mb-4">
-          配置一个全局代理，可用于访问受限的网络资源。
+          {t('proxy.desc')}
         </div>
 
         <Form
@@ -118,15 +120,15 @@ export const Proxy = () => {
         >
           <Form.Item
             name="proxyMode"
-            label="代理模式"
+            label={t('proxy.proxyMode')}
             className="mb-6"
           >
             <Select
               onChange={value => setProxyMode(value)}
               options={[
-                { value: 'none', label: '不使用代理' },
-                { value: 'http_socks', label: 'HTTP/SOCKS 代理' },
-                { value: 'accelerate', label: '加速代理' },
+                { value: 'none', label: t('proxy.noProxy') },
+                { value: 'http_socks', label: t('proxy.httpSocks') },
+                { value: 'accelerate', label: t('proxy.accelerate') },
               ]}
             />
           </Form.Item>
@@ -134,7 +136,7 @@ export const Proxy = () => {
           {/* HTTP/SOCKS 代理配置 */}
           {proxyMode === 'http_socks' && (
             <>
-              <Form.Item name="proxyProtocol" label="协议" className="mb-6">
+              <Form.Item name="proxyProtocol" label={t('proxy.protocol')} className="mb-6">
                 <Select
                   options={[
                     { value: 'http', label: 'http' },
@@ -145,13 +147,13 @@ export const Proxy = () => {
               </Form.Item>
               <Row gutter={[12, 12]}>
                 <Col md={12} xs={24}>
-                  <Form.Item name="proxyHost" label="主机" className="mb-4">
-                    <Input placeholder="例如：127.0.0.1" />
+                  <Form.Item name="proxyHost" label={t('proxy.host')} className="mb-4">
+                    <Input placeholder={t('proxy.hostPlaceholder')} />
                   </Form.Item>
                 </Col>
                 <Col md={12} xs={24}>
-                  <Form.Item name="proxyPort" label="端口" className="mb-4">
-                    <Input placeholder="例如：7890" />
+                  <Form.Item name="proxyPort" label={t('proxy.port')} className="mb-4">
+                    <Input placeholder={t('proxy.portPlaceholder')} />
                   </Form.Item>
                 </Col>
               </Row>
@@ -159,7 +161,7 @@ export const Proxy = () => {
                 <Col md={12} xs={24}>
                   <Form.Item
                     name="proxyUsername"
-                    label="用户名(可选)"
+                    label={t('proxy.username')}
                     className="mb-4"
                   >
                     <Input />
@@ -168,7 +170,7 @@ export const Proxy = () => {
                 <Col md={12} xs={24}>
                   <Form.Item
                     name="proxyPassword"
-                    label="密码(可选)"
+                    label={t('proxy.password')}
                     className="mb-4"
                   >
                     <Input />
@@ -176,10 +178,10 @@ export const Proxy = () => {
                 </Col>
                 <Col md={12} xs={24}>
                   <Form.Item
-                    label="跳过SSL证书验证"
+                    label={t('proxy.skipSslVerify')}
                     name="proxySslVerify"
                     valuePropName="checked"
-                    tooltip="当您的HTTPS代理使用自签名证书时，请开启此项以避免SSL验证错误。"
+                    tooltip={t('proxy.skipSslVerifyTip')}
                     className="mb-4"
                   >
                     <Switch />
@@ -193,10 +195,10 @@ export const Proxy = () => {
           {proxyMode === 'accelerate' && (
             <Form.Item
               name="accelerateProxyUrl"
-              label="加速代理地址"
+              label={t('proxy.accelerateUrl')}
               className="mb-6"
             >
-              <Input placeholder="例如：https://your-proxy.vercel.app" />
+              <Input placeholder={t('proxy.accelerateUrlPlaceholder')} />
             </Form.Item>
           )}
 
@@ -204,14 +206,14 @@ export const Proxy = () => {
             <div className="flex justify-end">
               <Space>
                 <Button onClick={handleTest} loading={isTestLoading}>
-                  测试连接
+                  {t('proxy.testConnection')}
                 </Button>
                 <Button
                   type="primary"
                   htmlType="submit"
                   loading={isSaveLoading}
                 >
-                  保存修改
+                  {t('proxy.saveChanges')}
                 </Button>
               </Space>
             </div>
@@ -220,17 +222,17 @@ export const Proxy = () => {
         {isTestLoading && (
           <div className="text-center">
             <Spin />
-            <p>正在测试连接，请稍候...</p>
+            <p>{t('proxy.testing')}</p>
           </div>
         )}
         {testResult && (
           <div>
-            <Divider>测试结果</Divider>
+            <Divider>{t('proxy.testResult')}</Divider>
             <div className="flex flex-col gap-2">
               {testResult.proxy_connectivity &&
                 testResult.proxy_connectivity.status !== 'skipped' && (
                   <div className="flex justify-between">
-                    <span>代理服务器连通性:</span>
+                    <span>{t('proxy.proxyConnectivity')}</span>
                     <ResultTag result={testResult.proxy_connectivity} />
                   </div>
                 )}

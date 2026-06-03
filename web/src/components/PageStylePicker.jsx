@@ -1,8 +1,10 @@
 import { CheckOutlined } from '@ant-design/icons'
+import { useTranslation } from 'react-i18next'
 import { useThemeMode, PAGE_STYLES } from '../ThemeProvider'
 import { ResponsiveModal } from './ResponsiveModal'
 
 const PageStylePicker = ({ open, onClose }) => {
+  const { t } = useTranslation()
   const { pageStyle, setPageStyle } = useThemeMode()
 
   const handleSelect = (key) => {
@@ -26,7 +28,7 @@ const PageStylePicker = ({ open, onClose }) => {
 
   return (
     <ResponsiveModal
-      title="页面样式"
+      title={t('pageStyle.title')}
       open={open}
       onCancel={onClose}
       footer={null}
@@ -34,7 +36,7 @@ const PageStylePicker = ({ open, onClose }) => {
     >
       <div className="py-2">
         <div className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-          选择应用整体的视觉风格
+          {t('pageStyle.selectTip')}
         </div>
         <div className="grid grid-cols-2 gap-3">
           {PAGE_STYLES.map(({ key, name }) => {
@@ -89,7 +91,7 @@ const PageStylePicker = ({ open, onClose }) => {
                       : 'var(--color-text)',
                   }}
                 >
-                  {name}
+                  {t(`pageStyle.${name}`)}
                 </span>
               </div>
             )
@@ -103,7 +105,7 @@ const PageStylePicker = ({ open, onClose }) => {
             color: 'var(--color-text)',
           }}
         >
-          💡 液态玻璃样式会让卡片、弹窗等元素呈现毛玻璃质感，建议在亮色/暗色模式下都试试效果~
+          {t('pageStyle.liquidGlassTip')}
         </div>
       </div>
     </ResponsiveModal>

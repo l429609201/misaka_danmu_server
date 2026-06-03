@@ -132,7 +132,7 @@ async def _get_bangumi_auth(session: AsyncSession, user_id: int) -> Dict[str, An
 async def _save_bangumi_auth(session: AsyncSession, user_id: int, auth_data: Dict[str, Any]):
     """保存或更新用户的Bangumi授权信息。"""
     existing_auth = await session.get(orm_models.BangumiAuth, user_id)
-    
+
     if existing_auth:
         for key, value in auth_data.items():
             setattr(existing_auth, key, value)
@@ -284,13 +284,36 @@ async def exchange_code(
 class BangumiMetadataSource(BaseMetadataSource):
     provider_name = "bangumi"
     api_router = auth_router
-    test_url = "https://bgm.tv"
+    config_keys = ["bangumiClientId", "bangumiClientSecret", "bangumiToken", "authMode", "bangumiApiBaseUrl", "bangumiImageBaseUrl"]
+
+    DEFAULT_API_BASE_URL = "https://api.bgm.tv"
+    DEFAULT_IMAGE_BASE_URL = "https://lain.bgm.tv"
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager, scraper_manager: ScraperManager, cache_manager: CacheManager):
         super().__init__(session_factory, config_manager, scraper_manager, cache_manager)
-        self.api_base_url = "https://api.bgm.tv"
         self._token: Optional[str] = None
         self._config_loaded = False
+
+    @property
+    async def test_url(self) -> str:
+        """动态地从配置中获取测试URL。"""
+        api_base = await self.config_manager.get("bangumiApiBaseUrl", self.DEFAULT_API_BASE_URL)
+        return api_base.rstrip('/')
+
+    async def _get_api_base_url(self) -> str:
+        """获取 Bangumi API 基础 URL。"""
+        url = await self.config_manager.get("bangumiApiBaseUrl", self.DEFAULT_API_BASE_URL)
+        return url.rstrip('/')
+
+    async def _rewrite_image_url(self, url: Optional[str]) -> Optional[str]:
+        """将图片 URL 中的默认域名替换为用户配置的域名。"""
+        if not url:
+            return None
+        custom_base = await self.config_manager.get("bangumiImageBaseUrl", "")
+        if not custom_base or custom_base.rstrip('/') == self.DEFAULT_IMAGE_BASE_URL:
+            return url
+        # 替换域名部分：https://lain.bgm.tv/... → https://custom.domain/...
+        return url.replace(self.DEFAULT_IMAGE_BASE_URL, custom_base.rstrip('/'), 1)
 
     async def _get_from_cache(self, key: str) -> Optional[Any]:
         """从缓存中获取数据。"""
@@ -332,7 +355,7 @@ class BangumiMetadataSource(BaseMetadataSource):
             return
         self._token = await self.config_manager.get("bangumiToken")
         self._config_loaded = True
-        
+
     async def _create_client(self, user: models.User) -> httpx.AsyncClient:
         await self._ensure_config()
         headers = {"User-Agent": f"DanmuApiServer/1.0 ({settings.jwt.secret_key[:8]})"}
@@ -368,7 +391,8 @@ class BangumiMetadataSource(BaseMetadataSource):
             if auth_info and auth_info.get("isAuthenticated") and auth_info.get("accessToken"):
                 self.logger.debug("Bangumi: 正在使用 OAuth Access Token 进行认证。")
                 headers["Authorization"] = f"Bearer {auth_info['accessToken']}"
-        return httpx.AsyncClient(base_url="https://api.bgm.tv", headers=headers, timeout=20.0)
+        api_base_url = await self._get_api_base_url()
+        return httpx.AsyncClient(base_url=api_base_url, headers=headers, timeout=20.0)
 
     async def search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
         """
@@ -386,10 +410,10 @@ class BangumiMetadataSource(BaseMetadataSource):
 
         self.logger.info(f"Bangumi: 缓存未命中，正在为标题 '{search_title}' 执行网络搜索...")
         all_results = await self._perform_network_search(search_title, user, mediaType)
-        
+
         if all_results:
             await self._set_to_cache(cache_key, [r.model_dump() for r in all_results], 'metadata_search_ttl_seconds', 3600)
-        
+
         return all_results
 
     async def _perform_network_search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
@@ -447,7 +471,7 @@ class BangumiMetadataSource(BaseMetadataSource):
                     title=subject.name_cn or subject.name,
                     type="tv_series",
                     nameJp=subject.name,
-                    imageUrl=subject.image_url,
+                    imageUrl=await self._rewrite_image_url(subject.image_url),
                     aliasesCn=aliases_cn
                 ))
 
@@ -489,7 +513,7 @@ class BangumiMetadataSource(BaseMetadataSource):
 
             return models.MetadataDetailsResponse(
                 id=str(subject.id), bangumiId=str(subject.id), title=subject.display_name,
-                type=media_type, nameJp=subject.name, imageUrl=subject.image_url, details=subject.details_string,
+                type=media_type, nameJp=subject.name, imageUrl=await self._rewrite_image_url(subject.image_url), details=subject.details_string,
                 nameEn=aliases.get("name_en"), nameRomaji=aliases.get("name_romaji"),
                 aliasesCn=aliases_cn, year=year
             )
@@ -522,6 +546,337 @@ class BangumiMetadataSource(BaseMetadataSource):
         except Exception as e:
             self.logger.warning(f"Bangumi辅助搜索失败: {e}")
         return {alias for alias in local_aliases if alias}
+
+    async def get_calendar(self, user: models.User) -> List[Dict[str, Any]]:
+        """从 Bangumi /calendar 获取当季全量番剧日历
+
+        集数策略（与 Trakt 一致的"两步走"）：
+        - BGM /calendar 接口不返回任何集数字段，因此首次刷新时所有番显示 ?/∞
+        - 返回前 fire-and-forget 触发两个后台任务并发拉数据：
+          1) /v0/subjects/{id} 取 total_episodes/eps（总集数，TTL 6h）
+          2) /v0/episodes?subject_id=X 数 airdate≤today 的条目（已播集数，TTL 12h）
+        - 下次刷新即可命中缓存显示真实「已播/总」进度
+
+        加载性能：整体日历结果缓存 1 小时，避免每次刷新都重打 BGM /calendar
+        （这是页面卡 3+ 秒的根因——BGM 国内访问偏慢，单次 1.5-3s）
+        """
+        import httpx
+        from datetime import datetime
+
+        # 局部缓存常量（避免污染模块顶层）
+        _CACHE_REGION = "metadata"
+        _BGM_EPS_KEY = "bgm_subject_eps_{bgm_id}"
+        _BGM_EPS_TTL = 6 * 3600
+        _BGM_EPS_CONCURRENCY = 5
+        # 已播集数缓存（airdate ≤ today 的集数）
+        _BGM_AIRED_KEY = "bgm_subject_aired_{bgm_id}"
+        _BGM_AIRED_TTL = 12 * 3600  # 12h，平衡新鲜度与请求量
+        _BGM_AIRED_CONCURRENCY = 5
+
+        # 整体日历结果缓存（仿 Trakt 同款机制）—— 关键性能优化
+        cache_backend = get_cache_backend()
+        today = datetime.now().strftime("%Y-%m-%d")
+        _CALENDAR_CACHE_KEY = f"bangumi_calendar_{today}"
+        _CALENDAR_CACHE_TTL = 3600  # 1 小时
+        try:
+            cached = await cache_backend.get(_CALENDAR_CACHE_KEY, region=_CACHE_REGION)
+            if cached is not None:
+                self.logger.debug(f"Bangumi 日历缓存命中（{len(cached)} 条），跳过 API 请求")
+                return cached
+        except Exception:
+            pass
+
+        metadata_logger = logging.getLogger('metadata_responses')
+        provider_setting = await self._get_provider_setting()
+        log_raw = provider_setting.get('logRawResponses', False)
+
+        await self._ensure_config()
+        api_base = await self._get_api_base_url()
+
+        items = []
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(f"{api_base}/calendar")
+                resp.raise_for_status()
+                raw_text = resp.text
+
+                if log_raw:
+                    metadata_logger.info(
+                        f"Bangumi Calendar Response: URL={resp.url} | Status={resp.status_code} | Body={raw_text}"
+                    )
+
+                bgm_calendar = resp.json()
+
+            for day_group in bgm_calendar:
+                weekday = day_group.get("weekday", {}).get("id")
+                if not weekday:
+                    continue
+                for bgm in day_group.get("items", []):
+                    images = bgm.get("images") or {}
+                    air_date = bgm.get("air_date") or ""
+                    year = None
+                    if air_date and len(air_date) >= 4 and air_date[:4].isdigit():
+                        year = int(air_date[:4])
+                    bgm_id = str(bgm.get("id", ""))
+                    # 总集数：尝试读个例缓存（由后台任务补全），未命中则 None → 前端 ∞
+                    eps_total = None
+                    aired_now = None
+                    if bgm_id:
+                        try:
+                            eps_total = await cache_backend.get(
+                                _BGM_EPS_KEY.format(bgm_id=bgm_id), region=_CACHE_REGION
+                            )
+                        except Exception:
+                            eps_total = None
+                        # 已播集数：尝试读个例缓存（由后台任务补全），未命中则 None → 前端 ?
+                        try:
+                            aired_now = await cache_backend.get(
+                                _BGM_AIRED_KEY.format(bgm_id=bgm_id), region=_CACHE_REGION
+                            )
+                        except Exception:
+                            aired_now = None
+                    items.append({
+                        "animeTitle": bgm.get("name_cn") or bgm.get("name", ""),
+                        "airWeekday": weekday,
+                        "origin": "bangumi",
+                        "isLocal": False,
+                        "bangumiId": bgm_id,
+                        "traktId": None,
+                        "imageUrl": images.get("common") or images.get("medium"),
+                        "rating": bgm.get("rating", {}).get("score"),
+                        "rank": bgm.get("rank"),
+                        "year": year,
+                        "airDate": air_date or None,
+                        "latestEpisodeIndex": aired_now,  # 已播集数（缓存命中才有）
+                        "episodeCount": eps_total,         # 总集数（缓存命中才有）
+                    })
+        except Exception as e:
+            self.logger.warning(f"Bangumi 日历获取失败: {e}")
+            return items
+
+        # 后台慢拉总集数：仅对未命中缓存的 bgm_id 触发
+        missing_ids = [it.get("bangumiId") for it in items
+                       if it.get("bangumiId") and it.get("episodeCount") is None]
+        # 后台慢拉已播集数：仅对未命中 aired 缓存的 bgm_id 触发
+        missing_aired_ids = [it.get("bangumiId") for it in items
+                             if it.get("bangumiId") and it.get("latestEpisodeIndex") is None]
+        if missing_ids or missing_aired_ids:
+            import asyncio
+            if missing_ids:
+                asyncio.create_task(self._fetch_eps_background(
+                    missing_ids, api_base,
+                    concurrency=_BGM_EPS_CONCURRENCY,
+                    cache_key_tpl=_BGM_EPS_KEY,
+                    cache_region=_CACHE_REGION,
+                    cache_ttl=_BGM_EPS_TTL,
+                ))
+            if missing_aired_ids:
+                asyncio.create_task(self._fetch_aired_episodes_background(
+                    missing_aired_ids, api_base,
+                    concurrency=_BGM_AIRED_CONCURRENCY,
+                    cache_key_tpl=_BGM_AIRED_KEY,
+                    cache_region=_CACHE_REGION,
+                    cache_ttl=_BGM_AIRED_TTL,
+                ))
+
+        # 写入整体日历缓存（1小时），下次刷新瞬间命中，不再走 BGM API
+        try:
+            await cache_backend.set(
+                _CALENDAR_CACHE_KEY, items,
+                ttl=_CALENDAR_CACHE_TTL, region=_CACHE_REGION,
+            )
+        except Exception:
+            pass
+
+        return items
+
+    async def get_user_watching_collection(self, user: models.User) -> Dict[str, Dict[str, Any]]:
+        """拉取「平台账号下我的在追」列表 — 用于补充 external_calendar_item.platformWatchStatus。
+
+        Bangumi collection type 取值（参考官方文档）：
+            1 = 想看 (wish)
+            2 = 看过 (collect/done)
+            3 = 在看 (do/watching)
+            4 = 搁置 (on_hold)
+            5 = 抛弃 (dropped)
+
+        本方法默认拉取**全部状态**的动画收藏，让上层决定如何映射展示。
+
+        :return: { bangumi_id: {'status': 'watching'|'wish'|..., 'watchedEps': int|None, 'rating': float|None} }
+                  未授权时返回 {}
+        """
+        # 状态码 → 标准化字符串
+        STATUS_MAP = {
+            1: "wish",
+            2: "done",
+            3: "watching",
+            4: "on_hold",
+            5: "dropped",
+        }
+
+        # 检查 OAuth 授权（必须有 access_token 才能调 /v0/users/-/collections）
+        async with self._session_factory() as session:
+            auth_info = await _get_bangumi_auth(session, user.id)
+        if not (auth_info and auth_info.get("isAuthenticated") and auth_info.get("accessToken")):
+            self.logger.debug("Bangumi: 未授权，跳过 get_user_watching_collection")
+            return {}
+
+        result: Dict[str, Dict[str, Any]] = {}
+        try:
+            async with await self._create_client(user) as client:
+                # subject_type=2 表示动画；不传 type 则返回全部状态
+                # /v0/users/-/collections 是私有接口，必须带 Authorization
+                offset = 0
+                limit = 50  # API 默认 30，最大 50
+                page_count = 0
+                MAX_PAGES = 20  # 安全上限：最多 1000 条收藏，避免循环失控
+                while page_count < MAX_PAGES:
+                    resp = await client.get(
+                        "/v0/users/-/collections",
+                        params={"subject_type": 2, "limit": limit, "offset": offset},
+                    )
+                    if resp.status_code != 200:
+                        self.logger.warning(
+                            f"Bangumi 拉取在追列表失败 status={resp.status_code} body={resp.text[:200]}"
+                        )
+                        break
+                    data = resp.json() or {}
+                    items = data.get("data") or []
+                    if not items:
+                        break
+                    for it in items:
+                        subject = it.get("subject") or {}
+                        bgm_id = subject.get("id") or it.get("subject_id")
+                        if not bgm_id:
+                            continue
+                        status_code = it.get("type")
+                        status_str = STATUS_MAP.get(status_code)
+                        if not status_str:
+                            continue
+                        result[str(bgm_id)] = {
+                            "status": status_str,
+                            "watchedEps": it.get("ep_status"),  # 看到第几集
+                            "rating": it.get("rate") or None,    # 1-10 的整数评分
+                        }
+                    total = data.get("total") or 0
+                    offset += len(items)
+                    if offset >= total or len(items) < limit:
+                        break
+                    page_count += 1
+        except Exception as e:
+            self.logger.warning(f"Bangumi get_user_watching_collection 异常: {e}")
+            return {}
+
+        self.logger.info(f"Bangumi 在追列表: 共 {len(result)} 条 (status 分布略)")
+        return result
+
+
+
+    async def _fetch_eps_background(
+        self, bgm_ids: List[str], api_base: str,
+        concurrency: int, cache_key_tpl: str, cache_region: str, cache_ttl: int,
+    ) -> None:
+        """后台并发拉取每个 subject 的总集数，写入缓存。
+        - 安静失败（后台任务，不抛异常）
+        - 优先 total_episodes，回退 eps
+        """
+        import asyncio
+        import httpx
+
+        cache_backend = get_cache_backend()
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _one(client: httpx.AsyncClient, bgm_id: str) -> None:
+            async with sem:
+                try:
+                    resp = await client.get(f"{api_base}/v0/subjects/{bgm_id}")
+                    if resp.status_code != 200:
+                        return
+                    data = resp.json() or {}
+                    # 优先 total_episodes（"完整最终集数"），回退到 eps
+                    total = data.get("total_episodes") or data.get("eps")
+                    if isinstance(total, int) and total > 0:
+                        try:
+                            await cache_backend.set(
+                                cache_key_tpl.format(bgm_id=bgm_id),
+                                total, ttl=cache_ttl, region=cache_region,
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                await asyncio.gather(*(_one(client, bid) for bid in bgm_ids), return_exceptions=True)
+            self.logger.debug(f"Bangumi 后台拉取 total_episodes 完成: {len(bgm_ids)} 个 subject")
+        except Exception as e:
+            self.logger.debug(f"Bangumi 后台拉取 total_episodes 失败: {e}")
+
+    async def _fetch_aired_episodes_background(
+        self, bgm_ids: List[str], api_base: str,
+        concurrency: int, cache_key_tpl: str, cache_region: str, cache_ttl: int,
+    ) -> None:
+        """后台并发拉取每个 subject 的"已播集数"，写入缓存。
+
+        BGM 没有原生"当前集"字段，唯一办法是调 /v0/episodes 拿全部集，
+        然后数 airdate ≤ today 的条目数 = 已播集数（仿 ani-rss BgmUtil.getEpisodes）。
+
+        - 安静失败（后台任务，不抛异常）
+        - 并发受 concurrency 限制，避免触发 BGM 限流
+        - type=0 仅取正篇（排除 OVA/SP/番外）
+        - limit=200 足以覆盖绝大多数番（最长番剧《海螺小姐》也就 2700+ 集，分页另说）
+        """
+        import asyncio
+        from datetime import datetime, timezone, timedelta
+        import httpx
+
+        cache_backend = get_cache_backend()
+        sem = asyncio.Semaphore(concurrency)
+        # 用 UTC+8（BGM 数据基本是日本/中国时区），避免时差导致今日已播被误算
+        today = (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d")
+
+        async def _one(client: httpx.AsyncClient, bgm_id: str) -> None:
+            async with sem:
+                try:
+                    resp = await client.get(
+                        f"{api_base}/v0/episodes",
+                        params={"subject_id": bgm_id, "type": 0, "limit": 200, "offset": 0},
+                    )
+                    if resp.status_code != 200:
+                        return
+                    data = resp.json() or {}
+                    eps_list = data.get("data") or []
+                    if not isinstance(eps_list, list):
+                        return
+                    aired = sum(
+                        1 for e in eps_list
+                        if isinstance(e, dict) and e.get("airdate") and e.get("airdate") <= today
+                    )
+                    if aired > 0:
+                        try:
+                            await cache_backend.set(
+                                cache_key_tpl.format(bgm_id=bgm_id),
+                                aired, ttl=cache_ttl, region=cache_region,
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                await asyncio.gather(*(_one(client, bid) for bid in bgm_ids), return_exceptions=True)
+            self.logger.debug(f"Bangumi 后台拉取 aired_episodes 完成: {len(bgm_ids)} 个 subject")
+        except Exception as e:
+            self.logger.debug(f"Bangumi 后台拉取 aired_episodes 失败: {e}")
+
+
+    async def _get_provider_setting(self) -> Dict[str, Any]:
+        """获取当前源的设置"""
+        async with self._session_factory() as session:
+            settings = await crud.get_all_metadata_source_settings(session)
+            return next((s for s in settings if s['providerName'] == self.provider_name), {})
 
     async def check_connectivity(self) -> Dict[str, str]:
         """检查Bangumi源配置状态"""

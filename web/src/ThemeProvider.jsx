@@ -1,8 +1,32 @@
 import { createContext, useContext, useEffect, useState, useMemo } from 'react'
 import { ConfigProvider } from 'antd'
 import { theme } from 'antd'
+import { useTranslation } from 'react-i18next'
 
 import zhCN from 'antd/locale/zh_CN'
+import zhTW from 'antd/locale/zh_TW'
+import enUS from 'antd/locale/en_US'
+
+import dayjs from 'dayjs'
+import 'dayjs/locale/zh-cn'
+import 'dayjs/locale/zh-tw'
+import 'dayjs/locale/en'
+
+// 语言 -> AntD locale 映射
+const ANTD_LOCALES = {
+  'zh-CN': zhCN,
+  'zh-TW': zhTW,
+  en: enUS,
+}
+
+// 语言 -> dayjs locale 映射
+const DAYJS_LOCALES = {
+  'zh-CN': 'zh-cn',
+  'zh-TW': 'zh-tw',
+  en: 'en',
+}
+
+const DEFAULT_LANG = 'zh-CN'
 
 // ========== 颜色工具函数 ==========
 
@@ -97,6 +121,7 @@ const DEFAULT_PAGE_STYLE = 'normal'
 const ThemeContext = createContext()
 
 export function ThemeProvider({ children }) {
+  const { i18n } = useTranslation()
   const [isDark, setIsDark] = useState(false)
   const [themeColor, setThemeColorState] = useState(() => {
     return localStorage.getItem('themeColor') || DEFAULT_PRIMARY
@@ -104,6 +129,26 @@ export function ThemeProvider({ children }) {
   const [pageStyle, setPageStyleState] = useState(() => {
     return localStorage.getItem('pageStyle') || DEFAULT_PAGE_STYLE
   })
+  const [language, setLanguageState] = useState(() => {
+    return localStorage.getItem('lang') || i18n.language || DEFAULT_LANG
+  })
+
+  // 设置语言并持久化（同步切换 i18next 与 dayjs）
+  const setLanguage = (lang) => {
+    setLanguageState(lang)
+    localStorage.setItem('lang', lang)
+    i18n.changeLanguage(lang)
+    dayjs.locale(DAYJS_LOCALES[lang] || 'zh-cn')
+  }
+
+  // 初始化时同步 i18next 与 dayjs 的语言
+  useEffect(() => {
+    if (i18n.language !== language) {
+      i18n.changeLanguage(language)
+    }
+    dayjs.locale(DAYJS_LOCALES[language] || 'zh-cn')
+    document.documentElement.setAttribute('lang', language)
+  }, [language])
 
   // 根据主色生成派生色
   const colors = useMemo(() => generateThemeColors(themeColor), [themeColor])
@@ -231,6 +276,7 @@ export function ThemeProvider({ children }) {
         colorBorder: colors.light.border,
         borderRadius: 8,
         headerBg: colors.light.hoverBg,
+        rowHoverBg: colors.light.hoverBg,
       },
       List: {
         colorBorder: colors.light.border,
@@ -339,8 +385,8 @@ export function ThemeProvider({ children }) {
   }), [colors])
 
   return (
-    <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle }}>
-      <ConfigProvider locale={zhCN} theme={isDark ? darkTheme : lightTheme}>
+    <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle, language, setLanguage }}>
+      <ConfigProvider locale={ANTD_LOCALES[language] || zhCN} theme={isDark ? darkTheme : lightTheme}>
         {children}
       </ConfigProvider>
     </ThemeContext.Provider>

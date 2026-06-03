@@ -10,16 +10,15 @@ class HelpMenuMixin:
 
     HELP_TEXT = (
         "📖 *命令列表:*\n\n"
-        "🔍 /search <关键词> - 搜索弹幕源\n"
-        "  _支持指定季集，如: /search 刀剑神域 S01E10_\n"
+        "🔍 /sh <关键词> - 搜索弹幕源\n"
+        "  _支持指定季集，如: /sh 刀剑神域 S01E10_\n"
         "🔄 /auto - 自动导入（多平台）\n"
         "🔗 /url - 从URL导入弹幕\n"
         "♻️ /refresh - 弹幕库管理\n"
         "🔑 /tokens - Token管理\n"
         "📋 /tasks - 定时任务列表\n"
         "🗑️ /cache - 清除缓存\n"
-        "❌ /cancel - 取消当前操作\n"
-        "📖 /help - 显示此帮助\n\n"
+        "❌ /cancel - 取消当前操作\n\n"
         "💡 点击下方按钮可快速执行命令"
     )
 

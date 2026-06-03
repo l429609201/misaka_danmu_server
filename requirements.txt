@@ -1,8 +1,8 @@
 fastapi
 uvicorn[standard]
-aiomysql
-asyncpg
-SQLAlchemy[asyncio]
+asyncmy>=0.2.9
+asyncpg>=0.29.0
+SQLAlchemy[asyncio]>=2.0.32
 greenlet
 apscheduler
 pydantic-settings
@@ -55,3 +55,5 @@ fastapi-mcp>=0.3.0  # 将FastAPI路由暴露为MCP工具
 pyotp  # RFC 6238 TOTP 实现
 # WebAuthn PassKey 支持
 webauthn>=2.0.0  # FIDO2/WebAuthn 服务端实现
+# 支持不等长 lookbehind 的正则引擎，用于兜底全局分集标题过滤
+regex

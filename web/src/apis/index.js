@@ -494,6 +494,14 @@ export const logoutBangumiAuth = () =>
 export const refreshBangumiAuth = () =>
   api.post('/api/ui/metadata/bangumi/actions/refresh_token')
 
+/** Trakt OAuth Auth */
+export const getTraktAuthStatus = () =>
+  api.post('/api/ui/metadata/trakt/actions/get_auth_status')
+export const saveTraktOAuth = (data) =>
+  api.post('/api/ui/metadata/trakt/actions/save_oauth', data)
+export const logoutTraktAuth = () =>
+  api.post('/api/ui/metadata/trakt/actions/revoke_auth')
+
 /** ------------------------------------------ 豆瓣、tmdb、tvdb配置、代理------------------------------------------  */
 /** 获取tmdb配置 */
 export const getTmdbConfig = () => api.get('/api/ui/config/provider/tmdb')
@@ -607,6 +615,23 @@ export const setGlobalFilter = data =>
   api.put('/api/ui/settings/global-filter', data)
 /** 获取全局过滤默认规则 */
 export const getGlobalFilterDefaults = () => api.get('/api/ui/settings/global-filter/defaults')
+
+/** 获取单剧分集过滤规则 */
+export const getSingleEpisodeFilter = () => api.get('/api/ui/settings/single-episode-filter')
+/** 更新单剧分集过滤规则 */
+export const setSingleEpisodeFilter = data =>
+  api.put('/api/ui/settings/single-episode-filter', data)
+/** 获取兜底全局分集标题过滤配置 */
+export const getGlobalEpisodeTitleFilter = () => api.get('/api/ui/settings/global-episode-title-filter')
+/** 更新兜底全局分集标题过滤配置 */
+export const setGlobalEpisodeTitleFilter = data =>
+  api.put('/api/ui/settings/global-episode-title-filter', data)
+/** 获取兜底分集标题过滤默认正则 */
+export const getGlobalEpisodeTitleFilterDefaults = () => api.get('/api/ui/settings/global-episode-title-filter/defaults')
+
+/** 使用后端 Python regex 测试正则 */
+export const testRegexPatterns = data => api.post('/api/ui/settings/regex-test', data)
+
 /** 获取弹幕黑名单默认规则 */
 export const getDanmakuBlacklistDefaults = () => api.get('/api/ui/settings/danmaku-blacklist/defaults')
 /** 获取搜索源默认分集黑名单 */
@@ -1090,6 +1115,30 @@ export const scanDuplicates = (strict = true) =>
 /** 批量合并重复条目 */
 export const batchMergeAnimes = (data) =>
   api.post('/api/ui/library/batch-merge', data)
+
+
+// ========== 日历视图 ==========
+
+/** 获取每周番表数据 */
+export const getWeeklyCalendar = () => api.get('/api/ui/calendar/weekly')
+
+/** 同步播出日程（Bangumi + Trakt） */
+export const syncSchedule = () => api.post('/api/ui/calendar/sync-bangumi-schedule')
+
+/** 清除日历同步缓存 */
+export const clearCalendarCache = () => api.post('/api/ui/calendar/clear-cache')
+
+/** 当季新番发现 */
+export const discoverCurrentSeason = () => api.get('/api/ui/calendar/discover')
+
+/** 订阅外部番（标记订阅意向，可选立即执行轮询） */
+export const subscribeCalendarItem = (data) => api.post('/api/ui/calendar/subscribe', data)
+
+/** 批量订阅外部番 */
+export const batchSubscribeCalendarItems = (data) => api.post('/api/ui/calendar/subscribe/batch', data)
+
+/** 取消订阅外部番 */
+export const unsubscribeCalendarItem = (data) => api.post('/api/ui/calendar/unsubscribe', data)
 
 
 // ========== 通知渠道 ==========

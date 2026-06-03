@@ -31,18 +31,28 @@ class DanmakuCleanupJob(BaseJob):
     """
     job_type = "danmakuCleanup"
     job_name = "定时删除弹幕"
+    job_name_en = "Scheduled Danmaku Cleanup"
+    job_name_tw = "定時刪除彈幕"
     description = "定期清理超过保留期限的弹幕数据。若某源的弹幕全部删除则删除该源，若某条目的所有源均被删除则删除该条目。"
+    description_en = "Periodically clean danmaku data beyond the retention period. Sources and entries with all danmaku deleted will be removed."
+    description_tw = "定期清理超過保留期限的彈幕資料。若某源的彈幕全部刪除則刪除該源，若某條目的所有源均被刪除則刪除該條目。"
 
     config_schema = [
         {
             "key": "retentionDays",
             "label": "弹幕保留天数",
+            "label_en": "Danmaku Retention Days",
+            "label_tw": "彈幕保留天數",
             "type": "number",
             "default": DEFAULT_RETENTION_DAYS,
             "min": 1,
             "max": 3650,
             "suffix": "天",
-            "description": "弹幕获取时间距今超过该天数后将被自动删除。默认为 7 天。"
+            "suffix_en": "days",
+            "suffix_tw": "天",
+            "description": "弹幕获取时间距今超过该天数后将被自动删除。默认为 7 天。",
+            "description_en": "Danmaku older than this many days will be auto-deleted. Default is 7 days.",
+            "description_tw": "彈幕取得時間距今超過該天數後將被自動刪除。預設為 7 天。"
         }
     ]
 

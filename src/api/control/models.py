@@ -179,6 +179,8 @@ class ControlAutoImportRequest(BaseModel):
     episode: Optional[str] = None  # 支持单集(如"1")或多集(如"1,3,5,7,9,11-13")格式
     mediaType: Optional[AutoImportMediaType] = None
     preassignedAnimeId: Optional[int] = None  # 预分配的anime_id（用于匹配后备）
+    # 任务完成后是否自动开启增量追更（用于日历订阅等需要持续追更的入口）
+    enableIncrementalRefresh: Optional[bool] = None
 
 
 class ControlMetadataSearchResponse(BaseModel):

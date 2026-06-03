@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Card, Input, Button, message, Space } from 'antd';
 import { ScanOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import LocalItemList from './LocalItemList';
 import DirectoryBrowser from './DirectoryBrowser';
 import { scanLocalDanmaku, getLastScanPath, saveScanPath } from '../../../apis';
 
 const LocalScan = () => {
+  const { t } = useTranslation();
   const [scanPath, setScanPath] = useState('');
   const [loading, setLoading] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -23,32 +25,32 @@ const LocalScan = () => {
         setScanPath(response.data.path);
       }
     } catch (error) {
-      console.error('加载上次路径失败:', error);
+      console.error(t('mediaFetch.localScan.loadLastPathFailed'), error);
     }
   };
 
   // 扫描本地弹幕
   const handleScan = async () => {
     if (!scanPath) {
-      message.warning('请选择或输入扫描路径');
+      message.warning(t('mediaFetch.localScan.selectPathWarning'));
       return;
     }
 
     // 验证路径是否合理
     if (scanPath.includes('node_modules') || scanPath.includes('.git') || scanPath.includes('cache') || scanPath.includes('temp')) {
-      message.warning('不建议扫描系统目录或缓存目录，请选择媒体文件目录');
+      message.warning(t('mediaFetch.localScan.systemDirWarning'));
       return;
     }
 
     setLoading(true);
     try {
-      message.info('开始扫描，请稍候...');
+      message.info(t('mediaFetch.localScan.scanStarted'));
       const res = await scanLocalDanmaku(scanPath);
-      message.success(res.data.message || '扫描完成');
+      message.success(res.data.message || t('mediaFetch.localScan.scanComplete'));
       // 触发列表刷新
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
-      message.error('扫描失败: ' + (error.message || '未知错误'));
+      message.error(t('mediaFetch.localScan.scanFailed') + (error.message || t('mediaFetch.localScan.unknownError')));
       console.error(error);
     } finally {
       setLoading(false);
@@ -66,17 +68,17 @@ const LocalScan = () => {
     // 自动保存路径
     try {
       await saveScanPath(path);
-      message.success(`已选择目录: ${path}`);
+      message.success(t('mediaFetch.localScan.directorySelected', { path }));
     } catch (error) {
-      console.error('保存路径失败:', error);
-      message.success(`已选择目录: ${path}`);  // 即使保存失败也显示选择成功
+      console.error(t('mediaFetch.localScan.savePathFailed'), error);
+      message.success(t('mediaFetch.localScan.directorySelected', { path }));  // 即使保存失败也显示选择成功
     }
   };
 
   return (
     <div style={{ padding: '8px' }}> {/* 添加移动端内边距 */}
       <Card
-        title={<span style={{ fontSize: '16px' }}>本地弹幕扫描</span>}
+        title={<span style={{ fontSize: '16px' }}>{t('mediaFetch.localScan.cardTitle')}</span>}
         extra={
           <Button
             type="primary"
@@ -84,7 +86,7 @@ const LocalScan = () => {
             loading={loading}
             onClick={handleScan}
           >
-            扫描
+            {t('mediaFetch.localScan.scan')}
           </Button>
         }
         style={{ marginBottom: '16px' }}
@@ -92,11 +94,11 @@ const LocalScan = () => {
         <Space direction="vertical" style={{ width: '100%' }} size="small"> {/* 减小间距 */}
           <div>
             <div style={{ marginBottom: '4px', color: '#666', fontSize: '14px' }}> {/* 调整字体大小 */}
-              扫描路径 (支持标准媒体服务器结构和纯弹幕文件结构)
+              {t('mediaFetch.localScan.scanPathLabel')}
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <Input
-                placeholder="请选择或输入扫描路径"
+                placeholder={t('mediaFetch.localScan.pathPlaceholder')}
                 value={scanPath}
                 onChange={(e) => setScanPath(e.target.value)}
                 style={{ flex: 1 }}
@@ -105,15 +107,15 @@ const LocalScan = () => {
                 icon={<FolderOpenOutlined />}
                 onClick={handleBrowse}
               >
-                浏览
+                {t('mediaFetch.localScan.browse')}
               </Button>
             </div>
           </div>
 
           <div style={{ fontSize: '12px', color: '#999' }}>
-            <div>支持的文件结构:</div>
-            <div>1. 标准媒体服务器结构: 从nfo文件读取元数据(TMDB ID等)和海报</div>
-            <div>2. 纯弹幕文件结构: 从文件夹结构推断标题和季集信息</div>
+            <div>{t('mediaFetch.localScan.supportedStructures')}</div>
+            <div>{t('mediaFetch.localScan.structure1')}</div>
+            <div>{t('mediaFetch.localScan.structure2')}</div>
           </div>
         </Space>
       </Card>

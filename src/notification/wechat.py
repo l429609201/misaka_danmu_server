@@ -103,6 +103,8 @@ class WeChatChannel(BaseNotificationChannel):
 
     channel_type = "wechat"
     display_name = "企业微信"
+    display_name_en = "WeCom"
+    display_name_tw = "企業微信"
     hide_proxy = True   # 企业微信使用 wecom_proxy 反代地址，不需要全局 HTTP 代理开关
 
     _CAPABILITIES = ChannelCapabilities(
@@ -126,12 +128,27 @@ class WeChatChannel(BaseNotificationChannel):
         return self._CAPABILITIES
 
     def _api_base(self) -> str:
-        """返回企业微信 API Base URL（支持通用出网代理路由 /out/）"""
+        """返回企业微信 API Base URL，智能识别代理格式：
+        - 留空 → 直连官方 https://qyapi.weixin.qq.com/cgi-bin
+        - 包含 /cgi-bin → 用户给了完整路径，直接用
+        - 以 /out 结尾 → MoviePilot 通用出网代理格式
+        - 其他 → 简单反代（Flask/Nginx 直接转发 /cgi-bin/*）
+        """
         proxy = self.config.get("wecom_proxy", "").strip().rstrip("/")
         if not proxy:
             return WECOM_API_BASE
-        # 通用出网代理格式：{vps_url}/out/qyapi.weixin.qq.com/cgi-bin
-        return f"{proxy}/out/qyapi.weixin.qq.com/cgi-bin"
+
+        # 已包含 /cgi-bin → 完整路径，直接用
+        if "/cgi-bin" in proxy:
+            return proxy if proxy.endswith("/cgi-bin") else proxy.split("/cgi-bin")[0] + "/cgi-bin"
+
+        # 以 /out 结尾 → MoviePilot 通用出网代理格式
+        if proxy.endswith("/out"):
+            return f"{proxy}/qyapi.weixin.qq.com/cgi-bin"
+
+        # 默认：简单反代，直接拼 /cgi-bin
+        # 兼容 Flask/Nginx 等直接转发 /cgi-bin/* 到企业微信的代理
+        return f"{proxy}/cgi-bin"
 
     def _relay_headers(self) -> dict:
         """当使用 VPS 代理时注入认证 Header，防止代理被滥用"""
@@ -522,74 +539,118 @@ class WeChatChannel(BaseNotificationChannel):
             {
                 "key": "corp_id",
                 "label": "企业 CorpID",
+                "label_en": "Corp ID",
+                "label_tw": "企業 CorpID",
                 "type": "string",
                 "description": "企业微信管理后台 → 我的企业 → 企业信息 → 企业ID",
+                "description_en": "WeCom Admin → My Company → Company Info → Corp ID",
+                "description_tw": "企業微信管理後台 → 我的企業 → 企業資訊 → 企業ID",
                 "placeholder": "ww1234567890abcdef",
                 "required": True,
             },
             {
                 "key": "corp_secret",
                 "label": "应用 Secret",
+                "label_en": "App Secret",
+                "label_tw": "應用 Secret",
                 "type": "password",
                 "description": "企业微信管理后台 → 应用管理 → 自建应用 → 详情 → Secret",
+                "description_en": "WeCom Admin → App Management → Custom App → Details → Secret",
+                "description_tw": "企業微信管理後台 → 應用管理 → 自建應用 → 詳情 → Secret",
                 "placeholder": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
                 "required": True,
             },
             {
                 "key": "agent_id",
                 "label": "应用 AgentID",
+                "label_en": "App AgentID",
+                "label_tw": "應用 AgentID",
                 "type": "string",
                 "description": "企业微信管理后台 → 应用管理 → 自建应用 → 详情 → AgentId",
+                "description_en": "WeCom Admin → App Management → Custom App → Details → AgentId",
+                "description_tw": "企業微信管理後台 → 應用管理 → 自建應用 → 詳情 → AgentId",
                 "placeholder": "1000001",
                 "required": True,
             },
             {
                 "key": "to_user",
                 "label": "接收者",
+                "label_en": "Receiver",
+                "label_tw": "接收者",
                 "type": "string",
                 "description": "接收消息的用户ID，多个用 | 分隔。@all 表示全体成员",
+                "description_en": "User IDs to receive messages, separated by |. @all means all members.",
+                "description_tw": "接收訊息的使用者ID，多個用 | 分隔。@all 表示全體成員",
                 "placeholder": "@all",
             },
             {
                 "key": "msg_token",
                 "label": "消息 Token",
+                "label_en": "Message Token",
+                "label_tw": "訊息 Token",
                 "type": "string",
                 "description": "企业微信后台 → 应用 → 接收消息 → Token（启用双向交互时必填）",
+                "description_en": "WeCom Admin → App → Receive Messages → Token (required for two-way interaction)",
+                "description_tw": "企業微信後台 → 應用 → 接收訊息 → Token（啟用雙向互動時必填）",
                 "placeholder": "随机字符串",
+                "placeholder_en": "Random string",
+                "placeholder_tw": "隨機字串",
             },
             {
                 "key": "encoding_aes_key",
                 "label": "消息 EncodingAESKey",
+                "label_en": "Message EncodingAESKey",
+                "label_tw": "訊息 EncodingAESKey",
                 "type": "password",
                 "description": "企业微信后台 → 应用 → 接收消息 → EncodingAESKey（43位，启用双向交互时必填）",
+                "description_en": "WeCom Admin → App → Receive Messages → EncodingAESKey (43 chars, required for two-way interaction)",
+                "description_tw": "企業微信後台 → 應用 → 接收訊息 → EncodingAESKey（43位，啟用雙向互動時必填）",
                 "placeholder": "43位随机字符串",
+                "placeholder_en": "43-char random string",
+                "placeholder_tw": "43位隨機字串",
             },
             {
                 "key": "wecom_proxy",
                 "label": "API 反向代理地址",
+                "label_en": "API Reverse Proxy",
+                "label_tw": "API 反向代理位址",
                 "type": "string",
-                "description": "企业微信 API 反向代理地址（对齐 MP 的 WECHAT_PROXY 设计）。留空则直连官方地址 代理搭建：https://t.me/areyouok32/90 ",
-                "placeholder": "https://qyapi.weixin.qq.com",
+                "description": "企业微信 API 反向代理地址。支持多种格式：① 简单反代（如 http://192.168.1.5:9034，自动拼接 /cgi-bin）② MP 通用出网代理（如 https://vps.com/out）③ 完整路径（如 http://host:port/cgi-bin）。留空则直连官方地址。",
+                "description_en": "WeCom API reverse proxy URL. Supports: ① Simple proxy (e.g. http://192.168.1.5:9034, auto-appends /cgi-bin) ② MP outbound proxy (e.g. https://vps.com/out) ③ Full path (e.g. http://host:port/cgi-bin). Leave empty for direct connection.",
+                "description_tw": "企業微信 API 反向代理位址。支援多種格式：① 簡單反代（如 http://192.168.1.5:9034，自動拼接 /cgi-bin）② MP 通用出網代理（如 https://vps.com/out）③ 完整路徑（如 http://host:port/cgi-bin）。留空則直連官方位址。",
+                "placeholder": "http://192.168.1.5:9034",
             },
             {
                 "key": "tunnel_enabled",
                 "label": "启用 VPS 隧道连接",
+                "label_en": "Enable VPS Tunnel",
+                "label_tw": "啟用 VPS 隧道連接",
                 "type": "boolean",
                 "description": "启用后，弹幕库将使用上方「API 反向代理地址」作为 VPS 目标，通过 wstunnel 建立反向隧道，使 VPS 收到的回调自动转发到本地弹幕库。认证密钥使用系统设置 → Webhook API Key。",
+                "description_en": "When enabled, uses the API proxy URL above as VPS target via wstunnel reverse tunnel. VPS callbacks are forwarded to local instance. Auth key uses System Settings → Webhook API Key.",
+                "description_tw": "啟用後，彈幕庫將使用上方「API 反向代理位址」作為 VPS 目標，透過 wstunnel 建立反向隧道，使 VPS 收到的回呼自動轉發到本地彈幕庫。認證金鑰使用系統設定 → Webhook API Key。",
                 "default": False,
             },
             {
                 "key": "server_url",
                 "label": "外网访问地址",
+                "label_en": "Public Access URL",
+                "label_tw": "外網存取位址",
                 "type": "string",
                 "description": "服务器外网地址，用于生成企业微信回调 URL（如 https://example.com）",
+                "description_en": "Server public URL for generating WeCom callback URL (e.g. https://example.com)",
+                "description_tw": "伺服器外網位址，用於產生企業微信回呼 URL（如 https://example.com）",
                 "placeholder": "https://example.com",
             },
             {
                 "key": "log_raw",
                 "label": "记录原始交互",
+                "label_en": "Log Raw Interactions",
+                "label_tw": "記錄原始互動",
                 "type": "boolean",
                 "description": "启用后，Bot 的所有收发消息将记录到 config/logs/bot_raw.log 文件中，用于调试",
+                "description_en": "When enabled, all Bot messages will be logged to config/logs/bot_raw.log for debugging.",
+                "description_tw": "啟用後，Bot 的所有收發訊息將記錄到 config/logs/bot_raw.log 檔案中，用於除錯",
                 "default": False,
             },
         ]

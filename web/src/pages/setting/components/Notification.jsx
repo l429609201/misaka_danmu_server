@@ -18,85 +18,96 @@ import {
   deleteNotificationChannel, testNotificationChannel,
   getWebhookApikey,
 } from '../../../apis'
+import { useTranslation } from 'react-i18next'
+import { getLocalizedField } from '../../../utils/i18nDynamic'
 
-// 事件分组定义（MoviePilot 风格）
-const EVENT_GROUPS = [
+// 事件分组定义（使用 t 函数，支持国际化）
+const getEventGroups = (t) => [
   {
-    label: '导入',
+    label: t('notification.groupImport'),
     events: [
-      { label: '导入成功', value: 'import_success' },
-      { label: '导入失败', value: 'import_failed' },
+      { label: t('notification.eventImportSuccess'), value: 'import_success' },
+      { label: t('notification.eventImportFailed'), value: 'import_failed' },
     ],
   },
   {
-    label: '刷新',
+    label: t('notification.groupRefresh'),
     events: [
-      { label: '刷新成功', value: 'refresh_success' },
-      { label: '刷新失败', value: 'refresh_failed' },
+      { label: t('notification.eventRefreshSuccess'), value: 'refresh_success' },
+      { label: t('notification.eventRefreshFailed'), value: 'refresh_failed' },
     ],
   },
   {
-    label: '自动导入',
+    label: t('notification.groupAutoImport'),
     events: [
-      { label: '自动导入成功', value: 'auto_import_success' },
-      { label: '自动导入失败', value: 'auto_import_failed' },
+      { label: t('notification.eventAutoImportSuccess'), value: 'auto_import_success' },
+      { label: t('notification.eventAutoImportFailed'), value: 'auto_import_failed' },
     ],
   },
   {
     label: 'Webhook',
     events: [
-      { label: '触发', value: 'webhook_triggered' },
-      { label: '导入成功', value: 'webhook_import_success' },
-      { label: '导入失败', value: 'webhook_import_failed' },
+      { label: t('notification.eventWebhookTriggered'), value: 'webhook_triggered' },
+      { label: t('notification.eventWebhookImportSuccess'), value: 'webhook_import_success' },
+      { label: t('notification.eventWebhookImportFailed'), value: 'webhook_import_failed' },
     ],
   },
   {
-    label: '追更',
+    label: t('notification.groupIncremental'),
     events: [
-      { label: '刷新成功', value: 'incremental_refresh_success' },
-      { label: '刷新失败', value: 'incremental_refresh_failed' },
+      { label: t('notification.eventIncrementalSuccess'), value: 'incremental_refresh_success' },
+      { label: t('notification.eventIncrementalFailed'), value: 'incremental_refresh_failed' },
     ],
   },
   {
-    label: '媒体库',
+    label: t('notification.groupMedia'),
     events: [
-      { label: '扫描完成', value: 'media_scan_complete' },
+      { label: t('notification.eventMediaScanComplete'), value: 'media_scan_complete' },
     ],
   },
   {
-    label: '定时任务',
+    label: t('notification.groupScheduled'),
     events: [
-      { label: '任务完成', value: 'scheduled_task_complete' },
-      { label: '任务失败', value: 'scheduled_task_failed' },
+      { label: t('notification.eventScheduledComplete'), value: 'scheduled_task_complete' },
+      { label: t('notification.eventScheduledFailed'), value: 'scheduled_task_failed' },
     ],
   },
   {
-    label: '系统',
+    label: t('notification.groupSystem'),
     events: [
-      { label: '系统启动', value: 'system_start' },
+      { label: t('notification.eventSystemStart'), value: 'system_start' },
     ],
   },
   {
-    label: '后备任务',
+    label: t('notification.groupFallback'),
     events: [
-      { label: '后备搜索完成/失败', value: 'fallback_search_complete' },
-      { label: '预下载弹幕完成/失败', value: 'predownload_complete' },
-      { label: '匹配后备完成/失败', value: 'match_fallback_complete' },
+      { label: t('notification.eventFallbackSearch'), value: 'fallback_search_complete' },
+      { label: t('notification.eventPredownload'), value: 'predownload_complete' },
+      { label: t('notification.eventMatchFallback'), value: 'match_fallback_complete' },
     ],
   },
   {
-    label: '任务进度',
+    label: t('notification.groupTaskProgress'),
     events: [
-      { label: '实时进度推送（TG）', value: 'task_progress' },
+      { label: t('notification.eventTaskProgress'), value: 'task_progress' },
     ],
   },
 ]
 
-// 扁平化所有事件（用于序列化）
-const ALL_EVENTS = EVENT_GROUPS.flatMap(g => g.events)
+// 扁平化所有事件（静态 value 列表，用于序列化，无需翻译）
+const ALL_EVENT_VALUES = [
+  'import_success', 'import_failed', 'refresh_success', 'refresh_failed',
+  'auto_import_success', 'auto_import_failed', 'webhook_triggered',
+  'webhook_import_success', 'webhook_import_failed', 'incremental_refresh_success',
+  'incremental_refresh_failed', 'media_scan_complete', 'scheduled_task_complete',
+  'scheduled_task_failed', 'system_start', 'fallback_search_complete',
+  'predownload_complete', 'match_fallback_complete', 'task_progress',
+]
 
 export const Notification = () => {
+  const { t } = useTranslation()
   const isMobile = useAtomValue(isMobileAtom)
+  const EVENT_GROUPS = getEventGroups(t)
   const [channels, setChannels] = useState([])
   const [channelTypes, setChannelTypes] = useState([])
   const [loading, setLoading] = useState(true)
@@ -123,7 +134,7 @@ export const Notification = () => {
       setChannels(channelsRes.data || [])
       setWebhookApiKey(apiKeyRes.data?.value || '')
     } catch (e) {
-      message.error('加载通知渠道数据失败')
+      message.error(t('notification.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -144,7 +155,7 @@ export const Notification = () => {
   // 根据渠道类型自动生成名称：第一个 "Telegram"，第二个 "Telegram 1"，以此类推
   const generateChannelName = (channelType) => {
     const typeInfo = channelTypes.find(t => t.channelType === channelType)
-    const baseName = typeInfo?.displayName || channelType
+    const baseName = getLocalizedField(typeInfo, 'displayName') || channelType
     const existing = channels.filter(c => c.channelType === channelType)
     if (existing.length === 0) return baseName
     return `${baseName} ${existing.length}`
@@ -183,9 +194,9 @@ export const Notification = () => {
   const handleDelete = async (id) => {
     try {
       await deleteNotificationChannel(id)
-      message.success('已删除')
+      message.success(t('notification.deleteSuccess'))
       loadData()
-    } catch { message.error('删除失败') }
+    } catch { message.error(t('notification.deleteFailed')) }
   }
 
   const handleTest = async (id) => {
@@ -194,11 +205,11 @@ export const Notification = () => {
       const res = await testNotificationChannel(id)
       const data = res.data
       if (data.success) {
-        message.success(data.message || '连接成功')
+        message.success(data.message || t('notification.testSuccess'))
       } else {
-        message.error(data.message || '连接失败')
+        message.error(data.message || t('notification.testFailed'))
       }
-    } catch { message.error('测试请求失败') }
+    } catch { message.error(t('notification.testRequestFailed')) }
     finally { setTesting(prev => ({ ...prev, [id]: false })) }
   }
 
@@ -207,7 +218,7 @@ export const Notification = () => {
       const values = await form.validateFields()
       setSaving(true)
       const eventsObj = {}
-      ALL_EVENTS.forEach(o => { eventsObj[o.value] = (values.eventsConfig || []).includes(o.value) })
+      ALL_EVENT_VALUES.forEach(v => { eventsObj[v] = (values.eventsConfig || []).includes(v) })
       const payload = {
         name: values.name,
         channelType: values.channelType,
@@ -218,16 +229,16 @@ export const Notification = () => {
       }
       if (editingChannel) {
         await updateNotificationChannel(editingChannel.id, payload)
-        message.success('已更新')
+        message.success(t('notification.updateSuccess'))
       } else {
         await createNotificationChannel(payload)
-        message.success('已创建')
+        message.success(t('notification.createSuccess'))
       }
       setModalVisible(false)
       loadData()
     } catch (e) {
       if (e.errorFields) return // form validation
-      message.error('保存失败')
+      message.error(t('notification.saveFailed'))
     } finally { setSaving(false) }
   }
 
@@ -249,10 +260,10 @@ export const Notification = () => {
           tooltip={field.description} initialValue={field.default || field.switchValues?.unchecked}>
           <Select>
             <Select.Option value={field.switchValues?.unchecked || 'polling'}>
-              {field.switchLabels?.unchecked || '选项A'}
+              {field.switchLabels?.unchecked || t('notification.optionA')}
             </Select.Option>
             <Select.Option value={field.switchValues?.checked || 'webhook'}>
-              {field.switchLabels?.checked || '选项B'}
+              {field.switchLabels?.checked || t('notification.optionB')}
             </Select.Option>
           </Select>
         </Form.Item>
@@ -278,14 +289,14 @@ export const Notification = () => {
     if (field.type === 'password') {
       return (
         <Form.Item key={field.key} label={field.label} name={name}
-          tooltip={field.description} rules={field.required ? [{ required: true, message: `请输入${field.label}` }] : []}>
+          tooltip={field.description} rules={field.required ? [{ required: true, message: t('notification.requiredMsg', { label: field.label }) }] : []}>
           <Input.Password placeholder={field.placeholder} />
         </Form.Item>
       )
     }
     return (
       <Form.Item key={field.key} label={field.label} name={name}
-        tooltip={field.description} rules={field.required ? [{ required: true, message: `请输入${field.label}` }] : []}>
+        tooltip={field.description} rules={field.required ? [{ required: true, message: t('notification.requiredMsg', { label: field.label }) }] : []}>
         <Input placeholder={field.placeholder} />
       </Form.Item>
     )
@@ -295,37 +306,37 @@ export const Notification = () => {
   const currentHideProxy = getHideProxyForType(selectedType)
 
   const columns = [
-    { title: '名称', dataIndex: 'name', key: 'name' },
+    { title: t('notification.colName'), dataIndex: 'name', key: 'name' },
     {
-      title: '类型', dataIndex: 'channelType', key: 'channelType',
+      title: t('notification.colType'), dataIndex: 'channelType', key: 'channelType',
       render: (v) => {
-        const t = channelTypes.find(ct => ct.channelType === v)
-        return <Tag>{t?.displayName || v}</Tag>
+        const ct = channelTypes.find(ct => ct.channelType === v)
+        return <Tag>{getLocalizedField(ct, 'displayName') || v}</Tag>
       },
     },
     {
-      title: '状态', dataIndex: 'isEnabled', key: 'isEnabled',
-      render: (v) => v ? <Tag color="green">启用</Tag> : <Tag color="default">禁用</Tag>,
+      title: t('notification.colStatus'), dataIndex: 'isEnabled', key: 'isEnabled',
+      render: (v) => v ? <Tag color="green">{t('notification.statusEnabled')}</Tag> : <Tag color="default">{t('notification.statusDisabled')}</Tag>,
     },
     {
-      title: '模式', key: 'mode',
+      title: t('notification.colMode'), key: 'mode',
       render: (_, r) => {
         const mode = r.config?.mode
         const isWebhook = mode === 'webhook' || r.channelType === 'wechat'
-        return isWebhook ? <Tag color="blue">Webhook</Tag> : <Tag>轮询</Tag>
+        return isWebhook ? <Tag color="blue">{t('notification.modeWebhook')}</Tag> : <Tag>{t('notification.modePoll')}</Tag>
       },
     },
     {
-      title: '操作', key: 'actions', width: 260,
+      title: t('notification.colActions'), key: 'actions', width: 260,
       render: (_, record) => (
         <Space size="small">
-          <Tooltip title="测试连接">
+          <Tooltip title={t('notification.tooltipTest')}>
             <Button size="small" icon={<ApiOutlined />}
               loading={testing[record.id]} onClick={() => handleTest(record.id)} />
           </Tooltip>
-          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
-          <Popconfirm title="确定删除此渠道？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消">
-            <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>{t('notification.btnEdit')}</Button>
+          <Popconfirm title={t('notification.confirmDelete')} onConfirm={() => handleDelete(record.id)} okText={t('common.confirm')} cancelText={t('common.cancel')}>
+            <Button size="small" danger icon={<DeleteOutlined />}>{t('notification.btnDelete')}</Button>
           </Popconfirm>
         </Space>
       ),
@@ -340,21 +351,21 @@ export const Notification = () => {
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <span style={{ fontWeight: 500, fontSize: 15 }}>{record.name}</span>
-          {record.isEnabled ? <Tag color="green">启用</Tag> : <Tag color="default">禁用</Tag>}
+          {record.isEnabled ? <Tag color="green">{t('notification.statusEnabled')}</Tag> : <Tag color="default">{t('notification.statusDisabled')}</Tag>}
         </div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-          <Tag>{typeInfo?.displayName || record.channelType}</Tag>
-          {(mode === 'webhook' || record.channelType === 'wechat') ? <Tag color="blue">Webhook</Tag> : <Tag>轮询</Tag>}
-          {record.useProxy && <Tag color="orange">代理</Tag>}
+          <Tag>{getLocalizedField(typeInfo, 'displayName') || record.channelType}</Tag>
+          {(mode === 'webhook' || record.channelType === 'wechat') ? <Tag color="blue">{t('notification.modeWebhook')}</Tag> : <Tag>{t('notification.modePoll')}</Tag>}
+          {record.useProxy && <Tag color="orange">{t('notification.modeProxy')}</Tag>}
         </div>
         <Space size="small" wrap>
-          <Tooltip title="测试连接">
+          <Tooltip title={t('notification.tooltipTest')}>
             <Button size="small" icon={<ApiOutlined />}
-              loading={testing[record.id]} onClick={() => handleTest(record.id)}>测试</Button>
+              loading={testing[record.id]} onClick={() => handleTest(record.id)}>{t('notification.btnTest')}</Button>
           </Tooltip>
-          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
-          <Popconfirm title="确定删除此渠道？" onConfirm={() => handleDelete(record.id)} okText="确定" cancelText="取消">
-            <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>{t('notification.btnEdit')}</Button>
+          <Popconfirm title={t('notification.confirmDelete')} onConfirm={() => handleDelete(record.id)} okText={t('common.confirm')} cancelText={t('common.cancel')}>
+            <Button size="small" danger icon={<DeleteOutlined />}>{t('notification.btnDelete')}</Button>
           </Popconfirm>
         </Space>
       </div>
@@ -364,17 +375,17 @@ export const Notification = () => {
   return (
     <div>
       <Card
-        title="通知渠道管理"
+        title={t('notification.channelTitle')}
         extra={
           isMobile ? (
             <Space size="small">
               <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading} size="small" />
-              <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} size="small">添加</Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} size="small">{t('notification.btnAdd')}</Button>
             </Space>
           ) : (
             <Space>
-              <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading}>刷新</Button>
-              <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>添加渠道</Button>
+              <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading}>{t('notification.btnRefresh')}</Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>{t('notification.btnAddChannel')}</Button>
             </Space>
           )
         }
@@ -382,7 +393,7 @@ export const Notification = () => {
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
         ) : channels.length === 0 ? (
-          <Empty description="暂无通知渠道，点击上方按钮添加" />
+          <Empty description={t('notification.emptyDesc')} />
         ) : (
           <ResponsiveTable
             dataSource={channels}
@@ -395,49 +406,49 @@ export const Notification = () => {
       </Card>
 
       <ResponsiveModal
-        title={editingChannel ? '编辑通知渠道' : '添加通知渠道'}
+        title={editingChannel ? t('notification.editTitle') : t('notification.addTitle')}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         width={560}
         height="85vh"
         footer={
           <div style={{ display: 'flex', gap: 8, justifyContent: isMobile ? 'stretch' : 'flex-end' }}>
-            <Button onClick={() => setModalVisible(false)} block={isMobile}>取消</Button>
-            <Button type="primary" onClick={handleSave} loading={saving} block={isMobile}>保存</Button>
+            <Button onClick={() => setModalVisible(false)} block={isMobile}>{t('notification.btnCancel')}</Button>
+            <Button type="primary" onClick={handleSave} loading={saving} block={isMobile}>{t('notification.btnSave')}</Button>
           </div>
         }
       >
         <Form form={form} layout="vertical">
-          <Form.Item label="渠道名称" name="name" rules={[{ required: true, message: '请输入渠道名称' }]}>
-            <Input placeholder="例如: 管理员通知Bot" />
+          <Form.Item label={t('notification.fieldName')} name="name" rules={[{ required: true, message: t('notification.fieldNameRequired') }]}>
+            <Input placeholder={t('notification.fieldNamePlaceholder')} />
           </Form.Item>
-          <Form.Item label="渠道类型" name="channelType" rules={[{ required: true }]}>
+          <Form.Item label={t('notification.fieldChannelType')} name="channelType" rules={[{ required: true }]}>
             <Select disabled={!!editingChannel} onChange={(val) => {
               if (!editingChannel) {
                 form.setFieldsValue({ name: generateChannelName(val), config: {} })
               }
             }}>
-              {channelTypes.map(t => (
-                <Select.Option key={t.channelType} value={t.channelType}>{t.displayName}</Select.Option>
+              {channelTypes.map(ct => (
+                <Select.Option key={ct.channelType} value={ct.channelType}>{getLocalizedField(ct, 'displayName')}</Select.Option>
               ))}
             </Select>
           </Form.Item>
           <Row gutter={24}>
             <Col span={currentSchema.some(f => f.key === 'log_raw') ? 8 : (currentHideProxy ? 24 : 12)}>
-              <Form.Item label="启用" name="isEnabled" valuePropName="checked">
+              <Form.Item label={t('notification.fieldEnabled')} name="isEnabled" valuePropName="checked">
                 <Switch />
               </Form.Item>
             </Col>
             {!currentHideProxy && (
               <Col span={currentSchema.some(f => f.key === 'log_raw') ? 8 : 12}>
-                <Form.Item label="使用代理" name="useProxy" valuePropName="checked">
+                <Form.Item label={t('notification.fieldUseProxy')} name="useProxy" valuePropName="checked">
                   <Switch />
                 </Form.Item>
               </Col>
             )}
             {currentSchema.some(f => f.key === 'log_raw') && (
               <Col span={8}>
-                <Form.Item label="记录交互" name={['config', 'log_raw']}
+                <Form.Item label={t('notification.fieldLogRaw')} name={['config', 'log_raw']}
                   tooltip={currentSchema.find(f => f.key === 'log_raw')?.description}
                   valuePropName="checked" initialValue={false}>
                   <Switch />
@@ -452,23 +463,23 @@ export const Notification = () => {
           {editingChannel?.id && (configValues?.mode === 'webhook' || selectedType === 'wechat') && (() => {
             const webhookUrl = `${(configValues?.server_url || configValues?.webhook_base_url || window.location.origin).replace(/\/$/, '')}/api/notification/channels/${editingChannel.id}/webhook?api_key=${webhookApiKey}`
             return (
-              <Form.Item label="Webhook 回调地址">
+              <Form.Item label={t('notification.fieldWebhookUrl')}>
                 <Space.Compact style={{ width: '100%' }}>
                   <Input readOnly value={webhookUrl} />
                   <Button
                     type="primary"
                     icon={<CopyOutlined />}
-                    onClick={() => { copy(webhookUrl); message.success('已复制到剪贴板') }}
+                    onClick={() => { copy(webhookUrl); message.success(t('notification.copyWebhookUrl')) }}
                   />
                 </Space.Compact>
               </Form.Item>
             )
           })()}
 
-          <Form.Item label="事件订阅" name="eventsConfig">
+          <Form.Item label={t('notification.fieldEvents')} name="eventsConfig">
             <Select
               mode="multiple"
-              placeholder="请选择订阅事件"
+              placeholder={t('notification.eventPlaceholder')}
               maxTagCount="responsive"
               optionFilterProp="label"
             >

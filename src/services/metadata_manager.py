@@ -633,29 +633,39 @@ class MetadataSourceManager:
             return await source_instance.execute_action(action_name, payload, user, request=request)
         raise HTTPException(status_code=404, detail=f"未找到元数据源: {provider}")
 
+    def get_config_keys(self, providerName: str) -> list:
+        """从源类的 config_keys 属性获取用户可配置的 key 列表。
+
+        优先从元数据源类读取，如果不存在则检查 scraper 等其他注册源。
+        """
+        source_class = self._source_classes.get(providerName)
+        if source_class:
+            return list(getattr(source_class, 'config_keys', []))
+        # scraper 等非元数据源的兼容 fallback（如 gamer）
+        scraper_keys_map = {
+            "gamer": ["gamerCookie", "gamerUserAgent", "gamerEpisodeBlacklistRegex", "scraperGamerLogResponses"],
+        }
+        return scraper_keys_map.get(providerName, [])
+
+    def get_bool_config_keys(self, providerName: str) -> list:
+        """从源类的 bool_config_keys 属性获取需要布尔转换的 key 列表。"""
+        source_class = self._source_classes.get(providerName)
+        if source_class:
+            return list(getattr(source_class, 'bool_config_keys', []))
+        return []
+
     async def getProviderConfig(self, providerName: str) -> Dict[str, Any]:
         """
         获取特定提供商（元数据源或搜索源）的配置。
+        config keys 从源类的 config_keys 属性自动获取，无需在此硬编码。
         """
 
-        # 将提供商名称映射到其在数据库中的配置键
-        config_keys_map = {
-            # Metadata Sources
-            "tmdb": ["tmdbApiKey", "tmdbApiBaseUrl", "tmdbImageBaseUrl"],
-            "bangumi": ["bangumiClientId", "bangumiClientSecret", "bangumiToken", "authMode"],
-            "douban": ["doubanCookie"],
-            "tvdb": ["tvdbApiKey"],
-            "imdb": ["imdbUseApi", "imdbEnableFallback"],  # IMDb 配置
-            # Scrapers
-            "gamer": ["gamerCookie", "gamerUserAgent", "gamerEpisodeBlacklistRegex", "scraperGamerLogResponses"],
-        }
+        keys_to_fetch = self.get_config_keys(providerName)
+        bool_keys = set(self.get_bool_config_keys(providerName))
 
-        keys_to_fetch = config_keys_map.get(providerName)
-
-        # 如果提供商没有特定的配置键，检查它是否是一个已知的提供商
-        if keys_to_fetch is None:
+        if not keys_to_fetch:
+            # 没有声明 config_keys，检查是否是已知的源
             is_known_metadata_source = providerName in self.sources
-            # 修正：即使没有特定配置键，只要是已知的元数据源，就继续执行
             if is_known_metadata_source:
                 config_values = {}
             else:
@@ -664,8 +674,7 @@ class MetadataSourceManager:
             config_values = {}
             for key in keys_to_fetch:
                 value_str = await self._config_manager.get(key, "")
-                # 对于IMDB的布尔值配置,转换为布尔类型
-                if key in ['imdbUseApi', 'imdbEnableFallback']:
+                if key in bool_keys:
                     config_values[key] = value_str.lower() == 'true' if value_str else True
                 else:
                     config_values[key] = value_str
@@ -813,6 +822,141 @@ class MetadataSourceManager:
     async def get_seasons(self, *args, **kwargs):
         """委托给 SeasonMapper.get_seasons_from_source()"""
         return await self.season_mapper.get_seasons_from_source(*args, **kwargs)
+
+    async def get_all_calendars(self, user: models.User, force_refresh: bool = False) -> Dict[str, List[Dict[str, Any]]]:
+        """从所有已启用的元数据源获取日历数据（三层架构）。
+
+        架构说明：
+            Layer 1: 内存/Redis 缓存（region=external_calendar，TTL 2h）
+            Layer 2: 持久化表 external_calendar_item（24h 内有效）
+            Layer 3: 调用 metadata source 的 get_calendar()，结果双写表+缓存
+
+        :param force_refresh: 跳过 L1/L2 缓存，强制走外部源重新拉取（用于「同步日程」按钮）
+        :return: { "bangumi": [...], "trakt": [...] } 仅包含实际有数据的源
+        """
+        from src.db.crud import external_calendar as ec_crud
+
+        CACHE_REGION = "external_calendar"
+        CACHE_KEY = "weekly_all"
+        CACHE_TTL = 2 * 60 * 60   # 2 小时
+        TABLE_MAX_AGE_HOURS = 24  # 表数据 24h 内视为有效
+
+        # ---- Layer 1: 内存/Redis 缓存 ----
+        if not force_refresh:
+            try:
+                cached = await self.cache_manager.get(CACHE_REGION, CACHE_KEY)
+                if cached:
+                    self.logger.debug("get_all_calendars: cache HIT (L1)")
+                    return cached
+            except Exception as e:
+                self.logger.debug(f"L1 缓存读取失败（忽略）: {e}")
+
+        # ---- Layer 2: 数据库表 ----
+        if not force_refresh:
+            try:
+                async with self._session_factory() as session:
+                    grouped = await ec_crud.get_all_fresh(session, max_age_hours=TABLE_MAX_AGE_HOURS)
+                if grouped:
+                    self.logger.debug(f"get_all_calendars: table HIT (L2) providers={list(grouped.keys())}")
+                    # 回填 L1 缓存（不阻塞返回）
+                    try:
+                        await self.cache_manager.set(CACHE_REGION, CACHE_KEY, grouped, ttl_seconds=CACHE_TTL)
+                    except Exception as e:
+                        self.logger.debug(f"L1 缓存回填失败（忽略）: {e}")
+                    return grouped
+            except Exception as e:
+                self.logger.warning(f"L2 表读取失败，回退到外部源: {e}")
+
+        # ---- Layer 3: 调用外部 API（与原逻辑保持一致） ----
+        results: Dict[str, List[Dict[str, Any]]] = {}
+
+        async def _fetch(provider_name: str, source_instance):
+            try:
+                items = await source_instance.get_calendar(user)
+                if items:
+                    return provider_name, items
+            except Exception as e:
+                self.logger.warning(f"获取 {provider_name} 日历失败: {e}")
+            return provider_name, []
+
+        tasks = []
+        for provider_name, setting in self.source_settings.items():
+            if not setting.get('isEnabled'):
+                continue
+            source = self.sources.get(provider_name)
+            if source and hasattr(source, 'get_calendar'):
+                tasks.append(_fetch(provider_name, source))
+
+        if tasks:
+            fetched = await asyncio.gather(*tasks, return_exceptions=True)
+            for item in fetched:
+                if isinstance(item, Exception):
+                    continue
+                name, items = item
+                if items:
+                    results[name] = items
+
+        # ---- 双写：持久化到表 + 写缓存 ----
+        if results:
+            # 写表（按 provider 分别 upsert）
+            try:
+                async with self._session_factory() as session:
+                    for provider_name, items in results.items():
+                        await ec_crud.upsert_items(session, provider_name, items)
+                self.logger.info(f"get_all_calendars: 已持久化 {sum(len(v) for v in results.values())} 条到 external_calendar_item 表")
+            except Exception as e:
+                self.logger.warning(f"L2 表写入失败（不影响返回）: {e}")
+
+            # 同步「平台用户私人在追状态」（OAuth 账号下的 watching/wish/done 等）
+            # 这个调用是可选的：未授权时各源会自动跳过返回 {}
+            try:
+                await self.sync_user_platform_status(user)
+                # 平台状态写入后，重新从表读取以保证返回的 results 含最新状态
+                async with self._session_factory() as session:
+                    refreshed = await ec_crud.get_all_fresh(session, max_age_hours=TABLE_MAX_AGE_HOURS)
+                if refreshed:
+                    results = refreshed
+            except Exception as e:
+                self.logger.warning(f"同步平台用户状态失败（不影响返回）: {e}")
+
+            # 写 L1 缓存
+            try:
+                await self.cache_manager.set(CACHE_REGION, CACHE_KEY, results, ttl_seconds=CACHE_TTL)
+            except Exception as e:
+                self.logger.debug(f"L1 缓存写入失败（忽略）: {e}")
+
+        return results
+
+    async def sync_user_platform_status(self, user: models.User) -> Dict[str, int]:
+        """同步「平台账号下我的在追/想看」状态到 external_calendar_item 表。
+
+        遍历所有已启用的元数据源，如果该源实现了 get_user_watching_collection，
+        则拉取用户在该平台的私人收藏状态，并 Upsert 到表中（仅更新 platformWatchStatus 等字段）。
+
+        :return: { provider_name: updated_rows_count }
+        """
+        from src.db.crud import external_calendar as ec_crud
+
+        result: Dict[str, int] = {}
+        for provider_name, setting in self.source_settings.items():
+            if not setting.get("isEnabled"):
+                continue
+            source = self.sources.get(provider_name)
+            if not source or not hasattr(source, "get_user_watching_collection"):
+                continue
+            try:
+                statuses = await source.get_user_watching_collection(user)
+                if not statuses:
+                    continue
+                async with self._session_factory() as session:
+                    updated = await ec_crud.update_platform_status(session, provider_name, statuses)
+                result[provider_name] = updated
+                self.logger.info(
+                    f"sync_user_platform_status: provider={provider_name} 拉取 {len(statuses)} 条，更新 {updated} 行"
+                )
+            except Exception as e:
+                self.logger.warning(f"sync_user_platform_status 调用 {provider_name} 失败: {e}")
+        return result
 
     async def close_all(self):
         """在应用关闭时关闭所有元数据源客户端。"""

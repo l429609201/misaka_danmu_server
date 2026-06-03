@@ -22,6 +22,7 @@ import {
   Progress,
 } from 'antd'
 import { useEffect, useState, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import Cookies from 'js-cookie'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 import {
@@ -62,7 +63,6 @@ import { MyIcon } from '@/components/MyIcon'
 import {
   closestCorners,
   DndContext,
-  DragOverlay,
   MouseSensor,
   TouchSensor,
   useSensor,
@@ -98,6 +98,7 @@ const SortableItem = ({
   handleChangeStatus,
   handleConfig,
 }) => {
+  const { t } = useTranslation()
   const {
     attributes,
     listeners,
@@ -124,17 +125,27 @@ const SortableItem = ({
   }
 
   return (
-    <List.Item ref={setNodeRef} style={style}>
-      <div className={`w-full flex ${isMobile ? 'gap-2' : 'items-center justify-between'}`}>
+    <List.Item ref={setNodeRef} style={style} className="!border-0 !p-0 mb-3" data-scraper-provider={item.providerName}>
+      <div
+        {...attributes}
+        {...listeners}
+        className={`w-full rounded-xl border transition-all hover:shadow-md ${isMobile ? 'p-3' : 'px-4 py-3'} flex ${isMobile ? 'gap-2' : 'items-center justify-between'}`}
+        style={{ background: 'var(--color-card)', borderColor: 'var(--color-border)', cursor: isDragging ? 'grabbing' : 'grab' }}
+      >
         {/* 左侧添加拖拽手柄 */}
         <div className="flex items-center gap-2">
           {/* 将attributes移到拖拽图标容器上，确保只有拖拽图标可触发拖拽 */}
-          <div {...attributes} {...listeners} style={{ cursor: 'grab' }}>
+          <div style={{ cursor: 'grab' }}>
             <MyIcon icon="drag" size={24} />
           </div>
           <div>{item.displayName || item.providerName}</div>
         </div>
-        <div className={`flex ${isMobile ? 'ml-auto' : 'items-center justify-around'} gap-4`}>
+        <div
+          className={`flex ${isMobile ? 'ml-auto' : 'items-center justify-around'} gap-4`}
+          onPointerDown={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
+          onTouchStart={e => e.stopPropagation()}
+        >
           {item.providerName === 'bilibili' && (
             <div className={`flex ${isMobile ? 'items-center gap-2' : ''} ${isMobile ? 'text-center' : ''}`}>
               {biliUserinfo.isLogin ? (
@@ -146,7 +157,7 @@ const SortableItem = ({
                   <span className={isMobile ? 'text-sm' : ''}>{biliUserinfo.uname}</span>
                 </div>
               ) : (
-                <span className="opacity-50 text-sm">未登录</span>
+                <span className="opacity-50 text-sm">{t('scrapers.notLoggedIn')}</span>
               )}
             </div>
           )}
@@ -155,12 +166,12 @@ const SortableItem = ({
               <MyIcon icon="setting" size={24} />
             </div>
             {item.useProxy && (
-              <Tooltip title="已启用代理">
+              <Tooltip title={t('scrapers.proxyEnabled')}>
                 <span className="text-blue-500"><MyIcon icon="wangluo" size={18} /></span>
               </Tooltip>
             )}
             {item.logRawResponses && (
-              <Tooltip title="已启用记录原始响应">
+              <Tooltip title={t('scrapers.rawResponseEnabled')}>
                 <span className="text-orange-400"><MyIcon icon="rizhi" size={18} /></span>
               </Tooltip>
             )}
@@ -169,8 +180,8 @@ const SortableItem = ({
             )}
             <Switch
               checked={item.isEnabled}
-              checkedChildren="已启用"
-              unCheckedChildren="未启用"
+              checkedChildren={t('scrapers.enabled')}
+              unCheckedChildren={t('scrapers.notEnabled')}
               onChange={handleChangeStatus}
             />
           </div>
@@ -181,10 +192,10 @@ const SortableItem = ({
 }
 
 export const Scrapers = () => {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [list, setList] = useState([])
   const [activeItem, setActiveItem] = useState(null)
-  const dragOverlayRef = useRef(null)
   const eventSourceRef = useRef(null)
   // 设置窗口
   const [open, setOpen] = useState(false)
@@ -341,9 +352,11 @@ export const Scrapers = () => {
     }
   }, [])
 
+
   const getInfo = async () => {
     let scraperList = []
     try {
+
       setLoading(true)
       const res1 = await getScrapers()
       scraperList = res1.data ?? []
@@ -383,6 +396,7 @@ export const Scrapers = () => {
         branches: res.data?.branches || [],
         tags: res.data?.tags || [],
         minServerVersion: res.data?.minServerVersion || null,
+        appVersion: res.data?.appVersion || null,
       })
     } catch (error) {
       console.error('加载仓库分支/标签失败:', error)
@@ -435,12 +449,12 @@ export const Scrapers = () => {
       await saveScraperAutoUpdate({ enabled: checked, interval })
       setAutoUpdateEnabled(checked)
       if (checked) {
-        messageApi.success(`已启用自动更新，后台每${interval}分钟检查一次`)
+        messageApi.success(t('scrapers.autoUpdateEnabled', { interval }))
       } else {
-        messageApi.success('已关闭自动更新')
+        messageApi.success(t('scrapers.autoUpdateDisabled'))
       }
     } catch (error) {
-      messageApi.error('保存自动更新配置失败')
+      messageApi.error(t('scrapers.saveAutoUpdateFailed'))
     } finally {
       setAutoUpdateLoading(false)
     }
@@ -464,12 +478,12 @@ export const Scrapers = () => {
       await saveScraperFullReplace({ enabled: checked })
       setFullReplaceEnabled(checked)
       if (checked) {
-        messageApi.success('已启用全量替换模式，下次更新将从 Releases 下载压缩包')
+        messageApi.success(t('scrapers.fullReplaceEnabled'))
       } else {
-        messageApi.success('已关闭全量替换模式，将使用逐文件对比下载')
+        messageApi.success(t('scrapers.fullReplaceDisabled'))
       }
     } catch (error) {
-      messageApi.error('保存全量替换配置失败')
+      messageApi.error(t('scrapers.saveFullReplaceFailed'))
     } finally {
       setFullReplaceLoading(false)
     }
@@ -479,7 +493,7 @@ export const Scrapers = () => {
   const subscribeDownloadProgress = (taskId) => {
     const token = Cookies.get('danmu_token')
     if (!token) {
-      messageApi.error('未找到认证令牌')
+      messageApi.error(t('scrapers.noAuthToken'))
       setLoadingResources(false)
       return
     }
@@ -537,13 +551,13 @@ export const Scrapers = () => {
                 setDownloadProgress(prev => ({
                   ...prev,
                   progress: 100,
-                  message: `下载完成! 成功: ${downloadedCount}, 跳过: ${skippedCount}，等待容器重启...`
+                  message: t('scrapers.downloadDoneRestart', { downloaded: downloadedCount, skipped: skippedCount })
                 }))
               } else {
                 setDownloadProgress(prev => ({
                   ...prev,
                   progress: 100,
-                  message: `下载完成! 成功: ${downloadedCount}, 跳过: ${skippedCount}, 失败: ${failedCount}`
+                  message: t('scrapers.downloadDoneFailed', { downloaded: downloadedCount, skipped: skippedCount, failed: failedCount })
                 }))
               }
               // 不在这里设置 taskCompleted 和刷新，等待 done 消息统一处理
@@ -551,7 +565,7 @@ export const Scrapers = () => {
 
             if (data.status === 'failed') {
               taskCompleted = true
-              messageApi.error(data.error_message || '下载失败')
+              messageApi.error(data.error_message || t('scrapers.downloadFailed'))
               setDownloadProgress({
                 visible: false,
                 current: 0,
@@ -566,7 +580,7 @@ export const Scrapers = () => {
 
             if (data.status === 'cancelled') {
               taskCompleted = true
-              messageApi.info('下载已取消')
+              messageApi.info(t('scrapers.downloadCancelled'))
               setDownloadProgress({
                 visible: false,
                 current: 0,
@@ -583,11 +597,11 @@ export const Scrapers = () => {
           // 处理重启通知
           if (data.type === 'restart') {
             taskCompleted = true
-            messageApi.info(data.message || '弹幕源更新完成，容器即将重启...')
+            messageApi.info(data.message || t('scrapers.scraperUpdateDoneRestartSoon'))
             setDownloadProgress(prev => ({
               ...prev,
               progress: 100,
-              message: data.message || '弹幕源更新完成，容器即将重启...'
+              message: data.message || t('scrapers.scraperUpdateDoneRestartSoon')
             }))
             // 不立即关闭进度条，等待 done 消息
           }
@@ -597,11 +611,11 @@ export const Scrapers = () => {
 
             // 检查是否需要重启
             if (data.need_restart) {
-              messageApi.info('弹幕源更新完成，容器正在重启中...')
+              messageApi.info(t('scrapers.scraperUpdateDoneRestart'))
               setDownloadProgress(prev => ({
                 ...prev,
                 progress: 0,  // 重置进度，用于显示重启等待进度
-                message: '弹幕源更新完成，容器正在重启中...',
+                message: t('scrapers.scraperUpdateDoneRestart'),
                 isRestarting: true
               }))
 
@@ -616,7 +630,7 @@ export const Scrapers = () => {
                 setDownloadProgress(prev => ({
                   ...prev,
                   progress: 0,
-                  message: '等待容器停止...'
+                  message: t('scrapers.waitingContainerStop')
                 }))
 
                 for (let i = 0; i < 30; i++) {
@@ -625,7 +639,7 @@ export const Scrapers = () => {
                   setDownloadProgress(prev => ({
                     ...prev,
                     progress: Math.min(restartProgress, 25),  // 第一阶段最多 25%
-                    message: `等待容器停止... (${waitSeconds}秒)`
+                    message: t('scrapers.waitingContainerStopSec', { sec: waitSeconds })
                   }))
 
                   try {
@@ -659,7 +673,7 @@ export const Scrapers = () => {
                   setDownloadProgress(prev => ({
                     ...prev,
                     progress: Math.min(restartProgress, 95),  // 最多显示 95%，留 5% 给完成
-                    message: `正在等待服务恢复... (${waitSeconds}秒)`
+                    message: t('scrapers.waitingServiceRecover', { sec: waitSeconds })
                   }))
 
                   try {
@@ -673,7 +687,7 @@ export const Scrapers = () => {
                       setDownloadProgress(prev => ({
                         ...prev,
                         progress: 100,
-                        message: '服务已恢复，正在刷新...'
+                        message: t('scrapers.serviceRecoveredRefreshing')
                       }))
                       await new Promise(resolve => setTimeout(resolve, 500))
                       setDownloadProgress({
@@ -685,7 +699,7 @@ export const Scrapers = () => {
                         scraper: '',
                         isRestarting: false
                       })
-                      messageApi.success('容器重启完成')
+                      messageApi.success(t('scrapers.containerRestartDone'))
                       getInfo()
                       loadVersionInfo()
                       setLoadingResources(false)
@@ -703,7 +717,7 @@ export const Scrapers = () => {
                     setDownloadProgress(prev => ({
                       ...prev,
                       progress: Math.min(restartProgress, 95),
-                      message: `正在等待服务恢复... (${waitSeconds}秒)`
+                      message: t('scrapers.waitingServiceRecover', { sec: waitSeconds })
                     }))
                   }
                 }
@@ -718,20 +732,20 @@ export const Scrapers = () => {
                   scraper: '',
                   isRestarting: false
                 })
-                messageApi.warning('容器重启超时，请手动刷新页面')
+                messageApi.warning(t('scrapers.containerRestartTimeout'))
                 setLoadingResources(false)
               }
 
               checkServiceReady()
             } else {
               // 不需要重启的情况（首次下载热加载完成 或 所有弹幕源都是最新的）
-              messageApi.success('弹幕源加载完成')
+              messageApi.success(t('scrapers.scraperLoadDone'))
 
               // 显示刷新动画
               setDownloadProgress(prev => ({
                 ...prev,
                 progress: 100,
-                message: '正在刷新页面数据...',
+                message: t('scrapers.refreshingPageData'),
                 isRestarting: true  // 复用重启动画
               }))
 
@@ -758,7 +772,7 @@ export const Scrapers = () => {
 
           if (data.type === 'error') {
             taskCompleted = true
-            messageApi.error(data.message || '下载失败')
+            messageApi.error(data.message || t('scrapers.downloadFailed'))
             setDownloadProgress({
               visible: false,
               current: 0,
@@ -808,17 +822,17 @@ export const Scrapers = () => {
                     setDownloadProgress(prev => ({
                       ...prev,
                       progress: 100,
-                      message: `下载完成! 成功: ${downloadedCount}, 跳过: ${skippedCount}，容器正在重启...`,
+                      message: t('scrapers.downloadDoneContainerRestart', { downloaded: downloadedCount, skipped: skippedCount }),
                       isRestarting: true
                     }))
                     // 不刷新，直接返回
                     return
                   } else {
-                    messageApi.success(`下载完成! 成功: ${downloadedCount}, 跳过: ${skippedCount}`)
+                    messageApi.success(t('scrapers.downloadDoneSimple', { downloaded: downloadedCount, skipped: skippedCount }))
                     setDownloadProgress(prev => ({
                       ...prev,
                       progress: 100,
-                      message: `下载完成! 成功: ${downloadedCount}, 跳过: ${skippedCount}`
+                      message: t('scrapers.downloadDoneSimple', { downloaded: downloadedCount, skipped: skippedCount })
                     }))
                   }
 
@@ -838,7 +852,7 @@ export const Scrapers = () => {
                     setLoadingResources(false)
                   }, 2000)
                 } else if (data.status === 'failed') {
-                  messageApi.error(data.error_message || '下载失败')
+                  messageApi.error(data.error_message || t('scrapers.downloadFailed'))
                   setDownloadProgress({
                     visible: false,
                     current: 0,
@@ -851,7 +865,7 @@ export const Scrapers = () => {
                   setLoadingResources(false)
                 } else {
                   // 任务状态未知，显示错误
-                  messageApi.error('进度连接出错，请刷新页面查看状态')
+                  messageApi.error(t('scrapers.progressConnError'))
                   setDownloadProgress({
                     visible: false,
                     current: 0,
@@ -865,7 +879,7 @@ export const Scrapers = () => {
                 }
               } else {
                 // 缓存中没有找到任务状态，显示错误
-                messageApi.error('进度连接出错，请刷新页面查看状态')
+                messageApi.error(t('scrapers.progressConnError'))
                 setDownloadProgress({
                   visible: false,
                   current: 0,
@@ -881,10 +895,10 @@ export const Scrapers = () => {
             .catch(fetchError => {
               console.error('查询缓存状态失败:', fetchError)
               // 查询失败，可能是容器正在重启，显示友好提示
-              messageApi.warning('连接已断开，可能是容器正在重启，请稍后刷新页面')
+              messageApi.warning(t('scrapers.connectionLostRefresh'))
               setDownloadProgress(prev => ({
                 ...prev,
-                message: '连接已断开，可能是容器正在重启...'
+                message: t('scrapers.connectionLostRestart')
               }))
               // 不立即关闭进度条，让用户看到提示
               setTimeout(() => {
@@ -912,7 +926,7 @@ export const Scrapers = () => {
 
   const handleLoadResources = async () => {
     if (!resourceRepoUrl.trim()) {
-      messageApi.error('请输入资源仓库链接')
+      messageApi.error(t('scrapers.inputRepoUrl'))
       return
     }
 
@@ -928,7 +942,7 @@ export const Scrapers = () => {
         current: 0,
         total: 0,
         progress: 0,
-        message: '正在启动下载任务...',
+        message: t('scrapers.startingDownloadTask'),
         scraper: '',
         isRestarting: false
       })
@@ -950,14 +964,14 @@ export const Scrapers = () => {
 
       setDownloadProgress(prev => ({
         ...prev,
-        message: `下载任务已启动，正在获取资源信息...`
+        message: t('scrapers.downloadTaskStarted')
       }))
 
       // 通过 SSE 订阅任务进度
       subscribeDownloadProgress(taskId)
 
     } catch (error) {
-      messageApi.error(error.response?.data?.detail || '启动下载任务失败')
+      messageApi.error(error.response?.data?.detail || t('scrapers.startDownloadFailed'))
       setDownloadProgress({
         visible: false,
         current: 0,
@@ -974,7 +988,7 @@ export const Scrapers = () => {
   const handleUploadPackage = async (file) => {
     // 验证文件对象
     if (!file || !(file instanceof File)) {
-      messageApi.error('无效的文件对象')
+      messageApi.error(t('scrapers.invalidFile'))
       return false
     }
 
@@ -999,13 +1013,13 @@ export const Scrapers = () => {
         // 需要重启容器
         if (autoRestart) {
           // 自动重启：显示等待进度
-          messageApi.info(responseData.message || '上传成功，容器正在重启...')
+          messageApi.info(responseData.message || t('scrapers.uploadSuccessRestart'))
           setDownloadProgress({
             visible: true,
             current: 0,
             total: 0,
             progress: 0,
-            message: '容器正在重启中...',
+            message: t('scrapers.containerRestarting'),
             scraper: '',
             isRestarting: true
           })
@@ -1020,7 +1034,7 @@ export const Scrapers = () => {
             setDownloadProgress(prev => ({
               ...prev,
               progress: 0,
-              message: '等待容器停止...'
+              message: t('scrapers.waitingContainerStop')
             }))
 
             for (let i = 0; i < 30; i++) {
@@ -1029,7 +1043,7 @@ export const Scrapers = () => {
               setDownloadProgress(prev => ({
                 ...prev,
                 progress: Math.min(restartProgress, 25),
-                message: `等待容器停止... (${waitSeconds}秒)`
+                message: t('scrapers.waitingContainerStopSec', { sec: waitSeconds })
               }))
 
               try {
@@ -1055,7 +1069,7 @@ export const Scrapers = () => {
               setDownloadProgress(prev => ({
                 ...prev,
                 progress: Math.min(restartProgress, 95),
-                message: `正在等待服务恢复... (${waitSeconds}秒)`
+                message: t('scrapers.waitingServiceRecover', { sec: waitSeconds })
               }))
 
               try {
@@ -1067,7 +1081,7 @@ export const Scrapers = () => {
                   setDownloadProgress(prev => ({
                     ...prev,
                     progress: 100,
-                    message: '服务已恢复，正在刷新...'
+                    message: t('scrapers.serviceRecoveredRefreshing')
                   }))
                   await new Promise(resolve => setTimeout(resolve, 500))
                   setDownloadProgress({
@@ -1079,7 +1093,7 @@ export const Scrapers = () => {
                     scraper: '',
                     isRestarting: false
                   })
-                  messageApi.success('容器重启完成')
+                  messageApi.success(t('scrapers.containerRestartDone'))
                   await getInfo()
                   await loadVersionInfo()
                   return
@@ -1095,7 +1109,7 @@ export const Scrapers = () => {
                 setDownloadProgress(prev => ({
                   ...prev,
                   progress: Math.min(restartProgress, 95),
-                  message: `正在等待服务恢复... (${waitSeconds}秒)`
+                  message: t('scrapers.waitingServiceRecover', { sec: waitSeconds })
                 }))
               }
             }
@@ -1110,17 +1124,17 @@ export const Scrapers = () => {
               scraper: '',
               isRestarting: false
             })
-            messageApi.warning('容器重启超时，请手动刷新页面')
+            messageApi.warning(t('scrapers.containerRestartTimeout'))
           }
 
           checkServiceReady()
         } else {
           // 手动重启：显示提示信息
-          messageApi.warning(responseData.message || '上传成功，请手动重启容器以加载新的弹幕源')
+          messageApi.warning(responseData.message || t('scrapers.uploadSuccessManualRestart'))
         }
       } else {
         // 不需要重启（首次上传热加载）
-        messageApi.success(responseData.message || '上传成功')
+        messageApi.success(responseData.message || t('scrapers.uploadSuccess'))
 
         // 延迟刷新,等待后台热加载完成
         setTimeout(async () => {
@@ -1133,7 +1147,7 @@ export const Scrapers = () => {
         }, 2500)
       }
     } catch (error) {
-      messageApi.error(error.response?.data?.detail || '上传失败')
+      messageApi.error(error.response?.data?.detail || t('scrapers.uploadFailed'))
     } finally {
       setUploadingPackage(false)
     }
@@ -1171,7 +1185,7 @@ export const Scrapers = () => {
       setList(updatedList)
       setScrapers(updatedList)
       messageApi.success(
-        `已更新排序，${movedItem.providerName} 移动到位置 ${overIndex + 1}`
+        t('scrapers.sortUpdated', { name: movedItem.providerName, position: overIndex + 1 })
       )
     }
 
@@ -1280,10 +1294,10 @@ export const Scrapers = () => {
           values[`scraper${setNameCapitalize}LogResponses`],
         name: setname,
       })
-      messageApi.success('保存成功')
+      messageApi.success(t('scrapers.saveSuccess'))
     } catch (error) {
       console.error(error)
-      messageApi.error('保存失败')
+      messageApi.error(t('scrapers.saveFailed'))
     } finally {
       setConfirmLoading(false)
       setOpen(false)
@@ -1333,7 +1347,7 @@ export const Scrapers = () => {
       startBiliLoginPoll(res.data)
       setBiliQrcodeStatus('')
     } catch (error) {
-      messageApi.error('获取二维码失败')
+      messageApi.error(t('scrapers.getQrcodeFailed'))
     } finally {
       setBiliQrcodeLoading(false)
     }
@@ -1353,12 +1367,12 @@ export const Scrapers = () => {
       const res = await getScraperDefaultBlacklist(setname)
       if (res.data && res.data.defaultBlacklist) {
         form.setFieldValue(`${setname}EpisodeBlacklistRegex`, res.data.defaultBlacklist)
-        messageApi.success('已填充源默认过滤规则')
+        messageApi.success(t('scrapers.filledSourceDefaultRules'))
       } else {
-        messageApi.warning('该搜索源没有默认过滤规则')
+        messageApi.warning(t('scrapers.noSourceDefaultRules'))
       }
     } catch (error) {
-      messageApi.error('获取源默认过滤规则失败')
+      messageApi.error(t('scrapers.getSourceDefaultRulesFailed'))
     } finally {
       setLoadingDefaultBlacklist(false)
     }
@@ -1372,12 +1386,12 @@ export const Scrapers = () => {
       const res = await getCommonBlacklist()
       if (res.data && res.data.commonBlacklist) {
         form.setFieldValue(`${setname}EpisodeBlacklistRegex`, res.data.commonBlacklist)
-        messageApi.success('已填充通用过滤规则')
+        messageApi.success(t('scrapers.filledCommonRules'))
       } else {
-        messageApi.warning('未找到通用过滤规则')
+        messageApi.warning(t('scrapers.noCommonRules'))
       }
     } catch (error) {
-      messageApi.error('获取通用过滤规则失败')
+      messageApi.error(t('scrapers.getCommonRulesFailed'))
     } finally {
       setLoadingCommonBlacklist(false)
     }
@@ -1385,7 +1399,7 @@ export const Scrapers = () => {
 
   const handleAiGenerate = async () => {
     if (!aiRegexDesc.trim()) {
-      messageApi.warning('请输入描述')
+      messageApi.warning(t('scrapers.inputDescription'))
       return
     }
     setAiRegexLoading(true)
@@ -1396,10 +1410,10 @@ export const Scrapers = () => {
       if (res.data?.regex) {
         setAiRegexResult(res.data.regex)
       } else {
-        messageApi.error('AI 未能生成有效的正则表达式')
+        messageApi.error(t('scrapers.aiNoValidRegex'))
       }
     } catch (e) {
-      messageApi.error(e?.response?.data?.detail || 'AI 正则生成失败')
+      messageApi.error(e?.response?.data?.detail || t('scrapers.aiRegexGenFailed'))
     } finally {
       setAiRegexLoading(false)
     }
@@ -1412,16 +1426,16 @@ export const Scrapers = () => {
     setAiRegexModalOpen(false)
     setAiRegexDesc('')
     setAiRegexResult('')
-    messageApi.success('已应用 AI 生成的规则')
+    messageApi.success(t('scrapers.aiRuleApplied'))
   }
 
   const handleBiliLogout = () => {
     modalApi.confirm({
-      title: '清除缓存',
+      title: t('scrapers.clearCache'),
       zIndex: 1002,
-      content: <div>确定要注销当前的Bilibili登录吗？</div>,
-      okText: '确认',
-      cancelText: '取消',
+      content: <div>{t('scrapers.confirmBiliLogout')}</div>,
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           await biliLogout()
@@ -1430,36 +1444,6 @@ export const Scrapers = () => {
         } catch (err) { }
       },
     })
-  }
-
-  const renderDragOverlay = () => {
-    if (!activeItem) return null
-
-    return (
-      <div ref={dragOverlayRef} style={{ width: '100%', maxWidth: '100%' }}>
-        <List.Item
-          style={{
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-            opacity: 0.9,
-          }}
-        >
-          <div className="w-full flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <MyIcon icon="drag" size={24} />
-              <div>{activeItem.displayName || activeItem.providerName}</div>
-            </div>
-            <div className="flex items-center justify-around gap-4">
-              <MyIcon icon="setting" size={24} />
-              {activeItem.isEnabled ? (
-                <Tag color="green">已启用</Tag>
-              ) : (
-                <Tag color="red">未启用</Tag>
-              )}
-            </div>
-          </div>
-        </List.Item>
-      </div>
-    )
   }
 
   // 解析字段配置（兼容多种格式）
@@ -1498,13 +1482,13 @@ export const Scrapers = () => {
     try {
       const res = await executeScraperAction(providerName, actionName)
       if (res.data?.success === false) {
-        messageApi.error(res.data?.message || errorMessage || '操作失败')
+        messageApi.error(res.data?.message || errorMessage || t('scrapers.operationFailed'))
       } else {
-        messageApi.success(res.data?.message || successMessage || '操作成功')
+        messageApi.success(res.data?.message || successMessage || t('scrapers.operationSuccess'))
       }
     } catch (error) {
       console.error('Action error:', error)
-      messageApi.error(error?.response?.data?.detail || errorMessage || '操作失败')
+      messageApi.error(error?.response?.data?.detail || errorMessage || t('scrapers.operationFailed'))
     }
   }
 
@@ -1587,7 +1571,7 @@ export const Scrapers = () => {
                 className="mb-4"
                 tooltip={tooltip}
               >
-                <Select placeholder={placeholder || '请选择'}>
+                <Select placeholder={placeholder || t('scrapers.pleaseSelect')}>
                   {(options || []).map(opt => (
                     <Select.Option key={opt.value} value={opt.value}>
                       {opt.label}
@@ -1641,10 +1625,10 @@ export const Scrapers = () => {
                     // 如果有确认文本，先弹出确认框
                     if (confirmText) {
                       Modal.confirm({
-                        title: '确认操作',
+                        title: t('scrapers.confirmAction'),
                         content: confirmText,
-                        okText: '确认',
-                        cancelText: '取消',
+                        okText: t('common.confirm'),
+                        cancelText: t('common.cancel'),
                         onOk: async () => {
                           await handleActionClick(setname, actionName, successMessage, errorMessage)
                         }
@@ -1694,15 +1678,15 @@ export const Scrapers = () => {
   return (
     <div className="my-6">
       {/* 资源仓库配置卡片 */}
-      <Card title="资源仓库" className="mb-6">
+      <Card title={t('scrapers.resourceRepo')} className="mb-6">
         <div className="space-y-4">
           <div>
             <div className="mb-2 text-sm text-gray-600">
-              从资源仓库加载弹幕源文件,或上传离线包进行安装
+              {t('scrapers.resourceRepoDesc')}
             </div>
             <div className={`flex gap-2 ${isMobile ? 'flex-col' : 'flex-row'}`}>
               <Input
-                placeholder="请输入GitHub仓库链接，例如：https://github.com/username/repo"
+                placeholder={t('scrapers.repoUrlPlaceholder')}
                 value={resourceRepoUrl}
                 onChange={(e) => setResourceRepoUrl(e.target.value)}
               />
@@ -1712,7 +1696,7 @@ export const Scrapers = () => {
                 onChange={setSelectedBranch}
                 loading={refsLoading}
                 style={{ width: isMobile ? '100%' : 180 }}
-                placeholder="选择分支或版本"
+                placeholder={t('scrapers.selectBranchOrVersion')}
                 onDropdownVisibleChange={(open) => {
                   if (open && repoRefs.branches.length === 0 && repoRefs.tags.length === 0) {
                     loadRepoRefs()
@@ -1722,27 +1706,29 @@ export const Scrapers = () => {
                 {repoRefs.branches.length > 0 || repoRefs.tags.length > 0 ? (
                   <>
                     {repoRefs.branches.length > 0 && (
-                      <Select.OptGroup label="分支">
+                      <Select.OptGroup label={t('scrapers.branch')}>
                         {repoRefs.branches.map(b => (
                           <Select.Option key={`branch-${b}`} value={b}>{b}</Select.Option>
                         ))}
                       </Select.OptGroup>
                     )}
                     {repoRefs.tags.length > 0 && (
-                      <Select.OptGroup label="版本标签">
+                      <Select.OptGroup label={t('scrapers.versionTag')}>
                         {repoRefs.tags.map(t => {
-                          // 比较 tag 版本与远程 package.json 中的 min_fetchable_version
-                          // 低于该最低可拉取版本的标记为不可用并禁用
+                          // 每个 tag 现在是 {name, minServerVersion} 对象
+                          const tagName = typeof t === 'string' ? t : t.name
+                          const tagMinVer = typeof t === 'string' ? null : t.minServerVersion
+                          // 用当前服务器版本和该 tag 要求的最低服务器版本比较
                           const parseVer = (v) => (v || '').replace(/^v/i, '').split('.').map(Number)
-                          const tagVer = parseVer(t)
-                          const minVer = parseVer(versionInfo.minFetchableVersion)
-                          const isDisabled = minVer.length >= 3 && tagVer.length >= 3 &&
-                            (tagVer[0] < minVer[0] ||
-                              (tagVer[0] === minVer[0] && tagVer[1] < minVer[1]) ||
-                              (tagVer[0] === minVer[0] && tagVer[1] === minVer[1] && tagVer[2] < minVer[2]))
+                          const appVer = parseVer(repoRefs.appVersion)
+                          const minVer = parseVer(tagMinVer)
+                          const isDisabled = tagMinVer && appVer.length >= 3 && minVer.length >= 3 &&
+                            (appVer[0] < minVer[0] ||
+                              (appVer[0] === minVer[0] && appVer[1] < minVer[1]) ||
+                              (appVer[0] === minVer[0] && appVer[1] === minVer[1] && appVer[2] < minVer[2]))
                           return (
-                            <Select.Option key={`tag-${t}`} value={t} disabled={isDisabled}>
-                              {t}{isDisabled ? ' (不兼容当前服务器)' : ''}
+                            <Select.Option key={`tag-${tagName}`} value={tagName} disabled={isDisabled}>
+                              {tagName}{isDisabled ? ` (${t('scrapers.serverVersionRequired', { version: tagMinVer })})` : ''}
                             </Select.Option>
                           )
                         })}
@@ -1764,27 +1750,27 @@ export const Scrapers = () => {
                     onClick={handleLoadResources}
                     className="w-full"
                   >
-                    加载资源
+                    {t('scrapers.loadResources')}
                   </Button>
                   <div className="flex gap-2 w-full">
                     <Button
                       onClick={async () => {
                         if (!resourceRepoUrl.trim()) {
-                          messageApi.error('请输入资源仓库链接')
+                          messageApi.error(t('scrapers.inputRepoUrl'))
                           return
                         }
                         try {
                           await saveResourceRepo({ repoUrl: resourceRepoUrl })
-                          messageApi.success('保存成功')
+                          messageApi.success(t('scrapers.saveSuccess'))
                           await loadVersionInfo()
                         } catch (error) {
-                          messageApi.error(error.response?.data?.detail || '保存失败')
+                          messageApi.error(error.response?.data?.detail || t('scrapers.saveFailed'))
                         }
                       }}
                       className="flex-1"
                       style={{ flex: 1, height: '30px' }}
                     >
-                      保存
+                      {t('scrapers.save')}
                     </Button>
                     <Upload
                       beforeUpload={handleUploadPackage}
@@ -1795,7 +1781,7 @@ export const Scrapers = () => {
                       style={{ flex: 1, width: '100%' }}
                     >
                       <Button loading={uploadingPackage} disabled={uploadingPackage} className="w-full" style={{ width: '100%', minHeight: '10px', height: '30px' }}>
-                        离线包上传
+                        {t('scrapers.offlineUpload')}
                       </Button>
                     </Upload>
                   </div>
@@ -1805,26 +1791,26 @@ export const Scrapers = () => {
                   <Button
                     onClick={async () => {
                       if (!resourceRepoUrl.trim()) {
-                        messageApi.error('请输入资源仓库链接')
+                        messageApi.error(t('scrapers.inputRepoUrl'))
                         return
                       }
                       try {
                         await saveResourceRepo({ repoUrl: resourceRepoUrl })
-                        messageApi.success('保存成功')
+                        messageApi.success(t('scrapers.saveSuccess'))
                         await loadVersionInfo()
                       } catch (error) {
-                        messageApi.error(error.response?.data?.detail || '保存失败')
+                        messageApi.error(error.response?.data?.detail || t('scrapers.saveFailed'))
                       }
                     }}
                   >
-                    保存
+                    {t('scrapers.save')}
                   </Button>
                   <Button
                     type="primary"
                     loading={loadingResources}
                     onClick={handleLoadResources}
                   >
-                    加载资源
+                    {t('scrapers.loadResources')}
                   </Button>
                   <Upload
                     beforeUpload={handleUploadPackage}
@@ -1833,7 +1819,7 @@ export const Scrapers = () => {
                     disabled={uploadingPackage}
                   >
                     <Button loading={uploadingPackage} disabled={uploadingPackage}>
-                      离线包上传
+                      {t('scrapers.offlineUpload')}
                     </Button>
                   </Upload>
                 </>
@@ -1859,7 +1845,7 @@ export const Scrapers = () => {
                       if (currentDownloadTaskId.current) {
                         try {
                           await cancelScraperDownload(currentDownloadTaskId.current)
-                          messageApi.warning('已取消下载')
+                          messageApi.warning(t('scrapers.cancelledDownload'))
                         } catch (e) {
                           console.error('取消下载失败:', e)
                         }
@@ -1877,7 +1863,7 @@ export const Scrapers = () => {
                       setLoadingResources(false)
                     }}
                   >
-                    取消
+                    {t('common.cancel')}
                   </Button>
                 )}
               </div>
@@ -1904,11 +1890,11 @@ export const Scrapers = () => {
                       <div className="flex items-center justify-between">
                         {versionInfo.officialVersion && (
                           <>
-                            <Typography.Text className="text-sm text-gray-600">主仓:</Typography.Text>
+                            <Typography.Text className="text-sm text-gray-600">{t('scrapers.mainRepo')}</Typography.Text>
                             <Typography.Text
                               code
                               style={{ color: '#ce1ea2ff', cursor: versionInfo.officialChangelog ? 'pointer' : 'default' }}
-                              onClick={() => versionInfo.officialChangelog && setChangelogModal({ open: true, title: '主仓版本日志', content: versionInfo.officialChangelog })}
+                              onClick={() => versionInfo.officialChangelog && setChangelogModal({ open: true, title: t('scrapers.mainRepoChangelog'), content: versionInfo.officialChangelog })}
                             >
                               {versionInfo.officialVersion}
                             </Typography.Text>
@@ -1916,11 +1902,11 @@ export const Scrapers = () => {
                         )}
                         {versionInfo.remoteVersion && (
                           <>
-                            <Typography.Text className="text-sm text-gray-600">远程:</Typography.Text>
+                            <Typography.Text className="text-sm text-gray-600">{t('scrapers.remote')}</Typography.Text>
                             <Typography.Text
                               code
                               style={{ color: '#52c41a', cursor: versionInfo.remoteChangelog ? 'pointer' : 'default' }}
-                              onClick={() => versionInfo.remoteChangelog && setChangelogModal({ open: true, title: '远程版本日志', content: versionInfo.remoteChangelog })}
+                              onClick={() => versionInfo.remoteChangelog && setChangelogModal({ open: true, title: t('scrapers.remoteChangelog'), content: versionInfo.remoteChangelog })}
                             >
                               {versionInfo.remoteVersion}
                             </Typography.Text>
@@ -1929,11 +1915,11 @@ export const Scrapers = () => {
                       </div>
                       <div className="flex gap-3">
                         <div className="flex items-center gap-8">
-                          <Typography.Text className="text-sm text-gray-600">本地:</Typography.Text>
+                          <Typography.Text className="text-sm text-gray-600">{t('scrapers.local')}</Typography.Text>
                           <Typography.Text
                             code
                             style={{ color: '#1890ff', cursor: versionInfo.localChangelog ? 'pointer' : 'default' }}
-                            onClick={() => versionInfo.localChangelog && setChangelogModal({ open: true, title: '本地版本日志', content: versionInfo.localChangelog })}
+                            onClick={() => versionInfo.localChangelog && setChangelogModal({ open: true, title: t('scrapers.localChangelog'), content: versionInfo.localChangelog })}
                           >
                             {versionInfo.localVersion}
                           </Typography.Text>
@@ -1960,35 +1946,35 @@ export const Scrapers = () => {
                                     transform: 'translate(-50%, -50%)',
                                   }}
                                 />
-                                <span style={{ opacity: 0 }}>刷新</span>
+                                <span style={{ opacity: 0 }}>{t('scrapers.refresh')}</span>
                               </>
-                            ) : '刷新'}
+                            ) : t('scrapers.refresh')}
                           </Button>
                         </div>
                       </div>
                       {/* 移动端：自动更新和全量替换开关 */}
                       <div className="flex items-center justify-between mt-2">
                         <div className="flex items-center gap-2">
-                          <Typography.Text className="text-sm text-gray-600">自动更新:</Typography.Text>
+                          <Typography.Text className="text-sm text-gray-600">{t('scrapers.autoUpdate')}</Typography.Text>
                           <Switch
                             size="small"
                             checked={autoUpdateEnabled}
                             loading={autoUpdateLoading}
-                            checkedChildren="启用"
-                            unCheckedChildren="关闭"
+                            checkedChildren={t('scrapers.switchOn')}
+                            unCheckedChildren={t('scrapers.switchOff')}
                             onChange={handleAutoUpdateToggle}
                           />
                         </div>
                         <div className="flex items-center gap-2">
-                          <Tooltip title="启用后从 GitHub Releases 下载压缩包全量替换，适用于 .so 文件更新不生效的情况">
-                            <Typography.Text className="text-sm text-gray-600" style={{ cursor: 'help' }}>全量替换:</Typography.Text>
+                          <Tooltip title={t('scrapers.fullReplaceTip')}>
+                            <Typography.Text className="text-sm text-gray-600" style={{ cursor: 'help' }}>{t('scrapers.fullReplace')}</Typography.Text>
                           </Tooltip>
                           <Switch
                             size="small"
                             checked={fullReplaceEnabled}
                             loading={fullReplaceLoading}
-                            checkedChildren="启用"
-                            unCheckedChildren="关闭"
+                            checkedChildren={t('scrapers.switchOn')}
+                            unCheckedChildren={t('scrapers.switchOff')}
                             onChange={handleFullReplaceToggle}
                           />
                         </div>
@@ -1998,11 +1984,11 @@ export const Scrapers = () => {
                     <div className="flex items-center gap-4">
                       {versionInfo.officialVersion && (
                         <div className="flex items-center gap-2">
-                          <Typography.Text className="text-sm text-gray-600">主仓版本:</Typography.Text>
+                          <Typography.Text className="text-sm text-gray-600">{t('scrapers.mainRepoVersion')}</Typography.Text>
                           <Typography.Text
                             code
                             style={{ color: '#ce1ea2ff', cursor: versionInfo.officialChangelog ? 'pointer' : 'default' }}
-                            onClick={() => versionInfo.officialChangelog && setChangelogModal({ open: true, title: '主仓版本日志', content: versionInfo.officialChangelog })}
+                            onClick={() => versionInfo.officialChangelog && setChangelogModal({ open: true, title: t('scrapers.mainRepoChangelog'), content: versionInfo.officialChangelog })}
                           >
                             {versionInfo.officialVersion}
                           </Typography.Text>
@@ -2010,47 +1996,47 @@ export const Scrapers = () => {
                       )}
                       {versionInfo.remoteVersion && (
                         <div className="flex items-center gap-2">
-                          <Typography.Text className="text-sm text-gray-600">远程版本:</Typography.Text>
+                          <Typography.Text className="text-sm text-gray-600">{t('scrapers.remoteVersion')}</Typography.Text>
                           <Typography.Text
                             code
                             style={{ color: '#52c41a', cursor: versionInfo.remoteChangelog ? 'pointer' : 'default' }}
-                            onClick={() => versionInfo.remoteChangelog && setChangelogModal({ open: true, title: '远程版本日志', content: versionInfo.remoteChangelog })}
+                            onClick={() => versionInfo.remoteChangelog && setChangelogModal({ open: true, title: t('scrapers.remoteChangelog'), content: versionInfo.remoteChangelog })}
                           >
                             {versionInfo.remoteVersion}
                           </Typography.Text>
                         </div>
                       )}
                       <div className="flex items-center gap-2">
-                        <Typography.Text className="text-sm text-gray-600">本地版本:</Typography.Text>
+                        <Typography.Text className="text-sm text-gray-600">{t('scrapers.localVersion')}</Typography.Text>
                         <Typography.Text
                           code
                           style={{ color: '#1890ff', cursor: versionInfo.localChangelog ? 'pointer' : 'default' }}
-                          onClick={() => versionInfo.localChangelog && setChangelogModal({ open: true, title: '本地版本日志', content: versionInfo.localChangelog })}
+                          onClick={() => versionInfo.localChangelog && setChangelogModal({ open: true, title: t('scrapers.localChangelog'), content: versionInfo.localChangelog })}
                         >
                           {versionInfo.localVersion}
                         </Typography.Text>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Typography.Text className="text-sm text-gray-600">自动更新:</Typography.Text>
+                        <Typography.Text className="text-sm text-gray-600">{t('scrapers.autoUpdate')}</Typography.Text>
                         <Switch
                           size="small"
                           checked={autoUpdateEnabled}
                           loading={autoUpdateLoading}
-                          checkedChildren="启用"
-                          unCheckedChildren="关闭"
+                          checkedChildren={t('scrapers.switchOn')}
+                          unCheckedChildren={t('scrapers.switchOff')}
                           onChange={handleAutoUpdateToggle}
                         />
                       </div>
                       <div className="flex items-center gap-2">
-                        <Tooltip title="启用后从 GitHub Releases 下载压缩包全量替换，适用于 .so 文件更新不生效的情况">
-                          <Typography.Text className="text-sm text-gray-600" style={{ cursor: 'help' }}>全量替换:</Typography.Text>
+                        <Tooltip title={t('scrapers.fullReplaceTip')}>
+                          <Typography.Text className="text-sm text-gray-600" style={{ cursor: 'help' }}>{t('scrapers.fullReplace')}</Typography.Text>
                         </Tooltip>
                         <Switch
                           size="small"
                           checked={fullReplaceEnabled}
                           loading={fullReplaceLoading}
-                          checkedChildren="启用"
-                          unCheckedChildren="关闭"
+                          checkedChildren={t('scrapers.switchOn')}
+                          unCheckedChildren={t('scrapers.switchOff')}
                           onChange={handleFullReplaceToggle}
                         />
                       </div>
@@ -2075,20 +2061,20 @@ export const Scrapers = () => {
                                 transform: 'translate(-50%, -50%)',
                               }}
                             />
-                            <span style={{ opacity: 0 }}>刷新</span>
+                            <span style={{ opacity: 0 }}>{t('scrapers.refresh')}</span>
                           </>
-                        ) : '刷新'}
+                        ) : t('scrapers.refresh')}
                       </Button>
                       {/* PC端：更新提示显示在刷新按钮右边 */}
                       {versionInfo.hasUpdate && (
-                        <Typography.Text type="warning" style={{ marginLeft: 8 }}>🆙 有更新可用</Typography.Text>
+                        <Typography.Text type="warning" style={{ marginLeft: 8 }}>{t('scrapers.hasUpdate')}</Typography.Text>
                       )}
                     </div>
                   )}
                   {/* 移动端：更新提示显示在下一行 */}
                   {isMobile && versionInfo.hasUpdate && (
                     <div className="flex items-center gap-2">
-                      <Typography.Text type="warning">🆙 有更新可用</Typography.Text>
+                      <Typography.Text type="warning">{t('scrapers.hasUpdate')}</Typography.Text>
                     </div>
                   )}
                 </div>
@@ -2101,18 +2087,18 @@ export const Scrapers = () => {
                     items: [
                       {
                         key: 'reload',
-                        label: '重载当前源',
+                        label: t('scrapers.reloadCurrent'),
                         onClick: async () => {
                           try {
                             setLoading(true)
                             const res = await reloadScrapers()
-                            messageApi.success(res.data?.message || '重载成功，正在后台重载...')
+                            messageApi.success(res.data?.message || t('scrapers.reloadSuccess'))
                             setTimeout(() => {
                               getInfo()
                               loadVersionInfo()
                             }, 2500)
                           } catch (error) {
-                            messageApi.error(error.response?.data?.detail || '重载失败')
+                            messageApi.error(error.response?.data?.detail || t('scrapers.reloadFailed'))
                           } finally {
                             setLoading(false)
                           }
@@ -2120,35 +2106,35 @@ export const Scrapers = () => {
                       },
                       {
                         key: 'backup',
-                        label: '备份当前源',
+                        label: t('scrapers.backupCurrent'),
                         onClick: async () => {
                           try {
                             const res = await backupScrapers()
-                            messageApi.success(res.data?.message || '备份成功')
+                            messageApi.success(res.data?.message || t('scrapers.backupSuccess'))
                           } catch (error) {
-                            messageApi.error(error.response?.data?.detail || '备份失败')
+                            messageApi.error(error.response?.data?.detail || t('scrapers.backupFailed'))
                           }
                         }
                       },
                       {
                         key: 'restore',
-                        label: '从备份中还原',
+                        label: t('scrapers.restoreFromBackup'),
                         onClick: () => {
                           modalApi.confirm({
-                            title: '还原弹幕源',
-                            content: '确定要从备份还原弹幕源吗？这将覆盖当前的弹幕源文件。',
-                            okText: '确认',
-                            cancelText: '取消',
+                            title: t('scrapers.restoreScraperTitle'),
+                            content: t('scrapers.restoreScraperContent'),
+                            okText: t('common.confirm'),
+                            cancelText: t('common.cancel'),
                             onOk: async () => {
                               try {
                                 const res = await restoreScrapers()
-                                messageApi.success(res.data?.message || '还原成功，正在后台重载...')
+                                messageApi.success(res.data?.message || t('scrapers.restoreSuccess'))
                                 setTimeout(() => {
                                   getInfo()
                                   loadVersionInfo()
                                 }, 2500)
                               } catch (error) {
-                                messageApi.error(error.response?.data?.detail || '还原失败')
+                                messageApi.error(error.response?.data?.detail || t('scrapers.restoreFailed'))
                               }
                             },
                           })
@@ -2157,21 +2143,21 @@ export const Scrapers = () => {
                       { type: 'divider' },
                       {
                         key: 'deleteBackup',
-                        label: '删除备份源',
+                        label: t('scrapers.deleteBackup'),
                         danger: true,
                         onClick: () => {
                           modalApi.confirm({
-                            title: '删除备份',
-                            content: '确定要删除所有备份文件吗？此操作不可恢复。',
-                            okText: '确认删除',
-                            cancelText: '取消',
+                            title: t('scrapers.deleteBackupTitle'),
+                            content: t('scrapers.deleteBackupContent'),
+                            okText: t('scrapers.confirmDelete'),
+                            cancelText: t('common.cancel'),
                             okButtonProps: { danger: true },
                             onOk: async () => {
                               try {
                                 const res = await deleteScraperBackup()
-                                messageApi.success(res.data?.message || '删除备份成功')
+                                messageApi.success(res.data?.message || t('scrapers.deleteBackupSuccess'))
                               } catch (error) {
-                                messageApi.error(error.response?.data?.detail || '删除备份失败')
+                                messageApi.error(error.response?.data?.detail || t('scrapers.deleteBackupFailed'))
                               }
                             },
                           })
@@ -2179,25 +2165,25 @@ export const Scrapers = () => {
                       },
                       {
                         key: 'deleteCurrent',
-                        label: '删除当前源',
+                        label: t('scrapers.deleteCurrent'),
                         danger: true,
                         onClick: () => {
                           modalApi.confirm({
-                            title: '删除当前弹幕源',
-                            content: '确定要删除所有当前弹幕源文件吗？此操作不可恢复。',
-                            okText: '确认删除',
-                            cancelText: '取消',
+                            title: t('scrapers.deleteCurrentTitle'),
+                            content: t('scrapers.deleteCurrentContent'),
+                            okText: t('scrapers.confirmDelete'),
+                            cancelText: t('common.cancel'),
                             okButtonProps: { danger: true },
                             onOk: async () => {
                               try {
                                 const res = await deleteCurrentScrapers()
-                                messageApi.success(res.data?.message || '删除成功')
+                                messageApi.success(res.data?.message || t('scrapers.deleteSuccess'))
                                 setTimeout(() => {
                                   getInfo()
                                   loadVersionInfo()
                                 }, 2500)
                               } catch (error) {
-                                messageApi.error(error.response?.data?.detail || '删除失败')
+                                messageApi.error(error.response?.data?.detail || t('scrapers.deleteFailed'))
                               }
                             },
                           })
@@ -2205,25 +2191,25 @@ export const Scrapers = () => {
                       },
                       {
                         key: 'deleteAll',
-                        label: '删除当前&备份源',
+                        label: t('scrapers.deleteAll'),
                         danger: true,
                         onClick: () => {
                           modalApi.confirm({
-                            title: '删除所有弹幕源',
-                            content: '确定要删除所有当前弹幕源和备份文件吗？此操作不可恢复！',
-                            okText: '确认删除',
-                            cancelText: '取消',
+                            title: t('scrapers.deleteAllTitle'),
+                            content: t('scrapers.deleteAllContent'),
+                            okText: t('scrapers.confirmDelete'),
+                            cancelText: t('common.cancel'),
                             okButtonProps: { danger: true },
                             onOk: async () => {
                               try {
                                 const res = await deleteAllScrapers()
-                                messageApi.success(res.data?.message || '删除成功')
+                                messageApi.success(res.data?.message || t('scrapers.deleteSuccess'))
                                 setTimeout(() => {
                                   getInfo()
                                   loadVersionInfo()
                                 }, 2500)
                               } catch (error) {
-                                messageApi.error(error.response?.data?.detail || '删除失败')
+                                messageApi.error(error.response?.data?.detail || t('scrapers.deleteFailed'))
                               }
                             },
                           })
@@ -2232,7 +2218,7 @@ export const Scrapers = () => {
                     ]
                   }}
                 >
-                  <Button type="primary">源操作</Button>
+                  <Button type="primary">{t('scrapers.sourceActions')}</Button>
                 </Dropdown>
               )}
             </div>
@@ -2246,18 +2232,18 @@ export const Scrapers = () => {
                     items: [
                       {
                         key: 'reload',
-                        label: '重载当前源',
+                        label: t('scrapers.reloadCurrent'),
                         onClick: async () => {
                           try {
                             setLoading(true)
                             const res = await reloadScrapers()
-                            messageApi.success(res.data?.message || '重载成功，正在后台重载...')
+                            messageApi.success(res.data?.message || t('scrapers.reloadSuccess'))
                             setTimeout(() => {
                               getInfo()
                               loadVersionInfo()
                             }, 2500)
                           } catch (error) {
-                            messageApi.error(error.response?.data?.detail || '重载失败')
+                            messageApi.error(error.response?.data?.detail || t('scrapers.reloadFailed'))
                           } finally {
                             setLoading(false)
                           }
@@ -2265,35 +2251,35 @@ export const Scrapers = () => {
                       },
                       {
                         key: 'backup',
-                        label: '备份当前源',
+                        label: t('scrapers.backupCurrent'),
                         onClick: async () => {
                           try {
                             const res = await backupScrapers()
-                            messageApi.success(res.data?.message || '备份成功')
+                            messageApi.success(res.data?.message || t('scrapers.backupSuccess'))
                           } catch (error) {
-                            messageApi.error(error.response?.data?.detail || '备份失败')
+                            messageApi.error(error.response?.data?.detail || t('scrapers.backupFailed'))
                           }
                         }
                       },
                       {
                         key: 'restore',
-                        label: '从备份中还原',
+                        label: t('scrapers.restoreFromBackup'),
                         onClick: () => {
                           modalApi.confirm({
-                            title: '还原弹幕源',
-                            content: '确定要从备份还原弹幕源吗？这将覆盖当前的弹幕源文件。',
-                            okText: '确认',
-                            cancelText: '取消',
+                            title: t('scrapers.restoreScraperTitle'),
+                            content: t('scrapers.restoreScraperContent'),
+                            okText: t('common.confirm'),
+                            cancelText: t('common.cancel'),
                             onOk: async () => {
                               try {
                                 const res = await restoreScrapers()
-                                messageApi.success(res.data?.message || '还原成功，正在后台重载...')
+                                messageApi.success(res.data?.message || t('scrapers.restoreSuccess'))
                                 setTimeout(() => {
                                   getInfo()
                                   loadVersionInfo()
                                 }, 2500)
                               } catch (error) {
-                                messageApi.error(error.response?.data?.detail || '还原失败')
+                                messageApi.error(error.response?.data?.detail || t('scrapers.restoreFailed'))
                               }
                             },
                           })
@@ -2302,21 +2288,21 @@ export const Scrapers = () => {
                       { type: 'divider' },
                       {
                         key: 'deleteBackup',
-                        label: '删除备份源',
+                        label: t('scrapers.deleteBackup'),
                         danger: true,
                         onClick: () => {
                           modalApi.confirm({
-                            title: '删除备份',
-                            content: '确定要删除所有备份文件吗？此操作不可恢复。',
-                            okText: '确认删除',
-                            cancelText: '取消',
+                            title: t('scrapers.deleteBackupTitle'),
+                            content: t('scrapers.deleteBackupContent'),
+                            okText: t('scrapers.confirmDelete'),
+                            cancelText: t('common.cancel'),
                             okButtonProps: { danger: true },
                             onOk: async () => {
                               try {
                                 const res = await deleteScraperBackup()
-                                messageApi.success(res.data?.message || '删除备份成功')
+                                messageApi.success(res.data?.message || t('scrapers.deleteBackupSuccess'))
                               } catch (error) {
-                                messageApi.error(error.response?.data?.detail || '删除备份失败')
+                                messageApi.error(error.response?.data?.detail || t('scrapers.deleteBackupFailed'))
                               }
                             },
                           })
@@ -2324,25 +2310,25 @@ export const Scrapers = () => {
                       },
                       {
                         key: 'deleteCurrent',
-                        label: '删除当前源',
+                        label: t('scrapers.deleteCurrent'),
                         danger: true,
                         onClick: () => {
                           modalApi.confirm({
-                            title: '删除当前弹幕源',
-                            content: '确定要删除所有当前弹幕源文件吗？此操作不可恢复。',
-                            okText: '确认删除',
-                            cancelText: '取消',
+                            title: t('scrapers.deleteCurrentTitle'),
+                            content: t('scrapers.deleteCurrentContent'),
+                            okText: t('scrapers.confirmDelete'),
+                            cancelText: t('common.cancel'),
                             okButtonProps: { danger: true },
                             onOk: async () => {
                               try {
                                 const res = await deleteCurrentScrapers()
-                                messageApi.success(res.data?.message || '删除成功')
+                                messageApi.success(res.data?.message || t('scrapers.deleteSuccess'))
                                 setTimeout(() => {
                                   getInfo()
                                   loadVersionInfo()
                                 }, 2500)
                               } catch (error) {
-                                messageApi.error(error.response?.data?.detail || '删除失败')
+                                messageApi.error(error.response?.data?.detail || t('scrapers.deleteFailed'))
                               }
                             },
                           })
@@ -2350,25 +2336,25 @@ export const Scrapers = () => {
                       },
                       {
                         key: 'deleteAll',
-                        label: '删除当前&备份源',
+                        label: t('scrapers.deleteAll'),
                         danger: true,
                         onClick: () => {
                           modalApi.confirm({
-                            title: '删除所有弹幕源',
-                            content: '确定要删除所有当前弹幕源和备份文件吗？此操作不可恢复！',
-                            okText: '确认删除',
-                            cancelText: '取消',
+                            title: t('scrapers.deleteAllTitle'),
+                            content: t('scrapers.deleteAllContent'),
+                            okText: t('scrapers.confirmDelete'),
+                            cancelText: t('common.cancel'),
                             okButtonProps: { danger: true },
                             onOk: async () => {
                               try {
                                 const res = await deleteAllScrapers()
-                                messageApi.success(res.data?.message || '删除成功')
+                                messageApi.success(res.data?.message || t('scrapers.deleteSuccess'))
                                 setTimeout(() => {
                                   getInfo()
                                   loadVersionInfo()
                                 }, 2500)
                               } catch (error) {
-                                messageApi.error(error.response?.data?.detail || '删除失败')
+                                messageApi.error(error.response?.data?.detail || t('scrapers.deleteFailed'))
                               }
                             },
                           })
@@ -2377,7 +2363,7 @@ export const Scrapers = () => {
                     ]
                   }}
                 >
-                  <Button type="primary" className="flex-1 min-w-0">源操作</Button>
+                  <Button type="primary" className="flex-1 min-w-0">{t('scrapers.sourceActions')}</Button>
                 </Dropdown>
               </div>
             )
@@ -2386,7 +2372,7 @@ export const Scrapers = () => {
       </Card >
 
       {/* 弹幕搜索源卡片 */}
-      < Card loading={loading} title="弹幕搜索源" >
+      < Card loading={loading} title={t('scrapers.danmakuSearchSource')} >
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}
@@ -2413,17 +2399,16 @@ export const Scrapers = () => {
               )}
             />
           </SortableContext>
-          {/* 拖拽覆盖层 */}
-          <DragOverlay>{renderDragOverlay()}</DragOverlay>
+
         </DndContext>
       </Card >
       <Modal
-        title={`配置: ${setname}`}
+        title={t('scrapers.configTitle', { name: setname })}
         open={open}
         onOk={handleSaveSingleScraper}
         confirmLoading={confirmLoading}
-        cancelText="取消"
-        okText="确认"
+        cancelText={t('common.cancel')}
+        okText={t('common.confirm')}
         onCancel={() => setOpen(false)}
         destroyOnClose // 确保每次打开时都重新渲染
         forceRender // 确保表单项在Modal打开时就存在
@@ -2434,7 +2419,7 @@ export const Scrapers = () => {
           {setname !== 'dandanplay' && (
             <Form.Item
               name="useProxy"
-              label="使用代理"
+              label={t('scrapers.useProxy')}
               valuePropName="checked"
               className="mb-4"
             >
@@ -2443,8 +2428,8 @@ export const Scrapers = () => {
           )}
 
           <Form.Item
-            label="搜索超时"
-            tooltip="该源的搜索请求超时时间。最低5秒，最大100秒，留空则不限。"
+            label={t('scrapers.searchTimeout')}
+            tooltip={t('scrapers.searchTimeoutTip')}
             className="mb-4"
           >
             <div className="flex items-start gap-3">
@@ -2459,7 +2444,7 @@ export const Scrapers = () => {
               </div>
               <div style={{ marginTop: 4 }}>
                 <Form.Item name={`scraper_${setname}_search_timeout`} noStyle>
-                  <InputNumber min={5} max={100} controls={false} style={{ width: 80 }} addonAfter="秒" />
+                  <InputNumber min={5} max={100} controls={false} style={{ width: 80 }} addonAfter={t('scrapers.secondUnit')} />
                 </Form.Item>
               </div>
             </div>
@@ -2468,19 +2453,19 @@ export const Scrapers = () => {
           {/* dandanplay specific */}
           {setname === 'dandanplay' && (
             <>
-              <Form.Item label="认证方式" className="mb-6">
+              <Form.Item label={t('scrapers.authMethod')} className="mb-6">
                 <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center gap-4'}`}>
                   <Switch
                     checkedChildren={
                       <Space>
                         <CloudOutlined />
-                        跨域代理
+                        {t('scrapers.crossOriginProxy')}
                       </Space>
                     }
                     unCheckedChildren={
                       <Space>
                         <DesktopOutlined />
-                        本地功能
+                        {t('scrapers.localFunction')}
                       </Space>
                     }
                     checked={dandanAuthMode === 'proxy'}
@@ -2489,7 +2474,7 @@ export const Scrapers = () => {
                     }
                   />
                   <div className="text-sm text-gray-600">
-                    {dandanAuthMode === 'local' ? '使用本地App ID和Secret进行认证' : '通过跨域代理使用API'}
+                    {dandanAuthMode === 'local' ? t('scrapers.localAuthDesc') : t('scrapers.proxyAuthDesc')}
                   </div>
                 </div>
               </Form.Item>
@@ -2510,46 +2495,46 @@ export const Scrapers = () => {
                         </a>
                       </span>
                     }
-                    rules={[{ required: true, message: '请输入App ID' }]}
+                    rules={[{ required: true, message: t('scrapers.inputAppId') }]}
                     className="mb-4"
                   >
                     <Input
                       prefix={<KeyOutlined className="text-gray-400" />}
-                      placeholder="请输入App ID"
+                      placeholder={t('scrapers.inputAppId')}
                     />
                   </Form.Item>
 
                   <Form.Item
                     name="dandanplayAppSecret"
                     label="App Secret"
-                    rules={[{ required: true, message: '请输入App Secret' }]}
+                    rules={[{ required: true, message: t('scrapers.inputAppSecret') }]}
                     className="mb-4"
                   >
                     <Input.Password
                       prefix={<LockOutlined className="text-gray-400" />}
-                      placeholder="请输入App Secret"
+                      placeholder={t('scrapers.inputAppSecret')}
                     />
                   </Form.Item>
 
                   <Form.Item
                     name="dandanplayAppSecretAlt"
-                    label="备用App Secret"
-                    tooltip="可选的备用密钥，用于轮换使用以避免频率限制"
+                    label={t('scrapers.backupAppSecret')}
+                    tooltip={t('scrapers.backupAppSecretTip')}
                     className="mb-4"
                   >
                     <Input.Password
                       prefix={<LockOutlined className="text-gray-400" />}
-                      placeholder="请输入备用App Secret（可选）"
+                      placeholder={t('scrapers.inputBackupAppSecret')}
                     />
                   </Form.Item>
 
                   <Form.Item
                     name="dandanplayApiBaseUrl"
-                    label="API基础URL"
-                    tooltip="弹弹play API的基础URL，通常无需修改"
+                    label={t('scrapers.apiBaseUrl')}
+                    tooltip={t('scrapers.apiBaseUrlTip')}
                     className="mb-4"
                   >
-                    <Input placeholder="默认为 https://api.dandanplay.net" />
+                    <Input placeholder={t('scrapers.apiBaseUrlPlaceholder')} />
                   </Form.Item>
                 </>
               )}
@@ -2557,9 +2542,9 @@ export const Scrapers = () => {
               {dandanAuthMode === 'proxy' && (
                 <Form.Item
                   name="dandanplayProxyConfig"
-                  label="跨域代理配置"
+                  label={t('scrapers.corsProxyConfig')}
                   rules={[
-                    { required: true, message: '请输入代理配置' },
+                    { required: true, message: t('scrapers.inputProxyConfig') },
                   ]}
                   className="mb-6"
                 >
@@ -2569,10 +2554,10 @@ export const Scrapers = () => {
 
               <Form.Item
                 name="dandanplayEpisodeIndexNormalize"
-                label="分集序号归一化（多季自动偏移）"
+                label={t('scrapers.episodeNormalize')}
                 valuePropName="checked"
                 className="mb-4"
-                tooltip="开启后，当弹弹play返回的分集序号不以1开头（如多季连续编号的第29~34集）时，自动将其偏移为从第1集开始（第1~6集）。适用于弹弹play中跨季连续编号的番剧。"
+                tooltip={t('scrapers.episodeNormalizeTip')}
               >
                 <Switch />
               </Form.Item>
@@ -2587,7 +2572,7 @@ export const Scrapers = () => {
             name={`${setname}EpisodeBlacklistRegex`}
             label={
               <div className="flex items-center justify-between w-full">
-                <span>分集标题黑名单 (正则)</span>
+                <span>{t('scrapers.episodeBlacklist')}</span>
                 <Space size="small">
                   <Button
                     type="link"
@@ -2595,7 +2580,7 @@ export const Scrapers = () => {
                     loading={loadingCommonBlacklist}
                     onClick={handleFillCommonBlacklist}
                   >
-                    填充通用规则
+                    {t('scrapers.fillCommonRules')}
                   </Button>
                   <Button
                     type="link"
@@ -2603,16 +2588,16 @@ export const Scrapers = () => {
                     loading={loadingDefaultBlacklist}
                     onClick={handleFillDefaultBlacklist}
                   >
-                    填充源默认规则
+                    {t('scrapers.fillSourceDefaultRules')}
                   </Button>
-                  <Tooltip title="AI 生成正则">
+                  <Tooltip title={t('scrapers.aiGenRegex')}>
                     <Button
                       type="link"
                       size="small"
                       icon={<RobotOutlined />}
                       onClick={() => setAiRegexModalOpen(true)}
                     >
-                      AI 生成
+                      {t('scrapers.aiGen')}
                     </Button>
                   </Tooltip>
                 </Space>
@@ -2625,15 +2610,14 @@ export const Scrapers = () => {
           <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center justify-start flex-wrap'} gap-2 mb-4`}>
             <Form.Item
               name={`scraper${setname.charAt(0).toUpperCase()}${setname.slice(1)}LogResponses`}
-              label="记录原始响应"
+              label={t('scrapers.recordRawResponse')}
               valuePropName="checked"
               className={isMobile ? "min-w-full !mb-0" : "min-w-[100px] shrink-0 !mb-0"}
             >
               <Switch />
             </Form.Item>
             <div className={`w-full ${isMobile ? 'text-sm' : ''}`}>
-              启用后，此源的所有API请求的原始响应将被记录到
-              config/logs/scraper_responses.log 文件中，用于调试。
+              {t('scrapers.rawResponseDesc')}
             </div>
           </div>
           {/* bilibili登录信息 */}
@@ -2651,12 +2635,12 @@ export const Scrapers = () => {
                       <Tag
                         color={biliUserinfo.vipType === 2 ? '#f50' : '#2db7f5'}
                       >
-                        {biliUserinfo.vipType === 2 ? '年度大会员' : '大会员'}
+                        {biliUserinfo.vipType === 2 ? t('scrapers.annualVip') : t('scrapers.vip')}
                       </Tag>
                     )}
                   </div>
                   <Button type="primary" danger onClick={handleBiliLogout}>
-                    注销登录
+                    {t('scrapers.logout')}
                   </Button>
                 </div>
               ) : (
@@ -2668,7 +2652,7 @@ export const Scrapers = () => {
                       loading={biliQrcodeLoading}
                       onClick={handleBiliQrcode}
                     >
-                      扫码登录
+                      {t('scrapers.scanLogin')}
                     </Button>
                     <div className="flex items-center gap-2">
                       <Checkbox
@@ -2685,7 +2669,7 @@ export const Scrapers = () => {
                         className="cursor-pointer text-sm"
                         onClick={() => setShowDisclaimerModal(true)}
                       >
-                        我已阅读并同意免责声明
+                        {t('scrapers.agreeDisclaimer')}
                       </span>
                     </div>
                   </div>
@@ -2696,7 +2680,7 @@ export const Scrapers = () => {
         </Form>
       </Modal>
       <Modal
-        title="bilibili扫码登录"
+        title={t('scrapers.biliScanLogin')}
         open={biliLoginOpen}
         footer={null}
         onCancel={() => setBiliLoginOpen(false)}
@@ -2717,16 +2701,16 @@ export const Scrapers = () => {
                 className="absolute left-0 top-0 w-full h-full p-3 flex items-center justify-center bg-black/80 cursor-pointer text-neutral-100"
                 onClick={handleBiliQrcode}
               >
-                二维码已失效
+                {t('scrapers.qrcodeExpired')}
                 <br />
-                点击重新获取
+                {t('scrapers.clickToRefresh')}
               </div>
             )}
             {biliQrcodeStatus === 'mobileConfirm' && (
               <div className="absolute left-0 top-0 w-full h-full p-3 flex items-center justify-center bg-black/80 text-neutral-100">
-                已扫描，请在
+                {t('scrapers.scannedConfirm')}
                 <br />
-                手机上确认登录
+                {t('scrapers.confirmOnPhone')}
               </div>
             )}
             {biliQrcodeStatus === 'error' && (
@@ -2734,40 +2718,39 @@ export const Scrapers = () => {
                 className="absolute left-0 top-0 w-full h-full p-3 flex items-center justify-center bg-black/80 cursor-pointer text-neutral-100"
                 onClick={handleBiliQrcode}
               >
-                轮询失败
+                {t('scrapers.pollFailed')}
                 <br />
-                点击重新获取
+                {t('scrapers.clickToRefresh')}
               </div>
             )}
           </div>
-          <div className={`mb-3 ${isMobile ? 'text-sm px-2' : ''}`}>请使用Bilibili手机客户端扫描二维码</div>
+          <div className={`mb-3 ${isMobile ? 'text-sm px-2' : ''}`}>{t('scrapers.scanQrcodeTip')}</div>
           <Button type="primary" danger onClick={cancelBiliLogin}>
-            取消登录
+            {t('scrapers.cancelLogin')}
           </Button>
         </div>
       </Modal>
       <Modal
-        title="免责声明"
+        title={t('scrapers.disclaimer')}
         open={showDisclaimerModal}
         onOk={() => {
           setBiliQrcodeChecked(true)
           setShowDisclaimerModal(false)
         }}
         onCancel={() => setShowDisclaimerModal(false)}
-        okText="同意"
-        cancelText="取消"
+        okText={t('scrapers.agree')}
+        cancelText={t('common.cancel')}
       >
         <div className="text-sm text-left">
-          登录接口由{' '}
+          {t('scrapers.disclaimerProvidedBy')}{' '}
           <a
             href="https://github.com/SocialSisterYi/bilibili-API-collect"
             target="_blank"
             rel="noopener noreferrer"
           >
             bilibili-API-collect
-          </a>{' '}
-          提供，为Blibili官方非公开接口。
-          您的登录凭据将加密存储在您自己的数据库中。登录行为属用户个人行为，通过该登录获取数据同等于使用您的账号获取，由登录用户自行承担相关责任，与本工具无关。使用本接口登录等同于认同该声明。
+          </a>
+          {t('scrapers.disclaimerContent')}
         </div>
       </Modal>
 
@@ -2811,13 +2794,13 @@ export const Scrapers = () => {
               </ReactMarkdown>
             </div>
           ) : (
-            <Typography.Text type="secondary">暂无版本日志</Typography.Text>
+            <Typography.Text type="secondary">{t('scrapers.noVersionLog')}</Typography.Text>
           )}
         </div>
       </Modal>
 
       <Modal
-        title={<><RobotOutlined /> AI 正则生成助手</>}
+        title={<><RobotOutlined /> {t('scrapers.aiRegexAssistant')}</>}
         open={aiRegexModalOpen}
         onCancel={() => { setAiRegexModalOpen(false); setAiRegexResult('') }}
         footer={null}
@@ -2827,12 +2810,12 @@ export const Scrapers = () => {
         <div className="space-y-4">
           <div>
             <div className="text-sm text-gray-600 mb-2">
-              用自然语言描述你想过滤的分集标题，AI 会帮你生成对应的正则表达式。
+              {t('scrapers.aiRegexDesc')}
             </div>
             <Input.TextArea
               value={aiRegexDesc}
               onChange={e => setAiRegexDesc(e.target.value)}
-              placeholder="例如：过滤掉包含 预告、花絮、特典、PV 的分集"
+              placeholder={t('scrapers.aiRegexPlaceholder')}
               rows={3}
               onPressEnter={e => { if (!e.shiftKey) { e.preventDefault(); handleAiGenerate() } }}
             />
@@ -2844,20 +2827,20 @@ export const Scrapers = () => {
               loading={aiRegexLoading}
               onClick={handleAiGenerate}
             >
-              生成
+              {t('scrapers.generate')}
             </Button>
           </div>
           {aiRegexResult && (
             <div>
-              <div className="text-sm text-gray-600 mb-1">生成结果：</div>
+              <div className="text-sm text-gray-600 mb-1">{t('scrapers.generateResult')}</div>
               <div className="bg-gray-50 border rounded p-3 font-mono text-sm break-all">
                 {aiRegexResult}
               </div>
               <div className="flex justify-end mt-3">
                 <Space>
-                  <Button onClick={() => setAiRegexResult('')}>清除</Button>
+                  <Button onClick={() => setAiRegexResult('')}>{t('scrapers.clear')}</Button>
                   <Button type="primary" onClick={handleApplyAiRegex}>
-                    应用规则
+                    {t('scrapers.applyRule')}
                   </Button>
                 </Space>
               </div>

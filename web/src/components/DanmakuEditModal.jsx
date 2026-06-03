@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Modal,
   Tabs,
@@ -60,6 +61,7 @@ const formatTime = (seconds) => {
 
 // 可拖拽的合并项组件
 const SortableMergeItem = ({ item, index, onOffsetChange, onRemove }) => {
+  const { t } = useTranslation()
   const {
     attributes,
     listeners,
@@ -85,16 +87,16 @@ const SortableMergeItem = ({ item, index, onOffsetChange, onRemove }) => {
         <HolderOutlined className="text-gray-400 dark:text-gray-500" />
       </div>
       <div className="flex-1">
-        <div className="font-medium">第{item.episodeIndex}集</div>
+        <div className="font-medium">{t('danmakuEdit.episodeItem', { index: item.episodeIndex })}</div>
         <div className="text-sm text-gray-500 dark:text-gray-400 truncate">{item.title}</div>
-        <div className="text-xs text-gray-400 dark:text-gray-500">弹幕: {item.commentCount}条</div>
+        <div className="text-xs text-gray-400 dark:text-gray-500">{t('danmakuEdit.danmakuCount', { count: item.commentCount })}</div>
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-sm">偏移:</span>
+        <span className="text-sm">{t('danmakuEdit.offset')}</span>
         <InputNumber
           value={item.offsetSeconds}
           onChange={(val) => onOffsetChange(item.episodeId, val || 0)}
-          addonAfter="秒"
+          addonAfter={t('danmakuEdit.second')}
           style={{ width: 120 }}
         />
       </div>
@@ -109,6 +111,7 @@ const SortableMergeItem = ({ item, index, onOffsetChange, onRemove }) => {
 }
 
 export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceInfo }) => {
+  const { t } = useTranslation()
   const messageApi = useMessage()
   const [activeTab, setActiveTab] = useState('detail')
   const [loading, setLoading] = useState(false)
@@ -170,7 +173,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
       const res = await getDanmakuEditDetail(episodeId)
       setDetailData(res.data)
     } catch (error) {
-      messageApi.error('获取弹幕详情失败')
+      messageApi.error(t('danmakuEdit.fetchDetailFailed'))
       setDetailData(null)
     } finally {
       setDetailLoading(false)
@@ -180,11 +183,11 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
   // 时间偏移处理
   const handleApplyOffset = async () => {
     if (offsetEpisodes.length === 0) {
-      messageApi.warning('请选择要调整的分集')
+      messageApi.warning(t('danmakuEdit.selectEpisodes'))
       return
     }
     if (offsetValue === 0) {
-      messageApi.warning('偏移值不能为0')
+      messageApi.warning(t('danmakuEdit.offsetNotZero'))
       return
     }
     setOffsetLoading(true)
@@ -193,10 +196,10 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
         episodeIds: offsetEpisodes,
         offsetSeconds: offsetValue,
       })
-      messageApi.success(`已对 ${offsetEpisodes.length} 个分集应用 ${offsetValue}s 偏移`)
+      messageApi.success(t('danmakuEdit.offsetApplied', { count: offsetEpisodes.length, offset: offsetValue }))
       onSuccess?.()
     } catch (error) {
-      messageApi.error('应用时间偏移失败: ' + error.message)
+      messageApi.error(t('danmakuEdit.applyOffsetFailed') + ': ' + error.message)
     } finally {
       setOffsetLoading(false)
     }
@@ -234,11 +237,11 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
   // 执行拆分
   const handleSplit = async () => {
     if (!splitSourceEpisode) {
-      messageApi.warning('请选择源分集')
+      messageApi.warning(t('danmakuEdit.selectSourceEpisode'))
       return
     }
     if (splitConfigs.length === 0) {
-      messageApi.warning('请添加拆分配置')
+      messageApi.warning(t('danmakuEdit.addSplitConfig'))
       return
     }
     setSplitLoading(true)
@@ -255,13 +258,13 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
         resetTime: splitResetTime,
       })
       if (res.data.success) {
-        messageApi.success(`拆分成功，创建了 ${res.data.newEpisodes.length} 个新分集`)
+        messageApi.success(t('danmakuEdit.splitSuccess', { count: res.data.newEpisodes.length }))
         onSuccess?.()
       } else {
-        messageApi.error(res.data.error || '拆分失败')
+        messageApi.error(res.data.error || t('danmakuEdit.splitFailed'))
       }
     } catch (error) {
-      messageApi.error('拆分失败: ' + error.message)
+      messageApi.error(t('danmakuEdit.splitFailed') + ': ' + error.message)
     } finally {
       setSplitLoading(false)
     }
@@ -307,11 +310,11 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
   // 执行合并
   const handleMerge = async () => {
     if (mergeEpisodes.length < 2) {
-      messageApi.warning('请至少选择2个分集进行合并')
+      messageApi.warning(t('danmakuEdit.selectAtLeast2'))
       return
     }
     if (!mergeTargetTitle.trim()) {
-      messageApi.warning('请输入目标标题')
+      messageApi.warning(t('danmakuEdit.inputTargetTitle'))
       return
     }
     setMergeLoading(true)
@@ -327,13 +330,13 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
         deduplicate: mergeDeduplicate,
       })
       if (res.data.success) {
-        messageApi.success(`合并成功，新分集共 ${res.data.commentCount} 条弹幕`)
+        messageApi.success(t('danmakuEdit.mergeSuccess', { count: res.data.commentCount }))
         onSuccess?.()
       } else {
-        messageApi.error(res.data.error || '合并失败')
+        messageApi.error(res.data.error || t('danmakuEdit.mergeFailed'))
       }
     } catch (error) {
-      messageApi.error('合并失败: ' + error.message)
+      messageApi.error(t('danmakuEdit.mergeFailed') + ': ' + error.message)
     } finally {
       setMergeLoading(false)
     }
@@ -355,7 +358,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
   const renderDetailTab = () => (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-        <span className="shrink-0">选择分集：</span>
+        <span className="shrink-0">{t('danmakuEdit.selectEpisode')}</span>
         <Select
           value={selectedDetailEpisode}
           onChange={setSelectedDetailEpisode}
@@ -363,7 +366,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
           style={{ maxWidth: 300 }}
           options={episodes?.map((e) => ({
             value: e.episodeId,
-            label: `第${e.episodeIndex}集 - ${e.title} (${e.commentCount}条)`,
+            label: t('danmakuEdit.episodeOption', { index: e.episodeIndex, title: e.title, count: e.commentCount }),
           }))}
         />
       </div>
@@ -377,34 +380,34 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
           {/* 统计信息 */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded">
-              <div className="text-sm text-gray-500 dark:text-gray-400">总弹幕数</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">{t('danmakuEdit.totalDanmaku')}</div>
               <div className="text-xl font-bold text-gray-900 dark:text-gray-100">{detailData.totalCount}</div>
             </div>
             <div className="p-3 bg-green-50 dark:bg-green-900/30 rounded">
-              <div className="text-sm text-gray-500 dark:text-gray-400">时间范围</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">{t('danmakuEdit.timeRange')}</div>
               <div className="text-xl font-bold text-gray-900 dark:text-gray-100">
                 {formatTime(detailData.timeRange.start)} - {formatTime(detailData.timeRange.end)}
               </div>
             </div>
             <div className="p-3 bg-purple-50 dark:bg-purple-900/30 rounded">
-              <div className="text-sm text-gray-500 dark:text-gray-400">来源数</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">{t('danmakuEdit.sourceCount')}</div>
               <div className="text-xl font-bold text-gray-900 dark:text-gray-100">{detailData.sources.length}</div>
             </div>
             <div className="p-3 bg-orange-50 dark:bg-orange-900/30 rounded">
-              <div className="text-sm text-gray-500 dark:text-gray-400">时长</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">{t('danmakuEdit.duration')}</div>
               <div className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                {Math.ceil((detailData.timeRange.end - detailData.timeRange.start) / 60)}分钟
+                {t('danmakuEdit.minutes', { count: Math.ceil((detailData.timeRange.end - detailData.timeRange.start) / 60) })}
               </div>
             </div>
           </div>
 
           {/* 来源分布 */}
           <div>
-            <div className="text-sm font-medium mb-2">来源分布</div>
+            <div className="text-sm font-medium mb-2">{t('danmakuEdit.sourceDistribution')}</div>
             <div className="flex flex-wrap gap-2">
               {detailData.sources.map((s) => (
                 <Tag key={s.name} color="blue">
-                  {s.name}: {s.count}条
+                  {t('danmakuEdit.sourceCountSuffix', { name: s.name, count: s.count })}
                 </Tag>
               ))}
             </div>
@@ -412,18 +415,18 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
 
           {/* 时间分布图 */}
           <div>
-            <div className="text-sm font-medium mb-2">时间分布（每分钟弹幕数）</div>
+            <div className="text-sm font-medium mb-2">{t('danmakuEdit.timeDistribution')}</div>
             <div className="max-h-40 overflow-y-auto space-y-1">
               {detailData.distribution.map((d) => (
                 <div key={d.minute} className="flex items-center gap-2 text-xs">
-                  <span className="w-16 text-right">{d.minute}分钟</span>
+                  <span className="w-16 text-right">{t('danmakuEdit.minuteLabel', { minute: d.minute })}</span>
                   <Progress
                     percent={(d.count / maxDistribution) * 100}
                     showInfo={false}
                     size="small"
                     className="flex-1"
                   />
-                  <span className="w-12">{d.count}条</span>
+                  <span className="w-12">{t('danmakuEdit.countSuffix', { count: d.count })}</span>
                 </div>
               ))}
             </div>
@@ -431,20 +434,20 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
 
           {/* 弹幕预览 */}
           <div>
-            <div className="text-sm font-medium mb-2">弹幕预览（前100条）</div>
+            <div className="text-sm font-medium mb-2">{t('danmakuEdit.danmakuPreview')}</div>
             <div className="max-h-60 overflow-y-auto border rounded border-gray-200 dark:border-gray-700">
               <Table
                 dataSource={detailData.comments}
                 columns={[
                   {
-                    title: '时间',
+                    title: t('danmakuEdit.colTime'),
                     dataIndex: 'time',
                     width: 80,
                     render: (t) => formatTime(t),
                   },
-                  { title: '内容', dataIndex: 'content', ellipsis: true },
+                  { title: t('danmakuEdit.colContent'), dataIndex: 'content', ellipsis: true },
                   {
-                    title: '来源',
+                    title: t('danmakuEdit.colSource'),
                     dataIndex: 'source',
                     width: 100,
                     render: (s) => <Tag>{s}</Tag>,
@@ -458,7 +461,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
           </div>
         </div>
       ) : (
-        <Empty description="暂无弹幕数据" />
+        <Empty description={t('danmakuEdit.noDanmakuData')} />
       )}
     </div>
   )
@@ -468,11 +471,11 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
     <div className="space-y-4">
       <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-sm text-yellow-800 dark:text-yellow-200">
         <InfoCircleOutlined className="mr-2" />
-        选择要调整的分集，设置偏移秒数（正数延后，负数提前），然后点击应用。
+        {t('danmakuEdit.offsetTip')}
       </div>
 
       <div>
-        <div className="text-sm font-medium mb-2">选择分集</div>
+        <div className="text-sm font-medium mb-2">{t('danmakuEdit.selectEpisodeLabel')}</div>
         <div className="max-h-60 overflow-y-auto border rounded p-2 border-gray-200 dark:border-gray-700" style={{ backgroundColor: 'var(--color-hover)' }}>
           <Checkbox
             checked={offsetEpisodes.length === episodes?.length}
@@ -485,7 +488,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
               }
             }}
           >
-            全选
+            {t('danmakuEdit.selectAll')}
           </Checkbox>
           <Divider className="my-2" />
           <div className="space-y-1">
@@ -501,7 +504,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
                     }
                   }}
                 >
-                  第{ep.episodeIndex}集 - {ep.title} ({ep.commentCount}条)
+                  {t('danmakuEdit.episodeOption', { index: ep.episodeIndex, title: ep.title, count: ep.commentCount })}
                 </Checkbox>
               </div>
             ))}
@@ -510,15 +513,15 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
       </div>
 
       <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-        <span className="shrink-0">偏移秒数：</span>
+        <span className="shrink-0">{t('danmakuEdit.offsetSeconds')}</span>
         <InputNumber
           value={offsetValue}
           onChange={setOffsetValue}
-          addonAfter="秒"
+          addonAfter={t('danmakuEdit.second')}
           style={{ width: 150 }}
         />
         <span className="text-gray-500 dark:text-gray-400 text-sm">
-          {offsetValue > 0 ? '弹幕将延后出现' : offsetValue < 0 ? '弹幕将提前出现' : ''}
+          {offsetValue > 0 ? t('danmakuEdit.danmakuDelay') : offsetValue < 0 ? t('danmakuEdit.danmakuAdvance') : ''}
         </span>
       </div>
 
@@ -529,7 +532,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
           loading={offsetLoading}
           disabled={offsetEpisodes.length === 0 || offsetValue === 0}
         >
-          应用偏移 ({offsetEpisodes.length}个分集)
+          {t('danmakuEdit.applyOffset', { count: offsetEpisodes.length })}
         </Button>
       </div>
     </div>
@@ -540,11 +543,11 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
     <div className="space-y-4">
       <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-sm text-yellow-800 dark:text-yellow-200">
         <InfoCircleOutlined className="mr-2" />
-        将一个分集的弹幕按时间范围拆分到多个新分集。适用于合集视频拆分为单集。
+        {t('danmakuEdit.splitTip')}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-        <span className="shrink-0">源分集：</span>
+        <span className="shrink-0">{t('danmakuEdit.sourceEpisode')}</span>
         <Select
           value={splitSourceEpisode}
           onChange={(val) => {
@@ -553,24 +556,24 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
           }}
           className="flex-1 min-w-[200px]"
           style={{ maxWidth: 300 }}
-          placeholder="选择要拆分的分集"
+          placeholder={t('danmakuEdit.selectSplitEpisode')}
           options={episodes?.map((e) => ({
             value: e.episodeId,
-            label: `第${e.episodeIndex}集 - ${e.title} (${e.commentCount}条)`,
+            label: t('danmakuEdit.episodeOption', { index: e.episodeIndex, title: e.title, count: e.commentCount }),
           }))}
         />
         {splitSourceEpisode && (
           <Button size="small" onClick={() => loadDetailData(splitSourceEpisode)}>
-            查看详情
+            {t('danmakuEdit.viewDetail')}
           </Button>
         )}
       </div>
 
       <div>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium">拆分配置</span>
+          <span className="text-sm font-medium">{t('danmakuEdit.splitConfig')}</span>
           <Button size="small" icon={<PlusOutlined />} onClick={addSplitConfig}>
-            添加
+            {t('danmakuEdit.add')}
           </Button>
         </div>
         <div className="space-y-2">
@@ -581,7 +584,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
               style={{ backgroundColor: 'var(--color-hover)' }}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="font-medium text-sm">新分集 {index + 1}</span>
+                <span className="font-medium text-sm">{t('danmakuEdit.newEpisode', { index: index + 1 })}</span>
                 <Button
                   type="text"
                   danger
@@ -593,47 +596,47 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
                 <InputNumber
                   value={config.episodeIndex}
                   onChange={(val) => updateSplitConfig(config.id, 'episodeIndex', val)}
-                  addonBefore="集数"
+                  addonBefore={t('danmakuEdit.episodeNum')}
                   className="w-full"
                   min={1}
                 />
                 <InputNumber
                   value={config.startTime}
                   onChange={(val) => updateSplitConfig(config.id, 'startTime', val)}
-                  addonBefore="开始"
-                  addonAfter="秒"
+                  addonBefore={t('danmakuEdit.start')}
+                  addonAfter={t('danmakuEdit.second')}
                   className="w-full"
                   min={0}
                 />
                 <InputNumber
                   value={config.endTime}
                   onChange={(val) => updateSplitConfig(config.id, 'endTime', val)}
-                  addonBefore="结束"
-                  addonAfter="秒"
+                  addonBefore={t('danmakuEdit.end')}
+                  addonAfter={t('danmakuEdit.second')}
                   className="w-full"
                   min={0}
                 />
                 <Input
                   value={config.title}
                   onChange={(e) => updateSplitConfig(config.id, 'title', e.target.value)}
-                  placeholder="标题"
+                  placeholder={t('danmakuEdit.titlePlaceholder')}
                   className="w-full"
                 />
               </div>
             </div>
           ))}
           {splitConfigs.length === 0 && (
-            <Empty description="点击添加按钮创建拆分配置" />
+            <Empty description={t('danmakuEdit.addSplitConfigEmpty')} />
           )}
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-4">
         <Checkbox checked={splitDeleteSource} onChange={(e) => setSplitDeleteSource(e.target.checked)}>
-          删除原分集
+          {t('danmakuEdit.deleteSourceEpisode')}
         </Checkbox>
         <Checkbox checked={splitResetTime} onChange={(e) => setSplitResetTime(e.target.checked)}>
-          新分集时间从0开始
+          {t('danmakuEdit.resetTimeFromZero')}
         </Checkbox>
       </div>
 
@@ -644,7 +647,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
           loading={splitLoading}
           disabled={!splitSourceEpisode || splitConfigs.length === 0}
         >
-          执行拆分
+          {t('danmakuEdit.doSplit')}
         </Button>
       </div>
     </div>
@@ -655,13 +658,13 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
     <div className="space-y-4">
       <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-sm text-yellow-800 dark:text-yellow-200">
         <InfoCircleOutlined className="mr-2" />
-        将多个分集的弹幕合并到一个新分集。可拖拽调整顺序，并为每个源分集设置时间偏移。
+        {t('danmakuEdit.mergeTip')}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* 左侧：可选分集 */}
         <div>
-          <div className="text-sm font-medium mb-2">可选分集</div>
+          <div className="text-sm font-medium mb-2">{t('danmakuEdit.availableEpisodes')}</div>
           <div className="max-h-60 overflow-y-auto border rounded p-2 border-gray-200 dark:border-gray-700" style={{ backgroundColor: 'var(--color-hover)' }}>
             {availableMergeEpisodes.length > 0 ? (
               availableMergeEpisodes.map((ep) => (
@@ -671,21 +674,21 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
                   onClick={() => addMergeEpisode(ep.episodeId)}
                 >
                   <div>
-                    <div className="font-medium">第{ep.episodeIndex}集</div>
+                    <div className="font-medium">{t('danmakuEdit.episodeItem', { index: ep.episodeIndex })}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 truncate">{ep.title}</div>
                   </div>
                   <Button size="small" icon={<PlusOutlined />} />
                 </div>
               ))
             ) : (
-              <Empty description="所有分集已添加" />
+              <Empty description={t('danmakuEdit.allEpisodesAdded')} />
             )}
           </div>
         </div>
 
         {/* 右侧：已选分集（可拖拽排序） */}
         <div>
-          <div className="text-sm font-medium mb-2">合并顺序（可拖拽调整）</div>
+          <div className="text-sm font-medium mb-2">{t('danmakuEdit.mergeOrder')}</div>
           <div className="max-h-60 overflow-y-auto border rounded p-2 border-gray-200 dark:border-gray-700" style={{ backgroundColor: 'var(--color-hover)' }}>
             {mergeEpisodes.length > 0 ? (
               <DndContext
@@ -709,7 +712,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
                 </SortableContext>
               </DndContext>
             ) : (
-              <Empty description="点击左侧分集添加" />
+              <Empty description={t('danmakuEdit.clickToAdd')} />
             )}
           </div>
         </div>
@@ -717,10 +720,10 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
 
       {/* 目标配置 */}
       <div className="p-3 rounded space-y-3" style={{ backgroundColor: 'var(--color-hover)' }}>
-        <div className="text-sm font-medium">目标分集配置</div>
+        <div className="text-sm font-medium">{t('danmakuEdit.targetConfig')}</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="flex items-center gap-2">
-            <span className="shrink-0">集数：</span>
+            <span className="shrink-0">{t('danmakuEdit.episodeNumLabel')}</span>
             <InputNumber
               value={mergeTargetIndex}
               onChange={setMergeTargetIndex}
@@ -730,21 +733,21 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="shrink-0">标题：</span>
+            <span className="shrink-0">{t('danmakuEdit.titleLabel')}</span>
             <Input
               value={mergeTargetTitle}
               onChange={(e) => setMergeTargetTitle(e.target.value)}
-              placeholder="输入合并后的标题"
+              placeholder={t('danmakuEdit.mergeTitlePlaceholder')}
               className="flex-1"
             />
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <Checkbox checked={mergeDeleteSources} onChange={(e) => setMergeDeleteSources(e.target.checked)}>
-            删除原分集
+            {t('danmakuEdit.deleteSourceEpisode')}
           </Checkbox>
           <Checkbox checked={mergeDeduplicate} onChange={(e) => setMergeDeduplicate(e.target.checked)}>
-            去除重复弹幕
+            {t('danmakuEdit.deduplicate')}
           </Checkbox>
         </div>
       </div>
@@ -756,7 +759,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
           loading={mergeLoading}
           disabled={mergeEpisodes.length < 2 || !mergeTargetTitle.trim()}
         >
-          执行合并 ({mergeEpisodes.length}个分集)
+          {t('danmakuEdit.doMerge', { count: mergeEpisodes.length })}
         </Button>
       </div>
     </div>
@@ -768,7 +771,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
       label: (
         <span>
           <InfoCircleOutlined />
-          弹幕详情
+          {t('danmakuEdit.tabDetail')}
         </span>
       ),
       children: renderDetailTab(),
@@ -778,7 +781,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
       label: (
         <span>
           <ClockCircleOutlined />
-          时间偏移
+          {t('danmakuEdit.tabOffset')}
         </span>
       ),
       children: renderOffsetTab(),
@@ -788,7 +791,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
       label: (
         <span>
           <ScissorOutlined />
-          分集拆分
+          {t('danmakuEdit.tabSplit')}
         </span>
       ),
       children: renderSplitTab(),
@@ -798,7 +801,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
       label: (
         <span>
           <MergeCellsOutlined />
-          分集合并
+          {t('danmakuEdit.tabMerge')}
         </span>
       ),
       children: renderMergeTab(),
@@ -807,7 +810,7 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
 
   return (
     <Modal
-      title="弹幕编辑"
+      title={t('danmakuEdit.title')}
       open={open}
       onCancel={onCancel}
       footer={null}

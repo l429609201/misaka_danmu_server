@@ -18,20 +18,32 @@ from src.ai.ai_prompts import DEFAULT_AI_MATCH_PROMPT, DEFAULT_AI_RECOGNITION_PR
 class TmdbAutoMapJob(BaseJob):
     job_type = "tmdbAutoScrape"
     job_name = "TMDB自动刮削与剧集组映射"
+    job_name_en = "TMDB Auto-Scrape & Episode Group Mapping"
+    job_name_tw = "TMDB自動刮削與劇集組對映"
     description = "自动从TMDB刮削已导入作品的别名、剧集组信息，更新分集映射关系。帮助解决分集顺序不一致的问题。"
+    description_en = "Auto-scrape aliases and episode group info from TMDB for imported works, updating episode mappings. Helps resolve episode order inconsistencies."
+    description_tw = "自動從TMDB刮削已匯入作品的別名、劇集組資訊，更新分集對映關係。幫助解決分集順序不一致的問題。"
     config_schema = [
         {
             "key": "forceScrape",
             "label": "强制刮削",
+            "label_en": "Force Scrape",
+            "label_tw": "強制刮削",
             "type": "boolean",
             "description": "关闭时，已有剧集组映射的条目将被跳过；开启时，强制覆盖所有条目的刮削数据",
+            "description_en": "When off, entries with existing episode group mappings are skipped; when on, force overwrite all entries.",
+            "description_tw": "關閉時，已有劇集組對映的條目將被跳過；開啟時，強制覆蓋所有條目的刮削資料",
             "default": False,
         },
         {
             "key": "enableEpisodeGroup",
             "label": "剧集组刮削",
+            "label_en": "Episode Group Scraping",
+            "label_tw": "劇集組刮削",
             "type": "boolean",
             "description": "开启后将从TMDB获取剧集组信息并更新分集映射关系；关闭时仅刮削别名信息",
+            "description_en": "When enabled, fetches episode group info from TMDB and updates mappings; when disabled, only scrapes alias info.",
+            "description_tw": "開啟後將從TMDB取得劇集組資訊並更新分集對映關係；關閉時僅刮削別名資訊",
             "default": False,
         },
     ]

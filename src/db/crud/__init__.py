@@ -24,6 +24,10 @@ from .user import (
     get_bangumi_auth,
     save_bangumi_auth,
     delete_bangumi_auth,
+    get_oauth_credential,
+    save_oauth_credential,
+    delete_oauth_credential,
+    get_oauth_credential_with_token,
 )
 
 # Task模块
@@ -194,6 +198,9 @@ from .source import (
     reset_incremental_refresh_failures,
     disable_incremental_refresh,
     get_sources_with_incremental_refresh_enabled,
+    get_calendar_sources,
+    update_air_schedule,
+    update_metadata_ids,
     _assign_source_order_if_missing,
     get_incremental_refresh_sources_grouped,
     batch_toggle_incremental_refresh,
@@ -340,6 +347,10 @@ __all__ = [
     'get_bangumi_auth',
     'save_bangumi_auth',
     'delete_bangumi_auth',
+    'get_oauth_credential',
+    'save_oauth_credential',
+    'delete_oauth_credential',
+    'get_oauth_credential_with_token',
     # Task
     'is_system_task',
     'get_scheduled_tasks',
@@ -477,6 +488,9 @@ __all__ = [
     'reset_incremental_refresh_failures',
     'disable_incremental_refresh',
     'get_sources_with_incremental_refresh_enabled',
+    'get_calendar_sources',
+    'update_air_schedule',
+    'update_metadata_ids',
     '_assign_source_order_if_missing',
     'split_source_episodes',
     'get_source_episode_list',

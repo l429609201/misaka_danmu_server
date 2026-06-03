@@ -21,6 +21,7 @@ from src.notification.menus import (
     TokensMenuMixin,
     TasksMenuMixin,
     CacheMenuMixin,
+    StatusMenuMixin,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class NotificationService(
     TokensMenuMixin,
     TasksMenuMixin,
     CacheMenuMixin,
+    StatusMenuMixin,
 ):
     """通知系统核心服务：命令处理 / 回调处理 / 对话状态 / 事件分发"""
 
@@ -78,15 +80,16 @@ class NotificationService(
 
     # 命令定义：{"/command": "描述"}
     MENU_COMMANDS = {
-        "/search": "搜索弹幕源",
+        "/help": "显示帮助",
+        "/status": "系统状态",
+        "/sh": "搜索弹幕源",
         "/auto": "自动导入（多平台）",
         "/url": "从URL导入弹幕",
         "/refresh": "弹幕库管理",
         "/tokens": "Token管理",
-        "/tasks": "定时任务列表",
+        "/tasks": "定时任务管理",
         "/cache": "清除缓存",
         "/cancel": "取消当前操作",
-        "/help": "显示帮助",
     }
 
     def get_menu_commands(self) -> Dict[str, str]:
@@ -157,6 +160,8 @@ class NotificationService(
         handler_map = {
             "start": self.cmd_start,
             "help": self.cmd_help,
+            "status": self.cmd_status,
+            "sh": self.cmd_search,
             "search": self.cmd_search,
             "tasks": self.cmd_list_tasks,
             "tokens": self.cmd_list_tokens,
@@ -181,8 +186,18 @@ class NotificationService(
         action = parts[0] if parts else ""
         params = parts[1:] if len(parts) > 1 else []
         callback_map = {
+            # status
+            "status_refresh": self.cb_status_refresh,
             # tasks
             "tasks_refresh": self.cb_tasks_refresh,
+            "task_toggle": self.cb_task_toggle,
+            "task_run": self.cb_task_run,
+            "task_del": self.cb_task_del,
+            "task_del_ok": self.cb_task_del_ok,
+            "task_add": self.cb_task_add,
+            "task_add_type": self.cb_task_add_type,
+            "task_cron": self.cb_task_cron,
+            "task_cron_custom": self.cb_task_cron_custom,
             # tokens
             "tokens_refresh": self.cb_tokens_refresh,
             "token_toggle": self.cb_token_toggle,
@@ -227,6 +242,14 @@ class NotificationService(
             "refresh_ep_page": self.cb_refresh_ep_page,
             "refresh_do": self.cb_refresh_do,
             "lib_page": self.cb_lib_page,
+            # refresh episode select (inline keyboard)
+            "ref_ep_tog": self.cb_ref_ep_toggle,
+            "ref_ep_do": self.cb_ref_ep_do,
+            "ref_ep_batch": self.cb_ref_ep_batch,
+            "ref_ep_pg": self.cb_ref_ep_page,
+            "ref_ep_all": self.cb_ref_ep_all,
+            "ref_ep_none": self.cb_ref_ep_none,
+            "ref_ep_ok": self.cb_ref_ep_ok,
             # delete source
             "delete_source_do": self.cb_delete_source_do,
             "delete_source_confirm": self.cb_delete_source_confirm,
@@ -279,6 +302,8 @@ class NotificationService(
             # 搜索结果操作面板的文本输入
             "search_season_input": self._text_search_season_input,
             "search_ep_input": self._text_search_ep_input,
+            # 定时任务添加
+            "task_cron_input": self._text_task_cron_input,
         }
         handler = text_handler_map.get(state)
         if not handler:
@@ -329,25 +354,41 @@ class NotificationService(
     }
 
     async def emit_event(self, event_type: str, data: Dict[str, Any]):
-        """向所有订阅了该事件的渠道发送通知"""
+        """向所有订阅了该事件的渠道发送通知
+
+        C 方案重构后：优先走 NotificationManager.notify_event 新路径，
+        进度消息编辑（task_progress_tg_msg）逻辑保留在此处处理。
+        """
         if not self.notification_manager:
             return
-        channels = self.notification_manager.get_all_channels()
+
         is_any_complete = event_type in self._COMPLETE_EVENT_TYPES
         task_id: str = data.get("task_id", "")
+
+        # 完成事件有进度消息缓存时，需要特殊处理 edit_message
+        if is_any_complete and task_id and self._task_progress_tg_msg.get(task_id):
+            # 带进度编辑的场景走旧路径（仅影响有缓存进度消息的渠道）
+            await self._emit_event_with_progress_edit(event_type, data, task_id)
+        else:
+            # 常规场景走新路径
+            await self.notification_manager.notify_event(event_type, data)
+
+    async def _emit_event_with_progress_edit(self, event_type: str, data: dict, task_id: str):
+        """带进度消息编辑的事件发送 — 处理 TG edit_message 场景
+
+        对有缓存进度消息的渠道：edit 已有消息
+        对其他渠道：通过新路径正常发送
+        """
+        channels = self.notification_manager.get_all_channels()
+        cached_channels = set(self._task_progress_tg_msg.get(task_id, {}).keys())
+
         for ch_id, channel_instance in channels.items():
             try:
                 events_cfg = channel_instance.config.get("__events_config", {})
-                # 检查订阅：fallback 事件从映射表取对应的订阅 key，否则直接用 event_type
                 check_key = self._FALLBACK_COMPLETE_EVENTS.get(event_type, event_type)
                 subscribed = events_cfg.get(check_key)
-                logger.info(f"[通知] event={event_type} ch={ch_id} check_key={check_key} subscribed={subscribed}")
 
-                # 完成事件 + 有缓存的进度消息 → 即使没订阅完成事件也要编辑进度消息
-                has_cached_progress = (
-                    is_any_complete and task_id
-                    and ch_id in self._task_progress_tg_msg.get(task_id, {})
-                )
+                has_cached_progress = ch_id in cached_channels
 
                 if not subscribed and not has_cached_progress:
                     continue
@@ -356,8 +397,9 @@ class NotificationService(
                 title, text = fmt_result[0], fmt_result[1]
                 reply_markup = fmt_result[2] if len(fmt_result) == 3 else None
                 image_url: str = data.get("image_url", "") or ""
-                # 任务完成时：若 TG 有已发进度消息，则 edit；否则发新消息
-                if is_any_complete and task_id:
+
+                if has_cached_progress:
+                    # 有进度消息缓存：edit 已有消息
                     edit_mid = self._task_progress_tg_msg.get(task_id, {}).get(ch_id)
                     msg_id_out: List[int] = []
                     await channel_instance.send_message(
@@ -365,13 +407,17 @@ class NotificationService(
                         edit_message_id=edit_mid, _msg_id_out=msg_id_out,
                         reply_markup=reply_markup,
                     )
-                    # 任务完成后清理该渠道的缓存
+                    # 清理该渠道的缓存
                     if task_id in self._task_progress_tg_msg:
                         self._task_progress_tg_msg[task_id].pop(ch_id, None)
                         if not self._task_progress_tg_msg[task_id]:
                             self._task_progress_tg_msg.pop(task_id, None)
                 else:
-                    await channel_instance.send_message(title=title, text=text, image=image_url, reply_markup=reply_markup)
+                    # 无进度缓存：正常发送
+                    await channel_instance.send_message(
+                        title=title, text=text, image=image_url,
+                        reply_markup=reply_markup,
+                    )
             except Exception as e:
                 logger.error(f"渠道 {ch_id} 发送事件 {event_type} 失败: {e}")
 

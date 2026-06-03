@@ -58,8 +58,10 @@ import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../store'
 import { ResponsiveTable } from '@/components/ResponsiveTable'
 import { useDefaultPageSize } from '../../hooks/useDefaultPageSize'
+import { useTranslation } from 'react-i18next'
 
 export const EpisodeDetail = () => {
+  const { t } = useTranslation()
   const { id } = useParams()
   const [searchParams] = useSearchParams()
   const animeId = searchParams.get('animeId')
@@ -148,7 +150,7 @@ export const EpisodeDetail = () => {
     try {
       // 如果 animeId 为 0 或无效，直接返回到库页面
       if (!animeId || Number(animeId) === 0) {
-        messageApi.error('无效的作品ID')
+        messageApi.error(t('episodePage.invalidAnimeId'))
         navigate('/library')
         return
       }
@@ -178,7 +180,7 @@ export const EpisodeDetail = () => {
       })
       setLoading(false)
     } catch (error) {
-      messageApi.error('获取剧集详情失败')
+      messageApi.error(t('episodePage.fetchDetailFailed'))
       navigate(`/anime/${animeId}`)
     }
   }
@@ -271,13 +273,13 @@ export const EpisodeDetail = () => {
       width: 150,
     },
     {
-      title: '剧集名',
+      title: t('episodePage.colEpisodeName'),
       dataIndex: 'title',
       key: 'title',
       width: 200,
     },
     {
-      title: '集数',
+      title: t('episodePage.colEpisodeIndex'),
       dataIndex: 'episodeIndex',
       key: 'episodeIndex',
       width: 80,
@@ -287,14 +289,14 @@ export const EpisodeDetail = () => {
       },
     },
     {
-      title: '弹幕数',
+      title: t('episodePage.colCommentCount'),
       dataIndex: 'commentCount',
       key: 'commentCount',
       width: 80,
     },
 
     {
-      title: '采集时间',
+      title: t('episodePage.colFetchedAt'),
       dataIndex: 'fetchedAt',
       key: 'fetchedAt',
       width: 160,
@@ -305,7 +307,7 @@ export const EpisodeDetail = () => {
       },
     },
     {
-      title: '官方链接',
+      title: t('episodePage.colOfficialLink'),
       dataIndex: 'sourceUrl',
       key: 'sourceUrl',
       width: 100,
@@ -318,7 +320,7 @@ export const EpisodeDetail = () => {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                跳转
+                {t('episodePage.btnJump')}
               </a>
             ) : (
               '--'
@@ -328,13 +330,13 @@ export const EpisodeDetail = () => {
       },
     },
     {
-      title: '操作',
+      title: t('episodePage.colAction'),
       width: isXmlImport ? 90 : 120,
       fixed: 'right',
       render: (_, record) => {
         return (
           <Space>
-            <Tooltip title="编辑分集信息">
+            <Tooltip title={t('episodePage.tipEditEpisode')}>
               <span
                 className="cursor-pointer hover:text-primary text-gray-600 dark:text-gray-400"
                 onClick={() => {
@@ -351,7 +353,7 @@ export const EpisodeDetail = () => {
               </span>
             </Tooltip>
             {!isXmlImport && (
-              <Tooltip title="刷新分集弹幕">
+              <Tooltip title={t('episodePage.tipRefreshDanmaku')}>
                 <span
                   className="cursor-pointer hover:text-primary text-gray-600 dark:text-gray-400"
                   onClick={() => handleRefresh(record)}
@@ -361,7 +363,7 @@ export const EpisodeDetail = () => {
               </Tooltip>
             )}
 
-            <Tooltip title="弹幕详情">
+            <Tooltip title={t('episodePage.tipDanmakuDetail')}>
               <span
                 className="cursor-pointer hover:text-primary text-gray-600 dark:text-gray-400"
                 onClick={() => {
@@ -371,7 +373,7 @@ export const EpisodeDetail = () => {
                 <MyIcon icon="comment" size={20} />
               </span>
             </Tooltip>
-            <Tooltip title="删除">
+            <Tooltip title={t('episodePage.tipDelete')}>
               <span
                 className="cursor-pointer hover:text-primary text-gray-600 dark:text-gray-400"
                 onClick={() => deleteEpisodeSingle(record)}
@@ -485,13 +487,13 @@ export const EpisodeDetail = () => {
 
   // 规则类型配置
   const ruleTypeOptions = [
-    { value: 'replace', label: '替换' },
-    { value: 'regex', label: '正则' },
-    { value: 'insert', label: '插入' },
-    { value: 'delete', label: '删除' },
-    { value: 'serialize', label: '序列化' },
-    { value: 'case', label: '大小写' },
-    { value: 'strip', label: '清理' },
+    { value: 'replace', label: t('episodePage.ruleReplace') },
+    { value: 'regex', label: t('episodePage.ruleRegex') },
+    { value: 'insert', label: t('episodePage.ruleInsert') },
+    { value: 'delete', label: t('episodePage.ruleDelete') },
+    { value: 'serialize', label: t('episodePage.ruleSerialize') },
+    { value: 'case', label: t('episodePage.ruleCase') },
+    { value: 'strip', label: t('episodePage.ruleStrip') },
   ]
 
   // 应用单条规则到标题
@@ -581,7 +583,7 @@ export const EpisodeDetail = () => {
           return title
       }
     } catch (e) {
-      messageApi.error(`规则 "${ruleTypeOptions.find(r => r.value === rule.type)?.label}" 执行错误: ${e.message}`)
+      messageApi.error(t('episodePage.ruleExecError', { rule: ruleTypeOptions.find(r => r.value === rule.type)?.label, error: e.message }))
       return title
     }
   }
@@ -595,35 +597,35 @@ export const EpisodeDetail = () => {
   const handleAddRule = () => {
     // 验证必填参数
     if (selectedRuleType === 'replace' && !ruleParams.search) {
-      messageApi.warning('请输入要查找的文本')
+      messageApi.warning(t('episodePage.enterSearchText'))
       return
     }
     if (selectedRuleType === 'regex' && !ruleParams.pattern) {
-      messageApi.warning('请输入正则表达式')
+      messageApi.warning(t('episodePage.enterRegex'))
       return
     }
     if (selectedRuleType === 'insert') {
       if (!ruleParams.text) {
-        messageApi.warning('请输入要插入的文本')
+        messageApi.warning(t('episodePage.enterInsertText'))
         return
       }
       if (ruleParams.position === 'index' && ruleParams.index === undefined) {
-        messageApi.warning('请输入插入位置')
+        messageApi.warning(t('episodePage.enterInsertPos'))
         return
       }
     }
     if (selectedRuleType === 'delete') {
       const mode = ruleParams.mode || 'text'
       if ((mode === 'text' || mode === 'toText' || mode === 'fromText') && !ruleParams.text) {
-        messageApi.warning('请输入文本')
+        messageApi.warning(t('episodePage.enterText'))
         return
       }
       if ((mode === 'first' || mode === 'last' || mode === 'range') && !ruleParams.count) {
-        messageApi.warning('请输入字符数')
+        messageApi.warning(t('episodePage.enterCharCount'))
         return
       }
       if (mode === 'range' && ruleParams.from === undefined) {
-        messageApi.warning('请输入起始位置')
+        messageApi.warning(t('episodePage.enterStartPos'))
         return
       }
     }
@@ -636,7 +638,7 @@ export const EpisodeDetail = () => {
     }
     setRenameRules(prev => [...prev, newRule])
     setRuleParams({})
-    messageApi.success('规则已添加')
+    messageApi.success(t('episodePage.ruleAdded'))
   }
 
   // 删除规则
@@ -669,7 +671,7 @@ export const EpisodeDetail = () => {
   // 预览效果
   const handlePreviewRules = () => {
     if (renameRules.length === 0) {
-      messageApi.warning('请先添加规则')
+      messageApi.warning(t('episodePage.addRuleFirst'))
       return
     }
     const preview = {}
@@ -683,7 +685,7 @@ export const EpisodeDetail = () => {
   // 应用批量命名规则
   const handleApplyBatchRename = () => {
     if (renameRules.length === 0) {
-      messageApi.warning('请先添加规则')
+      messageApi.warning(t('episodePage.addRuleFirst'))
       return
     }
     setBatchEditData(prev => prev.map((item, index) => ({
@@ -692,7 +694,7 @@ export const EpisodeDetail = () => {
     })))
     setIsPreviewMode(false)
     setPreviewData({})
-    messageApi.success('规则已应用')
+    messageApi.success(t('episodePage.ruleApplied'))
   }
 
   // 提交批量编辑
@@ -707,11 +709,11 @@ export const EpisodeDetail = () => {
           sourceUrl: item.sourceUrl,
         })
       }
-      messageApi.success('批量编辑成功')
+      messageApi.success(t('episodePage.batchEditSuccess'))
       setIsBatchEditModalOpen(false)
       getDetail()
     } catch (error) {
-      messageApi.error('批量编辑失败: ' + error.message)
+      messageApi.error(t('episodePage.batchEditFailed', { error: error.message }))
     } finally {
       setBatchEditLoading(false)
     }
@@ -719,19 +721,19 @@ export const EpisodeDetail = () => {
 
   const keepColumns = [
     {
-      title: '集数',
+      title: t('episodePage.colEpisodeIndex'),
       dataIndex: 'episodeIndex',
       key: 'episodeIndex',
       width: 60,
     },
     {
-      title: '标题',
+      title: t('episodePage.colTitle'),
       dataIndex: 'title',
       key: 'title',
       width: 200,
     },
     {
-      title: '弹幕数',
+      title: t('episodePage.colCommentCount'),
       dataIndex: 'commentCount',
       key: 'commentCount',
       width: 60,
@@ -741,15 +743,15 @@ export const EpisodeDetail = () => {
   const handleBatchDelete = () => {
     deleteFilesRef.current = true // 重置为默认值
     modalApi.confirm({
-      title: '删除分集',
+      title: t('episodePage.deleteEpisodeTitle'),
       zIndex: 1002,
       content: (
         <div>
-          <Typography.Text>您确定要删除选中的 {selectedRows.length} 个分集吗？</Typography.Text>
+          <Typography.Text>{t('episodePage.deleteSelectedConfirm', { count: selectedRows.length })}</Typography.Text>
           <br />
-          <Typography.Text>此操作将在后台提交一个批量删除任务。</Typography.Text>
+          <Typography.Text>{t('episodePage.deleteBatchHint')}</Typography.Text>
           <div className="flex items-center gap-2 mt-3">
-            <span>同时删除弹幕文件：</span>
+            <span>{t('episodePage.deleteAlsoFiles')}</span>
             <Switch
               defaultChecked={true}
               onChange={checked => {
@@ -759,8 +761,8 @@ export const EpisodeDetail = () => {
           </div>
         </div>
       ),
-      okText: '确认',
-      cancelText: '取消',
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           const res = await deleteAnimeEpisode({
@@ -769,7 +771,7 @@ export const EpisodeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          messageApi.error(`提交批量删除任务失败:${error.message}`)
+          messageApi.error(t('episodePage.deleteBatchSubmitFailed', { error: error.message }))
         }
       },
     })
@@ -778,15 +780,15 @@ export const EpisodeDetail = () => {
   const deleteEpisodeSingle = record => {
     deleteFilesRef.current = true // 重置为默认值
     modalApi.confirm({
-      title: '删除分集',
+      title: t('episodePage.deleteEpisodeTitle'),
       zIndex: 1002,
       content: (
         <div>
-          <Typography.Text>您确定要删除分集 '{record.title}' 吗？</Typography.Text>
+          <Typography.Text>{t('episodePage.deleteSingleConfirm', { title: record.title })}</Typography.Text>
           <br />
-          <Typography.Text>此操作将在后台提交一个批量删除任务。</Typography.Text>
+          <Typography.Text>{t('episodePage.deleteBatchHint')}</Typography.Text>
           <div className="flex items-center gap-2 mt-3">
-            <span>同时删除弹幕文件：</span>
+            <span>{t('episodePage.deleteAlsoFiles')}</span>
             <Switch
               defaultChecked={true}
               onChange={checked => {
@@ -796,8 +798,8 @@ export const EpisodeDetail = () => {
           </div>
         </div>
       ),
-      okText: '确认',
-      cancelText: '取消',
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           const res = await deleteAnimeEpisodeSingle({
@@ -806,7 +808,7 @@ export const EpisodeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          messageApi.error(`提交删除任务失败:${error.message}`)
+          messageApi.error(t('episodePage.deleteSubmitFailed', { error: error.message }))
         }
       },
     })
@@ -814,19 +816,19 @@ export const EpisodeDetail = () => {
 
   const handleRefresh = record => {
     modalApi.confirm({
-      title: '刷新分集',
+      title: t('episodePage.refreshEpisodeTitle'),
       zIndex: 1002,
-      content: <Typography.Text>您确定要刷新分集 '{record.title}' 的弹幕吗？</Typography.Text>,
-      okText: '确认',
-      cancelText: '取消',
+      content: <Typography.Text>{t('episodePage.refreshSingleConfirm', { title: record.title })}</Typography.Text>,
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           const res = await refreshEpisodeDanmaku({
             id: record.episodeId,
           })
-          messageApi.success(res.message || '刷新任务已开始。')
+          messageApi.success(res.message || t('episodePage.refreshStarted'))
         } catch (error) {
-          messageApi.error(`启动刷新任务失败:${error.message}`)
+          messageApi.error(t('episodePage.refreshStartFailed', { error: error.message }))
         }
       },
     })
@@ -834,29 +836,29 @@ export const EpisodeDetail = () => {
 
   const handleBatchRefresh = () => {
     if (!selectedRows.length) {
-      messageApi.warning('请先选择要刷新的分集')
+      messageApi.warning(t('episodePage.selectRefreshFirst'))
       return
     }
 
     modalApi.confirm({
-      title: '批量刷新分集',
+      title: t('episodePage.refreshBatchTitle'),
       zIndex: 1002,
       content: (
         <div>
-          <Typography.Text>您确定要刷新选中的 {selectedRows.length} 个分集的弹幕吗？</Typography.Text>
+          <Typography.Text>{t('episodePage.refreshBatchConfirm', { count: selectedRows.length })}</Typography.Text>
           <br />
-          <Typography.Text>此操作将在后台提交 {selectedRows.length} 个刷新任务。</Typography.Text>
+          <Typography.Text>{t('episodePage.refreshBatchHint', { count: selectedRows.length })}</Typography.Text>
         </div>
       ),
-      okText: '确认',
-      cancelText: '取消',
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           const episodeIds = selectedRows.map(row => row.episodeId)
           const res = await refreshEpisodesBulk({ episodeIds })
-          messageApi.success(res.message || '批量刷新任务已提交。')
+          messageApi.success(res.message || t('episodePage.refreshBatchSubmitted'))
         } catch (error) {
-          messageApi.error(`提交批量刷新任务失败:${error.message}`)
+          messageApi.error(t('episodePage.refreshBatchSubmitFailed', { error: error.message }))
         }
       },
     })
@@ -864,17 +866,17 @@ export const EpisodeDetail = () => {
 
   const goTask = res => {
     modalApi.confirm({
-      title: '提示',
+      title: t('episodePage.taskTipTitle'),
       zIndex: 1002,
       content: (
         <div>
-          <Typography.Text>{res.data?.message || '任务已提交'}</Typography.Text>
+          <Typography.Text>{res.data?.message || t('episodePage.taskSubmitted')}</Typography.Text>
           <br />
-          <Typography.Text>是否立即跳转到任务管理器查看进度？</Typography.Text>
+          <Typography.Text>{t('episodePage.goTaskManager')}</Typography.Text>
         </div>
       ),
-      okText: '确认',
-      cancelText: '取消',
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
       onOk: () => {
         navigate(`${RoutePaths.TASK}?status=all`)
       },
@@ -888,7 +890,7 @@ export const EpisodeDetail = () => {
   // URL解析函数（手动导入分集时使用）
   const handleValidateUrl = async (url) => {
     if (!url?.trim()) {
-      messageApi.warning('请输入URL')
+      messageApi.warning(t('episodePage.enterUrl'))
       return
     }
 
@@ -906,7 +908,7 @@ export const EpisodeDetail = () => {
             setUrlValidationResult({
               isValid: false,
               provider: res.data.provider,
-              errorMessage: `URL来源 (${res.data.provider}) 与当前源 (${sourceInfo?.providerName}) 不匹配`
+              errorMessage: t('episodePage.urlSourceMismatch', { provider: res.data.provider, source: sourceInfo?.providerName })
             })
             return
           }
@@ -939,7 +941,7 @@ export const EpisodeDetail = () => {
       console.error('URL校验失败:', error)
       setUrlValidationResult({
         isValid: false,
-        errorMessage: error.detail || error.message || 'URL校验失败'
+        errorMessage: error.detail || error.message || t('episodePage.urlValidateFailed')
       })
     } finally {
       setUrlValidating(false)
@@ -967,7 +969,7 @@ export const EpisodeDetail = () => {
       } else if (isXmlImport && manualImportMode === 'url') {
         // 自定义源 URL 导入模式：在当前自定义源下创建分集，而非新建条目
         if (!urlValidationResult?.isValid) {
-          messageApi.warning('请先解析URL')
+          messageApi.warning(t('episodePage.parseUrlFirst'))
           setConfirmLoading(false)
           return
         }
@@ -993,10 +995,10 @@ export const EpisodeDetail = () => {
       // 清空URL解析状态
       clearUrlValidation()
       setManualImportMode('xml')
-      messageApi.success('分集信息更新成功！')
+      messageApi.success(t('episodePage.episodeUpdateSuccess'))
     } catch (error) {
       // 改进错误提示，处理对象类型的错误
-      let errorMsg = '更新失败'
+      let errorMsg = t('episodePage.updateFailed')
       if (error?.errorFields) {
         // 表单验证错误
         errorMsg = error.errorFields.map(f => f.errors.join(', ')).join('; ')
@@ -1017,18 +1019,18 @@ export const EpisodeDetail = () => {
   const handleOffset = () => {
     let offsetValue = 0
     modalApi.confirm({
-      title: '集数偏移',
+      title: t('episodePage.offsetTitle'),
       icon: <VerticalAlignMiddleOutlined />,
       zIndex: 1002,
       content: (
         <div className="mt-4">
-          <Typography.Text>请输入一个整数作为偏移量（可为负数）。</Typography.Text>
+          <Typography.Text>{t('episodePage.offsetHint')}</Typography.Text>
           <br />
           <Typography.Text className="text-gray-500 dark:text-gray-400 text-xs">
-            例如：输入 12 会将第 1 集变为第 13 集。
+            {t('episodePage.offsetExample')}
           </Typography.Text>
           <InputNumber
-            placeholder="输入偏移量, e.g., 12 or -5"
+            placeholder={t('episodePage.offsetPlaceholder')}
             onChange={value => (offsetValue = value)}
             style={{ width: '100%' }}
             autoFocus
@@ -1037,7 +1039,7 @@ export const EpisodeDetail = () => {
       ),
       onOk: async () => {
         if (!offsetValue || !Number.isInteger(offsetValue)) {
-          messageApi.warning('请输入一个有效的整数偏移量。')
+          messageApi.warning(t('episodePage.offsetInvalid'))
           return
         }
         try {
@@ -1047,29 +1049,29 @@ export const EpisodeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          messageApi.error(error?.detail || '提交任务失败')
+          messageApi.error(error?.detail || t('episodePage.offsetSubmitFailed'))
         }
       },
-      okText: '确认',
-      cancelText: '取消',
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
     })
   }
 
   const handleResetEpisode = () => {
     modalApi.confirm({
-      title: '重整集数',
+      title: t('episodePage.reorderTitle'),
       zIndex: 1002,
       content: (
         <div>
           <Typography.Text>
-            您确定要为 '{animeDetail.title}'的这个数据源重整集数吗？
+            {t('episodePage.reorderConfirm', { title: animeDetail.title })}
           </Typography.Text>
           <br />
-          <Typography.Text>此操作会按当前顺序将集数重新编号为 1, 2, 3...</Typography.Text>
+          <Typography.Text>{t('episodePage.reorderHint')}</Typography.Text>
         </div>
       ),
-      okText: '确认',
-      cancelText: '取消',
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
       onOk: async () => {
         try {
           const res = await resetEpisode({
@@ -1077,7 +1079,7 @@ export const EpisodeDetail = () => {
           })
           goTask(res)
         } catch (error) {
-          messageApi.error(`提交重整任务失败:${error.message}`)
+          messageApi.error(t('episodePage.reorderSubmitFailed', { error: error.message }))
         }
       },
     })
@@ -1094,9 +1096,9 @@ export const EpisodeDetail = () => {
       await resetEpisode({
         sourceId: Number(id),
       })
-      messageApi.success('已提交：批量删除 + 重整集数 两个任务。')
+      messageApi.success(t('episodePage.resetSubmitted'))
     } catch (error) {
-      messageApi.error(`提交任务失败: ${error.message}`)
+      messageApi.error(t('episodePage.resetSubmitFailed', { error: error.message }))
     } finally {
       setResetInfo({})
       setResetOpen(false)
@@ -1118,13 +1120,13 @@ export const EpisodeDetail = () => {
             content: xmlContent,
           })
         } catch (error) {
-          messageApi.error(`文件 ${file.name} 解析失败: ${error.message}`)
+          messageApi.error(t('episodePage.fileParseFailed', { name: file.name, error: error.message }))
         }
       }
 
       reader.readAsText(file)
     } catch (error) {
-      messageApi.error(`文件处理失败: ${error.message}`)
+      messageApi.error(t('episodePage.fileProcessFailed', { error: error.message }))
     } finally {
       setUploading(false)
     }
@@ -1165,7 +1167,7 @@ export const EpisodeDetail = () => {
             ),
           },
           {
-            title: <Link to="/library">弹幕库</Link>,
+            title: <Link to="/library">{t('episodePage.breadcrumbLibrary')}</Link>,
           },
           {
             title: (
@@ -1177,13 +1179,13 @@ export const EpisodeDetail = () => {
             ),
           },
           {
-            title: '分集列表',
+            title: t('episodePage.breadcrumbEpisodeList'),
           },
         ]}
       />
-      <Card loading={loading} title={`分集列表: ${animeDetail?.title ?? ''}`}>
+      <Card loading={loading} title={t('episodePage.cardTitle', { title: animeDetail?.title ?? '' })}>
         <div className="mb-3 text-sm text-gray-600 dark:text-gray-400">
-          💡 {isMobile ? '点击卡片可选中/取消选中分集，支持Shift多选' : '点击复选框或卡片可选中/取消选中分集，支持Shift多选'}，用于批量操作
+          💡 {isMobile ? t('episodePage.selectTipMobile') : t('episodePage.selectTipDesktop')}{t('episodePage.selectTipSuffix')}
         </div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <Button
@@ -1193,25 +1195,25 @@ export const EpisodeDetail = () => {
             type="primary"
             disabled={!selectedRows.length}
           >
-            删除选中
+            {t('episodePage.btnDeleteSelected')}
           </Button>
           <div className="flex flex-wrap gap-2 sm:justify-end">
             <Button
               onClick={() => openBatchEditModal(selectedRows)}
               disabled={!selectedRows.length}
             >
-              <Tooltip title="批量编辑选中分集的标题和集数">
+              <Tooltip title={t('episodePage.tipBatchEdit')}>
                 <EditOutlined />
-                <span className="ml-1">批量编辑</span>
+                <span className="ml-1">{t('episodePage.btnBatchEdit')}</span>
               </Tooltip>
             </Button>
             <Button
               onClick={handleOffset}
               disabled={!selectedRows.length}
             >
-              <Tooltip title="对所有选中的分集应用一个集数偏移量">
+              <Tooltip title={t('episodePage.tipOffset')}>
                 <VerticalAlignMiddleOutlined />
-                <span className="ml-1">集数偏移</span>
+                <span className="ml-1">{t('episodePage.btnOffset')}</span>
               </Tooltip>
             </Button>
             <Button
@@ -1220,7 +1222,7 @@ export const EpisodeDetail = () => {
                   .map(ep => Number(ep.commentCount))
                   .filter(n => Number.isFinite(n) && n >= 0)
                 if (validCounts.length === 0) {
-                  messageApi.error('所有分集的弹幕数不可用。')
+                  messageApi.error(t('episodePage.danmakuUnavailable'))
                   return
                 }
                 const average =
@@ -1234,7 +1236,7 @@ export const EpisodeDetail = () => {
 
                 if (toDelete.length === 0) {
                   messageApi.error(
-                    `未找到低于平均值 (${average.toFixed(2)}) 的分集。`
+                    t('episodePage.noEpisodeBelowAvg', { avg: average.toFixed(2) })
                   )
                   return
                 }
@@ -1247,7 +1249,7 @@ export const EpisodeDetail = () => {
               }}
               disabled={!episodeList.length}
             >
-              正片重整
+              {t('episodePage.btnReorderMain')}
             </Button>
             <Button
               onClick={() => {
@@ -1255,24 +1257,24 @@ export const EpisodeDetail = () => {
               }}
               disabled={!episodeList.length}
             >
-              重整集数
+              {t('episodePage.btnReorder')}
             </Button>
             <Button
               onClick={handleBatchRefresh}
               disabled={!selectedRows.length || isXmlImport}
             >
-              <Tooltip title="批量刷新选中分集的弹幕">
+              <Tooltip title={t('episodePage.tipBatchRefresh')}>
                 <MyIcon icon="refresh" size={16} />
-                <span className="ml-1">批量刷新</span>
+                <span className="ml-1">{t('episodePage.btnBatchRefresh')}</span>
               </Tooltip>
             </Button>
             <Button
               onClick={() => setIsDanmakuEditModalOpen(true)}
               disabled={!episodeList.length}
             >
-              <Tooltip title="弹幕时间偏移、分集拆分、合并等操作">
+              <Tooltip title={t('episodePage.tipDanmakuEdit')}>
                 <EditOutlined />
-                <span className="ml-1">弹幕编辑</span>
+                <span className="ml-1">{t('episodePage.btnDanmakuEdit')}</span>
               </Tooltip>
             </Button>
             {isXmlImport && (
@@ -1281,7 +1283,7 @@ export const EpisodeDetail = () => {
                   setIsBatchModalOpen(true)
                 }}
               >
-                批量导入
+                {t('episodePage.btnBatchImport')}
               </Button>
             )}
             <Button
@@ -1298,7 +1300,7 @@ export const EpisodeDetail = () => {
               }}
               type="primary"
             >
-              手动导入
+              {t('episodePage.btnManualImport')}
             </Button>
           </div>
         </div>
@@ -1307,7 +1309,7 @@ export const EpisodeDetail = () => {
           <ResponsiveTable
             pagination={{
               ...pagination,
-              showTotal: total => `共 ${total} 条数据`,
+              showTotal: total => t('episodePage.totalItems', { total }),
               onChange: (page, pageSize) => {
                 setPagination(n => {
                   return {
@@ -1331,7 +1333,7 @@ export const EpisodeDetail = () => {
             dataSource={episodeList}
             columns={columns}
             rowKey={'episodeId'}
-            tableProps={{ rowClassName: () => '' }}
+            tableProps={{ className: 'library-table', rowClassName: () => '' }}
             scroll={{ x: '100%' }}
             renderCard={(record) => {
               const isSelected = selectedRows.some(row => row.episodeId === record.episodeId);
@@ -1383,7 +1385,7 @@ export const EpisodeDetail = () => {
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <Tag color="blue" className="text-xs">
-                              第{record.episodeIndex}集
+                              {t('episodePage.episodeIndexCard', { index: record.episodeIndex })}
                             </Tag>
                             <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
                               ID: {record.episodeId}
@@ -1395,7 +1397,7 @@ export const EpisodeDetail = () => {
                             danger
                             className="flex-shrink-0"
                             icon={<MyIcon icon="delete" size={16} />}
-                            title="删除分集"
+                            title={t('episodePage.deleteEpisodeTitle')}
                             onClick={(e) => {
                               e.stopPropagation()
                               deleteEpisodeSingle(record)
@@ -1410,13 +1412,13 @@ export const EpisodeDetail = () => {
                             <span className="flex items-center gap-1">
                               <MyIcon icon="comment" size={14} className="text-blue-500" />
                               <span className="text-gray-600 dark:text-gray-400">
-                                {record.commentCount || 0} 条弹幕
+                                {t('episodePage.commentCountCard', { count: record.commentCount || 0 })}
                               </span>
                             </span>
                           </div>
                           {record.sourceUrl && isUrl(record.sourceUrl) && (
                             <div className="flex items-center gap-1">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">来源:</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">{t('episodePage.sourceLabel')}</span>
                               <a
                                 href={record.sourceUrl}
                                 target="_blank"
@@ -1429,7 +1431,7 @@ export const EpisodeDetail = () => {
                             </div>
                           )}
                           <div className="text-xs text-gray-500 dark:text-gray-400">
-                            采集时间: {dayjs(record.fetchedAt).format('YYYY-MM-DD HH:mm')}
+                            {t('episodePage.fetchedAtCard', { time: dayjs(record.fetchedAt).format('YYYY-MM-DD HH:mm') })}
                           </div>
                         </div>
                       </div>
@@ -1440,7 +1442,7 @@ export const EpisodeDetail = () => {
                           size="small"
                           type="text"
                           icon={<MyIcon icon="edit" size={14} />}
-                          title="编辑分集信息"
+                          title={t('episodePage.tipEditEpisode')}
                           onClick={(e) => {
                             e.stopPropagation()
                             form.setFieldsValue({
@@ -1453,33 +1455,33 @@ export const EpisodeDetail = () => {
                             setEditOpen(true)
                           }}
                         >
-                          编辑
+                          {t('episodePage.btnEdit')}
                         </Button>
                         {!isXmlImport && (
                           <Button
                             size="small"
                             type="text"
                             icon={<MyIcon icon="refresh" size={14} />}
-                            title="刷新分集弹幕"
+                            title={t('episodePage.tipRefreshDanmaku')}
                             onClick={(e) => {
                               e.stopPropagation()
                               handleRefresh(record)
                             }}
                           >
-                            刷新
+                            {t('episodePage.btnRefresh')}
                           </Button>
                         )}
                         <Button
                           size="small"
                           type="text"
                           icon={<MyIcon icon="comment" size={14} />}
-                          title="查看弹幕详情"
+                          title={t('episodePage.tipDanmakuDetail')}
                           onClick={(e) => {
                             e.stopPropagation()
                             navigate(`/comment/${record.episodeId}?episodeId=${id}`)
                           }}
                         >
-                          弹幕
+                          {t('episodePage.btnDanmaku')}
                         </Button>
                       </div>
                     </div>
@@ -1493,12 +1495,12 @@ export const EpisodeDetail = () => {
         )}
       </Card>
       <Modal
-        title={isEditing ? '编辑分集信息' : '手动导入分集'}
+        title={isEditing ? t('episodePage.modalEditTitle') : t('episodePage.modalImportTitle')}
         open={editOpen}
         onOk={handleSave}
         confirmLoading={confirmLoading}
-        cancelText="取消"
-        okText="确认"
+        cancelText={t('common.cancel')}
+        okText={t('common.confirm')}
         onCancel={() => {
           setEditOpen(false)
           setIsEditing(false)
@@ -1525,8 +1527,8 @@ export const EpisodeDetail = () => {
                 form.setFieldsValue({ episodeIndex: nextEpisode })
               }}
               options={[
-                { label: <span><UploadOutlined className="mr-1" />XML导入</span>, value: 'xml' },
-                { label: <span><LinkOutlined className="mr-1" />URL导入</span>, value: 'url' },
+                { label: <span><UploadOutlined className="mr-1" />{t('episodePage.importXml')}</span>, value: 'xml' },
+                { label: <span><LinkOutlined className="mr-1" />{t('episodePage.importUrl')}</span>, value: 'url' },
               ]}
               block
             />
@@ -1539,26 +1541,26 @@ export const EpisodeDetail = () => {
             <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: 'var(--color-hover)' }}>
               <div className="text-gray-500 dark:text-gray-400 text-sm mb-2">
                 <LinkOutlined className="mr-1" />
-                输入其他平台的视频URL，系统将自动获取弹幕并导入到当前自定义源
+                {t('episodePage.urlImportDesc')}
               </div>
               <Form.Item
                 name="sourceUrl"
-                label="视频URL"
+                label={t('episodePage.labelVideoUrl')}
                 rules={[
                   {
                     required: true,
-                    message: `请输入视频URL`,
+                    message: t('episodePage.ruleVideoUrl'),
                   },
                 ]}
                 className="mb-2"
               >
                 <Input.Search
-                  placeholder="请输入视频URL，如 https://www.bilibili.com/video/BV..."
+                  placeholder={t('episodePage.placeholderVideoUrl')}
                   onSearch={handleValidateUrl}
                   onChange={() => setUrlValidationResult(null)}
                   enterButton={
                     <Button loading={urlValidating}>
-                      解析URL
+                      {t('episodePage.btnParseUrl')}
                     </Button>
                   }
                 />
@@ -1571,31 +1573,31 @@ export const EpisodeDetail = () => {
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <CheckCircleOutlined className="text-green-500" />
-                        <span className="font-medium text-green-700 dark:text-green-400 text-sm">URL解析成功</span>
+                        <span className="font-medium text-green-700 dark:text-green-400 text-sm">{t('episodePage.urlParseSuccess')}</span>
                       </div>
                       <div className="grid grid-cols-2 gap-1 text-xs">
-                        <div><span className="text-gray-500 dark:text-gray-400">平台：</span><span className="dark:text-gray-200">{urlValidationResult.provider}</span></div>
-                        <div><span className="text-gray-500 dark:text-gray-400">媒体ID：</span><span className="dark:text-gray-200">{urlValidationResult.mediaId}</span></div>
+                        <div><span className="text-gray-500 dark:text-gray-400">{t('episodePage.fieldPlatform')}</span><span className="dark:text-gray-200">{urlValidationResult.provider}</span></div>
+                        <div><span className="text-gray-500 dark:text-gray-400">{t('episodePage.fieldMediaId')}</span><span className="dark:text-gray-200">{urlValidationResult.mediaId}</span></div>
                         {urlValidationResult.title && (
-                          <div className="col-span-2"><span className="text-gray-500 dark:text-gray-400">标题：</span><span className="dark:text-gray-200">{urlValidationResult.title}</span></div>
+                          <div className="col-span-2"><span className="text-gray-500 dark:text-gray-400">{t('episodePage.fieldTitle')}</span><span className="dark:text-gray-200">{urlValidationResult.title}</span></div>
                         )}
                         {urlValidationResult.mediaType && (
-                          <div><span className="text-gray-500 dark:text-gray-400">类型：</span><span className="dark:text-gray-200">{urlValidationResult.mediaType === 'movie' ? '电影' : '剧集'}</span></div>
+                          <div><span className="text-gray-500 dark:text-gray-400">{t('episodePage.fieldType')}</span><span className="dark:text-gray-200">{urlValidationResult.mediaType === 'movie' ? t('episodePage.typeMovie') : t('episodePage.typeSeries')}</span></div>
                         )}
                         {urlValidationResult.episodeIndex && (
-                          <div><span className="text-gray-500 dark:text-gray-400">集数：</span><span className="dark:text-gray-200">第 {urlValidationResult.episodeIndex} 集</span></div>
+                          <div><span className="text-gray-500 dark:text-gray-400">{t('episodePage.fieldEpisode')}</span><span className="dark:text-gray-200">{t('episodePage.episodeNo', { index: urlValidationResult.episodeIndex })}</span></div>
                         )}
                       </div>
                       {urlValidationResult.imageUrl && (
                         <div className="mt-2">
-                          <img src={urlValidationResult.imageUrl} alt="封面" className="h-20 rounded" />
+                          <img src={urlValidationResult.imageUrl} alt={t('episodePage.coverAlt')} className="h-20 rounded" />
                         </div>
                       )}
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
                       <ExclamationCircleOutlined className="text-red-500" />
-                      <span className="text-red-700 dark:text-red-400 text-sm">{urlValidationResult.errorMessage || 'URL解析失败'}</span>
+                      <span className="text-red-700 dark:text-red-400 text-sm">{urlValidationResult.errorMessage || t('episodePage.urlParseFailed')}</span>
                     </div>
                   )}
                 </div>
@@ -1608,26 +1610,26 @@ export const EpisodeDetail = () => {
             <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: 'var(--color-hover)' }}>
               <div className="text-gray-500 dark:text-gray-400 text-sm mb-2">
                 <LinkOutlined className="mr-1" />
-                输入 {sourceInfo?.providerName} 平台的视频URL，可自动解析标题
+                {t('episodePage.urlImportDescSource', { source: sourceInfo?.providerName })}
               </div>
               <Form.Item
                 name="sourceUrl"
-                label="官方链接"
+                label={t('episodePage.labelOfficialLink')}
                 rules={[
                   {
                     required: true,
-                    message: `请输入官方链接`,
+                    message: t('episodePage.ruleOfficialLink'),
                   },
                 ]}
                 className="mb-2"
               >
                 <Input.Search
-                  placeholder={`请输入 ${sourceInfo?.providerName} 的视频URL`}
+                  placeholder={t('episodePage.placeholderSourceUrl', { source: sourceInfo?.providerName })}
                   onSearch={handleValidateUrl}
                   onChange={() => setUrlValidationResult(null)}
                   enterButton={
                     <Button loading={urlValidating}>
-                      解析URL
+                      {t('episodePage.btnParseUrl')}
                     </Button>
                   }
                 />
@@ -1640,23 +1642,23 @@ export const EpisodeDetail = () => {
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <CheckCircleOutlined className="text-green-500" />
-                        <span className="font-medium text-green-700 dark:text-green-400 text-sm">URL解析成功</span>
+                        <span className="font-medium text-green-700 dark:text-green-400 text-sm">{t('episodePage.urlParseSuccess')}</span>
                       </div>
                       <div className="grid grid-cols-2 gap-1 text-xs">
-                        <div><span className="text-gray-500 dark:text-gray-400">平台：</span><span className="dark:text-gray-200">{urlValidationResult.provider}</span></div>
-                        <div><span className="text-gray-500 dark:text-gray-400">媒体ID：</span><span className="dark:text-gray-200">{urlValidationResult.mediaId}</span></div>
+                        <div><span className="text-gray-500 dark:text-gray-400">{t('episodePage.fieldPlatform')}</span><span className="dark:text-gray-200">{urlValidationResult.provider}</span></div>
+                        <div><span className="text-gray-500 dark:text-gray-400">{t('episodePage.fieldMediaId')}</span><span className="dark:text-gray-200">{urlValidationResult.mediaId}</span></div>
                         {urlValidationResult.title && (
-                          <div className="col-span-2"><span className="text-gray-500 dark:text-gray-400">标题：</span><span className="dark:text-gray-200">{urlValidationResult.title}</span></div>
+                          <div className="col-span-2"><span className="text-gray-500 dark:text-gray-400">{t('episodePage.fieldTitle')}</span><span className="dark:text-gray-200">{urlValidationResult.title}</span></div>
                         )}
                         {urlValidationResult.episodeIndex && (
-                          <div><span className="text-gray-500 dark:text-gray-400">集数：</span><span className="dark:text-gray-200">第 {urlValidationResult.episodeIndex} 集</span></div>
+                          <div><span className="text-gray-500 dark:text-gray-400">{t('episodePage.fieldEpisode')}</span><span className="dark:text-gray-200">{t('episodePage.episodeNo', { index: urlValidationResult.episodeIndex })}</span></div>
                         )}
                       </div>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
                       <ExclamationCircleOutlined className="text-red-500" />
-                      <span className="text-red-700 dark:text-red-400 text-sm">{urlValidationResult.errorMessage || 'URL解析失败'}</span>
+                      <span className="text-red-700 dark:text-red-400 text-sm">{urlValidationResult.errorMessage || t('episodePage.urlParseFailed')}</span>
                     </div>
                   )}
                 </div>
@@ -1666,19 +1668,19 @@ export const EpisodeDetail = () => {
 
           <Form.Item
             name="title"
-            label="分集标题"
-            rules={[{ required: true, message: '请输入分集标题' }]}
+            label={t('episodePage.labelEpisodeTitle')}
+            rules={[{ required: true, message: t('episodePage.ruleEpisodeTitle') }]}
           >
-            <Input placeholder="请输入分集标题" />
+            <Input placeholder={t('episodePage.placeholderEpisodeTitle')} />
           </Form.Item>
           <Form.Item
             name="episodeIndex"
-            label="集数"
-            rules={[{ required: true, message: '请输入集数' }]}
+            label={t('episodePage.labelEpisodeIndex')}
+            rules={[{ required: true, message: t('episodePage.ruleEpisodeIndex') }]}
           >
             <InputNumber
               style={{ width: '100%' }}
-              placeholder="请输入分集集数"
+              placeholder={t('episodePage.placeholderEpisodeIndex')}
               min={1}
             />
           </Form.Item>
@@ -1688,17 +1690,17 @@ export const EpisodeDetail = () => {
             <>
               <Form.Item
                 name="content"
-                label="弹幕XML内容"
+                label={t('episodePage.labelXmlContent')}
                 rules={[
                   {
                     required: true,
-                    message: `请输入弹幕XML内容`,
+                    message: t('episodePage.ruleXmlContent'),
                   },
                 ]}
               >
                 <Input.TextArea
                   rows={6}
-                  placeholder="请在此处粘贴弹幕XML文件的内容"
+                  placeholder={t('episodePage.placeholderXmlContent')}
                 />
               </Form.Item>
               <div className="text-right my-4">
@@ -1709,7 +1711,7 @@ export const EpisodeDetail = () => {
                   disabled={uploading}
                 >
                   <Button type="primary" icon={<UploadOutlined />}>
-                    选择文件导入XML
+                    {t('episodePage.btnSelectXmlFile')}
                   </Button>
                 </Upload>
               </div>
@@ -1720,25 +1722,25 @@ export const EpisodeDetail = () => {
           {!isXmlImport && isEditing && (
             <Form.Item
               name="sourceUrl"
-              label="官方链接"
+              label={t('episodePage.labelOfficialLink')}
               rules={[
                 {
                   required: true,
-                  message: `请输入官方链接`,
+                  message: t('episodePage.ruleOfficialLink'),
                 },
               ]}
             >
-              <Input placeholder="请输入官方链接" />
+              <Input placeholder={t('episodePage.placeholderOfficialLink')} />
             </Form.Item>
           )}
 
           {isEditing && (
             <Form.Item
               name="danmakuFilePath"
-              label="弹幕文件路径"
-              tooltip="弹幕XML文件的存储路径，修改后会更新数据库记录（不会移动实际文件）"
+              label={t('episodePage.labelDanmakuPath')}
+              tooltip={t('episodePage.tooltipDanmakuPath')}
             >
-              <Input placeholder="例如: /app/config/danmaku/123/456.xml" />
+              <Input placeholder={t('episodePage.placeholderDanmakuPath')} />
             </Form.Item>
           )}
           <Form.Item name="episodeId" hidden>
@@ -1750,26 +1752,26 @@ export const EpisodeDetail = () => {
         </Form>
       </Modal>
       <Modal
-        title={`正片重整预览 - ${animeDetail.title}`}
+        title={t('episodePage.resetPreviewTitle', { title: animeDetail.title })}
         open={resetOpen}
         onOk={handleResetMainEpisode}
         confirmLoading={resetLoading}
-        cancelText="取消"
-        okText="确认执行"
+        cancelText={t('common.cancel')}
+        okText={t('episodePage.btnConfirmExec')}
         onCancel={() => setResetOpen(false)}
         zIndex={100}
       >
         <div>
-          <Typography.Text className="mb-2">将基于平均弹幕数进行正片重整：</Typography.Text>
+          <Typography.Text className="mb-2">{t('episodePage.resetPreviewDesc')}</Typography.Text>
           <ul>
             <li>
               <Typography.Text>
-                平均弹幕数：<strong>{resetInfo?.average?.toFixed(2)}</strong>
+                {t('episodePage.avgCommentCount')}<strong>{resetInfo?.average?.toFixed(2)}</strong>
               </Typography.Text>
             </li>
             <li>
               <Typography.Text>
-                预计删除分集：
+                {t('episodePage.estimateDelete')}
                 <span className="text-red-400 font-bold">
                   {resetInfo?.toDelete?.length}
                 </span>{' '}
@@ -1778,7 +1780,7 @@ export const EpisodeDetail = () => {
             </li>
             <li>
               <Typography.Text>
-                预计保留分集：
+                {t('episodePage.estimateKeep')}
                 <span className="text-green-500 font-bold">
                   {resetInfo?.toKeep?.length}
                 </span>{' '}
@@ -1788,9 +1790,10 @@ export const EpisodeDetail = () => {
           </ul>
         </div>
         <div className="my-4 text-sm font-semibold">
-          <Typography.Text>预览将保留的分集（最多显示 80 条）</Typography.Text>
+          <Typography.Text>{t('episodePage.previewKeepHint')}</Typography.Text>
         </div>
         <Table
+          className="library-table"
           pagination={false}
           size="small"
           dataSource={resetInfo?.toKeep?.slice(0, 80) ?? []}
@@ -1801,27 +1804,27 @@ export const EpisodeDetail = () => {
       </Modal>
       {/* 批量编辑弹窗 */}
       <Modal
-        title="批量编辑分集"
+        title={t('episodePage.batchEditTitle')}
         open={isBatchEditModalOpen}
         onCancel={() => setIsBatchEditModalOpen(false)}
         onOk={handleBatchEditSubmit}
         confirmLoading={batchEditLoading}
         width={800}
-        okText="确认提交"
-        cancelText="取消"
+        okText={t('episodePage.btnConfirmSubmit')}
+        cancelText={t('common.cancel')}
       >
         {/* 批量调整集数 */}
         <div className="mb-4 p-3 rounded" style={{ backgroundColor: 'var(--color-hover)' }}>
-          <div className="font-medium mb-2">🔢 批量调整集数</div>
+          <div className="font-medium mb-2">{t('episodePage.sectionAdjustIndex')}</div>
           <div className="flex flex-wrap items-center gap-2">
             <Select
               value={batchIndexMode}
               onChange={setBatchIndexMode}
               style={{ width: 120 }}
               options={[
-                { value: 'none', label: '不修改' },
-                { value: 'offset', label: '偏移' },
-                { value: 'reorder', label: '按顺序重排' },
+                { value: 'none', label: t('episodePage.indexModeNone') },
+                { value: 'offset', label: t('episodePage.indexModeOffset') },
+                { value: 'reorder', label: t('episodePage.indexModeReorder') },
               ]}
             />
             {batchIndexMode === 'offset' && (
@@ -1829,39 +1832,39 @@ export const EpisodeDetail = () => {
                 <InputNumber
                   value={batchOffsetValue}
                   onChange={setBatchOffsetValue}
-                  placeholder="偏移量"
+                  placeholder={t('episodePage.placeholderOffset')}
                   className="w-28"
                 />
-                <span className="text-gray-500 dark:text-gray-400 text-sm">正数增加，负数减少</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm">{t('episodePage.offsetHintPosNeg')}</span>
               </>
             )}
             {batchIndexMode === 'reorder' && (
               <>
-                <span className="text-gray-500 dark:text-gray-400 text-sm">从第</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm">{t('episodePage.reorderFrom')}</span>
                 <InputNumber
                   value={batchReorderStart}
                   onChange={setBatchReorderStart}
                   min={1}
                   className="w-20"
                 />
-                <span className="text-gray-500 dark:text-gray-400 text-sm">集开始</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm">{t('episodePage.reorderStart')}</span>
               </>
             )}
             <Button
               onClick={batchIndexMode === 'offset' ? handleApplyBatchOffset : handleApplyBatchReorder}
               disabled={batchIndexMode === 'none' || (batchIndexMode === 'offset' && !batchOffsetValue)}
             >
-              应用
+              {t('episodePage.btnApply')}
             </Button>
           </div>
         </div>
 
         {/* 批量命名规则 - ReNamer风格 */}
         <div className="mb-4 p-3 rounded" style={{ backgroundColor: 'var(--color-hover)' }}>
-          <div className="font-medium mb-2">📝 批量命名规则</div>
+          <div className="font-medium mb-2">{t('episodePage.sectionRenameRules')}</div>
           {/* 添加规则区域 */}
           <div className="flex flex-wrap items-center gap-2 mb-3">
-            <span className="text-gray-500 dark:text-gray-400 text-sm">添加规则:</span>
+            <span className="text-gray-500 dark:text-gray-400 text-sm">{t('episodePage.addRuleLabel')}</span>
             <Select
               value={selectedRuleType}
               onChange={(v) => { setSelectedRuleType(v); setRuleParams({}) }}
@@ -1871,31 +1874,31 @@ export const EpisodeDetail = () => {
             {/* 替换规则参数 */}
             {selectedRuleType === 'replace' && (
               <>
-                <Input value={ruleParams.search || ''} onChange={(e) => setRuleParams(p => ({ ...p, search: e.target.value }))} placeholder="查找" style={{ width: 120 }} />
+                <Input value={ruleParams.search || ''} onChange={(e) => setRuleParams(p => ({ ...p, search: e.target.value }))} placeholder={t('episodePage.placeholderSearch')} style={{ width: 120 }} />
                 <span>→</span>
-                <Input value={ruleParams.replace || ''} onChange={(e) => setRuleParams(p => ({ ...p, replace: e.target.value }))} placeholder="替换为" style={{ width: 120 }} />
+                <Input value={ruleParams.replace || ''} onChange={(e) => setRuleParams(p => ({ ...p, replace: e.target.value }))} placeholder={t('episodePage.placeholderReplaceWith')} style={{ width: 120 }} />
               </>
             )}
             {/* 正则规则参数 */}
             {selectedRuleType === 'regex' && (
               <>
-                <Input value={ruleParams.pattern || ''} onChange={(e) => setRuleParams(p => ({ ...p, pattern: e.target.value }))} placeholder="正则表达式" style={{ width: 150 }} />
+                <Input value={ruleParams.pattern || ''} onChange={(e) => setRuleParams(p => ({ ...p, pattern: e.target.value }))} placeholder={t('episodePage.placeholderRegex')} style={{ width: 150 }} />
                 <span>→</span>
-                <Input value={ruleParams.replace || ''} onChange={(e) => setRuleParams(p => ({ ...p, replace: e.target.value }))} placeholder="替换为" style={{ width: 120 }} />
+                <Input value={ruleParams.replace || ''} onChange={(e) => setRuleParams(p => ({ ...p, replace: e.target.value }))} placeholder={t('episodePage.placeholderReplaceWith')} style={{ width: 120 }} />
               </>
             )}
             {/* 插入规则参数 */}
             {selectedRuleType === 'insert' && (
               <>
-                <Input value={ruleParams.text || ''} onChange={(e) => setRuleParams(p => ({ ...p, text: e.target.value }))} placeholder="插入文本" style={{ width: 120 }} />
+                <Input value={ruleParams.text || ''} onChange={(e) => setRuleParams(p => ({ ...p, text: e.target.value }))} placeholder={t('episodePage.placeholderInsertText')} style={{ width: 120 }} />
                 <Select
                   value={ruleParams.position || 'start'}
                   onChange={(v) => setRuleParams(p => ({ ...p, position: v }))}
                   style={{ width: 100 }}
                   options={[
-                    { value: 'start', label: '开头' },
-                    { value: 'end', label: '结尾' },
-                    { value: 'index', label: '指定位置' }
+                    { value: 'start', label: t('episodePage.posStart') },
+                    { value: 'end', label: t('episodePage.posEnd') },
+                    { value: 'index', label: t('episodePage.posIndex') }
                   ]}
                 />
                 {ruleParams.position === 'index' && (
@@ -1903,9 +1906,9 @@ export const EpisodeDetail = () => {
                     value={ruleParams.index || 0}
                     onChange={(v) => setRuleParams(p => ({ ...p, index: v }))}
                     min={0}
-                    placeholder="位置"
+                    placeholder={t('episodePage.placeholderPosition')}
                     style={{ width: 80 }}
-                    addonAfter="位"
+                    addonAfter={t('episodePage.addonChar')}
                   />
                 )}
               </>
@@ -1918,12 +1921,12 @@ export const EpisodeDetail = () => {
                   onChange={(v) => setRuleParams(p => ({ ...p, mode: v }))}
                   style={{ width: 140 }}
                   options={[
-                    { value: 'text', label: '删除文本' },
-                    { value: 'first', label: '删除前N个字符' },
-                    { value: 'last', label: '删除后N个字符' },
-                    { value: 'toText', label: '从开头删到文本' },
-                    { value: 'fromText', label: '从文本删到结尾' },
-                    { value: 'range', label: '删除范围' },
+                    { value: 'text', label: t('episodePage.delText') },
+                    { value: 'first', label: t('episodePage.delFirstN') },
+                    { value: 'last', label: t('episodePage.delLastN') },
+                    { value: 'toText', label: t('episodePage.delToText') },
+                    { value: 'fromText', label: t('episodePage.delFromText') },
+                    { value: 'range', label: t('episodePage.delRange') },
                   ]}
                 />
                 {/* 删除指定文本 */}
@@ -1932,7 +1935,7 @@ export const EpisodeDetail = () => {
                     <Input
                       value={ruleParams.text || ''}
                       onChange={(e) => setRuleParams(p => ({ ...p, text: e.target.value }))}
-                      placeholder="要删除的文本"
+                      placeholder={t('episodePage.placeholderDelText')}
                       style={{ width: 120 }}
                     />
                     <label className="flex items-center gap-1 text-sm">
@@ -1941,7 +1944,7 @@ export const EpisodeDetail = () => {
                         checked={ruleParams.caseSensitive || false}
                         onChange={(e) => setRuleParams(p => ({ ...p, caseSensitive: e.target.checked }))}
                       />
-                      区分大小写
+                      {t('episodePage.caseSensitive')}
                     </label>
                   </>
                 )}
@@ -1951,7 +1954,7 @@ export const EpisodeDetail = () => {
                     value={ruleParams.count || 0}
                     onChange={(v) => setRuleParams(p => ({ ...p, count: v }))}
                     min={0}
-                    placeholder="字符数"
+                    placeholder={t('episodePage.placeholderCharCount')}
                     style={{ width: 100 }}
                   />
                 )}
@@ -1961,7 +1964,7 @@ export const EpisodeDetail = () => {
                     value={ruleParams.count || 0}
                     onChange={(v) => setRuleParams(p => ({ ...p, count: v }))}
                     min={0}
-                    placeholder="字符数"
+                    placeholder={t('episodePage.placeholderCharCount')}
                     style={{ width: 100 }}
                   />
                 )}
@@ -1971,7 +1974,7 @@ export const EpisodeDetail = () => {
                     <Input
                       value={ruleParams.text || ''}
                       onChange={(e) => setRuleParams(p => ({ ...p, text: e.target.value }))}
-                      placeholder="删除到此文本"
+                      placeholder={t('episodePage.placeholderDelToText')}
                       style={{ width: 120 }}
                     />
                     <label className="flex items-center gap-1 text-sm">
@@ -1980,7 +1983,7 @@ export const EpisodeDetail = () => {
                         checked={ruleParams.caseSensitive || false}
                         onChange={(e) => setRuleParams(p => ({ ...p, caseSensitive: e.target.checked }))}
                       />
-                      区分大小写
+                      {t('episodePage.caseSensitive')}
                     </label>
                   </>
                 )}
@@ -1990,7 +1993,7 @@ export const EpisodeDetail = () => {
                     <Input
                       value={ruleParams.text || ''}
                       onChange={(e) => setRuleParams(p => ({ ...p, text: e.target.value }))}
-                      placeholder="从此文本删除"
+                      placeholder={t('episodePage.placeholderDelFromText')}
                       style={{ width: 120 }}
                     />
                     <label className="flex items-center gap-1 text-sm">
@@ -1999,30 +2002,30 @@ export const EpisodeDetail = () => {
                         checked={ruleParams.caseSensitive || false}
                         onChange={(e) => setRuleParams(p => ({ ...p, caseSensitive: e.target.checked }))}
                       />
-                      区分大小写
+                      {t('episodePage.caseSensitive')}
                     </label>
                   </>
                 )}
                 {/* 删除范围 */}
                 {ruleParams.mode === 'range' && (
                   <>
-                    <span className="text-sm">从位置</span>
+                    <span className="text-sm">{t('episodePage.rangeFrom')}</span>
                     <InputNumber
                       value={ruleParams.from || 0}
                       onChange={(v) => setRuleParams(p => ({ ...p, from: v }))}
                       min={0}
-                      placeholder="起始位置"
+                      placeholder={t('episodePage.placeholderStartPos')}
                       style={{ width: 90 }}
                     />
-                    <span className="text-sm">删除</span>
+                    <span className="text-sm">{t('episodePage.rangeDelete')}</span>
                     <InputNumber
                       value={ruleParams.count || 0}
                       onChange={(v) => setRuleParams(p => ({ ...p, count: v }))}
                       min={0}
-                      placeholder="字符数"
+                      placeholder={t('episodePage.placeholderCharCount')}
                       style={{ width: 80 }}
                     />
-                    <span className="text-sm">个字符</span>
+                    <span className="text-sm">{t('episodePage.rangeChars')}</span>
                   </>
                 )}
               </>
@@ -2032,39 +2035,39 @@ export const EpisodeDetail = () => {
               <div className="w-full flex flex-col gap-2 p-2 bg-gray-100 dark:bg-gray-700 rounded">
                 {/* 第一行：格式结构 */}
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm text-gray-500">格式结构:</span>
+                  <span className="text-sm text-gray-500">{t('episodePage.formatStructure')}</span>
                   <Input
                     value={ruleParams.prefix || ''}
                     onChange={(e) => setRuleParams(p => ({ ...p, prefix: e.target.value }))}
-                    placeholder="第"
+                    placeholder={t('episodePage.placeholderPrefixSample')}
                     style={{ width: 120 }}
-                    addonBefore="前缀"
+                    addonBefore={t('episodePage.addonPrefix')}
                     size="small"
                   />
                   <span className="text-xs text-gray-400">+</span>
                   <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded text-xs font-mono">
-                    序号
+                    {t('episodePage.serialNumber')}
                   </span>
                   <span className="text-xs text-gray-400">+</span>
                   <Input
                     value={ruleParams.suffix || ''}
                     onChange={(e) => setRuleParams(p => ({ ...p, suffix: e.target.value }))}
-                    placeholder="集"
+                    placeholder={t('episodePage.placeholderSuffixSample')}
                     style={{ width: 120 }}
-                    addonBefore="后缀"
+                    addonBefore={t('episodePage.addonSuffix')}
                     size="small"
                   />
                 </div>
                 {/* 第二行：序号参数 */}
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm text-gray-500">序号设置:</span>
+                  <span className="text-sm text-gray-500">{t('episodePage.serialSettings')}</span>
                   <InputNumber
                     value={ruleParams.start || 1}
                     onChange={(v) => setRuleParams(p => ({ ...p, start: v }))}
                     min={0}
-                    placeholder="起始"
+                    placeholder={t('episodePage.placeholderStart')}
                     style={{ width: 130 }}
-                    addonBefore="起始值"
+                    addonBefore={t('episodePage.addonStartValue')}
                     size="small"
                   />
                   <InputNumber
@@ -2072,9 +2075,9 @@ export const EpisodeDetail = () => {
                     onChange={(v) => setRuleParams(p => ({ ...p, digits: v }))}
                     min={1}
                     max={5}
-                    placeholder="位数"
+                    placeholder={t('episodePage.placeholderDigits')}
                     style={{ width: 130 }}
-                    addonBefore="补零位数"
+                    addonBefore={t('episodePage.addonPadZero')}
                     size="small"
                   />
                   <Select
@@ -2083,21 +2086,21 @@ export const EpisodeDetail = () => {
                     style={{ width: 100 }}
                     size="small"
                     options={[
-                      { value: 'start', label: '添加到开头' },
-                      { value: 'end', label: '添加到结尾' },
-                      { value: 'replace', label: '替换标题' }
+                      { value: 'start', label: t('episodePage.serialAddStart') },
+                      { value: 'end', label: t('episodePage.serialAddEnd') },
+                      { value: 'replace', label: t('episodePage.serialReplace') }
                     ]}
                   />
                 </div>
                 {/* 第三行：效果预览 */}
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">效果预览:</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{t('episodePage.effectPreview')}</span>
                   <span className="text-sm font-mono text-blue-600 dark:text-blue-400 font-semibold">
                     {
                       ruleParams.position === 'start'
-                        ? `${ruleParams.prefix || ''}${String(ruleParams.start || 1).padStart(ruleParams.digits || 2, '0')}${ruleParams.suffix || ''}原标题`
+                        ? `${ruleParams.prefix || ''}${String(ruleParams.start || 1).padStart(ruleParams.digits || 2, '0')}${ruleParams.suffix || ''}${t('episodePage.originalTitle')}`
                         : ruleParams.position === 'end'
-                        ? `原标题${ruleParams.prefix || ''}${String(ruleParams.start || 1).padStart(ruleParams.digits || 2, '0')}${ruleParams.suffix || ''}`
+                        ? `${t('episodePage.originalTitle')}${ruleParams.prefix || ''}${String(ruleParams.start || 1).padStart(ruleParams.digits || 2, '0')}${ruleParams.suffix || ''}`
                         : `${ruleParams.prefix || ''}${String(ruleParams.start || 1).padStart(ruleParams.digits || 2, '0')}${ruleParams.suffix || ''}`
                     }
                   </span>
@@ -2106,17 +2109,17 @@ export const EpisodeDetail = () => {
             )}
             {/* 大小写规则参数 */}
             {selectedRuleType === 'case' && (
-              <Select value={ruleParams.mode || 'upper'} onChange={(v) => setRuleParams(p => ({ ...p, mode: v }))} style={{ width: 120 }} options={[{ value: 'upper', label: '全大写' }, { value: 'lower', label: '全小写' }, { value: 'title', label: '首字母大写' }]} />
+              <Select value={ruleParams.mode || 'upper'} onChange={(v) => setRuleParams(p => ({ ...p, mode: v }))} style={{ width: 120 }} options={[{ value: 'upper', label: t('episodePage.caseUpper') }, { value: 'lower', label: t('episodePage.caseLower') }, { value: 'title', label: t('episodePage.caseTitle') }]} />
             )}
             {/* 清理规则参数 */}
             {selectedRuleType === 'strip' && (
               <>
-                <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={ruleParams.trimSpaces || false} onChange={(e) => setRuleParams(p => ({ ...p, trimSpaces: e.target.checked }))} />首尾空格</label>
-                <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={ruleParams.trimDuplicateSpaces || false} onChange={(e) => setRuleParams(p => ({ ...p, trimDuplicateSpaces: e.target.checked }))} />重复空格</label>
-                <Input value={ruleParams.chars || ''} onChange={(e) => setRuleParams(p => ({ ...p, chars: e.target.value }))} placeholder="删除字符" style={{ width: 100 }} />
+                <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={ruleParams.trimSpaces || false} onChange={(e) => setRuleParams(p => ({ ...p, trimSpaces: e.target.checked }))} />{t('episodePage.stripTrimSpaces')}</label>
+                <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={ruleParams.trimDuplicateSpaces || false} onChange={(e) => setRuleParams(p => ({ ...p, trimDuplicateSpaces: e.target.checked }))} />{t('episodePage.stripDuplicateSpaces')}</label>
+                <Input value={ruleParams.chars || ''} onChange={(e) => setRuleParams(p => ({ ...p, chars: e.target.value }))} placeholder={t('episodePage.placeholderDelChars')} style={{ width: 100 }} />
               </>
             )}
-            <Button type="primary" onClick={handleAddRule}>+ 添加</Button>
+            <Button type="primary" onClick={handleAddRule}>{t('episodePage.btnAdd')}</Button>
           </div>
           {/* 已添加的规则列表 */}
           {renameRules.length > 0 && (
@@ -2129,29 +2132,29 @@ export const EpisodeDetail = () => {
                   <span className="text-sm flex-1 truncate">
                     {rule.type === 'replace' && `"${rule.params.search}" → "${rule.params.replace || ''}"`}
                     {rule.type === 'regex' && `/${rule.params.pattern}/ → "${rule.params.replace || ''}"`}
-                    {rule.type === 'insert' && `"${rule.params.text}" (${rule.params.position === 'start' ? '开头' : '结尾'})`}
+                    {rule.type === 'insert' && t('episodePage.insertDesc', { text: rule.params.text, position: rule.params.position === 'start' ? t('episodePage.posStart') : t('episodePage.posEnd') })}
                     {rule.type === 'delete' && (() => {
                       const mode = rule.params.mode || 'text'
                       switch (mode) {
                         case 'text':
-                          return `删除文本 "${rule.params.text}"`
+                          return t('episodePage.delTextDesc', { text: rule.params.text })
                         case 'first':
-                          return `删除前 ${rule.params.count || 0} 个字符`
+                          return t('episodePage.delFirstDesc', { count: rule.params.count || 0 })
                         case 'last':
-                          return `删除后 ${rule.params.count || 0} 个字符`
+                          return t('episodePage.delLastDesc', { count: rule.params.count || 0 })
                         case 'toText':
-                          return `从开头删到 "${rule.params.text}"`
+                          return t('episodePage.delToTextDesc', { text: rule.params.text })
                         case 'fromText':
-                          return `从 "${rule.params.text}" 删到结尾`
+                          return t('episodePage.delFromTextDesc', { text: rule.params.text })
                         case 'range':
-                          return `从位置 ${rule.params.from || 0} 删除 ${rule.params.count || 0} 个字符`
+                          return t('episodePage.delRangeDesc', { from: rule.params.from || 0, count: rule.params.count || 0 })
                         default:
-                          return '删除'
+                          return t('episodePage.delDefaultDesc')
                       }
                     })()}
                     {rule.type === 'serialize' && `${rule.params.prefix || ''}{${String(rule.params.start || 1).padStart(rule.params.digits || 2, '0')}}${rule.params.suffix || ''}`}
-                    {rule.type === 'case' && (rule.params.mode === 'upper' ? '全大写' : rule.params.mode === 'lower' ? '全小写' : '首字母大写')}
-                    {rule.type === 'strip' && '清理空格/字符'}
+                    {rule.type === 'case' && (rule.params.mode === 'upper' ? t('episodePage.caseUpper') : rule.params.mode === 'lower' ? t('episodePage.caseLower') : t('episodePage.caseTitle'))}
+                    {rule.type === 'strip' && t('episodePage.stripDesc')}
                   </span>
                   <Button type="text" danger size="small" onClick={() => handleDeleteRule(rule.id)}>🗑</Button>
                 </div>
@@ -2161,7 +2164,7 @@ export const EpisodeDetail = () => {
           {/* 预览和应用按钮 */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-sm">👁 预览效果</span>
+              <span className="text-sm">{t('episodePage.previewEffect')}</span>
               <Switch
                 checked={isPreviewMode}
                 onChange={(checked) => {
@@ -2171,7 +2174,7 @@ export const EpisodeDetail = () => {
                 disabled={renameRules.length === 0}
               />
             </div>
-            <Button type="primary" onClick={handleApplyBatchRename} disabled={renameRules.length === 0}>✅ 应用规则</Button>
+            <Button type="primary" onClick={handleApplyBatchRename} disabled={renameRules.length === 0}>{t('episodePage.btnApplyRules')}</Button>
           </div>
         </div>
 
@@ -2182,10 +2185,10 @@ export const EpisodeDetail = () => {
               <table className="w-full text-sm text-gray-900 dark:text-gray-100">
                 <thead className="bg-gray-100 dark:bg-gray-700 sticky top-0 z-10">
                   <tr>
-                    <th className="p-2 border border-gray-200 dark:border-gray-600 w-10">拖拽</th>
+                    <th className="p-2 border border-gray-200 dark:border-gray-600 w-10">{t('episodePage.thDrag')}</th>
                     <th className="p-2 border border-gray-200 dark:border-gray-600 w-32">ID</th>
-                    <th className="p-2 border border-gray-200 dark:border-gray-600">剧集名</th>
-                    <th className="p-2 border border-gray-200 dark:border-gray-600 w-24">集数</th>
+                    <th className="p-2 border border-gray-200 dark:border-gray-600">{t('episodePage.thEpisodeName')}</th>
+                    <th className="p-2 border border-gray-200 dark:border-gray-600 w-24">{t('episodePage.thEpisodeIndex')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2198,7 +2201,7 @@ export const EpisodeDetail = () => {
           </DndContext>
         </div>
         <div className="mt-2 text-gray-500 dark:text-gray-400 text-sm">
-          💡 拖拽行可调整顺序，点击"确认提交"后才会保存更改
+          💡 {t('episodePage.dragTip')}
         </div>
       </Modal>
       <BatchImportModal
