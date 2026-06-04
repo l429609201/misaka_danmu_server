@@ -225,6 +225,15 @@ export const BatchManagePage = () => {
   const handleSelectAll = () => setSelectedSourceIds(animeGroups.flatMap(g => g.sources.map(s => s.sourceId)))
   const handleDeselectAll = () => setSelectedSourceIds([])
   const handleCheckboxChange = (sourceId, checked) => setSelectedSourceIds(prev => checked ? [...prev, sourceId] : prev.filter(id => id !== sourceId))
+  const toggleGroupSelection = (group) => {
+    const ids = group.sources.map(s => s.sourceId)
+    const allSelected = ids.every(id => selectedSourceIds.includes(id))
+    if (allSelected) {
+      setSelectedSourceIds(prev => prev.filter(id => !ids.includes(id)))
+    } else {
+      setSelectedSourceIds(prev => [...new Set([...prev, ...ids])])
+    }
+  }
 
   // ---- Computed ----
   const finishedCount = animeGroups.reduce((acc, g) => acc + g.sources.filter(s => s.isFinished).length, 0)
@@ -273,7 +282,7 @@ export const BatchManagePage = () => {
             <h1 className="text-2xl font-extrabold tracking-tight truncate">{t('batchManage.title')}</h1>
             {taskChip()}
           </div>
-          {/* 视图切换 - 固定位置，不受模式影响 */}
+          {/* 视图切换 */}
           <div className="flex rounded-xl border border-gray-200 dark:border-white/6 overflow-hidden flex-shrink-0">
             <button onClick={() => setViewMode('list')}
               className={`px-3 py-1.5 text-xs font-medium transition ${viewMode === 'list' ? 'bg-indigo-500 text-white' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/4'}`}>
@@ -289,20 +298,21 @@ export const BatchManagePage = () => {
       </div>
 
       {viewMode === 'list' ? (<>
-      {/* 统计卡片 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+
+      {/* 统计徽章 — 卡片上方整行 */}
+      <div className="flex items-center justify-between gap-2 mb-3">
         {[
-          { iconName: 'yuan', iconColor: '#818cf8', label: t('batchManage.statTotal'), value: stats.totalSources, color: 'indigo' },
-          { iconName: 'refresh', iconColor: '#4ade80', label: t('batchManage.statRefreshing'), value: stats.refreshEnabled, color: 'blue' },
-          { iconName: 'favorites-fill', iconColor: '#facc15', label: t('batchManage.statFavorited'), value: stats.favorited, color: 'amber' },
-          { iconName: 'wanjie1', iconColor: '#60a5fa', label: t('batchManage.statFinished'), value: finishedCount, color: 'green' },
+          { iconName: 'yuan', iconColor: '#818cf8', label: t('batchManage.statTotal'), value: stats.totalSources },
+          { iconName: 'refresh', iconColor: '#4ade80', label: t('batchManage.statRefreshing'), value: stats.refreshEnabled },
+          { iconName: 'favorites-fill', iconColor: '#facc15', label: t('batchManage.statFavorited'), value: stats.favorited },
+          { iconName: 'wanjie1', iconColor: '#60a5fa', label: t('batchManage.statFinished'), value: finishedCount },
         ].map((s, i) => (
-          <div key={i} className="rounded-2xl border border-gray-200 dark:border-white/6 bg-white dark:bg-[#1a1e2e] p-4 sm:p-5 transition hover:-translate-y-0.5 hover:shadow-lg cursor-default flex items-center justify-between">
-            <div className="flex flex-col items-start">
-              <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center mb-1.5 ${statIconBgClass[s.color] || 'bg-gray-500/10'}`}><MyIcon icon={s.iconName} size={18} color={s.iconColor} /></div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">{s.label}</div>
+          <div key={i} className="flex-1 flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/6 bg-white dark:bg-[#1a1e2e] text-xs cursor-default min-w-0">
+            <div className="flex items-center gap-1 min-w-0">
+              <MyIcon icon={s.iconName} size={13} color={s.iconColor} />
+              <span className="text-gray-500 dark:text-gray-400 truncate">{s.label}</span>
             </div>
-            <div className="text-3xl sm:text-4xl font-extrabold">{s.value}</div>
+            <span className="font-bold tabular-nums ml-1">{s.value}</span>
           </div>
         ))}
       </div>
@@ -313,13 +323,19 @@ export const BatchManagePage = () => {
         <div className={`rounded-2xl border border-gray-200 dark:border-white/6 bg-white dark:bg-[#1a1e2e] overflow-hidden ${isMobile ? 'flex flex-col max-h-[calc(100vh-300px)]' : ''}`}>
           {/* 工具栏 */}
           <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-gray-200 dark:border-white/6 flex items-center gap-2 flex-wrap">
-            {[
-              { key: 'all', label: `${t('incrementalRefresh.all')} ${stats.totalSources}` },
-            ].map(f => (
-              <button key={f.key} className={`px-3.5 py-1 rounded-full text-xs font-medium border transition ${typeFilter === 'all' && refreshFilter === 'all' && favoriteFilter === 'all' && finishedFilter === 'all' ? 'bg-indigo-500/8 text-indigo-400 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
-                onClick={() => { setTypeFilter('all'); setRefreshFilter('all'); setFavoriteFilter('all'); setFinishedFilter('all'); setPage(1); fetchData({ page: 1, typeFilter: 'all', refreshFilter: 'all', favoriteFilter: 'all', finishedFilter: 'all' }) }}
-              >{f.label}</button>
-            ))}
+            {(() => {
+              const allIds = animeGroups.flatMap(g => g.sources.map(s => s.sourceId))
+              const allSelected = allIds.length > 0 && allIds.every(id => selectedSourceIds.includes(id))
+              return (
+                <button
+                  className={`px-3.5 py-1 rounded-full text-xs font-medium border transition flex items-center gap-1 ${allSelected ? 'border-transparent shadow-sm' : 'border-gray-200 dark:border-white/6 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                  style={allSelected ? { backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)', color: 'var(--color-primary)', borderColor: 'color-mix(in srgb, var(--color-primary) 30%, transparent)' } : undefined}
+                  onClick={() => allSelected ? handleDeselectAll() : handleSelectAll()}
+                >
+                  {allSelected ? '☑' : '☐'} {allSelected ? t('batchManage.sidebarDeselectAll') : t('batchManage.sidebarSelectAll')}
+                </button>
+              )
+            })()}
             <Dropdown menu={{ items: [
               { key: 'all', label: t('incrementalRefresh.allTypes') },
               { key: 'movie', label: t('batchManage.typeMovie') },
@@ -393,7 +409,7 @@ export const BatchManagePage = () => {
           </div>
 
           {/* 表格 / 移动端卡片 */}
-          <div className={isMobile ? 'p-3 space-y-3 flex-1 overflow-y-auto' : 'overflow-y-auto overflow-x-hidden'} style={isMobile ? undefined : { maxHeight: 520 }}>
+          <div className={isMobile ? 'p-3 space-y-3 flex-1 overflow-y-auto' : 'overflow-y-auto overflow-x-hidden'} style={isMobile ? undefined : { maxHeight: 'calc(100vh - 380px)', minHeight: 300 }}>
             {loading ? (
               <div className="flex justify-center py-12"><Spin /></div>
             ) : animeGroups.length === 0 ? (
@@ -413,10 +429,16 @@ export const BatchManagePage = () => {
                   <div
                     key={isMulti ? group.animeId : s.sourceId}
                     onClick={() => toggleGroupSelection(group)}
-                    className={`relative rounded-xl border p-3 transition cursor-pointer ${groupSelected ? 'border-indigo-500 dark:border-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 ring-1 ring-indigo-500/30' : 'border-gray-200 dark:border-white/6 bg-white dark:bg-[#1a1e2e] hover:border-indigo-300/60 dark:hover:border-indigo-500/40'}`}
+                    className={`relative rounded-xl border p-3 transition cursor-pointer ${groupSelected ? 'ring-2 ring-inset shadow-sm' : 'border-gray-200 dark:border-white/6 bg-white dark:bg-[#1a1e2e] hover:border-indigo-300/60 dark:hover:border-indigo-500/40'}`}
+                    style={groupSelected ? {
+                      backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, transparent)',
+                      borderColor: 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
+                      '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 50%, transparent)',
+                    } : undefined}
                   >
                     {groupSelected && (
-                      <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center shadow-sm z-10">
+                      <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center shadow-sm z-10"
+                        style={{ backgroundColor: 'var(--color-primary)' }}>
                         <span className="text-white text-[10px] font-bold">{groupAllSelected ? '✓' : selectedCount}</span>
                       </div>
                     )}
@@ -457,95 +479,121 @@ export const BatchManagePage = () => {
                 )
               })
             ) : (
-              /* ===== 桌面端表格视图 ===== */
-              <table className="w-full text-sm table-fixed">
-                <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-white/6 sticky top-0 bg-white dark:bg-[#1a1e2e] z-10">
-                    <th className="px-4 py-2.5 w-10"><Checkbox onChange={e => e.target.checked ? handleSelectAll() : handleDeselectAll()} checked={selectedSourceIds.length > 0 && selectedSourceIds.length === animeGroups.flatMap(g => g.sources).length} indeterminate={selectedSourceIds.length > 0 && selectedSourceIds.length < animeGroups.flatMap(g => g.sources).length} /></th>
-                    <th className="px-4 py-2.5 text-left cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition w-[40%]" onClick={() => handleSortChange('title')}>{t('batchManage.colTitle')} <span className={`text-[10px] ${sortBy === 'title' ? 'text-indigo-400' : 'opacity-30'}`}>{sortBy === 'title' ? (sortOrder === 'asc' ? '↑' : '↓') : '⇅'}</span></th>
-                    <th className="px-4 py-2.5">{t('batchManage.colProgress')}</th>
-                    <th className="px-4 py-2.5 min-w-[80px]">{t('batchManage.colMissing')}</th>
-                    <th className="px-4 py-2.5">{t('batchManage.colRefresh')}</th>
-                    <th className="px-4 py-2.5">{t('batchManage.colFavorite')}</th>
-                    <th className="px-4 py-2.5">{t('batchManage.colFinished')}</th>
-                    <th className="px-4 py-2.5 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition" onClick={() => handleSortChange('created')}>
-                      <div className="flex items-center gap-1.5">
-                        <div className="flex flex-col leading-tight">
-                          <span>{t('batchManage.colUpdatedLine1')}</span>
-                          <span>{t('batchManage.colUpdatedLine2')}</span>
-                        </div>
-                        <div className="flex flex-col items-center text-[10px] leading-none gap-0.5">
-                          <span className={sortBy === 'created' && sortOrder === 'asc' ? 'text-indigo-400' : 'opacity-30'}>▲</span>
-                          <span className={sortBy === 'created' && sortOrder === 'desc' ? 'text-indigo-400' : 'opacity-30'}>▼</span>
-                        </div>
+              /* ===== 桌面端卡片列表视图 ===== */
+              <>
+                {/* 列表头 */}
+                <div className="flex items-center px-5 py-2.5 text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-white/6 sticky top-0 bg-white dark:bg-[#1a1e2e] z-10">
+                  <div className="w-[38%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition flex items-center gap-1" onClick={() => handleSortChange('title')}>
+                    {t('batchManage.colTitle')} <span className={`text-[10px] ${sortBy === 'title' ? 'text-indigo-400' : 'opacity-30'}`}>{sortBy === 'title' ? (sortOrder === 'asc' ? '↑' : '↓') : '⇅'}</span>
+                  </div>
+                  <div className="w-[10%]">{t('batchManage.colProgress')}</div>
+                  <div className="w-[10%]">{t('batchManage.colMissing')}</div>
+                  <div className="w-[10%]">{t('batchManage.colRefresh')}</div>
+                  <div className="w-[10%]">{t('batchManage.colFavorite')}</div>
+                  <div className="w-[10%]">{t('batchManage.colFinished')}</div>
+                  <div className="w-[12%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition" onClick={() => handleSortChange('created')}>
+                    <div className="flex items-center gap-1">
+                      <div className="flex flex-col leading-tight">
+                        <span>{t('batchManage.colUpdatedLine1')}</span>
+                        <span>{t('batchManage.colUpdatedLine2')}</span>
                       </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {animeGroups.map(group => {
+                      <div className="flex flex-col items-center text-[10px] leading-none gap-0.5">
+                        <span className={sortBy === 'created' && sortOrder === 'asc' ? 'text-indigo-400' : 'opacity-30'}>▲</span>
+                        <span className={sortBy === 'created' && sortOrder === 'desc' ? 'text-indigo-400' : 'opacity-30'}>▼</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {/* 卡片行列表 */}
+                <div className="p-2 space-y-1">
+                  {animeGroups.map((group, idx) => {
                     const isMulti = group.sources.length > 1
-                    if (!isMulti) {
-                      const s = group.sources[0]
-                      return (
-                        <tr key={s.sourceId} className="border-b border-gray-100 dark:border-white/3 hover:bg-gray-50 dark:hover:bg-indigo-500/4 transition">
-                          <td className="px-4 py-3"><Checkbox checked={selectedSourceIds.includes(s.sourceId)} onChange={e => handleCheckboxChange(s.sourceId, e.target.checked)} /></td>
-                          <td className="px-4 py-3 text-left max-w-0">
-                            <div className="flex items-center gap-2.5">
-                              {getPoster(group) ? <img src={getPoster(group)} alt={group.animeTitle} className="w-9 h-12 rounded-md object-cover flex-shrink-0" /> : <div className="w-9 h-12 rounded-md bg-gray-200/10 dark:bg-white/6 flex-shrink-0" />}
-                              <div className="min-w-0 flex-1">
-                                <Tooltip title={group.animeTitle} placement="topLeft"><div className="font-semibold text-sm truncate cursor-default">{group.animeTitle}</div></Tooltip>
-                                <div className="flex gap-1 mt-0.5 flex-wrap">
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${group.animeType === 'movie' ? 'bg-purple-500/10 text-purple-400' : 'bg-indigo-500/10 text-indigo-400'}`}>{group.animeType === 'movie' ? t('batchManage.typeMovie') : t('batchManage.typeTV')}</span>
-                                  {group.animeType !== 'movie' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400">{t('libraryGroup.seasonTag', { season: group.season })}</span>}
-                                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-500/8 text-gray-500 dark:text-gray-400">{s.providerName}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{t('splitSource.episodeCountSuffix', { count: s.episodeCount })}</td>
-                          <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{t('batchManage.noMissing')}</td>
-                          <td className="px-4 py-3"><ToggleBtn on={s.incrementalRefreshEnabled} onClick={() => handleToggleRefresh(s.sourceId)} iconName="refresh" color="#4ade80" /></td>
-                          <td className="px-4 py-3"><ToggleBtn on={s.isFavorited} onClick={() => handleToggleFavorite(s.sourceId)} iconName="favorites-fill" color="#facc15" /></td>
-                          <td className="px-4 py-3"><ToggleBtn on={s.isFinished} onClick={() => handleToggleFinished(s.sourceId)} iconName="wanjie1" color="#60a5fa" /></td>
-                          <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                            {s.lastRefreshLatestEpisodeAt ? dayjs(s.lastRefreshLatestEpisodeAt).format('MM-DD HH:mm') : '—'}
-                            {s.incrementalRefreshEnabled && s.incrementalRefreshFailures > 0 && <><br /><span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400">{t('incrementalRefresh.failureCount', { failures: s.incrementalRefreshFailures, max: stats.maxFailures })}</span></>}
-                          </td>
-                        </tr>
-                      )
-                    }
-                    // Multi-source row
+                    const s = group.sources[0]
+                    const isSelected = isMulti
+                      ? group.sources.some(x => selectedSourceIds.includes(x.sourceId))
+                      : selectedSourceIds.includes(s.sourceId)
+                    const latestTime = isMulti
+                      ? (() => { const l = group.sources.filter(x => x.lastRefreshLatestEpisodeAt).sort((a, b) => new Date(b.lastRefreshLatestEpisodeAt) - new Date(a.lastRefreshLatestEpisodeAt))[0]; return l ? dayjs(l.lastRefreshLatestEpisodeAt).format('MM-DD HH:mm') : '—' })()
+                      : s.lastRefreshLatestEpisodeAt ? dayjs(s.lastRefreshLatestEpisodeAt).format('MM-DD HH:mm') : '—'
                     return (
-                      <tr key={group.animeId} className="border-b border-gray-100 dark:border-white/3 hover:bg-gray-50 dark:hover:bg-indigo-500/4 transition">
-                        <td className="px-4 py-3"><Checkbox checked={group.sources.every(s => selectedSourceIds.includes(s.sourceId))} indeterminate={group.sources.some(s => selectedSourceIds.includes(s.sourceId)) && !group.sources.every(s => selectedSourceIds.includes(s.sourceId))} onChange={e => { group.sources.forEach(s => handleCheckboxChange(s.sourceId, e.target.checked)) }} /></td>
-                        <td className="px-4 py-3 text-left max-w-0">
-                          <div className="flex items-center gap-2.5">
-                            {getPoster(group) ? <img src={getPoster(group)} alt={group.animeTitle} className="w-9 h-12 rounded-md object-cover flex-shrink-0" /> : <div className="w-9 h-12 rounded-md bg-gray-200/10 dark:bg-white/6 flex-shrink-0" />}
+                      <div
+                        key={isMulti ? group.animeId : s.sourceId}
+                        onClick={() => toggleGroupSelection(group)}
+                        className={`relative flex items-center px-5 py-5 rounded-2xl cursor-pointer transition-all select-none ${
+                          isSelected
+                            ? 'ring-2 ring-inset shadow-sm'
+                            : idx % 2 === 1
+                              ? 'bg-gray-50/60 dark:bg-white/[0.02] hover:bg-gray-100/70 dark:hover:bg-white/[0.04]'
+                              : 'hover:bg-gray-50 dark:hover:bg-white/3'
+                        }`}
+                        style={isSelected ? {
+                          backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, transparent)',
+                          '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 50%, transparent)',
+                        } : undefined}
+                      >
+                        {/* 选中打钩 */}
+                        {isSelected && (
+                          <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center shadow-sm z-10"
+                            style={{ backgroundColor: 'var(--color-primary)' }}>
+                            <span className="text-white text-[10px] font-bold">✓</span>
+                          </div>
+                        )}
+                        {/* 作品 */}
+                        <div className="w-[38%] min-w-0 pr-3">
+                          <div className="flex items-center gap-3">
+                            {getPoster(group)
+                              ? <img src={getPoster(group)} alt={group.animeTitle} className="w-11 h-[60px] rounded-lg object-cover flex-shrink-0" />
+                              : <div className="w-11 h-[60px] rounded-lg bg-gray-200/10 dark:bg-white/6 flex-shrink-0" />}
                             <div className="min-w-0 flex-1">
-                              <Tooltip title={group.animeTitle} placement="topLeft"><div className="font-semibold text-sm truncate cursor-default">{group.animeTitle}</div></Tooltip>
+                              <Tooltip title={group.animeTitle} placement="topLeft">
+                                <div className="font-semibold text-sm truncate">{group.animeTitle}</div>
+                              </Tooltip>
                               <div className="flex gap-1 mt-0.5 flex-wrap">
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${group.animeType === 'movie' ? 'bg-purple-500/10 text-purple-400' : 'bg-indigo-500/10 text-indigo-400'}`}>{group.animeType === 'movie' ? t('batchManage.typeMovie') : t('batchManage.typeTV')}</span>
-                                {group.animeType !== 'movie' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400">{t('libraryGroup.seasonTag', { season: group.season })}</span>}
-                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-500/8 text-indigo-400">{t('batchManage.multiSource', { count: group.sources.length })}</span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${group.animeType === 'movie' ? 'bg-purple-500/10 text-purple-400' : 'bg-indigo-500/10 text-indigo-400'}`}>
+                                  {group.animeType === 'movie' ? t('batchManage.typeMovie') : t('batchManage.typeTV')}
+                                </span>
+                                {group.animeType !== 'movie' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400">{t('libraryGroup.seasonTag', { season: group.season })}</span>}
+                                {isMulti
+                                  ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-indigo-500/8 text-indigo-400">{t('batchManage.multiSource', { count: group.sources.length })}</span>
+                                  : <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-gray-500/8 text-gray-500 dark:text-gray-400">{s.providerName}</span>}
                               </div>
                             </div>
                           </div>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{t('splitSource.episodeCountSuffix', { count: Math.max(...group.sources.map(s => s.episodeCount)) })}</td>
-                        <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{t('batchManage.noMissing')}</td>
-                        {/* Multi-source toggles with dropdown */}
-                        <td className="px-4 py-3"><MultiToggle sources={group.sources} field="incrementalRefreshEnabled" iconName="refresh" color="#4ade80" onToggle={handleToggleRefresh} /></td>
-                        <td className="px-4 py-3"><MultiToggle sources={group.sources} field="isFavorited" iconName="favorites-fill" color="#facc15" onToggle={handleToggleFavorite} /></td>
-                        <td className="px-4 py-3"><MultiToggle sources={group.sources} field="isFinished" iconName="wanjie1" color="#60a5fa" onToggle={handleToggleFinished} /></td>
-                        <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                          {(() => { const latest = group.sources.filter(s => s.lastRefreshLatestEpisodeAt).sort((a, b) => new Date(b.lastRefreshLatestEpisodeAt) - new Date(a.lastRefreshLatestEpisodeAt))[0]; return latest ? dayjs(latest.lastRefreshLatestEpisodeAt).format('MM-DD HH:mm') : '—' })()}
-                        </td>
-                      </tr>
+                        </div>
+                        {/* 进度 */}
+                        <div className="w-[10%] text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                          {t('splitSource.episodeCountSuffix', { count: isMulti ? Math.max(...group.sources.map(x => x.episodeCount)) : s.episodeCount })}
+                        </div>
+                        {/* 缺失 */}
+                        <div className="w-[10%] text-xs text-gray-500 dark:text-gray-400">{t('batchManage.noMissing')}</div>
+                        {/* 三个 Toggle，阻止冒泡避免触发行选中 */}
+                        <div className="w-[10%]" onClick={e => e.stopPropagation()}>
+                          {isMulti
+                            ? <MultiToggle sources={group.sources} field="incrementalRefreshEnabled" iconName="refresh" color="#4ade80" onToggle={handleToggleRefresh} />
+                            : <ToggleBtn on={s.incrementalRefreshEnabled} onClick={() => handleToggleRefresh(s.sourceId)} iconName="refresh" color="#4ade80" />}
+                        </div>
+                        <div className="w-[10%]" onClick={e => e.stopPropagation()}>
+                          {isMulti
+                            ? <MultiToggle sources={group.sources} field="isFavorited" iconName="favorites-fill" color="#facc15" onToggle={handleToggleFavorite} />
+                            : <ToggleBtn on={s.isFavorited} onClick={() => handleToggleFavorite(s.sourceId)} iconName="favorites-fill" color="#facc15" />}
+                        </div>
+                        <div className="w-[10%]" onClick={e => e.stopPropagation()}>
+                          {isMulti
+                            ? <MultiToggle sources={group.sources} field="isFinished" iconName="wanjie1" color="#60a5fa" onToggle={handleToggleFinished} />
+                            : <ToggleBtn on={s.isFinished} onClick={() => handleToggleFinished(s.sourceId)} iconName="wanjie1" color="#60a5fa" />}
+                        </div>
+                        {/* 最近更新 */}
+                        <div className="w-[12%] text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                          {latestTime}
+                          {!isMulti && s.incrementalRefreshEnabled && s.incrementalRefreshFailures > 0 && (
+                            <><br /><span className="text-[10px] px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-400">{t('incrementalRefresh.failureCount', { failures: s.incrementalRefreshFailures, max: stats.maxFailures })}</span></>
+                          )}
+                        </div>
+                      </div>
                     )
                   })}
-                </tbody>
-              </table>
+                </div>
+              </>
             )}
           </div>
 
@@ -601,13 +649,20 @@ export const BatchManagePage = () => {
 // ---- Sub-components ----
 const ToggleBtn = ({ on, onClick, iconName, color }) => (
   <button
-    className={`w-7 h-6 rounded-md border text-sm flex items-center justify-center transition cursor-pointer ${on ? 'opacity-100' : 'border-gray-200 dark:border-white/6 opacity-30 grayscale hover:opacity-50'}`}
-    style={on ? {
-      borderColor: 'color-mix(in srgb, var(--color-primary) 25%, transparent)',
-      backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)',
-    } : undefined}
     onClick={onClick}
-  ><MyIcon icon={iconName} size={14} color={on ? color : undefined} /></button>
+    className={`h-7 px-2 rounded-full flex items-center justify-center gap-1 transition-all cursor-pointer text-xs font-medium ${
+      on
+        ? 'shadow-sm'
+        : 'bg-gray-100 dark:bg-white/6 text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-white/10'
+    }`}
+    style={on ? {
+      backgroundColor: `${color}22`,
+      color: color,
+      boxShadow: `0 0 0 1px ${color}44`,
+    } : undefined}
+  >
+    <MyIcon icon={iconName} size={13} color={on ? color : undefined} />
+  </button>
 )
 
 const MultiToggle = ({ sources, field, iconName, color, onToggle }) => {
@@ -624,13 +679,18 @@ const MultiToggle = ({ sources, field, iconName, color, onToggle }) => {
   return (
     <div className="relative inline-block" ref={ref}>
       <button
-        className={`h-6 px-2 rounded-md border text-xs flex items-center gap-1 transition cursor-pointer ${anyOn ? 'opacity-100' : 'border-gray-200 dark:border-white/6 opacity-30 grayscale hover:opacity-50'}`}
+        className={`h-7 px-2 rounded-full flex items-center gap-1 transition-all cursor-pointer text-xs font-medium ${
+          anyOn
+            ? 'shadow-sm'
+            : 'bg-gray-100 dark:bg-white/6 text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-white/10'
+        }`}
         style={anyOn ? {
-          borderColor: 'color-mix(in srgb, var(--color-primary) 25%, transparent)',
-          backgroundColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)',
+          backgroundColor: `${color}22`,
+          color: color,
+          boxShadow: `0 0 0 1px ${color}44`,
         } : undefined}
         onClick={() => setOpen(!open)}
-      ><MyIcon icon={iconName} size={14} color={anyOn ? color : undefined} /> <span className="text-[9px] opacity-40">▾</span></button>
+      ><MyIcon icon={iconName} size={13} color={anyOn ? color : undefined} /> <span className="text-[9px] opacity-50">▾</span></button>
       {open && (
         <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-white dark:bg-[#1a1e2e] border border-gray-200 dark:border-white/6 rounded-xl p-1.5 shadow-xl z-20 min-w-[140px]">
           {sources.map(s => (
@@ -666,8 +726,13 @@ const CalCard = React.memo(function CalCard({
   onToggleSelect, onSubscribe, onUnsubscribe, isSubscribing,
 }) {
   const isExternal = !item.isLocal
+  const selectedStyle = selected ? {
+    backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, transparent)',
+    borderColor: 'color-mix(in srgb, var(--color-primary) 50%, transparent)',
+    boxShadow: '0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent)',
+  } : undefined
   const baseStyle = selected
-    ? 'border-indigo-500 dark:border-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 ring-1 ring-indigo-500/30'
+    ? 'ring-2 ring-inset'
     : isExternal
       ? ORIGIN_STYLE[item.origin] || ''
       : (isToday ? 'border-indigo-200 dark:border-indigo-500/20 bg-indigo-50 dark:bg-indigo-500/4' : 'border-gray-200 dark:border-white/6 bg-white dark:bg-white/2 hover:bg-gray-50 dark:hover:bg-white/4')
@@ -678,6 +743,9 @@ const CalCard = React.memo(function CalCard({
     return (
       <div
         className={`group/card ${cardWidth} flex-shrink-0 rounded-xl overflow-hidden border transition relative ${baseStyle} cursor-pointer hover:border-indigo-400/50 dark:hover:border-indigo-500/40`}
+        style={{
+          ...(selected ? { ...selectedStyle, '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 50%, transparent)' } : {}),
+        }}
         onClick={() => onToggleSelect(item)}
       >
         <div className="relative w-full aspect-[2/3] bg-gray-200 dark:bg-white/6">
@@ -718,7 +786,7 @@ const CalCard = React.memo(function CalCard({
             </span>
           )}
           {/* 选中勾 */}
-          {selected && <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center shadow-sm z-10"><span className="text-white text-[10px] font-bold">✓</span></div>}
+          {selected && <div className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center shadow-sm z-10" style={{ backgroundColor: 'var(--color-primary)' }}><span className="text-white text-[10px] font-bold">✓</span></div>}
           {/* 底部悬浮：左侧进度条+集数（自适应），右下角订阅/已订阅 */}
           <div className="absolute bottom-0 inset-x-0 px-1.5 pb-1.5 pt-4 bg-gradient-to-t from-black/70 to-transparent flex items-center gap-1.5">
             {(() => {
@@ -771,10 +839,12 @@ const CalCard = React.memo(function CalCard({
   return (
     <div
       className={`flex gap-2.5 p-2 rounded-xl transition border relative ${baseStyle} ${isExternal ? 'cursor-pointer hover:border-indigo-400/50 dark:hover:border-indigo-500/40' : 'cursor-default'}`}
+      style={selected ? { ...selectedStyle, '--tw-ring-color': 'color-mix(in srgb, var(--color-primary) 50%, transparent)' } : undefined}
       onClick={isExternal ? () => onToggleSelect(item) : undefined}
     >
       {selected && (
-        <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center shadow-sm z-10">
+        <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center shadow-sm z-10"
+          style={{ backgroundColor: 'var(--color-primary)' }}>
           <span className="text-white text-[10px] font-bold">✓</span>
         </div>
       )}

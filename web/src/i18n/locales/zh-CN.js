@@ -1331,6 +1331,8 @@ export default {
     saveChanges: '保存修改',
     testing: '正在测试连接，请稍候...',
     testResult: '测试结果',
+    connectivityCheck: '连通性检测',
+    testHint: '点击右上角「测试连接」开始检测',
     proxyConnectivity: '代理服务器连通性:',
     testSuccess: '成功 ({{latency}} ms)',
     testFailed: '失败: {{error}}',

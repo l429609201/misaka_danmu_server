@@ -115,14 +115,42 @@ class So360MetadataSource(BaseMetadataSource):
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
         }
 
-        self.client = httpx.AsyncClient(
-            headers=self.headers,
-            cookies=self.cookies,
-            timeout=20.0,
-        )
+        self.client = None  # 延迟初始化，支持代理配置
+
+    async def _get_proxy(self) -> Optional[str]:
+        """当 360 元数据源开启 useProxy 时，返回代理 URL。"""
+        proxy_mode = await self.config_manager.get("proxyMode", "none")
+        if proxy_mode == "none":
+            if (await self.config_manager.get("proxyEnabled", "false")).lower() == "true":
+                proxy_mode = "http_socks"
+        if proxy_mode != "http_socks":
+            return None
+        proxy_url = await self.config_manager.get("proxyUrl", "")
+        if not proxy_url:
+            return None
+        async with self._session_factory() as session:
+            from src.db import crud as _crud
+            all_settings = await _crud.get_all_metadata_source_settings(session)
+            setting = next((s for s in all_settings if s.get('providerName') == '360'), None)
+            if setting and setting.get('useProxy', False):
+                return proxy_url
+        return None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """获取或创建 httpx client，支持代理。"""
+        if self.client is None:
+            proxy = await self._get_proxy()
+            self.client = httpx.AsyncClient(
+                headers=self.headers,
+                cookies=self.cookies,
+                timeout=20.0,
+                proxy=proxy,
+            )
+        return self.client
 
     async def search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
         """基于参考实现的简化搜索方法（使用 CacheManager 缓存避免短期内重复请求）"""
+        await self._get_client()  # 确保 client 已初始化
         cache_prefix = "360_search_"
         cache_key = keyword
 
@@ -330,6 +358,7 @@ class So360MetadataSource(BaseMetadataSource):
         return await self._get_episode_url_from_360(best_match, episode_index, target_site)
 
     async def get_details(self, item_id: str, user: models.User, mediaType: Optional[str] = None) -> Optional[models.MetadataDetailsResponse]:
+        await self._get_client()
         possible_paths = [f"/dianshiju/{item_id}.html", f"/dongman/{item_id}.html", f"/dianying/{item_id}.html"]
         try:
             for path in possible_paths:
@@ -640,6 +669,7 @@ class So360MetadataSource(BaseMetadataSource):
         Returns:
             List[Tuple[int, str]]: (集数, 播放URL) 的列表
         """
+        await self._get_client()
         try:
             # 1. 获取条目信息 - 优先级: item_data > 数据库缓存 > 重新查询
             if item_data:
@@ -1033,4 +1063,5 @@ class So360MetadataSource(BaseMetadataSource):
         raise NotImplementedError(f"操作 '{action_name}' 在 {self.provider_name} 中未实现。")
 
     async def close(self):
-        await self.client.aclose()
+        if self.client:
+            await self.client.aclose()

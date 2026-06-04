@@ -323,7 +323,22 @@ async def get_calendar_sources(session: AsyncSession) -> List[Dict[str, Any]]:
         .outerjoin(Episode, AnimeSource.id == Episode.sourceId)
         .where(AnimeSource.incrementalRefreshEnabled == True)
         .where(AnimeSource.isFinished == False)
-        .group_by(AnimeSource.id)
+        .group_by(
+            AnimeSource.id,
+            AnimeSource.providerName,
+            Anime.id,
+            Anime.title,
+            Anime.type,
+            Anime.season,
+            Anime.imageUrl,
+            Anime.localImagePath,
+            Anime.episodeCount,
+            AnimeMetadata.airWeekday,
+            AnimeMetadata.airTime,
+            AnimeMetadata.bangumiId,
+            AnimeMetadata.traktId,
+            AnimeMetadata.tmdbId,
+        )
     )
     result = await session.execute(stmt)
     rows = result.mappings().all()

@@ -22,6 +22,8 @@ from src.services import ScraperManager
 from .base import BaseMetadataSource
 
 logger = logging.getLogger(__name__)
+metadata_logger = logging.getLogger("scraper_responses")
+
 
 class InfoboxItem(BaseModel):
     key: str
@@ -179,7 +181,7 @@ async def _refresh_bangumi_token(session: AsyncSession, user_id: int, config: Di
             "redirect_uri": redirect_uri
         }
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(proxy=config.get("proxy")) as client:
             response = await client.post("https://bgm.tv/oauth/access_token", data=payload)
             response.raise_for_status()
             token_data = response.json()
@@ -245,7 +247,20 @@ async def exchange_code(
         "redirect_uri": body.redirect_uri,
     }
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # 获取代理配置（仅当 bangumi 元数据源开启 useProxy 时走代理）
+        proxy = None
+        proxy_mode = await config_manager.get("proxyMode", "none")
+        if proxy_mode == "none" and (await config_manager.get("proxyEnabled", "false")).lower() == "true":
+            proxy_mode = "http_socks"
+        if proxy_mode == "http_socks":
+            proxy_url = await config_manager.get("proxyUrl", "")
+            if proxy_url:
+                bgm_settings = await crud.get_all_metadata_source_settings(session)
+                bgm_setting = next((s for s in bgm_settings if s.get('providerName') == 'bangumi'), None)
+                if bgm_setting and bgm_setting.get('useProxy', False):
+                    proxy = proxy_url
+
+        async with httpx.AsyncClient(timeout=30.0, proxy=proxy) as client:
             token_response = await client.post("https://bgm.tv/oauth/access_token", data=payload)
             token_response.raise_for_status()
             token_data = token_response.json()
@@ -356,6 +371,24 @@ class BangumiMetadataSource(BaseMetadataSource):
         self._token = await self.config_manager.get("bangumiToken")
         self._config_loaded = True
 
+    async def _get_proxy(self) -> Optional[str]:
+        """获取 Bangumi 代理配置。当全局代理启用且 bgm 源设置了 useProxy 时返回代理 URL。"""
+        proxy_mode = await self.config_manager.get("proxyMode", "none")
+        if proxy_mode == "none":
+            if (await self.config_manager.get("proxyEnabled", "false")).lower() == "true":
+                proxy_mode = "http_socks"
+        if proxy_mode != "http_socks":
+            return None
+        proxy_url = await self.config_manager.get("proxyUrl", "")
+        if not proxy_url:
+            return None
+        async with self._session_factory() as session:
+            all_settings = await crud.get_all_metadata_source_settings(session)
+            bgm_setting = next((s for s in all_settings if s.get('providerName') == 'bangumi'), None)
+            if bgm_setting and bgm_setting.get('useProxy', False):
+                return proxy_url
+        return None
+
     async def _create_client(self, user: models.User) -> httpx.AsyncClient:
         await self._ensure_config()
         headers = {"User-Agent": f"DanmuApiServer/1.0 ({settings.jwt.secret_key[:8]})"}
@@ -379,7 +412,8 @@ class BangumiMetadataSource(BaseMetadataSource):
                     config = {
                         "client_id": await self.config_manager.get("bangumiClientId", ""),
                         "client_secret": await self.config_manager.get("bangumiClientSecret", ""),
-                        "redirect_uri": redirect_uri
+                        "redirect_uri": redirect_uri,
+                        "proxy": await self._get_proxy(),
                     }
                     refreshed = await _refresh_bangumi_token(session, user.id, config)
                     if refreshed:
@@ -392,7 +426,8 @@ class BangumiMetadataSource(BaseMetadataSource):
                 self.logger.debug("Bangumi: 正在使用 OAuth Access Token 进行认证。")
                 headers["Authorization"] = f"Bearer {auth_info['accessToken']}"
         api_base_url = await self._get_api_base_url()
-        return httpx.AsyncClient(base_url=api_base_url, headers=headers, timeout=20.0)
+        proxy = await self._get_proxy()
+        return httpx.AsyncClient(base_url=api_base_url, headers=headers, timeout=20.0, proxy=proxy)
 
     async def search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
         """
@@ -595,7 +630,8 @@ class BangumiMetadataSource(BaseMetadataSource):
 
         items = []
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            proxy = await self._get_proxy()
+            async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
                 resp = await client.get(f"{api_base}/calendar")
                 resp.raise_for_status()
                 raw_text = resp.text
@@ -807,7 +843,8 @@ class BangumiMetadataSource(BaseMetadataSource):
                     pass
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            proxy = await self._get_proxy()
+            async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
                 await asyncio.gather(*(_one(client, bid) for bid in bgm_ids), return_exceptions=True)
             self.logger.debug(f"Bangumi 后台拉取 total_episodes 完成: {len(bgm_ids)} 个 subject")
         except Exception as e:
@@ -865,7 +902,8 @@ class BangumiMetadataSource(BaseMetadataSource):
                     pass
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            proxy = await self._get_proxy()
+            async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
                 await asyncio.gather(*(_one(client, bid) for bid in bgm_ids), return_exceptions=True)
             self.logger.debug(f"Bangumi 后台拉取 aired_episodes 完成: {len(bgm_ids)} 个 subject")
         except Exception as e:

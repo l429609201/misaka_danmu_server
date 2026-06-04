@@ -1329,6 +1329,8 @@ export default {
     saveChanges: 'Save Changes',
     testing: 'Testing connection, please wait...',
     testResult: 'Test Result',
+    connectivityCheck: 'Connectivity Check',
+    testHint: 'Click "Test Connection" in the top right to start',
     proxyConnectivity: 'Proxy server connectivity:',
     testSuccess: 'Success ({{latency}} ms)',
     testFailed: 'Failed: {{error}}',
