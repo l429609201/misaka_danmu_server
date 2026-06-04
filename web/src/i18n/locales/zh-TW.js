@@ -1329,6 +1329,8 @@ export default {
     saveChanges: '儲存變更',
     testing: '正在測試連線，請稍候...',
     testResult: '測試結果',
+    connectivityCheck: '連通性檢測',
+    testHint: '點擊右上角「測試連線」開始檢測',
     proxyConnectivity: '代理伺服器連通性:',
     testSuccess: '成功 ({{latency}} ms)',
     testFailed: '失敗: {{error}}',

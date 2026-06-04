@@ -8,9 +8,6 @@ import {
   Select,
   Switch,
   Spin,
-  Tag,
-  Divider,
-  Space,
 } from 'antd'
 import { useEffect, useState } from 'react'
 import { getProxyConfig, setProxyConfig, testProxy } from '../../../apis'
@@ -96,13 +93,10 @@ export const Proxy = () => {
     }
   }
 
-  const ResultTag = ({ result }) => {
-    const isSuccess = result.status === 'success'
-    const color = isSuccess ? 'green' : 'red'
-    const text = isSuccess
-      ? t('proxy.testSuccess', { latency: result.latency.toFixed(0) })
-      : t('proxy.testFailed', { error: result.error })
-    return <Tag color={color}>{text}</Tag>
+  const getLatencyColor = (ms) => {
+    if (ms <= 300) return { bar: 'bg-emerald-400/70', text: 'text-emerald-400', dot: 'bg-emerald-400' }
+    if (ms <= 1000) return { bar: 'bg-orange-400/70', text: 'text-orange-400', dot: 'bg-orange-400' }
+    return { bar: 'bg-red-400/70', text: 'text-red-400', dot: 'bg-red-400' }
   }
 
   return (
@@ -204,50 +198,113 @@ export const Proxy = () => {
 
           <Form.Item>
             <div className="flex justify-end">
-              <Space>
-                <Button onClick={handleTest} loading={isTestLoading}>
-                  {t('proxy.testConnection')}
-                </Button>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  loading={isSaveLoading}
-                >
-                  {t('proxy.saveChanges')}
-                </Button>
-              </Space>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={isSaveLoading}
+              >
+                {t('proxy.saveChanges')}
+              </Button>
             </div>
           </Form.Item>
         </Form>
-        {isTestLoading && (
-          <div className="text-center">
-            <Spin />
-            <p>{t('proxy.testing')}</p>
+      </Card>
+
+      {/* 测速结果卡片 - 常驻显示 */}
+      <Card
+        className="mt-4"
+        title={
+          <div className="flex items-center gap-2">
+            <span>{t('proxy.connectivityCheck')}</span>
+            {testResult && (() => {
+              const entries = Object.entries(testResult.target_sites)
+              const successCount = entries.filter(([, r]) => r.status === 'success').length
+              const failCount = entries.length - successCount
+              return (
+                <div className="flex items-center gap-2 ml-2">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500">✓ {successCount}</span>
+                  {failCount > 0 && <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-red-500/10 text-red-500">✗ {failCount}</span>}
+                </div>
+              )
+            })()}
           </div>
-        )}
-        {testResult && (
-          <div>
-            <Divider>{t('proxy.testResult')}</Divider>
-            <div className="flex flex-col gap-2">
-              {testResult.proxy_connectivity &&
-                testResult.proxy_connectivity.status !== 'skipped' && (
-                  <div className="flex justify-between">
-                    <span>{t('proxy.proxyConnectivity')}</span>
-                    <ResultTag result={testResult.proxy_connectivity} />
+        }
+        extra={
+          <Button onClick={handleTest} loading={isTestLoading} size="small">
+            {t('proxy.testConnection')}
+          </Button>
+        }
+      >
+          {!isTestLoading && !testResult && (
+            <div className="flex items-center justify-center py-10 text-sm text-gray-400">
+              {t('proxy.testHint') || '点击右上角「测试连接」开始测速'}
+            </div>
+          )}
+          {isTestLoading && (
+            <div className="flex items-center justify-center gap-3 py-8">
+              <Spin />
+              <span className="text-sm text-gray-500">{t('proxy.testing')}</span>
+            </div>
+          )}
+          {testResult && (() => {
+            const entries = Object.entries(testResult.target_sites)
+            const successEntries = entries.filter(([, r]) => r.status === 'success')
+            const maxLatency = Math.max(...successEntries.map(([, r]) => r.latency), 500)
+            const successCount = successEntries.length
+            const totalCount = entries.length
+            const pct = totalCount > 0 ? Math.round((successCount / totalCount) * 100) : 0
+            const avgLatency = successEntries.length > 0 ? Math.round(successEntries.reduce((s, [, r]) => s + r.latency, 0) / successEntries.length) : 0
+
+            return (
+              <div>
+                {/* 成功率进度条 */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex-1 h-2 rounded-full bg-gray-100 dark:bg-white/5 overflow-hidden">
+                    <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-500 whitespace-nowrap">{pct}% ({successCount}/{totalCount})</span>
+                  {avgLatency > 0 && <span className="text-xs text-gray-400 whitespace-nowrap">⏱ {avgLatency}ms</span>}
+                </div>
+
+                {/* 代理连通性 */}
+                {testResult.proxy_connectivity && testResult.proxy_connectivity.status !== 'skipped' && (
+                  <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-white/[0.03] mb-2">
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${testResult.proxy_connectivity.status === 'success' ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                    <span className="text-xs text-gray-600 dark:text-gray-300 w-44 truncate font-medium">{t('proxy.proxyConnectivity')}</span>
+                    <div className="flex-1" />
+                    {testResult.proxy_connectivity.status === 'success'
+                      ? <span className={`text-xs font-bold ${getLatencyColor(testResult.proxy_connectivity.latency).text} w-16 text-right`}>{testResult.proxy_connectivity.latency.toFixed(0)}ms</span>
+                      : <span className="text-[10px] font-semibold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">{testResult.proxy_connectivity.error}</span>
+                    }
                   </div>
                 )}
-              {Object.entries(testResult.target_sites).map(([site, result]) => (
-                <div key={site} className="flex justify-between">
-                  <span>
-                    {site.replace('https://', '').replace('http://', '')}:
-                  </span>
-                  <ResultTag result={result} />
+
+                {/* 站点列表 */}
+                <div className="space-y-1">
+                  {entries.map(([site, result], idx) => {
+                    const domain = site.replace('https://', '').replace('http://', '')
+                    const isSuccess = result.status === 'success'
+                    const colors = isSuccess ? getLatencyColor(result.latency) : null
+                    const barWidth = isSuccess ? Math.min(100, Math.round((result.latency / maxLatency) * 100)) : 100
+                    return (
+                      <div key={site} className={`flex items-center gap-3 px-3 py-2 rounded-lg transition ${idx % 2 === 0 ? 'bg-gray-50/60 dark:bg-white/[0.02]' : ''} hover:bg-gray-100/70 dark:hover:bg-white/[0.04]`}>
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isSuccess ? colors.dot : 'bg-red-400'}`} />
+                        <span className={`text-xs w-44 truncate ${isSuccess ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400'}`}>{domain}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-white/5 overflow-hidden">
+                          <div className={`h-full rounded-full transition-all duration-500 ${isSuccess ? colors.bar : 'bg-red-400/50'}`} style={{ width: `${barWidth}%` }} />
+                        </div>
+                        {isSuccess
+                          ? <span className={`text-xs font-bold ${colors.text} w-16 text-right`}>{result.latency.toFixed(0)}ms</span>
+                          : <span className="text-[10px] font-semibold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded w-16 text-center truncate" title={result.error}>{result.error?.length > 8 ? result.error.slice(0, 8) + '…' : result.error}</span>
+                        }
+                      </div>
+                    )
+                  })}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </Card>
+              </div>
+            )
+          })()}
+        </Card>
     </div>
   )
 }

@@ -66,6 +66,22 @@ async def _bgm_token_refresh_handler(app: FastAPI) -> None:
         "redirect_uri": redirect_uri,
     }
 
+    # 获取 Bangumi 代理配置（仅当 bangumi 元数据源开启 useProxy 时）
+    from src.db import crud
+    proxy = None
+    proxy_mode = await config_manager.get("proxyMode", "none")
+    if proxy_mode == "none" and (await config_manager.get("proxyEnabled", "false")).lower() == "true":
+        proxy_mode = "http_socks"
+    if proxy_mode == "http_socks":
+        proxy_url = await config_manager.get("proxyUrl", "")
+        if proxy_url:
+            async with session_factory() as _s:
+                ms_settings = await crud.get_all_metadata_source_settings(_s)
+                bgm_s = next((s for s in ms_settings if s.get('providerName') == 'bangumi'), None)
+                if bgm_s and bgm_s.get('useProxy', False):
+                    proxy = proxy_url
+    oauth_config["proxy"] = proxy
+
     now = get_now()
 
     async with session_factory() as session:

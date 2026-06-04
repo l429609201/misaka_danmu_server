@@ -84,7 +84,8 @@ class TraktMetadataSource(BaseMetadataSource):
 
         results = []
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            proxy = await self._get_proxy()
+            async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
                 resp = await client.get(f"{TRAKT_API_BASE}/search/show", params={"query": keyword, "extended": "full"}, headers=headers)
                 resp.raise_for_status()
                 raw_text = resp.text
@@ -126,7 +127,8 @@ class TraktMetadataSource(BaseMetadataSource):
             return None
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            proxy = await self._get_proxy()
+            async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
                 resp = await client.get(f"{TRAKT_API_BASE}/shows/{item_id}", params={"extended": "full"}, headers=headers)
                 resp.raise_for_status()
                 raw_text = resp.text
@@ -191,7 +193,8 @@ class TraktMetadataSource(BaseMetadataSource):
         items = []
         url = f"{TRAKT_API_BASE}/calendars/all/shows/{today}/7"
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            proxy = await self._get_proxy()
+            async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
                 resp = await client.get(url, headers=public_headers)
                 resp.raise_for_status()
                 raw_text = resp.text
@@ -295,7 +298,8 @@ class TraktMetadataSource(BaseMetadataSource):
 
         result: Dict[str, Dict[str, Any]] = {}
         try:
-            async with httpx.AsyncClient(timeout=20) as client:
+            proxy = await self._get_proxy()
+            async with httpx.AsyncClient(timeout=20, proxy=proxy) as client:
                 # 1) 已看（含「在看」）— /users/me/watched/shows 返回所有看过任意集的 show
                 try:
                     resp = await client.get(
@@ -421,7 +425,8 @@ class TraktMetadataSource(BaseMetadataSource):
                     pass
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            proxy = await self._get_proxy()
+            async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
                 await asyncio.gather(*(_one(client, tid) for tid in trakt_ids), return_exceptions=True)
             self.logger.debug(f"Trakt 后台拉取 aired_episodes 完成: {len(trakt_ids)} 个 show")
         except Exception as e:
@@ -432,6 +437,20 @@ class TraktMetadataSource(BaseMetadataSource):
         async with self._session_factory() as session:
             settings = await crud.get_all_metadata_source_settings(session)
             return next((s for s in settings if s['providerName'] == self.provider_name), {})
+
+    async def _get_proxy(self) -> Optional[str]:
+        """当 trakt 源开启 useProxy 时，返回代理 URL。"""
+        proxy_mode = await self.config_manager.get("proxyMode", "none")
+        if proxy_mode == "none":
+            if (await self.config_manager.get("proxyEnabled", "false")).lower() == "true":
+                proxy_mode = "http_socks"
+        if proxy_mode != "http_socks":
+            return None
+        proxy_url = await self.config_manager.get("proxyUrl", "")
+        if not proxy_url:
+            return None
+        provider_setting = await self._get_provider_setting()
+        return proxy_url if provider_setting.get("useProxy", False) else None
 
     async def check_connectivity(self) -> Dict[str, str]:
         """检查 Trakt 连通性 — 通过 CF Worker 的 OAuth providers 端点"""
