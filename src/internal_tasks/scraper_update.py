@@ -227,157 +227,215 @@ async def _perform_update(
         full_replace_enabled = await config_manager.get("scraperFullReplaceEnabled", "false")
         use_full_replace = full_replace_enabled.lower() == "true"
 
+        # 全量替换防御：检查最近是否失败过（防止 native crash 导致无限重启循环）
+        FULL_REPLACE_FAIL_FLAG = Path("/app/config/full_replace_failed") if Path("/.dockerenv").exists() else Path("config/full_replace_failed")
+        if use_full_replace and FULL_REPLACE_FAIL_FLAG.exists():
+            try:
+                from datetime import datetime
+                fail_data = json.loads(FULL_REPLACE_FAIL_FLAG.read_text())
+                fail_time = datetime.fromisoformat(fail_data.get("time", ""))
+                cooldown_minutes = 60
+                elapsed = (datetime.now() - fail_time).total_seconds() / 60
+                if elapsed < cooldown_minutes:
+                    logger.warning(
+                        f"全量替换在 {int(elapsed)} 分钟前失败过，冷却期 {cooldown_minutes} 分钟内跳过本次更新。"
+                        f"上次失败原因: {fail_data.get('error', '未知')}"
+                    )
+                    return
+                else:
+                    # 冷却期已过，清除标志文件
+                    FULL_REPLACE_FAIL_FLAG.unlink(missing_ok=True)
+                    logger.info("全量替换冷却期已过，清除失败标志")
+            except Exception:
+                # 标志文件格式异常，清除并继续
+                FULL_REPLACE_FAIL_FLAG.unlink(missing_ok=True)
+
         # ========== 全量替换模式 ==========
         if use_full_replace and repo_info:
             logger.info("使用全量替换模式，从 GitHub Releases 下载压缩包")
 
-            asset_info = await _fetch_github_release_asset(
-                repo_info=repo_info,
-                platform_key=platform_key,
-                headers=headers,
-                proxy=proxy_to_use
-            )
-
-            if asset_info:
-                success = await _download_and_extract_release(
-                    asset_info=asset_info,
-                    scrapers_dir=scrapers_dir,
+            try:
+                asset_info = await _fetch_github_release_asset(
+                    repo_info=repo_info,
+                    platform_key=platform_key,
                     headers=headers,
                     proxy=proxy_to_use
                 )
 
-                if success:
-                    # 更新 versions.json
-                    from datetime import datetime
-                    release_version = asset_info['version'].lstrip('v')
+                if asset_info:
+                    success = await _download_and_extract_release(
+                        asset_info=asset_info,
+                        scrapers_dir=scrapers_dir,
+                        headers=headers,
+                        proxy=proxy_to_use
+                    )
 
-                    # 从解压后的 package.json 读取各个源的版本信息
-                    scrapers_versions = {}
-                    scrapers_hashes = {}
-                    local_package_file = scrapers_dir / "package.json"
-                    try:
-                        if local_package_file.exists():
-                            package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
-                            # 从 resources 字段提取各个源的版本号和哈希值
-                            resources = package_content.get('resources', {})
-                            for scraper_name, scraper_info in resources.items():
-                                if isinstance(scraper_info, dict):
-                                    version = scraper_info.get('version')
-                                    if version:
-                                        scrapers_versions[scraper_name] = version
-                                    # 提取哈希值
-                                    hashes = scraper_info.get('hashes', {})
-                                    platform_key = f"{platform_info['platform']}_{platform_info['arch']}"
-                                    if platform_key in hashes:
-                                        scrapers_hashes[scraper_name] = hashes[platform_key]
-                            logger.info(f"从 package.json 读取到 {len(scrapers_versions)} 个源的版本信息")
-                    except Exception as e:
-                        logger.warning(f"读取 package.json 中的源版本信息失败: {e}")
+                    if success:
+                        # 更新 versions.json
+                        from datetime import datetime
+                        release_version = asset_info['version'].lstrip('v')
 
-                    # 从解压后的 versions.json 读取全局版本限制字段（覆盖前读取）
-                    min_server_version = None
-                    existing_versions_file = scrapers_dir / "versions.json"
-                    if existing_versions_file.exists():
+                        # 从解压后的 package.json 读取各个源的版本信息
+                        scrapers_versions = {}
+                        scrapers_hashes = {}
+                        local_package_file = scrapers_dir / "package.json"
                         try:
-                            existing_ver_data = json.loads(await asyncio.to_thread(existing_versions_file.read_text))
-                            min_server_version = existing_ver_data.get('min_server_version')
-                        except Exception:
-                            pass
-                    # package.json 也可能携带版本限制字段
-                    if local_package_file.exists() and not min_server_version:
-                        try:
-                            pkg = json.loads(await asyncio.to_thread(local_package_file.read_text))
-                            min_server_version = pkg.get('min_server_version')
-                        except Exception:
-                            pass
-
-                    versions_data = {
-                        "platform": platform_info['platform'],
-                        "type": platform_info['arch'],
-                        "version": release_version,
-                        "scrapers": scrapers_versions,
-                        "hashes": scrapers_hashes,
-                        "full_replace": True,
-                        "update_time": datetime.now().isoformat()
-                    }
-                    if min_server_version:
-                        versions_data['min_server_version'] = min_server_version
-                    versions_json_str = json.dumps(versions_data, indent=2, ensure_ascii=False)
-                    await asyncio.to_thread(SCRAPERS_VERSIONS_FILE.write_text, versions_json_str)
-                    logger.info(f"已更新 versions.json: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
-
-                    # 同时更新 package.json 的版本号（前端从这里读取整体版本）
-                    try:
-                        if local_package_file.exists():
-                            package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
-                            package_content['version'] = release_version
-                        else:
-                            package_content = {"version": release_version}
-                        package_json_str = json.dumps(package_content, indent=2, ensure_ascii=False)
-                        await asyncio.to_thread(local_package_file.write_text, package_json_str)
-                        logger.info(f"已更新 package.json 版本号为: {release_version}")
-                    except Exception as pkg_err:
-                        logger.warning(f"更新 package.json 失败: {pkg_err}")
-
-                    # 全量替换模式：一定是更新已有源，需要重启容器
-                    # 先备份新下载的资源到持久化目录
-                    try:
-                        logger.info("正在备份全量替换的资源到持久化目录...")
-                        await backup_scrapers(SystemUser())
-                        logger.info("全量替换资源备份完成")
-                    except Exception as backup_error:
-                        logger.warning(f"备份资源失败: {backup_error}")
-
-                    # 检查是否有 Docker socket
-                    from src.utils.docker_utils import is_docker_socket_available, restart_container
-                    import sys
-                    docker_available = is_docker_socket_available()
-
-                    # 判断是否是首次下载（本地没有任何弹幕源）
-                    existing_scrapers = set(scraper_manager.scrapers.keys())
-                    is_first_download = len(existing_scrapers) == 0
-
-                    if is_first_download:
-                        # 首次下载：执行热加载
-                        try:
-                            await scraper_manager.load_and_sync_scrapers()
-                            logger.info(f"弹幕源首次下载完成（热加载）: {release_version}")
+                            if local_package_file.exists():
+                                package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
+                                # 从 resources 字段提取各个源的版本号和哈希值
+                                resources = package_content.get('resources', {})
+                                for scraper_name, scraper_info in resources.items():
+                                    if isinstance(scraper_info, dict):
+                                        version = scraper_info.get('version')
+                                        if version:
+                                            scrapers_versions[scraper_name] = version
+                                        # 提取哈希值
+                                        hashes = scraper_info.get('hashes', {})
+                                        platform_key = f"{platform_info['platform']}_{platform_info['arch']}"
+                                        if platform_key in hashes:
+                                            scrapers_hashes[scraper_name] = hashes[platform_key]
+                                logger.info(f"从 package.json 读取到 {len(scrapers_versions)} 个源的版本信息")
                         except Exception as e:
-                            logger.error(f"热加载失败: {e}")
-                    elif docker_available:
-                        # 非首次下载且有 Docker socket：重启容器
-                        logger.info("全量替换完成，准备重启容器...")
+                            logger.warning(f"读取 package.json 中的源版本信息失败: {e}")
 
-                        # 刷新日志缓冲，确保日志输出
-                        for handler in logging.getLogger().handlers:
-                            handler.flush()
-                        sys.stdout.flush()
-                        sys.stderr.flush()
+                        # 从解压后的 versions.json 读取全局版本限制字段（覆盖前读取）
+                        min_server_version = None
+                        existing_versions_file = scrapers_dir / "versions.json"
+                        if existing_versions_file.exists():
+                            try:
+                                existing_ver_data = json.loads(await asyncio.to_thread(existing_versions_file.read_text))
+                                min_server_version = existing_ver_data.get('min_server_version')
+                            except Exception:
+                                pass
+                        # package.json 也可能携带版本限制字段
+                        if local_package_file.exists() and not min_server_version:
+                            try:
+                                pkg = json.loads(await asyncio.to_thread(local_package_file.read_text))
+                                min_server_version = pkg.get('min_server_version')
+                            except Exception:
+                                pass
 
-                        # 等待日志写入完成
-                        await asyncio.sleep(1.0)
+                        versions_data = {
+                            "platform": platform_info['platform'],
+                            "type": platform_info['arch'],
+                            "version": release_version,
+                            "scrapers": scrapers_versions,
+                            "hashes": scrapers_hashes,
+                            "full_replace": True,
+                            "update_time": datetime.now().isoformat()
+                        }
+                        if min_server_version:
+                            versions_data['min_server_version'] = min_server_version
+                        versions_json_str = json.dumps(versions_data, indent=2, ensure_ascii=False)
+                        await asyncio.to_thread(SCRAPERS_VERSIONS_FILE.write_text, versions_json_str)
+                        logger.info(f"已更新 versions.json: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
 
-                        container_name = await config_manager.get("containerName", "misaka-danmu-server")
-                        result = await restart_container(container_name)
-                        if result.get("success"):
-                            logger.info(f"弹幕源全量替换完成: {local_version} -> {release_version}，已向容器 '{container_name}' 发送重启指令")
+                        # 同时更新 package.json 的版本号（前端从这里读取整体版本）
+                        try:
+                            if local_package_file.exists():
+                                package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
+                                package_content['version'] = release_version
+                            else:
+                                package_content = {"version": release_version}
+                            package_json_str = json.dumps(package_content, indent=2, ensure_ascii=False)
+                            await asyncio.to_thread(local_package_file.write_text, package_json_str)
+                            logger.info(f"已更新 package.json 版本号为: {release_version}")
+                        except Exception as pkg_err:
+                            logger.warning(f"更新 package.json 失败: {pkg_err}")
+
+                        # 全量替换模式：一定是更新已有源，需要重启容器
+                        # 先备份新下载的资源到持久化目录
+                        try:
+                            logger.info("正在备份全量替换的资源到持久化目录...")
+                            await backup_scrapers(SystemUser())
+                            logger.info("全量替换资源备份完成")
+                        except Exception as backup_error:
+                            logger.warning(f"备份资源失败: {backup_error}")
+
+                        # 检查是否有 Docker socket
+                        from src.utils.docker_utils import is_docker_socket_available, restart_container
+                        import sys
+                        docker_available = is_docker_socket_available()
+
+                        # 判断是否是首次下载（本地没有任何弹幕源）
+                        existing_scrapers = set(scraper_manager.scrapers.keys())
+                        is_first_download = len(existing_scrapers) == 0
+
+                        if is_first_download:
+                            # 首次下载：执行热加载
+                            try:
+                                await scraper_manager.load_and_sync_scrapers()
+                                logger.info(f"弹幕源首次下载完成（热加载）: {release_version}")
+                            except Exception as e:
+                                logger.error(f"热加载失败: {e}")
+                        elif docker_available:
+                            # 非首次下载且有 Docker socket：重启容器
+                            logger.info("全量替换完成，准备重启容器...")
+
+                            # 刷新日志缓冲，确保日志输出
+                            for handler in logging.getLogger().handlers:
+                                handler.flush()
+                            sys.stdout.flush()
+                            sys.stderr.flush()
+
+                            # 等待日志写入完成
+                            await asyncio.sleep(1.0)
+
+                            container_name = await config_manager.get("containerName", "misaka-danmu-server")
+                            result = await restart_container(container_name)
+                            if result.get("success"):
+                                logger.info(f"弹幕源全量替换完成: {local_version} -> {release_version}，已向容器 '{container_name}' 发送重启指令")
+                            else:
+                                logger.warning(f"重启容器失败: {result.get('message')}")
+                                logger.warning("⚠️ 请手动重启容器以加载新的弹幕源")
                         else:
-                            logger.warning(f"重启容器失败: {result.get('message')}")
-                            logger.warning("⚠️ 请手动重启容器以加载新的弹幕源")
-                    else:
-                        # 非首次下载且没有 Docker socket：仅提示手动重启，不执行热加载
-                        logger.info(f"弹幕源全量替换下载完成: {local_version} -> {release_version}")
-                        logger.warning("⚠️ 未检测到 Docker 套接字，请手动重启容器以加载新的弹幕源（.so 文件需要重启才能生效）")
+                            # 非首次下载且没有 Docker socket：仅提示手动重启，不执行热加载
+                            logger.info(f"弹幕源全量替换下载完成: {local_version} -> {release_version}")
+                            logger.warning("⚠️ 未检测到 Docker 套接字，请手动重启容器以加载新的弹幕源（.so 文件需要重启才能生效）")
 
-                    # 清除版本缓存
-                    import src.api.ui.scraper_resources as sr
-                    sr._version_cache = None
-                    sr._version_cache_time = None
-                    return
+                        # 清除版本缓存
+                        import src.api.ui.scraper_resources as sr
+                        sr._version_cache = None
+                        sr._version_cache_time = None
+
+                        # 全量替换成功，清除失败标志
+                        FULL_REPLACE_FAIL_FLAG.unlink(missing_ok=True)
+                        return
+                    else:
+                        logger.warning("全量替换失败，回退到逐文件下载模式")
                 else:
-                    logger.warning("全量替换失败，回退到逐文件下载模式")
-            else:
-                logger.warning("未找到匹配的 Release 压缩包，回退到逐文件下载模式")
+                    logger.warning("未找到匹配的 Release 压缩包，回退到逐文件下载模式")
+
+            except Exception as full_replace_error:
+                # 全量替换过程中发生异常（包括可能的 native crash 前的 Python 异常）
+                logger.error(f"全量替换异常: {full_replace_error}", exc_info=True)
+                # 写入失败标志文件，防止重启后立即重试导致无限重启
+                try:
+                    from datetime import datetime
+                    fail_info = {
+                        "time": datetime.now().isoformat(),
+                        "error": str(full_replace_error)[:200],
+                        "version": asset_info.get('version', 'unknown') if isinstance(asset_info, dict) else 'unknown'
+                    }
+                    FULL_REPLACE_FAIL_FLAG.parent.mkdir(parents=True, exist_ok=True)
+                    FULL_REPLACE_FAIL_FLAG.write_text(json.dumps(fail_info, ensure_ascii=False))
+                    logger.info("已写入全量替换失败标志，冷却期内将自动降级为增量更新")
+                except Exception:
+                    pass
+                # 尝试从备份恢复
+                try:
+                    backup_dir = Path("/app/config/scrapers_backup") if Path("/.dockerenv").exists() else Path("config/scrapers_backup")
+                    if backup_dir.exists():
+                        import shutil
+                        backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
+                        if backup_files:
+                            scrapers_dir = _get_scrapers_dir()
+                            for f in backup_files:
+                                shutil.copy2(f, scrapers_dir / f.name)
+                            logger.info(f"已从备份恢复 {len(backup_files)} 个弹幕源文件")
+                except Exception as restore_err:
+                    logger.error(f"从备份恢复失败: {restore_err}")
+                logger.warning("全量替换异常，回退到逐文件下载模式")
 
         # ========== 逐文件下载模式（默认）==========
         # 获取资源列表

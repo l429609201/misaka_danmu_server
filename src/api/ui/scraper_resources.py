@@ -2196,6 +2196,39 @@ async def _download_and_extract_release(
         if progress_callback:
             await progress_callback("正在解压文件...")
 
+        # ── 解压前版本检查：从包内读取 versions.json 的 min_server_version ──
+        try:
+            min_server_version = None
+            if filename.endswith('.tar.gz') or filename.endswith('.tgz'):
+                with tarfile.open(fileobj=io.BytesIO(archive_content), mode='r:gz') as pre_tar:
+                    for m in pre_tar.getmembers():
+                        if m.isfile() and Path(m.name).name == 'versions.json':
+                            fo = pre_tar.extractfile(m)
+                            if fo:
+                                min_server_version = json.loads(fo.read()).get('min_server_version')
+                            break
+            else:
+                with zipfile.ZipFile(io.BytesIO(archive_content), 'r') as pre_zip:
+                    for zi in pre_zip.infolist():
+                        if Path(zi.filename).name == 'versions.json':
+                            min_server_version = json.loads(pre_zip.read(zi.filename)).get('min_server_version')
+                            break
+
+            if min_server_version:
+                from src._version import APP_VERSION
+                from src.services.scraper_manager import _version_satisfies
+                if not _version_satisfies(APP_VERSION, min_server_version):
+                    logger.error(
+                        f"全量替换中止：弹幕源包要求服务器版本 >= {min_server_version}，"
+                        f"当前版本 {APP_VERSION}"
+                    )
+                    if progress_callback:
+                        await progress_callback(f"版本不满足：需要 >= {min_server_version}，当前 {APP_VERSION}")
+                    return False
+                logger.info(f"版本检查通过: 服务器 {APP_VERSION} >= 弹幕源包要求 {min_server_version}")
+        except Exception as e:
+            logger.warning(f"解压前版本检查失败（宽松放行）: {e}")
+
         # 记录旧文件列表（解压完成后清理多余的旧文件）
         old_files = {
             file.name for file in scrapers_dir.glob("*")
@@ -2232,15 +2265,18 @@ async def _download_and_extract_release(
                             logger.warning(f"检测到路径穿越尝试: {member.name}")
                             continue
 
-                        # 读取并写入文件
+                        # 读取并写入文件（同步写入，避免 asyncio.to_thread 在 ARM64+uvloop 下触发 native crash）
                         file_obj = tar_ref.extractfile(member)
                         if file_obj:
                             file_content = file_obj.read()
-                            await asyncio.to_thread(target_path.write_bytes, file_content)
+                            if len(file_content) == 0 and base_name.endswith(('.so', '.pyd')):
+                                logger.warning(f"跳过 0 字节文件: {base_name}")
+                                continue
+                            target_path.write_bytes(file_content)
                             extracted_count += 1
                             if base_name.endswith(('.so', '.pyd')):
                                 new_files.add(base_name)
-                            logger.debug(f"解压: {base_name}")
+                            logger.debug(f"解压: {base_name} ({len(file_content)} 字节)")
         else:
             # 处理 zip 格式
             with zipfile.ZipFile(io.BytesIO(archive_content), 'r') as zip_ref:
@@ -2262,13 +2298,16 @@ async def _download_and_extract_release(
                             logger.warning(f"检测到路径穿越尝试: {zip_info.filename}")
                             continue
 
-                        # 读取并写入文件
+                        # 读取并写入文件（同步写入，避免 asyncio.to_thread 在 ARM64+uvloop 下触发 native crash）
                         file_content = zip_ref.read(zip_info.filename)
-                        await asyncio.to_thread(target_path.write_bytes, file_content)
+                        if len(file_content) == 0 and base_name.endswith(('.so', '.pyd')):
+                            logger.warning(f"跳过 0 字节文件: {base_name}")
+                            continue
+                        target_path.write_bytes(file_content)
                         extracted_count += 1
                         if base_name.endswith(('.so', '.pyd')):
                             new_files.add(base_name)
-                        logger.debug(f"解压: {base_name}")
+                        logger.debug(f"解压: {base_name} ({len(file_content)} 字节)")
 
         logger.info(f"解压完成: 共 {extracted_count} 个文件")
 

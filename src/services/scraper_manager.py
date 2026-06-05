@@ -221,7 +221,21 @@ class ScraperManager:
             # 我们只关心 .py 文件或已知的二进制扩展名
             if not (file_path.name.endswith(".py") or file_path.name.endswith(".so") or file_path.name.endswith(".pyd")):
                 continue
-            
+
+            # 防御性检查：跳过 0 字节的二进制文件（损坏/不完整的 .so/.pyd）
+            if file_path.name.endswith((".so", ".pyd")):
+                try:
+                    fsize = file_path.stat().st_size
+                    if fsize == 0:
+                        logging.getLogger(__name__).warning(
+                            f"跳过 0 字节文件: {file_path.name}（文件损坏或下载不完整）"
+                        )
+                        failed_providers.append(file_path.stem.split('.')[0])
+                        continue
+                except OSError as e:
+                    logging.getLogger(__name__).warning(f"无法读取文件信息 {file_path.name}: {e}")
+                    failed_providers.append(file_path.stem.split('.')[0])
+                    continue
 
 
             module_name_stem = file_path.stem.split('.')[0] # e.g., 'bilibili.cpython-311-x86_64-linux-gnu' -> 'bilibili'
@@ -239,6 +253,21 @@ class ScraperManager:
                 for name, obj in inspect.getmembers(module, inspect.isclass):
                     if issubclass(obj, BaseScraper) and obj is not BaseScraper:
                         provider_name = obj.provider_name # 直接访问类属性，避免实例化
+
+                        # 单源最低服务器版本检查：类属性 min_server_version（空字符串或未定义则不限制）
+                        source_min_ver = getattr(obj, 'min_server_version', None) or ''
+                        if source_min_ver:
+                            from src._version import APP_VERSION
+                            if _version_satisfies(APP_VERSION, source_min_ver):
+                                logging.getLogger(__name__).info(
+                                    f"✓ {provider_name} 版本检查通过 (要求 >= {source_min_ver}, 当前 {APP_VERSION})"
+                                )
+                            else:
+                                logging.getLogger(__name__).warning(
+                                    f"✗ 跳过 {provider_name}: 要求服务器版本 >= {source_min_ver}，当前 {APP_VERSION}"
+                                )
+                                failed_providers.append(module_name_stem)
+                                continue
 
                         discovered_providers.append(provider_name)
                         # (新增) 注册该刮削器能处理的域名
