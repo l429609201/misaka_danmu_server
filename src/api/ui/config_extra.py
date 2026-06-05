@@ -250,27 +250,38 @@ async def test_proxy_latency(
         if should_test:
             try:
                 instance = get_instance_func()
-                # 修正：支持异步获取 test_url
+                # 优先读取 test_urls 列表（多域名），兼容旧的 test_url（单域名）
+                collected_urls = []
+
+                # 1. 读取 test_urls 列表
+                if hasattr(instance, 'test_urls'):
+                    urls_attr = getattr(instance, 'test_urls')
+                    if isinstance(urls_attr, (list, tuple)):
+                        collected_urls.extend(urls_attr)
+
+                # 2. 读取 test_url（单值，兼容旧源）
                 if hasattr(instance, 'test_url'):
                     test_url_attr = getattr(instance, 'test_url')
                     # 检查是否是协程对象 (async property 返回的)
                     if asyncio.iscoroutine(test_url_attr):
                         result = await test_url_attr
                         if result:
-                            test_domains.add(result)
+                            collected_urls.append(result)
                     # 检查是否是异步方法（callable）
                     elif asyncio.iscoroutinefunction(test_url_attr):
                         result = await test_url_attr()
                         if result:
-                            test_domains.add(result)
+                            collected_urls.append(result)
                     # 检查是否是普通方法
                     elif callable(test_url_attr):
                         result = test_url_attr()
                         if result:
-                            test_domains.add(result)
+                            collected_urls.append(result)
                     # 普通属性
                     elif test_url_attr:
-                        test_domains.add(test_url_attr)
+                        collected_urls.append(test_url_attr)
+
+                test_domains.update(collected_urls)
             except ValueError:
                 pass
             except Exception as e:
@@ -283,6 +294,19 @@ async def test_proxy_latency(
         "https://raw.githubusercontent.com"
     ]
     test_domains.update(github_domains)
+
+    # 添加其他服务的固定测试域名
+    extra_service_domains = [
+        "https://api.telegram.org",          # Telegram Bot 通知
+        "https://qyapi.weixin.qq.com",       # 企业微信 Webhook 通知
+        "https://api.openai.com",            # AI 匹配 (OpenAI)
+        "https://api.deepseek.com",          # AI 匹配 (DeepSeek)
+        "https://api.siliconflow.cn",        # AI 匹配 (SiliconFlow)
+        "https://generativelanguage.googleapis.com",  # AI 匹配 (Google Gemini)
+        "https://cdn.jsdelivr.net",          # CDN 资源
+        "https://webservice.fanart.tv",      # FanArt 海报
+    ]
+    test_domains.update(extra_service_domains)
 
     # --- 步骤 3: 并发执行所有测试 ---
     # 定义 URL 转换函数（用于加速代理模式）
