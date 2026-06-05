@@ -217,8 +217,6 @@ class ScraperManager:
         # 我们需要同时处理源码和编译后的情况。
         # 对文件列表排序以确保每次发现的顺序一致
         failed_providers: list = []  # import 失败的源，同步数据库时保留，不删除
-        _version_check_passed: list = []   # 版本检查通过的源
-        _version_check_failed: list = []   # 版本检查未通过的源
         for file_path in sorted(scrapers_dir.iterdir()):
             # 我们只关心 .py 文件或已知的二进制扩展名
             if not (file_path.name.endswith(".py") or file_path.name.endswith(".so") or file_path.name.endswith(".pyd")):
@@ -261,9 +259,13 @@ class ScraperManager:
                         if source_min_ver:
                             from src._version import APP_VERSION
                             if _version_satisfies(APP_VERSION, source_min_ver):
-                                _version_check_passed.append(f"{provider_name} (>= {source_min_ver})")
+                                logging.getLogger(__name__).info(
+                                    f"✓ {provider_name} 版本检查通过 (要求 >= {source_min_ver}, 当前 {APP_VERSION})"
+                                )
                             else:
-                                _version_check_failed.append(f"{provider_name} (需要 >= {source_min_ver})")
+                                logging.getLogger(__name__).warning(
+                                    f"✗ 跳过 {provider_name}: 要求服务器版本 >= {source_min_ver}，当前 {APP_VERSION}"
+                                )
                                 failed_providers.append(module_name_stem)
                                 continue
 
@@ -311,20 +313,6 @@ class ScraperManager:
                 logging.getLogger(__name__).error(f"加载搜索源模块 {module_name} 失败，已跳过。错误: {e}", exc_info=True)
                 failed_providers.append(module_name_stem)
         
-        # 汇总输出单源版本检查结果
-        if _version_check_passed or _version_check_failed:
-            from src._version import APP_VERSION
-            lines = [f"单源版本检查 (服务器 {APP_VERSION}):"]
-            if _version_check_passed:
-                lines.append(f"  ✓ 通过 {len(_version_check_passed)} 个:")
-                for item in _version_check_passed:
-                    lines.append(f"    - {item}")
-            if _version_check_failed:
-                lines.append(f"  ✗ 跳过 {len(_version_check_failed)} 个:")
-                for item in _version_check_failed:
-                    lines.append(f"    - {item}")
-            logging.getLogger(__name__).info("\n".join(lines))
-
         # 在同步数据库之前，注册所有发现的默认配置
         if default_configs_to_register:
             await self.config_manager.register_defaults(default_configs_to_register)
