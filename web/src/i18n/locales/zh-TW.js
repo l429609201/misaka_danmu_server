@@ -595,7 +595,7 @@ export default {
     viewList: '列表',
     viewCalendar: '日曆',
     taskEnabled: '追更已啟用',
-    taskDisabled: '追更已暫停',
+    taskDisabled: '追更任務未啟用',
     taskNotConfigured: '未設定追更任務',
     nextRun: '下次',
     statTotal: '全部源',

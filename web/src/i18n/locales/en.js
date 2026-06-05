@@ -595,7 +595,7 @@ export default {
     viewList: 'List',
     viewCalendar: 'Calendar',
     taskEnabled: 'Refresh Enabled',
-    taskDisabled: 'Refresh Paused',
+    taskDisabled: 'Refresh Not Enabled',
     taskNotConfigured: 'Refresh Not Configured',
     nextRun: 'Next',
     statTotal: 'Total Sources',
