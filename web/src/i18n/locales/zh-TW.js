@@ -337,6 +337,7 @@ export default {
     clear: '清空',
     export: '匯出',
     scrollTop: '捲動到頂部',
+    scrollBottom: '捲動到底部',
     autoScroll: '自動捲動',
     copyLog: '複製記錄',
     waitingLog: '等待記錄...',

@@ -337,6 +337,7 @@ export default {
     clear: 'Clear',
     export: 'Export',
     scrollTop: 'Scroll to top',
+    scrollBottom: 'Scroll to bottom',
     autoScroll: 'Auto scroll',
     copyLog: 'Copy log',
     waitingLog: 'Waiting for logs...',

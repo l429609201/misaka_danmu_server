@@ -337,6 +337,7 @@ export default {
     clear: '清空',
     export: '导出',
     scrollTop: '滚动到顶部',
+    scrollBottom: '滚动到底部',
     autoScroll: '自动滚动',
     copyLog: '复制日志',
     waitingLog: '等待日志...',
