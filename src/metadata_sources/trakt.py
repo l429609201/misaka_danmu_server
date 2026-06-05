@@ -33,6 +33,7 @@ class TraktMetadataSource(BaseMetadataSource):
     """Trakt.tv 元数据源 — 搜索、详情、OAuth（CF Worker 代理）、日历"""
 
     provider_name = "trakt"
+    test_url = "https://api.trakt.tv"
     config_keys = []  # OAuth 走 CF Worker，无需用户配置 client_id/secret
 
     configurable_fields = {}

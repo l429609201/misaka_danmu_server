@@ -35,7 +35,7 @@ export default function RealtimeLogModal({ open, onClose }) {
       onmessage: (event) => {
         const msg = event.data.trim()
         if (!msg) return
-        setLogs(prev => [msg, ...prev].slice(0, 200))
+        setLogs(prev => [...prev, msg].slice(-200))
       },
       onerror: (err) => { setConnected(false); throw err },
     }).catch(e => { if (e.name !== 'AbortError') console.error('SSE错误:', e) })
@@ -45,7 +45,7 @@ export default function RealtimeLogModal({ open, onClose }) {
 
   useEffect(() => {
     if (autoScroll && containerRef.current) {
-      containerRef.current.scrollTop = 0
+      containerRef.current.scrollTop = containerRef.current.scrollHeight
     }
   }, [logs, autoScroll])
 
@@ -57,7 +57,7 @@ export default function RealtimeLogModal({ open, onClose }) {
   }
 
   const exportLogs = () => {
-    const blob = new Blob([logs.slice().reverse().join('\r\n')], { type: 'text/plain' })
+    const blob = new Blob([logs.join('\r\n')], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -189,9 +189,9 @@ export default function RealtimeLogModal({ open, onClose }) {
     <div className="flex gap-1">
       <Tooltip title={t('realtimeLog.clear')}><Button size="small" type="text" icon={<ClearOutlined />} onClick={() => setLogs([])} /></Tooltip>
       <Tooltip title={t('realtimeLog.export')}><Button size="small" type="text" icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
-      <Tooltip title={t('realtimeLog.scrollTop')}>
-        <Button size="small" type="text" icon={<VerticalAlignBottomOutlined className="rotate-180" />} onClick={() => {
-          if (containerRef.current) containerRef.current.scrollTop = 0
+      <Tooltip title={t('realtimeLog.scrollBottom')}>
+        <Button size="small" type="text" icon={<VerticalAlignBottomOutlined />} onClick={() => {
+          if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight
         }} />
       </Tooltip>
     </div>
@@ -207,9 +207,9 @@ export default function RealtimeLogModal({ open, onClose }) {
         <div className="flex gap-2">
           <Tooltip title={t('realtimeLog.clear')}><Button icon={<ClearOutlined />} onClick={() => setLogs([])} /></Tooltip>
           <Tooltip title={t('realtimeLog.export')}><Button icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
-          <Tooltip title={t('realtimeLog.scrollTop')}>
-            <Button icon={<VerticalAlignBottomOutlined className="rotate-180" />} onClick={() => {
-              if (containerRef.current) containerRef.current.scrollTop = 0
+          <Tooltip title={t('realtimeLog.scrollBottom')}>
+            <Button icon={<VerticalAlignBottomOutlined />} onClick={() => {
+              if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight
             }} />
           </Tooltip>
         </div>
