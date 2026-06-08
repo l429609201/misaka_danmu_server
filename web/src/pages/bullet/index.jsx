@@ -3,6 +3,7 @@ import { TokenManage } from './components/TokenManage'
 import { OutputManage } from './components/OutputManage'
 import { MatchFallbackSetting } from './components/MatchFallbackSetting'
 import DanmakuStorage from '../setting/components/DanmakuStorage'
+import { DataCheckPanel } from './components/DataCheckPanel'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { MobileTabs } from '@/components/MobileTabs'
 import { useAtomValue } from 'jotai'
@@ -36,6 +37,11 @@ export const Bullet = () => {
       label: t('bullet.tabFallback'),
       key: 'fallback',
       children: <MatchFallbackSetting />,
+    },
+    {
+      label: t('bullet.tabDataCheck'),
+      key: 'data-check',
+      children: <DataCheckPanel />,
     },
   ]
 

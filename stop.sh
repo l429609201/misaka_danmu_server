@@ -50,7 +50,11 @@ ORPHAN_COUNT=0
 ORPHAN_PIDS=$(pgrep -f "python.*src\.main" 2>/dev/null || true)
 for pid in $ORPHAN_PIDS; do
     echo "     发现残留后端进程 PID $pid，正在终止..."
-    kill -9 "$pid" 2>/dev/null
+    kill "$pid" 2>/dev/null
+    sleep 1
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null
+    fi
     ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
     KILLED=$((KILLED + 1))
 done
@@ -64,7 +68,11 @@ ORPHAN_COUNT=0
 ORPHAN_PIDS=$(pgrep -f "uvicorn.*src\.main" 2>/dev/null || true)
 for pid in $ORPHAN_PIDS; do
     echo "     发现残留 uvicorn 进程 PID $pid，正在终止..."
-    kill -9 "$pid" 2>/dev/null
+    kill "$pid" 2>/dev/null
+    sleep 1
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null
+    fi
     ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
     KILLED=$((KILLED + 1))
 done
@@ -78,7 +86,11 @@ ORPHAN_COUNT=0
 ORPHAN_PIDS=$(pgrep -f "node.*vite" 2>/dev/null || true)
 for pid in $ORPHAN_PIDS; do
     echo "     发现残留前端进程 PID $pid，正在终止..."
-    kill -9 "$pid" 2>/dev/null
+    kill "$pid" 2>/dev/null
+    sleep 1
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null
+    fi
     ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
     KILLED=$((KILLED + 1))
 done

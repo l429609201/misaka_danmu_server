@@ -223,6 +223,8 @@ async def test_proxy_latency(
     # --- 步骤 2: 动态构建要测试的目标域名列表 ---
     target_sites_results: Dict[str, ProxyTestResult] = {}
     test_domains = set()
+    # 域名归属映射：domain -> { group, source }
+    domain_source_map: Dict[str, Dict[str, str]] = {}
 
     # 统一获取所有源的设置
     enabled_metadata_settings = await crud.get_all_metadata_source_settings(session)
@@ -230,9 +232,9 @@ async def test_proxy_latency(
 
     # 合并所有源的设置，并添加一个获取实例的函数
     all_sources_settings = [
-        (s, lambda name=s['providerName']: metadata_manager.get_source(name)) for s in enabled_metadata_settings
+        (s, lambda name=s['providerName']: metadata_manager.get_source(name), "metadata") for s in enabled_metadata_settings
     ] + [
-        (s, lambda name=s['providerName']: scraper_manager.get_scraper(name)) for s in scraper_settings
+        (s, lambda name=s['providerName']: scraper_manager.get_scraper(name), "scraper") for s in scraper_settings
     ]
 
     # 根据代理模式决定测试哪些源
@@ -240,7 +242,7 @@ async def test_proxy_latency(
     log_message = "代理未启用，将测试所有已启用的源。" if not is_proxy_enabled else "代理已启用，将仅测试已配置代理的源。"
     logger.info(log_message)
 
-    for setting, get_instance_func in all_sources_settings:
+    for setting, get_instance_func, source_type in all_sources_settings:
         provider_name = setting.get('providerName')
 
         # 优化：只测试已启用的源
@@ -282,6 +284,10 @@ async def test_proxy_latency(
                         collected_urls.append(test_url_attr)
 
                 test_domains.update(collected_urls)
+                # 记录域名归属
+                group_label = "弹幕源" if source_type == "scraper" else "元数据源"
+                for url in collected_urls:
+                    domain_source_map[url] = {"group": group_label, "source": provider_name}
             except ValueError:
                 pass
             except Exception as e:
@@ -294,19 +300,23 @@ async def test_proxy_latency(
         "https://raw.githubusercontent.com"
     ]
     test_domains.update(github_domains)
+    for d in github_domains:
+        domain_source_map[d] = {"group": "资源下载", "source": "GitHub"}
 
     # 添加其他服务的固定测试域名
-    extra_service_domains = [
-        "https://api.telegram.org",          # Telegram Bot 通知
-        "https://qyapi.weixin.qq.com",       # 企业微信 Webhook 通知
-        "https://api.openai.com",            # AI 匹配 (OpenAI)
-        "https://api.deepseek.com",          # AI 匹配 (DeepSeek)
-        "https://api.siliconflow.cn",        # AI 匹配 (SiliconFlow)
-        "https://generativelanguage.googleapis.com",  # AI 匹配 (Google Gemini)
-        "https://cdn.jsdelivr.net",          # CDN 资源
-        "https://webservice.fanart.tv",      # FanArt 海报
-    ]
-    test_domains.update(extra_service_domains)
+    extra_service_domains = {
+        "https://api.telegram.org": ("通知服务", "Telegram"),
+        "https://qyapi.weixin.qq.com": ("通知服务", "企业微信"),
+        "https://api.openai.com": ("AI 服务", "OpenAI"),
+        "https://api.deepseek.com": ("AI 服务", "DeepSeek"),
+        "https://api.siliconflow.cn": ("AI 服务", "SiliconFlow"),
+        "https://generativelanguage.googleapis.com": ("AI 服务", "Google Gemini"),
+        "https://cdn.jsdelivr.net": ("资源下载", "jsDelivr"),
+        "https://webservice.fanart.tv": ("图片服务", "FanArt"),
+    }
+    test_domains.update(extra_service_domains.keys())
+    for url, (group, source) in extra_service_domains.items():
+        domain_source_map[url] = {"group": group, "source": source}
 
     # --- 步骤 3: 并发执行所有测试 ---
     # 定义 URL 转换函数（用于加速代理模式）
@@ -340,7 +350,8 @@ async def test_proxy_latency(
 
     return FullProxyTestResponse(
         proxy_connectivity=proxy_connectivity_result,
-        target_sites=target_sites_results
+        target_sites=target_sites_results,
+        domain_map=domain_source_map
     )
 
 

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal, Table, Button, Input, Select, Space, Tag, Popconfirm, message, Statistic, Row, Col, Card, Tooltip } from 'antd'
-import { DeleteOutlined, ReloadOutlined, ClearOutlined, SearchOutlined, DatabaseOutlined } from '@ant-design/icons'
-import { getCacheStats, getCacheList, clearCache, deleteCacheKey } from '@/apis'
+import { DeleteOutlined, ReloadOutlined, ClearOutlined, SearchOutlined, DatabaseOutlined, EyeOutlined } from '@ant-design/icons'
+import { getCacheStats, getCacheList, clearCache, deleteCacheKey, getCacheDetail } from '@/apis'
 
 const REGION_COLORS = {
   search: 'blue',
@@ -20,6 +20,7 @@ export default function CacheManagerModal({ open, onClose }) {
   const [region, setRegion] = useState('all')
   const [search, setSearch] = useState('')
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 })
+  const [detailModal, setDetailModal] = useState({ open: false, data: null, loading: false })
 
   const fetchStats = useCallback(async () => {
     try {
@@ -104,11 +105,23 @@ export default function CacheManagerModal({ open, onClose }) {
     },
     {
       title: t('common.operation'),
-      width: 80,
+      width: 100,
       render: (_, record) => (
-        <Popconfirm title={t('common.delete_confirm')} onConfirm={() => handleDeleteKey(record.key, record.region)} okText={t('common.confirm')} cancelText={t('common.cancel')}>
-          <Button type="link" danger size="small" icon={<DeleteOutlined />} />
-        </Popconfirm>
+        <Space size="small">
+          <Button type="link" size="small" icon={<EyeOutlined />}
+            onClick={async () => {
+              setDetailModal({ open: true, data: null, loading: true })
+              try {
+                const res = await getCacheDetail(record.key, record.region)
+                setDetailModal({ open: true, data: res.data, loading: false })
+              } catch {
+                setDetailModal({ open: false, data: null, loading: false })
+              }
+            }} />
+          <Popconfirm title={t('common.delete_confirm')} onConfirm={() => handleDeleteKey(record.key, record.region)} okText={t('common.confirm')} cancelText={t('common.cancel')}>
+            <Button type="link" danger size="small" icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
       ),
     },
   ]
@@ -170,6 +183,36 @@ export default function CacheManagerModal({ open, onClose }) {
           onChange: (page, size) => fetchItems(page, size),
         }}
       />
+
+      {/* 详情弹窗 */}
+      <Modal title={t('cacheManager.detailTitle')} open={detailModal.open}
+        onCancel={() => setDetailModal({ open: false, data: null, loading: false })}
+        footer={null} width={650}>
+        {detailModal.loading ? (
+          <div className="text-center py-8">{t('cacheManager.loading')}</div>
+        ) : detailModal.data && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2 text-sm">
+              <Tag color={REGION_COLORS[detailModal.data.region] || 'default'}>
+                {detailModal.data.region}
+              </Tag>
+              <Tag>{t('cacheManager.type')}: {detailModal.data.value_type}</Tag>
+              <Tag>{t('cacheManager.size')}: {(detailModal.data.size_bytes / 1024).toFixed(1)} KB</Tag>
+              {detailModal.data.item_count != null && (
+                <Tag>{t('cacheManager.count')}: {detailModal.data.item_count}</Tag>
+              )}
+            </div>
+            <div className="text-xs text-gray-500 break-all font-mono">
+              Key: {detailModal.data.key}
+            </div>
+            <pre className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-xs overflow-auto max-h-96 whitespace-pre-wrap break-all">
+              {typeof detailModal.data.value === 'object'
+                ? JSON.stringify(detailModal.data.value, null, 2)
+                : String(detailModal.data.value)}
+            </pre>
+          </div>
+        )}
+      </Modal>
     </Modal>
   )
 }

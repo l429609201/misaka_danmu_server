@@ -9,6 +9,7 @@ from src.services import ScraperManager, TaskManager, TaskSuccess, TaskPauseForR
 from src.services.import_existence_checker import check_anime_existence
 from src.rate_limiter import RateLimiter, RateLimitExceededError
 from src.utils import download_image
+from src.utils.episode_filter import get_and_apply_single_episode_filter
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +194,12 @@ async def generic_import_task(
         target_episode_index=target_episode_index,
         db_media_type=mediaType
     )
+
+    # 应用单剧过滤规则
+    if episodes:
+        episodes = await get_and_apply_single_episode_filter(
+            episodes, config_manager, title_to_use, provider, mediaId
+        )
 
     # 如果主源无分集且有补充源,使用补充源获取分集URL
     if not episodes and supplementProvider and supplementMediaId:

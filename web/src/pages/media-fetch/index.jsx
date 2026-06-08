@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import { Tabs } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import LibraryScan from './components/LibraryScan';
 import LocalScan from './components/LocalScan';
 import { MobileTabs } from '@/components/MobileTabs';
@@ -9,8 +9,14 @@ import { isMobileAtom } from '../../../store/index.js';
 
 const MediaFetch = () => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState('library-scan');
+  const [searchParams] = useSearchParams();
+  const activeTab = searchParams.get('key') || 'library-scan';
+  const navigate = useNavigate();
   const isMobile = useAtomValue(isMobileAtom);
+
+  const handleTabChange = (newKey) => {
+    navigate(`/media-fetch?key=${newKey}`, { replace: true });
+  };
 
   const items = [
     {
@@ -32,12 +38,12 @@ const MediaFetch = () => {
           <MobileTabs
             items={items}
             defaultActiveKey={activeTab}
-            onChange={setActiveTab}
+            onChange={handleTabChange}
           />
         ) : (
           <Tabs
             activeKey={activeTab}
-            onChange={setActiveTab}
+            onChange={handleTabChange}
             items={items}
           />
         )}

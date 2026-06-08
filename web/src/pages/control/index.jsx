@@ -4,6 +4,7 @@ import { ApiDoc } from './components/ApiDoc'
 import { ApiLogs } from './components/ApiLogs'
 import { McpInfo } from './components/McpInfo'
 import { Settings } from './components/Settings'
+import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { MobileTabs } from '@/components/MobileTabs'
 import { useAtomValue } from 'jotai'
@@ -42,6 +43,11 @@ export const Control = () => {
       label: t('control.tabApiDoc'),
       key: 'apidoc',
       children: <ApiDoc />,
+    },
+    {
+      label: t('control.tabDiagnostics'),
+      key: 'diagnostics',
+      children: <DiagnosticsPanel />,
     },
   ]
 

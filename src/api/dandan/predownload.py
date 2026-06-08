@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from src.db import crud, orm_models, ConfigManager
 from src.services import ScraperManager, TaskManager, TaskSuccess
 from src.rate_limiter import RateLimiter
+from src.utils.episode_filter import get_and_apply_single_episode_filter
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +177,12 @@ async def try_predownload_next_episode(
                     # 获取分集列表
                     logger.info(f"预下载: 正在获取分集列表 (provider={provider}, mediaId={media_id})")
                     episodes = await scraper_manager.get_episodes_routed(provider, media_id)
+
+                    # 应用单剧过滤规则
+                    if episodes and anime and anime.title:
+                        episodes = await get_and_apply_single_episode_filter(
+                            episodes, config_manager, anime.title, provider, media_id
+                        )
 
                     if not episodes or len(episodes) == 0:
                         logger.warning(f"预下载失败: 无法获取分集列表 (provider={provider}, mediaId={media_id})")

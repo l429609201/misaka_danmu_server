@@ -7,6 +7,7 @@ import {
   pollTaskCommentTest,
   parseFilenameTest,
   getTokenList,
+  matchTrace,
 } from '../../../apis'
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -22,8 +23,9 @@ import {
   Alert,
   Pagination,
   Switch,
+  Collapse,
 } from 'antd'
-import { SearchOutlined } from '@ant-design/icons'
+import { SearchOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
 
 export const Test = () => {
   const { t } = useTranslation()
@@ -582,6 +584,81 @@ export const Test = () => {
           )
         }
         return <div className="text-red-600">{t('apiTest.recognitionFailed', { msg: data?.message || t('apiTest.cannotRecognize') })}</div>
+      },
+    },
+    matchDebug: {
+      label: t('matchDebugger.title'),
+      apiPath: '/api/ui/debug/match-trace',
+      method: 'POST',
+      noToken: true,
+      handler: (values) => matchTrace({ title: values.debugTitle, season: values.debugSeason || undefined, episode: values.debugEpisode || undefined }),
+      fields: [
+        {
+          name: 'debugTitle',
+          label: t('matchDebugger.inputTitle'),
+          apiParam: 'title (body)',
+          placeholder: t('matchDebugger.titlePlaceholder'),
+          required: true,
+          component: Input,
+        },
+        {
+          name: 'debugSeason',
+          label: t('matchDebugger.season'),
+          apiParam: 'season (body)',
+          placeholder: 'S',
+          component: InputNumber,
+          componentProps: { min: 1, style: { width: 80 } },
+        },
+        {
+          name: 'debugEpisode',
+          label: t('matchDebugger.episode'),
+          apiParam: 'episode (body)',
+          placeholder: 'E',
+          component: InputNumber,
+          componentProps: { min: 1, style: { width: 80 } },
+        },
+      ],
+      renderResult: data => {
+        if (!data?.steps) return <div className="text-red-600">{data?.error || 'Unknown error'}</div>
+        const collapseItems = data.steps.map((step, idx) => ({
+          key: idx,
+          label: (
+            <div className="flex items-center gap-2">
+              {step.success
+                ? <CheckCircleOutlined className="text-green-500" />
+                : <CloseCircleOutlined className="text-red-500" />}
+              <span className="font-medium">{step.name}</span>
+              <Tag size="small"><ClockCircleOutlined /> {step.duration_ms?.toFixed(0)}ms</Tag>
+            </div>
+          ),
+          children: (
+            <div className="space-y-2 text-xs">
+              {step.input_data && (
+                <div>
+                  <span className="font-semibold text-gray-500">{t('matchDebugger.input')}:</span>
+                  <pre className="bg-gray-50 dark:bg-gray-800 p-2 rounded mt-1 overflow-auto max-h-40 whitespace-pre-wrap">{JSON.stringify(step.input_data, null, 2)}</pre>
+                </div>
+              )}
+              {step.output_data && (
+                <div>
+                  <span className="font-semibold text-gray-500">{t('matchDebugger.output')}:</span>
+                  <pre className="bg-green-50 dark:bg-green-900/20 p-2 rounded mt-1 overflow-auto max-h-60 whitespace-pre-wrap">{JSON.stringify(step.output_data, null, 2)}</pre>
+                </div>
+              )}
+              {step.details && <div className="text-orange-500">{step.details}</div>}
+            </div>
+          ),
+        }))
+        return (
+          <div>
+            <div className="flex gap-4 mb-3 text-sm">
+              <span>{t('matchDebugger.steps')}: <strong>{data.steps.length}</strong></span>
+              <span>{t('matchDebugger.results')}: <strong>{data.result_count}</strong></span>
+              <span>{t('matchDebugger.totalTime')}: <strong>{data.total_duration_ms?.toFixed(0)}ms</strong></span>
+            </div>
+            <Collapse items={collapseItems} defaultActiveKey={collapseItems.map((_, i) => i)} size="small" />
+          </div>
+        )
       },
     },
   }

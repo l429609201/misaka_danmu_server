@@ -19,6 +19,7 @@ import PageStylePicker from '@/components/PageStylePicker'
 import LanguagePicker from '@/components/LanguagePicker'
 import RealtimeLogModal from '@/components/RealtimeLogModal'
 import CacheManagerModal from '@/components/CacheManagerModal'
+import HealthOverviewModal from '@/pages/home/components/HealthOverview'
 import HistoryLogModal from '@/components/HistoryLogModal'
 import { RateLimitIndicator } from '@/components/RateLimitIndicator'
 import { clearBrowserCache } from '@/utils/clearCache'
@@ -86,12 +87,14 @@ const navItems = [
     { key: 'webhook', label: 'nav.taskWebhook', icon: 'Webhookrenwu', iconSize: 28, iconClassName: 'ml-px' },
     { key: 'schedule', label: 'nav.taskSchedule', icon: 'dingshirenwu' },
     { key: 'ratelimit', label: 'nav.taskRatelimit', icon: 'liukong' },
+    { key: 'profile', label: 'nav.taskProfile', icon: 'tongji-jinhangzhongderenwushuliang' },
   ]},
   { key: RoutePaths.BULLET, label: 'nav.bullet', icon: 'danmu', iconfontIcon: 'icon-danmu', children: [
     { key: 'token', label: 'nav.bulletToken', icon: 'tokenguanli' },
     { key: 'output', label: 'nav.bulletOutput', icon: 'shuchupeizhi' },
     { key: 'storage', label: 'nav.bulletStorage', icon: 'cunchupeizhi' },
     { key: 'fallback', label: 'nav.bulletFallback', icon: 'sanfangyunpeizhi' },
+    { key: 'data-check', label: 'nav.bulletDataCheck', icon: 'renlianshibie_o' },
   ]},
   { key: RoutePaths.MEDIA_FETCH, label: 'nav.mediaFetch', icon: 'movie', iconfontIcon: 'icon-movie', children: [
     { key: 'library-scan', label: 'nav.mediaLibraryScan', icon: 'meitiduqu', iconSize: 28 , iconClassName: 'ml-px' },
@@ -108,6 +111,7 @@ const navItems = [
     { key: 'apilogs', label: 'nav.controlApilogs', icon: 'APIrizhi' },
     { key: 'mcp', label: 'nav.controlMcp', icon: 'MCP' },
     { key: 'apidoc', label: 'nav.controlApidoc', icon: 'kuaijierukou_apiwendang' },
+    { key: 'diagnostics', label: 'nav.controlDiagnostics', icon: 'anquan' },
   ]},
   { key: RoutePaths.SETTING, label: 'nav.setting', icon: 'setting', iconfontIcon: 'icon-setting', children: [
     { key: 'parameters', label: 'nav.settingParameters', icon: 'canshupeizhi' },
@@ -116,6 +120,7 @@ const navItems = [
     { key: 'notification', label: 'nav.settingNotification', icon: 'jiaohu' },
     { key: 'recognition', label: 'nav.settingRecognition', icon: 'renlianshibie_o' },
     { key: 'automatch', label: 'nav.settingAutomatch', icon: 'ai' },
+    { key: 'security', label: 'nav.settingSecurity', icon: 'anquan' },
   ]},
 ]
 
@@ -399,6 +404,7 @@ const MobileHeader = ({ activeKey }) => {
   const [isPageStyleOpen, setIsPageStyleOpen] = useState(false)
   const [isLanguageOpen, setIsLanguageOpen] = useState(false)
   const [isCacheModalOpen, setIsCacheModalOpen] = useState(false)
+  const [isHealthModalOpen, setIsHealthModalOpen] = useState(false)
   const [passwordForm] = Form.useForm()
   const [passwordLoading, setPasswordLoading] = useState(false)
   const [currentPasswordVisible, setCurrentPasswordVisible] = useState(false)
@@ -494,6 +500,8 @@ const MobileHeader = ({ activeKey }) => {
       setIsLanguageOpen(true)
     } else if (item.key === 'cache-manager') {
       setIsCacheModalOpen(true)
+    } else if (item.key === 'health-check') {
+      setIsHealthModalOpen(true)
     } else if (item.key === 'clear-browser-cache') {
       clearBrowserCache()
     } else if (item.key === 'restart-service') {
@@ -596,6 +604,11 @@ const MobileHeader = ({ activeKey }) => {
                         key: 'cache-manager',
                         label: t('header.cacheManager'),
                         icon: 'refresh',
+                      },
+                      {
+                        key: 'health-check',
+                        label: t('header.healthCheck'),
+                        icon: 'checksurface',
                       },
                       {
                         key: 'clear-browser-cache',
@@ -761,6 +774,10 @@ const MobileHeader = ({ activeKey }) => {
         open={isCacheModalOpen}
         onClose={() => setIsCacheModalOpen(false)}
       />
+      <HealthOverviewModal
+        open={isHealthModalOpen}
+        onClose={() => setIsHealthModalOpen(false)}
+      />
     </>
   )
 }
@@ -781,6 +798,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
   const [isPageStyleOpen, setIsPageStyleOpen] = useState(false)
   const [isLanguageOpen, setIsLanguageOpen] = useState(false)
   const [isCacheModalOpen, setIsCacheModalOpen] = useState(false)
+  const [isHealthModalOpen, setIsHealthModalOpen] = useState(false)
   const [form] = Form.useForm()
   const [showPassword1, setShowPassword1] = useState(false)
   const [showPassword2, setShowPassword2] = useState(false)
@@ -1154,6 +1172,15 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     ),
                   },
                   {
+                    key: 'healthCheck',
+                    icon: <MyIcon icon="checksurface" size={16} />,
+                    label: (
+                      <div onClick={() => setIsHealthModalOpen(true)} className="text-base">
+                        {t('header.healthCheck')}
+                      </div>
+                    ),
+                  },
+                  {
                     key: 'clearCache',
                     icon: <MyIcon icon="qinglihuancun" size={16} />,
                     label: (
@@ -1327,6 +1354,10 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
       <CacheManagerModal
         open={isCacheModalOpen}
         onClose={() => setIsCacheModalOpen(false)}
+      />
+      <HealthOverviewModal
+        open={isHealthModalOpen}
+        onClose={() => setIsHealthModalOpen(false)}
       />
     </>
   )

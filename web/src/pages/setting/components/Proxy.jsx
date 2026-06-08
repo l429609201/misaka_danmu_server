@@ -279,28 +279,89 @@ export const Proxy = () => {
                   </div>
                 )}
 
-                {/* 站点列表 */}
-                <div className="space-y-1">
-                  {entries.map(([site, result], idx) => {
-                    const domain = site.replace('https://', '').replace('http://', '')
-                    const isSuccess = result.status === 'success'
-                    const colors = isSuccess ? getLatencyColor(result.latency) : null
-                    const barWidth = isSuccess ? Math.min(100, Math.round((result.latency / maxLatency) * 100)) : 100
-                    return (
-                      <div key={site} className={`flex items-center gap-3 px-3 py-2 rounded-lg transition ${idx % 2 === 0 ? 'bg-gray-50/60 dark:bg-white/[0.02]' : ''} hover:bg-gray-100/70 dark:hover:bg-white/[0.04]`}>
-                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isSuccess ? colors.dot : 'bg-red-400'}`} />
-                        <span className={`text-xs w-44 truncate ${isSuccess ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400'}`}>{domain}</span>
-                        <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-white/5 overflow-hidden">
-                          <div className={`h-full rounded-full transition-all duration-500 ${isSuccess ? colors.bar : 'bg-red-400/50'}`} style={{ width: `${barWidth}%` }} />
-                        </div>
-                        {isSuccess
-                          ? <span className={`text-xs font-bold ${colors.text} w-16 text-right`}>{result.latency.toFixed(0)}ms</span>
-                          : <span className="text-[10px] font-semibold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded w-16 text-center truncate" title={result.error}>{result.error?.length > 8 ? result.error.slice(0, 8) + '…' : result.error}</span>
-                        }
-                      </div>
-                    )
-                  })}
-                </div>
+                {/* 站点列表（按 domain_map 分组，同源聚合） */}
+                {(() => {
+                  const domainMap = testResult.domain_map || {}
+                  // 按 group 分组
+                  const groups = {}
+                  entries.forEach(([site, result]) => {
+                    const info = domainMap[site]
+                    const groupName = info?.group || '其他'
+                    if (!groups[groupName]) groups[groupName] = []
+                    groups[groupName].push([site, result, info?.source || ''])
+                  })
+                  // 每个 group 内部按 source 名称排序，同源域名聚在一起
+                  Object.values(groups).forEach(items => {
+                    items.sort((a, b) => a[2].localeCompare(b[2]))
+                  })
+                  // 组间排序：弹幕源 > 元数据源 > AI 服务 > 通知服务 > 资源下载 > 图片服务 > 其他
+                  const groupOrder = ['弹幕源', '元数据源', 'AI 服务', '通知服务', '资源下载', '图片服务', '其他']
+                  const sortedGroupNames = Object.keys(groups).sort((a, b) => {
+                    const ia = groupOrder.indexOf(a), ib = groupOrder.indexOf(b)
+                    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+                  })
+
+                  return (
+                    <div className="space-y-4">
+                      {sortedGroupNames.map(groupName => {
+                        const items = groups[groupName]
+                        // 二级分组：按 source 聚合
+                        const subGroups = {}
+                        items.forEach(([site, result, sourceName]) => {
+                          const key = sourceName || site
+                          if (!subGroups[key]) subGroups[key] = []
+                          subGroups[key].push([site, result])
+                        })
+                        const subGroupNames = Object.keys(subGroups).sort()
+
+                        return (
+                          <div key={groupName}>
+                            <div className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1.5 px-1">{groupName}</div>
+                            <div className="space-y-2">
+                              {subGroupNames.map(sourceName => {
+                                const domains = subGroups[sourceName]
+                                const allSuccess = domains.every(([, r]) => r.status === 'success')
+                                const anySuccess = domains.some(([, r]) => r.status === 'success')
+                                const sourceColor = allSuccess ? 'text-emerald-500' : anySuccess ? 'text-orange-400' : 'text-red-400'
+
+                                return (
+                                  <div key={sourceName} className="rounded-lg bg-gray-50/60 dark:bg-white/[0.02] overflow-hidden">
+                                    {/* 源名称子标题 */}
+                                    <div className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold ${sourceColor}`}>
+                                      <span className={`w-1.5 h-1.5 rounded-full ${allSuccess ? 'bg-emerald-400' : anySuccess ? 'bg-orange-400' : 'bg-red-400'}`} />
+                                      {sourceName}
+                                    </div>
+                                    {/* 该源下的域名列表 */}
+                                    <div className="space-y-0">
+                                      {domains.map(([site, result], idx) => {
+                                        const domain = site.replace('https://', '').replace('http://', '')
+                                        const isSuccess = result.status === 'success'
+                                        const colors = isSuccess ? getLatencyColor(result.latency) : null
+                                        const barWidth = isSuccess ? Math.min(100, Math.round((result.latency / maxLatency) * 100)) : 100
+                                        return (
+                                          <div key={site} className={`flex items-center gap-3 px-3 pl-6 py-1.5 transition hover:bg-gray-100/70 dark:hover:bg-white/[0.04]`}>
+                                            <span className={`text-xs flex-1 truncate ${isSuccess ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400'}`}>{domain}</span>
+                                            <div className="w-24 h-1.5 rounded-full bg-gray-100 dark:bg-white/5 overflow-hidden flex-shrink-0">
+                                              <div className={`h-full rounded-full transition-all duration-500 ${isSuccess ? colors.bar : 'bg-red-400/50'}`} style={{ width: `${barWidth}%` }} />
+                                            </div>
+                                            {isSuccess
+                                              ? <span className={`text-xs font-bold ${colors.text} w-14 text-right`}>{result.latency.toFixed(0)}ms</span>
+                                              : <span className="text-[10px] font-semibold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded w-14 text-center truncate" title={result.error}>{result.error?.length > 8 ? result.error.slice(0, 8) + '…' : result.error}</span>
+                                            }
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
               </div>
             )
           })()}

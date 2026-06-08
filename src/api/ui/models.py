@@ -76,6 +76,7 @@ class FullProxyTestResponse(BaseModel):
     """完整代理测试响应"""
     proxy_connectivity: ProxyTestResult
     target_sites: Dict[str, ProxyTestResult]
+    domain_map: Optional[Dict[str, Dict[str, str]]] = None  # domain -> { group, source }
 
 
 class TitleRecognitionContent(BaseModel):

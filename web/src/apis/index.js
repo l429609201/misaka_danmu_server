@@ -1209,3 +1209,68 @@ export const clearCache = (region) => api.delete('/api/ui/cache/clear', { params
 /** 删除单条缓存 */
 export const deleteCacheKey = (key, region) => api.delete('/api/ui/cache/key', { params: { key, region } })
 /** ---------------------------------------------------缓存管理相关结束------------------------------------------------ */
+
+/** 获取单条缓存完整值 */
+export const getCacheDetail = (key, region) => api.get('/api/ui/cache/detail', { params: { key, region } })
+
+/** 获取备份详情 */
+export const getBackupDetail = (filename) => api.get(`/api/ui/backup/detail/${filename}`)
+
+/** 备份预检 */
+export const backupDryRun = (data) => api.post('/api/ui/backup/dry-run', data)
+
+/** 匹配调试 */
+export const matchTrace = (data) => api.post('/api/ui/debug/match-trace', data)
+
+// ==================== 系统健康度 ====================
+export const getScraperHealthStats = () => api.get('/api/ui/system-health/scraper-stats')
+export const resetScraperHealthStats = () => api.post('/api/ui/system-health/scraper-stats/reset')
+export const getSystemHealthSummary = () => api.get('/api/ui/system-health/summary')
+export const getConfigScore = () => api.get('/api/ui/system-health/config-score')
+export const getAnimePriority = () => api.get('/api/ui/system-health/anime-priority')
+export const setAnimePriority = (data) => api.post('/api/ui/system-health/anime-priority', data)
+export const batchSetAnimePriority = (data) => api.post('/api/ui/system-health/anime-priority/batch', data)
+
+// ==================== 诊断中心 ====================
+export const getEnvironmentInfo = () => api.get('/api/ui/diagnostics/environment')
+export const analyzeLogDiagnostics = (hours = 24) => api.get(`/api/ui/diagnostics/log-analysis?hours=${hours}`)
+export const getFullDiagnostics = () => api.get('/api/ui/diagnostics/full')
+
+// ==================== 数据体检 ====================
+export const scanDataIssues = (limit = 50) => api.get(`/api/ui/data-check/scan?limit=${limit}`)
+export const fixOrphanEpisodes = () => api.post('/api/ui/data-check/fix-orphans')
+export const clearBrokenMappings = () => api.post('/api/ui/data-check/clear-mapping')
+
+// ==================== 识别词检测 ====================
+export const checkRecognitionConflicts = () => api.get('/api/ui/recognition-check/conflicts')
+export const testRecognitionRule = (data) => api.post('/api/ui/recognition-check/test', data)
+
+// ==================== 配置变更历史 ====================
+export const getConfigHistory = (params) => api.get('/api/ui/config-history/list', { params })
+export const rollbackConfig = (data) => api.post('/api/ui/config-history/rollback', data)
+export const clearConfigHistory = () => api.post('/api/ui/config-history/clear')
+
+// ==================== 任务画像 / 容量趋势 ====================
+export const getTaskProfiles = (days = 7) => api.get(`/api/ui/task-profile/summary?days=${days}`)
+export const getTaskTimeline = (taskId) => api.get('/api/ui/task-profile/timeline', { params: { task_id: taskId } })
+export const getCapacityTrends = () => api.get('/api/ui/trends/capacity')
+export const getCurrentCapacity = () => api.get('/api/ui/trends/current')
+
+// ==================== 安全审计 ====================
+export const getAuditLogs = (params) => api.get('/api/ui/audit/logs', { params })
+export const getSessionStats = () => api.get('/api/ui/audit/session-stats')
+export const clearAuditLogs = () => api.post('/api/ui/audit/clear')
+
+// ==================== 日程增强 ====================
+export const getUpcomingShows = (days = 7) => api.get(`/api/ui/calendar/upcoming?days=${days}`)
+export const getStaleEpisodes = () => api.get('/api/ui/calendar/stale-episodes')
+
+// ==================== AI 可解释性 ====================
+export const getRecentAIMatches = (limit = 20) => api.get(`/api/ui/ai-explain/recent-matches?limit=${limit}`)
+export const getAIMatchExplainStats = (hours = 24) => api.get(`/api/ui/ai-explain/stats?hours=${hours}`)
+export const getLowConfidenceMatches = () => api.get('/api/ui/ai-explain/low-confidence')
+
+// ==================== 本地扫描增量 ====================
+export const getScanIndexStats = () => api.get('/api/ui/local-scan/index-stats')
+export const rebuildScanIndex = () => api.post('/api/ui/local-scan/rebuild-index')
+export const getScanIndexDetail = (params) => api.get('/api/ui/local-scan/index-detail', { params })

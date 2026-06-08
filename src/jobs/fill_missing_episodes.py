@@ -46,6 +46,22 @@ class FillMissingEpisodesJob(BaseJob):
             "description_en": "When enabled, sources marked as finished will be skipped during scan.",
             "description_tw": "開啟後，標記為已完結的源將被跳過，不進行缺集掃描。"
         },
+        {
+            "key": "lowQualityThreshold",
+            "label": "低质量弹幕阈值",
+            "label_en": "Low Quality Danmaku Threshold",
+            "label_tw": "低品質彈幕閾值",
+            "type": "number",
+            "default": 0,
+            "min": 0,
+            "max": 1000,
+            "suffix": "条",
+            "suffix_en": "comments",
+            "suffix_tw": "條",
+            "description": "弹幕数低于此值的分集将被标记为低质量并重新抓取。设为0则禁用低质量检测。",
+            "description_en": "Episodes with fewer danmaku than this threshold will be re-fetched. Set to 0 to disable.",
+            "description_tw": "彈幕數低於此值的分集將被標記為低品質並重新抓取。設為0則停用低品質檢測。"
+        },
     ]
 
     async def run(self, session: AsyncSession, progress_callback: Callable, task_config: dict = None):
@@ -53,8 +69,9 @@ class FillMissingEpisodesJob(BaseJob):
             task_config = {}
         max_fill_count = int(task_config.get("maxFillCount", 10))
         skip_finished = task_config.get("skipFinished", False)
+        low_quality_threshold = int(task_config.get("lowQualityThreshold", 0))
 
-        self.logger.info(f"开始执行 [{self.job_name}]... (最大补全: {max_fill_count}, 跳过已完结: {skip_finished})")
+        self.logger.info(f"开始执行 [{self.job_name}]... (最大补全: {max_fill_count}, 跳过已完结: {skip_finished}, 低质量阈值: {low_quality_threshold})")
         await progress_callback(0, "正在扫描库内条目...")
 
         # 步骤1: 查询所有源及其实际分集数
@@ -135,10 +152,57 @@ class FillMissingEpisodesJob(BaseJob):
                 await asyncio.sleep(0.5)
 
         self.logger.info(f"扫描完成: 检查 {checked_count} 个源, 发现 {len(missing_sources)} 个缺集源, {error_count} 个错误")
-        await progress_callback(70, f"扫描完成，发现 {len(missing_sources)} 个缺集源")
 
-        if not missing_sources:
-            raise TaskSuccess(f"扫描完成：检查了 {checked_count} 个源，未发现缺集。")
+        # 步骤2.5: 低质量弹幕检测（弹幕数低于阈值的分集标记为需要重抓）
+        low_quality_count = 0
+        if low_quality_threshold > 0:
+            await progress_callback(72, "正在检测低质量弹幕分集...")
+            # 查询弹幕数低于阈值的分集（按源分组统计）
+            lq_stmt = (
+                select(
+                    orm_models.Episode.sourceId.label("source_id"),
+                    orm_models.Anime.title.label("title"),
+                    orm_models.AnimeSource.providerName.label("provider_name"),
+                    func.count(orm_models.Episode.id).label("episode_count"),
+                    func.avg(orm_models.Episode.commentCount).label("avg_comments"),
+                )
+                .join(orm_models.AnimeSource, orm_models.Episode.sourceId == orm_models.AnimeSource.id)
+                .join(orm_models.Anime, orm_models.AnimeSource.animeId == orm_models.Anime.id)
+                .where(orm_models.Episode.commentCount < low_quality_threshold)
+                .where(orm_models.Episode.commentCount >= 0)
+                .group_by(
+                    orm_models.Episode.sourceId,
+                    orm_models.Anime.title,
+                    orm_models.AnimeSource.providerName,
+                )
+            )
+
+            if skip_finished:
+                lq_stmt = lq_stmt.where(orm_models.AnimeSource.isFinished == False)  # noqa: E712
+
+            lq_result = await session.execute(lq_stmt)
+            lq_sources = [dict(row) for row in lq_result.mappings()]
+            low_quality_count = sum(row["episode_count"] for row in lq_sources)
+
+            if lq_sources:
+                self.logger.info(
+                    f"发现 {len(lq_sources)} 个源共 {low_quality_count} 个低质量分集 "
+                    f"(弹幕数 < {low_quality_threshold})"
+                )
+                for lq in lq_sources[:10]:  # 只日志前10条
+                    self.logger.info(
+                        f"  低质量: '{lq['title']}' [{lq['provider_name']}] "
+                        f"{lq['episode_count']}集, 平均弹幕{lq['avg_comments']:.0f}条"
+                    )
+
+        await progress_callback(75, f"扫描完成，发现 {len(missing_sources)} 个缺集源" +
+                                (f"，{low_quality_count} 个低质量分集" if low_quality_count > 0 else ""))
+
+        if not missing_sources and low_quality_count == 0:
+            raise TaskSuccess(
+                f"扫描完成：检查了 {checked_count} 个源，未发现缺集" +
+                (f"或低质量弹幕。" if low_quality_threshold > 0 else "。")
+            )
 
         # 步骤3: 对缺集的源提交补全任务（最多 max_fill_count 个）
         # 按缺失集数从多到少排序，优先补全缺得多的
@@ -204,5 +268,7 @@ class FillMissingEpisodesJob(BaseJob):
             summary_parts.append(f"超出限制跳过 {skipped_fill} 个")
         if error_count:
             summary_parts.append(f"扫描出错 {error_count} 个")
+        if low_quality_count > 0:
+            summary_parts.append(f"低质量弹幕 {low_quality_count} 个分集")
 
         raise TaskSuccess(f"分集补全完成：{'，'.join(summary_parts)}。")

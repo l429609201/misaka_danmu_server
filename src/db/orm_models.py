@@ -166,6 +166,16 @@ class Scraper(Base):
     isEnabled: Mapped[bool] = mapped_column("is_enabled", Boolean, default=True)
     displayOrder: Mapped[int] = mapped_column("display_order", Integer, default=0)
     useProxy: Mapped[bool] = mapped_column("use_proxy", Boolean, default=False)
+    # 健康度统计字段
+    totalSearches: Mapped[int] = mapped_column("total_searches", Integer, default=0, server_default="0")
+    successCount: Mapped[int] = mapped_column("success_count", Integer, default=0, server_default="0")
+    failCount: Mapped[int] = mapped_column("fail_count", Integer, default=0, server_default="0")
+    timeoutCount: Mapped[int] = mapped_column("timeout_count", Integer, default=0, server_default="0")
+    emptyCount: Mapped[int] = mapped_column("empty_count", Integer, default=0, server_default="0")
+    totalDurationMs: Mapped[float] = mapped_column("total_duration_ms", Integer, default=0, server_default="0")
+    totalResultCount: Mapped[int] = mapped_column("total_result_count", Integer, default=0, server_default="0")
+    lastSearchAt: Mapped[Optional[datetime]] = mapped_column("last_search_at", NaiveDateTime, nullable=True)
+    lastError: Mapped[Optional[str]] = mapped_column("last_error", String(500), nullable=True)
 
 class MetadataSource(Base):
     __tablename__ = "metadata_sources"

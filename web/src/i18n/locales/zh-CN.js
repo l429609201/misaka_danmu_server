@@ -96,10 +96,12 @@ export default {
     taskWebhook: 'Webhook 任务',
     taskSchedule: '定时任务',
     taskRatelimit: '流控面板',
+    taskProfile: '任务画像',
     bulletToken: 'Token管理',
     bulletOutput: '弹幕输出配置',
     bulletStorage: '弹幕存储配置',
     bulletFallback: '设置',
+    bulletDataCheck: '数据体检',
     mediaLibraryScan: '媒体库读取',
     mediaLocalScan: '本地扫描',
     sourceScrapers: '弹幕搜索源',
@@ -110,12 +112,14 @@ export default {
     controlApilogs: 'API访问日志',
     controlMcp: 'MCP',
     controlApidoc: 'API文档',
+    controlDiagnostics: '诊断中心',
     settingParameters: '参数配置',
     settingProxy: '代理设置',
     settingWebhook: 'Webhook',
     settingNotification: '通知与交互',
     settingRecognition: '识别词配置',
     settingAutomatch: 'AI辅助增强',
+    settingSecurity: '安全',
     my: '我的',
   },
 
@@ -131,6 +135,7 @@ export default {
     sessionManager: '会话管理',
     changePassword: '修改密码',
     cacheManager: '缓存管理',
+    healthCheck: '健康检查',
     clearBrowserCache: '清理浏览器缓存',
     restartService: '重启服务',
     logout: '退出登录',
@@ -259,6 +264,26 @@ export default {
     clear: '清除',
     clearWithRegion: '清除{{region}}',
     totalCount: '共 {{count}} 条',
+    // 缓存管理增强（设置页Tab）
+    totalEntries: '缓存总条数',
+    allRegions: '全部区域',
+    searchPlaceholder: '搜索缓存 Key...',
+    refresh: '刷新',
+    clearAll: '清除全部',
+    clearRegion: '清除 {{region}}',
+    preview: '值预览',
+    actions: '操作',
+    confirmDelete: '确定删除这条缓存？',
+    confirmClearAll: '确定清除所有缓存？此操作不可恢复。',
+    clearSuccess: '缓存已清除',
+    deleteSuccess: '缓存已删除',
+    loadFailed: '加载缓存列表失败: {{error}}',
+    noData: '暂无缓存数据',
+    detailTitle: '缓存详情',
+    loading: '加载中...',
+    type: '类型',
+    size: '大小',
+    count: '条目数',
   },
 
   // 两步验证弹窗
@@ -861,7 +886,7 @@ export default {
 
   // API 接口测试
   apiTest: {
-    title: 'API 接口测试',
+    title: '测试',
     fetchTokenFailed: '获取 Token 列表失败',
     testError: '测试错误',
     // 测试类型
@@ -3203,6 +3228,7 @@ export default {
     tabWebhook: 'Webhook 任务',
     tabSchedule: '定时任务',
     tabRateLimit: '流控面板',
+    tabProfile: '任务画像',
   },
 
   // Webhook 任务 WebhookTasks
@@ -3445,6 +3471,7 @@ export default {
     tabOutput: '弹幕输出配置',
     tabStorage: '弹幕存储配置',
     tabFallback: '设置',
+    tabDataCheck: '数据体检',
 
     // Domain.jsx - 自定义域名
     domainTitle: '自定义域名设置',
@@ -3724,6 +3751,7 @@ export default {
     tabSettings: '设置',
     tabApiLogs: 'API访问日志',
     tabApiDoc: 'API文档',
+    tabDiagnostics: '诊断中心',
 
     // ApiDoc.jsx
     apiDocTitle: 'API文档',
@@ -3909,5 +3937,154 @@ export default {
     platformWatching: '平台账号下「我在看」',
     platformWishlist: '平台账号下「想看」',
     local: '本地',
+  },
+
+  // 匹配调试器
+  matchDebugger: {
+    title: '匹配过程调试',
+    inputTitle: '标题',
+    titlePlaceholder: '输入要调试的标题...',
+    season: '季度',
+    episode: '集数',
+    run: '开始调试',
+    steps: '步骤数',
+    results: '结果数',
+    totalTime: '总耗时',
+    input: '输入',
+    output: '输出',
+    hint: '输入标题后点击"开始调试"，查看匹配过程的每一步',
+  },
+
+  // ==================== 新增18功能 i18n ====================
+
+  healthOverview: {
+    title: '系统健康总览',
+    todayDanmaku: '今日新增弹幕',
+    missingEp: '缺弹幕分集',
+    taskSuccess: '任务成功',
+    taskFail: '任务失败',
+    scrapers: '弹幕源',
+    unhealthy: '个异常',
+    configScore: '配置评分',
+    lastBackup: '最近备份',
+  },
+
+  upcoming: {
+    title: '即将播出',
+    today: '今天',
+    tomorrow: '明天',
+    daysLater: '天后',
+    hasDanmaku: '有弹幕',
+    noDanmaku: '无弹幕',
+  },
+
+  diagnostics: {
+    envTitle: '运行环境',
+    logTitle: '日志诊断',
+    refresh: '刷新',
+    loadFailed: '加载失败',
+    appVersion: '应用版本',
+    platform: '平台',
+    dbType: '数据库类型',
+    cacheBackend: '缓存后端',
+    timezone: '时区',
+    configDir: '配置目录',
+    suggestion: '建议',
+    noIssues: '近期无异常日志',
+  },
+
+  dataCheck: {
+    title: '数据体检',
+    scan: '开始扫描',
+    noIssues: '数据健康，未发现问题',
+    confirmFix: '确定要修复吗？此操作不可撤销',
+    fix: '修复',
+    fixSuccess: '修复成功',
+    fixFailed: '修复失败',
+    andMore: '等 {{count}} 条',
+    severity: {
+      info: '信息',
+      warning: '警告',
+      error: '错误',
+    },
+    category: {
+      missing_metadata: '缺失元数据',
+      zero_danmaku: '零弹幕分集',
+      orphan_episodes: '孤立分集',
+      duplicate_anime: '重复条目',
+      broken_mapping: '映射异常',
+    },
+    suggestion: {
+      missing_metadata: '这些条目缺少元数据ID(tmdbId/bangumiId)，建议在弹幕库中手动补充或重新匹配',
+      zero_danmaku: '这些分集弹幕数为0，可能是抓取失败或来源无弹幕，建议尝试刷新',
+      orphan_episodes: '存在孤立分集（弹幕源已删除但分集记录仍在），建议清理',
+      duplicate_anime: '这些条目存在重复（同标题+同季度），建议合并或删除多余条目',
+      broken_mapping: '这些条目有媒体服务器类型但缺少SeriesId，可能映射不完整',
+    },
+  },
+
+  recognitionCheck: {
+    conflictTitle: '规则冲突检测',
+    testTitle: '规则测试',
+    scan: '检测',
+    noConflict: '未发现规则冲突',
+    testPlaceholder: '输入标题测试规则命中情况',
+    test: '测试',
+    original: '原始标题',
+    result: '转换结果',
+    hitRules: '命中规则',
+  },
+
+  configHistory: {
+    title: '配置变更历史',
+    time: '时间',
+    key: '配置项',
+    source: '来源',
+    oldValue: '旧值',
+    newValue: '新值',
+    action: '操作',
+    confirmRollback: '确定回滚到此版本？',
+    rollbackSuccess: '回滚成功',
+    rollbackFailed: '回滚失败',
+    confirmClear: '确定清除所有变更历史？',
+  },
+
+  taskProfile: {
+    title: '任务画像',
+    jobType: '任务类型',
+    runs: '运行次数',
+    successRate: '成功率',
+    avgDur: '平均耗时',
+    maxDur: '最长耗时',
+    success: '成功',
+    fail: '失败',
+    day1: '最近1天',
+    day7: '最近7天',
+    day30: '最近30天',
+  },
+
+  audit: {
+    logTitle: '安全审计日志',
+    time: '时间',
+    event: '事件',
+    status: '状态',
+    detail: '详情',
+    activeSessions: '活跃会话',
+    totalSessions: '总会话数',
+    confirmClear: '确定清除所有审计日志？',
+  },
+
+  aiExplain: {
+    totalCalls: '总调用',
+    successRate: '成功率',
+    totalTokens: '总Token消耗',
+    cacheHitRate: '缓存命中率',
+    recentTitle: '最近匹配记录',
+    time: '时间',
+    method: '方法',
+    status: '状态',
+    model: '模型',
+    duration: '耗时',
+    cache: '缓存',
   },
 }

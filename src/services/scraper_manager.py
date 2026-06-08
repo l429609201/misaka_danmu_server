@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import json
 import re
 import pkgutil
 import inspect
@@ -14,7 +15,7 @@ from urllib.parse import urlparse
 from src.scrapers.base import BaseScraper
 from src.utils import TransportManager
 from src.utils.buffered_logging import BufferedLogHandler, create_buffered_logger, flush_buffered_logs
-from src.db import models, crud, ConfigManager
+from src.db import models, crud, ConfigManager, orm_models
 
 # 从 models 导入需要的类
 ProviderSearchInfo = models.ProviderSearchInfo
@@ -654,7 +655,40 @@ class ScraperManager:
                 filtered_results.append(item)
         
         logging.getLogger(__name__).info(f"全局标题过滤: 从 {len(all_results)} 个结果中保留了 {len(filtered_results)} 个。")
+
+        # 异步更新弹幕源健康度统计
+        asyncio.create_task(self._update_health_stats(timed_results))
+
         return filtered_results
+
+    async def _update_health_stats(self, timed_results):
+        """异步更新弹幕源健康度统计到 scrapers 表"""
+        from src.core import get_now
+        now = get_now()
+
+        try:
+            async with self._session_factory() as session:
+                for provider_name, result, duration_ms, error, _ in timed_results:
+                    scraper_row = await session.get(orm_models.Scraper, provider_name)
+                    if not scraper_row:
+                        continue
+                    scraper_row.totalSearches = (scraper_row.totalSearches or 0) + 1
+                    scraper_row.totalDurationMs = (scraper_row.totalDurationMs or 0) + duration_ms
+                    if error:
+                        scraper_row.failCount = (scraper_row.failCount or 0) + 1
+                        err_str = str(error)[:500]
+                        scraper_row.lastError = err_str
+                        if "timeout" in err_str.lower() or "timed out" in err_str.lower():
+                            scraper_row.timeoutCount = (scraper_row.timeoutCount or 0) + 1
+                    elif result:
+                        scraper_row.successCount = (scraper_row.successCount or 0) + 1
+                        scraper_row.totalResultCount = (scraper_row.totalResultCount or 0) + len(result)
+                    else:
+                        scraper_row.emptyCount = (scraper_row.emptyCount or 0) + 1
+                    scraper_row.lastSearchAt = now
+                await session.commit()
+        except Exception as e:
+            logging.getLogger(__name__).debug(f"更新弹幕源健康统计失败: {e}")
 
     @staticmethod
     def parse_supplement_media_id(media_id: str) -> Optional[tuple]:
