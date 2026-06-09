@@ -112,7 +112,6 @@ export default {
     controlApilogs: 'API访问日志',
     controlMcp: 'MCP',
     controlApidoc: 'API文档',
-    controlDiagnostics: '诊断中心',
     settingParameters: '参数配置',
     settingProxy: '代理设置',
     settingWebhook: 'Webhook',
@@ -3751,7 +3750,6 @@ export default {
     tabSettings: '设置',
     tabApiLogs: 'API访问日志',
     tabApiDoc: 'API文档',
-    tabDiagnostics: '诊断中心',
 
     // ApiDoc.jsx
     apiDocTitle: 'API文档',
@@ -3959,6 +3957,8 @@ export default {
 
   healthOverview: {
     title: '系统健康总览',
+    tabHealth: '健康概览',
+    tabDiagnostics: '系统诊断',
     todayDanmaku: '今日新增弹幕',
     missingEp: '缺弹幕分集',
     taskSuccess: '任务成功',

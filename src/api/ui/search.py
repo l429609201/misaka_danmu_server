@@ -9,6 +9,7 @@ try:
 except ImportError:
     _regex_module = re
 from typing import Any, Dict, Optional, List
+from src.utils.episode_filter import parse_single_episode_filter_rules, apply_single_episode_filter
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -117,91 +118,6 @@ def _paginate_dicts(items: List[Dict[str, Any]], page: int, page_size: int) -> L
     return items[start:start + page_size]
 
 
-def _parse_metadata_block(block: str) -> Dict[str, str]:
-    """解析类似 {[rules=xxx;provider=xxx;mediaId=xxx]} 的配置块。"""
-    text = block.strip()
-    if not (text.startswith("{[") and text.endswith("]}")):
-        return {}
-    text = text[2:-2].strip()
-    data: Dict[str, str] = {}
-    for part in text.split(";"):
-        if "=" not in part:
-            continue
-        key, value = part.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if key:
-            data[key] = value
-    return data
-
-
-def _parse_single_episode_filter_rules(content: str) -> List[Dict[str, str]]:
-    """解析单剧过滤文本配置。格式：作品匹配词 => {[rules=正则;provider=可选;mediaId=可选]}"""
-    rules: List[Dict[str, str]] = []
-    if not content:
-        return rules
-    for line_num, raw_line in enumerate(content.splitlines(), 1):
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if " => " not in line:
-            logger.warning(f"单剧过滤配置第{line_num}行缺少 =>，已跳过: {line}")
-            continue
-        title_pattern, block = line.split(" => ", 1)
-        title_pattern = title_pattern.strip()
-        meta = _parse_metadata_block(block)
-        rule_pattern = meta.get("rules", "").strip()
-        if not title_pattern or not rule_pattern:
-            logger.warning(f"单剧过滤配置第{line_num}行缺少作品匹配词或 rules，已跳过: {line}")
-            continue
-        rules.append({
-            "title": title_pattern,
-            "rules": rule_pattern,
-            "provider": meta.get("provider", "").strip(),
-            "mediaId": meta.get("mediaId", "").strip(),
-        })
-    return rules
-
-
-def _apply_single_episode_filter(
-    episodes: List[models.ProviderEpisodeInfo],
-    rules: List[Dict[str, str]],
-    title: Optional[str],
-    provider: str,
-    media_id: str,
-) -> List[models.ProviderEpisodeInfo]:
-    if not rules or not title:
-        return episodes
-    filtered = episodes
-    for rule in rules:
-        if rule["title"].lower() not in title.lower():
-            continue
-        if rule.get("provider") and rule["provider"] != provider:
-            continue
-        if rule.get("mediaId") and rule["mediaId"] != media_id:
-            continue
-        pattern = rule["rules"]
-        before_count = len(filtered)
-        kept = []
-        removed_titles = []
-        for episode in filtered:
-            episode_title = episode.title or ""
-            try:
-                matched = re.search(pattern, episode_title, re.IGNORECASE) is not None
-            except re.error as e:
-                logger.warning(f"单剧过滤规则正则无效，已跳过: {pattern} ({e})")
-                matched = False
-            if matched:
-                removed_titles.append(episode_title)
-            else:
-                kept.append(episode)
-        if removed_titles:
-            logger.info(
-                f"单剧过滤命中: title={title}, provider={provider}, mediaId={media_id}, "
-                f"rule={rule['title']}，过滤 {len(removed_titles)}/{before_count} 集: {removed_titles[:20]}"
-            )
-        filtered = kept
-    return filtered
 
 
 @router.get(
@@ -860,8 +776,8 @@ async def get_episodes_for_search_result(
         episodes = await manager.get_episodes_routed(provider, media_id, db_media_type=media_type)
         # 单剧过滤
         filter_content = await config_manager.get("singleEpisodeFilterRules", "")
-        filter_rules = _parse_single_episode_filter_rules(filter_content)
-        episodes = _apply_single_episode_filter(episodes, filter_rules, title, provider, media_id)
+        filter_rules = parse_single_episode_filter_rules(filter_content)
+        episodes = apply_single_episode_filter(episodes, filter_rules, title, provider, media_id)
         # 兜底全局分集标题过滤
         global_filter_enabled = await config_manager.get("globalEpisodeTitleFilterEnabled", "false")
         if global_filter_enabled == "true":

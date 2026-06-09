@@ -270,10 +270,26 @@ def _roman_to_int(s: str) -> int:
 
 
 def _chinese_num_to_int(s: str) -> Optional[int]:
-    """将中文数字转换为整数，支持阿拉伯数字直通"""
+    """将中文数字转换为整数，支持阿拉伯数字直通和组合中文数字
+
+    支持范围：一~九十九（含十一~十九、二十~二十九等组合形式）
+    示例：十一→11, 二十→20, 三十五→35, 九十九→99
+    """
     if s.isdigit():
         return int(s)
-    return CHINESE_NUM_MAP.get(s)
+    # 单字快速查找
+    if len(s) == 1:
+        return CHINESE_NUM_MAP.get(s)
+    # 组合中文数字解析（十一~九十九）
+    if '十' in s:
+        parts = s.split('十', 1)
+        tens_part = parts[0]  # 十前面的数字（空则为1）
+        ones_part = parts[1]  # 十后面的数字（空则为0）
+        tens = CHINESE_NUM_MAP.get(tens_part, 1) if tens_part else 1
+        ones = CHINESE_NUM_MAP.get(ones_part, 0) if ones_part else 0
+        if isinstance(tens, int) and isinstance(ones, int):
+            return tens * 10 + ones
+    return None
 
 
 def _strip_video_extension(filename: str) -> str:

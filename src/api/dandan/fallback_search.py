@@ -12,8 +12,8 @@ from typing import Dict, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
-from src.db import crud, ConfigManager
-from src.services import ScraperManager, TaskManager, MetadataSourceManager, unified_search
+from src.db import crud, models, ConfigManager
+from src.services import ScraperManager, TaskManager, MetadataSourceManager, unified_search, convert_to_chinese_title
 from src.utils import (
     parse_search_keyword,
     ai_type_and_season_mapping_and_correction,
@@ -205,7 +205,17 @@ async def execute_fallback_search_task(
         season_to_filter = parsed_info.get("season")
         episode_to_filter = parsed_info.get("episode")
 
-        # 2. 应用标题预处理规则
+        # 2. 名称转换（非中文→中文，与 Webhook 搜索一致）
+        fallback_user = models.User(id=0, username="fallback_search")
+        converted_title, conversion_applied = await convert_to_chinese_title(
+            original_title, config_manager, metadata_manager,
+            ai_matcher_manager, fallback_user
+        )
+        if conversion_applied:
+            logger.info(f"✓ 后备搜索名称转换: '{original_title}' → '{converted_title}'")
+            original_title = converted_title
+
+        # 3. 应用标题预处理规则
         search_title = original_title
         if title_recognition_manager:
             (processed_title, processed_episode, processed_season, preprocessing_applied) = \
@@ -226,7 +236,7 @@ async def execute_fallback_search_task(
         else:
             logger.info("○ 未配置标题识别管理器，跳过后备搜索预处理。")
 
-        # 3. 同步更新缓存中的 parsed_info
+        # 4. 同步更新缓存中的 parsed_info
         search_info = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key)
         if search_info:
             cached_parsed = search_info.get("parsed_info") or {}
@@ -236,7 +246,7 @@ async def execute_fallback_search_task(
             search_info["parsed_info"] = cached_parsed
             await set_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key, search_info, FALLBACK_SEARCH_CACHE_TTL)
 
-        # 4. 构造 episode_info
+        # 5. 构造 episode_info
         episode_info = (
             {"season": season_to_filter, "episode": episode_to_filter}
             if episode_to_filter is not None else None
@@ -310,7 +320,7 @@ async def execute_fallback_search_task(
 
             timer.step_end(details=f"{len(sorted_results)}个结果", sub_steps=source_timing_sub_steps)
 
-        # 5. 根据标题关键词修正媒体类型
+        # 6. 根据标题关键词修正媒体类型
         def is_movie_by_title(title: str) -> bool:
             if not title:
                 return False
@@ -323,7 +333,7 @@ async def execute_fallback_search_task(
                 logger.info(f"标题 '{item.title}' 包含电影关键词，类型从 'tv_series' 修正为 'movie'。")
                 item.type = "movie"
 
-        # 6. 如果搜索词中明确指定了季度，对结果进行过滤
+        # 7. 如果搜索词中明确指定了季度，对结果进行过滤
         if season_to_filter:
             original_count = len(sorted_results)
             filtered_by_type = [item for item in sorted_results if item.type == "tv_series"]

@@ -112,7 +112,6 @@ export default {
     controlApilogs: 'API Access Logs',
     controlMcp: 'MCP',
     controlApidoc: 'API Docs',
-    controlDiagnostics: 'Diagnostics',
     settingParameters: 'Parameters',
     settingProxy: 'Proxy',
     settingWebhook: 'Webhook',
@@ -3215,7 +3214,6 @@ Singer 2024 => {[rules=extra|pure version|preview|behind the scenes]}`,
     tabSettings: 'Settings',
     tabApiLogs: 'API Access Log',
     tabApiDoc: 'API Docs',
-    tabDiagnostics: 'Diagnostics',
 
     // ApiDoc.jsx
     apiDocTitle: 'API Docs',
@@ -3415,6 +3413,8 @@ Singer 2024 => {[rules=extra|pure version|preview|behind the scenes]}`,
 
   healthOverview: {
     title: 'System Health',
+    tabHealth: 'Overview',
+    tabDiagnostics: 'Diagnostics',
     todayDanmaku: 'New Danmaku Today',
     missingEp: 'Missing Episodes',
     taskSuccess: 'Tasks OK',

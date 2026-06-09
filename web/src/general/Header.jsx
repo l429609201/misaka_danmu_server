@@ -111,7 +111,6 @@ const navItems = [
     { key: 'apilogs', label: 'nav.controlApilogs', icon: 'APIrizhi' },
     { key: 'mcp', label: 'nav.controlMcp', icon: 'MCP' },
     { key: 'apidoc', label: 'nav.controlApidoc', icon: 'kuaijierukou_apiwendang' },
-    { key: 'diagnostics', label: 'nav.controlDiagnostics', icon: 'anquan' },
   ]},
   { key: RoutePaths.SETTING, label: 'nav.setting', icon: 'setting', iconfontIcon: 'icon-setting', children: [
     { key: 'parameters', label: 'nav.settingParameters', icon: 'canshupeizhi' },

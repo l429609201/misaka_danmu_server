@@ -466,11 +466,13 @@ a:hover {
    通过 <html data-page-style="liquid-glass"> 启用
    ========================================== */
 html[data-page-style="liquid-glass"] {
-  /* 给整个 body 一个柔和的渐变背景，玻璃效果才有"穿透感" */
+  /* 给整个 body 一个柔和的渐变背景，玻璃效果才有"穿透感"
+     渐变色跟随 --color-primary 主题色，使用 color-mix 实现透明度混合 */
   background:
-    radial-gradient(circle at 20% 10%, var(--color-shadow) 0%, transparent 45%),
-    radial-gradient(circle at 80% 80%, var(--color-shadow) 0%, transparent 50%),
-    var(--color-bg);
+    radial-gradient(circle at 20% 10%, color-mix(in srgb, var(--color-primary) 18%, transparent) 0%, transparent 45%),
+    radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--color-primary) 12%, transparent) 0%, transparent 50%),
+    radial-gradient(circle at 60% 40%, color-mix(in srgb, var(--color-secondary) 10%, transparent) 0%, transparent 40%),
+    var(--color-bg) !important;
   background-attachment: fixed;
 }
 
@@ -577,14 +579,14 @@ html[data-page-style="liquid-glass"] .ant-popover-inner,
 html[data-page-style="liquid-glass"] .ant-tooltip-inner,
 html[data-page-style="liquid-glass"] .ant-message-notice-content,
 html[data-page-style="liquid-glass"] .ant-notification-notice {
-  background: rgba(255, 255, 255, 0.82) !important;
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.7) !important;
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
   border-radius: 20px !important;
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7) !important;
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
 }
 
 /* 下拉菜单：毛玻璃 + 更高不透明度（防止文字透穿） */
@@ -738,10 +740,10 @@ html[data-page-style="liquid-glass"].dark .ant-picker {
 
 /* 顶部导航栏玻璃化 */
 html[data-page-style="liquid-glass"] .bg-base-bg.fixed.top-0 {
-  background: rgba(255, 255, 255, 0.88) !important;
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.5);
 }
 html[data-page-style="liquid-glass"].dark .bg-base-bg.fixed.top-0 {
   background: rgba(15, 23, 42, 0.88) !important;
