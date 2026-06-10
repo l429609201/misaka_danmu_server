@@ -413,6 +413,7 @@ async def execute_fallback_search_task(
                     "media_id": result.mediaId,
                     "original_title": result.title,
                     "type": result.type,
+                    "season": result.season,
                     "anime_id": current_virtual_anime_id,
                 }
 

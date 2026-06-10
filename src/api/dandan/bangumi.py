@@ -148,8 +148,16 @@ async def get_bangumi_details(
 
                                     if actual_episodes:
                                         # 计算 effective_season（源切换和新剧集分支共用）
-                                        _parsed = parse_search_keyword(original_title)
-                                        effective_season = target_season if target_season is not None else (_parsed.get("season") or 1)
+                                        # 优先级：① target_season（搜索词解析） > ② mapping_info.season（搜索结果自带）
+                                        #         > ③ original_title 重新解析 > ④ 默认 1
+                                        _result_season = mapping_info.get("season")
+                                        if target_season is not None:
+                                            effective_season = target_season
+                                        elif _result_season is not None:
+                                            effective_season = _result_season
+                                        else:
+                                            _parsed = parse_search_keyword(original_title)
+                                            effective_season = _parsed.get("season") or 1
 
                                         # 检查是否已经有相同剧集的记录（源切换检测）
                                         existing_anime = await find_existing_anime_by_bangumi_id(session, bangumiId, search_key)
@@ -171,7 +179,7 @@ async def get_bangumi_details(
                                             logger.info(f"源切换: '{original_title}' 更新 {len(actual_episodes)} 个分集映射到 {provider}")
                                         else:
                                             # 新剧集，先检查数据库中是否已有相同标题的条目
-                                            base_title = _parsed["title"]
+                                            base_title = parse_search_keyword(original_title)["title"]
 
                                             # 直接在数据库中查找相同标题+季度的条目
                                             stmt = select(Anime.id, Anime.title).where(
