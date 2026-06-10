@@ -1235,6 +1235,7 @@ export const SearchResult = () => {
                                 provider: item.provider,
                                 media_id: item.mediaId,
                                 media_type: item.type,
+                                title: item.title,
                               }
 
                               const res = await getEditEpisodes(params)

@@ -12,15 +12,17 @@ import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import get_db_session
 from src.core import get_now
+from src.core.cache import get_cache_backend
 from src._version import APP_VERSION
 from src.api.dependencies import get_config_manager
 from src.db import ConfigManager
+from src.db.database import get_db_type
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -83,6 +85,7 @@ ERROR_PATTERNS = [
 
 @router.get("/diagnostics/environment", response_model=EnvironmentInfo, summary="运行环境诊断")
 async def get_environment_info(
+    request: Request,
     config_manager: ConfigManager = Depends(get_config_manager),
 ):
     config_dir = os.path.join(os.getcwd(), "config")
@@ -94,10 +97,40 @@ async def get_environment_info(
         uvloop_enabled = True
     except ImportError:
         pass
-    db_type = await config_manager.get("databaseType", "sqlite")
-    cache_backend = await config_manager.get("cacheBackend", "memory")
+
+    # 运行时读取：直接从 engine URL 获取真实数据库类型
+    db_type = get_db_type()
+    try:
+        engine = getattr(request.app.state, "db_engine", None)
+        if engine is not None:
+            db_type = engine.url.get_dialect().name
+    except Exception:
+        pass
+
+    # 运行时读取：从全局缓存实例类名获取真实后端类型
+    _BACKEND_LABELS = {
+        "MemoryBackend": "memory",
+        "RedisBackend": "redis",
+        "DatabaseBackend": "database",
+        "HybridBackend": "hybrid",
+    }
+    try:
+        backend = get_cache_backend()
+        cache_backend = _BACKEND_LABELS.get(type(backend).__name__, type(backend).__name__)
+    except Exception:
+        cache_backend = "unknown"
     import time
     tz_name = time.tzname[0] if time.tzname else "Unknown"
+    # 计算当前 UTC 偏移，格式如 UTC+8 或 UTC-5
+    utc_offset_seconds = -time.timezone if not time.daylight else -time.altzone
+    utc_offset_hours = utc_offset_seconds / 3600
+    if utc_offset_hours == int(utc_offset_hours):
+        utc_offset_str = f"UTC{int(utc_offset_hours):+d}"
+    else:
+        h = int(utc_offset_hours)
+        m = int(abs(utc_offset_hours - h) * 60)
+        utc_offset_str = f"UTC{h:+d}:{m:02d}"
+    tz_display = f"{tz_name} ({utc_offset_str})"
 
     return EnvironmentInfo(
         appVersion=APP_VERSION,
@@ -111,7 +144,7 @@ async def get_environment_info(
         logsDir=logs_dir,
         configDirWritable=os.access(config_dir, os.W_OK) if os.path.exists(config_dir) else False,
         logsDirWritable=os.access(logs_dir, os.W_OK) if os.path.exists(logs_dir) else False,
-        timezone=tz_name,
+        timezone=tz_display,
         isDocker=is_docker,
         uvloopEnabled=uvloop_enabled,
     )
