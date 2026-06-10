@@ -179,25 +179,34 @@ async def get_bangumi_details(
                                             logger.info(f"源切换: '{original_title}' 更新 {len(actual_episodes)} 个分集映射到 {provider}")
                                         else:
                                             # 新剧集，先检查数据库中是否已有相同标题的条目
-                                            # 直接使用源原始标题（保留季度后缀），与 comment 创建条目保持一致
-                                            base_title = original_title
+                                            # 先用原始标题查（如"碧蓝之海 第二季"），找不到再用纯标题查（兼容旧数据）
+                                            pure_title = parse_search_keyword(original_title)["title"]
 
                                             # 直接在数据库中查找相同标题+季度的条目
                                             stmt = select(Anime.id, Anime.title).where(
-                                                Anime.title == base_title,
+                                                Anime.title == original_title,
                                                 Anime.season == effective_season
                                             )
                                             result = await session.execute(stmt)
                                             existing_db_anime = result.mappings().first()
 
+                                            # 兼容旧数据：原始标题找不到，再用纯标题查
+                                            if not existing_db_anime and original_title != pure_title:
+                                                stmt_fallback = select(Anime.id, Anime.title).where(
+                                                    Anime.title == pure_title,
+                                                    Anime.season == effective_season
+                                                )
+                                                result_fallback = await session.execute(stmt_fallback)
+                                                existing_db_anime = result_fallback.mappings().first()
+
                                             if existing_db_anime:
                                                 # 如果数据库中已有相同标题的条目，使用已有的anime_id
                                                 real_anime_id = existing_db_anime['id']
-                                                logger.info(f"复用已存在的番剧: '{base_title}' (ID={real_anime_id}) 共 {len(actual_episodes)} 集")
+                                                logger.info(f"复用已存在的番剧: '{original_title}' (ID={real_anime_id}) 共 {len(actual_episodes)} 集")
                                             else:
                                                 # 如果数据库中没有，获取新的真实animeId
                                                 real_anime_id = await get_next_real_anime_id(session)
-                                                logger.info(f"新剧集: '{base_title}' (ID={real_anime_id}) 共 {len(actual_episodes)} 集")
+                                                logger.info(f"新剧集: '{original_title}' (ID={real_anime_id}) 共 {len(actual_episodes)} 集")
 
                                         # 清除缓存中所有使用这个real_anime_id的其他映射（避免冲突）
                                         all_cache_keys_conflict = await get_cache_keys(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")

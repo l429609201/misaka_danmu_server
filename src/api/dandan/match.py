@@ -1054,13 +1054,23 @@ async def get_match_for_item(
                 logger.info(f"  - 分配虚拟animeId: {virtual_anime_id}")
 
                 # 分配真实anime_id（用于生成episodeId）
-                # 注意：Anime和AnimeSource已经在orm_models中定义，这里直接使用
+                # 查询时先用原始标题（如"碧蓝之海 第二季"），找不到再用纯标题（兼容旧数据）
+                display_title = best_match.title  # 弹幕源原始标题
                 stmt = select(orm_models.Anime.id, orm_models.Anime.title).where(
-                    orm_models.Anime.title == final_title,
+                    orm_models.Anime.title == display_title,
                     orm_models.Anime.season == final_season
                 )
                 result = await session_inner.execute(stmt)
                 existing_db_anime = result.mappings().first()
+
+                # 兼容旧数据：如果原始标题找不到，再用纯标题查
+                if not existing_db_anime and display_title != final_title:
+                    stmt_fallback = select(orm_models.Anime.id, orm_models.Anime.title).where(
+                        orm_models.Anime.title == final_title,
+                        orm_models.Anime.season == final_season
+                    )
+                    result_fallback = await session_inner.execute(stmt_fallback)
+                    existing_db_anime = result_fallback.mappings().first()
 
                 if existing_db_anime:
                     real_anime_id = existing_db_anime['id']
@@ -1103,6 +1113,7 @@ async def get_match_for_item(
                     "provider": best_match.provider,
                     "mediaId": best_match.mediaId,
                     "final_title": final_title,
+                    "original_title": best_match.title,
                     "final_season": final_season,
                     "media_type": best_match.type,
                     "imageUrl": best_match.imageUrl,
@@ -1120,6 +1131,7 @@ async def get_match_for_item(
                     "mediaId": best_match.mediaId,
                     "episode_number": final_episode_number,  # 使用final_episode_number (电影为1)
                     "final_title": final_title,
+                    "original_title": best_match.title,
                     "final_season": final_season,
                     "media_type": best_match.type,
                     "imageUrl": best_match.imageUrl,

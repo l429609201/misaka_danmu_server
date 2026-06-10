@@ -392,6 +392,8 @@ async def get_comments_for_dandan(
             provider = fallback_info["provider"]
             mediaId = fallback_info["mediaId"]
             final_title = fallback_info["final_title"]
+            # 创建条目用原始标题（如"碧蓝之海 第二季"），匹配查询用 final_title
+            display_title = fallback_info.get("original_title") or final_title
             final_season = fallback_info["final_season"]
             media_type = fallback_info["media_type"]
             imageUrl = fallback_info.get("imageUrl")
@@ -439,11 +441,11 @@ async def get_comments_for_dandan(
             existing_anime = result.scalar_one_or_none()
 
             if not existing_anime:
-                # 创建anime条目
-                logger.info(f"创建anime条目: id={real_anime_id}, title='{final_title}'")
+                # 创建anime条目（使用原始标题展示，如"碧蓝之海 第二季"）
+                logger.info(f"创建anime条目: id={real_anime_id}, title='{display_title}'")
                 new_anime = Anime(
                     id=real_anime_id,
-                    title=final_title,
+                    title=display_title,
                     type=media_type,
                     season=final_season,
                     imageUrl=imageUrl,
