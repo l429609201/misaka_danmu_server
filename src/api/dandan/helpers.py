@@ -224,10 +224,11 @@ async def find_existing_anime_by_bangumi_id(
 
 async def update_episode_mapping(
     session: AsyncSession, episode_id: int, provider: str,
-    media_id: str, episode_index: int, original_title: str
+    media_id: str, episode_index: int, original_title: str,
+    season: int = 1
 ):
     """更新episodeId的映射关系（更新数据库缓存）"""
-    await store_episode_mapping(session, episode_id, provider, media_id, episode_index, original_title)
+    await store_episode_mapping(session, episode_id, provider, media_id, episode_index, original_title, season=season)
     real_anime_id = int(str(episode_id)[2:8])
     try:
         all_cache_keys = await get_cache_keys(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")

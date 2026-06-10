@@ -147,6 +147,10 @@ async def get_bangumi_details(
                                     actual_episodes = await scraper.get_episodes(media_id, db_media_type=media_type)
 
                                     if actual_episodes:
+                                        # 计算 effective_season（源切换和新剧集分支共用）
+                                        _parsed = parse_search_keyword(original_title)
+                                        effective_season = target_season if target_season is not None else (_parsed.get("season") or 1)
+
                                         # 检查是否已经有相同剧集的记录（源切换检测）
                                         existing_anime = await find_existing_anime_by_bangumi_id(session, bangumiId, search_key)
 
@@ -161,16 +165,13 @@ async def get_bangumi_details(
                                                 episode_id = generate_episode_id(real_anime_id, 1, ep_index)
                                                 await update_episode_mapping(
                                                     session, episode_id, provider, media_id,
-                                                    ep_index, original_title
+                                                    ep_index, original_title,
+                                                    season=effective_season
                                                 )
                                             logger.info(f"源切换: '{original_title}' 更新 {len(actual_episodes)} 个分集映射到 {provider}")
                                         else:
                                             # 新剧集，先检查数据库中是否已有相同标题的条目
-                                            # 解析搜索关键词，提取纯标题
-                                            parsed_info = parse_search_keyword(original_title)
-                                            base_title = parsed_info["title"]
-                                            # 使用搜索时解析出的季度（target_season），默认为 1
-                                            effective_season = target_season if target_season is not None else (parsed_info.get("season") or 1)
+                                            base_title = _parsed["title"]
 
                                             # 直接在数据库中查找相同标题+季度的条目
                                             stmt = select(Anime.id, Anime.title).where(
