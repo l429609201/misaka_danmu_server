@@ -171,12 +171,14 @@ async def get_cache_keys(session: AsyncSession, pattern: str) -> List[str]:
 
 async def store_episode_mapping(
     session: AsyncSession, episode_id: int, provider: str,
-    media_id: str, episode_index: int, original_title: str
+    media_id: str, episode_index: int, original_title: str,
+    season: int = 1
 ):
     """存储episodeId到源的映射关系到缓存"""
     mapping_data = {
         "provider": provider, "media_id": media_id,
         "episode_index": episode_index, "original_title": original_title,
+        "season": season,
         "timestamp": time.time()
     }
     await set_db_cache(session, EPISODE_MAPPING_CACHE_PREFIX, str(episode_id), mapping_data, 10800)

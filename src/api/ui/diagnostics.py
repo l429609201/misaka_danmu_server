@@ -202,9 +202,10 @@ async def analyze_logs(
 
 @router.get("/diagnostics/full", response_model=DiagnosticSummary, summary="完整诊断报告")
 async def get_full_diagnostics(
+    request: Request,
     config_manager: ConfigManager = Depends(get_config_manager),
 ):
-    env = await get_environment_info(config_manager)
+    env = await get_environment_info(request, config_manager)
     log_items = await analyze_logs(hours=24)
 
     checks = []

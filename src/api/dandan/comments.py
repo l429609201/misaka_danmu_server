@@ -1010,6 +1010,10 @@ async def get_comments_for_dandan(
                                         search_term = search_keyword or original_title
                                         parsed_info = parse_search_keyword(search_term)
                                         base_title = parsed_info["title"]
+                                        # 从映射数据或搜索词解析中获取季度（不硬编码 1）
+                                        effective_season = mapping_data.get("season") if mapping_data else None
+                                        if effective_season is None:
+                                            effective_season = parsed_info.get("season") or 1
 
                                         # 由于我们在分配real_anime_id时已经检查了数据库，这里直接使用real_anime_id
                                         # 如果数据库中已有相同标题的条目，real_anime_id就是已有的anime_id
@@ -1030,7 +1034,7 @@ async def get_comments_for_dandan(
                                                 id=real_anime_id,
                                                 title=base_title,
                                                 type=media_type,
-                                                season=1,
+                                                season=effective_season,
                                                 year=year,
                                                 imageUrl=image_url,
                                                 createdAt=get_now()
@@ -1038,7 +1042,7 @@ async def get_comments_for_dandan(
                                             task_session.add(new_anime)
                                             await task_session.flush()  # 确保ID可用
                                             anime_id = real_anime_id
-                                            logger.info(f"创建新番剧: ID={anime_id}, 标题='{base_title}', 年份={year}")
+                                            logger.info(f"创建新番剧: ID={anime_id}, 标题='{base_title}' S{effective_season}, 年份={year}")
 
                                             # 同步PostgreSQL序列(避免主键冲突)
                                             await sync_postgres_sequence(task_session)
@@ -1074,7 +1078,7 @@ async def get_comments_for_dandan(
                                                     "provider": current_provider,
                                                     "mediaId": current_episode_url,
                                                     "final_title": base_title,
-                                                    "final_season": 1,
+                                                    "final_season": effective_season,
                                                     "media_type": media_type,
                                                     "imageUrl": image_url,
                                                     "year": year,

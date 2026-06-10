@@ -169,11 +169,13 @@ async def get_bangumi_details(
                                             # 解析搜索关键词，提取纯标题
                                             parsed_info = parse_search_keyword(original_title)
                                             base_title = parsed_info["title"]
+                                            # 使用搜索时解析出的季度（target_season），默认为 1
+                                            effective_season = target_season if target_season is not None else (parsed_info.get("season") or 1)
 
-                                            # 直接在数据库中查找相同标题的条目
+                                            # 直接在数据库中查找相同标题+季度的条目
                                             stmt = select(Anime.id, Anime.title).where(
                                                 Anime.title == base_title,
-                                                Anime.season == 1
+                                                Anime.season == effective_season
                                             )
                                             result = await session.execute(stmt)
                                             existing_db_anime = result.mappings().first()
@@ -225,7 +227,8 @@ async def get_bangumi_details(
                                             if not existing_anime:
                                                 await store_episode_mapping(
                                                     session, episode_id, provider, media_id,
-                                                    episode_index, original_title
+                                                    episode_index, original_title,
+                                                    season=effective_season
                                                 )
 
                                             episodes.append(BangumiEpisode(
