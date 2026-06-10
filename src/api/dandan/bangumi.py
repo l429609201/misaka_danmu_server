@@ -179,7 +179,8 @@ async def get_bangumi_details(
                                             logger.info(f"源切换: '{original_title}' 更新 {len(actual_episodes)} 个分集映射到 {provider}")
                                         else:
                                             # 新剧集，先检查数据库中是否已有相同标题的条目
-                                            base_title = parse_search_keyword(original_title)["title"]
+                                            # 直接使用源原始标题（保留季度后缀），与 comment 创建条目保持一致
+                                            base_title = original_title
 
                                             # 直接在数据库中查找相同标题+季度的条目
                                             stmt = select(Anime.id, Anime.title).where(

@@ -18,7 +18,7 @@ from src.db import crud, orm_models, models, get_db_session, sync_postgres_seque
 from src.core import get_now
 from src.core.cache import get_cache_backend
 from src.services import ScraperManager, TaskManager, TaskSuccess
-from src.utils import parse_search_keyword, sample_comments_evenly, record_play_history, handle_danmaku_likes, strip_danmaku_likes
+from src.utils import parse_search_keyword, sample_comments_evenly, record_play_history, handle_danmaku_likes, strip_danmaku_likes, is_movie_by_title
 from src.utils import restyle_danmaku_likes
 from src.rate_limiter import RateLimiter
 from src import tasks
@@ -1006,14 +1006,16 @@ async def get_comments_for_dandan(
                                         except Exception as e:
                                             logger.error(f"查找搜索缓存信息失败: {e}")
 
-                                        # 解析搜索关键词，提取纯标题（如"天才基本法 S01E13" -> "天才基本法"）
+                                        # 直接使用源返回的原始标题（保留季度后缀，如"碧蓝之海 第二季"）
                                         search_term = search_keyword or original_title
                                         parsed_info = parse_search_keyword(search_term)
-                                        base_title = parsed_info["title"]
-                                        # 从映射数据或搜索词解析中获取季度（不硬编码 1）
+                                        base_title = original_title
+                                        # 季度获取：① 映射数据自带 > ② 搜索词解析 > ③ 默认 1
                                         effective_season = mapping_data.get("season") if mapping_data else None
                                         if effective_season is None:
                                             effective_season = parsed_info.get("season") or 1
+                                        # 电影/剧场版不使用季度概念（统一复用 is_movie_by_title 工具）
+                                        is_movie_type = media_type == "movie" or is_movie_by_title(base_title)
 
                                         # 由于我们在分配real_anime_id时已经检查了数据库，这里直接使用real_anime_id
                                         # 如果数据库中已有相同标题的条目，real_anime_id就是已有的anime_id
@@ -1030,11 +1032,13 @@ async def get_comments_for_dandan(
                                             logger.info(f"使用已存在的番剧: ID={anime_id}")
                                         else:
                                             # 如果不存在，直接创建新的（使用real_anime_id作为指定ID）
+                                            # 电影/剧场版季度存 1（数据库约束），非电影用 effective_season
+                                            anime_season = 1 if is_movie_type else effective_season
                                             new_anime = Anime(
                                                 id=real_anime_id,
                                                 title=base_title,
                                                 type=media_type,
-                                                season=effective_season,
+                                                season=anime_season,
                                                 year=year,
                                                 imageUrl=image_url,
                                                 createdAt=get_now()
@@ -1042,7 +1046,10 @@ async def get_comments_for_dandan(
                                             task_session.add(new_anime)
                                             await task_session.flush()  # 确保ID可用
                                             anime_id = real_anime_id
-                                            logger.info(f"创建新番剧: ID={anime_id}, 标题='{base_title}' S{effective_season}, 年份={year}")
+                                            if is_movie_type:
+                                                logger.info(f"创建新番剧: ID={anime_id}, 标题='{base_title}', 年份={year}")
+                                            else:
+                                                logger.info(f"创建新番剧: ID={anime_id}, 标题='{base_title}', 季度={anime_season}, 年份={year}")
 
                                             # 同步PostgreSQL序列(避免主键冲突)
                                             await sync_postgres_sequence(task_session)
@@ -1078,7 +1085,7 @@ async def get_comments_for_dandan(
                                                     "provider": current_provider,
                                                     "mediaId": current_episode_url,
                                                     "final_title": base_title,
-                                                    "final_season": effective_season,
+                                                    "final_season": 1 if is_movie_type else effective_season,
                                                     "media_type": media_type,
                                                     "imageUrl": image_url,
                                                     "year": year,

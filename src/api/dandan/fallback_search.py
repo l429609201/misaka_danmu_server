@@ -17,7 +17,8 @@ from src.services import ScraperManager, TaskManager, MetadataSourceManager, uni
 from src.utils import (
     parse_search_keyword,
     ai_type_and_season_mapping_and_correction,
-    SearchTimer, SEARCH_TYPE_FALLBACK_SEARCH
+    SearchTimer, SEARCH_TYPE_FALLBACK_SEARCH,
+    is_movie_by_title
 )
 from src.rate_limiter import RateLimiter
 from src.ai import AIMatcherManager
@@ -320,14 +321,7 @@ async def execute_fallback_search_task(
 
             timer.step_end(details=f"{len(sorted_results)}个结果", sub_steps=source_timing_sub_steps)
 
-        # 6. 根据标题关键词修正媒体类型
-        def is_movie_by_title(title: str) -> bool:
-            if not title:
-                return False
-            movie_keywords = ["剧场版", "劇場版", "movie", "映画"]
-            title_lower = title.lower()
-            return any(keyword in title_lower for keyword in movie_keywords)
-
+        # 6. 根据标题关键词修正媒体类型（复用统一的 is_movie_by_title）
         for item in sorted_results:
             if item.type == "tv_series" and is_movie_by_title(item.title):
                 logger.info(f"标题 '{item.title}' 包含电影关键词，类型从 'tv_series' 修正为 'movie'。")
