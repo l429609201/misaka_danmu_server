@@ -620,7 +620,6 @@ async def _merge_source_episodes(
     """
     from sqlalchemy import select
     from src.db.orm_models import AnimeSource, Episode, Anime
-    from src.core.cache import get_cache_backend
 
     for anime_id, anime_info in list(grouped_animes.items()):
         try:
@@ -742,12 +741,9 @@ async def _merge_source_episodes(
                     "year": anime_obj.year,
                 }
 
-                # 写入缓存（先内存缓存，再数据库缓存）
+                # 写入缓存
                 try:
-                    _backend = get_cache_backend()
-                    if _backend is not None:
-                        await _backend.set(fallback_series_key, cache_data, ttl=10800, region="default")
-                    await crud.set_cache(session, fallback_series_key, cache_data, ttl=10800)
+                    await set_db_cache(session, "", fallback_series_key, cache_data, 10800)
                     logger.debug(f"[并行搜索] 已创建映射缓存: {fallback_series_key}")
                 except Exception as e:
                     logger.warning(f"[并行搜索] 创建映射缓存失败: {e}")
