@@ -490,9 +490,10 @@ class ScraperDownloadExecutor:
             await self.scraper_manager.load_and_sync_scrapers()
             self._log("✓ 弹幕源加载完成")
         else:
-            # 非首次下载：检查是否有 Docker socket，决定重启方式
-            from src.utils.docker_utils import is_docker_socket_available, restart_container
-            docker_available = is_docker_socket_available()
+            # 非首次下载：检查是否在 Docker 容器内且有 Docker socket，决定重启方式
+            from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
+            # 同时满足两个条件才走自动重启路径：socket 可用 + 确实在 Docker 容器内
+            docker_available = is_docker_socket_available() and is_running_in_docker()
 
             if docker_available:
                 # 有 Docker socket，执行容器级别重启
@@ -719,9 +720,9 @@ class ScraperDownloadExecutor:
             existing_scrapers = set(self.scraper_manager.scrapers.keys())
             is_first_download = len(existing_scrapers) == 0
 
-            # 检查是否有 Docker socket
-            from src.utils.docker_utils import is_docker_socket_available, restart_container
-            docker_available = is_docker_socket_available()
+            # 检查是否在 Docker 容器内且有 Docker socket
+            from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
+            docker_available = is_docker_socket_available() and is_running_in_docker()
 
             if is_first_download:
                 # 首次下载（本地没有弹幕源）：部署到 scrapers 和 backup 目录，然后热加载

@@ -1510,10 +1510,10 @@ async def load_resources_stream(
                     # 判断是否是首次下载（本地没有任何弹幕源）
                     is_first_download = len(manager.scrapers) == 0
 
-                    from src.utils.docker_utils import is_docker_socket_available, restart_container
+                    from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
                     import sys
 
-                    docker_available = is_docker_socket_available()
+                    docker_available = is_docker_socket_available() and is_running_in_docker()
 
                     # ========== 先备份新下载的资源到持久化目录（在 SSE 流中同步执行）==========
                     if download_count > 0:

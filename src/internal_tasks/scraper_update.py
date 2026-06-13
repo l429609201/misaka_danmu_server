@@ -352,10 +352,10 @@ async def _perform_update(
                         except Exception as backup_error:
                             logger.warning(f"备份资源失败: {backup_error}")
 
-                        # 检查是否有 Docker socket
-                        from src.utils.docker_utils import is_docker_socket_available, restart_container
+                        # 检查是否在 Docker 容器内且有 Docker socket
+                        from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
                         import sys
-                        docker_available = is_docker_socket_available()
+                        docker_available = is_docker_socket_available() and is_running_in_docker()
 
                         # 判断是否是首次下载（本地没有任何弹幕源）
                         existing_scrapers = set(scraper_manager.scrapers.keys())
@@ -532,10 +532,10 @@ async def _perform_update(
                 logger.error(f"热加载失败: {e}")
         else:
             # 非首次下载：不保存版本信息到 scrapers 目录，版本信息只在备份中
-            # 根据是否有 Docker socket 决定重启方式
-            from src.utils.docker_utils import is_docker_socket_available, restart_container
+            # 根据是否在 Docker 容器内且有 Docker socket 决定重启方式
+            from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
             import sys
-            docker_available = is_docker_socket_available()
+            docker_available = is_docker_socket_available() and is_running_in_docker()
 
             if docker_available:
                 # 有 Docker socket：重启容器

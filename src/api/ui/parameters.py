@@ -345,9 +345,9 @@ async def upload_scraper_package(
 
                 logger.info(f"用户 '{current_user.username}' 上传了离线包到备份目录,共 {file_count} 个文件")
 
-                # 检查是否有 Docker socket
-                from src.utils.docker_utils import is_docker_socket_available, restart_container
-                docker_available = is_docker_socket_available()
+                # 检查是否在 Docker 容器内且有 Docker socket
+                from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
+                docker_available = is_docker_socket_available() and is_running_in_docker()
 
                 if docker_available:
                     # 有 Docker socket，执行容器重启
