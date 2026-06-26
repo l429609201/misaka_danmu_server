@@ -989,3 +989,20 @@ html[data-page-style="liquid-glass"].dark .library-drag-overlay td {
   background: rgba(30, 41, 59, 0.72) !important;
 }
 
+/* ===== 全功能搜索：锚点定位高亮 ===== */
+/* 点击搜索结果跳转到目标功能区块时，短暂高亮闪烁以提示用户 */
+.feature-anchor-highlight {
+  animation: feature-anchor-flash 2s ease-in-out;
+  border-radius: 8px;
+}
+
+@keyframes feature-anchor-flash {
+  0%, 100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  15%, 55% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 70%, transparent);
+  }
+}
+
+

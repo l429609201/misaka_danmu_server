@@ -10,6 +10,10 @@ import {
   setDanmakuChConvert,
   getDanmakuChConvertPriority,
   setDanmakuChConvertPriority,
+  getDanmakuTopConvertTo,
+  setDanmakuTopConvertTo,
+  getDanmakuBottomConvertTo,
+  setDanmakuBottomConvertTo,
   getDanmakuLikesOutputEnabled,
   setDanmakuLikesOutputEnabled,
   getDanmakuLikesStyle,
@@ -96,6 +100,8 @@ export const OutputManage = () => {
   const [aiRegexResult, setAiRegexResult] = useState('')
   const [chConvert, setChConvert] = useState('0')
   const [chConvertPriority, setChConvertPriority] = useState('player')
+  const [topConvertTo, setTopConvertTo] = useState('none')
+  const [bottomConvertTo, setBottomConvertTo] = useState('none')
   const [likesStyle, setLikesStyle] = useState('heart_white')
 
   const messageApi = useMessage()
@@ -103,7 +109,7 @@ export const OutputManage = () => {
   const getConfig = async () => {
     setLoading(true)
     try {
-      const [limitRes, mergeEnabledRes, colorModeRes, colorPaletteRes, blacklistEnabledRes, blacklistPatternsRes, chConvertRes, chConvertPriorityRes, likesOutputRes] = await Promise.all([
+      const [limitRes, mergeEnabledRes, colorModeRes, colorPaletteRes, blacklistEnabledRes, blacklistPatternsRes, chConvertRes, chConvertPriorityRes, likesOutputRes, topConvertRes, bottomConvertRes] = await Promise.all([
         getDanmuOutputTotal(),
         getDanmakuMergeOutputEnabled(),
         getDanmakuRandomColorMode(),
@@ -113,6 +119,8 @@ export const OutputManage = () => {
         getDanmakuChConvert(),
         getDanmakuChConvertPriority(),
         getDanmakuLikesOutputEnabled(),
+        getDanmakuTopConvertTo(),
+        getDanmakuBottomConvertTo(),
       ])
       setLimit(limitRes.data?.value ?? '-1')
       setMergeEnabled(mergeEnabledRes.data?.value === 'true')
@@ -122,6 +130,8 @@ export const OutputManage = () => {
       setBlacklistPatterns(blacklistPatternsRes.data?.value || '')
       setChConvert(chConvertRes.data?.value || '0')
       setChConvertPriority(chConvertPriorityRes.data?.value || 'player')
+      setTopConvertTo(topConvertRes.data?.value || 'none')
+      setBottomConvertTo(bottomConvertRes.data?.value || 'none')
       const rawStyle = await getDanmakuLikesStyle()
       // 兼容旧配置：danmakuLikesOutputEnabled=false 时映射为 off
       if (likesOutputRes.data?.value === 'false') {
@@ -144,6 +154,8 @@ export const OutputManage = () => {
         setDanmakuMergeOutputEnabled({ value: mergeEnabled ? 'true' : 'false' }),
         setDanmakuChConvert({ value: chConvert }),
         setDanmakuChConvertPriority({ value: chConvertPriority }),
+        setDanmakuTopConvertTo({ value: topConvertTo }),
+        setDanmakuBottomConvertTo({ value: bottomConvertTo }),
         setDanmakuLikesOutputEnabled({ value: likesStyle !== 'off' ? 'true' : 'false' }),
         setDanmakuLikesStyle({ value: likesStyle !== 'off' ? likesStyle : 'heart_white' }),
       ])
@@ -238,7 +250,7 @@ export const OutputManage = () => {
   }, [])
 
   return (
-    <div className="my-6">
+    <div className="my-6" id="feat-bullet-output">
       <Card loading={loading} title={t('bullet.outputTitle')}>
         <div>{t('bullet.outputDesc')}</div>
         <div className="my-4">
@@ -321,6 +333,35 @@ export const OutputManage = () => {
           </div>
           <div className="text-sm text-gray-600">
             {t('bullet.outputConvertDesc')}
+          </div>
+          <div className="flex items-center gap-4 mt-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span>{t('bullet.outputPosTop')}</span>
+              <Segmented
+                value={topConvertTo}
+                onChange={setTopConvertTo}
+                options={[
+                  { label: t('bullet.outputPosNone'), value: 'none' },
+                  { label: t('bullet.outputPosBottom'), value: 'bottom' },
+                  { label: t('bullet.outputPosScroll'), value: 'scroll' },
+                ]}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span>{t('bullet.outputPosBottomLabel')}</span>
+              <Segmented
+                value={bottomConvertTo}
+                onChange={setBottomConvertTo}
+                options={[
+                  { label: t('bullet.outputPosNone'), value: 'none' },
+                  { label: t('bullet.outputPosTopValue'), value: 'top' },
+                  { label: t('bullet.outputPosScroll'), value: 'scroll' },
+                ]}
+              />
+            </div>
+            <Tooltip title={t('bullet.outputPosTip')}>
+              <QuestionCircleOutlined className="text-gray-400 cursor-help" />
+            </Tooltip>
           </div>
         </div>
         <div className="flex items-center justify-end gap-3">

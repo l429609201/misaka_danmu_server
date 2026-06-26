@@ -217,10 +217,14 @@ async def get_bangumi_details(
                                                 continue
                                             if si.get("status") == "completed" and "bangumi_mapping" in si:
                                                 for bid, mi in list(si["bangumi_mapping"].items()):
-                                                    # 如果是其他映射使用了相同的real_anime_id，清除它
+                                                    # 如果是其他映射使用了相同的real_anime_id，解除其绑定
+                                                    # 修复：仅解除 real_anime_id 字段，保留条目本身（provider/media_id 等搜索信息）。
+                                                    # 原先 del 整个条目会导致：切换查看其他结果后，回头再点该结果时
+                                                    # bangumi_mapping 中已无此条目 → 无法重建映射 → 看不了分集。
+                                                    # 解绑后，回头点击该 bangumiId 会重新走映射流程，分集恢复正常。
                                                     if mi.get("real_anime_id") == real_anime_id and bid != bangumiId:
-                                                        del si["bangumi_mapping"][bid]
-                                                        logger.info(f"清除冲突的缓存映射: search_key={sk}, bangumiId={bid}, real_anime_id={real_anime_id}")
+                                                        mi.pop("real_anime_id", None)
+                                                        logger.info(f"解除冲突的缓存映射绑定: search_key={sk}, bangumiId={bid}, real_anime_id={real_anime_id}")
                                                 # 保存更新后的缓存
                                                 await set_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, sk, si, FALLBACK_SEARCH_CACHE_TTL)
 

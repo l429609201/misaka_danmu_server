@@ -67,6 +67,7 @@ from .danmaku_color import (
     apply_repeat_highlight,
     parse_palette,
 )
+from .danmaku_mode import convert_danmaku_position
 from .danmaku_filter import apply_blacklist_filter
 
 logger = logging.getLogger(__name__)
@@ -254,13 +255,24 @@ async def get_comments_for_dandan(
         except (ValueError, TypeError):
             auto_refresh_days = 0
 
+        # 弹幕条数阈值：仅当现有弹幕条数低于此值时才刷新，避免对已抓全的弹幕重复重抓。0 表示不限制条数。
+        try:
+            refresh_threshold = int(await config_manager.get("danmakuRefreshThreshold", "5000"))
+        except (ValueError, TypeError):
+            refresh_threshold = 5000
+
         if auto_refresh_days > 0:
-            fetched_at = await crud.get_episode_fetched_at(session, episodeId)
-            if fetched_at is not None:
-                now = get_now()
-                age_days = (now - fetched_at).total_seconds() / 86400
-                if age_days >= auto_refresh_days:
-                    unique_key = f"refresh-episode-{episodeId}"
+            # 条数阈值过滤：当前弹幕已达到/超过阈值则跳过刷新
+            current_count = len(comments_data)
+            if refresh_threshold > 0 and current_count >= refresh_threshold:
+                logger.debug(f"[自动刷新] episodeId={episodeId} 现有弹幕 {current_count} 条已达阈值（{refresh_threshold}），跳过自动刷新")
+            else:
+                fetched_at = await crud.get_episode_fetched_at(session, episodeId)
+                if fetched_at is not None:
+                    now = get_now()
+                    age_days = (now - fetched_at).total_seconds() / 86400
+                    if age_days >= auto_refresh_days:
+                        unique_key = f"refresh-episode-{episodeId}"
                     # 检查是否已有刷新任务在跑（避免重复提交）
                     already_running = False
                     async with task_manager._lock:
@@ -863,6 +875,21 @@ async def get_comments_for_dandan(
                     current_scraper_manager = scraper_manager
                     current_rate_limiter = rate_limiter
                     current_episodes_list_ref = None  # 用于保存整部剧的分集列表
+                    # 【修复】在外层确定映射信息后直接传入任务，避免任务内二次查缓存时
+                    # 因并发导致命中另一部剧的 mapping（标题串台 bug）
+                    # mapping_data 来自 episode_mapping 缓存（按 episodeId 一对一，不会被串扰）
+                    # mapping_info 来自 fallback_search 缓存（可能被并发覆盖，但此刻外层刚查到的是正确的）
+                    # 优先使用 mapping_data，其次用外层刚查到的 mapping_info
+                    current_mapping_info = None
+                    if mapping_data and isinstance(mapping_data, dict):
+                        current_mapping_info = mapping_data
+                    else:
+                        # mapping_info 可能在 816-824 行的分支中被赋值
+                        try:
+                            if mapping_info and isinstance(mapping_info, dict):
+                                current_mapping_info = mapping_info
+                        except NameError:
+                            pass
 
                     async def download_comments_task(task_session, progress_callback):
                         try:
@@ -871,26 +898,30 @@ async def get_comments_for_dandan(
                             if scraper:
                                 # 首先获取分集列表
                                 await progress_callback(30, "获取分集列表...")
-                                # 查找映射信息（根据real_anime_id匹配）
-                                mapping_info = None
-                                try:
-                                    all_cache_keys_mapping = await get_cache_keys(task_session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
-                                    for cache_key_mapping in all_cache_keys_mapping:
-                                        search_key = cache_key_mapping.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
-                                        last_bangumi_id = await get_db_cache(task_session, USER_LAST_BANGUMI_CHOICE_PREFIX, search_key)
-                                        if last_bangumi_id:
-                                            search_info = await get_db_cache(task_session, FALLBACK_SEARCH_CACHE_PREFIX, search_key)
-                                            if not isinstance(search_info, dict):
-                                                continue
-                                            if last_bangumi_id in search_info.get("bangumi_mapping", {}):
-                                                temp_mapping = search_info["bangumi_mapping"][last_bangumi_id]
-                                                # 检查real_anime_id是否匹配
-                                                if temp_mapping.get("real_anime_id") == real_anime_id:
-                                                    mapping_info = temp_mapping
-                                                    logger.info(f"找到匹配的映射信息: search_key={search_key}, bangumiId={last_bangumi_id}, real_anime_id={real_anime_id}")
-                                                    break
-                                except Exception as e:
-                                    logger.error(f"查找映射信息失败: {e}")
+                                # 【修复】直接使用外层已确认的映射信息，不再二次遍历缓存
+                                # 避免并发窗口期内缓存被其他搜索覆盖导致标题串台
+                                mapping_info = current_mapping_info
+                                if not mapping_info:
+                                    # 兜底：如果外层没拿到，再去缓存查（保持向后兼容）
+                                    try:
+                                        all_cache_keys_mapping = await get_cache_keys(task_session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
+                                        for cache_key_mapping in all_cache_keys_mapping:
+                                            search_key = cache_key_mapping.replace(FALLBACK_SEARCH_CACHE_PREFIX, "")
+                                            last_bangumi_id = await get_db_cache(task_session, USER_LAST_BANGUMI_CHOICE_PREFIX, search_key)
+                                            if last_bangumi_id:
+                                                search_info = await get_db_cache(task_session, FALLBACK_SEARCH_CACHE_PREFIX, search_key)
+                                                if not isinstance(search_info, dict):
+                                                    continue
+                                                if last_bangumi_id in search_info.get("bangumi_mapping", {}):
+                                                    temp_mapping = search_info["bangumi_mapping"][last_bangumi_id]
+                                                    if temp_mapping.get("real_anime_id") == real_anime_id:
+                                                        mapping_info = temp_mapping
+                                                        logger.info(f"找到匹配的映射信息(兜底): search_key={search_key}, bangumiId={last_bangumi_id}, real_anime_id={real_anime_id}")
+                                                        break
+                                    except Exception as e:
+                                        logger.error(f"查找映射信息失败: {e}")
+                                else:
+                                    logger.info(f"使用外层已确认的映射信息: provider={mapping_info.get('provider')}, original_title={mapping_info.get('original_title')}, real_anime_id={real_anime_id}")
 
                                 if not mapping_info:
                                     logger.error(f"无法找到real_anime_id={real_anime_id}的映射信息")
@@ -1407,6 +1438,15 @@ async def get_comments_for_dandan(
             logger.debug(f"弹幕简繁转换 (episodeId: {episodeId}): 最终模式={final_convert}(优先级={priority}, 播放器={chConvert}, 服务端={server_ch}), 处理 {len(comments_data)} 条")
     except Exception as e:
         logger.error(f"应用简繁转换失败: {e}", exc_info=True)
+
+    # 弹幕位置转换：按配置把顶部(5)/底部(4)弹幕转为其他类型（仅输出时转换，基于原始 mode 一次性映射）
+    try:
+        top_to = await config_manager.get('danmakuTopConvertTo', 'none')
+        bottom_to = await config_manager.get('danmakuBottomConvertTo', 'none')
+        if comments_data and (top_to != 'none' or bottom_to != 'none'):
+            comments_data = convert_danmaku_position(comments_data, top_to=top_to, bottom_to=bottom_to)
+    except Exception as e:
+        logger.error(f"应用弹幕位置转换失败: {e}", exc_info=True)
 
     # UA 已由 get_token_from_path 依赖项记录
     logger.debug(f"弹幕接口响应 (episodeId: {episodeId}): 总计 {len(comments_data)} 条弹幕")

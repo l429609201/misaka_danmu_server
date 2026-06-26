@@ -48,6 +48,77 @@ def _calendar_title_key(title: Optional[str], season: Optional[int], anime_type:
     return normalized, season or 1, anime_type or "tv_series"
 
 
+def _build_source_descriptor(origin: str, cal_item: dict) -> dict:
+    """构造统一的「可订阅源描述」对象，供前端多源选择弹框使用。
+    字段对齐 subscribeCalendarItem 入参，前端可直接据此发起订阅。"""
+    bgm_id = cal_item.get("bangumiId")
+    trakt_id = cal_item.get("traktId")
+    tmdb_id = cal_item.get("tmdbId") or cal_item.get("traktTmdbId")
+    return {
+        "origin": origin,
+        "provider": cal_item.get("provider") or origin,
+        "externalId": cal_item.get("externalId") or bgm_id or trakt_id or (str(tmdb_id) if tmdb_id else None),
+        "animeTitle": cal_item.get("animeTitle") or cal_item.get("titleZh"),
+        "titleZh": cal_item.get("titleZh"),
+        "season": cal_item.get("season"),
+        "mediaType": cal_item.get("animeType") or "tv_series",
+        "bangumiId": bgm_id,
+        "traktId": trakt_id,
+        "tmdbId": str(tmdb_id) if tmdb_id else None,
+        "traktTmdbId": str(tmdb_id) if tmdb_id else cal_item.get("traktTmdbId"),
+        "rating": cal_item.get("rating"),
+        "subscriptionType": cal_item.get("subscriptionType"),
+    }
+
+
+def _append_available_source(entry: dict, origin: str, cal_item: dict) -> None:
+    """把一个外部源追加到 entry['availableSources']（按 provider 去重）。
+    用于纯外部卡跨源去重时聚合多源，前端订阅时可弹框选择其中一个源。"""
+    sources = entry.setdefault("availableSources", [])
+    desc = _build_source_descriptor(origin, cal_item)
+    if not any(s.get("provider") == desc.get("provider") and s.get("externalId") == desc.get("externalId") for s in sources):
+        sources.append(desc)
+
+
+
+def _get_subscription_providers(scraper_manager: "ScraperManager") -> list:
+    """返回所有「支持订阅/探索」且已启用的弹幕源 provider 名（如 ['bilibili']）。"""
+    providers = []
+    for name, scraper in scraper_manager.scrapers.items():
+        setting = scraper_manager.scraper_settings.get(name, {})
+        if not setting.get("isEnabled", True):
+            continue
+        if getattr(scraper, "supports_subscription", False):
+            providers.append(name)
+    return providers
+
+
+async def _sync_scraper_calendars(
+    session: AsyncSession, scraper_manager: "ScraperManager", providers: list
+) -> int:
+    """拉取弹幕源（如 Bilibili）的番剧时间表并落库 external_calendar_item。
+
+    供 weekly 首屏（表数据过期时）与「同步日程」按钮调用。返回写入条目数。
+    """
+    from src.db.crud import external_calendar as ext_cal_crud
+
+    total = 0
+    for provider in providers:
+        scraper = scraper_manager.scrapers.get(provider)
+        if not scraper:
+            continue
+        try:
+            items = await scraper.fetch_subscription_calendar()
+        except NotImplementedError:
+            continue
+        except Exception as e:
+            logger.warning(f"日历同步：源 '{provider}' 拉取失败: {e}")
+            continue
+        if items:
+            total += await ext_cal_crud.upsert_items(session, provider, items)
+    return total
+
+
 
 class SubscribeRequest(BaseModel):
     """日历订阅请求"""
@@ -62,6 +133,8 @@ class SubscribeRequest(BaseModel):
     externalId: Optional[str] = None
     # 是否立即触发一次订阅轮询（导入任务）
     runNow: bool = True
+    # 选中的集列表（订阅合集部分集时：立即导入这些集 + 订阅整个合集）
+    selectedEpisodes: Optional[list[str]] = None
 
 
 class BatchSubscribeRequest(BaseModel):
@@ -85,11 +158,12 @@ async def get_weekly_calendar(
     session: AsyncSession = Depends(get_db_session),
     user: models.User = Depends(security.get_current_user),
     metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    scraper_manager: ScraperManager = Depends(get_scraper_manager),
 ):
     """
     获取每周番表日历数据。
     通过 MetadataSourceManager 动态调用各元数据源的 get_calendar 方法。
-    合并：本地追更 + 各元数据源日历。
+    合并：本地追更 + 各元数据源日历（Bangumi/Trakt）+ 弹幕源番剧时间表（Bilibili）。
     """
     # 1. 本地追更数据
     sources = await crud.get_calendar_sources(session)
@@ -163,6 +237,12 @@ async def get_weekly_calendar(
 
     # 2. 动态获取所有元数据源的日历
     external_counts = {}
+    # 跨源去重：记录已进入 weekly/unscheduled 的「纯外部条目」标题键。
+    # 防止同一番同时来自 metadata 源(Bangumi/Trakt) 与弹幕源(Bilibili) 时被重复加卡。
+    external_title_keys = set()
+    # 纯外部卡按标题键索引：同名番来自多个外部源时，后来的源不重复加卡，
+    # 而是聚合到首张卡的 availableSources，供前端订阅时弹框选择具体源。
+    external_by_title = {}
     try:
         all_calendars = await metadata_manager.get_all_calendars(user)
         for source_name, cal_items in all_calendars.items():
@@ -245,6 +325,18 @@ async def get_weekly_calendar(
 
                     continue
 
+                # 跨外部源去重：同名番已由其他外部源加过卡 → 不重复加，
+                # 仅把当前源聚合到首张卡的 availableSources（前端订阅时可选源）。
+                ext_title_key = _calendar_title_key(
+                    cal_item.get("animeTitle") or cal_item.get("titleZh"),
+                    cal_item.get("season"),
+                    cal_item.get("animeType") or "tv_series",
+                )
+                if ext_title_key and ext_title_key in external_by_title:
+                    existing = external_by_title[ext_title_key]
+                    _append_available_source(existing, source_name, cal_item)
+                    continue
+
                 # 补全默认字段
                 entry = {
                     "sourceId": None, "animeId": None,
@@ -274,14 +366,108 @@ async def get_weekly_calendar(
                         "platformWatchStatus", "platformWatchedEpisodes", "platformRating",
                     )},
                 }
+                # 首张卡自身也登记为一个可订阅源（多源时弹框含本源）
+                _append_available_source(entry, source_name, cal_item)
                 weekday = cal_item.get("airWeekday")
                 if weekday and 1 <= weekday <= 7:
                     weekly[weekday].append(entry)
                     count += 1
+                    # 登记跨源去重键：后续同名外部源（含 Bilibili 段）命中则聚合而非重复加卡
+                    if ext_title_key:
+                        external_title_keys.add(ext_title_key)
+                        external_by_title[ext_title_key] = entry
             if count > 0:
                 external_counts[source_name] = count
     except Exception as e:
         logger.warning(f"获取外部日历失败: {e}")
+
+    # 3. 弹幕源番剧时间表（Bilibili）：从 external_calendar_item 读取，按 airWeekday 进周列/未知列
+    try:
+        sub_providers = _get_subscription_providers(scraper_manager)
+        if sub_providers:
+            scraper_items = await ext_cal_crud.list_calendar_items(
+                session, providers=sub_providers, max_age_hours=24
+            )
+            # 表中无新鲜数据（首次或已过期）→ 同步拉取一次再读
+            if not scraper_items:
+                synced = await _sync_scraper_calendars(session, scraper_manager, sub_providers)
+                if synced:
+                    scraper_items = await ext_cal_crud.list_calendar_items(
+                        session, providers=sub_providers, max_age_hours=24
+                    )
+            for cal_item in scraper_items:
+                provider = cal_item.get("provider")
+                # 弱关联本地条目：命中则视为已订阅，不重复加卡
+                title_key = _calendar_title_key(
+                    cal_item.get("animeTitle") or cal_item.get("titleZh"),
+                    cal_item.get("season"),
+                    cal_item.get("animeType") or "tv_series",
+                )
+                if title_key and title_key in local_by_title:
+                    # 命中本地条目：聚合 Bilibili 来源到 externalSources（与元数据源一致），
+                    # 使本地卡右上角能竖排显示 Bilibili 角标，而非整个跳过导致无标识。
+                    local_item = local_by_title[title_key]
+                    ext_title = cal_item.get("animeTitle") or cal_item.get("titleZh")
+                    # 去重：同一 provider 已聚合过则不重复加
+                    if not any(es.get("origin") == provider for es in local_item["externalSources"]):
+                        local_item["externalSources"].append({
+                            "origin": provider,
+                            "provider": provider,
+                            "externalId": cal_item.get("externalId"),
+                            "animeTitle": ext_title,
+                            "titleZh": cal_item.get("titleZh"),
+                            "subscriptionType": cal_item.get("subscriptionType"),
+                            "rating": cal_item.get("rating"),
+                        })
+                        if ext_title:
+                            titles = local_item.setdefault("externalTitles", [])
+                            if ext_title not in titles:
+                                titles.append(ext_title)
+                    # 评分/已播/总集数：本地缺失时用 Bilibili 数据补全
+                    if not local_item.get("rating") and cal_item.get("rating"):
+                        local_item["rating"] = cal_item.get("rating")
+                    if local_item.get("latestEpisodeIndex") is None and cal_item.get("latestEpisodeIndex") is not None:
+                        local_item["latestEpisodeIndex"] = cal_item.get("latestEpisodeIndex")
+                    if local_item.get("episodeCount") is None and cal_item.get("episodeCount") is not None:
+                        local_item["episodeCount"] = cal_item.get("episodeCount")
+                    continue
+                # 跨源去重：同名番已由其他外部源(Bangumi/Trakt) 加入周历 →
+                # 不重复加 Bilibili 卡，仅把 Bilibili 聚合为首张卡的可订阅源（前端可选源）。
+                if title_key and title_key in external_by_title:
+                    _append_available_source(external_by_title[title_key], provider, cal_item)
+                    continue
+                weekday = cal_item.get("airWeekday")
+                entry = {
+                    "sourceId": None, "animeId": None,
+                    "animeTitle": cal_item.get("animeTitle", ""),
+                    "animeType": cal_item.get("animeType") or "tv_series",
+                    "season": cal_item.get("season"), "localImagePath": None,
+                    "imageUrl": cal_item.get("imageUrl"),
+                    "providerName": None, "episodeCount": cal_item.get("episodeCount"),
+                    "latestEpisodeIndex": cal_item.get("latestEpisodeIndex"),
+                    "airWeekday": weekday, "airTime": cal_item.get("airTime"),
+                    "bangumiId": None, "traktId": None, "tmdbId": None,
+                    "scheduleSource": provider,
+                    "origin": provider, "isLocal": False,
+                    "isSubscribed": bool(cal_item.get("isSubscribed")),
+                    "subscriptionStatus": cal_item.get("subscriptionStatus"),
+                    "rating": cal_item.get("rating"),
+                    "provider": provider,
+                    "externalId": cal_item.get("externalId"),
+                    "subscriptionType": cal_item.get("subscriptionType"),
+                }
+                # 首张卡自身登记为可订阅源（后续同名源聚合到此）
+                _append_available_source(entry, provider, cal_item)
+                if weekday and 1 <= weekday <= 7:
+                    weekly[weekday].append(entry)
+                else:
+                    unscheduled.append(entry)  # 无播出星期 → 未知列
+                if title_key:
+                    external_title_keys.add(title_key)
+                    external_by_title[title_key] = entry
+                external_counts[provider] = external_counts.get(provider, 0) + 1
+    except Exception as e:
+        logger.warning(f"获取弹幕源日历失败: {e}")
 
     # 排序：本地优先
     for day in weekly:
@@ -319,8 +505,14 @@ async def get_tmdb_poster(
         logger.debug(f"获取 TMDB 海报失败 (tmdb_id={tmdb_id}): {e}")
         poster_url = None
     if not poster_url:
-        return Response(status_code=status.HTTP_404_NOT_FOUND)
-    return RedirectResponse(url=poster_url, status_code=status.HTTP_302_FOUND)
+        # 404 也缓存一小段时间，避免无海报的条目每次重渲染都打一次请求
+        return Response(status_code=status.HTTP_404_NOT_FOUND, headers={"Cache-Control": "public, max-age=3600"})
+    # 海报 URL 稳定不变 → 让浏览器长期缓存该 302，避免卡片重渲染/滚动时重复请求
+    return RedirectResponse(
+        url=poster_url,
+        status_code=status.HTTP_302_FOUND,
+        headers={"Cache-Control": "public, max-age=604800, immutable"},
+    )
 
 
 @router.get("/tmdb-title/{tmdb_id}", summary="按需获取 TMDB 中文标题与年份（懒加载，免认证）")
@@ -350,7 +542,9 @@ async def clear_calendar_cache(
     清理范围：
     1. 旧版 Trakt/Bangumi 散落缓存键（向后兼容）
     2. 新版聚合层缓存（region=external_calendar）
-    3. 持久化表 external_calendar_item 的所有数据
+    3. 持久化表 external_calendar_item 仅删「纯日历缓存」行：
+       - 保留 isSubscribed=True 的订阅意向（用户的订阅不会被清掉）
+       - 保留带 parentExternalId 的订阅子候选项（避免下次扫描复活已忽略/已下载的项）
     """
     from src.core.cache import get_cache_backend
     cache = get_cache_backend()
@@ -369,16 +563,44 @@ async def clear_calendar_cache(
                 deleted += cleared
         except Exception as e:
             logger.debug(f"清除 external_calendar 缓存失败（忽略）: {e}")
-        # 3) 持久化表数据 —— 全部清空，让下次访问重新拉取
+        # 3) 持久化表数据 —— 仅删「纯日历缓存」(isSubscribed=False 且无 parentExternalId)
+        # parentExternalId 存在 extraData JSON 内，SQL 难以过滤，故 Python 层筛 ID 后批量删
         try:
-            from sqlalchemy import delete as sa_delete
+            import json as _json
+            from sqlalchemy import select as sa_select, delete as sa_delete
             from src.db.orm_models import ExternalCalendarItem
-            result = await session.execute(sa_delete(ExternalCalendarItem))
-            await session.commit()
-            table_deleted = result.rowcount or 0
-            deleted += table_deleted
-            if table_deleted:
-                logger.info(f"清除 external_calendar_item 表 {table_deleted} 条记录")
+            stmt = sa_select(ExternalCalendarItem.id, ExternalCalendarItem.extraData).where(
+                ExternalCalendarItem.isSubscribed == False  # noqa: E712
+            )
+            rows = (await session.execute(stmt)).all()
+            ids_to_delete = []
+            for row_id, extra_raw in rows:
+                # 跳过订阅扫描产生的子候选项（视频候选/分集候选）
+                if extra_raw:
+                    try:
+                        extra = _json.loads(extra_raw)
+                        if isinstance(extra, dict) and extra.get("parentExternalId"):
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                ids_to_delete.append(row_id)
+            if ids_to_delete:
+                # 分批删（避免超大 IN 子句）
+                BATCH = 500
+                table_deleted = 0
+                for i in range(0, len(ids_to_delete), BATCH):
+                    chunk = ids_to_delete[i:i + BATCH]
+                    res = await session.execute(
+                        sa_delete(ExternalCalendarItem).where(ExternalCalendarItem.id.in_(chunk))
+                    )
+                    table_deleted += res.rowcount or 0
+                await session.commit()
+                deleted += table_deleted
+                if table_deleted:
+                    logger.info(
+                        f"清除 external_calendar_item 表 {table_deleted} 条「纯日历缓存」"
+                        f"（保留订阅意向 + 子候选项）"
+                    )
         except Exception as e:
             logger.warning(f"清除 external_calendar_item 表失败: {e}")
     except Exception as e:
@@ -392,6 +614,7 @@ async def sync_bangumi_schedule(
     session: AsyncSession = Depends(get_db_session),
     user: models.User = Depends(security.get_current_user),
     metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    scraper_manager: ScraperManager = Depends(get_scraper_manager),
 ):
     """
     手动同步播出日程。
@@ -476,6 +699,16 @@ async def sync_bangumi_schedule(
         if updated > 0:
             total_updated += updated
             details.append(f"{source_name}: 日程更新 {updated} 部")
+
+    # ====== 阶段3: 强制刷新弹幕源番剧时间表（Bilibili）======
+    try:
+        sub_providers = _get_subscription_providers(scraper_manager)
+        if sub_providers:
+            synced = await _sync_scraper_calendars(session, scraper_manager, sub_providers)
+            if synced:
+                details.append(f"番剧时间表: 刷新 {synced} 部")
+    except Exception as e:
+        logger.warning(f"同步弹幕源时间表失败: {e}")
 
     if not details:
         details.append("无变更")
@@ -707,7 +940,13 @@ async def subscribe_calendar_item(
             "subscriptionStatus": "pending",
         }
 
-    # runNow=True：流控 + 触发任务
+    # runNow=True：按源类型分流
+    # 若是支持订阅的 scraper（合集/UP主等强标识）→ 直接扫描导入，否则 → 走标题搜索
+    scraper = scraper_manager.get_scraper(provider)
+    is_scraper_subscription = (
+        scraper is not None and getattr(scraper, "supports_subscription", False)
+    )
+
     is_limited, retry_after = await rate_limiter.get_global_limit_status()
     if is_limited:
         # 已经标记为 importing 但触发被流控，回退为 pending
@@ -718,11 +957,32 @@ async def subscribe_calendar_item(
         )
 
     try:
-        task_id = await _trigger_auto_import_task(
-            body, session, task_manager, scraper_manager, metadata_manager,
-            config_manager, rate_limiter, ai_matcher_manager, title_recognition_manager,
-            oauth_user=models.User.model_validate(user),
-        )
+        if is_scraper_subscription:
+            # 强标识订阅（合集/UP主）：直接扫描拉取视频 → 建库
+            from src.jobs.subscription_scan import scan_and_import_target_task
+
+            task_coro = lambda s, cb: scan_and_import_target_task(
+                cb, s, scraper_manager, config_manager, provider, external_id,
+                title_recognition_manager, body.selectedEpisodes or None
+            )
+            task_id, _ = await task_manager.submit_task(
+                task_coro,
+                title=f"立即导入订阅: {body.animeTitle}",
+                unique_key=f"scan-import-{provider}-{external_id}",
+                task_type="scan_and_import_target",
+                task_parameters={
+                    "provider": provider, "externalId": external_id,
+                    "title": body.animeTitle, "selectedEpisodes": body.selectedEpisodes,
+                },
+                run_immediately=True,
+            )
+        else:
+            # 元数据源订阅/纯标题：走原标题搜索建库
+            task_id = await _trigger_auto_import_task(
+                body, session, task_manager, scraper_manager, metadata_manager,
+                config_manager, rate_limiter, ai_matcher_manager, title_recognition_manager,
+                oauth_user=models.User.model_validate(user),
+            )
     except HTTPException:
         await ext_cal_crud.update_subscription_status(session, provider, external_id, "pending")
         raise

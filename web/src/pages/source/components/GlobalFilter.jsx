@@ -364,7 +364,7 @@ export const GlobalFilter = () => {
 
 
   return (
-    <div className="my-6">
+    <div className="my-6" id="feat-global-filter">
       <Tabs defaultActiveKey="global" items={[
         {
           key: 'global',

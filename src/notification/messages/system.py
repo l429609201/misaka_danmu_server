@@ -24,7 +24,10 @@ class SystemStartMessage(NotificationMessage):
         self.subscription_key = "system_start"
 
     def to_markdown(self) -> tuple:
-        return ("系统启动", "弹幕服务器已启动完成 ✓")
+        return ("🚀 *弹幕服务已启动*", ">✓ 服务启动完成，弹幕系统就绪")
+
+    def to_text(self) -> tuple:
+        return ("🚀 弹幕服务已启动", "✓ 服务启动完成，弹幕系统就绪")
 
 
 @dataclass
@@ -43,13 +46,33 @@ class WebhookTriggeredMessage(NotificationMessage):
         source = _esc(d.get("webhook_source", ""))
         delayed = d.get("delayed", False)
         delay_hours = d.get("delay_hours", "")
-        lines = [
-            "📺 *媒体信息*",
-            f"• 名称: {anime_title}",
-            f"• 来源: {source}",
-            f"• 操作: {'⏳ 延迟入库 ' + str(delay_hours) + ' 小时后执行' if delayed else '⚡ 即时导入'}",
+
+        title = "📡 *Webhook 触发*"
+        op_str = f"⏳ 延迟入库 {_esc(str(delay_hours))} 小时后执行" if delayed else "⚡ 即时导入"
+        quote_lines = [
+            f">📺 *{anime_title}*",
         ]
-        return ("Webhook 触发", "\n".join(lines))
+        if source:
+            quote_lines.append(f">📍 来源: {source}")
+        quote_lines.append(f">{op_str}")
+
+        lines = [title, ""]
+        lines.extend(quote_lines)
+        return (title.replace("*", ""), "\n".join(lines))
+
+    def to_text(self) -> tuple:
+        d = self.payload
+        anime_title = d.get("anime_title", "") or "未知"
+        source = d.get("webhook_source", "")
+        delayed = d.get("delayed", False)
+        delay_hours = d.get("delay_hours", "")
+
+        op_str = f"⏳ 延迟入库 {delay_hours} 小时后执行" if delayed else "⚡ 即时导入"
+        lines = ["📡 Webhook 触发", "", f"📺 {anime_title}"]
+        if source:
+            lines.append(f"📍 来源: {source}")
+        lines.append(op_str)
+        return ("📡 Webhook 触发", "\n".join(lines))
 
 
 @dataclass
@@ -64,8 +87,13 @@ class MediaScanCompleteMessage(NotificationMessage):
 
     def to_markdown(self) -> tuple:
         d = self.payload
+        message = _esc(d.get("message", "扫描完成"))
+        return ("✅ *媒体库扫描完成*", f">📋 {message}")
+
+    def to_text(self) -> tuple:
+        d = self.payload
         message = d.get("message", "扫描完成")
-        return ("✅ 媒体库扫描完成", message)
+        return ("✅ 媒体库扫描完成", f"📋 {message}")
 
 
 @dataclass
@@ -88,10 +116,33 @@ class TaskProgressMessage(NotificationMessage):
         bar = "█" * filled + "░" * (10 - filled)
         safe_title = _esc(task_title) if task_title else ""
         safe_desc = _esc(description) if description else ""
-        lines = ["⚙️ *执行进度*", ""]
+
+        title = "⬇️ *任务进行中*"
+        lines = [title, ""]
         if safe_title:
-            lines.append(f"• 任务: {safe_title}")
-        lines.append(f"• 进度: `[{bar}]` {progress}%")
+            lines.append(f">📺 {safe_title}")
+        lines.append(f">`\\[{bar}\\]` {progress}%")
         if safe_desc:
-            lines.append(f"• 状态: {safe_desc}")
-        return ("⬇️ 任务进行中", "\n".join(lines))
+            lines.append(f">📋 {safe_desc}")
+
+        # title 返回空：body 已自带标题行，避免 send_message 二次拼接重复
+        return ("", "\n".join(lines))
+
+    def to_text(self) -> tuple:
+        d = self.payload
+        task_title = d.get("task_title", "")
+        progress = d.get("progress", 0)
+        description = d.get("description", "")
+
+        filled = int(progress / 10)
+        bar = "█" * filled + "░" * (10 - filled)
+
+        lines = ["⬇️ 任务进行中", ""]
+        if task_title:
+            lines.append(f"📺 {task_title}")
+        lines.append(f"[{bar}] {progress}%")
+        if description:
+            lines.append(f"📋 {description}")
+
+        # title 返回空：body 已自带标题行，避免二次拼接重复
+        return ("", "\n".join(lines))

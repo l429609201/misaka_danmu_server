@@ -136,3 +136,58 @@ async def get_and_apply_single_episode_filter(
     if not rules:
         return episodes
     return apply_single_episode_filter(episodes, rules, title, provider, media_id)
+
+
+async def apply_global_episode_title_filter(
+    episodes,
+    config_manager,
+    provider: str = "",
+    media_id: str = "",
+):
+    """兜底全局分集标题过滤（不依赖作品标题，按全局正则过滤分集标题）。
+
+    读取配置：
+        - globalEpisodeTitleFilterEnabled: 开关（"true" 才生效）
+        - globalEpisodeTitleFilterRegex: 全局过滤正则
+
+    与单剧过滤的区别：单剧过滤需匹配作品标题/源/mediaId 后再过滤；
+    本函数是全局兜底，只要开关开启就对所有分集标题应用同一条正则。
+    正则无效时保留该分集（不误删）。
+
+    Args:
+        episodes: 分集列表 (List[ProviderEpisodeInfo])
+        config_manager: 配置管理器
+        provider: 数据源名称（仅用于日志）
+        media_id: 媒体ID（仅用于日志）
+
+    Returns:
+        过滤后的分集列表
+    """
+    if not episodes:
+        return episodes
+    enabled = await config_manager.get("globalEpisodeTitleFilterEnabled", "false")
+    if str(enabled).lower() != "true":
+        return episodes
+    pattern = (await config_manager.get("globalEpisodeTitleFilterRegex", "") or "").strip()
+    if not pattern:
+        return episodes
+
+    before_count = len(episodes)
+    kept = []
+    for ep in episodes:
+        ep_title = getattr(ep, "title", "") or ""
+        try:
+            if re.search(pattern, ep_title, re.IGNORECASE):
+                continue  # 命中过滤规则，丢弃
+        except re.error as e:
+            logger.warning(f"兜底全局分集标题过滤正则无效，已跳过过滤: {pattern} ({e})")
+            return episodes  # 正则无效时整体不过滤，避免误删
+        kept.append(ep)
+
+    removed = before_count - len(kept)
+    if removed > 0:
+        logger.info(
+            f"兜底全局分集标题过滤: provider={provider}, mediaId={media_id}, "
+            f"过滤 {removed}/{before_count} 集"
+        )
+    return kept

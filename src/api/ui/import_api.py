@@ -197,8 +197,28 @@ async def import_edited_episodes(
     episodes_hash = hashlib.md5(episode_indices_str.encode('utf-8')).hexdigest()[:8]
     unique_key = f"import-{request_data.provider}-{request_data.mediaId}-{episodes_hash}"
 
+    # 构造 task_parameters，供完成通知格式化使用（否则媒体信息段为空）
+    # episode 取首集索引（编辑导入可能含多集，通知展示首集即可）
+    first_episode = request_data.episodes[0].episodeIndex if request_data.episodes else None
+    edited_task_parameters = {
+        "animeTitle": display_title,
+        "season": display_season,
+        "episode": first_episode,
+        "episodeCount": len(request_data.episodes),
+        "provider": request_data.provider,
+        "mediaId": request_data.mediaId,
+        "type": request_data.mediaType,
+        "mediaType": request_data.mediaType,
+        "tmdbId": request_data.tmdbId or "",
+        "imageUrl": request_data.imageUrl or "",
+        "bangumiId": request_data.bangumiId or "",
+    }
+
     try:
-        task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+        task_id, _ = await task_manager.submit_task(
+            task_coro, task_title, unique_key=unique_key,
+            task_parameters=edited_task_parameters,
+        )
     except HTTPException as e:
         # 重新抛出由 task_manager 引发的冲突错误
         raise e

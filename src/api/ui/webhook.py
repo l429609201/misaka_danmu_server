@@ -50,13 +50,20 @@ async def get_webhook_tasks(
 
 
 @router.post("/webhook-tasks/delete-bulk", summary="批量删除Webhook任务")
-async def delete_bulk_webhook_tasks(payload: Dict[str, List[int]], session: AsyncSession = Depends(get_db_session)):
+async def delete_bulk_webhook_tasks(
+    payload: Dict[str, List[int]],
+    session: AsyncSession = Depends(get_db_session),
+    current_user: models.User = Depends(security.get_current_user),
+):
     deleted_count = await crud.delete_webhook_tasks(session, payload.get("ids", []))
     return {"message": f"成功删除 {deleted_count} 个任务。"}
 
 
 @router.delete("/webhook-tasks/clear-all", summary="清空所有Webhook任务")
-async def clear_all_webhook_tasks(session: AsyncSession = Depends(get_db_session)):
+async def clear_all_webhook_tasks(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: models.User = Depends(security.get_current_user),
+):
     """一键清空所有待处理的 Webhook 任务，用于处理大量任务堆积的情况。"""
     deleted_count = await crud.delete_all_webhook_tasks(session)
     return {"message": f"已清空 {deleted_count} 个任务。", "deletedCount": deleted_count}

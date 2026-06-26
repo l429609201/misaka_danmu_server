@@ -37,6 +37,9 @@ def get_default_configs(settings=None, ai_prompts=None):
         'externalApiDuplicateTaskThresholdHours': (3, '（外部API）重复任务提交阈值（小时）。在此时长内，不允许为同一媒体提交重复的自动导入任务。0为禁用。'),
         'webhookCustomDomain': ('', '用于拼接Webhook URL的自定义域名。'),
 
+        # Telegram 搜索体验
+        'telegramSearchPosterCollage': ('true', 'Telegram 搜索结果是否将各条目海报聚合为一张带序号的九宫格图先发出。'),
+
         # 登录安全
         'loginMaxFailCount': (3, '登录失败次数上限。同一 IP 在达到此次数后将被临时锁定。0为禁用暴力破解防护。'),
         'loginLockoutMinutes': (60, '登录锁定时长（分钟）。超过失败上限后，该 IP 需等待此时长才能重试。'),
@@ -64,6 +67,8 @@ def get_default_configs(settings=None, ai_prompts=None):
         'danmakuMergeOutputEnabled': ('false', '是否启用合并输出。启用后，将所有源的弹幕合并后再进行均衡采样输出。'),
         'danmakuChConvert': ('0', '弹幕简繁转换。0-不转换，1-转换为简体，2-转换为繁体。'),
         'danmakuChConvertPriority': ('player', '简繁转换优先级。player-播放器优先（播放器明确指定时覆盖服务端配置），server-服务端优先（始终使用服务端配置）。'),
+        'danmakuTopConvertTo': ('none', '顶部弹幕(mode=5)转换目标。none-不转换，bottom-转为底部，scroll-转为滚动。仅在输出时转换，基于原始类型一次性映射，不影响已存储的弹幕。'),
+        'danmakuBottomConvertTo': ('none', '底部弹幕(mode=4)转换目标。none-不转换，top-转为顶部，scroll-转为滚动。仅在输出时转换，基于原始类型一次性映射，不影响已存储的弹幕。'),
         'danmakuLikesFetchEnabled': ('true', '是否在下载弹幕时获取并存储点赞信息。关闭后新下载的弹幕不会包含点赞数据。'),
         'danmakuLikesOutputEnabled': ('true', '是否在弹幕输出中显示点赞状态。关闭后即使弹幕文件中包含点赞信息也不会输出。'),
         'danmakuLikesStyle': ('heart_white', '点赞显示样式。可选：heart_white(🤍/🔥)、heart_red(❤️/🔥)、heart_outline(♡/🔥)、like_bracket([👍]/[🔥])、text(点赞/热门)、num_only(+数字)。danmakuLikesOutputEnabled=false 时此配置无效。'),
@@ -75,6 +80,8 @@ def get_default_configs(settings=None, ai_prompts=None):
         'danmakuBlacklistEnabled': ('false', '是否启用弹幕黑名单过滤。启用后，将过滤掉匹配黑名单正则表达式的弹幕。'),
         'danmakuBlacklistPatterns': (r'2333|666|哈哈哈|牛逼|前排|抢前排|第[0-9一二三四五六七八九十百千]+排|空降|到此一游|打卡|报道|报到|学[jJvVaA]+|后台播放|生日快乐|现在.+点|几点了|^\d+小时|^\d+分钟|^\d+秒|^\d{4}年|^\d+月\d+日|纯享版|三连|一键三连|恰饭|币没了|热乎的|^\d+分钟前|白嫖|奥利给|寄了|蚌埠住了|蚌住|绷不住|笑死|草|泪目|哭了|泪奔|我哭了|弹幕护体|高考加油|上岸|保佑|还愿|活该|大快人心|报应|吓得我|一个巴掌拍不响|苍蝇不叮无缝的蛋|可怜之人必有可恨之处|^从.{0,8}来的|广东人|四川人|东北人|山东人|河南人|江苏人|浙江人|上海人|北京人|我老婆|我老公|我儿子|我女儿|我妈|爸|弟|姐|szd|真香|真恶心|太丑了|太美了|抱走|承包|舔屏|鼻血|已存|壁纸|手机壁纸|桌面|高清|无码|开车|手动狗头|手动滑稽|doge|妙啊|寄寄+|111+|222+|333+|444+|555+|777+|888+|999+|000+|(.)\1{6,}|^.{0,9}\(|^[\u4e00-\u9fa5\w]{0,10} \)|^[^\u4e00-\u9fa5]{8,}\(|[·・]?(■|▂|▃|▄|▅|▆|▇|█){3,}[·・]?|^[\u4e00-\u9fa5]{5}[，,][\u4e00-\u9fa5]{7}[，,][\u4e00-\u9fa5]{5} \)|见.{0,6}滚|滚.{0,6}见|智障|弱智|脑残|垃圾|辣鸡|恶心|死全家|去死妈|死爹|去死|傻逼|傻B|SB|sb|S ?b|cnm|你妈|NMSL|nm+l|tmd|他妈|操|艹|曹|叉|尼玛|泥马|日你|日死|去死吧|傻吊|阳痿|早泄|卖鲍|约炮|赌博|菠菜|开盘|杀猪盘|三狗|pg|AG|DG|OB|MG|BBIN|PT|EA|JDB|已三连|已投币|已充电|已关注|已收藏|已点赞|已打赏|已上舰|已续舰|提督|总督|舰长|大会员|年度大会员|小心心|辣条|打call|冲鸭|yyds|YYDS|绝绝子|神作|神番|封神|名场面|修罗场|真香警告|社死|翻车|贴贴|抱抱|亲亲|我爱你|娶我|嫁我|已婚|已离婚|已出轨|已出柜|已弯|已直|已黑化|已净化|已成佛|已飞升|已圆寂|已投胎|已退网|已退圈|已取关|已拉黑|已举报|已切割|已脱粉|已回踩|已反黑|已洗白|世界尽头|冷酷异变|生崽|生猴子|生一窝|小奶猫|小奶狗|小奶狐|小奶狼|小奶龙|舔狗|舔狼|上头了|太上头|眼睛怀孕|耳朵怀孕|妊娠纹|打桩机|大力出奇迹|黑化强三倍|洗白弱三倍|寄中寄|寄里寄气|玉玉了|已紫砂|我裂开了|xswl|awsl|AWSL|好甜|好刀|锁死|嗑疯了|嗑到脑溢血|嗑拉了|嗑吐了|cp粉狂喜|大型发糖|大型撒狗粮|大型虐狗|大型修罗场|大型翻车现场|大型社死现场|大型真香现场|大型纪录片|太顶了|太硬了|太粗了|太长了|太快了|太刺激了|爽飞了|高潮了|喷了|射了|已升天|手动@所有人|我来晚了|我先润了|我先溜了|我先寄了|88|886|拜拜|202[5-9]|2030|新年快乐|跨年快乐|龙年大吉|恭喜发财|暴富|脱单', '弹幕黑名单正则表达式，使用 | 分隔多个规则。匹配弹幕内容(m字段)，不区分大小写。'),
         'scraperVerificationEnabled': ('false', '是否启用搜索源签名验证。'),
+        'globalEpisodeTitleFilterEnabled': ('false', '是否启用兜底全局分集标题过滤。启用后，在所有分集获取路径（搜索预览、导入、预下载、自动导入、Webhook等）统一按全局正则过滤分集标题。'),
+        'globalEpisodeTitleFilterRegex': ('', '兜底全局分集标题过滤正则。匹配到的分集标题将被过滤（不区分大小写）。可在设置页点击“填充默认规则”写入内置默认正则。globalEpisodeTitleFilterEnabled=false 时此配置无效。'),
         'bilibiliCookie': ('', '用于访问B站API的Cookie，特别是buvid3。'),
         'gamerCookie': ('', '用于访问巴哈姆特动画疯的Cookie。'),
         'matchFallbackEnabled': ('false', '是否为匹配接口启用后备机制（自动搜索导入）。'),
@@ -112,6 +119,8 @@ def get_default_configs(settings=None, ai_prompts=None):
 
         # 弹幕自动刷新配置
         'danmakuAutoRefreshDays': ('0', '弹幕自动刷新间隔天数。当请求弹幕时，若弹幕获取时间超过此天数则自动触发刷新。设为 0 禁用此功能。'),
+        # 弹幕自动刷新条数阈值。仅当某集弹幕条数低于此值时才触发自动刷新，避免对已抓全的弹幕重复刷新。
+        'danmakuRefreshThreshold': ('5000', '弹幕自动刷新条数阈值。当触发自动刷新检测时，仅当该集现有弹幕条数低于此值才会重新抓取。设为 0 表示不限制条数（始终按天数刷新）。'),
 
         # 季度映射配置
         'homeSearchEnableTmdbSeasonMapping': ('false', '是否启用主页搜索 TMDB季度映射。启用后，系统会通过TMDB等元数据源获取季度名称，提高多季度剧集的匹配准确率。'),

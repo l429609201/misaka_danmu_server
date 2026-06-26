@@ -290,7 +290,9 @@ async def execute_fallback_search_task(
                 scraper_manager=scraper_manager,
                 metadata_manager=metadata_manager,
                 use_alias_expansion=True,
-                use_alias_filtering=True,
+                # 对齐主页搜索：信任元数据源别名，不做相似度预筛，
+                # 避免误删港澳台/日文等低相似度但正确的别名（如 B 站港澳台番剧）。
+                use_alias_filtering=False,
                 use_title_filtering=True,
                 use_source_priority_sorting=True,
                 progress_callback=progress_callback,

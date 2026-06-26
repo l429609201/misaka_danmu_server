@@ -611,3 +611,42 @@ class ExternalCalendarItem(Base):
         Index('idx_external_fetched_at', 'fetched_at'),                      # 过期清理用
         Index('idx_external_subscription_status', 'is_subscribed', 'subscription_status'),  # 订阅扫描用
     )
+
+
+class SubscriptionCandidateItem(Base):
+    """订阅候选项表（纯候选池）- 存储合集/UP主/番剧扫描出的分集列表。
+
+    设计原则（方案 C）：
+    1. 仅记录「有哪些集」，不记录导入状态（导入与否由 episode 表决定）
+    2. 与 ExternalCalendarItem 是父子关系：parent_id 外键关联
+    3. 前端查询时 JOIN episode 表获取 is_imported 字段
+
+    用途：
+    - 订阅合集/UP主时，扫描出的单集存入此表
+    - 前端「其他作品」列表数据源
+    - 允许用户手动选择导入部分集，未导入的集仍保留在候选池
+    """
+    __tablename__ = "subscription_candidate_item"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    parentId: Mapped[int] = mapped_column(
+        "parent_id", BigInteger, ForeignKey("external_calendar_item.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    externalId: Mapped[str] = mapped_column("external_id", String(255), nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String(500))
+    # 建库所需的扩展字段（aid/cid/episodeIndex/parentTitle/mediaType/season 等），JSON 序列化字符串
+    # 定时扫描导入时需要这些字段拉弹幕+建库，故候选池需保留（不再是纯候选池）
+    extraData: Mapped[Optional[str]] = mapped_column("extra_data", TEXT)
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False)
+
+    # 关联：父订阅目标
+    parent: Mapped["ExternalCalendarItem"] = relationship(
+        "ExternalCalendarItem", foreign_keys=[parentId], backref="candidate_items"
+    )
+
+    __table_args__ = (
+        UniqueConstraint('parent_id', 'external_id', name='uk_candidate_parent_external'),
+        Index('idx_candidate_parent', 'parent_id'),
+    )
+

@@ -38,6 +38,23 @@ class TraktMetadataSource(BaseMetadataSource):
 
     configurable_fields = {}
 
+    # ============ 订阅助手能力 ============
+    # 注意：这里的「订阅」是【弹幕库内订阅】(自动建库追更)，不是 Trakt 站内的 watchlist。
+    # 流程：用户在订阅页搜番 → 命中后写 external_calendar_item(traktId/tmdbId)
+    #       → IncrementalRefreshJob 自动调 auto_search_and_import_task 在弹幕库内整剧建库 + 持续追更。
+    supports_subscription = True
+    handled_domains = ["trakt.tv"]
+    subscription_types = [
+        {
+            "type": "trakt_show",
+            "label": "影视剧（弹幕库追更）",
+            "description": "通过 Trakt 搜番，订阅后会自动在本地弹幕库建库 + 追更（不会同步到 Trakt 账号）",
+            "payloadSchema": {"fields": [
+                {"name": "traktId", "type": "string", "required": True, "label": "Trakt ID", "placeholder": "例如 12345"},
+            ]},
+        },
+    ]
+
     async def _get_headers(self, user_token: Optional[str] = None) -> Dict[str, str]:
         """构建 Trakt API 请求头"""
         headers = {
@@ -79,15 +96,19 @@ class TraktMetadataSource(BaseMetadataSource):
         log_raw = provider_setting.get('logRawResponses', False)
 
         headers = await self._get_headers_for_user(user)
-        if not headers:
-            logger.warning("Trakt search: 用户未授权，跳过搜索")
+        if not headers or "trakt-api-key" not in headers:
+            logger.warning("Trakt search: 缺少 trakt-api-key，跳过搜索")
             return []
+
+        # 公共搜索端点 /search/show 只需 trakt-api-key(client_id)，不需要 OAuth Bearer。
+        # 若带上过期/无效的 Bearer 反而触发 401，这里统一剥离 Authorization。
+        public_headers = {k: v for k, v in headers.items() if k != "Authorization"}
 
         results = []
         try:
             proxy = await self._get_proxy()
             async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
-                resp = await client.get(f"{TRAKT_API_BASE}/search/show", params={"query": keyword, "extended": "full"}, headers=headers)
+                resp = await client.get(f"{TRAKT_API_BASE}/search/show", params={"query": keyword, "extended": "full"}, headers=public_headers)
                 resp.raise_for_status()
                 raw_text = resp.text
 
@@ -510,3 +531,78 @@ class TraktMetadataSource(BaseMetadataSource):
         async with self._session_factory() as session:
             deleted = await crud.delete_oauth_credential(session, user.id, "trakt")
         return {"success": deleted, "message": "已撤销 Trakt 授权" if deleted else "未找到授权信息"}
+
+    # ============ 订阅助手实现 ============
+
+    async def check_subscription_capability(self, user=None) -> Dict[str, Any]:
+        """Trakt 订阅可用性：用户已 OAuth 授权且 client_id 完整即可用。"""
+        if user is None:
+            # /available-sources 阶段允许 user 透传；不强求授权也声明可见，但 available=False 引导用户授权
+            return {
+                "available": False, "authRequired": True, "authStatus": "unknown",
+                "reason": "需登录后检测授权状态", "subscriptionTypes": self.subscription_types,
+            }
+        headers = await self._get_headers_for_user(user)
+        if not headers or "trakt-api-key" not in headers:
+            return {
+                "available": False, "authRequired": True, "authStatus": "missing",
+                "reason": "请先完成 Trakt OAuth 授权", "subscriptionTypes": self.subscription_types,
+            }
+        return {
+            "available": True, "authRequired": True, "authStatus": "valid",
+            "reason": None, "subscriptionTypes": self.subscription_types,
+        }
+
+    async def discover_subscription_targets(self, query: str, subscription_type: str = "", user=None) -> List[Dict[str, Any]]:
+        """搜 Trakt 影视剧候选；复用现有 search()。"""
+        query = (query or "").strip()
+        if not query or user is None:
+            return []
+        try:
+            results = await self.search(query, user=user)
+        except Exception as e:
+            self.logger.warning(f"Trakt: 订阅 discover 搜索失败: {type(e).__name__}: {e}")
+            return []
+        out = []
+        for r in results[:20]:
+            if not r.id:
+                continue
+            desc = (r.details or "")[:80]
+            year = f" · {r.year}" if r.year else ""
+            out.append({
+                "type": "trakt_show",
+                "title": r.title or f"Trakt {r.id}",
+                "cover": r.imageUrl,
+                "description": f"Trakt ID {r.id}{year}" + (f" · {desc}" if desc else ""),
+                "payload": {
+                    "traktId": str(r.id),
+                    "tmdbId": str(r.tmdbId) if r.tmdbId else None,
+                    "title": r.title or "",
+                    "year": r.year,
+                    "imageUrl": r.imageUrl,
+                },
+            })
+        return out
+
+    async def validate_subscription_payload(self, subscription_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """校验 Trakt 订阅 payload，统一返回标准结构（写入 external_calendar_item）。"""
+        if subscription_type != "trakt_show":
+            raise ValueError(f"Trakt 暂不支持订阅类型: {subscription_type}")
+        trakt_id = (payload or {}).get("traktId") or ""
+        if not str(trakt_id).strip():
+            raise ValueError("缺少 traktId")
+        title = (payload or {}).get("title") or ""
+        tmdb_id = (payload or {}).get("tmdbId")
+        return {
+            "provider": self.provider_name,
+            "externalId": f"trakt-{trakt_id}",
+            "title": title,
+            "animeType": "tv_series",
+            "subscriptionType": "trakt_show",
+            "extraData": {
+                "traktId": str(trakt_id),
+                "tmdbId": str(tmdb_id) if tmdb_id else None,
+                "year": (payload or {}).get("year"),
+                "imageUrl": (payload or {}).get("imageUrl"),
+            },
+        }

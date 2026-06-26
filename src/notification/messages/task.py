@@ -31,6 +31,9 @@ class ImportMessage(NotificationMessage):
     def to_markdown(self) -> tuple:
         return _build_import_markdown(self.payload, self.message_type)
 
+    def to_text(self) -> tuple:
+        return _build_import_text(self.payload, self.message_type)
+
 
 @dataclass
 class AutoImportMessage(NotificationMessage):
@@ -45,6 +48,9 @@ class AutoImportMessage(NotificationMessage):
     def to_markdown(self) -> tuple:
         return _build_import_markdown(self.payload, self.message_type)
 
+    def to_text(self) -> tuple:
+        return _build_import_text(self.payload, self.message_type)
+
 
 @dataclass
 class WebhookImportMessage(NotificationMessage):
@@ -58,6 +64,9 @@ class WebhookImportMessage(NotificationMessage):
 
     def to_markdown(self) -> tuple:
         return _build_import_markdown(self.payload, self.message_type)
+
+    def to_text(self) -> tuple:
+        return _build_import_text(self.payload, self.message_type)
 
 
 # ═══════════════════════════════════════════
@@ -76,6 +85,9 @@ class RefreshMessage(NotificationMessage):
 
     def to_markdown(self) -> tuple:
         return _build_refresh_markdown(self.payload, self.message_type)
+
+    def to_text(self) -> tuple:
+        return _build_refresh_text(self.payload, self.message_type)
 
 
 @dataclass
@@ -96,6 +108,9 @@ class IncrementalRefreshMessage(NotificationMessage):
     def to_markdown(self) -> tuple:
         return _build_refresh_markdown(self.payload, self.message_type)
 
+    def to_text(self) -> tuple:
+        return _build_refresh_text(self.payload, self.message_type)
+
 
 # ═══════════════════════════════════════════
 # 定时任务消息
@@ -115,32 +130,48 @@ class ScheduledTaskMessage(NotificationMessage):
         d = self.payload
         is_success = self.message_type == "scheduled_task_complete"
         icon = "✅" if is_success else "❌"
-        label = "定时任务完成" if is_success else "定时任务失败"
+        title = f"{icon} *定时任务{'完成' if is_success else '失败'}*"
         task_title = _esc(d.get("task_title", ""))
-        task_id = d.get("task_id", "")
         message = d.get("message", "")
         finished_at = d.get("finished_at", "")
-        msg_short = _esc((message[:300] + "…") if len(message) > 300 else message)
+        msg_short = _esc((message[:200] + "…") if len(message) > 200 else message)
 
+        # 引用块
+        quote_lines = []
+        if task_title:
+            quote_lines.append(f">⚙️ 任务: {task_title}")
+
+        # 组装
+        lines = [title, ""]
+        lines.extend(quote_lines)
+        lines.append("")
         if msg_short:
-            msg_lines = [l for l in msg_short.splitlines() if l.strip()]
-            if len(msg_lines) <= 1:
-                detail_lines = [f"  └─ 📋 {msg_short}"]
-            else:
-                detail_lines = [f"  ├─ 📋 {l}" for l in msg_lines[:-1]]
-                detail_lines.append(f"  └─ 📋 {msg_lines[-1]}")
-        else:
-            detail_lines = []
+            lines.append(f"📋 {msg_short}")
+        if finished_at:
+            lines.append(f"⏰ {_esc(finished_at)}")
 
-        lines = [
-            "⚙️ *执行结果*",
-            f"• 任务: {task_title}" if task_title else "",
-            f"• 状态: {icon} {'已完成' if is_success else '执行失败'}",
-            *detail_lines,
-            f"• 时间: {finished_at}" if finished_at else "",
-            f"• TaskID: `{task_id[:8]}…`" if task_id else "",
-        ]
-        return (f"{icon} {label}", "\n".join(l for l in lines if l))
+        return (title.replace("*", ""), "\n".join(l for l in lines if l is not None))
+
+    def to_text(self) -> tuple:
+        d = self.payload
+        is_success = self.message_type == "scheduled_task_complete"
+        icon = "✅" if is_success else "❌"
+        title = f"{icon} 定时任务{'完成' if is_success else '失败'}"
+        task_title = d.get("task_title", "")
+        message = d.get("message", "")
+        finished_at = d.get("finished_at", "")
+        msg_short = (message[:200] + "…") if len(message) > 200 else message
+
+        lines = [title, ""]
+        if task_title:
+            lines.append(f"⚙️ 任务: {task_title}")
+        if msg_short:
+            lines.append("")
+            lines.append(f"📋 {msg_short}")
+        if finished_at:
+            lines.append(f"⏰ {finished_at}")
+
+        return (title, "\n".join(l for l in lines if l is not None))
 
 
 # ═══════════════════════════════════════════
@@ -160,6 +191,9 @@ class FallbackDownloadMessage(NotificationMessage):
     def to_markdown(self) -> tuple:
         return _build_fallback_markdown(self.payload, self.message_type)
 
+    def to_text(self) -> tuple:
+        return _build_fallback_text(self.payload, self.message_type)
+
 
 @dataclass
 class FallbackSearchMessage(NotificationMessage):
@@ -173,6 +207,9 @@ class FallbackSearchMessage(NotificationMessage):
 
     def to_markdown(self) -> tuple:
         return _build_fallback_markdown(self.payload, self.message_type)
+
+    def to_text(self) -> tuple:
+        return _build_fallback_text(self.payload, self.message_type)
 
 
 @dataclass
@@ -189,20 +226,48 @@ class PredownloadMessage(NotificationMessage):
         d = self.payload
         is_success = "success" in self.message_type
         icon = "✅" if is_success else "❌"
+        title = f"{icon} *预下载{'完成' if is_success else '失败'}*"
         task_title = _esc(d.get("task_title", ""))
         message = d.get("message", "")
         finished_at = d.get("finished_at", "")
-        msg_short = _esc((message[:300] + "…") if len(message) > 300 else message)
-        lines = [
-            "📺 *媒体信息*",
-            f"• 任务: {task_title}" if task_title else "",
-            "",
-            "⚙️ *执行结果*",
-            f"• 状态: {icon} {'处理完成' if is_success else '处理失败'}",
-            f"  └─ 📋 {msg_short}" if msg_short else "",
-            f"• 时间: {finished_at}" if finished_at else "",
-        ]
-        return (f"{icon} 后备任务{'完成' if is_success else '失败'}", "\n".join(l for l in lines if l))
+        msg_short = _esc((message[:200] + "…") if len(message) > 200 else message)
+
+        # 引用块
+        quote_lines = []
+        if task_title:
+            quote_lines.append(f">📺 *{task_title}*")
+
+        # 组装
+        lines = [title, ""]
+        lines.extend(quote_lines)
+        lines.append("")
+        if msg_short:
+            lines.append(f"📋 {msg_short}")
+        if finished_at:
+            lines.append(f"⏰ {_esc(finished_at)}")
+
+        return (title.replace("*", ""), "\n".join(l for l in lines if l is not None))
+
+    def to_text(self) -> tuple:
+        d = self.payload
+        is_success = "success" in self.message_type
+        icon = "✅" if is_success else "❌"
+        title = f"{icon} 预下载{'完成' if is_success else '失败'}"
+        task_title = d.get("task_title", "")
+        message = d.get("message", "")
+        finished_at = d.get("finished_at", "")
+        msg_short = (message[:200] + "…") if len(message) > 200 else message
+
+        lines = [title, ""]
+        if task_title:
+            lines.append(f"📺 {task_title}")
+        if msg_short:
+            lines.append("")
+            lines.append(f"📋 {msg_short}")
+        if finished_at:
+            lines.append(f"⏰ {finished_at}")
+
+        return (title, "\n".join(l for l in lines if l is not None))
 
 
 @dataclass
@@ -219,10 +284,10 @@ class MatchFallbackMessage(NotificationMessage):
         d = self.payload
         is_success = "success" in self.message_type
         icon = "✅" if is_success else "❌"
-        task_title = _esc(d.get("task_title", ""))
+        title = f"{icon} *匹配后备{'完成' if is_success else '失败'}*"
         message = d.get("message", "")
         finished_at = d.get("finished_at", "")
-        msg_short = _esc((message[:300] + "…") if len(message) > 300 else message)
+        msg_short = _esc((message[:200] + "…") if len(message) > 200 else message)
         task_params = d.get("task_parameters", {})
         provider = _esc(task_params.get("provider", ""))
         final_title = _esc(task_params.get("final_title", ""))
@@ -230,27 +295,61 @@ class MatchFallbackMessage(NotificationMessage):
         episode_number = task_params.get("episode_number")
         is_movie = task_params.get("is_movie", False)
 
-        lines = [
-            "📺 *媒体信息*",
-            f"• 任务: {task_title}" if task_title else "",
-        ]
-        if provider:
-            lines.append(f"• 弹幕源: {provider}")
+        # 引用块
+        quote_lines = []
         if final_title:
-            lines.append(f"• 番剧: {final_title}")
+            quote_lines.append(f">📺 *{final_title}*")
         if final_season is not None and episode_number is not None:
             if is_movie:
-                lines.append("• 类型: 电影")
+                quote_lines.append(">📍 电影")
             else:
-                lines.append(f"• 季集: S{final_season:02d}E{episode_number:02d}")
-        lines.extend([
-            "",
-            "⚙️ *执行结果*",
-            f"• 状态: {icon} {'处理完成' if is_success else '处理失败'}",
-            f"  └─ 📋 {msg_short}" if msg_short else "",
-            f"• 时间: {finished_at}" if finished_at else "",
-        ])
-        return (f"{icon} 后备任务{'完成' if is_success else '失败'}", "\n".join(l for l in lines if l))
+                quote_lines.append(f">📍 S{final_season:02d}E{episode_number:02d}")
+        if provider:
+            quote_lines.append(f">🎯 弹幕源: {provider}")
+
+        # 组装
+        lines = [title, ""]
+        lines.extend(quote_lines)
+        lines.append("")
+        if msg_short:
+            lines.append(f"📋 {msg_short}")
+        if finished_at:
+            lines.append(f"⏰ {_esc(finished_at)}")
+
+        return (title.replace("*", ""), "\n".join(l for l in lines if l is not None))
+
+    def to_text(self) -> tuple:
+        d = self.payload
+        is_success = "success" in self.message_type
+        icon = "✅" if is_success else "❌"
+        title = f"{icon} 匹配后备{'完成' if is_success else '失败'}"
+        message = d.get("message", "")
+        finished_at = d.get("finished_at", "")
+        msg_short = (message[:200] + "…") if len(message) > 200 else message
+        task_params = d.get("task_parameters", {})
+        provider = task_params.get("provider", "")
+        final_title = task_params.get("final_title", "")
+        final_season = task_params.get("final_season")
+        episode_number = task_params.get("episode_number")
+        is_movie = task_params.get("is_movie", False)
+
+        lines = [title, ""]
+        if final_title:
+            lines.append(f"📺 {final_title}")
+        if final_season is not None and episode_number is not None:
+            if is_movie:
+                lines.append("📍 电影")
+            else:
+                lines.append(f"📍 S{final_season:02d}E{episode_number:02d}")
+        if provider:
+            lines.append(f"🎯 弹幕源: {provider}")
+        if msg_short:
+            lines.append("")
+            lines.append(f"📋 {msg_short}")
+        if finished_at:
+            lines.append(f"⏰ {finished_at}")
+
+        return (title, "\n".join(l for l in lines if l is not None))
 
 
 # ═══════════════════════════════════════════
@@ -258,18 +357,16 @@ class MatchFallbackMessage(NotificationMessage):
 # ═══════════════════════════════════════════
 
 def _build_import_markdown(d: dict, event_type: str) -> tuple:
-    """导入/自动导入/Webhook导入 通用 Markdown 格式"""
+    """导入/自动导入/Webhook导入 通用 MarkdownV2 卡片式模板"""
     _LABELS = {
-        "import_success": ("导入成功", True),
-        "import_failed": ("导入失败", False),
-        "auto_import_success": ("自动导入成功", True),
-        "auto_import_failed": ("自动导入失败", False),
-        "webhook_import_success": ("Webhook 导入成功", True),
-        "webhook_import_failed": ("Webhook 导入失败", False),
+        "import_success": ("✅ *导入成功*", True),
+        "import_failed": ("❌ *导入失败*", False),
+        "auto_import_success": ("✅ *自动导入成功*", True),
+        "auto_import_failed": ("❌ *自动导入失败*", False),
+        "webhook_import_success": ("✅ *Webhook 导入成功*", True),
+        "webhook_import_failed": ("❌ *Webhook 导入失败*", False),
     }
-    label, is_success = _LABELS.get(event_type, (event_type, True))
-    icon = "✅" if is_success else "❌"
-    status_str = "处理完成" if is_success else "处理失败"
+    title, is_success = _LABELS.get(event_type, (f"{'✅' if 'success' in event_type else '❌'} *{event_type}*", "success" in event_type))
 
     anime_title = _esc(d.get("anime_title", ""))
     season = d.get("season")
@@ -277,89 +374,227 @@ def _build_import_markdown(d: dict, event_type: str) -> tuple:
     source = _esc(d.get("source", ""))
     tmdb_id = d.get("tmdb_id", "")
     media_type = _esc(d.get("media_type", ""))
-    task_id = d.get("task_id", "")
     message = d.get("message", "")
     finished_at = d.get("finished_at", "")
-    msg_short = _esc((message[:300] + "…") if len(message) > 300 else message)
+    msg_short = _esc((message[:200] + "…") if len(message) > 200 else message)
 
     s_str = f"S{int(season):02d}" if season is not None else ""
     e_str = f"E{int(episode):02d}" if episode is not None else ""
-    tmdb_str = f"TMDB:{tmdb_id}" if tmdb_id else ""
+    se_str = f"{s_str}{e_str}" if s_str or e_str else ""
 
-    lines = [
-        "📺 *媒体信息*",
-        f"• 名称: {anime_title}" if anime_title else "",
-        f"• 季集: {s_str}{e_str}" if s_str or e_str else "",
-        f"• 类型: {media_type}" if media_type else "",
-        f"• 来源: {source}" if source else "",
-        f"• ID: {tmdb_str}" if tmdb_str else "",
-        "",
-        "⚙️ *任务执行信息*",
-        f"• TaskID: `{task_id}`" if task_id else "",
-        f"  └─ 状态: {icon} {status_str}",
-        f"  └─ 📋 {msg_short}" if msg_short else "",
-        f"• 时间: {finished_at}" if finished_at else "",
-    ]
-    return (f"{icon} {label}", "\n".join(l for l in lines if l))
+    # 引用块内容
+    quote_lines = []
+    if anime_title:
+        quote_lines.append(f">📺 *{anime_title}*")
+    if se_str or media_type:
+        parts = [p for p in [se_str, media_type] if p]
+        quote_lines.append(f">📍 {' \\| '.join(parts)}")
+    if source:
+        quote_lines.append(f">🎯 弹幕源: {source}")
+    if tmdb_id:
+        quote_lines.append(f">🏷️ TMDB: {_esc(str(tmdb_id))}")
+
+    # 组装完整消息
+    lines = [title, ""]
+    lines.extend(quote_lines)
+    lines.append("")
+    if msg_short:
+        lines.append(f"📋 {msg_short}")
+    if finished_at:
+        lines.append(f"⏰ {_esc(finished_at)}")
+
+    return (title.replace("*", ""), "\n".join(l for l in lines if l is not None))
+
+
+def _build_import_text(d: dict, event_type: str) -> tuple:
+    """导入类 纯文本模板（企业微信/Server酱，无任何 markdown 符号）"""
+    _LABELS = {
+        "import_success": ("✅ 导入成功", True),
+        "import_failed": ("❌ 导入失败", False),
+        "auto_import_success": ("✅ 自动导入成功", True),
+        "auto_import_failed": ("❌ 自动导入失败", False),
+        "webhook_import_success": ("✅ Webhook 导入成功", True),
+        "webhook_import_failed": ("❌ Webhook 导入失败", False),
+    }
+    title, _ = _LABELS.get(event_type, (f"{'✅' if 'success' in event_type else '❌'} {event_type}", True))
+
+    anime_title = d.get("anime_title", "")
+    season = d.get("season")
+    episode = d.get("episode")
+    source = d.get("source", "")
+    tmdb_id = d.get("tmdb_id", "")
+    media_type = d.get("media_type", "")
+    message = d.get("message", "")
+    finished_at = d.get("finished_at", "")
+    msg_short = (message[:200] + "…") if len(message) > 200 else message
+
+    s_str = f"S{int(season):02d}" if season is not None else ""
+    e_str = f"E{int(episode):02d}" if episode is not None else ""
+    se_str = f"{s_str}{e_str}" if s_str or e_str else ""
+
+    lines = [title, ""]
+    if anime_title:
+        lines.append(f"📺 {anime_title}")
+    if se_str or media_type:
+        parts = [p for p in [se_str, media_type] if p]
+        lines.append(f"📍 {' | '.join(parts)}")
+    if source:
+        lines.append(f"🎯 弹幕源: {source}")
+    if tmdb_id:
+        lines.append(f"🏷️ TMDB: {tmdb_id}")
+    if msg_short:
+        lines.append("")
+        lines.append(f"📋 {msg_short}")
+    if finished_at:
+        lines.append(f"⏰ {finished_at}")
+
+    return (title, "\n".join(l for l in lines if l is not None))
 
 
 def _build_refresh_markdown(d: dict, event_type: str) -> tuple:
-    """刷新类消息通用 Markdown 格式"""
+    """刷新类消息 MarkdownV2 卡片式模板"""
     _LABELS = {
-        "refresh_success": ("刷新成功", True),
-        "refresh_failed": ("刷新失败", False),
-        "incremental_refresh_success": ("追更刷新成功", True),
-        "incremental_refresh_failed": ("追更刷新失败", False),
+        "refresh_success": ("✅ *刷新成功*", True),
+        "refresh_failed": ("❌ *刷新失败*", False),
+        "incremental_refresh_success": ("✅ *追更成功*", True),
+        "incremental_refresh_failed": ("❌ *追更失败*", False),
     }
-    label, is_success = _LABELS.get(event_type, (event_type, True))
-    icon = "✅" if is_success else "❌"
-    status_str = "处理完成" if is_success else "处理失败"
+    title, is_success = _LABELS.get(event_type, (f"{'✅' if 'success' in event_type else '❌'} *刷新*", "success" in event_type))
 
     anime_title = _esc(d.get("anime_title", ""))
     season = d.get("season")
     episode = d.get("episode")
     message = d.get("message", "")
     finished_at = d.get("finished_at", "")
-    msg_short = _esc((message[:300] + "…") if len(message) > 300 else message)
+    msg_short = _esc((message[:200] + "…") if len(message) > 200 else message)
 
     s_str = f"S{int(season):02d}" if season is not None else ""
     e_str = f"E{int(episode):02d}" if episode is not None else ""
+    se_str = f"{s_str}{e_str}" if s_str else ""
 
-    lines = [
-        "📺 *媒体信息*",
-        f"• 名称: {anime_title}" if anime_title else "",
-        f"• 季集: {s_str}{e_str}" if s_str else "",
-        f"• 操作: 刷新弹幕",
-        f"• 状态: {icon} {status_str}",
-        f"• 信息: {msg_short}" if msg_short else "",
-        f"• 时间: {finished_at}" if finished_at else "",
-    ]
-    return (f"{icon} {label}", "\n".join(l for l in lines if l))
+    # 操作类型
+    is_incremental = "incremental" in event_type
+    op_str = "增量追更" if is_incremental else "手动刷新"
+
+    # 引用块
+    quote_lines = []
+    if anime_title:
+        quote_lines.append(f">📺 *{anime_title}*")
+    if se_str:
+        quote_lines.append(f">📍 {se_str}")
+    quote_lines.append(f">🔄 操作: {_esc(op_str)}")
+
+    # 组装
+    lines = [title, ""]
+    lines.extend(quote_lines)
+    lines.append("")
+    if msg_short:
+        lines.append(f"📋 {msg_short}")
+    if finished_at:
+        lines.append(f"⏰ {_esc(finished_at)}")
+
+    return (title.replace("*", ""), "\n".join(l for l in lines if l is not None))
+
+
+def _build_refresh_text(d: dict, event_type: str) -> tuple:
+    """刷新类 纯文本模板"""
+    _LABELS = {
+        "refresh_success": "✅ 刷新成功",
+        "refresh_failed": "❌ 刷新失败",
+        "incremental_refresh_success": "✅ 追更成功",
+        "incremental_refresh_failed": "❌ 追更失败",
+    }
+    title = _LABELS.get(event_type, f"{'✅' if 'success' in event_type else '❌'} 刷新")
+
+    anime_title = d.get("anime_title", "")
+    season = d.get("season")
+    episode = d.get("episode")
+    message = d.get("message", "")
+    finished_at = d.get("finished_at", "")
+    msg_short = (message[:200] + "…") if len(message) > 200 else message
+
+    s_str = f"S{int(season):02d}" if season is not None else ""
+    e_str = f"E{int(episode):02d}" if episode is not None else ""
+    se_str = f"{s_str}{e_str}" if s_str else ""
+    op_str = "增量追更" if "incremental" in event_type else "手动刷新"
+
+    lines = [title, ""]
+    if anime_title:
+        lines.append(f"📺 {anime_title}")
+    if se_str:
+        lines.append(f"📍 {se_str}")
+    lines.append(f"🔄 操作: {op_str}")
+    if msg_short:
+        lines.append("")
+        lines.append(f"📋 {msg_short}")
+    if finished_at:
+        lines.append(f"⏰ {finished_at}")
+
+    return (title, "\n".join(l for l in lines if l is not None))
 
 
 def _build_fallback_markdown(d: dict, event_type: str) -> tuple:
-    """后备弹幕下载/搜索 通用 Markdown 格式"""
+    """后备弹幕下载/搜索 MarkdownV2 卡片式模板"""
     is_success = "success" in event_type
     icon = "✅" if is_success else "❌"
+    # 区分后备下载和后备搜索
+    if "search" in event_type:
+        title = f"{icon} *后备搜索{'完成' if is_success else '失败'}*"
+    else:
+        title = f"{icon} *后备下载{'完成' if is_success else '失败'}*"
+
     task_title = _esc(d.get("task_title", ""))
     token_name = _esc(d.get("token_name", ""))
-    task_id = d.get("task_id", "")
     message = d.get("message", "")
     finished_at = d.get("finished_at", "")
-    msg_short = _esc((message[:300] + "…") if len(message) > 300 else message)
+    msg_short = _esc((message[:200] + "…") if len(message) > 200 else message)
 
-    lines = [
-        "📺 *媒体信息*",
-        f"• 任务: {task_title}" if task_title else "",
-        f"• 调用者: {token_name}" if token_name else "",
-        "",
-        "⚙️ *执行结果*",
-        f"• TaskID: `{task_id}`" if task_id else "",
-        f"  └─ 状态: {icon} {'已完成' if is_success else '失败'}",
-        f"  └─ 📋 {msg_short}" if msg_short else "",
-        f"• 时间: {finished_at}" if finished_at else "",
-    ]
-    return (f"{icon} 后备任务{'完成' if is_success else '失败'}", "\n".join(l for l in lines if l))
+    # 引用块
+    quote_lines = []
+    if task_title:
+        quote_lines.append(f">📺 *{task_title}*")
+    if token_name:
+        quote_lines.append(f">👤 调用者: {token_name}")
+
+    # 组装
+    lines = [title, ""]
+    lines.extend(quote_lines)
+    lines.append("")
+    if msg_short:
+        lines.append(f"📋 {msg_short}")
+    if finished_at:
+        lines.append(f"⏰ {_esc(finished_at)}")
+
+    return (title.replace("*", ""), "\n".join(l for l in lines if l is not None))
+
+
+def _build_fallback_text(d: dict, event_type: str) -> tuple:
+    """后备弹幕下载/搜索 纯文本模板"""
+    is_success = "success" in event_type
+    icon = "✅" if is_success else "❌"
+    if "search" in event_type:
+        title = f"{icon} 后备搜索{'完成' if is_success else '失败'}"
+    else:
+        title = f"{icon} 后备下载{'完成' if is_success else '失败'}"
+
+    task_title = d.get("task_title", "")
+    token_name = d.get("token_name", "")
+    message = d.get("message", "")
+    finished_at = d.get("finished_at", "")
+    msg_short = (message[:200] + "…") if len(message) > 200 else message
+
+    lines = [title, ""]
+    if task_title:
+        lines.append(f"📺 {task_title}")
+    if token_name:
+        lines.append(f"👤 调用者: {token_name}")
+    if msg_short:
+        lines.append("")
+        lines.append(f"📋 {msg_short}")
+    if finished_at:
+        lines.append(f"⏰ {finished_at}")
+
+    return (title, "\n".join(l for l in lines if l is not None))
 
 
 # ═══════════════════════════════════════════
@@ -379,19 +614,22 @@ class AggregatedSummaryMessage(NotificationMessage):
         count = self.payload.get("count", 0)
         items = self.payload.get("items", [])
         time_range = self.payload.get("time_range", "")
+        title = f"⚠️ *批量通知汇总* \\({_esc(str(count))} 条\\)"
         # 按作品名分组统计
         anime_counts: Dict[str, int] = {}
         for item in items:
             name = item.get("anime_title", "未知")
             anime_counts[name] = anime_counts.get(name, 0) + 1
 
-        lines = [
-            f"⚠️ *批量通知汇总* ({count} 条)",
-            f"⏰ 时间范围: {time_range}" if time_range else "",
-            "",
-        ]
+        quote_lines = []
         for name, cnt in anime_counts.items():
-            lines.append(f"  • {_esc(name)}: {cnt} 条")
+            quote_lines.append(f">📺 {_esc(name)}: {cnt} 条")
+
+        lines = [title, ""]
+        if time_range:
+            lines.append(f"⏰ {_esc(time_range)}")
+            lines.append("")
+        lines.extend(quote_lines)
 
         # 附带最后一条错误摘要
         if items:
@@ -399,5 +637,30 @@ class AggregatedSummaryMessage(NotificationMessage):
             if last_msg:
                 short = (last_msg[:200] + "…") if len(last_msg) > 200 else last_msg
                 lines.extend(["", f"📋 最近错误: {_esc(short)}"])
+
+        return ("⚠️ 批量通知汇总", "\n".join(l for l in lines if l))
+
+    def to_text(self) -> tuple:
+        count = self.payload.get("count", 0)
+        items = self.payload.get("items", [])
+        time_range = self.payload.get("time_range", "")
+        title = f"⚠️ 批量通知汇总 ({count} 条)"
+        anime_counts: Dict[str, int] = {}
+        for item in items:
+            name = item.get("anime_title", "未知")
+            anime_counts[name] = anime_counts.get(name, 0) + 1
+
+        lines = [title, ""]
+        if time_range:
+            lines.append(f"⏰ {time_range}")
+            lines.append("")
+        for name, cnt in anime_counts.items():
+            lines.append(f"📺 {name}: {cnt} 条")
+
+        if items:
+            last_msg = items[-1].get("message", "")
+            if last_msg:
+                short = (last_msg[:200] + "…") if len(last_msg) > 200 else last_msg
+                lines.extend(["", f"📋 最近错误: {short}"])
 
         return ("⚠️ 批量通知汇总", "\n".join(l for l in lines if l))

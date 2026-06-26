@@ -7,13 +7,19 @@ import { MobileTabs } from '@/components/MobileTabs'
 import { RoutePaths } from '../../general/RoutePaths'
 import { Library } from './index.jsx'
 import { BatchManagePage } from './batch-manage.jsx'
+import { SubscriptionPage } from '../subscription/index.jsx'
 
 export const LibraryTabsPage = () => {
   const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
   const isMobile = useAtomValue(isMobileAtom)
-  const key = location.pathname === RoutePaths.BATCH_MANAGE ? 'batch' : 'library'
+  // 三态：library / batch / subscriptions
+  const key = location.pathname === RoutePaths.BATCH_MANAGE
+    ? 'batch'
+    : location.pathname === RoutePaths.SUBSCRIPTIONS
+      ? 'subscriptions'
+      : 'library'
 
   const tabItems = [
     {
@@ -26,10 +32,20 @@ export const LibraryTabsPage = () => {
       key: 'batch',
       children: <BatchManagePage />,
     },
+    {
+      label: t('subscription.title', '订阅'),
+      key: 'subscriptions',
+      children: <SubscriptionPage />,
+    },
   ]
 
   const handleTabChange = (newKey) => {
-    navigate(newKey === 'batch' ? RoutePaths.BATCH_MANAGE : RoutePaths.LIBRARY)
+    const pathMap = {
+      batch: RoutePaths.BATCH_MANAGE,
+      subscriptions: RoutePaths.SUBSCRIPTIONS,
+      library: RoutePaths.LIBRARY,
+    }
+    navigate(pathMap[newKey] || RoutePaths.LIBRARY)
   }
 
 

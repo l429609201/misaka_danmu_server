@@ -10,7 +10,7 @@ import classNames from 'classnames'
 import { Tag, Dropdown, Modal, Form, Input, Button, Space, Badge, Popconfirm } from 'antd';
 import { logout, changePassword, checkAppUpdate, getDockerStatus, restartService, getVersion } from '../apis/index.js'
 import Cookies from 'js-cookie'
-import { EyeInvisibleOutlined, EyeOutlined, LockOutlined } from '@ant-design/icons'
+import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, SearchOutlined } from '@ant-design/icons'
 import { Tooltip } from 'antd'
 import SessionManager from '@/components/SessionManager'
 import VersionModal from '@/components/VersionModal'
@@ -21,6 +21,7 @@ import RealtimeLogModal from '@/components/RealtimeLogModal'
 import CacheManagerModal from '@/components/CacheManagerModal'
 import HealthOverviewModal from '@/pages/home/components/HealthOverview'
 import HistoryLogModal from '@/components/HistoryLogModal'
+import { FeatureSearch } from '@/components/FeatureSearch'
 import { RateLimitIndicator } from '@/components/RateLimitIndicator'
 import { clearBrowserCache } from '@/utils/clearCache'
 import { useMessage } from '../MessageContext'
@@ -411,6 +412,7 @@ const MobileHeader = ({ activeKey }) => {
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false)
   const [dockerAvailable, setDockerAvailable] = useState(false)
   const [restartLoading, setRestartLoading] = useState(false)
+  const [featureSearchOpen, setFeatureSearchOpen] = useState(false)
   const messageApi = useMessage()
   const setUserinfo = useSetAtom(userinfoAtom)
 
@@ -487,6 +489,8 @@ const MobileHeader = ({ activeKey }) => {
   const handleMenuItemClick = (item, parentItem) => {
     if (item.key === 'logout') {
       onLogout()
+    } else if (item.key === 'feature-search') {
+      setFeatureSearchOpen(true)
     } else if (item.key === 'change-password') {
       setIsPasswordModalOpen(true)
     } else if (item.key === 'session-manager') {
@@ -575,6 +579,11 @@ const MobileHeader = ({ activeKey }) => {
                     })),
                     ...(it.key === 'user' ? [
                       {
+                        key: 'feature-search',
+                        label: t('featureSearch.menuTitle'),
+                        icon: 'search',
+                      },
+                      {
                         key: 'theme-color',
                         label: t('header.themeColor'),
                         icon: 'MenuIcon-gexinghua-heise',
@@ -644,6 +653,11 @@ const MobileHeader = ({ activeKey }) => {
           ))}
         </div>
       </div>
+
+      <FeatureSearch
+        open={featureSearchOpen}
+        onClose={() => setFeatureSearchOpen(false)}
+      />
 
       {/* 修改密码弹框 */}
       <Modal
@@ -805,6 +819,20 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
   const [isLoading, setIsLoading] = useState(false)
   const [dockerAvailable, setDockerAvailable] = useState(false)
   const [restartLoading, setRestartLoading] = useState(false)
+  // 全功能搜索面板开关
+  const [featureSearchOpen, setFeatureSearchOpen] = useState(false)
+
+  // 全局快捷键 Ctrl/Cmd+K 打开/关闭功能搜索
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        setFeatureSearchOpen(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // ---- 导航挤压检测 ----
   const [compactNav, setCompactNav] = useState(false)
@@ -1117,6 +1145,16 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
               menu={{
                 items: [
                   {
+                    key: 'featureSearch',
+                    icon: <SearchOutlined style={{ fontSize: 16 }} />,
+                    label: (
+                      <div onClick={() => setFeatureSearchOpen(true)} className="text-base">
+                        {t('featureSearch.menuTitle')}
+                        <span className="ml-2 text-xs text-gray-400">Ctrl/⌘+K</span>
+                      </div>
+                    ),
+                  },
+                  {
                     key: 'themeColor',
                     icon: <MyIcon icon="MenuIcon-gexinghua-heise" size={16} />,
                     label: (
@@ -1224,6 +1262,11 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
           </div>
         </div>
       </div>
+
+      <FeatureSearch
+        open={featureSearchOpen}
+        onClose={() => setFeatureSearchOpen(false)}
+      />
 
       <Modal
         title={t('header.changePassword')}

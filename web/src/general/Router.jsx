@@ -54,6 +54,10 @@ export const router = createBrowserRouter([
         element: <LibraryTabsPage />,
       },
       {
+        path: RoutePaths.SUBSCRIPTIONS,
+        element: <LibraryTabsPage />,
+      },
+      {
         path: RoutePaths.SETTING,
         element: <Setting />,
       },

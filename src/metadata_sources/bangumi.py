@@ -301,6 +301,23 @@ class BangumiMetadataSource(BaseMetadataSource):
     api_router = auth_router
     config_keys = ["bangumiClientId", "bangumiClientSecret", "bangumiToken", "authMode", "bangumiApiBaseUrl", "bangumiImageBaseUrl"]
 
+    # ============ 订阅助手能力 ============
+    # 注意：这里的「订阅」是【弹幕库内订阅】(自动建库追更)，不是 Bangumi 站内的「在看」。
+    # 流程：discover 搜番 → 用户选 → 写 external_calendar_item(bangumiId)
+    #       → IncrementalRefreshJob 自动调 auto_search_and_import_task 在弹幕库内整剧建库 + 持续追更。
+    supports_subscription = True
+    handled_domains = ["bgm.tv", "bangumi.tv"]
+    subscription_types = [
+        {
+            "type": "bangumi_subject",
+            "label": "番剧（弹幕库追更）",
+            "description": "通过 Bangumi 搜番，订阅后会自动在本地弹幕库建库 + 追更（不会同步到 Bangumi 账号）",
+            "payloadSchema": {"fields": [
+                {"name": "bangumiId", "type": "string", "required": True, "label": "Bangumi 条目 ID", "placeholder": "例如 12345"},
+            ]},
+        },
+    ]
+
     DEFAULT_API_BASE_URL = "https://api.bgm.tv"
     DEFAULT_IMAGE_BASE_URL = "https://lain.bgm.tv"
 
@@ -1025,3 +1042,68 @@ class BangumiMetadataSource(BaseMetadataSource):
             return {"message": "注销成功"}
         else:
             return await super().execute_action(action_name, payload, user, request)
+
+    # ============ 订阅助手实现 ============
+
+    async def check_subscription_capability(self, user=None) -> Dict[str, Any]:
+        """Bangumi 订阅可用性：公共搜索 API 即可（无 OAuth 也能搜）。"""
+        return {
+            "available": True,
+            "authRequired": False,
+            "authStatus": "valid",
+            "reason": None,
+            "subscriptionTypes": self.subscription_types,
+        }
+
+    async def discover_subscription_targets(self, query: str, subscription_type: str = "", user=None) -> List[Dict[str, Any]]:
+        """搜 Bangumi 番剧条目候选；复用 search()。无登录用户时构造一个匿名占位。"""
+        query = (query or "").strip()
+        if not query:
+            return []
+        # search() 需要 user.id 做缓存键；订阅探测阶段允许 user 缺省，构造匿名兜底
+        u = user or models.User(id=0, username="__sub_discover__")
+        try:
+            results = await self.search(query, user=u)
+        except Exception as e:
+            self.logger.warning(f"Bangumi: 订阅 discover 搜索失败: {type(e).__name__}: {e}")
+            return []
+        out = []
+        for r in results[:20]:
+            if not r.id:
+                continue
+            year = f" · {r.year}" if r.year else ""
+            desc = (r.details or "")[:80]
+            out.append({
+                "type": "bangumi_subject",
+                "title": r.title or f"Bangumi {r.id}",
+                "cover": r.imageUrl,
+                "description": f"Bangumi ID {r.id}{year}" + (f" · {desc}" if desc else ""),
+                "payload": {
+                    "bangumiId": str(r.id),
+                    "title": r.title or "",
+                    "year": r.year,
+                    "imageUrl": r.imageUrl,
+                },
+            })
+        return out
+
+    async def validate_subscription_payload(self, subscription_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """校验 Bangumi 订阅 payload；统一返回写入 external_calendar_item 的标准结构。"""
+        if subscription_type != "bangumi_subject":
+            raise ValueError(f"Bangumi 暂不支持订阅类型: {subscription_type}")
+        bgm_id = (payload or {}).get("bangumiId") or ""
+        if not str(bgm_id).strip():
+            raise ValueError("缺少 bangumiId")
+        title = (payload or {}).get("title") or ""
+        return {
+            "provider": self.provider_name,
+            "externalId": f"bgm-{bgm_id}",
+            "title": title,
+            "animeType": "tv_series",
+            "subscriptionType": "bangumi_subject",
+            "extraData": {
+                "bangumiId": str(bgm_id),
+                "year": (payload or {}).get("year"),
+                "imageUrl": (payload or {}).get("imageUrl"),
+            },
+        }

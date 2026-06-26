@@ -362,6 +362,19 @@ class NotificationManager:
             edit_message_id=message.edit_policy(),
         )
 
+    def render_event_for_channel(self, event_type: str, payload: dict,
+                                 channel: BaseNotificationChannel) -> Optional[RenderedMessage]:
+        """根据 event_type + payload 为指定渠道生成 RenderedMessage。
+
+        供 notification_service 的进度 edit / 完成消息 edit 路径复用统一消息类，
+        避免维护重复的格式化模板。未注册的事件类型返回 None。
+        """
+        message = self._registry.create(event_type, payload)
+        if message is None:
+            return None
+        message.message_type = event_type
+        return self.render_for_channel(message, channel)
+
     @staticmethod
     def _check_subscription(channel: BaseNotificationChannel,
                             message: NotificationMessage) -> bool:

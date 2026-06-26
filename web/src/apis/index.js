@@ -366,6 +366,18 @@ export const getDanmakuChConvertPriority = () =>
 /** 弹幕输出配置 简繁转换优先级 */
 export const setDanmakuChConvertPriority = data =>
   api.put('/api/ui/config/danmakuChConvertPriority', data)
+/** 弹幕输出配置 顶部弹幕转换目标（none/bottom/scroll） */
+export const getDanmakuTopConvertTo = () =>
+  api.get('/api/ui/config/danmakuTopConvertTo')
+/** 弹幕输出配置 顶部弹幕转换目标 */
+export const setDanmakuTopConvertTo = data =>
+  api.put('/api/ui/config/danmakuTopConvertTo', data)
+/** 弹幕输出配置 底部弹幕转换目标（none/top/scroll） */
+export const getDanmakuBottomConvertTo = () =>
+  api.get('/api/ui/config/danmakuBottomConvertTo')
+/** 弹幕输出配置 底部弹幕转换目标 */
+export const setDanmakuBottomConvertTo = data =>
+  api.put('/api/ui/config/danmakuBottomConvertTo', data)
 /** 弹幕输出配置 输出点赞状态开关 */
 export const getDanmakuLikesOutputEnabled = () =>
   api.get('/api/ui/config/danmakuLikesOutputEnabled')
@@ -1139,6 +1151,43 @@ export const batchSubscribeCalendarItems = (data) => api.post('/api/ui/calendar/
 
 /** 取消订阅外部番 */
 export const unsubscribeCalendarItem = (data) => api.post('/api/ui/calendar/unsubscribe', data)
+
+
+// ========== 通用订阅助手 ==========
+
+/** 探测当前可用订阅源（弹幕源 + 元数据源） */
+export const getAvailableSubscriptionSources = () => api.get('/api/ui/subscriptions/available-sources')
+
+/** 发现可订阅目标（关键词搜索 / URL 解析合集） */
+// 注意：此项目的 api.get 第二个参数直接是 query params（已封装），不要再包 { params }
+export const discoverSubscriptionTargets = (params) => api.get('/api/ui/subscriptions/discover', params)
+
+// 按 URL 自动定位订阅源并发现候选（后端按各源 handled_domains 匹配，前端无需硬编码域名）
+export const resolveSubscriptionUrl = (url) => api.post('/api/ui/subscriptions/resolve-url', { url })
+
+/** 查询订阅目标 */
+export const getSubscriptionTargets = (params) => api.get('/api/ui/subscriptions/targets', params)
+
+/** 创建订阅目标（provider/type/payload 通用结构） */
+export const createSubscriptionTarget = (data) => api.post('/api/ui/subscriptions/targets', data)
+
+/** 修改订阅目标（启用状态/状态/extraData 补丁） */
+export const updateSubscriptionTarget = (id, data) => api.patch(`/api/ui/subscriptions/targets/${id}`, data)
+
+/** 取消订阅目标 */
+export const deleteSubscriptionTarget = (id) => api.delete(`/api/ui/subscriptions/targets/${id}`)
+
+/** 立即扫描订阅目标 */
+export const scanSubscriptionTarget = (id) => api.post(`/api/ui/subscriptions/targets/${id}/scan`)
+
+/** 查询订阅候选项 */
+export const getSubscriptionItems = (params) => api.get('/api/ui/subscriptions/items', params)
+
+/** 重试订阅候选项 */
+export const retrySubscriptionItem = (id) => api.post(`/api/ui/subscriptions/items/${id}/retry`)
+
+/** 忽略订阅候选项 */
+export const ignoreSubscriptionItem = (id) => api.post(`/api/ui/subscriptions/items/${id}/ignore`)
 
 
 // ========== 通知渠道 ==========

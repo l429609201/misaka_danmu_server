@@ -11,6 +11,7 @@ from src.api.ui import (
     cache, debug,
     health, diagnostics, data_check, recognition_check, config_history,
     trends, audit, calendar_extra, ai_explain, scan_index,
+    subscriptions,
 )
 
 # This router aggregates all non-dandanplay API endpoints.
@@ -109,6 +110,9 @@ api_router.include_router(ai_explain.router, prefix="/ui", tags=["AIExplain"], i
 
 # 本地扫描增量索引
 api_router.include_router(scan_index.router, prefix="/ui", tags=["ScanIndex"], include_in_schema=False)
+
+# 通用订阅助手（订阅源能力探测 + 订阅目标/候选项）
+api_router.include_router(subscriptions.router, prefix="/ui", tags=["Subscriptions"], include_in_schema=False)
 
 api_router.include_router(webhook_router, prefix="/webhook", tags=["Webhook"], include_in_schema=False)
 

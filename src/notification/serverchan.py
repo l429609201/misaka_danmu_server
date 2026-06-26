@@ -39,10 +39,9 @@ class ServerChanChannel(BaseNotificationChannel):
     display_name_en = "ServerChan³"
     display_name_tw = "Server醬³"
 
-    # SC3 Bot 渠道能力：仅支持富文本和链接，不支持按钮/回调/编辑
+    # SC3 Bot 渠道能力：发送端未传 parse_mode，实际按纯文本渲染，故不声明 RICH_TEXT
     _CAPABILITIES = ChannelCapabilities(
         capabilities={
-            ChannelCapability.RICH_TEXT,
             ChannelCapability.LINKS,
         },
     )

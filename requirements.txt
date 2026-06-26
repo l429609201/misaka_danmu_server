@@ -6,7 +6,8 @@ SQLAlchemy[asyncio]>=2.0.32
 greenlet
 apscheduler
 pydantic-settings
-httpx[socks]>=0.23.0
+# httpx 0.26+ 才支持 AsyncClient(proxy=...) 参数（旧版为 proxies=），代码使用 proxy= 故锁 >=0.26
+httpx[socks]>=0.26.0
 # 使用固定的 passlib 和 bcrypt 版本以避免兼容性问题
 # passlib 未适配 bcrypt>=4.1 的 API 变更（__about__ 移除、72字节密码限制）
 # 锁定 bcrypt<4.1 直到 passlib 发布兼容版本
@@ -57,3 +58,4 @@ pyotp  # RFC 6238 TOTP 实现
 webauthn>=2.0.0  # FIDO2/WebAuthn 服务端实现
 # 支持不等长 lookbehind 的正则引擎，用于兜底全局分集标题过滤
 regex
+Pillow>=10.0.0  # 用于将搜索结果海报聚合为九宫格图片（Telegram 搜索体验）

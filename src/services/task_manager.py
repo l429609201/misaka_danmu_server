@@ -207,6 +207,8 @@ class TaskManager:
                 "episode_count": params.get("episodeCount"),
                 "webhook_source": params.get("webhookSource", ""),
                 "provider": params.get("provider", "") or params.get("providerName", ""),
+                # source 字段：新消息类导入模板读取 source 展示"来源/弹幕源"，映射自 provider
+                "source": params.get("provider", "") or params.get("providerName", ""),
                 "media_id": params.get("mediaId", "") or params.get("media_id", ""),
                 "tmdb_id": params.get("tmdbId", ""),
                 "media_type": params.get("type", "") or params.get("mediaType", ""),

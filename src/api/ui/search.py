@@ -4,10 +4,6 @@ Search相关的API端点
 import asyncio
 import logging
 import re
-try:
-    import regex as _regex_module
-except ImportError:
-    _regex_module = re
 from typing import Any, Dict, Optional, List
 from src.utils.episode_filter import parse_single_episode_filter_rules, apply_single_episode_filter
 
@@ -774,27 +770,11 @@ async def get_episodes_for_search_result(
     """为指定的搜索结果获取完整的分集列表。自动识别补充源mediaId并路由。"""
     try:
         episodes = await manager.get_episodes_routed(provider, media_id, db_media_type=media_type)
-        # 单剧过滤
+        # 单剧过滤（依赖作品标题，未下沉到 get_episodes_routed）
         filter_content = await config_manager.get("singleEpisodeFilterRules", "")
         filter_rules = parse_single_episode_filter_rules(filter_content)
         episodes = apply_single_episode_filter(episodes, filter_rules, title, provider, media_id)
-        # 兜底全局分集标题过滤
-        global_filter_enabled = await config_manager.get("globalEpisodeTitleFilterEnabled", "false")
-        if global_filter_enabled == "true":
-            global_filter_regex = await config_manager.get("globalEpisodeTitleFilterRegex", "")
-            if global_filter_regex.strip():
-                before_count = len(episodes)
-                kept = []
-                for ep in episodes:
-                    ep_title = ep.title or ""
-                    try:
-                        if not _regex_module.search(global_filter_regex, ep_title, _regex_module.IGNORECASE):
-                            kept.append(ep)
-                    except _regex_module.error:
-                        kept.append(ep)
-                if len(kept) < before_count:
-                    logger.info(f"兜底全局分集标题过滤: provider={provider}, mediaId={media_id}, 过滤 {before_count - len(kept)}/{before_count} 集")
-                episodes = kept
+        # 注：兜底全局分集标题过滤已统一收口到 manager.get_episodes_routed 内部，此处无需重复处理
         return episodes
     except httpx.RequestError as e:
         # 新增：捕获网络错误

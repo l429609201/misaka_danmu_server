@@ -87,6 +87,9 @@ class CommandResult:
     # 图文文章列表（渠道层有能力时优先展示带图版本）
     # 每项: {"title": str, "description": str, "picurl": str, "url": str}
     articles: List[Dict[str, str]] = field(default_factory=list)
+    # 聚合海报图（PNG bytes）。非空时渠道层优先以图片消息发送，
+    # caption 取 text，附带 reply_markup 按钮。用于搜索结果九宫格海报。
+    image_bytes: Optional[bytes] = None
 
 
 @dataclass
@@ -168,6 +171,10 @@ class BaseNotificationChannel(ABC):
 
         默认实现将 RenderedMessage 转发到 send_message，
         保持与旧渠道实现的兼容性。子类可覆写以获得更精细的控制。
+
+        注意：消息系统的 to_markdown/to_text 返回的 body 已自带标题行，
+        因此这里 title 传空，避免 send_message 二次拼接导致标题重复；
+        title 通过 metadata 透传，供图文消息的 article 标题使用。
         """
         title = rendered.title
         body = rendered.body
@@ -179,7 +186,9 @@ class BaseNotificationChannel(ABC):
         if rendered.edit_message_id:
             kwargs["edit_message_id"] = rendered.edit_message_id
         kwargs.update(rendered.metadata)
-        await self.send_message(title=title, text=body, **kwargs)
+        # article_title 供图文卡片标题使用（body 已含标题，正文 title 传空避免重复）
+        kwargs["article_title"] = title
+        await self.send_message(title="", text=body, **kwargs)
 
     async def edit_rendered(self, rendered: RenderedMessage):
         """编辑已有消息。默认无操作，支持编辑的渠道覆写。"""
