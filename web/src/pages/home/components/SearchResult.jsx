@@ -1193,6 +1193,11 @@ export const SearchResult = () => {
                               <Tag color="volcano">
                                 {t('searchResult.yearLabel', { value: item.year ?? t('searchResult.unknown') })}
                               </Tag>
+                              {item.recognitionTitle && (
+                                <Tag color="green">
+                                  {t('searchResult.recognitionLabel', { value: item.recognitionTitle })}
+                                </Tag>
+                              )}
                               {item.type !== 'movie' && (
                                 <Tag color="orange">
                                   {t('searchResult.seasonLabel', { value: item.season ?? t('searchResult.unknown') })}

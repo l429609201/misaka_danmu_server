@@ -347,9 +347,9 @@ async def exchange_code(
 class BangumiMetadataSource(BaseMetadataSource):
     provider_name = "bangumi"
     api_router = auth_router
-    config_keys = ["bangumiClientId", "bangumiClientSecret", "bangumiToken", "authMode", "bangumiApiBaseUrl", "bangumiImageBaseUrl", "bangumiDataSyncEnabled", "bangumiDataSyncCron", "bangumiDataUrl"]
+    config_keys = ["bangumiClientId", "bangumiClientSecret", "bangumiToken", "authMode", "bangumiApiBaseUrl", "bangumiImageBaseUrl", "bangumiDataSyncEnabled", "bangumiDataOfflineEnabled", "bangumiDataSyncCron", "bangumiDataUrl"]
     # 需要做布尔转换的配置 key（getProviderConfig 时返回 true/false 布尔值）
-    bool_config_keys = ["bangumiDataSyncEnabled"]
+    bool_config_keys = ["bangumiDataSyncEnabled", "bangumiDataOfflineEnabled"]
 
     # ============ 订阅助手能力 ============
     # 注意：这里的「订阅」是【弹幕库内订阅】(自动建库追更)，不是 Bangumi 站内的「在看」。

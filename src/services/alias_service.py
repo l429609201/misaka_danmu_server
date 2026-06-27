@@ -126,12 +126,20 @@ async def fetch_aliases(
 async def _fetch_aliases_from_bangumi_data(
     title: str, bangumi_id: Optional[str]
 ) -> Optional[Dict[str, Any]]:
-    """从 bangumi-data 本地离线索引获取别名（优先 bangumiId 精确查，回退标题模糊查）。"""
+    """从 bangumi-data 本地离线索引获取别名（优先 bangumiId 精确查，回退标题模糊查）。
+
+    受 bangumiDataOfflineEnabled 开关控制：关闭时返回 None（仅用在线 API）。
+    """
     try:
         from src.services.bangumi_data_manager import get_bangumi_data_manager
         manager = get_bangumi_data_manager()
         if manager is None:
             return None
+        # 开关判断：关闭离线库方式时跳过
+        if manager.config_manager is not None:
+            offline_enabled = (await manager.config_manager.get("bangumiDataOfflineEnabled", "true")).lower() == "true"
+            if not offline_enabled:
+                return None
         result = None
         if bangumi_id:
             result = await manager.get_aliases_by_bangumi_id(str(bangumi_id))

@@ -37,6 +37,7 @@ class ParseResult:
     effect: Optional[str] = None
     original_title: Optional[str] = None
     en_name: Optional[str] = None
+    raw_input: Optional[str] = None  # 用户输入的原始完整文件名/关键词，供识别词等下游环节使用
 
 
 # ============================================================================
@@ -671,6 +672,7 @@ def parse_search_keyword(keyword: str) -> Dict[str, Any]:
     支持: "Title S01E01", "Title S01", "Title 第二季", "Title Ⅲ", "Title 2"
     """
     keyword = keyword.strip()
+    _raw = keyword  # 保留原始完整关键词，供下游识别词等最高优先级逻辑使用
 
     # 1. 优先匹配 SxxExx
     m = re.match(r'^(?P<title>.+?)\s*S(?P<season>\d{1,2})E(?P<episode>\d{1,4})$', keyword, re.IGNORECASE)
@@ -679,6 +681,7 @@ def parse_search_keyword(keyword: str) -> Dict[str, Any]:
             "title": m.group('title').strip(),
             "season": int(m.group('season')),
             "episode": int(m.group('episode')),
+            "original_keyword": _raw,
         }
 
     # 2. 匹配季度信息
@@ -702,12 +705,12 @@ def parse_search_keyword(keyword: str) -> Dict[str, Any]:
                 season = handler(m)
                 # 避免将年份误认为季度
                 if season and not (len(title) > 4 and title[-4:].isdigit()):
-                    return {"title": title, "season": season, "episode": None}
+                    return {"title": title, "season": season, "episode": None, "original_keyword": _raw}
             except (ValueError, KeyError, IndexError):
                 continue
 
     # 3. 无匹配，返回原始标题
-    return {"title": keyword, "season": None, "episode": None}
+    return {"title": keyword, "season": None, "episode": None, "original_keyword": _raw}
 
 
 # ============================================================================

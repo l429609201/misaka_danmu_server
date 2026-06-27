@@ -108,6 +108,7 @@ export function BangumiConfig({ form }) {
         bangumiApiBaseUrl: config.bangumiApiBaseUrl || 'https://api.bgm.tv',
         bangumiImageBaseUrl: config.bangumiImageBaseUrl || 'https://lain.bgm.tv',
         bangumiDataSyncEnabled: config.bangumiDataSyncEnabled ?? false,
+        bangumiDataOfflineEnabled: config.bangumiDataOfflineEnabled ?? true,
         bangumiDataSyncCron: config.bangumiDataSyncCron || '0 4 * * *',
         bangumiDataUrl: config.bangumiDataUrl || 'https://unpkg.com/bangumi-data@0.3/dist/data.json',
         authMode: mode, // 保存到表单中
@@ -282,14 +283,31 @@ export function BangumiConfig({ form }) {
         </div>
         <div className="text-xs text-gray-500 -mt-1">{t('metadataConfig.bgmDataDesc')}</div>
 
-        <Form.Item
-          name="bangumiDataSyncEnabled"
-          label={t('metadataConfig.bgmDataSyncEnabled')}
-          valuePropName="checked"
-          className="!mb-0"
-        >
-          <Switch />
-        </Form.Item>
+        {/* 一行三栏：启用离线库方式（左） | 启用定时同步（中） | 立即同步（右） */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <Form.Item
+            name="bangumiDataOfflineEnabled"
+            label={t('metadataConfig.bgmDataOfflineEnabled')}
+            tooltip={t('metadataConfig.bgmDataOfflineEnabledTip')}
+            valuePropName="checked"
+            className="!mb-0"
+          >
+            <Switch />
+          </Form.Item>
+
+          <Form.Item
+            name="bangumiDataSyncEnabled"
+            label={t('metadataConfig.bgmDataSyncEnabled')}
+            valuePropName="checked"
+            className="!mb-0"
+          >
+            <Switch />
+          </Form.Item>
+
+          <Button size="small" type="primary" loading={bgmDataSyncing} onClick={handleSyncBgmData}>
+            {t('metadataConfig.bgmDataSyncNow')}
+          </Button>
+        </div>
 
         <Form.Item
           name="bangumiDataSyncCron"
@@ -308,13 +326,6 @@ export function BangumiConfig({ form }) {
         >
           <Input placeholder="https://unpkg.com/bangumi-data@0.3/dist/data.json" />
         </Form.Item>
-
-        <div className="flex items-center gap-2 pt-1">
-          <Button size="small" type="primary" loading={bgmDataSyncing} onClick={handleSyncBgmData}>
-            {t('metadataConfig.bgmDataSyncNow')}
-          </Button>
-          <span className="text-xs text-gray-400">{t('metadataConfig.bgmDataSyncNowTip')}</span>
-        </div>
       </div>
 
       {/* 隐藏的 authMode 字段 */}

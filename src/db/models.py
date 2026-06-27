@@ -81,6 +81,7 @@ class ProviderSearchInfo(BaseModel):
     url: Optional[str] = Field(None, description="平台播放页面URL")
     supportsEpisodeUrls: Optional[bool] = Field(None, description="该源是否支持获取分集URL (用于补充源功能)")
     supplementSource: Optional[str] = Field(None, description="搜索补充源名称 (如 '360')，非补充结果时为null")
+    recognitionTitle: Optional[str] = Field(None, description="识别词指定的入库正确名（命中双向识别词时设置，前端展示为tag；None表示未命中识别词）")
 
 
 class ProviderSearchResponse(BaseModel):

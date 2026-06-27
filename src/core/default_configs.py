@@ -59,6 +59,7 @@ def get_default_configs(settings=None, ai_prompts=None):
         'bangumiClientId': ('', '用于Bangumi OAuth的App ID。'),
         'bangumiClientSecret': ('', '用于Bangumi OAuth的App Secret。'),
         'bangumiDataSyncEnabled': ('false', '是否启用 bangumi-data 离线索引定时同步。'),
+        'bangumiDataOfflineEnabled': ('true', '是否启用 bangumi-data 离线库辅助（开=离线库+API补充，关=仅用API）。'),
         'bangumiDataSyncCron': ('0 4 * * *', 'bangumi-data 离线索引同步的 cron 表达式（默认每天 4:00）。'),
         'bangumiDataUrl': ('https://unpkg.com/bangumi-data@0.3/dist/data.json', 'bangumi-data 数据集的下载地址（CDN）。支持自定义镜像，多个地址用英文逗号分隔，按顺序回退。'),
         'doubanCookie': ('', '用于访问豆瓣API的Cookie。'),

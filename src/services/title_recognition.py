@@ -480,6 +480,60 @@ class TitleRecognitionManager:
 
         return processed_text, processed_episode, processed_season, has_changed
 
+    async def apply_search_title_mapping(self, original_keyword: str) -> Optional[Dict[str, Any]]:
+        """
+        识别词"反向映射"（搜索期最高优先级）。
+
+        用户写的 postprocess 规则形如：
+            说唱巅峰对决2026 => {[source=iqiyi;title=中国新说唱 第九季;season_offset=1>9]}
+        其中 `source`(规则左侧匹配词)=源站真实标题，`title`=用户希望的入库名。
+
+        本方法做反向匹配：如果"用户搜索的原始完整关键词"命中了规则的 `title` 值，
+        说明用户其实想找的是源站上叫 `source` 的那部，于是返回实际应该拿去搜索的词。
+
+        Args:
+            original_keyword: 用户输入的原始完整关键词（未经 parse 拆解，如 "中国新说唱 第九季"）
+
+        Returns:
+            命中时返回 {
+                "search_title": 实际拿去搜索的词（规则 source 值，如 "说唱巅峰对决2026"）,
+                "recognition_title": 识别词指定的入库正确名（规则 title 值，如 "中国新说唱 第九季"）,
+                "rule_source_restriction": 规则的源限定（如 "iqiyi"，无则 "all"）,
+            }
+            未命中返回 None
+        """
+        await self._ensure_rules_loaded()
+
+        if not original_keyword:
+            return None
+
+        # 仅扫描带 title 的 postprocess 规则（season_offset / metadata_replace）
+        for rule in self.recognition_rules:
+            if rule.stage != 'postprocess':
+                continue
+            if rule.rule_type not in ('season_offset', 'metadata_replace'):
+                continue
+            recognition_title = rule.data.get('title')
+            rule_match_source = rule.data.get('source')  # 规则左侧匹配词 = 源站真实标题
+            if not recognition_title or not rule_match_source:
+                continue
+
+            # 反向匹配：用户原始词 == 规则的 title 值（即用户用"入库名"来搜）
+            if self._exact_match(original_keyword, recognition_title):
+                rule_source_restriction = rule.data.get('source_restriction', 'all')
+                logger.info(
+                    f"✓ 识别词反向映射命中: 用户搜索 '{original_keyword}' 匹配规则入库名 "
+                    f"'{recognition_title}'，实际改用 '{rule_match_source}' 搜索"
+                    f"（源限定={rule_source_restriction}）"
+                )
+                return {
+                    "search_title": rule_match_source,
+                    "recognition_title": recognition_title,
+                    "rule_source_restriction": rule_source_restriction,
+                }
+
+        return None
+
     async def apply_storage_postprocessing(self, text: str, season: Optional[int] = None, source: Optional[str] = None, episode: Optional[int] = None) -> Tuple[str, Optional[int], bool, Optional[Dict[str, Any]], Optional[int]]:
         """
         应用入库后处理规则（在选择最佳匹配后执行）

@@ -205,20 +205,42 @@ async def execute_fallback_search_task(
         original_title = parsed_info["title"]
         season_to_filter = parsed_info.get("season")
         episode_to_filter = parsed_info.get("episode")
+        # 原始完整关键词（未拆解），供识别词反向映射使用
+        original_keyword = parsed_info.get("original_keyword") or search_term.strip()
+
+        # 🚀 识别词反向映射（最高优先级）：用户用"入库名"搜索时，自动改用源站真实名去搜
+        recognition_title = None  # 识别词指定的入库正确名，命中后写入每条结果
+        recognition_mapping_applied = False
+        if title_recognition_manager:
+            try:
+                mapping = await title_recognition_manager.apply_search_title_mapping(original_keyword)
+                if mapping:
+                    recognition_title = mapping["recognition_title"]
+                    recognition_mapping_applied = True
+                    logger.info(
+                        f"✓ 后备搜索识别词反向映射: '{search_term}' → 实际搜索 "
+                        f"'{mapping['search_title']}'，入库名标记为 '{recognition_title}'"
+                    )
+            except Exception as e:
+                logger.warning(f"后备搜索识别词反向映射失败: {e}")
 
         # 2. 名称转换（非中文→中文，与 Webhook 搜索一致）
+        # 识别词反向映射命中时跳过（用户已显式指定真实搜索词）
         fallback_user = models.User(id=0, username="fallback_search")
-        converted_title, conversion_applied = await convert_to_chinese_title(
-            original_title, config_manager, metadata_manager,
-            ai_matcher_manager, fallback_user
-        )
-        if conversion_applied:
-            logger.info(f"✓ 后备搜索名称转换: '{original_title}' → '{converted_title}'")
-            original_title = converted_title
+        if recognition_mapping_applied:
+            original_title = mapping["search_title"]
+        else:
+            converted_title, conversion_applied = await convert_to_chinese_title(
+                original_title, config_manager, metadata_manager,
+                ai_matcher_manager, fallback_user
+            )
+            if conversion_applied:
+                logger.info(f"✓ 后备搜索名称转换: '{original_title}' → '{converted_title}'")
+                original_title = converted_title
 
-        # 3. 应用标题预处理规则
+        # 3. 应用标题预处理规则（识别词反向映射命中时跳过，避免二次改写真实搜索词）
         search_title = original_title
-        if title_recognition_manager:
+        if title_recognition_manager and not recognition_mapping_applied:
             (processed_title, processed_episode, processed_season, preprocessing_applied) = \
                 await title_recognition_manager.apply_search_preprocessing(
                     original_title, episode_to_filter, season_to_filter
@@ -436,6 +458,7 @@ async def execute_fallback_search_task(
                     episodeCount=result.episodeCount or 0,
                     rating=0.0,
                     isFavorited=False,
+                    recognitionTitle=recognition_title,  # 识别词反向映射命中时的入库正确名
                 )
             )
 

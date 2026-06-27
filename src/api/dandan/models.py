@@ -64,6 +64,7 @@ class DandanSearchAnimeItem(BaseModel):
     episodeCount: int
     rating: float = 0.0
     isFavorited: bool = False
+    recognitionTitle: Optional[str] = None  # 识别词反向映射命中时的入库正确名（前端展示为tag）
 
 
 class DandanSearchAnimeResponse(DandanResponseBase):
