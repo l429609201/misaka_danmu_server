@@ -18,7 +18,7 @@ from src.api.dependencies import (
 )
 from .models import (
     UITaskResponse, ImportFromUrlRequest, ValidateUrlRequest, ValidateUrlResponse,
-    EpisodeOffsetPreviewRequest, EpisodeOffsetPreviewResponse
+    EpisodeOffsetPreviewRequest, EpisodeOffsetPreviewResponse, UrlCollectionInfo
 )
 
 logger = logging.getLogger(__name__)
@@ -296,7 +296,23 @@ async def validate_import_url(
                 errorMessage=f"无法从URL解析出有效信息，请检查URL格式是否正确"
             )
 
-        # 3. 返回解析结果
+        # 3. 检测该 URL 是否属于合集（目前仅 B站 ugc_season 支持）
+        collection_info = None
+        if hasattr(scraper, "get_url_import_collection_info"):
+            try:
+                col = await scraper.get_url_import_collection_info(url)
+                if col and col.get("seasonId") and col.get("mid"):
+                    collection_info = UrlCollectionInfo(
+                        seasonId=str(col["seasonId"]),
+                        mid=str(col["mid"]),
+                        title=col.get("title"),
+                        total=col.get("total"),
+                    )
+            except Exception as e:
+                # 合集检测失败不影响主流程，仅记录
+                logger.warning(f"检测URL合集信息失败: {e}")
+
+        # 4. 返回解析结果
         return ValidateUrlResponse(
             isValid=True,
             provider=provider,
@@ -305,7 +321,8 @@ async def validate_import_url(
             imageUrl=info.imageUrl,
             mediaType=info.type,
             year=info.year,
-            episodeIndex=info.currentEpisodeIndex  # 如果URL中包含集数信息
+            episodeIndex=info.currentEpisodeIndex,  # 如果URL中包含集数信息
+            collection=collection_info
         )
     except Exception as e:
         logger.error(f"解析URL时发生错误: {e}", exc_info=True)
@@ -384,6 +401,22 @@ async def import_from_url(
     media_id = info.mediaId
     image_url = info.imageUrl
     year = info.year
+
+    # 3.1 合集导入模式：改用 collection mediaId，让 get_episodes 展开整个合集为多集
+    if (request_data.import_mode == "collection"
+            and request_data.collection_season_id and request_data.collection_mid):
+        season_id = str(request_data.collection_season_id).strip()
+        mid = str(request_data.collection_mid).strip()
+        if season_id.isdigit() and mid.isdigit():
+            media_id = f"collection:{season_id}:{mid}"
+            # 合集作为剧集聚合导入
+            final_media_type = "tv_series"
+            logger.info(f"URL导入: 启用合集模式 (season_id={season_id}, mid={mid})")
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="合集导入参数无效：season_id 与 mid 必须为数字"
+            )
 
     logger.info(f"URL导入: provider={provider}, mediaId={media_id}, title={final_title}, type={final_media_type}, season={final_season}")
 

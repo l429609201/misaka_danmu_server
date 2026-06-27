@@ -61,8 +61,13 @@ class BulkDeleteRequest(BaseModel):
 class ProxyTestResult(BaseModel):
     """代理测试结果"""
     status: str  # 'success' or 'failure'
-    latency: Optional[float] = None  # in ms
+    latency: Optional[float] = None  # HTTP 连通延迟 (ms)
     error: Optional[str] = None
+    # DNS 解析检测结果（新增）
+    dns_status: Optional[str] = None  # 'success' | 'failure' | None(未检测)
+    dns_latency: Optional[float] = None  # DNS 解析耗时 (ms)
+    resolved_ip: Optional[str] = None  # 解析到的首个 IP
+    dns_error: Optional[str] = None  # DNS 解析失败原因
 
 
 class ProxyTestRequest(BaseModel):
@@ -70,6 +75,23 @@ class ProxyTestRequest(BaseModel):
     proxy_mode: str = "none"  # none, http_socks, accelerate
     proxy_url: Optional[str] = None  # HTTP/SOCKS 代理 URL
     accelerate_proxy_url: Optional[str] = None  # 加速代理地址
+
+
+class SingleTargetTestRequest(BaseModel):
+    """单域名测速 / DNS 解析测试请求"""
+    url: str  # 要测试的域名或 URL（如 https://example.com 或 example.com）
+    proxy_mode: str = "none"  # none, http_socks, accelerate
+    proxy_url: Optional[str] = None
+    accelerate_proxy_url: Optional[str] = None
+    check_dns: bool = True  # 是否做 DNS 解析检测
+    check_http: bool = True  # 是否做 HTTP 连通性检测
+
+
+class SingleTargetTestResponse(BaseModel):
+    """单域名测速 / DNS 解析测试响应"""
+    url: str  # 规范化后的测试 URL
+    host: str  # 实际解析/请求的主机名
+    result: ProxyTestResult  # 复用统一结果结构（含 DNS 与 HTTP）
 
 
 class FullProxyTestResponse(BaseModel):
@@ -176,11 +198,34 @@ class ImportFromUrlRequest(BaseModel):
     title: Optional[str] = None  # 可选：指定标题，不指定则从源获取
     media_type: Optional[str] = None  # 可选：媒体类型
     season: Optional[int] = None  # 可选：季度
+    # B站合集导入：import_mode='collection' 时按合集展开为多集
+    import_mode: Optional[str] = None  # 'single'(默认) | 'collection'
+    collection_season_id: Optional[str] = None  # 合集 season_id（import_mode=collection 时使用）
+    collection_mid: Optional[str] = None  # 合集所属 UP 的 mid
+
+
+class UrlCollectionInfo(BaseModel):
+    """URL 所属合集信息（目前仅 B站 ugc_season）"""
+    seasonId: str  # 合集 season_id
+    mid: str  # 合集所属 UP 的 mid
+    title: Optional[str] = None  # 合集标题
+    total: Optional[int] = None  # 合集视频总数（用于前端提示"共 N 个"）
 
 
 class ValidateUrlRequest(BaseModel):
     """URL校验请求"""
     url: str  # 要校验的URL
+
+
+class ImportCollectionRequest(BaseModel):
+    """自定义源「整个合集」导入请求（目前仅 B站 ugc_season）。
+
+    将合集内全部视频作为「当前自定义源」的分集批量导入：后端拉取合集视频列表，
+    构造批量手动导入项（每项一个视频 URL），逐个抓取弹幕写入当前 sourceId。
+    """
+    url: str  # 合集内任一视频的 URL（后端据此解析合集）
+    title: Optional[str] = None  # 合集标题（可选，仅用于任务名展示）
+    startEpisodeIndex: Optional[int] = None  # 起始集号（可选，默认 1）
 
 
 class ValidateUrlResponse(BaseModel):
@@ -194,6 +239,7 @@ class ValidateUrlResponse(BaseModel):
     year: Optional[int] = None  # 年份
     episodeIndex: Optional[int] = None  # 集数（如果能从URL解析出来）
     errorMessage: Optional[str] = None  # 错误信息
+    collection: Optional[UrlCollectionInfo] = None  # 该视频所属合集信息（仅 B站且属于合集时返回）
 
 
 class GlobalFilterSettings(BaseModel):

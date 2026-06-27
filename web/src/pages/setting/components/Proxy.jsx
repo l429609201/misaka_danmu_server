@@ -8,9 +8,10 @@ import {
   Select,
   Switch,
   Spin,
+  Tag,
 } from 'antd'
 import { useEffect, useState } from 'react'
-import { getProxyConfig, setProxyConfig, testProxy } from '../../../apis'
+import { getProxyConfig, setProxyConfig, testProxy, testSingleTarget } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
 import { useTranslation } from 'react-i18next'
 
@@ -22,6 +23,10 @@ export const Proxy = () => {
   const [isSaveLoading, setIsSaveLoading] = useState(false)
   const [isTestLoading, setIsTestLoading] = useState(false)
   const [testResult, setTestResult] = useState(null)
+  // 单域名测速 / DNS 解析
+  const [singleUrl, setSingleUrl] = useState('')
+  const [singleTesting, setSingleTesting] = useState(false)
+  const [singleResult, setSingleResult] = useState(null)
   const messageApi = useMessage()
 
   useEffect(() => {
@@ -90,6 +95,51 @@ export const Proxy = () => {
       messageApi.error(t('proxy.testRequestFailed'))
     } finally {
       setIsTestLoading(false)
+    }
+  }
+
+  // 单独测试某个域名的速度 / DNS 解析
+  const handleTestSingle = async () => {
+    const url = singleUrl.trim()
+    if (!url) {
+      messageApi.warning(t('proxy.singleUrlRequired'))
+      return
+    }
+    try {
+      setSingleTesting(true)
+      setSingleResult(null)
+      const values = form.getFieldsValue()
+      // 构建代理 URL（与 handleTest 一致）
+      let proxyUrl = ''
+      if (
+        values.proxyMode === 'http_socks' &&
+        values.proxyHost &&
+        values.proxyPort &&
+        values.proxyProtocol
+      ) {
+        let userinfo = ''
+        if (values.proxyUsername) {
+          userinfo = encodeURIComponent(values.proxyUsername)
+          if (values.proxyPassword) {
+            userinfo += ':' + encodeURIComponent(values.proxyPassword)
+          }
+          userinfo += '@'
+        }
+        proxyUrl = `${values.proxyProtocol}://${userinfo}${values.proxyHost}:${values.proxyPort}`
+      }
+      const res = await testSingleTarget({
+        url,
+        proxy_mode: values.proxyMode || 'none',
+        proxy_url: proxyUrl,
+        accelerate_proxy_url: values.accelerateProxyUrl || '',
+        check_dns: true,
+        check_http: true,
+      })
+      setSingleResult(res.data)
+    } catch (error) {
+      messageApi.error(error?.detail || error?.message || t('proxy.testRequestFailed'))
+    } finally {
+      setSingleTesting(false)
     }
   }
 
@@ -341,6 +391,22 @@ export const Proxy = () => {
                                         return (
                                           <div key={site} className={`flex items-center gap-3 px-3 pl-6 py-1.5 transition hover:bg-gray-100/70 dark:hover:bg-white/[0.04]`}>
                                             <span className={`text-xs flex-1 truncate ${isSuccess ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400'}`}>{domain}</span>
+                                            {/* DNS 解析状态：成功显示首个 IP（hover 查看），失败显示红点 */}
+                                            {result.dns_status === 'success' ? (
+                                              <span
+                                                className="text-[10px] font-mono text-sky-500 bg-sky-500/10 px-1.5 py-0.5 rounded flex-shrink-0 max-w-[120px] truncate"
+                                                title={`DNS: ${result.resolved_ip} (${Math.round(result.dns_latency)}ms)`}
+                                              >
+                                                {result.resolved_ip}
+                                              </span>
+                                            ) : result.dns_status === 'failure' ? (
+                                              <span
+                                                className="text-[10px] font-semibold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded flex-shrink-0"
+                                                title={result.dns_error || 'DNS 解析失败'}
+                                              >
+                                                DNS✗
+                                              </span>
+                                            ) : null}
                                             <div className="w-24 h-1.5 rounded-full bg-gray-100 dark:bg-white/5 overflow-hidden flex-shrink-0">
                                               <div className={`h-full rounded-full transition-all duration-500 ${isSuccess ? colors.bar : 'bg-red-400/50'}`} style={{ width: `${barWidth}%` }} />
                                             </div>
@@ -366,6 +432,77 @@ export const Proxy = () => {
             )
           })()}
         </Card>
+
+      {/* 单域名测速 / DNS 解析卡片 */}
+      <Card className="mt-4" title={t('proxy.singleTestTitle')}>
+        <div className="text-gray-500 dark:text-gray-400 text-sm mb-3">
+          {t('proxy.singleTestDesc')}
+        </div>
+        <Input.Search
+          value={singleUrl}
+          onChange={e => setSingleUrl(e.target.value)}
+          placeholder={t('proxy.singleUrlPlaceholder')}
+          enterButton={
+            <Button type="primary" loading={singleTesting}>
+              {t('proxy.singleTestBtn')}
+            </Button>
+          }
+          onSearch={handleTestSingle}
+          allowClear
+        />
+
+        {singleTesting && (
+          <div className="flex items-center justify-center gap-3 py-6">
+            <Spin />
+            <span className="text-sm text-gray-500">{t('proxy.testing')}</span>
+          </div>
+        )}
+
+        {singleResult && !singleTesting && (() => {
+          const r = singleResult.result || {}
+          const httpOk = r.status === 'success'
+          const dnsOk = r.dns_status === 'success'
+          return (
+            <div className="mt-4 space-y-3">
+              {/* 主机信息 */}
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-gray-400">{t('proxy.singleHost')}</span>
+                <span className="font-mono dark:text-gray-200">{singleResult.host}</span>
+              </div>
+
+              {/* DNS 解析结果 */}
+              <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-white/[0.03]">
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${r.dns_status == null ? 'bg-gray-300' : dnsOk ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                <span className="text-xs text-gray-600 dark:text-gray-300 w-28 font-medium">{t('proxy.dnsResolve')}</span>
+                <div className="flex-1 flex items-center gap-2 flex-wrap">
+                  {dnsOk ? (
+                    <>
+                      <Tag color="green" className="!m-0">{r.resolved_ip}</Tag>
+                      <span className="text-xs text-gray-400">{Math.round(r.dns_latency)}ms</span>
+                    </>
+                  ) : r.dns_status === 'failure' ? (
+                    <span className="text-[11px] font-semibold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">{r.dns_error || t('proxy.dnsFailed')}</span>
+                  ) : (
+                    <span className="text-xs text-gray-400">{t('proxy.notChecked')}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* HTTP 连通性结果 */}
+              <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-white/[0.03]">
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${httpOk ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                <span className="text-xs text-gray-600 dark:text-gray-300 w-28 font-medium">{t('proxy.httpConnect')}</span>
+                <div className="flex-1 flex items-center justify-end">
+                  {httpOk
+                    ? <span className={`text-xs font-bold ${getLatencyColor(r.latency).text}`}>{Math.round(r.latency)}ms</span>
+                    : <span className="text-[11px] font-semibold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">{r.error || t('proxy.connectFailed')}</span>
+                  }
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+      </Card>
     </div>
   )
 }

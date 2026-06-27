@@ -21,7 +21,7 @@ from src.api.dependencies import (
     get_metadata_manager, get_config_manager, get_rate_limiter,
     get_title_recognition_manager
 )
-from .models import UITaskResponse, BulkDeleteRequest
+from .models import UITaskResponse, BulkDeleteRequest, ImportCollectionRequest
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +336,94 @@ async def batch_manual_import(
             task_parameters={"sourceId": sourceId, "providerName": source_info['providerName']}
         )
         return {"message": "批量手动导入任务已提交", "taskId": task_id}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+
+@router.post("/library/source/{sourceId}/import-collection", status_code=status.HTTP_202_ACCEPTED, summary="导入整个合集为当前源的分集", response_model=UITaskResponse)
+async def import_collection(
+    sourceId: int,
+    payload: ImportCollectionRequest,
+    current_user: models.User = Depends(security.get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+    scraper_manager: ScraperManager = Depends(get_scraper_manager),
+    task_manager: TaskManager = Depends(get_task_manager),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
+):
+    """将一个 B站合集（ugc_season）内的全部视频，作为「当前自定义源」的分集批量导入。
+
+    流程：
+    1. 自动识别 URL 所属平台（须支持合集，目前仅 bilibili）。
+    2. 调 scraper 拉取合集视频列表（含 bvid/title），按合集顺序构造批量导入项。
+    3. 提交 batch_manual_import_task（传入 scraperProvider），逐个 URL 抓取弹幕写入当前 sourceId。
+    """
+    source_info = await crud.get_anime_source_info(session, sourceId)
+    if not source_info:
+        raise HTTPException(status_code=404, detail="数据源未找到")
+
+    url = (payload.url or "").strip()
+    if not url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="URL不能为空")
+
+    # 1. 识别平台（基于各 scraper 的 handled_domains）
+    scraper = scraper_manager.get_scraper_by_domain(url)
+    if not scraper:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="无法识别URL所属平台")
+    real_provider = scraper.provider_name
+
+    # 2. 校验该 scraper 支持合集导入
+    if not hasattr(scraper, "list_collection_videos_for_import") and not hasattr(scraper, "get_url_import_collection_info"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"平台 '{real_provider}' 不支持合集导入")
+
+    # 3. 拉取合集视频列表（每项含 url + title）
+    try:
+        videos = await scraper.list_collection_videos_for_import(url)
+    except AttributeError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"平台 '{real_provider}' 不支持合集导入")
+    except Exception as e:
+        logger.error(f"拉取合集视频列表失败: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"拉取合集视频列表失败: {e}")
+
+    if not videos:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该URL未检测到合集，或合集内无可导入的视频")
+
+    # 4. 构造批量导入项（episodeIndex 从 startEpisodeIndex 起递增）
+    start_index = payload.startEpisodeIndex if (payload.startEpisodeIndex and payload.startEpisodeIndex > 0) else 1
+    items: List[models.BatchManualImportItem] = []
+    for offset, v in enumerate(videos):
+        video_url = v.get("url")
+        if not video_url:
+            continue
+        items.append(models.BatchManualImportItem(
+            title=v.get("title") or f"第 {start_index + offset} 集",
+            episodeIndex=start_index + offset,
+            content=video_url,
+        ))
+
+    if not items:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="合集内无可导入的视频")
+
+    collection_title = payload.title or "合集"
+    task_title = f"导入合集: {source_info['title']} - {collection_title} ({real_provider})"
+    unique_key = f"import-collection-{sourceId}-{real_provider}"
+    try:
+        task_coro = lambda s, cb: tasks.batch_manual_import_task(
+            sourceId=sourceId,
+            animeId=source_info['animeId'],
+            providerName=source_info['providerName'],
+            items=items,
+            progress_callback=cb,
+            session=s,
+            manager=scraper_manager,
+            rate_limiter=rate_limiter,
+            scraperProvider=real_provider,  # 让 custom 源也按 URL 逐个抓取
+        )
+        task_id, _ = await task_manager.submit_task(
+            task_coro, task_title, unique_key=unique_key,
+            task_type="batch_manual_import",
+            task_parameters={"sourceId": sourceId, "providerName": source_info['providerName']}
+        )
+        return {"message": f"合集导入任务已提交，共 {len(items)} 个视频", "taskId": task_id}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 

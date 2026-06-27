@@ -539,6 +539,9 @@ export const setProxyConfig = data => api.put('/api/ui/config/proxy', data)
 /** 测试代理连接 */
 export const testProxy = data => api.post('/api/ui/proxy/test', data)
 
+/** 单独测试某个域名的速度 / DNS 解析 */
+export const testSingleTarget = data => api.post('/api/ui/proxy/test-single', data)
+
 /** 获取受信任的反向代理IP */
 export const getTrustedProxiesConfig = () =>
   api.get('/api/ui/config/trustedProxies')
@@ -693,6 +696,14 @@ export const addSourceToAnime = data =>
 /** 批量手动导入 */
 export const batchManualImport = data =>
   api.post(`/api/ui/library/source/${data.sourceId}/batch-import`, data)
+
+/** 导入整个合集为当前源的分集（目前仅 B站 ugc_season） */
+export const importCollection = data =>
+  api.post(`/api/ui/library/source/${data.sourceId}/import-collection`, {
+    url: data.url,
+    title: data.title,
+    startEpisodeIndex: data.startEpisodeIndex,
+  })
 
 /** 校验并解析导入URL */
 export const validateImportUrl = data =>
