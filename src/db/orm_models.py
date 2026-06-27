@@ -219,6 +219,28 @@ class CacheData(Base):
     cacheValue: Mapped[str] = mapped_column("cache_value", TEXT().with_variant(MEDIUMTEXT, "mysql"))
     expiresAt: Mapped[datetime] = mapped_column("expires_at", NaiveDateTime, index=True)
 
+class BangumiDataIndex(Base):
+    """bangumi-data 离线索引表。
+
+    来源：https://unpkg.com/bangumi-data@0.3/dist/data.json（CC BY 4.0），定时同步。
+    作为本地离线数据层，为别名补全(A2)、匹配增强(A2)、平台直链(A3)提供支撑，
+    与在线 Bangumi 元数据源互补（命中本地则省一次在线请求），不耦合其主链路。
+    """
+    __tablename__ = "bangumi_data_index"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # 该番在 bangumi 站点的 subject id（sites 中 site==bangumi 的 id），用于与库内 bangumiId 桥接
+    bangumiId: Mapped[Optional[str]] = mapped_column("bangumi_id", String(32), index=True)
+    titleMain: Mapped[str] = mapped_column("title_main", String(500), index=True)  # 日文原名（title 字段）
+    # 全语言别名扁平化（换行分隔），供 SQL LIKE 跨语言模糊匹配
+    titlesAll: Mapped[Optional[str]] = mapped_column("titles_all", TEXT().with_variant(MEDIUMTEXT, "mysql"))
+    titleZh: Mapped[Optional[str]] = mapped_column("title_zh", String(500))   # 首选简体中文译名
+    titleEn: Mapped[Optional[str]] = mapped_column("title_en", String(500))   # 首选英文名
+    type: Mapped[Optional[str]] = mapped_column("type", String(32))            # tv / movie / ova / ...
+    beginYear: Mapped[Optional[int]] = mapped_column("begin_year", Integer)    # 放送开始年份
+    sites: Mapped[Optional[str]] = mapped_column("sites", TEXT)                # JSON：{platform: id} 平台映射
+    updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime, default=get_now, nullable=False)
+
+
 class ApiToken(Base):
     __tablename__ = "api_tokens"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

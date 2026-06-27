@@ -364,6 +364,22 @@ class MetadataSourceManager:
                 if detail_aliases:
                     all_aliases.update(detail_aliases)
 
+        # A2 匹配增强：用 bangumi-data 本地离线索引补充多语言别名（日↔中↔英），离线零网络成本
+        try:
+            from src.services.bangumi_data_manager import get_bangumi_data_manager
+            bgm_data = get_bangumi_data_manager()
+            if bgm_data is not None:
+                local = await bgm_data.get_aliases_by_title(keyword)
+                if local:
+                    if local.get("name_jp"):
+                        all_aliases.add(local["name_jp"])
+                    if local.get("name_en"):
+                        all_aliases.add(local["name_en"])
+                    for cn in (local.get("aliases_cn") or []):
+                        all_aliases.add(cn)
+        except Exception as e:
+            self.logger.debug(f"bangumi-data 本地别名补充失败: {e}")
+
         return {alias for alias in all_aliases if alias}, supplemental_results, title_type_map
 
     async def supplement_empty_search_results(

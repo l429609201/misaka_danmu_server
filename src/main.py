@@ -33,6 +33,7 @@ from src.services import (
     TransportManager, setup_logging,
     NotificationService, NotificationManager,
     TunnelService, apply_tunnel_from_notification_manager,
+    init_bangumi_data_manager,
 )
 from src.utils import InternalPollingManager, init_proxy_middleware
 from src.api import api_router, control_router
@@ -234,6 +235,9 @@ async def lifespan(app: FastAPI):
     # 初始化媒体服务器管理器
     app.state.media_server_manager = MediaServerManager(session_factory)
     await app.state.media_server_manager.initialize()
+
+    # 初始化 bangumi-data 离线数据层管理器（全局单例，供别名补全/匹配增强/平台直链使用）
+    app.state.bangumi_data_manager = init_bangumi_data_manager(session_factory, app.state.config_manager)
 
     app.state.webhook_manager = WebhookManager(
         session_factory, app.state.task_manager, app.state.scraper_manager,

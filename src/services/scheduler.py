@@ -297,6 +297,26 @@ class SchedulerManager:
             await crud.update_scheduled_task_run_times(session, task_id, task_info['lastRunAt'], next_run_time)
             return await crud.get_scheduled_task(session, task_id)
 
+    async def sync_bangumi_data_schedule(self, enabled: bool, cron: str) -> None:
+        """方案甲：根据 Bangumi 源配置中的「开关 + cron」，自动维护 bangumiDataSync 调度任务。
+
+        - enabled=True：不存在则创建，存在则更新 cron 并启用
+        - enabled=False：存在则禁用（保留记录，不删除），不存在则不处理
+        由 set_provider_settings 在保存 Bangumi 配置时调用。
+        """
+        job_type = "bangumiDataSync"
+        name = "bangumi-data 离线索引同步"
+        cron = (cron or "").strip() or "0 4 * * *"  # 默认每天 4:00
+        async with self._session_factory() as session:
+            existing_id = await crud.get_scheduled_task_id_by_type(session, job_type)
+
+        if existing_id:
+            await self.update_task(existing_id, name, cron, enabled)
+            logger.info(f"已更新 bangumi-data 同步调度任务: enabled={enabled}, cron='{cron}'")
+        elif enabled:
+            await self.add_task(name, job_type, cron, True)
+            logger.info(f"已创建 bangumi-data 同步调度任务: cron='{cron}'")
+
     async def delete_task(self, task_id: str) -> bool:
         async with self._session_factory() as session:
             task_info = await crud.get_scheduled_task(session, task_id)

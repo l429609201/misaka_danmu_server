@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src import security
 from src.db import crud, models, get_db_session, ConfigManager
 from src.core import get_config_schema
-from src.services import ScraperManager, MetadataSourceManager
+from src.services import ScraperManager, MetadataSourceManager, SchedulerManager
 from src.ai.ai_prompts import (
     DEFAULT_AI_MATCH_PROMPT,
     DEFAULT_AI_SEASON_MAPPING_PROMPT,
@@ -33,7 +33,7 @@ from src.utils import DanmakuPathTemplate
 
 from src.api.dependencies import (
     get_scraper_manager, get_metadata_manager, get_config_manager,
-    get_ai_matcher_manager
+    get_ai_matcher_manager, get_scheduler_manager
 )
 from .models import (
     ProxyTestResult, ProxyTestRequest, FullProxyTestResponse,
@@ -701,7 +701,8 @@ async def set_provider_settings(
     settings: Dict[str, Any],
     current_user: models.User = Depends(security.get_current_user),
     config_manager: ConfigManager = Depends(get_config_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager)
+    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    scheduler_manager: SchedulerManager = Depends(get_scheduler_manager)
 ):
     """批量更新指定元数据源的相关配置。config keys 从源类自动获取，无需硬编码。"""
     keys_to_update = metadata_manager.get_config_keys(providerName)
@@ -712,6 +713,21 @@ async def set_provider_settings(
     if tasks:
         await asyncio.gather(*tasks)
     logger.info(f"用户 '{current_user.username}' 更新了元数据源 '{providerName}' 的配置。")
+
+    # 方案甲：保存 Bangumi 配置时，按「开关 + cron」自动维护 bangumi-data 同步调度任务
+    if providerName == "bangumi" and ("bangumiDataSyncEnabled" in settings or "bangumiDataSyncCron" in settings):
+        try:
+            enabled_raw = settings.get("bangumiDataSyncEnabled")
+            if isinstance(enabled_raw, bool):
+                enabled = enabled_raw
+            elif enabled_raw is not None:
+                enabled = str(enabled_raw).lower() == "true"
+            else:
+                enabled = (await config_manager.get("bangumiDataSyncEnabled", "false")).lower() == "true"
+            cron = settings.get("bangumiDataSyncCron") or await config_manager.get("bangumiDataSyncCron", "0 4 * * *")
+            await scheduler_manager.sync_bangumi_data_schedule(enabled, cron)
+        except Exception as e:
+            logger.error(f"维护 bangumi-data 同步调度任务失败: {e}", exc_info=True)
 
 
 

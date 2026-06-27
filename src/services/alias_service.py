@@ -78,10 +78,14 @@ async def fetch_aliases(
     metadata_manager,
     tmdb_id: Optional[str] = None,
     year: Optional[int] = None,
+    bangumi_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     从元数据源获取别名。
     优先使用 TMDB ID 直接获取详情（最准确），否则通过标题搜索找最佳匹配。
+
+    bangumi_id: 若已知，则优先用 bangumi-data 本地离线索引直查别名（0 网络、离线可用），
+                作为在线源的补充与兜底。
 
     Returns:
         {"name_en": str, "name_jp": str, "name_romaji": str, "aliases_cn": list} 或 None
@@ -106,11 +110,39 @@ async def fetch_aliases(
         except Exception as e:
             logger.warning(f"通过 TMDB ID 获取别名失败: {e}")
 
+    # 策略1.5: bangumi-data 本地离线索引（已知 bangumiId 时直查，最快且离线可用）
+    if (not aliases or not any(aliases.values())):
+        local_aliases = await _fetch_aliases_from_bangumi_data(title, bangumi_id)
+        if local_aliases and any(local_aliases.values()):
+            aliases = local_aliases
+
     # 策略2: 标题搜索找最佳匹配
     if not aliases or not any(aliases.values()):
         aliases = await _search_best_match_aliases(title, year, media_type, metadata_manager, user)
 
     return aliases
+
+
+async def _fetch_aliases_from_bangumi_data(
+    title: str, bangumi_id: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """从 bangumi-data 本地离线索引获取别名（优先 bangumiId 精确查，回退标题模糊查）。"""
+    try:
+        from src.services.bangumi_data_manager import get_bangumi_data_manager
+        manager = get_bangumi_data_manager()
+        if manager is None:
+            return None
+        result = None
+        if bangumi_id:
+            result = await manager.get_aliases_by_bangumi_id(str(bangumi_id))
+        if not result and title:
+            result = await manager.get_aliases_by_title(title)
+        if result and any(result.values()):
+            logger.info(f"bangumi-data 本地命中别名: title='{title}', bangumiId={bangumi_id}")
+        return result
+    except Exception as e:
+        logger.warning(f"bangumi-data 本地别名查询失败: {e}")
+        return None
 
 
 async def _search_best_match_aliases(

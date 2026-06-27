@@ -493,6 +493,12 @@ export const getBangumiConfig = () => api.get('/api/ui/config/provider/bangumi')
 /** 设置bangumi api配置 */
 export const setBangumiConfig = data =>
   api.put('/api/ui/config/provider/bangumi', data)
+/** 查询 bangumi-data 离线索引状态（库内条数） */
+export const getBangumiDataStatus = () =>
+  api.get('/api/ui/bangumi-data/status')
+/** 手动触发 bangumi-data 离线索引同步 */
+export const syncBangumiData = () =>
+  api.post('/api/ui/bangumi-data/sync')
 /** 获取授权信息 */
 export const getBangumiAuth = () =>
   api.post('/api/ui/metadata/bangumi/actions/get_auth_state')
