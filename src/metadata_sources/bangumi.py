@@ -149,6 +149,41 @@ async def _delete_bangumi_auth(session: AsyncSession, user_id: int):
     stmt = delete(orm_models.BangumiAuth).where(orm_models.BangumiAuth.userId == user_id)
     await session.execute(stmt)
 
+async def _get_bgm_token_status(access_token: str, proxy: Optional[str] = None) -> Optional[int]:
+    """实时查询 bgm.tv 上某个 access_token 的剩余有效秒数。
+
+    参考 ani-rss：不信任本地 expiresAt（可能因时区/未存 expires_in 而算错），
+    直接调 bgm.tv 的 token_status 接口拿真实过期时间。
+
+    Returns:
+        - 剩余秒数（>0 有效，<=0 已过期）
+        - None：查询失败（网络错误/接口异常），调用方应回退到本地 expiresAt 判断
+    """
+    if not access_token:
+        return None
+    try:
+        async with httpx.AsyncClient(proxy=proxy, timeout=15.0) as client:
+            # bgm.tv 官方：POST /oauth/token_status，form 传 access_token，返回 expires(秒级时间戳)
+            resp = await client.post(
+                "https://bgm.tv/oauth/token_status",
+                data={"access_token": access_token},
+            )
+            if resp.status_code != 200:
+                # 401/400 通常表示 token 已失效
+                logger.debug(f"Bangumi token_status 返回非 200: {resp.status_code}")
+                return None
+            data = resp.json()
+            expires_ts = data.get("expires")
+            if expires_ts is None:
+                return None
+            # expires 是 UTC 秒级时间戳；与当前 UTC 时间比较得到剩余秒数
+            import time
+            return int(expires_ts) - int(time.time())
+    except Exception as e:
+        logger.debug(f"Bangumi token_status 查询失败（将回退本地判断）: {e}")
+        return None
+
+
 async def _refresh_bangumi_token(session: AsyncSession, user_id: int, config: Dict[str, Any]) -> bool:
     """刷新Bangumi access token。
 
@@ -165,8 +200,14 @@ async def _refresh_bangumi_token(session: AsyncSession, user_id: int, config: Di
 
     client_id = config.get("client_id")
     client_secret = config.get("client_secret")
-    # 优先使用授权时保存的 redirect_uri，保证和授权时一致（bgm.tv 严格校验）
+    # redirect_uri 优先级：授权时保存的真实回调 > 配置传入(webhookCustomDomain 拼接)。
+    # bgm.tv 刷新接口要求 redirect_uri 必填；用授权时一致的值最稳，避免 localhost 回退被拒。
     redirect_uri = getattr(auth, 'redirectUri', None) or config.get("redirect_uri")
+    if not getattr(auth, 'redirectUri', None) and config.get("_is_localhost_fallback"):
+        logger.warning(
+            "Bangumi 刷新使用了 localhost 回退的 redirect_uri，可能与授权时不一致导致刷新被拒。"
+            "建议在【设置-自定义域名】填写对外访问地址。"
+        )
 
     if not all([client_id, client_secret, redirect_uri]):
         logger.warning("Bangumi OAuth配置不完整,无法刷新token")
@@ -186,16 +227,23 @@ async def _refresh_bangumi_token(session: AsyncSession, user_id: int, config: Di
             response.raise_for_status()
             token_data = response.json()
 
-            # 更新token信息
+            # 更新token信息：新 access_token 与轮换后的 refresh_token 都必须落库。
+            # bgm.tv 每次刷新会作废旧 refresh_token，若新值丢失将永久掉授权。
             auth.accessToken = token_data["access_token"]
             auth.refreshToken = token_data.get("refresh_token", auth.refreshToken)
             auth.expiresAt = get_now() + timedelta(seconds=token_data.get("expires_in", 604800))
-            await session.flush()
+            # 立即提交，避免外层异常回滚导致"旧 refresh 已作废但新 token 未落库"的死局。
+            await session.commit()
 
             logger.info(f"Bangumi token已自动刷新 (用户ID: {user_id})")
             return True
 
     except Exception as e:
+        # 刷新失败时回滚本次未提交的改动，保持 session 干净
+        try:
+            await session.rollback()
+        except Exception:
+            pass
         logger.error(f"刷新Bangumi token失败: {e}")
         return False
 
@@ -416,14 +464,22 @@ class BangumiMetadataSource(BaseMetadataSource):
             async with self._session_factory() as session:
                 auth_info = await _get_bangumi_auth(session, user.id)
 
-                # 自动刷新token (参考ani-rss: 剩余天数<=3天时刷新)
-                if auth_info.get("isAuthenticated") and auth_info.get("daysLeft", 999) <= 3:
-                    # 构造回调URL（无 request 上下文，直接用配置拼接）
-                    # 注意：refresh token 时 bgm.tv 不严格校验 redirect_uri，
-                    # 但仍需传一个合法值，这里用 localhost fallback 即可
+                # 判断是否需要刷新：
+                # 1) 已授权但剩余 <=3 天；或 2) 已过期(isExpired)但库里仍有 refresh_token。
+                # 关键修复：过期后 _get_bangumi_auth 返回 isAuthenticated=False，旧逻辑会漏刷，
+                # 这里改为直接查库里是否存在 refresh_token 来决定能否续期，让过期也能自愈。
+                auth_obj = await session.get(orm_models.BangumiAuth, user.id)
+                has_refresh = bool(auth_obj and auth_obj.refreshToken)
+                near_expiry = auth_info.get("isAuthenticated") and auth_info.get("daysLeft", 999) <= 3
+                expired_but_refreshable = (not auth_info.get("isAuthenticated")) and auth_info.get("isExpired") and has_refresh
+
+                if (near_expiry or expired_but_refreshable) and has_refresh:
+                    # 构造回调 URL：优先自定义域名，没配才回退 localhost 并标记
                     base_url = await self.config_manager.get("webhookCustomDomain", "")
+                    is_localhost_fallback = False
                     if not base_url:
                         base_url = f"http://localhost:{settings.server.port}"
+                        is_localhost_fallback = True
                     redirect_uri = f"{base_url.rstrip('/')}/bgm-oauth-callback"
 
                     config = {
@@ -431,11 +487,12 @@ class BangumiMetadataSource(BaseMetadataSource):
                         "client_secret": await self.config_manager.get("bangumiClientSecret", ""),
                         "redirect_uri": redirect_uri,
                         "proxy": await self._get_proxy(),
+                        "_is_localhost_fallback": is_localhost_fallback,
                     }
+                    # _refresh_bangumi_token 内部已自行 commit
                     refreshed = await _refresh_bangumi_token(session, user.id, config)
                     if refreshed:
-                        await session.commit()
-                        # 重新获取授权信息
+                        # 重新获取授权信息（已是新 token）
                         auth_info = await _get_bangumi_auth(session, user.id)
                         self.logger.info(f"Bangumi token已自动刷新 (用户ID: {user.id})")
 

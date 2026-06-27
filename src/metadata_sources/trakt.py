@@ -68,7 +68,24 @@ class TraktMetadataSource(BaseMetadataSource):
     async def _get_headers_for_user(self, user: models.User) -> Optional[Dict[str, str]]:
         """获取带有完整认证信息的 Trakt API 请求头（含 trakt-api-key）"""
         import json
-        # 在 session 内部提取所有需要的值，避免 session 关闭后访问 ORM 属性导致连接泄漏
+        from src.core.timezone import get_now
+
+        # 先做一次临期检测：若 access_token 即将过期（剩余 <=7 天），先经 Worker 刷新。
+        # 仅当存在 refresh_token 时才会真正刷新，避免对老凭证（无 refresh_token）反复尝试。
+        async with self._session_factory() as session:
+            cred = await crud.get_oauth_credential_with_token(session, user.id, "trakt")
+            if not cred or not cred.accessToken:
+                return None
+            needs_refresh = bool(
+                cred.refreshToken and cred.expiresAt
+                and (cred.expiresAt - get_now()).total_seconds() <= 7 * 24 * 3600
+            )
+
+        if needs_refresh:
+            # 刷新失败不阻断：继续用旧 token 尝试（可能仍有效），由调用方处理 401。
+            await self._refresh_token_via_worker(user)
+
+        # 重新读取（刷新后可能已更新 accessToken）
         async with self._session_factory() as session:
             cred = await crud.get_oauth_credential_with_token(session, user.id, "trakt")
             if not cred or not cred.accessToken:
@@ -87,6 +104,63 @@ class TraktMetadataSource(BaseMetadataSource):
             except (json.JSONDecodeError, TypeError):
                 pass
         return headers
+
+    async def _refresh_token_via_worker(self, user: models.User) -> bool:
+        """通过 CF Worker 的 /oauth/refresh 端点刷新 Trakt access_token。
+
+        Trakt 的 client_secret 保存在 Worker 端，本地无法直连 trakt.tv 刷新，
+        因此走 Worker 代理：POST /oauth/refresh {provider, refresh_token}
+        返回 {access_token, refresh_token, expires_in, token_type, created_at}。
+
+        Returns:
+            bool: 刷新成功返回 True；无 refresh_token 或失败返回 False。
+        """
+        import httpx
+        from datetime import timedelta
+        from src.core.timezone import get_now
+
+        # 取当前 refresh_token
+        async with self._session_factory() as session:
+            cred = await crud.get_oauth_credential_with_token(session, user.id, "trakt")
+            if not cred or not cred.refreshToken:
+                self.logger.debug("Trakt: 无 refresh_token，无法自动刷新（需重新授权）")
+                return False
+            refresh_token = cred.refreshToken
+
+        try:
+            proxy = await self._get_proxy()
+            async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
+                resp = await client.post(
+                    f"{TRAKT_OAUTH_WORKER_URL}/oauth/refresh",
+                    json={"provider": "trakt", "refresh_token": refresh_token},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            new_access = data.get("access_token")
+            if not new_access:
+                self.logger.warning(f"Trakt: 刷新响应缺少 access_token: {data}")
+                return False
+
+            # refresh_token 轮换则更新，否则沿用原值
+            new_refresh = data.get("refresh_token") or refresh_token
+            expires_in = data.get("expires_in")
+
+            update_data = {"accessToken": new_access, "refreshToken": new_refresh}
+            try:
+                if expires_in is not None:
+                    update_data["expiresAt"] = get_now() + timedelta(seconds=int(expires_in))
+            except (TypeError, ValueError):
+                pass
+
+            async with self._session_factory() as session:
+                await crud.save_oauth_credential(session, user.id, "trakt", update_data)
+
+            self.logger.info(f"Trakt token 已自动刷新 (用户ID: {user.id})")
+            return True
+        except Exception as e:
+            self.logger.error(f"Trakt token 刷新失败: {e}")
+            return False
 
     async def search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
         """搜索影视作品（需要用户已通过 OAuth 授权）"""
@@ -509,6 +583,7 @@ class TraktMetadataSource(BaseMetadataSource):
             return {"success": False, "message": "缺少 access_token"}
 
         import json
+        from datetime import timedelta
         from src.core.timezone import get_now
 
         # 将 client_id 存入 extraData（JSON 格式），用于后续 API 调用时带 trakt-api-key
@@ -517,14 +592,27 @@ class TraktMetadataSource(BaseMetadataSource):
         if client_id:
             extra_data["clientId"] = client_id
 
+        # 落库 refresh_token 与过期时间，用于后续自动刷新（修复：此前从未保存，导致 token 过期后无法刷新）。
+        # 兼容前端可能传 refreshToken / refresh_token 两种命名；expiresIn 为秒。
+        refresh_token = payload.get("refreshToken") or payload.get("refresh_token") or None
+        expires_in = payload.get("expiresIn") or payload.get("expires_in")
+        save_data = {
+            "accessToken": access_token,
+            "refreshToken": refresh_token,
+            "providerUserId": payload.get("userId", ""),
+            "providerUsername": payload.get("username", ""),
+            "authorizedAt": get_now(),
+            "extraData": json.dumps(extra_data) if extra_data else None,
+        }
+        # 仅当拿到有效 expires_in 时才写过期时间，避免把 None 误当作"立即过期"。
+        try:
+            if expires_in is not None:
+                save_data["expiresAt"] = get_now() + timedelta(seconds=int(expires_in))
+        except (TypeError, ValueError):
+            pass
+
         async with self._session_factory() as session:
-            await crud.save_oauth_credential(session, user.id, "trakt", {
-                "accessToken": access_token,
-                "providerUserId": payload.get("userId", ""),
-                "providerUsername": payload.get("username", ""),
-                "authorizedAt": get_now(),
-                "extraData": json.dumps(extra_data) if extra_data else None,
-            })
+            await crud.save_oauth_credential(session, user.id, "trakt", save_data)
         return {"success": True, "message": "Trakt 授权成功"}
 
     async def _revoke_auth(self, user: models.User) -> Dict[str, Any]:

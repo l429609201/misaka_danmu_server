@@ -23,6 +23,9 @@ export default function TraktOAuthCallback() {
     const name = url.searchParams.get('name')
     const provider = url.searchParams.get('provider')
     const clientId = url.searchParams.get('client_id')
+    // refresh_token 与 expires_in 用于后端落库 + 后续自动刷新（token 过期前续期）
+    const refreshToken = url.searchParams.get('refresh_token')
+    const expiresIn = url.searchParams.get('expires_in')
 
     if (!accessToken) {
       setStatus('error')
@@ -38,12 +41,14 @@ export default function TraktOAuthCallback() {
 
     const token = Cookies.get('danmu_token')
 
-    // 调后端 API 保存 Trakt OAuth 凭据（含 client_id 用于后续 API 调用）
+    // 调后端 API 保存 Trakt OAuth 凭据（含 client_id 用于后续 API 调用，refresh_token/expires_in 用于自动刷新）
     api.post('/api/ui/metadata/trakt/actions/save_oauth', {
       accessToken,
       userId: user || '',
       username: name || '',
       clientId: clientId || '',
+      refreshToken: refreshToken || '',
+      expiresIn: expiresIn ? Number(expiresIn) : undefined,
     }, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })

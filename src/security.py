@@ -285,6 +285,9 @@ async def check_ip_whitelist(request: Request, session: AsyncSession) -> Optiona
             except Exception as e:
                 # 可能是并发请求导致的重复键错误，尝试复用已存在的会话
                 if "Duplicate entry" in str(e) or "UNIQUE constraint" in str(e):
+                    # 关键修复：捕获 IntegrityError 后必须先回滚，否则该 session 事务被标记为
+                    # "需回滚"，后续业务查询（如 calendar）复用同一 session 会抛 PendingRollbackError → 500
+                    await session.rollback()
                     logger.debug(f"白名单会话已被其他请求创建，尝试复用: {jti}")
                     # 更新最后使用时间
                     try:
@@ -294,6 +297,8 @@ async def check_ip_whitelist(request: Request, session: AsyncSession) -> Optiona
                     _whitelist_session_cache[cache_key] = (user, current_time, ttl_seconds, jti)
                     return user
                 else:
+                    # 其他异常同样需要回滚，避免脏事务污染后续复用同一 session 的请求
+                    await session.rollback()
                     logger.error(f"创建白名单会话记录失败: {e}")
                 # 即使数据库记录失败，仍然允许访问（但不缓存）
                 return user

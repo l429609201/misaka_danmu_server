@@ -54,16 +54,20 @@ async def _bgm_token_refresh_handler(app: FastAPI) -> None:
         logger.debug("Bangumi OAuth 未配置 (缺少 client_id/client_secret)，跳过刷新")
         return
 
-    # 构造 redirect_uri（后台刷新时 bgm.tv 不严格校验，但仍需传合法值）
+    # 构造 redirect_uri（后台刷新时 bgm.tv 要求 redirect_uri 必填）
+    # 优先用自定义域名；没配置时回退 localhost 并标记，供刷新函数判断是否打 warning。
     base_url = await config_manager.get("webhookCustomDomain", "")
+    is_localhost_fallback = False
     if not base_url:
         base_url = f"http://localhost:{settings.server.port}"
+        is_localhost_fallback = True
     redirect_uri = f"{base_url.rstrip('/')}/bgm-oauth-callback"
 
     oauth_config = {
         "client_id": client_id,
         "client_secret": client_secret,
         "redirect_uri": redirect_uri,
+        "_is_localhost_fallback": is_localhost_fallback,
     }
 
     # 获取 Bangumi 代理配置（仅当 bangumi 元数据源开启 useProxy 时）
@@ -104,28 +108,40 @@ async def _bgm_token_refresh_handler(app: FastAPI) -> None:
         for auth in auth_records:
             needs_refresh = False
 
-            if not auth.expiresAt:
-                # 没有过期时间记录，保守起见尝试刷新
-                needs_refresh = True
-            elif auth.expiresAt < now:
-                # 已过期 — ani-rss 的关键差异：仍然尝试刷新
-                needs_refresh = True
-                logger.info(
-                    f"Bangumi token 已过期 (用户ID: {auth.userId})，尝试使用 refresh_token 续期"
-                )
-            else:
-                days_left = (auth.expiresAt - now).days
-                if days_left <= REFRESH_THRESHOLD_DAYS:
+            # 优先用 bgm.tv token_status 实时查真实剩余时间（参考 ani-rss），
+            # 不信任本地 expiresAt（可能因时区/未存 expires_in 而算错）。
+            from src.metadata_sources.bangumi import _get_bgm_token_status
+            remaining_seconds = None
+            if auth.accessToken:
+                remaining_seconds = await _get_bgm_token_status(auth.accessToken, proxy)
+
+            if remaining_seconds is not None:
+                # 远程查询成功：剩余 <= 3 天（含已过期的负数）则刷新
+                days_left = remaining_seconds // 86400
+                if remaining_seconds <= REFRESH_THRESHOLD_DAYS * 86400:
                     needs_refresh = True
-                    logger.info(
-                        f"Bangumi token 即将过期 (用户ID: {auth.userId}, 剩余 {days_left} 天)，执行刷新"
-                    )
+                    if remaining_seconds <= 0:
+                        logger.info(f"Bangumi token 已过期 (用户ID: {auth.userId})，尝试 refresh_token 续期")
+                    else:
+                        logger.info(f"Bangumi token 即将过期 (用户ID: {auth.userId}, 剩余 {days_left} 天)，执行刷新")
+            else:
+                # 远程查询失败（网络/接口异常）：回退到本地 expiresAt 判断
+                if not auth.expiresAt:
+                    needs_refresh = True
+                elif auth.expiresAt < now:
+                    needs_refresh = True
+                    logger.info(f"Bangumi token 已过期 (用户ID: {auth.userId}，本地判断)，尝试 refresh_token 续期")
+                else:
+                    days_left = (auth.expiresAt - now).days
+                    if days_left <= REFRESH_THRESHOLD_DAYS:
+                        needs_refresh = True
+                        logger.info(f"Bangumi token 即将过期 (用户ID: {auth.userId}, 剩余 {days_left} 天，本地判断)，执行刷新")
 
             if not needs_refresh:
                 skipped += 1
                 continue
 
-            # 复用现有的刷新逻辑
+            # 复用现有的刷新逻辑（内部已自行 commit）
             from src.metadata_sources.bangumi import _refresh_bangumi_token
 
             success = await _refresh_bangumi_token(session, auth.userId, oauth_config)
@@ -134,9 +150,7 @@ async def _bgm_token_refresh_handler(app: FastAPI) -> None:
             else:
                 failed += 1
 
-        # 统一提交
-        if refreshed > 0:
-            await session.commit()
+        # _refresh_bangumi_token 内部已 commit，这里不再重复提交
 
         if refreshed > 0 or failed > 0:
             logger.info(
