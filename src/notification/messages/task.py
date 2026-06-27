@@ -374,6 +374,8 @@ def _build_import_markdown(d: dict, event_type: str) -> tuple:
     source = _esc(d.get("source", ""))
     tmdb_id = d.get("tmdb_id", "")
     media_type = _esc(d.get("media_type", ""))
+    year = d.get("year")
+    image_url = d.get("image_url", "") or d.get("imageUrl", "")
     message = d.get("message", "")
     finished_at = d.get("finished_at", "")
     msg_short = _esc((message[:200] + "…") if len(message) > 200 else message)
@@ -382,10 +384,13 @@ def _build_import_markdown(d: dict, event_type: str) -> tuple:
     e_str = f"E{int(episode):02d}" if episode is not None else ""
     se_str = f"{s_str}{e_str}" if s_str or e_str else ""
 
+    # 标题行：附带年份，如 📺 标题 (2024)
+    title_with_year = f"{anime_title} ({int(year)})" if (anime_title and year) else anime_title
+
     # 引用块内容
     quote_lines = []
-    if anime_title:
-        quote_lines.append(f">📺 *{anime_title}*")
+    if title_with_year:
+        quote_lines.append(f">📺 *{title_with_year}*")
     if se_str or media_type:
         parts = [p for p in [se_str, media_type] if p]
         quote_lines.append(f">📍 {' \\| '.join(parts)}")
@@ -393,6 +398,8 @@ def _build_import_markdown(d: dict, event_type: str) -> tuple:
         quote_lines.append(f">🎯 弹幕源: {source}")
     if tmdb_id:
         quote_lines.append(f">🏷️ TMDB: {_esc(str(tmdb_id))}")
+    if image_url:
+        quote_lines.append(f">🖼 [海报]({_esc(str(image_url))})")
 
     # 组装完整消息
     lines = [title, ""]
@@ -424,6 +431,8 @@ def _build_import_text(d: dict, event_type: str) -> tuple:
     source = d.get("source", "")
     tmdb_id = d.get("tmdb_id", "")
     media_type = d.get("media_type", "")
+    year = d.get("year")
+    image_url = d.get("image_url", "") or d.get("imageUrl", "")
     message = d.get("message", "")
     finished_at = d.get("finished_at", "")
     msg_short = (message[:200] + "…") if len(message) > 200 else message
@@ -432,9 +441,11 @@ def _build_import_text(d: dict, event_type: str) -> tuple:
     e_str = f"E{int(episode):02d}" if episode is not None else ""
     se_str = f"{s_str}{e_str}" if s_str or e_str else ""
 
+    title_with_year = f"{anime_title} ({int(year)})" if (anime_title and year) else anime_title
+
     lines = [title, ""]
-    if anime_title:
-        lines.append(f"📺 {anime_title}")
+    if title_with_year:
+        lines.append(f"📺 {title_with_year}")
     if se_str or media_type:
         parts = [p for p in [se_str, media_type] if p]
         lines.append(f"📍 {' | '.join(parts)}")
@@ -442,6 +453,8 @@ def _build_import_text(d: dict, event_type: str) -> tuple:
         lines.append(f"🎯 弹幕源: {source}")
     if tmdb_id:
         lines.append(f"🏷️ TMDB: {tmdb_id}")
+    if image_url:
+        lines.append(f"🖼 海报: {image_url}")
     if msg_short:
         lines.append("")
         lines.append(f"📋 {msg_short}")
@@ -464,6 +477,8 @@ def _build_refresh_markdown(d: dict, event_type: str) -> tuple:
     anime_title = _esc(d.get("anime_title", ""))
     season = d.get("season")
     episode = d.get("episode")
+    year = d.get("year")
+    image_url = d.get("image_url", "") or d.get("imageUrl", "")
     message = d.get("message", "")
     finished_at = d.get("finished_at", "")
     msg_short = _esc((message[:200] + "…") if len(message) > 200 else message)
@@ -476,13 +491,17 @@ def _build_refresh_markdown(d: dict, event_type: str) -> tuple:
     is_incremental = "incremental" in event_type
     op_str = "增量追更" if is_incremental else "手动刷新"
 
+    title_with_year = f"{anime_title} ({int(year)})" if (anime_title and year) else anime_title
+
     # 引用块
     quote_lines = []
-    if anime_title:
-        quote_lines.append(f">📺 *{anime_title}*")
+    if title_with_year:
+        quote_lines.append(f">📺 *{title_with_year}*")
     if se_str:
         quote_lines.append(f">📍 {se_str}")
     quote_lines.append(f">🔄 操作: {_esc(op_str)}")
+    if image_url:
+        quote_lines.append(f">🖼 [海报]({_esc(str(image_url))})")
 
     # 组装
     lines = [title, ""]
@@ -509,6 +528,8 @@ def _build_refresh_text(d: dict, event_type: str) -> tuple:
     anime_title = d.get("anime_title", "")
     season = d.get("season")
     episode = d.get("episode")
+    year = d.get("year")
+    image_url = d.get("image_url", "") or d.get("imageUrl", "")
     message = d.get("message", "")
     finished_at = d.get("finished_at", "")
     msg_short = (message[:200] + "…") if len(message) > 200 else message
@@ -518,12 +539,16 @@ def _build_refresh_text(d: dict, event_type: str) -> tuple:
     se_str = f"{s_str}{e_str}" if s_str else ""
     op_str = "增量追更" if "incremental" in event_type else "手动刷新"
 
+    title_with_year = f"{anime_title} ({int(year)})" if (anime_title and year) else anime_title
+
     lines = [title, ""]
-    if anime_title:
-        lines.append(f"📺 {anime_title}")
+    if title_with_year:
+        lines.append(f"📺 {title_with_year}")
     if se_str:
         lines.append(f"📍 {se_str}")
     lines.append(f"🔄 操作: {op_str}")
+    if image_url:
+        lines.append(f"🖼 海报: {image_url}")
     if msg_short:
         lines.append("")
         lines.append(f"📋 {msg_short}")
