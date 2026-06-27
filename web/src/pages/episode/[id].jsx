@@ -1636,6 +1636,17 @@ export const EpisodeDetail = () => {
                         </div>
                       )}
                     </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <ExclamationCircleOutlined className="text-red-500" />
+                      <span className="text-red-700 dark:text-red-400 text-sm">{urlValidationResult.errorMessage || t('episodePage.urlParseFailed')}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {!isXmlImport && !isEditing && (
             <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: 'var(--color-hover)' }}>
               <div className="text-gray-500 dark:text-gray-400 text-sm mb-2">
