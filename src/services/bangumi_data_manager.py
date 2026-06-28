@@ -438,6 +438,52 @@ class BangumiDataManager:
             return None
         return str(matched[0].bangumiId)
 
+    async def find_series_bangumi_ids(self, title: str) -> List[str]:
+        """查同系列全部季的 bangumiId（无季标记搜索词专用，返回主季 + 各后续季）。
+
+        why：搜「更衣人偶坠入爱河」（无季标记）应涵盖全部季；BGM 里每季是独立 subject
+        （第一季=333158、第二季=398951）。同系列判定：把每行标题用项目统一的
+        parse_search_keyword 拆出「纯标题 + 季号」，纯标题归一化后 == 搜索词系列主名即同系列；
+        季号用于「主季在前、各季升序」排序。
+
+        复用 src.utils 的 parse_search_keyword / normalize_title，不自造季度解析正则。
+        防误纳同名不同番：以「去季后缀的系列主名严格归一化相等」为准。无命中返回 []。
+        """
+        from src.utils import parse_search_keyword, normalize_title
+
+        title = (title or "").strip()
+        if not title:
+            return []
+        # 搜索词的系列主名（去掉季度后缀后归一化），作为同系列判定基准
+        series_norm = _normalize_title(normalize_title(title))
+        if not series_norm:
+            return []
+
+        rows = await self._search_rows_by_title(title, limit=50)
+        # 候选池圈空（错别字等）→ 前后半段放宽再圈一次，与 find_bangumi_id_by_exact_title 一致
+        if not rows:
+            rows = await self._search_candidates_relaxed(title, limit=50)
+
+        # (season_order, bangumiId) 收集后排序；季号缺省（无季标记=主季）按 1 处理
+        collected: List[tuple] = []
+        seen_ids = set()
+        for row in rows:
+            if not row.bangumiId or row.bangumiId in seen_ids:
+                continue
+            for t in self._row_all_titles(row):
+                parsed = parse_search_keyword(t)
+                row_series_norm = _normalize_title(normalize_title(parsed.get("title") or t))
+                if row_series_norm and row_series_norm == series_norm:
+                    # 同系列：季号缺省视为第 1 季（主季）
+                    order = parsed.get("season") or 1
+                    collected.append((order, str(row.bangumiId)))
+                    seen_ids.add(row.bangumiId)
+                    break
+        if not collected:
+            return []
+        collected.sort(key=lambda x: x[0])
+        return [bid for _, bid in collected]
+
     async def get_search_aliases(self, title: str, limit: int = 5) -> List[str]:
         """搜索别名增强：按关键词命中 bangumi-data，返回去重的全语言别名列表。
 
