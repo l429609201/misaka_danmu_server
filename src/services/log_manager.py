@@ -134,6 +134,23 @@ class ApschedulerLogTranslatorFilter(logging.Filter):
 
         return True
 
+
+class McpRequestLogDowngradeFilter(logging.Filter):
+    """将 MCP SDK 的高频请求日志按 DEBUG 级别处理。
+
+    why：fastapi-mcp 底层依赖的 mcp SDK（logger 名为 'mcp.server.lowlevel.server'）
+    会在每次处理请求时用 INFO 级别打印 "Processing request of type XxxRequest"。
+    MCP 客户端会定时轮询 ListTools，导致该日志成对刷屏。
+    这里把它当作 DEBUG 级别对待：仅当全局日志级别为 DEBUG 时才放行，
+    否则（INFO 及以上）直接丢弃，从而消除刷屏噪音。
+    """
+    def filter(self, record):
+        if record.name.startswith("mcp.") and record.levelno == logging.INFO \
+                and isinstance(record.msg, str) and record.msg.startswith("Processing request of type"):
+            # 等价于把该日志降级为 DEBUG：全局为 DEBUG 时显示，否则过滤掉
+            return logging.getLogger().getEffectiveLevel() <= logging.DEBUG
+        return True
+
 def setup_logging():
     """
     配置根日志记录器，使其能够将日志输出到控制台、一个可轮转的文件，
@@ -195,6 +212,13 @@ def setup_logging():
     logger.addHandler(logging.StreamHandler()) # 控制台处理器
     logger.addHandler(logging.handlers.RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=5, encoding='utf-8')) # 文件处理器
 
+    # 把 MCP 高频请求日志降级过滤器挂到所有处理器上。
+    # why：filter 必须加在 handler 上才对子 logger(mcp.*)传播来的记录生效；
+    # 加在 root logger 上只对 root 直接产生的记录有效。
+    mcp_filter = McpRequestLogDowngradeFilter()
+    for handler in logger.handlers:
+        handler.addFilter(mcp_filter)
+
     # 配置httpx logger,确保其日志也经过敏感信息过滤
     httpx_logger = logging.getLogger("httpx")
     httpx_logger.addFilter(SensitiveInfoFilter())
@@ -203,6 +227,7 @@ def setup_logging():
     deque_handler = DequeHandler(_logs_deque)
     deque_handler.addFilter(NoHttpxLogFilter())
     deque_handler.addFilter(BilibiliInfoFilter()) # 添加新的过滤器
+    deque_handler.addFilter(mcp_filter)  # UI 日志同样降级 MCP 高频请求噪音
     logger.addHandler(deque_handler)
 
     # 为所有处理器设置格式
