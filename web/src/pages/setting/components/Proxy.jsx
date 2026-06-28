@@ -4,6 +4,7 @@ import {
   Col,
   Form,
   Input,
+  Popover,
   Row,
   Select,
   Switch,
@@ -149,6 +150,79 @@ export const Proxy = () => {
     return { bar: 'bg-red-400/70', text: 'text-red-400', dot: 'bg-red-400' }
   }
 
+  // 单域名测试 Popover 内容（输入框 + DNS/HTTP 结果），由头部「单域名测试」按钮触发弹出
+  const singleTestContent = (
+    <div style={{ width: 360 }} className="max-w-[80vw]">
+      <div className="text-gray-500 dark:text-gray-400 text-xs mb-3">
+        {t('proxy.singleTestDesc')}
+      </div>
+      <Input.Search
+        value={singleUrl}
+        onChange={e => setSingleUrl(e.target.value)}
+        placeholder={t('proxy.singleUrlPlaceholder')}
+        enterButton={
+          <Button type="primary" loading={singleTesting}>
+            {t('proxy.singleTestBtn')}
+          </Button>
+        }
+        onSearch={handleTestSingle}
+        allowClear
+      />
+
+      {singleTesting && (
+        <div className="flex items-center justify-center gap-3 py-6">
+          <Spin />
+          <span className="text-sm text-gray-500">{t('proxy.testing')}</span>
+        </div>
+      )}
+
+      {singleResult && !singleTesting && (() => {
+        const r = singleResult.result || {}
+        const httpOk = r.status === 'success'
+        const dnsOk = r.dns_status === 'success'
+        return (
+          <div className="mt-4 space-y-3">
+            {/* 主机信息 */}
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-gray-400">{t('proxy.singleHost')}</span>
+              <span className="font-mono dark:text-gray-200">{singleResult.host}</span>
+            </div>
+
+            {/* DNS 解析结果 */}
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-white/[0.03]">
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${r.dns_status == null ? 'bg-gray-300' : dnsOk ? 'bg-emerald-400' : 'bg-red-400'}`} />
+              <span className="text-xs text-gray-600 dark:text-gray-300 w-28 font-medium">{t('proxy.dnsResolve')}</span>
+              <div className="flex-1 flex items-center gap-2 flex-wrap">
+                {dnsOk ? (
+                  <>
+                    <Tag color="green" className="!m-0">{r.resolved_ip}</Tag>
+                    <span className="text-xs text-gray-400">{Math.round(r.dns_latency)}ms</span>
+                  </>
+                ) : r.dns_status === 'failure' ? (
+                  <span className="text-[11px] font-semibold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">{r.dns_error || t('proxy.dnsFailed')}</span>
+                ) : (
+                  <span className="text-xs text-gray-400">{t('proxy.notChecked')}</span>
+                )}
+              </div>
+            </div>
+
+            {/* HTTP 连通性结果 */}
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-white/[0.03]">
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${httpOk ? 'bg-emerald-400' : 'bg-red-400'}`} />
+              <span className="text-xs text-gray-600 dark:text-gray-300 w-28 font-medium">{t('proxy.httpConnect')}</span>
+              <div className="flex-1 flex items-center justify-end">
+                {httpOk
+                  ? <span className={`text-xs font-bold ${getLatencyColor(r.latency).text}`}>{Math.round(r.latency)}ms</span>
+                  : <span className="text-[11px] font-semibold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">{r.error || t('proxy.connectFailed')}</span>
+                }
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+    </div>
+  )
+
   return (
     <div className="my-6">
       <Card loading={loading} title={t('proxy.title')}>
@@ -280,9 +354,20 @@ export const Proxy = () => {
           </div>
         }
         extra={
-          <Button onClick={handleTest} loading={isTestLoading} size="small">
-            {t('proxy.testConnection')}
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* 单域名测试：点击弹出 Popover（输入域名/URL 测 DNS+连接），与整体连通性检测并列 */}
+            <Popover
+              content={singleTestContent}
+              title={t('proxy.singleTestTitle')}
+              trigger="click"
+              placement="bottomRight"
+            >
+              <Button size="small">{t('proxy.singleTestTitle')}</Button>
+            </Popover>
+            <Button onClick={handleTest} loading={isTestLoading} size="small">
+              {t('proxy.testConnection')}
+            </Button>
+          </div>
         }
       >
           {!isTestLoading && !testResult && (
@@ -432,77 +517,6 @@ export const Proxy = () => {
             )
           })()}
         </Card>
-
-      {/* 单域名测速 / DNS 解析卡片 */}
-      <Card className="mt-4" title={t('proxy.singleTestTitle')}>
-        <div className="text-gray-500 dark:text-gray-400 text-sm mb-3">
-          {t('proxy.singleTestDesc')}
-        </div>
-        <Input.Search
-          value={singleUrl}
-          onChange={e => setSingleUrl(e.target.value)}
-          placeholder={t('proxy.singleUrlPlaceholder')}
-          enterButton={
-            <Button type="primary" loading={singleTesting}>
-              {t('proxy.singleTestBtn')}
-            </Button>
-          }
-          onSearch={handleTestSingle}
-          allowClear
-        />
-
-        {singleTesting && (
-          <div className="flex items-center justify-center gap-3 py-6">
-            <Spin />
-            <span className="text-sm text-gray-500">{t('proxy.testing')}</span>
-          </div>
-        )}
-
-        {singleResult && !singleTesting && (() => {
-          const r = singleResult.result || {}
-          const httpOk = r.status === 'success'
-          const dnsOk = r.dns_status === 'success'
-          return (
-            <div className="mt-4 space-y-3">
-              {/* 主机信息 */}
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-gray-400">{t('proxy.singleHost')}</span>
-                <span className="font-mono dark:text-gray-200">{singleResult.host}</span>
-              </div>
-
-              {/* DNS 解析结果 */}
-              <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-white/[0.03]">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${r.dns_status == null ? 'bg-gray-300' : dnsOk ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                <span className="text-xs text-gray-600 dark:text-gray-300 w-28 font-medium">{t('proxy.dnsResolve')}</span>
-                <div className="flex-1 flex items-center gap-2 flex-wrap">
-                  {dnsOk ? (
-                    <>
-                      <Tag color="green" className="!m-0">{r.resolved_ip}</Tag>
-                      <span className="text-xs text-gray-400">{Math.round(r.dns_latency)}ms</span>
-                    </>
-                  ) : r.dns_status === 'failure' ? (
-                    <span className="text-[11px] font-semibold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">{r.dns_error || t('proxy.dnsFailed')}</span>
-                  ) : (
-                    <span className="text-xs text-gray-400">{t('proxy.notChecked')}</span>
-                  )}
-                </div>
-              </div>
-
-              {/* HTTP 连通性结果 */}
-              <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-white/[0.03]">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${httpOk ? 'bg-emerald-400' : 'bg-red-400'}`} />
-                <span className="text-xs text-gray-600 dark:text-gray-300 w-28 font-medium">{t('proxy.httpConnect')}</span>
-                <div className="flex-1 flex items-center justify-end">
-                  {httpOk
-                    ? <span className={`text-xs font-bold ${getLatencyColor(r.latency).text}`}>{Math.round(r.latency)}ms</span>
-                    : <span className="text-[11px] font-semibold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">{r.error || t('proxy.connectFailed')}</span>
-                  }
-                </div>
-              </div>
-            </div>
-          )
-        })()}
-      </Card>
     </div>
   )
 }

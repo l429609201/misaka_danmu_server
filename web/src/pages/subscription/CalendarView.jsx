@@ -51,6 +51,17 @@ const getItemKey = (item) => {
 
 const DAYS_KEYS = ['calendar.mon', 'calendar.tue', 'calendar.wed', 'calendar.thu', 'calendar.fri', 'calendar.sat', 'calendar.sun']
 
+// 媒体类型 → 展示文案：movie/tv 走 i18n，ova/ona 直显缩写，其它兜底大写（新增类型零改动）
+const getTypeLabel = (type, t) => {
+  if (!type) return ''
+  const v = String(type).toLowerCase()
+  if (v === 'movie') return t('calendar.movie')
+  if (v === 'tv' || v === 'tv_series') return t('calendar.tvSeries')
+  if (v === 'ova') return 'OVA'
+  if (v === 'ona') return 'ONA'
+  return v.toUpperCase()
+}
+
 // ============ CalCard：海报卡片（顶层组件 + React.memo，防止父组件重渲染时 <img> 重新挂载导致海报重复请求 307） ============
 const CalCard = React.memo(function CalCard({
   item, isToday, horizontal, day, isMobile, selected, t,
@@ -162,11 +173,19 @@ const CalCard = React.memo(function CalCard({
             </Tooltip>
           )}
 
+          {/* 信息标签区：统一圆角胶囊（年份 / 类型 / 季度 / 播出星期 / 开播时间），有则展示，缺省自动省略 */}
           <div className="flex items-center gap-1 mt-1 flex-wrap">
-            {displayYear && <span className="text-[9px] font-medium text-gray-500 dark:text-gray-400">{displayYear}</span>}
-            {!item.isLocal && item.season && <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-indigo-500/10 text-indigo-400">{t('libraryGroup.seasonTag', { season: item.season })}</span>}
-            {item.isLocal && item.animeType !== 'movie' && item.season && <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-indigo-500/10 text-indigo-400">{t('libraryGroup.seasonTag', { season: item.season })}</span>}
-            {item.airTime && <span className="text-[9px] text-gray-500 dark:text-gray-400">🕐 {item.airTime}</span>}
+            {/* 年份 */}
+            {displayYear && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-gray-500/10 text-gray-500 dark:text-gray-400">{displayYear}</span>}
+            {/* 媒体类型（movie/tv/ova...） */}
+            {(item.animeType || item.type) && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-500 dark:text-purple-400">{getTypeLabel(item.animeType || item.type, t)}</span>}
+            {/* 季度（外部条目 + 本地非电影条目） */}
+            {!item.isLocal && item.season && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400">{t('libraryGroup.seasonTag', { season: item.season })}</span>}
+            {item.isLocal && item.animeType !== 'movie' && item.season && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400">{t('libraryGroup.seasonTag', { season: item.season })}</span>}
+            {/* 播出星期（airWeekday: 1=周一...7=周日，有则展示） */}
+            {item.airWeekday >= 1 && item.airWeekday <= 7 && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-500 dark:text-sky-400">{t(DAYS_KEYS[item.airWeekday - 1])}</span>}
+            {/* 开播时间 */}
+            {item.airTime && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 dark:text-amber-400">🕐 {item.airTime}</span>}
           </div>
         </div>
       </div>
@@ -226,12 +245,16 @@ const CalCard = React.memo(function CalCard({
                 {isSubscribing ? '⏳' : '➕'} {t('calendar.subscribeAction')}
               </span>
           }
-          {item.isLocal && item.animeType !== 'movie' && item.season && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400">{t('libraryGroup.seasonTag', { season: item.season })}</span>}
-          {item.latestEpisodeIndex != null && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">EP{String(item.latestEpisodeIndex).padStart(2, '0')}</span>}
-          {item.providerName && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-gray-500/8 text-gray-500 dark:text-gray-400">{item.providerName}</span>}
-          {item.rating && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-500">★{item.rating}</span>}
+          {item.isLocal && item.animeType !== 'movie' && item.season && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400">{t('libraryGroup.seasonTag', { season: item.season })}</span>}
+          {item.latestEpisodeIndex != null && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400">EP{String(item.latestEpisodeIndex).padStart(2, '0')}</span>}
+          {item.providerName && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-gray-500/8 text-gray-500 dark:text-gray-400">{item.providerName}</span>}
+          {item.rating && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500">★{item.rating}</span>}
+          {/* 年份 / 类型 / 播出星期 / 开播时间：统一圆角胶囊，有则展示 */}
+          {(item.year || (item.origin === 'trakt' && item.traktTmdbId)) && getDisplayYear(item) && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-gray-500/10 text-gray-500 dark:text-gray-400">{getDisplayYear(item)}</span>}
+          {(item.animeType || item.type) && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-500 dark:text-purple-400">{getTypeLabel(item.animeType || item.type, t)}</span>}
+          {item.airWeekday >= 1 && item.airWeekday <= 7 && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-500 dark:text-sky-400">{t(DAYS_KEYS[item.airWeekday - 1])}</span>}
+          {item.airTime && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 dark:text-amber-400">🕐 {item.airTime}</span>}
         </div>
-        {item.airTime && <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">🕐 {item.airTime}</div>}
       </div>
     </div>
   )
