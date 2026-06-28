@@ -484,6 +484,90 @@ class BangumiDataManager:
         collected.sort(key=lambda x: x[0])
         return [bid for _, bid in collected]
 
+    async def get_offline_air_schedule(self) -> Dict[str, Dict[str, Any]]:
+        """从离线 bangumi_data_index 提取「在播番剧的播出日程」，供日程同步在在线日历不可用时兜底。
+
+        why：api.bgm.tv/calendar 国内常 502，导致日程同步(schedule_sync)拿不到 airWeekday。
+        离线库存有 broadcast(放送周期, 如 R/2022-01-09 23:00:00/P7D)+beginDate/endDate，
+        可本地推算播出星期/时间。注意：这里只产出「bangumiId→日程」映射供同步匹配本地番剧，
+        不作为日历展示数据源（不会往日历页塞入本地没有的番）。
+
+        在播判定：beginDate ≤ 今天 且 (endDate 为空 或 endDate ≥ 今天)，type=tv，且有 bangumiId。
+        返回 { bangumiId: {"airWeekday": int(1-7), "airTime": "HH:MM"} }。
+        """
+        from datetime import datetime
+
+        today_date = datetime.now().date()
+        async with self._session_factory() as session:
+            stmt = select(orm_models.BangumiDataIndex).where(
+                orm_models.BangumiDataIndex.type == "tv",
+                orm_models.BangumiDataIndex.broadcast.isnot(None),
+                orm_models.BangumiDataIndex.beginDate.isnot(None),
+                orm_models.BangumiDataIndex.bangumiId.isnot(None),
+            )
+            res = await session.execute(stmt)
+            rows = list(res.scalars().all())
+
+        schedule: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            begin_dt = self._parse_naive_dt(row.beginDate)
+            if begin_dt is None or begin_dt.date() > today_date:
+                continue  # 还没开播
+            end_dt = self._parse_naive_dt(row.endDate)
+            if end_dt is not None and end_dt.date() < today_date:
+                continue  # 已完结
+            air_dt = self._broadcast_first_air(row.broadcast)
+            if air_dt is None:
+                continue
+            schedule[str(row.bangumiId)] = {
+                "airWeekday": air_dt.isoweekday(),  # 1=周一..7=周日
+                "airTime": air_dt.strftime("%H:%M"),
+            }
+        self.logger.info(f"bangumi-data 离线日程: 提取 {len(schedule)} 部在播番剧的播出星期")
+        return schedule
+
+    @staticmethod
+    def _parse_naive_dt(s: Optional[str]) -> Optional["datetime"]:
+        """解析 sync 存入的本地墙钟时间串（YYYY-MM-DD HH:MM:SS 或 YYYY-MM-DD）。失败返回 None。"""
+        from datetime import datetime
+        if not s:
+            return None
+        s = s.strip()
+        try:
+            return datetime.strptime(s[:19], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            pass
+        try:
+            return datetime.strptime(s[:10], "%Y-%m-%d")
+        except ValueError:
+            return None
+
+    @classmethod
+    def _broadcast_first_air(cls, broadcast: Optional[str]) -> Optional["datetime"]:
+        """从 broadcast 规则(R/<本地时间>/P7D)提取首播时间点（含周几+时刻）。失败返回 None。"""
+        from datetime import datetime
+        if not broadcast:
+            return None
+        m = _ISO_DT_PATTERN.search(broadcast)
+        raw = m.group(0) if m else None
+        if raw:
+            # broadcast 经 sync 已转本地时区为 naive 串；但正则也可能匹配到原始 ISO，统一尝试
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                try:
+                    return datetime.strptime(raw[:19], fmt)
+                except ValueError:
+                    continue
+        # sync 后的本地串不带 Z/时区，_ISO_DT_PATTERN（要求时区）可能匹配不到 → 手动找 "R/.../P"
+        parts = broadcast.split("/")
+        if len(parts) >= 2:
+            mid = parts[1].strip()
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                try:
+                    return datetime.strptime(mid[:19], fmt)
+                except ValueError:
+                    continue
+        return None
+
     async def get_search_aliases(self, title: str, limit: int = 5) -> List[str]:
         """搜索别名增强：按关键词命中 bangumi-data，返回去重的全语言别名列表。
 

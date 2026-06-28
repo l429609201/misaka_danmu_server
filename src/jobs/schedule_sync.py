@@ -60,27 +60,46 @@ class ScheduleSyncJob(BaseJob):
         raise TaskSuccess(f"日程同步完成。{summary}，共更新 {total_updated} 部。")
 
     async def _sync_bangumi(self, session: AsyncSession, sources: List[Dict[str, Any]]) -> int:
-        """从 Bangumi /calendar 同步 airWeekday"""
+        """从 Bangumi /calendar 同步 airWeekday；在线 502/失败时用离线 bangumi-data 兜底。"""
         import httpx
 
+        # 构建 bangumiId → weekday 映射（优先在线 /calendar）
+        bgm_schedule: Dict[str, int] = {}
+        # airTime 映射（仅离线兜底能提供，在线 /calendar 无放送时刻）
+        bgm_airtime: Dict[str, str] = {}
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get("https://api.bgm.tv/calendar")
                 resp.raise_for_status()
                 bgm_calendar = resp.json()
+            for day_group in bgm_calendar:
+                weekday = day_group.get("weekday", {}).get("id")
+                if not weekday:
+                    continue
+                for item in day_group.get("items", []):
+                    bgm_id = str(item.get("id"))
+                    bgm_schedule[bgm_id] = weekday
         except Exception as e:
-            self.logger.error(f"Bangumi 日历获取失败: {e}")
-            return 0
+            self.logger.warning(f"Bangumi 在线日历获取失败: {e}，改用离线 bangumi-data 提取日程")
 
-        # 构建 bangumiId → weekday 映射
-        bgm_schedule: Dict[str, int] = {}
-        for day_group in bgm_calendar:
-            weekday = day_group.get("weekday", {}).get("id")
-            if not weekday:
-                continue
-            for item in day_group.get("items", []):
-                bgm_id = str(item.get("id"))
-                bgm_schedule[bgm_id] = weekday
+        # 在线拿不到（502 等）→ 离线兜底：从 bangumi_data_index 的 broadcast 推算播出星期
+        if not bgm_schedule:
+            try:
+                from src.services import get_bangumi_data_manager
+                mgr = get_bangumi_data_manager()
+                if mgr is not None:
+                    offline = await mgr.get_offline_air_schedule()
+                    for bgm_id, info in offline.items():
+                        bgm_schedule[bgm_id] = info["airWeekday"]
+                        if info.get("airTime"):
+                            bgm_airtime[bgm_id] = info["airTime"]
+                    if offline:
+                        self.logger.info(f"Bangumi 日程: 离线兜底提取 {len(offline)} 部在播番剧")
+            except Exception as e:
+                self.logger.warning(f"Bangumi 离线日程兜底失败: {e}")
+
+        if not bgm_schedule:
+            return 0
 
         updated = 0
         for s in sources:
@@ -88,8 +107,10 @@ class ScheduleSyncJob(BaseJob):
             if not bgm_id or bgm_id not in bgm_schedule:
                 continue
             new_weekday = bgm_schedule[bgm_id]
-            if new_weekday != s.get("airWeekday"):
-                await crud.update_air_schedule(session, s["animeId"], new_weekday, s.get("airTime"))
+            # airTime：离线兜底有则用离线值，否则沿用原值
+            new_airtime = bgm_airtime.get(bgm_id, s.get("airTime"))
+            if new_weekday != s.get("airWeekday") or new_airtime != s.get("airTime"):
+                await crud.update_air_schedule(session, s["animeId"], new_weekday, new_airtime)
                 updated += 1
                 self.logger.info(f"Bangumi 日程更新: '{s['animeTitle']}' → 星期{new_weekday}")
 
