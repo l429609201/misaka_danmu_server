@@ -362,15 +362,48 @@ class BangumiDataManager:
             res = await session.execute(stmt)
             return list(res.scalars().all())
 
+    async def _search_candidates_relaxed(self, title: str, limit: int = 50) -> List[orm_models.BangumiDataIndex]:
+        """候选池放宽：精确子串 LIKE 圈不到时（如搜索词有错别字「更新→更衣」）的兜底圈选。
+
+        做法：把标题切前/后两半，任一半子串命中即入候选池。差 1 字时错字只落在某一半，
+        另一半完整保留 → 仍能圈到正确记录。仅圈候选，最终是否采用由 fuzz 阈值 + 唯一性把关。
+        标题过短（<6 字）切半无意义且易引入噪音，直接放弃。
+        """
+        title = (title or "").strip()
+        if len(title) < 6:
+            return []
+        half = len(title) // 2
+        head, tail = title[:half], title[half:]
+        async with self._session_factory() as session:
+            from sqlalchemy import or_, func as sfunc
+            stmt = (
+                select(orm_models.BangumiDataIndex)
+                .where(
+                    or_(
+                        orm_models.BangumiDataIndex.titlesAll.like(f"%{head}%"),
+                        orm_models.BangumiDataIndex.titlesAll.like(f"%{tail}%"),
+                    )
+                )
+                .order_by(sfunc.length(orm_models.BangumiDataIndex.titleMain))
+                .limit(limit)
+            )
+            res = await session.execute(stmt)
+            return list(res.scalars().all())
+
     async def find_bangumi_id_by_exact_title(
         self, title: str, year: Optional[int] = None
     ) -> Optional[str]:
-        """归一化精确相等匹配，命中唯一才返回 bangumiId（搜索软429兜底专用）。
+        """模糊相似匹配，命中唯一才返回 bangumiId（搜索软429兜底专用）。
 
-        why：兜底取 BGM id 必须「宁缺毋滥」——错配会给用户错番弹幕。这里只用归一化精确相等
-        （去空格 + 繁转简 + 小写 + 全半角），绝不用 LIKE 子串做最终判定（LIKE 仅圈候选池）。
-        多条命中时用 year 去重；仍多条或零条 → 返回 None（放弃，交回调用方）。
+        why：兜底取 BGM id 必须「宁缺毋滥」——错配会给用户错番弹幕。判定阈值与在线 bangumi
+        兜底对齐（fuzz≥88，约可容 8 字标题差 1 字的常见错别字），并在归一化（去空格 + 繁转简
+        + 小写 + 全半角）后比较。多条命中时用 year 去重；仍多条或零条 → 返回 None（放弃）。
+
+        候选池：先用精确子串 LIKE 圈选；圈空时（错字场景）用前/后半段 LIKE 放宽再圈一次。
+        放宽只影响候选池，最终采用与否仍由 fuzz≥88 + 唯一性把关，不放松错配防线。
         """
+        from thefuzz import fuzz
+
         title = (title or "").strip()
         if not title:
             return None
@@ -378,12 +411,19 @@ class BangumiDataManager:
         if not norm_target:
             return None
 
-        # LIKE 只圈候选池，精确判定在 Python 层做归一化相等
+        # 阈值与在线 bangumi 兜底一致（dandanplay._try_bgmtv_fallback 用 88）
+        _FUZZ_THRESHOLD = 88
+
+        # LIKE 只圈候选池，最终判定在 Python 层做归一化 fuzz 相似度
         rows = await self._search_rows_by_title(title, limit=50)
+        if not rows:
+            # 精确子串圈空（多为错别字）→ 前后半段放宽再圈一次
+            rows = await self._search_candidates_relaxed(title, limit=50)
         matched = [
             row for row in rows
             if row.bangumiId and any(
-                _normalize_title(t) == norm_target for t in self._row_all_titles(row)
+                fuzz.ratio(_normalize_title(t), norm_target) >= _FUZZ_THRESHOLD
+                for t in self._row_all_titles(row)
             )
         ]
         if not matched:
