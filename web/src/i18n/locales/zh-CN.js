@@ -1089,6 +1089,8 @@ export default {
     inputProxyConfig: '请输入代理配置',
     episodeNormalize: '分集序号归一化（多季自动偏移）',
     episodeNormalizeTip: '开启后，当弹弹play返回的分集序号不以1开头（如多季连续编号的第29~34集）时，自动将其偏移为从第1集开始（第1~6集）。适用于弹弹play中跨季连续编号的番剧。',
+    searchFallbackBgmtv: '搜索限流时 bgmtv 兜底',
+    searchFallbackBgmtvTip: '开启后，当弹弹play代理主搜索被软429限流或无结果时，自动通过 BGM id 调用弹弹play的 bgmtv 接口兜底获取作品与分集（需配置 App ID/Secret 或跨域代理）。匹配不到唯一可信项时放弃，绝不返回错番。默认关闭。',
     biliProxyEnable: '启用限制内容搜索代理',
     biliProxyEnableTip: '并行于主搜索，用于搜索地域限制的番剧（如港澳台番剧）。启用后请在下方选择一种代理方式。',
     biliProxyMode: '代理方式',

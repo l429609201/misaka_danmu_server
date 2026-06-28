@@ -2590,6 +2590,17 @@ export const Scrapers = () => {
               >
                 <Switch />
               </Form.Item>
+
+              {/* 搜索限流时 bgmtv 兜底开关（与「分集序号归一化」同区块并列） */}
+              <Form.Item
+                name="dandanplaySearchFallbackBgmtv"
+                label={t('scrapers.searchFallbackBgmtv')}
+                valuePropName="checked"
+                className="mb-4"
+                tooltip={t('scrapers.searchFallbackBgmtvTip')}
+              >
+                <Switch />
+              </Form.Item>
             </>
           )}
 

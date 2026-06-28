@@ -1087,6 +1087,8 @@ export default {
     inputProxyConfig: 'Please enter proxy config',
     episodeNormalize: 'Episode number normalization (auto offset for multi-season)',
     episodeNormalizeTip: 'When enabled, if the episode number returned by dandanplay does not start at 1 (e.g. episodes 29-34 with continuous multi-season numbering), it is automatically offset to start at 1 (episodes 1-6). Applies to anime with cross-season continuous numbering in dandanplay.',
+    searchFallbackBgmtv: 'bgmtv fallback on search rate-limit',
+    searchFallbackBgmtvTip: 'When enabled, if the dandanplay proxy search is soft-429 rate-limited or returns nothing, it automatically resolves a BGM id and calls dandanplay\'s bgmtv endpoint as a fallback to fetch the title and episodes (requires App ID/Secret or a CORS proxy). If no single trustworthy match is found it gives up and never returns a wrong title. Disabled by default.',
     biliProxyEnable: 'Enable restricted-content search proxy',
     biliProxyEnableTip: 'Runs in parallel with the main search to find region-locked anime (e.g. HK/MO/TW). After enabling, choose one proxy method below.',
     biliProxyMode: 'Proxy method',
