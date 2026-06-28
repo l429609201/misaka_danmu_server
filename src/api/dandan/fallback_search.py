@@ -170,6 +170,105 @@ async def handle_fallback_search(
     return await _wait_for_search_result(search_key)
 
 
+async def _try_dandan_bgmtv_fallback(
+    search_title: str,
+    season_to_filter: Optional[int],
+    scraper_manager: ScraperManager,
+    metadata_manager: MetadataSourceManager,
+    config_manager: ConfigManager,
+) -> list:
+    """弹幕源搜索软429/无结果时的 bgmtv 兜底（三道防线，宁缺毋滥）。
+
+    防线1：取 BGM id —— 在线 bangumi 源 top1（归一化相等或 fuzz≥88）为主，
+           失败则离线 bangumi-data 归一化精确相等兜底。
+    防线2：year/season 消歧（由各取 id 方法内部处理）。
+    防线3：调 dandanplay bgmtv 后，返回 animeTitle 与原标题 fuzz<85 丢弃（防人工映射错误）。
+
+    匹配不到唯一可信项 → 返回 []（绝不返回错番）。软429静默跳过。
+    返回 [ProviderSearchInfo] 或 []。
+    """
+    from thefuzz import fuzz
+    from src.rate_limiter import RateLimitExceededError
+    from src.services import get_bangumi_data_manager
+
+    # 前置校验：开关开启（开关位于 dandanplay 源配置）
+    if (await config_manager.get("dandanplay_search_fallback_bgmtv", "false")).lower() != "true":
+        return []
+    try:
+        scraper = scraper_manager.get_scraper("dandanplay")
+    except Exception:
+        logger.info("bgmtv兜底: dandanplay 源未加载，跳过")
+        return []
+    # 前置校验：本地签名模式需 appId/appSecret；或已配跨域代理模式
+    proxy_config = await config_manager.get("dandanplay_proxy_config", "")
+    app_id = await config_manager.get("dandanplay_app_id", "")
+    app_secret = await config_manager.get("dandanplay_app_secret", "")
+    if not (proxy_config.strip() or (app_id and app_secret)):
+        logger.info("bgmtv兜底: dandanplay 未配置 appId/appSecret 或跨域代理，跳过")
+        return []
+
+    norm_target = _normalize_for_match(search_title)
+
+    # 防线1-主：在线 bangumi 源 top1
+    bgm_id = None
+    try:
+        user = models.User(id=0, username="fallback_bgmtv")
+        candidates = await metadata_manager.search("bangumi", search_title, user)
+        if candidates:
+            top = candidates[0]
+            cand_titles = [t for t in (top.title, top.nameJp) if t]
+            ok = any(_normalize_for_match(t) == norm_target for t in cand_titles) or \
+                any(fuzz.ratio(_normalize_for_match(t), norm_target) >= 88 for t in cand_titles)
+            if ok and getattr(top, "bangumiId", None):
+                bgm_id = str(top.bangumiId)
+                logger.info(f"bgmtv兜底: 在线 bangumi 命中 bgmId={bgm_id} '{top.title}'")
+    except Exception as e:
+        logger.warning(f"bgmtv兜底: 在线 bangumi 查询失败: {e}")
+
+    # 防线1-兜底：离线 bangumi-data 归一化精确相等
+    if not bgm_id:
+        mgr = get_bangumi_data_manager()
+        if mgr is not None:
+            try:
+                bgm_id = await mgr.find_bangumi_id_by_exact_title(search_title)
+                if bgm_id:
+                    logger.info(f"bgmtv兜底: 离线 bangumi-data 精确命中 bgmId={bgm_id}")
+            except Exception as e:
+                logger.warning(f"bgmtv兜底: 离线 bangumi-data 查询失败: {e}")
+
+    if not bgm_id:
+        logger.info(f"bgmtv兜底: '{search_title}' 未取到可信 BGM id，放弃")
+        return []
+
+    # 调 dandanplay bgmtv（软429静默跳过）
+    try:
+        info = await scraper.search_by_bangumi_id(bgm_id)
+    except RateLimitExceededError:
+        logger.info("bgmtv兜底: dandanplay 仍被限流，跳过")
+        return []
+    except Exception as e:
+        logger.warning(f"bgmtv兜底: search_by_bangumi_id 失败: {e}")
+        return []
+    if not info:
+        return []
+
+    # 防线3：结果二次校验（dandanplay↔bgm.tv 为人工映射，可能错配）
+    if fuzz.ratio(_normalize_for_match(info.title), norm_target) < 85:
+        logger.info(f"bgmtv兜底: 二次校验未过（'{info.title}' vs '{search_title}'），丢弃")
+        return []
+    if season_to_filter and info.type == "tv_series" and info.season != season_to_filter:
+        logger.info(f"bgmtv兜底: 季度不符（结果S{info.season} vs 期望S{season_to_filter}），丢弃")
+        return []
+
+    logger.info(f"bgmtv兜底: 采用 animeId={info.mediaId} '{info.title}'")
+    return [info]
+
+
+def _normalize_for_match(s: Optional[str]) -> str:
+    """标题归一化（去空格 + 小写），用于兜底 fuzz/相等校验。轻量版，繁简交由元数据源处理。"""
+    return (s or "").replace(" ", "").replace("：", ":").lower()
+
+
 async def execute_fallback_search_task(
     search_term: str,
     search_key: str,
@@ -344,6 +443,19 @@ async def execute_fallback_search_task(
                     )
 
             timer.step_end(details=f"{len(sorted_results)}个结果", sub_steps=source_timing_sub_steps)
+
+        # 5.5 弹幕源全部软429/无结果时的 bgmtv 兜底（开关默认关闭，三道防线宁缺毋滥）
+        if not sorted_results:
+            try:
+                bgmtv_results = await _try_dandan_bgmtv_fallback(
+                    search_title, season_to_filter,
+                    scraper_manager, metadata_manager, config_manager,
+                )
+                if bgmtv_results:
+                    sorted_results = bgmtv_results
+                    logger.info(f"bgmtv兜底: 并入 {len(bgmtv_results)} 个结果")
+            except Exception as e:
+                logger.warning(f"bgmtv兜底执行异常（不影响主流程）: {e}")
 
         # 6. 根据标题关键词修正媒体类型（复用统一的 is_movie_by_title）
         for item in sorted_results:

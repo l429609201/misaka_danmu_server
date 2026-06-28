@@ -372,7 +372,8 @@ class AIMatcher:
         self,
         query: Dict[str, Any],
         results: List[ProviderSearchInfo],
-        favorited_info: Optional[Dict[str, bool]] = None
+        favorited_info: Optional[Dict[str, bool]] = None,
+        existing_info: Optional[Dict[str, bool]] = None
     ) -> Optional[int]:
         """
         使用AI从搜索结果中选择最佳匹配
@@ -381,6 +382,7 @@ class AIMatcher:
             query: 查询信息,包含 title, season, episode, year 等
             results: 搜索结果列表
             favorited_info: 精确标记信息 {provider:mediaId -> isFavorited}
+            existing_info: 库内已有源信息 {provider:mediaId -> inLibrary}
 
         Returns:
             最佳匹配结果的索引,如果没有合适的匹配则返回None
@@ -401,6 +403,12 @@ class AIMatcher:
                     key = f"{result.provider}:{result.mediaId}"
                     is_favorited = favorited_info.get(key, False)
 
+                # 检查是否已存在于库内（供 AI 优先复用库内源，避免同剧不同集换源）
+                in_library = False
+                if existing_info:
+                    key = f"{result.provider}:{result.mediaId}"
+                    in_library = existing_info.get(key, False)
+
                 results_data.append({
                     "index": idx,
                     "provider": result.provider,
@@ -409,7 +417,8 @@ class AIMatcher:
                     "season": result.season,
                     "year": result.year,
                     "episodeCount": result.episodeCount,
-                    "isFavorited": is_favorited
+                    "isFavorited": is_favorited,
+                    "inLibrary": in_library
                 })
 
             # 尝试从缓存获取

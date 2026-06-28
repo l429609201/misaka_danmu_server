@@ -14,14 +14,25 @@ sites 字段原样保留 data.json 的 sites 数组（含各站点 begin/broadca
 """
 import json
 import logging
+import re
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
 from sqlalchemy import select, delete
 
 from src.db import orm_models
+from src.core.timezone import get_app_timezone
 
 logger = logging.getLogger(__name__)
+
+# 匹配 ISO 8601 带时区的时间点（含可选毫秒、Z 或 ±HH:MM 偏移）。
+# 用于从 broadcast 重复规则（如 R/2022-01-09T01:00:00.000Z/P7D）中提取中间时间段。
+_ISO_DT_PATTERN = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})"
+)
+# 统一输出格式：去时区、去毫秒，空格分隔（YYYY-MM-DD HH:MM:SS）
+_OUTPUT_DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 # 默认数据源（v0.3.x 最新聚合产物）；jsDelivr 作为备用镜像。
 # 实际地址由配置 bangumiDataUrl 决定（支持逗号分隔多地址回退），此处仅作兜底。
@@ -33,6 +44,34 @@ DEFAULT_DATA_URLS = [
 # siteMeta（平台 -> URL 模板）随 data.json 一起下发，sync() 时动态解析并存入此配置键，
 # 反向解析器从配置读取（why：避免写死常量过时，自动跟随数据源更新）。
 _SITE_META_CONFIG_KEY = "bangumiDataSiteMeta"
+
+# 繁转简转换器（懒加载单例）：兜底精确匹配需归一化繁简差异
+_t2s_converter = None
+
+
+def _normalize_title(s: Optional[str]) -> str:
+    """标题归一化：繁转简 + 去空格 + 全角转半角 + 小写。用于兜底精确相等匹配。"""
+    if not s:
+        return ""
+    global _t2s_converter
+    if _t2s_converter is None:
+        try:
+            from opencc import OpenCC
+            _t2s_converter = OpenCC("t2s")
+        except Exception:
+            _t2s_converter = False  # 标记不可用，后续跳过繁简转换
+    text = s
+    if _t2s_converter:
+        try:
+            text = _t2s_converter.convert(text)
+        except Exception:
+            pass
+    # 全角转半角
+    text = "".join(
+        chr(ord(ch) - 0xFEE0) if "！" <= ch <= "～" else (" " if ch == "\u3000" else ch)
+        for ch in text
+    )
+    return text.replace(" ", "").lower()
 
 
 class BangumiDataManager:
@@ -113,6 +152,45 @@ class BangumiDataManager:
         return "\n".join(all_titles), main, title_zh, title_en
 
     @staticmethod
+    def _to_naive_local(iso_str: Optional[str]) -> Optional[str]:
+        """把带时区的 ISO 时间串转成 TZ 环境变量时区下的本地墙钟时间，去时区、去毫秒。
+
+        输入: "2022-01-09T16:00:00.000Z" / "2022-04-03T17:00:00+09:00"
+        输出: "2022-01-10 00:00:00"（按 Asia/Shanghai 等 TZ 转换后的无时区串）
+        why: data.json 原样带时区，需按部署时区落地为统一可比较的本地时间。
+        无时区/空值/解析失败 → 原样返回（不丢数据、不报错）。
+        """
+        if not iso_str:
+            return iso_str
+        s = iso_str.strip()
+        try:
+            # fromisoformat 在部分 Python 版本不认结尾的 Z，先归一为 +00:00
+            normalized = s[:-1] + "+00:00" if s.endswith("Z") else s
+            dt = datetime.fromisoformat(normalized)
+        except ValueError:
+            return iso_str  # 非标准格式，原样保留
+        if dt.tzinfo is None:
+            # 本就无时区：只统一格式（去毫秒、空格分隔），不做时区平移
+            return dt.strftime(_OUTPUT_DT_FMT)
+        # 带时区：平移到应用时区后去掉 tzinfo
+        local_dt = dt.astimezone(get_app_timezone()).replace(tzinfo=None)
+        return local_dt.strftime(_OUTPUT_DT_FMT)
+
+    @classmethod
+    def _broadcast_to_naive_local(cls, broadcast: Optional[str]) -> Optional[str]:
+        """转换 broadcast 重复规则里的时间段，保留 R/.../P... 外壳。
+
+        输入: "R/1971-10-05T15:00:00.000Z/P7D"
+        输出: "R/1971-10-05 23:00:00/P7D"（中间时间按 TZ 平移去时区，规则部分原样）
+        """
+        if not broadcast:
+            return broadcast
+        return _ISO_DT_PATTERN.sub(
+            lambda m: cls._to_naive_local(m.group(0)) or m.group(0),
+            broadcast,
+        )
+
+    @staticmethod
     def _extract_bangumi_id(item: Dict[str, Any]) -> Optional[str]:
         """从 sites 数组中提取 bangumi 站点 id（用于与库内 bangumiId 桥接）。"""
         for s in (item.get("sites") or []):
@@ -159,9 +237,10 @@ class BangumiDataManager:
                 # 新增：补全源完整字段（why：原先丢弃，无法支撑详情展示与放送信息）
                 "lang": (item.get("lang") or "")[:16] or None,
                 "officialSite": (item.get("officialSite") or "")[:500] or None,
-                "beginDate": (item.get("begin") or "")[:40] or None,
-                "endDate": (item.get("end") or "")[:40] or None,
-                "broadcast": (item.get("broadcast") or "")[:100] or None,
+                # 时间字段去时区：按 TZ 环境变量平移为本地墙钟时间再存（YYYY-MM-DD HH:MM:SS）
+                "beginDate": self._to_naive_local((item.get("begin") or "")[:40] or None),
+                "endDate": self._to_naive_local((item.get("end") or "")[:40] or None),
+                "broadcast": self._broadcast_to_naive_local((item.get("broadcast") or "")[:100] or None),
                 "comment": item.get("comment") or None,
                 "sites": json.dumps(raw_sites, ensure_ascii=False) if raw_sites else None,
             })
@@ -179,6 +258,15 @@ class BangumiDataManager:
         async with self._session_factory() as session:
             res = await session.execute(select(func.count(orm_models.BangumiDataIndex.id)))
             return int(res.scalar() or 0)
+
+    async def clear(self) -> Dict[str, Any]:
+        """清空离线索引表。返回 {success, count}（count=清除前条数）。"""
+        before = await self.count()
+        async with self._session_factory() as session:
+            await session.execute(delete(orm_models.BangumiDataIndex))
+            await session.commit()
+        self.logger.info(f"bangumi-data: 已清除离线索引，共 {before} 条")
+        return {"success": True, "count": before}
 
     # ---------------- 查询 ----------------
 
@@ -273,6 +361,42 @@ class BangumiDataManager:
             )
             res = await session.execute(stmt)
             return list(res.scalars().all())
+
+    async def find_bangumi_id_by_exact_title(
+        self, title: str, year: Optional[int] = None
+    ) -> Optional[str]:
+        """归一化精确相等匹配，命中唯一才返回 bangumiId（搜索软429兜底专用）。
+
+        why：兜底取 BGM id 必须「宁缺毋滥」——错配会给用户错番弹幕。这里只用归一化精确相等
+        （去空格 + 繁转简 + 小写 + 全半角），绝不用 LIKE 子串做最终判定（LIKE 仅圈候选池）。
+        多条命中时用 year 去重；仍多条或零条 → 返回 None（放弃，交回调用方）。
+        """
+        title = (title or "").strip()
+        if not title:
+            return None
+        norm_target = _normalize_title(title)
+        if not norm_target:
+            return None
+
+        # LIKE 只圈候选池，精确判定在 Python 层做归一化相等
+        rows = await self._search_rows_by_title(title, limit=50)
+        matched = [
+            row for row in rows
+            if row.bangumiId and any(
+                _normalize_title(t) == norm_target for t in self._row_all_titles(row)
+            )
+        ]
+        if not matched:
+            return None
+        if len(matched) > 1 and year is not None:
+            # 用年份消歧（bangumi-data 每季独立 subject）
+            matched = [r for r in matched if r.beginYear == year] or matched
+        if len(matched) != 1:
+            self.logger.info(
+                f"bangumi-data 兜底匹配: '{title}' 命中 {len(matched)} 条（非唯一），放弃"
+            )
+            return None
+        return str(matched[0].bangumiId)
 
     async def get_search_aliases(self, title: str, limit: int = 5) -> List[str]:
         """搜索别名增强：按关键词命中 bangumi-data，返回去重的全语言别名列表。

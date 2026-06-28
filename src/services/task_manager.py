@@ -218,6 +218,25 @@ class TaskManager:
             except Exception:
                 pass  # 补查失败不影响通知发出
 
+        # 3. 兜底：task_parameters 带 sourceId 的刷新类任务（如 TG 刷新 tg_refresh、指令刷新），
+        #    其 unique_key 无 refresh 前缀，上面补不到，这里按 sourceId 反查作品/源信息。
+        if not db_extra.get("anime_title"):
+            source_id = (task.task_parameters or {}).get("sourceId")
+            if source_id is not None:
+                try:
+                    async with self._session_factory() as session:
+                        info = await crud.get_anime_source_info(session, int(source_id))
+                        if info:
+                            db_extra["anime_title"] = info.get("title", "")
+                            db_extra["season"] = info.get("season")
+                            db_extra["year"] = info.get("year")
+                            db_extra["source"] = info.get("providerName", "")
+                            db_extra["tmdb_id"] = info.get("tmdbId", "") or ""
+                            if not db_extra.get("image_url"):
+                                db_extra["image_url"] = info.get("imageUrl", "") or ""
+                except Exception:
+                    pass  # 补查失败不影响通知发出
+
         # image_url 优先用任务参数里的，没有再用补查结果
         if not image_url:
             image_url = db_extra.get("image_url", "") or ""

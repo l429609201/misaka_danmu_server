@@ -20,6 +20,7 @@ import {
   refreshBangumiAuth,
   getBangumiDataStatus,
   syncBangumiData,
+  clearBangumiData,
   getTmdbConfig,
   getTvdbConfig,
   getDoubanConfig,
@@ -44,6 +45,7 @@ export function BangumiConfig({ form }) {
   // bangumi-data 离线索引状态
   const [bgmDataCount, setBgmDataCount] = useState(null)
   const [bgmDataSyncing, setBgmDataSyncing] = useState(false)
+  const [bgmDataClearing, setBgmDataClearing] = useState(false)
   const oauthPopupRef = useRef(null)
 
   // 使用 ref 来存储当前状态，避免 useEffect 依赖导致重新加载
@@ -150,6 +152,27 @@ export function BangumiConfig({ form }) {
     } finally {
       setBgmDataSyncing(false)
     }
+  }
+
+  // 清除 bangumi-data 离线索引（二次确认防误触）
+  const handleClearBgmData = () => {
+    showModal({
+      title: t('metadataConfig.bgmDataClear'),
+      content: t('metadataConfig.bgmDataClearConfirm'),
+      onOk: async () => {
+        try {
+          setBgmDataClearing(true)
+          const res = await clearBangumiData()
+          const data = res.data || res
+          messageApi.success(data?.message || t('metadataConfig.bgmDataClearDone'))
+          await loadBgmDataCount()
+        } catch (error) {
+          messageApi.error(`${t('metadataConfig.bgmDataClearFailed')}: ${error?.response?.data?.detail || error.message}`)
+        } finally {
+          setBgmDataClearing(false)
+        }
+      },
+    })
   }
 
   const handleOAuthLogin = async () => {
@@ -306,6 +329,10 @@ export function BangumiConfig({ form }) {
 
           <Button size="small" type="primary" loading={bgmDataSyncing} onClick={handleSyncBgmData}>
             {t('metadataConfig.bgmDataSyncNow')}
+          </Button>
+
+          <Button size="small" danger loading={bgmDataClearing} onClick={handleClearBgmData}>
+            {t('metadataConfig.bgmDataClear')}
           </Button>
         </div>
 

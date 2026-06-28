@@ -541,8 +541,13 @@ async def webhook_search_and_dispatch_task(
 
                 # 获取精确标记信息
                 favorited_info = {}
+                # 库内已有源信息（复用前面已算好的 existing_source_keys，供 AI 优先复用库内源）
+                existing_info = {}
 
                 for result in all_search_results:
+                    source_key = f"{result.provider}:{result.mediaId}"
+                    if source_key in existing_source_keys:
+                        existing_info[source_key] = True
                     # 查找是否有相同provider和mediaId的源被标记
                     stmt = (
                         select(AnimeSource.isFavorited)
@@ -560,7 +565,7 @@ async def webhook_search_and_dispatch_task(
 
                 # 使用AIMatcherManager进行匹配
                 ai_selected_index = await ai_matcher_manager.select_best_match(
-                    query_info, all_search_results, favorited_info
+                    query_info, all_search_results, favorited_info, existing_info
                 )
 
                 if ai_selected_index is not None:

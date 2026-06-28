@@ -162,20 +162,70 @@ async def get_bangumi_data_status(
 
 @router.post("/bangumi-data/sync", summary="手动触发 bangumi-data 离线索引同步")
 async def trigger_bangumi_data_sync(
+    request: Request,
     current_user: models.User = Depends(security.get_current_user),
 ):
-    """立即从 CDN 拉取 bangumi-data 并同步到本地索引（不必等定时任务）。
+    """提交一个后台任务，从 CDN 拉取 bangumi-data 并同步到本地索引（不必等定时任务）。
 
-    注意：会拉取约 7MB 数据并全量重建索引表，耗时通常数秒到数十秒（取决于网络）。
+    why：原实现直接 await manager.sync() 会阻塞 HTTP 请求数秒~数十秒且无任务记录，
+    改为走任务管理器，与定时同步(BangumiDataSyncJob)保持一致：有进度、有历史、不阻塞接口。
     """
-    from src.services import get_bangumi_data_manager
+    from src.services import get_bangumi_data_manager, TaskSuccess
+
     manager = get_bangumi_data_manager()
     if manager is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 管理器未就绪")
-    result = await manager.sync()
-    if not result.get("success"):
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=result.get("message") or "同步失败")
-    return {"message": f"同步完成，共 {result.get('count')} 条", "count": result.get("count")}
+
+    task_manager = request.app.state.task_manager
+
+    async def _sync_coro(session, progress_callback):
+        await progress_callback(10, "正在从 CDN 拉取 bangumi-data...")
+        result = await manager.sync()
+        if result.get("success"):
+            raise TaskSuccess(f"bangumi-data 同步完成，共 {result.get('count')} 条。")
+        raise TaskSuccess(f"bangumi-data 同步失败：{result.get('message')}")
+
+    # unique_key 防止重复提交（与定时任务共用语义前缀，便于去重检测）
+    task_id, _ = await task_manager.submit_task(
+        _sync_coro,
+        "bangumi-data 离线索引同步（手动）",
+        unique_key="bangumi-data-sync-manual",
+        task_type="bangumiDataSync",
+        queue_type="management",
+    )
+    return {"message": "bangumi-data 同步任务已提交", "taskId": task_id}
+
+
+@router.post("/bangumi-data/clear", summary="清除 bangumi-data 离线索引数据")
+async def trigger_bangumi_data_clear(
+    request: Request,
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """提交一个后台任务，清空本地 bangumi-data 离线索引表。
+
+    why：与立即同步保持一致走任务管理器，有任务记录、不阻塞接口（清表本身虽快，但统一入口便于审计）。
+    """
+    from src.services import get_bangumi_data_manager, TaskSuccess
+
+    manager = get_bangumi_data_manager()
+    if manager is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 管理器未就绪")
+
+    task_manager = request.app.state.task_manager
+
+    async def _clear_coro(session, progress_callback):
+        await progress_callback(10, "正在清除 bangumi-data 离线索引...")
+        result = await manager.clear()
+        raise TaskSuccess(f"bangumi-data 离线索引已清除，共 {result.get('count')} 条。")
+
+    task_id, _ = await task_manager.submit_task(
+        _clear_coro,
+        "bangumi-data 离线索引清除",
+        unique_key="bangumi-data-clear-manual",
+        task_type="bangumiDataClear",
+        queue_type="management",
+    )
+    return {"message": "bangumi-data 清除任务已提交", "taskId": task_id}
 
 
 @router.get("/bangumi-data/danmaku-sources/{bangumi_id}", summary="反向解析：某番各平台 URL 及是否有对应弹幕源")

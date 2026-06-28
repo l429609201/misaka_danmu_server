@@ -720,6 +720,19 @@ async def _migrate_anime_group_fk_v1(conn: AsyncConnection, db_type: str):
             logger.warning(f"  ⚠️  添加 anime.group_id 外键约束失败: {e}")
 
 
+async def _reset_ai_match_prompt_v1(conn: AsyncConnection):
+    """删除 config 表中的 aiMatchPrompt 条目，使其在 register_defaults 时用新默认值回填。
+
+    why：DEFAULT_AI_MATCH_PROMPT 新增了「库内已有源优先」等规则，但 register_defaults
+    只在 key 不存在时才写入，已有自定义/旧默认值不会被覆盖。此迁移删除旧条目，
+    随后启动流程的 register_defaults 会自动用最新默认提示词回填。
+    若日后再次更新默认提示词需强制刷新，新增 _v2 迁移即可。
+    """
+    logger.info("删除旧的 aiMatchPrompt 配置，使其用新默认提示词回填...")
+    await conn.execute(text("DELETE FROM config WHERE config_key = 'aiMatchPrompt'"))
+    logger.info("aiMatchPrompt 已删除，将在 register_defaults 阶段用新默认值回填。")
+
+
 # 所有迁移任务的 ID 列表（新增迁移时需同步更新此列表）
 ALL_MIGRATION_IDS = [
     "migrate_clear_rate_limit_state_v1",
@@ -731,6 +744,7 @@ ALL_MIGRATION_IDS = [
     "drop_force_scrape_column_v1",
     "remove_system_token_reset_task_v1",
     "migrate_anime_group_fk_v1",
+    "reset_ai_match_prompt_v1",
 ]
 
 
@@ -768,6 +782,7 @@ async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
         ("drop_force_scrape_column_v1", _drop_force_scrape_column_v1, (db_type,)),  # 删除已废弃的 force_scrape 列
         ("remove_system_token_reset_task_v1", _remove_system_token_reset_task_v1, ()),  # 删除已迁移到内部轮询的 tokenReset 定时任务
         ("migrate_anime_group_fk_v1", _migrate_anime_group_fk_v1, (db_type,)),  # 为 anime.group_id 添加外键约束
+        ("reset_ai_match_prompt_v1", _reset_ai_match_prompt_v1, ()),  # 删除旧 aiMatchPrompt，用新默认提示词回填
     ]
 
     for migration_id, migration_func, args in migrations:

@@ -499,6 +499,9 @@ export const getBangumiDataStatus = () =>
 /** 手动触发 bangumi-data 离线索引同步 */
 export const syncBangumiData = () =>
   api.post('/api/ui/bangumi-data/sync')
+/** 清除 bangumi-data 离线索引数据 */
+export const clearBangumiData = () =>
+  api.post('/api/ui/bangumi-data/clear')
 /** 获取授权信息 */
 export const getBangumiAuth = () =>
   api.post('/api/ui/metadata/bangumi/actions/get_auth_state')
