@@ -236,8 +236,16 @@ class BangumiDataIndex(Base):
     titleZh: Mapped[Optional[str]] = mapped_column("title_zh", String(500))   # 首选简体中文译名
     titleEn: Mapped[Optional[str]] = mapped_column("title_en", String(500))   # 首选英文名
     type: Mapped[Optional[str]] = mapped_column("type", String(32))            # tv / movie / ova / ...
-    beginYear: Mapped[Optional[int]] = mapped_column("begin_year", Integer)    # 放送开始年份
-    sites: Mapped[Optional[str]] = mapped_column("sites", TEXT)                # JSON：{platform: id} 平台映射
+    beginYear: Mapped[Optional[int]] = mapped_column("begin_year", Integer)    # 放送开始年份（保留，兼容旧逻辑）
+    # 新增：补全源 data.json 的完整字段，避免信息丢失（why：原仅存年份/精简映射，无法支撑详情展示与反向解析）
+    lang: Mapped[Optional[str]] = mapped_column("lang", String(16))            # 原始语言（如 ja）
+    officialSite: Mapped[Optional[str]] = mapped_column("official_site", String(500))  # 官方网站
+    beginDate: Mapped[Optional[str]] = mapped_column("begin_date", String(40))  # 完整开播时间（ISO 字符串，原样保留）
+    endDate: Mapped[Optional[str]] = mapped_column("end_date", String(40))      # 完结时间（ISO 字符串，原样保留）
+    broadcast: Mapped[Optional[str]] = mapped_column("broadcast", String(100))  # 放送周期规则（如 R/2022-...P7D）
+    comment: Mapped[Optional[str]] = mapped_column("comment", TEXT)             # 备注
+    # sites 改存「原始 sites 数组」JSON（保留每个站点的 begin/broadcast 子字段），不再重组为 {platform:id}
+    sites: Mapped[Optional[str]] = mapped_column("sites", TEXT)                # JSON：原始 sites 数组
     updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime, default=get_now, nullable=False)
 
 

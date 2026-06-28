@@ -1359,6 +1359,9 @@ export const SearchResult = () => {
                   <div className="flex items-center flex-wrap gap-2">
                     <Tag color="magenta">{t('searchResult.sourceLabel', { value: item.provider ?? t('searchResult.unknown') })}</Tag>
                     <Tag color="volcano">{t('searchResult.yearLabel', { value: item.year ?? t('searchResult.unknown') })}</Tag>
+                    {item.recognitionTitle && (
+                      <Tag color="green">{t('searchResult.recognitionLabel', { value: item.recognitionTitle })}</Tag>
+                    )}
                     <Tag color="orange">{t('searchResult.seasonLabel', { value: item.season ?? t('searchResult.unknown') })}</Tag>
                     <Tag color="gold">{t('searchResult.totalEpisodesLabel', { value: item.episodeCount ?? 0 })}</Tag>
                     {item.supplementSource && (

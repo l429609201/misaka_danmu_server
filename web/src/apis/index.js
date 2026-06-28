@@ -1182,6 +1182,10 @@ export const discoverSubscriptionTargets = (params) => api.get('/api/ui/subscrip
 // 按 URL 自动定位订阅源并发现候选（后端按各源 handled_domains 匹配，前端无需硬编码域名）
 export const resolveSubscriptionUrl = (url) => api.post('/api/ui/subscriptions/resolve-url', { url })
 
+/** 离线探索（bangumi-data 为主 + 在线为辅）：秒搜 + 多语言别名 + 平台映射 */
+// onlineProvider 可选，传入则并行用在线源补充（如 bangumi / trakt）
+export const discoverOfflineSubscriptionTargets = (params) => api.get('/api/ui/subscriptions/discover/offline', params)
+
 /** 查询订阅目标 */
 export const getSubscriptionTargets = (params) => api.get('/api/ui/subscriptions/targets', params)
 

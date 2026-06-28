@@ -4,6 +4,7 @@ import { SearchOutlined, LinkOutlined } from '@ant-design/icons'
 import {
   getAvailableSubscriptionSources,
   discoverSubscriptionTargets,
+  discoverOfflineSubscriptionTargets,
   createSubscriptionTarget,
 } from '../../apis'
 import { SubscriptionUrlModal } from './SubscriptionUrlModal'
@@ -11,6 +12,22 @@ import { SubscriptionUrlModal } from './SubscriptionUrlModal'
 // 是否为 URL：仅看协议头。具体能否被订阅源识别，交后端 /resolve-url 决定。
 // 这样前端无需感知任何源的域名（新增/移除源时前端零改动）。
 const looksLikeUrl = (q) => !!q && /^https?:\/\//i.test(q.trim())
+
+// bangumi-data 站点 → 是否有对应已实现弹幕源（可直接抓弹幕）。
+// 与后端 bangumi_platform_resolver.SITE_TO_PROVIDER 对齐：这些站点的番可一键抓弹幕。
+const DANMAKU_CAPABLE_SITES = new Set([
+  'qq', 'youku', 'mgtv', 'iqiyi',
+  'bilibili', 'bilibili_hk_mo_tw', 'bilibili_hk_mo', 'bilibili_tw',
+  'gamer', 'gamer_hk',
+])
+// 站点 → 友好展示名（仅常见站点，其余用原 key）
+const SITE_LABELS = {
+  qq: '腾讯', youku: '优酷', mgtv: '芒果', iqiyi: '爱奇艺',
+  bilibili: 'B站', bilibili_hk_mo_tw: 'B站(港澳台)', bilibili_hk_mo: 'B站(港澳)', bilibili_tw: 'B站(台)',
+  gamer: '动画疯', gamer_hk: '动画疯(HK)', bangumi: 'Bangumi', netflix: 'Netflix',
+  nicovideo: 'Niconico', abema: 'ABEMA', unext: 'U-NEXT', crunchyroll: 'CR',
+  disneyplus: 'Disney+', tmdb: 'TMDB', mal: 'MAL', anidb: 'AniDB', aniList: 'AniList',
+}
 
 // 统一搜索区：常驻订阅页顶部，两视图通用。
 // 支持：选订阅源（全部/单个）+ 关键词或 URL → discover 候选 → 点选订阅。
@@ -74,14 +91,41 @@ export const SubscriptionSearchBar = ({ t, onSubscribed }) => {
     }
   }
 
+  // 离线探索（bangumi-data 为主）：秒搜 + 多语言 + 平台映射，结果排在在线源之前
+  const _discoverOffline = async (q) => {
+    try {
+      const r = await discoverOfflineSubscriptionTargets({ query: q })
+      // 离线候选自带 provider（bangumi），统一补到 _provider 以复用渲染/订阅逻辑
+      const list = ((r.data || r).list || []).map(it => ({
+        ...it,
+        _provider: it.provider || 'bangumi',
+        _offline: true,
+      }))
+      return list
+    } catch {
+      return []  // 离线探索失败静默，不影响在线探索
+    }
+  }
+
   const _runDiscover = async (targets, q) => {
     setSearching(true)
     setPopoverOpen(true)
     setCandidates([])
     setErrors([])
     try {
-      const results = await Promise.all(targets.map(p => _discoverOne(p, q)))
-      const merged = results.flatMap(r => r.list)
+      // 离线（bangumi-data）+ 在线源 并行探索
+      const [offlineList, results] = await Promise.all([
+        _discoverOffline(q),
+        Promise.all(targets.map(p => _discoverOne(p, q))),
+      ])
+      const onlineMerged = results.flatMap(r => r.list)
+      // 离线结果在前（带平台映射，更精准），与在线结果按 (provider,bangumiId) 粗去重
+      const seen = new Set(offlineList.map(it => `${it._provider}:${it.payload?.bangumiId || ''}`))
+      const dedupOnline = onlineMerged.filter(it => {
+        const k = `${it._provider}:${it.payload?.bangumiId || ''}`
+        return !it.payload?.bangumiId || !seen.has(k)
+      })
+      const merged = [...offlineList, ...dedupOnline]
       const errs = results.filter(r => r.error).map(r => ({ provider: r.provider, reason: r.error }))
       setCandidates(merged)
       setErrors(errs)
@@ -185,8 +229,36 @@ export const SubscriptionSearchBar = ({ t, onSubscribed }) => {
                       >
                         <List.Item.Meta
                           avatar={item.cover ? <Avatar shape="square" size={40} src={item.cover} /> : <Avatar shape="square" size={40}>{((item.title || '?') + '').slice(0, 1)}</Avatar>}
-                          title={<span className="text-sm font-medium">{item.title || '(无标题)'}</span>}
-                          description={<span className="text-xs text-gray-500">{item.description || ''}</span>}
+                          title={
+                            <span className="text-sm font-medium">
+                              {item.title || '(无标题)'}
+                              {item._offline && <Tag color="green" style={{ marginLeft: 6 }}>{t('subscription.offlineHit', '离线命中')}</Tag>}
+                            </span>
+                          }
+                          description={
+                            <span className="text-xs text-gray-500">
+                              {item.description || ''}
+                              {item._offline && item.payload?.sites && Object.keys(item.payload.sites).length > 0 && (
+                                <span className="block mt-1">
+                                  {Object.keys(item.payload.sites)
+                                    // 可抓弹幕的平台排前
+                                    .sort((a, b) => (DANMAKU_CAPABLE_SITES.has(b) ? 1 : 0) - (DANMAKU_CAPABLE_SITES.has(a) ? 1 : 0))
+                                    .slice(0, 10)
+                                    .map(site => {
+                                      const capable = DANMAKU_CAPABLE_SITES.has(site)
+                                      const label = SITE_LABELS[site] || site
+                                      return (
+                                        <Tooltip key={site} title={capable ? t('subscription.danmakuCapable', '该平台可抓弹幕') : t('subscription.infoOnly', '仅作信息参考')}>
+                                          <Tag color={capable ? 'green' : 'default'} style={{ marginBottom: 2 }}>
+                                            {capable ? '🔥 ' : ''}{label}
+                                          </Tag>
+                                        </Tooltip>
+                                      )
+                                    })}
+                                </span>
+                              )}
+                            </span>
+                          }
                         />
                       </List.Item>
                     )

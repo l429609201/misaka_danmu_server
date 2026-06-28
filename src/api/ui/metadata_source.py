@@ -126,26 +126,6 @@ async def execute_metadata_action(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-# A3 平台直链：bangumi-data 各站点 URL 模板（{{id}} 占位），用于把站点 id 拼成可点击链接
-_BANGUMI_DATA_SITE_URL_TEMPLATES = {
-    "bangumi": "https://bgm.tv/subject/{id}",
-    "bilibili": "https://www.bilibili.com/bangumi/media/md{id}",
-    "bilibili_hk_mo_tw": "https://www.bilibili.com/bangumi/media/md{id}",
-    "acfun": "https://www.acfun.cn/bangumi/aa{id}",
-    "iqiyi": "https://www.iqiyi.com/{id}.html",
-    "youku": "https://list.youku.com/show/id_z{id}.html",
-    "qq": "https://v.qq.com/detail/{id}.html",
-    "mgtv": "https://www.mgtv.com/h/{id}.html",
-    "netflix": "https://www.netflix.com/title/{id}",
-    "tmdb": "https://www.themoviedb.org/{id}",
-    "mal": "https://myanimelist.net/anime/{id}",
-    "anidb": "https://anidb.net/anime/{id}",
-    "crunchyroll": "https://www.crunchyroll.com/series/{id}",
-    "prime": "https://www.amazon.co.jp/dp/{id}",
-    "disneyplus": "https://www.disneyplus.com/series/-/{id}",
-}
-
-
 @router.get("/bangumi-data/platforms/{bangumi_id}", summary="A3：查询某番在各平台的 id/链接（bangumi-data 离线索引）")
 async def get_bangumi_data_platforms(
     bangumi_id: str,
@@ -154,23 +134,16 @@ async def get_bangumi_data_platforms(
     """根据 bangumiId 从 bangumi-data 离线索引返回该作品在各平台的 id 与可点击链接。
 
     用途：让用户看到「这部番在 B站/爱奇艺/优酷/Netflix 等平台是否上架」并可跳转。
-    注意：各平台 id 形态不一（如 tmdb 为 'movie/123'），是否能直接用于自动导入需逐平台适配，
-    本端点只做映射展示，不驱动导入。
+    注意：URL 由随 data.json 动态下发的 siteMeta.urlTemplate 拼成（不再硬编码），各平台 id 形态不一
+    （如 tmdb 为 'tv/123'），是否能直接用于自动导入需逐平台适配，本端点只做映射展示。
     """
     from src.services import get_bangumi_data_manager
     manager = get_bangumi_data_manager()
     if manager is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 离线索引未就绪")
 
-    sites_map = await manager.get_all_platform_ids(str(bangumi_id))
-    if not sites_map:
-        return {"bangumiId": bangumi_id, "platforms": []}
-
-    platforms = []
-    for site, sid in sites_map.items():
-        template = _BANGUMI_DATA_SITE_URL_TEMPLATES.get(site)
-        url = template.format(id=sid) if template else None
-        platforms.append({"site": site, "id": sid, "url": url})
+    # 复用反向解析器：动态 siteMeta 拼 URL
+    platforms = await manager.build_platform_urls(str(bangumi_id))
     return {"bangumiId": bangumi_id, "platforms": platforms}
 
 
@@ -203,4 +176,47 @@ async def trigger_bangumi_data_sync(
     if not result.get("success"):
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=result.get("message") or "同步失败")
     return {"message": f"同步完成，共 {result.get('count')} 条", "count": result.get("count")}
+
+
+@router.get("/bangumi-data/danmaku-sources/{bangumi_id}", summary="反向解析：某番各平台 URL 及是否有对应弹幕源")
+async def get_bangumi_data_danmaku_sources(
+    bangumi_id: str,
+    request: Request,
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """把某番在各平台的 id 反向拼成官方 URL，并探测每个 URL 是否有「已实现的弹幕源」可直接抓弹幕。
+
+    工作链路：bangumiId → sites{平台:id} → siteMeta.urlTemplate 拼 URL
+            → scraper_manager.get_scraper_by_domain(url) 判定能否抓弹幕。
+    available=true 的平台可走 /extcomment 直接获取弹幕。
+    """
+    from src.services import get_bangumi_data_manager
+    manager = get_bangumi_data_manager()
+    if manager is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 离线索引未就绪")
+
+    platforms = await manager.build_platform_urls(str(bangumi_id))
+    scraper_manager = getattr(request.app.state, "scraper_manager", None)
+
+    sources = []
+    for p in platforms:
+        url = p.get("url")
+        provider = None
+        available = False
+        # 仅当能拼出 URL 且存在处理该域名的弹幕源时，标记为可抓取
+        if url and scraper_manager is not None:
+            scraper = scraper_manager.get_scraper_by_domain(url)
+            if scraper is not None:
+                provider = scraper.provider_name
+                available = True
+        sources.append({
+            "site": p.get("site"),
+            "id": p.get("id"),
+            "title": p.get("title"),
+            "type": p.get("type"),
+            "url": url,
+            "provider": provider,      # 对应的弹幕源 provider_name（无则 None）
+            "available": available,    # 是否可直接通过该 URL 抓弹幕
+        })
+    return {"bangumiId": bangumi_id, "sources": sources}
 

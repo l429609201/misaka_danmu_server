@@ -171,11 +171,18 @@ export default function HistoryLogModal({ open, onClose }) {
           style={isMobile ? { flex: '1 1 0', minWidth: 0 } : undefined}
         />
       </div>
-      <Spin spinning={loading} className={isMobile ? 'flex-1 overflow-hidden flex flex-col' : ''}>
-        <Card className={isMobile ? 'flex-1 overflow-hidden flex flex-col' : ''} styles={{ body: { padding: isMobile ? 8 : 12, ...(isMobile ? { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } : {}) } }}>
+      {/* 修复移动端无法滚动：Spin 作为容器会插入 .ant-spin-nested-loading / .ant-spin-container 两层 div，
+          断开 Drawer 的 flex 高度链，导致内部滚动容器算不出高度。改为滚动容器直接挂在 Card.body 下，
+          loading 时用绝对定位遮罩覆盖，桌面端逻辑（max-h-[55vh]）保持不变。 */}
+      <Card className={isMobile ? 'flex-1 min-h-0 flex flex-col' : ''} styles={{ body: { padding: isMobile ? 8 : 12, ...(isMobile ? { flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' } : {}) } }}>
           <div
-            className={`${isMobile ? 'flex-1 overflow-y-auto overflow-x-hidden' : 'max-h-[55vh] overflow-y-auto overflow-x-hidden'}`}
+            className={`relative ${isMobile ? 'flex-1 min-h-0 overflow-y-auto overflow-x-hidden' : 'max-h-[55vh] overflow-y-auto overflow-x-hidden'}`}
           >
+            {loading && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.04)' }}>
+                <Spin />
+              </div>
+            )}
             {filtered.length === 0 ? (
               <div className="flex items-center justify-center" style={{ height: '30vh' }}>
                 <Empty description={<span className="text-gray-400">{search ? t('historyLog.noMatchLog') : t('historyLog.noLog')}</span>} image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -209,7 +216,6 @@ export default function HistoryLogModal({ open, onClose }) {
             )}
           </div>
         </Card>
-      </Spin>
     </>
   )
 

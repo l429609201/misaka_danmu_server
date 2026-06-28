@@ -178,7 +178,44 @@ async def discover_targets(
     return {"list": items or []}
 
 
-@router.post("/explore/sync", summary="同步探索榜单数据")
+@router.get("/discover/offline", summary="离线探索（bangumi-data 为主 + 在线为辅）")
+async def discover_offline(
+    query: str = Query(..., description="关键词（支持任意语言译名）"),
+    onlineProvider: Optional[str] = Query(None, description="可选：辅助在线探索源，如 bangumi / trakt"),
+    user: models.User = Depends(security.get_current_user),
+    scraper_manager: ScraperManager = Depends(get_scraper_manager),
+    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+):
+    """以 bangumi-data 离线库为主探索源（秒搜+多语言+带平台映射），在线 API 为辅。
+
+    - 主：查本地 bangumi_data_index，返回 bangumi_data_subject 候选（payload 含 sites 平台映射）。
+    - 辅：若指定 onlineProvider，并行调其 discover 补充（在线源结果排在离线结果之后）。
+    返回 {list:[...]}，结构与 /discover 对齐，供前端统一渲染。
+    """
+    from src.services import get_bangumi_data_manager
+    offline_items: List[Dict[str, Any]] = []
+    bgm_mgr = get_bangumi_data_manager()
+    if bgm_mgr is not None:
+        try:
+            offline_items = await bgm_mgr.discover_offline(query)
+        except Exception as e:
+            logger.warning(f"bangumi-data 离线探索失败: {type(e).__name__}: {e}")
+
+    # 辅助在线探索（可选）
+    online_items: List[Dict[str, Any]] = []
+    if onlineProvider:
+        source = _resolve_source(onlineProvider, scraper_manager, metadata_manager)
+        if source is not None and getattr(source, "supports_subscription", False):
+            try:
+                try:
+                    online_items = await source.discover_subscription_targets(query, "", user=user)
+                except TypeError:
+                    online_items = await source.discover_subscription_targets(query, "")
+            except (NotImplementedError, Exception) as e:
+                logger.warning(f"在线辅助探索失败 ({onlineProvider}): {type(e).__name__}: {e}")
+
+    return {"list": (offline_items or []) + (online_items or [])}
+
 async def sync_explore(
     user: models.User = Depends(security.get_current_user),
     session: AsyncSession = Depends(get_db_session),
