@@ -82,6 +82,7 @@ const navItems = [
   { key: RoutePaths.LIBRARY, label: 'nav.library', icon: 'tvlibrary', iconfontIcon: 'icon-tvlibrary', children: [
     { key: 'library', label: 'libraryPage.pageTitle', icon: 'kufangguanli' },
     { key: 'batch', label: 'libraryPage.btnBatchManage', icon: 'piliangguanli' },
+    { key: 'subscriptions', label: 'features.subscriptions.title', icon: 'kufangguanli' },
   ] },
   { key: RoutePaths.TASK, label: 'nav.task', icon: 'renwu', iconfontIcon: 'icon-renwu', children: [
     { key: 'task', label: 'nav.taskRunning', icon: 'tongji-jinhangzhongderenwushuliang' },
@@ -151,14 +152,20 @@ const navIconStyle = (size, scale, compact = false) => {
 
 const getChildNavigatePath = (parentItem, childKey) => {
   if (parentItem?.key === RoutePaths.LIBRARY) {
-    return childKey === 'batch' ? RoutePaths.BATCH_MANAGE : RoutePaths.LIBRARY
+    // 弹幕库下三个子页面各自独立路由（library / batch-manage / subscriptions）
+    if (childKey === 'batch') return RoutePaths.BATCH_MANAGE
+    if (childKey === 'subscriptions') return RoutePaths.SUBSCRIPTIONS
+    return RoutePaths.LIBRARY
   }
   return `${parentItem.key}?key=${childKey}`
 }
 
 const getNavChildActiveKey = (parentItem, location, subKey) => {
   if (parentItem?.key === RoutePaths.LIBRARY) {
-    return location.pathname === RoutePaths.BATCH_MANAGE ? 'batch' : 'library'
+    // 按当前路径反推高亮哪个子项
+    if (location.pathname === RoutePaths.BATCH_MANAGE) return 'batch'
+    if (location.pathname === RoutePaths.SUBSCRIPTIONS) return 'subscriptions'
+    return 'library'
   }
   return subKey
 }
