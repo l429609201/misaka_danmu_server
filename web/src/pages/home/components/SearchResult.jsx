@@ -1623,9 +1623,14 @@ export const SearchResult = () => {
                   <span className="shrink-0">{t('searchResult.seasonColon')}</span>
                   <InputNumber
                     value={editSeason}
-                    onChange={value => setEditSeason(value)}
+                    // 季度最小为 1：onChange 直接钳制，避免用户手动键入 0 或负数/空值
+                    onChange={value => {
+                      const num = Math.floor(Number(value))
+                      setEditSeason(Number.isFinite(num) && num >= 1 ? num : 1)
+                    }}
                     min={1}
                     step={1}
+                    precision={0}
                     disabled={editMediaType === 'movie'}
                     style={{ width: 80 }}
                   />

@@ -449,6 +449,15 @@ class BangumiDataManager:
         复用 src.utils 的 parse_search_keyword / normalize_title，不自造季度解析正则。
         防误纳同名不同番：以「去季后缀的系列主名严格归一化相等」为准。无命中返回 []。
         """
+        # 复用带年份版本，仅取 bgmId（保持原有调用方契约不变）
+        return [bid for bid, _ in await self.find_series_bangumi_ids_with_year(title)]
+
+    async def find_series_bangumi_ids_with_year(self, title: str) -> List[tuple]:
+        """同 find_series_bangumi_ids，但每项附带 beginYear，返回 [(bangumiId, year)]。
+
+        why：dandanplay bgmtv 软429兜底调 search_by_bangumi_id 时，接口常不返回 startDate，
+        借离线库的 beginYear 兜底年份，避免前端「年份未知」。year 缺省为 None。
+        """
         from src.utils import parse_search_keyword, normalize_title
 
         title = (title or "").strip()
@@ -464,7 +473,7 @@ class BangumiDataManager:
         if not rows:
             rows = await self._search_candidates_relaxed(title, limit=50)
 
-        # (season_order, bangumiId) 收集后排序；季号缺省（无季标记=主季）按 1 处理
+        # (season_order, bangumiId, year) 收集后排序；季号缺省（无季标记=主季）按 1 处理
         collected: List[tuple] = []
         seen_ids = set()
         for row in rows:
@@ -476,13 +485,13 @@ class BangumiDataManager:
                 if row_series_norm and row_series_norm == series_norm:
                     # 同系列：季号缺省视为第 1 季（主季）
                     order = parsed.get("season") or 1
-                    collected.append((order, str(row.bangumiId)))
+                    collected.append((order, str(row.bangumiId), getattr(row, "beginYear", None)))
                     seen_ids.add(row.bangumiId)
                     break
         if not collected:
             return []
         collected.sort(key=lambda x: x[0])
-        return [bid for _, bid in collected]
+        return [(bid, year) for _, bid, year in collected]
 
     async def get_offline_air_schedule(self) -> Dict[str, Dict[str, Any]]:
         """从离线 bangumi_data_index 提取「在播番剧的播出日程」，供日程同步在在线日历不可用时兜底。
