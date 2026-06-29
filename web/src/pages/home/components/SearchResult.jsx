@@ -1203,9 +1203,12 @@ export const SearchResult = () => {
                                   {t('searchResult.seasonLabel', { value: item.season ?? t('searchResult.unknown') })}
                                 </Tag>
                               )}
-                              <Tag color="gold">
-                                {t('searchResult.totalEpisodesLabel', { value: item.episodeCount ?? 0 })}
-                              </Tag>
+                              {/* why：人人(renren)源的搜索接口不返回集数，总集数恒为0，故不展示该标签避免误导 */}
+                              {item.provider !== 'renren' && (
+                                <Tag color="gold">
+                                  {t('searchResult.totalEpisodesLabel', { value: item.episodeCount ?? 0 })}
+                                </Tag>
+                              )}
                               {searchEpisode && (
                                 <Tag color="cyan">
                                   {t('searchResult.singleEpisode', { value: searchEpisode })}
@@ -1363,7 +1366,10 @@ export const SearchResult = () => {
                       <Tag color="green">{t('searchResult.recognitionLabel', { value: item.recognitionTitle })}</Tag>
                     )}
                     <Tag color="orange">{t('searchResult.seasonLabel', { value: item.season ?? t('searchResult.unknown') })}</Tag>
-                    <Tag color="gold">{t('searchResult.totalEpisodesLabel', { value: item.episodeCount ?? 0 })}</Tag>
+                    {/* why：人人(renren)源搜索接口不返回集数，总集数恒为0，故不展示该标签 */}
+                    {item.provider !== 'renren' && (
+                      <Tag color="gold">{t('searchResult.totalEpisodesLabel', { value: item.episodeCount ?? 0 })}</Tag>
+                    )}
                     {item.supplementSource && (
                       <Tag color="purple">{t('searchResult.supplementTag', { source: item.supplementSource })}</Tag>
                     )}
@@ -1623,14 +1629,9 @@ export const SearchResult = () => {
                   <span className="shrink-0">{t('searchResult.seasonColon')}</span>
                   <InputNumber
                     value={editSeason}
-                    // 季度最小为 1：onChange 直接钳制，避免用户手动键入 0 或负数/空值
-                    onChange={value => {
-                      const num = Math.floor(Number(value))
-                      setEditSeason(Number.isFinite(num) && num >= 1 ? num : 1)
-                    }}
+                    onChange={value => setEditSeason(value)}
                     min={1}
                     step={1}
-                    precision={0}
                     disabled={editMediaType === 'movie'}
                     style={{ width: 80 }}
                   />
