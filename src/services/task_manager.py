@@ -108,8 +108,15 @@ class TaskManager:
         title = task.title or ""
         suffix = "_success" if is_success else "_failed"
 
-        # 删除任务不发通知
-        if key.startswith("delete-source-") or key.startswith("delete-bulk-sources-"):
+        # 删除任务不发通知（必须覆盖所有删除前缀，否则会掉到末尾兜底被误判为 import_success，
+        # 导致出现"✅ 导入成功 / 删除成功"这种标题与内容矛盾的通知）
+        if key.startswith((
+            "delete-source-",        # 删除单个数据源
+            "delete-bulk-sources-",  # 批量删除数据源
+            "delete-anime-",         # 删除作品
+            "delete-episode-",       # 删除单个分集
+            "delete-bulk-episodes-", # 批量删除分集
+        )):
             return None
 
         # 定时任务（有 scheduled_task_id）
