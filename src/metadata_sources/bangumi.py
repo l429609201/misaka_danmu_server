@@ -576,6 +576,11 @@ class BangumiMetadataSource(BaseMetadataSource):
                 # 收集别名：name_cn 作为 aliasesCn
                 aliases_cn = [subject.name_cn] if subject.name_cn else []
 
+                # 从 subject.date（如 "2022-01-08"）提取年份，供下游（如 bgmtv 兜底多季消歧/日志）使用
+                sub_year = None
+                if subject.date and len(subject.date) >= 4 and subject.date[:4].isdigit():
+                    sub_year = int(subject.date[:4])
+
                 results.append(models.MetadataDetailsResponse(
                     id=str(subject.id),
                     bangumiId=str(subject.id),
@@ -583,7 +588,8 @@ class BangumiMetadataSource(BaseMetadataSource):
                     type="tv_series",
                     nameJp=subject.name,
                     imageUrl=await self._rewrite_image_url(subject.image_url),
-                    aliasesCn=aliases_cn
+                    aliasesCn=aliases_cn,
+                    year=sub_year,
                 ))
 
             return results
