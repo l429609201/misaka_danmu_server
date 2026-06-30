@@ -175,6 +175,7 @@ async def search_anime_provider(
         # why：规则形如 source=iqiyi 表示该识别词仅对爱奇艺源生效。命中后记录源限定，
         # 注入 recognitionTitle 时仅打给匹配源的结果，避免 renren 等无关源被误标。
         recognition_source_restriction = "all"
+        recognition_rule_source = None  # 规则左侧源站标题(如"说唱巅峰对决2026")，用于标题精确校验
         recognition_mapping_applied = False
         if title_recognition_manager:
             try:
@@ -182,6 +183,7 @@ async def search_anime_provider(
                 if mapping:
                     recognition_title = mapping["recognition_title"]
                     recognition_source_restriction = mapping.get("rule_source_restriction", "all") or "all"
+                    recognition_rule_source = mapping.get("search_title")  # 规则 source 值
                     recognition_mapping_applied = True
                     # why：反向映射把搜索词换成了源站真实名（如"说唱巅峰对决2026"），
                     # 但 season_to_filter 仍是用户输入"入库名"解析出的目标季(如第9季)。
@@ -274,12 +276,21 @@ async def search_anime_provider(
 
         # 识别词反向映射的入库正确名注入器：给响应中每条结果打 recognitionTitle 标记。
         # 注意：recognitionTitle 是请求级派生信息，不进搜索结果缓存，仅在返回前注入。
-        # why：规则带 source=xxx 时仅注入给该源的结果（source_restriction != 'all'），
-        # 否则全部注入，避免 renren 等无关源被误标识别词。
-        def _match_recognition_source(provider) -> bool:
-            if recognition_source_restriction == "all":
-                return True
-            return provider == recognition_source_restriction
+        # why：必须同时满足两个条件才打标记——
+        #   1) 源限定：规则带 source=xxx 时仅匹配该源（避免 renren 等无关源被误标）；
+        #   2) 标题精确匹配规则 source：同一源下可能有多条结果（如 iqiyi 的"说唱巅峰对决2026"
+        #      和"中国说唱巅峰对决2022"），只有标题真正等于规则 source 的那条才是目标作品，
+        #      否则会把同源无关结果误标识别词。
+        def _match_recognition_source(item: dict) -> bool:
+            provider = item.get("provider")
+            if recognition_source_restriction != "all" and provider != recognition_source_restriction:
+                return False
+            # 标题精确校验：复用识别词管理器的 _exact_match，与命中判定逻辑一致
+            if recognition_rule_source and title_recognition_manager:
+                return title_recognition_manager._exact_match(
+                    item.get("title") or "", recognition_rule_source
+                )
+            return True
 
         def _inject_recognition(payload: dict) -> dict:
             # why：必须"规范化"而非"只增"——旧版本曾把 recognitionTitle 无差别写进
@@ -288,7 +299,7 @@ async def search_anime_provider(
                 for _item in payload["results"]:
                     if not isinstance(_item, dict):
                         continue
-                    if recognition_title and _match_recognition_source(_item.get("provider")):
+                    if recognition_title and _match_recognition_source(_item):
                         _item["recognitionTitle"] = recognition_title
                     else:
                         _item["recognitionTitle"] = None
@@ -800,11 +811,11 @@ async def search_anime_provider(
     timer.finish()  # 打印搜索计时报告
     filter_metadata = _extract_filter_metadata(sorted_results)
     # 识别词反向映射命中时，给每条结果打 recognitionTitle 标记（请求级派生，不进搜索缓存）
-    # why：规则带 source=xxx 时仅标记该源结果，避免无关源被误标识别词。
+    # why：规则带 source=xxx 时仅标记该源结果，且标题需精确匹配规则 source，避免同源无关结果被误标。
     result_dicts = [item.model_dump() for item in paginated_results]
     if recognition_title:
         for _item in result_dicts:
-            if _match_recognition_source(_item.get("provider")):
+            if _match_recognition_source(_item):
                 _item["recognitionTitle"] = recognition_title
     response_payload = {
         "results": result_dicts,

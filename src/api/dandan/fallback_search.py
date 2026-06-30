@@ -213,6 +213,7 @@ async def execute_fallback_search_task(
         # why：规则形如 source=iqiyi 表示该识别词仅对爱奇艺源生效，记录源限定，
         # 写 recognitionTitle 时仅打给匹配源结果，避免 renren 等无关源被误标。
         recognition_source_restriction = "all"
+        recognition_rule_source = None  # 规则左侧源站标题，用于标题精确校验
         recognition_mapping_applied = False
         if title_recognition_manager:
             try:
@@ -220,6 +221,7 @@ async def execute_fallback_search_task(
                 if mapping:
                     recognition_title = mapping["recognition_title"]
                     recognition_source_restriction = mapping.get("rule_source_restriction", "all") or "all"
+                    recognition_rule_source = mapping.get("search_title")  # 规则 source 值
                     recognition_mapping_applied = True
                     # why：反向映射把搜索词换成源站真实名，但 season_to_filter 仍是用户输入
                     # "入库名"解析出的目标季。源站结果是源季，若不修正会被 line 358 季度过滤删光。
@@ -465,11 +467,17 @@ async def execute_fallback_search_task(
                 episode_ranges = format_episode_ranges(existing_episodes)
                 type_description = f"{base_type_desc}（库内：{episode_ranges}）"
 
-            # why：识别词带 source=xxx 时仅标记该源结果，避免无关源被误标识别词。
+            # why：识别词带 source=xxx 时仅标记该源结果；且标题需精确匹配规则 source，
+            # 避免同源下无关结果（如 iqiyi 的"中国说唱巅峰对决2022"）被误标识别词。
             item_recognition_title = recognition_title
-            if recognition_title and recognition_source_restriction != "all":
-                if result.provider != recognition_source_restriction:
+            if recognition_title:
+                # 源限定校验
+                if recognition_source_restriction != "all" and result.provider != recognition_source_restriction:
                     item_recognition_title = None
+                # 标题精确校验（复用识别词管理器 _exact_match，与命中判定一致）
+                elif recognition_rule_source and title_recognition_manager:
+                    if not title_recognition_manager._exact_match(result.title or "", recognition_rule_source):
+                        item_recognition_title = None
 
             search_results.append(
                 DandanSearchAnimeItem(
