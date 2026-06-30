@@ -2672,9 +2672,17 @@ export const Scrapers = () => {
           <Form.Item
             name={`${setname}EpisodeBlacklistRegex`}
             label={
-              <div className="flex items-center justify-between w-full">
-                <span>{t('scrapers.episodeBlacklist')}</span>
-                <Space size="small">
+              // 移动端窄屏：纵向堆叠（标题在上、按钮组在下并允许换行），
+              // 避免横向 flex 把"分集标题黑名单(正则)"挤压成一字宽竖排。
+              <div
+                className={
+                  isMobile
+                    ? 'flex flex-col items-start gap-1 w-full'
+                    : 'flex items-center justify-between w-full'
+                }
+              >
+                <span className="whitespace-nowrap">{t('scrapers.episodeBlacklist')}</span>
+                <Space size="small" wrap>
                   <Button
                     type="link"
                     size="small"
