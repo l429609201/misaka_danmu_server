@@ -1,4 +1,5 @@
-fastapi
+fastapi>=0.115.0,<0.116.0
+starlette>=0.40.0,<0.42.0
 uvicorn[standard]
 asyncmy>=0.2.9
 asyncpg>=0.29.0

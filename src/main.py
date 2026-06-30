@@ -532,13 +532,6 @@ app.include_router(api_router, prefix="/api")
 
 # --- MCP Server 初始化 ---
 # 必须在所有路由注册完毕后调用，这样 fastapi-mcp 才能扫描到所有外部控制 API
-#
-# 预热：在 setup_mcp 之前先生成并缓存外部控制 API 文档。
-# 原因：fastapi-mcp 会把被暴露为 MCP 工具的 /api/control 路由的 include_in_schema
-# 改成 False，导致之后再生成文档时 paths 为空（"No operations defined in spec!"）。
-# 此刻所有路由都还是正常状态，提前生成缓存即可彻底规避该问题，无需任何特殊改写。
-_control_api_openapi()
-
 setup_mcp(app)
 
 # --- 新增：挂载 Swagger UI 的静态文件目录 ---
