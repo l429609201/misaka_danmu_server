@@ -128,6 +128,10 @@ async def handle_fallback_search(
     await set_db_cache(session, TOKEN_SEARCH_TASKS_PREFIX, token, search_key, TOKEN_SEARCH_TASKS_TTL)
 
     # 通过任务管理器提交后备搜索任务
+    # task_id_ref：submit_task 返回后才有 task_id，用可变容器在闭包里回填，
+    # 供任务完成后 update_task_parameters 写入海报URL（事件循环单线程，无竞态）。
+    task_id_ref: dict = {}
+
     async def fallback_search_coro_factory(session_inner: AsyncSession, progress_callback):
         try:
             ai_matcher_manager_local = AIMatcherManager(config_manager=config_manager)
@@ -136,6 +140,10 @@ async def handle_fallback_search(
                 scraper_manager, metadata_manager, config_manager,
                 rate_limiter, title_recognition_manager, ai_matcher_manager_local
             )
+            # 任务成功完成后，从缓存结果提取前若干个海报URL写入 task_parameters，
+            # 供完成通知（FallbackSearchMessage）聚合九宫格海报。
+            # why：海报聚合放在通知链路异步执行，不阻塞搜索返回；此处仅做轻量URL提取。
+            await _attach_poster_urls_to_task(session_inner, search_key, task_id_ref.get("id"))
         except Exception as e:
             logger.error(f"后备搜索任务执行失败: {e}", exc_info=True)
             search_info_failed = await get_db_cache(session_inner, FALLBACK_SEARCH_CACHE_PREFIX, search_key)
@@ -146,6 +154,26 @@ async def handle_fallback_search(
             existing_token_key = await get_db_cache(session_inner, TOKEN_SEARCH_TASKS_PREFIX, token)
             if existing_token_key == search_key:
                 await delete_db_cache(session_inner, TOKEN_SEARCH_TASKS_PREFIX, token)
+
+    # 海报URL提取器：从后备搜索缓存结果取前 9 个非空 imageUrl，写进 task_parameters
+    async def _attach_poster_urls_to_task(session_inner: AsyncSession, s_key: str, t_id):
+        if not t_id:
+            return
+        try:
+            info = await get_db_cache(session_inner, FALLBACK_SEARCH_CACHE_PREFIX, s_key)
+            results = (info or {}).get("results") or []
+            poster_urls = []
+            for r in results:
+                url = (r or {}).get("imageUrl") or ""
+                if url:
+                    poster_urls.append(url)
+                if len(poster_urls) >= 9:  # 九宫格上限
+                    break
+            if poster_urls:
+                task_manager.update_task_parameters(t_id, {"poster_urls": poster_urls})
+        except Exception as e:
+            # 海报URL提取失败不影响任务完成与通知发出
+            logger.debug(f"提取后备搜索海报URL失败（忽略）: {e}")
 
     # 提交后备搜索任务
     try:
@@ -160,6 +188,7 @@ async def handle_fallback_search(
             fallback_search_coro_factory, task_title, run_immediately=True, queue_type="fallback",
             task_parameters={"token_name": token_name, "search_term": search_term}
         )
+        task_id_ref["id"] = task_id  # 回填，供 coro_factory 完成后写海报URL
         logger.info(f"后备搜索任务已提交: {task_id}")
     except Exception as e:
         logger.error(f"提交后备搜索任务失败: {e}", exc_info=True)

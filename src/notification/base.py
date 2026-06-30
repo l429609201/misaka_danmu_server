@@ -181,6 +181,8 @@ class BaseNotificationChannel(ABC):
         kwargs = {}
         if rendered.image:
             kwargs["image"] = rendered.image
+        if rendered.image_bytes:
+            kwargs["image_bytes"] = rendered.image_bytes
         if rendered.buttons:
             kwargs["reply_markup"] = rendered.buttons
         if rendered.edit_message_id:

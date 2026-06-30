@@ -331,14 +331,57 @@ class NotificationManager:
 
         检查每个渠道的事件订阅配置，只发送给订阅了的渠道。
         """
+        # 聚合海报（如后备搜索九宫格）：仅生成一次，复用给所有图片渠道，避免重复下载绘制。
+        # _collage_cache: None=尚未尝试; False=已尝试但无图; bytes=已生成
+        _collage_cache: Any = None
+        _collage_tried = False
+
         for ch_id, channel in self.channels.items():
             try:
                 if not self._check_subscription(channel, message):
                     continue
                 rendered = self.render_for_channel(message, channel)
+                # 仅对支持图片的渠道尝试附加聚合海报（异步，不阻塞业务主流程——
+                # 通知本身已在任务完成后异步发出）。失败静默降级为纯文字。
+                caps = channel.get_capabilities()
+                if caps.supports(ChannelCapability.IMAGES):
+                    if not _collage_tried:
+                        _collage_tried = True
+                        _collage_cache = await self._build_collage_for(message)
+                    if _collage_cache:
+                        rendered.image_bytes = _collage_cache
                 await channel.send_rendered(rendered)
             except Exception as e:
                 logger.error(f"渠道 {ch_id} 发送消息 [{message.message_type}] 失败: {e}")
+
+    async def _build_collage_for(self, message: NotificationMessage) -> Optional[bytes]:
+        """为消息生成聚合海报（PNG bytes）。受配置开关与代理控制，全程容错返回 None。
+
+        why：海报聚合是可选增强，任何环节失败都不应影响通知发出，故吞掉所有异常。
+        """
+        try:
+            # 读取开关与代理配置（一次 dispatch 仅调用一次）
+            enabled = True
+            proxy = None
+            ssl_verify = True
+            try:
+                async with self._session_factory() as session:
+                    enabled = (await crud.get_config_value(
+                        session, "fallbackSearchPosterCollage", "true")).lower() == "true"
+                    proxy_enabled = (await crud.get_config_value(
+                        session, "proxyEnabled", "false")).lower() == "true"
+                    proxy_url = await crud.get_config_value(session, "proxyUrl", "")
+                    ssl_verify = (await crud.get_config_value(
+                        session, "proxySslVerify", "true")).lower() == "true"
+                    proxy = proxy_url if (proxy_enabled and proxy_url) else None
+            except Exception:
+                pass
+            if not enabled:
+                return None
+            return await message.build_image_bytes(proxy=proxy, ssl_verify=ssl_verify)
+        except Exception as e:
+            logger.debug(f"生成聚合海报失败（忽略，降级纯文字）: {e}")
+            return None
 
     def render_for_channel(self, message: NotificationMessage,
                            channel: BaseNotificationChannel) -> RenderedMessage:

@@ -731,6 +731,8 @@ class TelegramChannel(BaseNotificationChannel):
             self.logger.warning("未配置 Chat ID，无法发送消息")
             return
         image: str = kwargs.get("image", "") or ""
+        # image_bytes：聚合海报 PNG 字节（如后备搜索九宫格），优先级高于单图 URL
+        image_bytes: Optional[bytes] = kwargs.get("image_bytes")
         # caption：title 已是纯文本（to_markdown 返回的 title 去掉了 *），需转义后再套 *粗体*
         # body(text) 已是合法 MarkdownV2，直接拼接
         safe_title = self._escape_markdown_v2(title) if title else ""
@@ -760,6 +762,35 @@ class TelegramChannel(BaseNotificationChannel):
                     )
                     if msg_id_out is not None and sent:
                         msg_id_out.append(sent.message_id)
+            elif image_bytes:
+                # 聚合海报（PNG bytes）：以图片消息发送，正文作为 caption。
+                # 失败时降级为纯文本，确保通知必达。
+                import io as _io
+                try:
+                    photo = _io.BytesIO(image_bytes)
+                    photo.name = "poster.png"
+                    sent = await asyncio.to_thread(
+                        self._bot.send_photo, chat_id, photo, caption=caption,
+                        parse_mode="MarkdownV2", reply_markup=markup,
+                    )
+                except Exception as photo_err:
+                    photo_err_str = str(photo_err).lower()
+                    if "can't parse entities" in photo_err_str:
+                        self.logger.warning(f"send_photo(bytes) MarkdownV2 解析失败，降级纯文本caption: {photo_err}")
+                        photo = _io.BytesIO(image_bytes)
+                        photo.name = "poster.png"
+                        sent = await asyncio.to_thread(
+                            self._bot.send_photo, chat_id, photo,
+                            caption=plain_caption, reply_markup=markup,
+                        )
+                    else:
+                        self.logger.warning(f"send_photo(bytes) 失败，降级为纯文本消息: {photo_err}")
+                        sent = await asyncio.to_thread(
+                            self._bot.send_message, chat_id, caption,
+                            parse_mode="MarkdownV2", reply_markup=markup,
+                        )
+                if msg_id_out is not None and sent:
+                    msg_id_out.append(sent.message_id)
             elif image:
                 # 有封面图：发带图片的消息，正文作为 caption
                 try:

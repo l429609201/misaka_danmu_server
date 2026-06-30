@@ -95,6 +95,16 @@ class NotificationMessage:
         """输出可选图片地址。默认空。"""
         return self.payload.get("image_url", "") or ""
 
+    async def build_image_bytes(self, proxy: Optional[str] = None,
+                                ssl_verify: bool = True) -> Optional[bytes]:
+        """异步生成随消息发送的图片字节（如聚合海报九宫格）。默认无（返回 None）。
+
+        why：海报聚合涉及异步下载多图 + 绘制，无法在同步的 render_for_channel 中完成，
+        故单列异步钩子，由 dispatch（异步上下文）在发送前调用。子类按需覆写。
+        失败应自行吞掉异常并返回 None，避免影响通知正常发出。
+        """
+        return None
+
     def edit_policy(self) -> Optional[int]:
         """是否允许编辑已有消息。返回 message_id 或 None。"""
         return None
@@ -129,3 +139,6 @@ class RenderedMessage:
     buttons: List[List[Dict[str, str]]] = field(default_factory=list)
     edit_message_id: Optional[int] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # 聚合海报图（PNG bytes）。非空时图片渠道优先以图片消息发送，正文作为 caption。
+    # 由 NotificationManager.dispatch 在发送前异步生成填入（见 NotificationMessage.build_image_bytes）。
+    image_bytes: Optional[bytes] = None

@@ -1228,12 +1228,25 @@ async def get_match_for_item(
             task_id_ref["id"] = task_id  # 赋值后 coro_factory 内部才能用来更新标题
             logger.info(f"匹配后备任务已提交: {task_id}")
 
-            # 等待任务完成(最多30秒)
+            # 等待任务完成。超时时长由配置 matchFallbackTimeout 控制（秒）：
+            # -1 表示无限等待直到匹配完成；其余正数为最大等待秒数，超时返回未匹配，任务继续在后台跑。
+            # why：此前硬编码 30s，导致 WebUI"后备匹配超时时间"配置无法生效。
+            timeout_str = await config_manager.get("matchFallbackTimeout", "60")
             try:
-                await asyncio.wait_for(done_event.wait(), timeout=30.0)
-                logger.info(f"匹配后备任务完成: {task_id}")
+                match_wait_timeout = float(timeout_str)
+            except (ValueError, TypeError):
+                match_wait_timeout = 30.0
+
+            try:
+                if match_wait_timeout < 0:
+                    # 无限等待：不设超时，直到后备匹配任务完成
+                    await done_event.wait()
+                    logger.info(f"匹配后备任务完成: {task_id}")
+                else:
+                    await asyncio.wait_for(done_event.wait(), timeout=match_wait_timeout)
+                    logger.info(f"匹配后备任务完成: {task_id}")
             except asyncio.TimeoutError:
-                logger.warning(f"匹配后备任务超时: {task_id}")
+                logger.warning(f"匹配后备任务超时（{match_wait_timeout:.0f}秒）: {task_id}")
                 match_fallback_result["response"] = DandanMatchResponse(isMatched=False, matches=[])
 
             # 返回结果

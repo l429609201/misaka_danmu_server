@@ -91,7 +91,9 @@ def get_default_configs(settings=None, ai_prompts=None):
         'gamerCookie': ('', '用于访问巴哈姆特动画疯的Cookie。'),
         'matchFallbackEnabled': ('false', '是否为匹配接口启用后备机制（自动搜索导入）。'),
         'matchFallbackBlacklist': ('', '匹配后备黑名单，使用正则表达式过滤文件名，匹配的文件不会触发后备机制。'),
+        'matchFallbackTimeout': ('60', '后备匹配接口(/match)等待结果的最大秒数。-1 表示无限等待直到匹配完成；超时后返回未匹配，匹配任务继续在后台运行。'),
         'searchFallbackEnabled': ('false', '是否为搜索接口启用后备搜索功能（全网搜索）。'),
+        'fallbackSearchPosterCollage': ('true', '后备搜索完成通知是否将各结果海报聚合为一张带序号的九宫格图一并推送（仅支持图片的渠道生效，失败自动降级纯文字，异步执行不阻塞搜索返回）。'),
 
         # 弹幕文件路径配置
         'customDanmakuPathEnabled': ('false', '是否启用自定义弹幕文件保存路径。'),

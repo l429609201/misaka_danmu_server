@@ -211,6 +211,35 @@ class FallbackSearchMessage(NotificationMessage):
     def to_text(self) -> tuple:
         return _build_fallback_text(self.payload, self.message_type)
 
+    async def build_image_bytes(self, proxy=None, ssl_verify: bool = True):
+        """聚合后备搜索结果海报为九宫格 PNG。
+
+        海报URL由 fallback_search 在任务完成后写入 task_parameters['poster_urls']。
+        仅成功事件、且有海报URL时才聚合；任何异常都吞掉返回 None，确保通知正常发出。
+        开关(fallbackSearchPosterCollage)与代理由调用方(dispatch)判定后决定是否调用。
+        """
+        if self.message_type != "fallback_search_success":
+            return None
+        # poster_urls 优先取 payload 顶层，其次取 task_parameters（task_manager 透传位置）
+        poster_urls = self.payload.get("poster_urls")
+        if not poster_urls:
+            task_params = self.payload.get("task_parameters") or {}
+            poster_urls = task_params.get("poster_urls")
+        if not poster_urls:
+            return None
+        try:
+            from src.utils.poster_collage import build_poster_collage
+            items = [
+                {"imageUrl": url, "index": i + 1}
+                for i, url in enumerate(poster_urls) if url
+            ]
+            if not items:
+                return None
+            return await build_poster_collage(items, proxy=proxy, ssl_verify=ssl_verify)
+        except Exception:
+            # 聚合失败静默降级为纯文字通知
+            return None
+
 
 @dataclass
 class PredownloadMessage(NotificationMessage):
