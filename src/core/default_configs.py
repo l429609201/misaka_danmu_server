@@ -62,6 +62,7 @@ def get_default_configs(settings=None, ai_prompts=None):
         'bangumiDataOfflineEnabled': ('true', '是否启用 bangumi-data 离线库辅助（开=离线库+API补充，关=仅用API）。'),
         'bangumiDataSyncCron': ('0 4 * * *', 'bangumi-data 离线索引同步的 cron 表达式（默认每天 4:00）。'),
         'bangumiDataUrl': ('https://unpkg.com/bangumi-data@0.3/dist/data.json', 'bangumi-data 数据集的下载地址（CDN）。支持自定义镜像，多个地址用英文逗号分隔，按顺序回退。'),
+        'bangumiDataLocalLoadRecord': ('', '本地打包 data.json 的加载记录（JSON：含文件哈希/条数/时间），启动时比对哈希决定是否重新加载，请勿手动修改。'),
         'doubanCookie': ('', '用于访问豆瓣API的Cookie。'),
         'imdbUseApi': ('true', 'IMDb是否使用第三方API (api.imdbapi.dev) 而不是官方网站HTML解析。'),
         'imdbEnableFallback': ('true', 'IMDb是否启用兜底机制。当主方式失败时,自动尝试另一种方式。'),

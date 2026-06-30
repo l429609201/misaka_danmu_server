@@ -589,7 +589,32 @@ html[data-page-style="liquid-glass"] .ant-notification-notice {
     inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
 }
 
-/* 下拉菜单：毛玻璃 + 更高不透明度（防止文字透穿） */
+/* Modal / Drawer 磨砂玻璃专属覆写（why：弹窗叠在内容上，0.55 透明度会穿底看到背景文字，
+   故单独提高不透明度 + 加大模糊，比普通卡片更"实"，但仍保留磨砂质感） */
+html[data-page-style="liquid-glass"] .ant-modal-content,
+html[data-page-style="liquid-glass"] .ant-drawer-content {
+  background: rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.65) !important;
+}
+html[data-page-style="liquid-glass"].dark .ant-modal-content,
+html[data-page-style="liquid-glass"].dark .ant-drawer-content {
+  background: rgba(30, 41, 59, 0.92) !important;
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+}
+
+/* 遮罩层加深 + 轻微模糊，让弹窗更聚焦、背景内容不再清晰可读 */
+html[data-page-style="liquid-glass"] .ant-modal-mask,
+html[data-page-style="liquid-glass"] .ant-drawer-mask {
+  background: rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+}
+
+
 html[data-page-style="liquid-glass"] .ant-dropdown .ant-dropdown-menu {
   background: rgba(255, 255, 255, 0.9) !important;
   backdrop-filter: blur(28px) saturate(180%) !important;

@@ -239,6 +239,15 @@ async def lifespan(app: FastAPI):
     # 初始化 bangumi-data 离线数据层管理器（全局单例，供别名补全/匹配增强/平台直链使用）
     app.state.bangumi_data_manager = init_bangumi_data_manager(session_factory, app.state.config_manager)
 
+    # 后台异步加载项目内打包的本地 data.json（与 main.py 同级）。
+    # why: 用文件哈希去重，未变更则跳过；create_task 不阻塞启动，失败静默不影响主流程。
+    async def _load_bangumi_local_data():
+        try:
+            await app.state.bangumi_data_manager.sync_from_local()
+        except Exception as e:
+            logger.warning(f"bangumi-data 本地离线数据加载失败（不影响启动）: {e}")
+    asyncio.create_task(_load_bangumi_local_data())
+
     app.state.webhook_manager = WebhookManager(
         session_factory, app.state.task_manager, app.state.scraper_manager,
         app.state.rate_limiter, app.state.metadata_manager,

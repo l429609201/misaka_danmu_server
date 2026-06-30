@@ -15,6 +15,8 @@ sites 字段原样保留 data.json 的 sites 数组（含各站点 begin/broadca
 import json
 import logging
 import re
+import hashlib
+from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -44,6 +46,14 @@ DEFAULT_DATA_URLS = [
 # siteMeta（平台 -> URL 模板）随 data.json 一起下发，sync() 时动态解析并存入此配置键，
 # 反向解析器从配置读取（why：避免写死常量过时，自动跟随数据源更新）。
 _SITE_META_CONFIG_KEY = "bangumiDataSiteMeta"
+
+# 本地离线数据文件加载记录（JSON 字符串）：{hash, count, loadedAt, path}
+# 启动时算本地文件 sha256 与此记录比对，相同且表非空则跳过加载，避免每次重复写库。
+_LOCAL_LOAD_RECORD_KEY = "bangumiDataLocalLoadRecord"
+
+# 项目内打包的本地数据文件：与 main.py 同级（src/data.json）。
+# bangumi_data_manager.py 位于 src/services/ → src 根 = parent.parent。
+_LOCAL_DATA_FILENAME = "data.json"
 
 # 繁转简转换器（懒加载单例）：兜底精确匹配需归一化繁简差异
 _t2s_converter = None
@@ -96,8 +106,22 @@ class BangumiDataManager:
                 urls = []
         return urls or list(DEFAULT_DATA_URLS)
 
-    async def _fetch_raw(self) -> tuple[Optional[List[Dict[str, Any]]], Dict[str, Any]]:
-        """从 CDN 拉取 data.json，返回 (items 列表, siteMeta 字典)（items 失败返回 None）。"""
+    @staticmethod
+    def _fmt_bytes(n: float) -> str:
+        """字节数人性化格式：B / KB / MB。"""
+        if n < 1024:
+            return f"{n:.0f}B"
+        if n < 1024 * 1024:
+            return f"{n / 1024:.1f}KB"
+        return f"{n / (1024 * 1024):.2f}MB"
+
+    async def _fetch_raw(self, progress_callback=None) -> tuple[Optional[List[Dict[str, Any]]], Dict[str, Any]]:
+        """从 CDN 拉取 data.json，返回 (items 列表, siteMeta 字典)（items 失败返回 None）。
+
+        :param progress_callback: 可选 async(progress:int, description:str)，流式下载时实时回报
+                                  已下载字节数与下载速度，供任务管理器展示。
+        """
+        import time as _time
         # 复用项目统一代理中间件（支持 HTTP/SOCKS 与加速代理）
         try:
             from src.utils.proxy_middleware import get_proxy_middleware
@@ -116,15 +140,54 @@ class BangumiDataManager:
                     target_url = url
                     client = httpx.AsyncClient(timeout=120.0, follow_redirects=True)
                 async with client:
-                    resp = await client.get(target_url)
-                    resp.raise_for_status()
-                    data = resp.json()
+                    # 流式下载：按 chunk 累计字节并实时回报速度（why：data.json 数 MB，
+                    # 国内 CDN 慢时用户需要看到下载进度而非长时间无反馈）
+                    async with client.stream("GET", target_url) as resp:
+                        resp.raise_for_status()
+                        total = int(resp.headers.get("Content-Length") or 0)
+                        downloaded = 0
+                        chunks = []
+                        start = _time.monotonic()
+                        last_report = start
+                        async for chunk in resp.aiter_bytes(64 * 1024):
+                            chunks.append(chunk)
+                            downloaded += len(chunk)
+                            now = _time.monotonic()
+                            # 每 0.5s 回报一次，避免过于频繁刷库/刷通知
+                            if progress_callback and (now - last_report >= 0.5):
+                                elapsed = max(now - start, 1e-6)
+                                speed = downloaded / elapsed
+                                if total > 0:
+                                    pct = 10 + int(downloaded / total * 50)  # 下载阶段占 10%~60%
+                                    desc = (f"下载中 {self._fmt_bytes(downloaded)}/{self._fmt_bytes(total)} "
+                                            f"({self._fmt_bytes(speed)}/s)")
+                                else:
+                                    pct = 30
+                                    desc = f"下载中 {self._fmt_bytes(downloaded)} ({self._fmt_bytes(speed)}/s)"
+                                try:
+                                    await progress_callback(pct, desc)
+                                except Exception:
+                                    pass
+                                last_report = now
+                        body = b"".join(chunks)
+                    elapsed = max(_time.monotonic() - start, 1e-6)
+                    avg_speed = downloaded / elapsed
+                    if progress_callback:
+                        try:
+                            await progress_callback(
+                                60, f"下载完成 {self._fmt_bytes(downloaded)} "
+                                    f"(平均 {self._fmt_bytes(avg_speed)}/s)，正在解析..."
+                            )
+                        except Exception:
+                            pass
+                    data = json.loads(body)
                 items = data.get("items") if isinstance(data, dict) else data
                 # siteMeta（站点->URL模板）随 data.json 顶层一起下发，动态解析（数组形态无此字段）
                 site_meta = data.get("siteMeta") if isinstance(data, dict) else {}
                 if items:
                     self.logger.info(
-                        f"bangumi-data: 从 {url} 拉取到 {len(items)} 条记录，siteMeta {len(site_meta or {})} 个站点"
+                        f"bangumi-data: 从 {url} 拉取到 {len(items)} 条记录（{self._fmt_bytes(downloaded)}，"
+                        f"平均 {self._fmt_bytes(avg_speed)}/s），siteMeta {len(site_meta or {})} 个站点"
                     )
                     return items, (site_meta or {})
             except Exception as e:
@@ -205,12 +268,34 @@ class BangumiDataManager:
             return int(begin[:4])
         return None
 
-    async def sync(self) -> Dict[str, Any]:
-        """全量同步：拉取 → 清表 → 批量写入。返回 {success, count}。"""
-        items, site_meta = await self._fetch_raw()
+    async def sync(self, progress_callback=None) -> Dict[str, Any]:
+        """全量同步：从 CDN 拉取 → 清表 → 批量写入。返回 {success, count}。
+
+        :param progress_callback: 可选 async(progress:int, description:str)，
+                                  下载阶段回报字节数/速度，写库阶段回报进度。
+        """
+        items, site_meta = await self._fetch_raw(progress_callback=progress_callback)
         if not items:
             return {"success": False, "count": 0, "message": "数据拉取失败"}
+        if progress_callback:
+            try:
+                await progress_callback(70, f"正在解析并写入 {len(items)} 条记录...")
+            except Exception:
+                pass
+        count = await self._persist_items(items, site_meta)
+        if progress_callback:
+            try:
+                await progress_callback(100, f"同步完成，写入 {count} 条")
+            except Exception:
+                pass
+        self.logger.info(f"bangumi-data: 同步完成，写入 {count} 条")
+        return {"success": True, "count": count}
 
+    async def _persist_items(self, items: List[Dict[str, Any]], site_meta: Dict[str, Any]) -> int:
+        """把原始 items 解析后清表写入 bangumi_data_index，返回写入条数。
+
+        why: 抽出此方法供 CDN 同步 sync() 与本地加载 sync_from_local() 共用，统一写库逻辑。
+        """
         # siteMeta 动态落库到配置（供反向解析器拼 URL）；拉取不到则保留上次的值不覆盖
         if site_meta and self.config_manager:
             try:
@@ -249,8 +334,99 @@ class BangumiDataManager:
             await session.execute(delete(orm_models.BangumiDataIndex))
             session.add_all([orm_models.BangumiDataIndex(**r) for r in rows])
             await session.commit()
-        self.logger.info(f"bangumi-data: 同步完成，写入 {len(rows)} 条")
-        return {"success": True, "count": len(rows)}
+        return len(rows)
+
+    # ---------------- 本地离线文件加载 ----------------
+
+    def _get_local_data_path(self) -> Path:
+        """本地打包数据文件路径：与 main.py 同级（src/data.json）。
+
+        bangumi_data_manager.py 位于 src/services/，parent.parent 即 src 根目录。
+        """
+        return Path(__file__).resolve().parent.parent / _LOCAL_DATA_FILENAME
+
+    @staticmethod
+    def _file_sha256(path: Path) -> str:
+        """分块计算文件 sha256（避免大文件一次性读入内存）。"""
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    async def _read_local_load_record(self) -> Dict[str, Any]:
+        """读取上次本地加载记录（config 表 JSON 字段）。缺失/损坏返回 {}。"""
+        if not self.config_manager:
+            return {}
+        try:
+            raw = await self.config_manager.get(_LOCAL_LOAD_RECORD_KEY, "")
+            return json.loads(raw) if raw else {}
+        except Exception:
+            return {}
+
+    async def sync_from_local(self, force: bool = False) -> Dict[str, Any]:
+        """从项目内打包的本地 data.json 加载离线数据（带哈希去重）。
+
+        流程（why：避免每次启动都重复清表写库，几万行写入有开销）：
+        1. 定位本地文件 → 不存在直接跳过
+        2. 算 sha256，与 config 记录的 hash 比对
+        3. hash 相同且表非空 → 跳过；否则解析写入并更新记录
+
+        :param force: True 时忽略哈希记录强制重新加载。
+        :return: {success, count, skipped, message}
+        """
+        path = self._get_local_data_path()
+        if not path.exists():
+            self.logger.info(f"bangumi-data: 本地数据文件不存在，跳过本地加载（{path}）")
+            return {"success": False, "count": 0, "skipped": True, "message": "本地文件不存在"}
+
+        try:
+            file_hash = self._file_sha256(path)
+        except Exception as e:
+            self.logger.warning(f"bangumi-data: 计算本地文件哈希失败: {e}")
+            return {"success": False, "count": 0, "skipped": True, "message": f"哈希计算失败: {e}"}
+
+        # 哈希比对：相同且表内已有数据则跳过（force=True 时跳过此判断）
+        if not force:
+            record = await self._read_local_load_record()
+            if record.get("hash") == file_hash and await self.count() > 0:
+                self.logger.info(
+                    f"bangumi-data: 本地数据未变更（hash 命中，已有 {record.get('count')} 条），跳过加载"
+                )
+                return {"success": True, "count": record.get("count", 0), "skipped": True, "message": "哈希命中，无需重载"}
+
+        # 解析本地文件（结构与 CDN data.json 一致：dict 含 items/siteMeta，或直接是数组）
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:
+            self.logger.warning(f"bangumi-data: 解析本地数据文件失败: {e}")
+            return {"success": False, "count": 0, "skipped": True, "message": f"解析失败: {e}"}
+
+        items = data.get("items") if isinstance(data, dict) else data
+        site_meta = data.get("siteMeta") if isinstance(data, dict) else {}
+        if not items:
+            self.logger.warning("bangumi-data: 本地数据文件无有效 items，跳过")
+            return {"success": False, "count": 0, "skipped": True, "message": "无有效数据"}
+
+        count = await self._persist_items(items, site_meta or {})
+
+        # 写入加载记录（供下次启动比对去重）
+        if self.config_manager:
+            try:
+                record = {
+                    "hash": file_hash,
+                    "count": count,
+                    "loadedAt": datetime.now().strftime(_OUTPUT_DT_FMT),
+                    "path": str(path),
+                }
+                await self.config_manager.setValue(
+                    _LOCAL_LOAD_RECORD_KEY, json.dumps(record, ensure_ascii=False)
+                )
+            except Exception as e:
+                self.logger.warning(f"bangumi-data: 保存本地加载记录失败: {e}")
+
+        self.logger.info(f"bangumi-data: 本地离线数据加载完成，写入 {count} 条（hash={file_hash[:12]}...）")
+        return {"success": True, "count": count, "skipped": False, "message": "加载完成"}
 
     async def count(self) -> int:
         """当前索引表条目数。"""

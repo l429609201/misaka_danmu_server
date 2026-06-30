@@ -41,9 +41,9 @@ class BangumiDataSyncJob(BaseJob):
             raise TaskSuccess("bangumi-data 管理器未就绪，已跳过。")
 
         await progress_callback(10, "正在从 CDN 拉取 bangumi-data...")
-        result = await manager.sync()
+        # 透传 progress_callback：下载阶段实时展示已下载字节数与速度
+        result = await manager.sync(progress_callback=progress_callback)
         if result.get("success"):
-            await progress_callback(100, f"同步完成，共 {result.get('count')} 条")
             raise TaskSuccess(f"bangumi-data 同步完成，共 {result.get('count')} 条。")
         else:
             raise TaskSuccess(f"bangumi-data 同步失败：{result.get('message')}")
