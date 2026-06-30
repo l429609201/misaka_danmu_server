@@ -411,6 +411,10 @@ def _control_api_openapi():
     schema = get_openapi(
         title="Misaka Danmaku External Control API",
         version="1.0.0",
+        # 固定为 3.0.3：FastAPI 默认生成 OAS 3.1.0，但项目内置的旧版 swagger-ui-bundle
+        # 解析 3.1.0 的 paths 失败，导致文档页显示 "No operations defined in spec!"。
+        # 降级到 3.0.3 可被旧版 UI 正常渲染，且不影响接口本身。
+        openapi_version="3.0.3",
         description="用于外部自动化和集成的API。支持两种鉴权方式：\n"
                     "1. **查询参数**：`?api_key=<你的密钥>`\n"
                     "2. **请求头**：`X-API-KEY: <你的密钥>`（推荐，也用于 MCP 连接）",
