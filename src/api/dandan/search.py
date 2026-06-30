@@ -80,6 +80,33 @@ def _format_db_results(db_results):
     return animes
 
 
+def _format_db_results(db_results):
+    """将数据库搜索结果转换为 DandanSearchAnimeItem 列表"""
+    animes = []
+    for res in db_results:
+        dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
+        dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
+        year = res.get('year')
+        start_date_str = None
+        if year:
+            start_date_str = datetime(year, 1, 1, tzinfo=get_app_timezone()).isoformat()
+        elif res.get('startDate'):
+            start_date_str = res.get('startDate').isoformat()
+        animes.append(DandanSearchAnimeItem(
+            animeId=res['animeId'],
+            bangumiId=res.get('bangumiId') or f"A{res['animeId']}",
+            animeTitle=res['animeTitle'],
+            type=dandan_type,
+            typeDescription=dandan_type_desc,
+            imageUrl=res.get('imageUrl'),
+            startDate=start_date_str,
+            year=year,
+            episodeCount=res.get('episodeCount', 0),
+            rating=0.0,
+            isFavorited=False
+        ))
+    return animes
+
 # 创建搜索路由器
 search_router = APIRouter(route_class=DandanApiRoute)
 
@@ -198,6 +225,7 @@ async def search_anime_for_dandan(
 
     # 如果本地库有结果且不需要触发后备搜索，直接返回
     if db_results and not should_trigger_fallback:
+        return DandanSearchAnimeResponse(animes=_format_db_results(db_results))
         return DandanSearchAnimeResponse(animes=_format_db_results(db_results))
 
     # 如果本地库无结果或需要触发后备搜索，检查是否启用了后备搜索
@@ -355,6 +383,11 @@ async def search_anime_for_dandan(
             parallel_count = sum(1 for a in labeled_fallback if '（并行' in a.animeTitle)
             logger.info(f"并行搜索: 后备 {len(fallback_response.animes)} 个结果，其中 {parallel_count} 个精确源匹配标注并行")
             return DandanSearchAnimeResponse(animes=labeled_fallback)
+        
+        # 并行搜索模式下后备搜索无结果，回退到库内结果
+        if parallel_search_enabled and db_results and not fallback_response.animes:
+            logger.info(f"并行搜索: 后备搜索无结果，回退到库内 {len(db_results)} 个结果")
+            return DandanSearchAnimeResponse(animes=_format_db_results(db_results))
 
         # 并行搜索模式下后备搜索（在线爬虫）无结果时，回退到库内已有结果，
         # 避免冷门/老剧在爬虫源搜不到时把库内已有数据一并丢弃、返回空。
