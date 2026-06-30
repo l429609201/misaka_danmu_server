@@ -217,6 +217,19 @@ async def execute_fallback_search_task(
                 if mapping:
                     recognition_title = mapping["recognition_title"]
                     recognition_mapping_applied = True
+                    # why：反向映射把搜索词换成源站真实名，但 season_to_filter 仍是用户输入
+                    # "入库名"解析出的目标季。源站结果是源季，若不修正会被 line 358 季度过滤删光。
+                    # 用规则 season_offset 解析出的"源站季度"覆盖过滤季度（通配/无法解析则不按季过滤）。
+                    mapped_source_season = mapping.get("search_season")
+                    if mapped_source_season is not None:
+                        if season_to_filter != mapped_source_season:
+                            logger.info(
+                                f"✓ 后备搜索反向映射季度修正: 过滤季度 {season_to_filter} → "
+                                f"源站季度 {mapped_source_season}"
+                            )
+                        season_to_filter = mapped_source_season
+                    else:
+                        season_to_filter = None
                     logger.info(
                         f"✓ 后备搜索识别词反向映射: '{search_term}' → 实际搜索 "
                         f"'{mapping['search_title']}'，入库名标记为 '{recognition_title}'"

@@ -521,18 +521,54 @@ class TitleRecognitionManager:
             # 反向匹配：用户原始词 == 规则的 title 值（即用户用"入库名"来搜）
             if self._exact_match(original_keyword, recognition_title):
                 rule_source_restriction = rule.data.get('source_restriction', 'all')
+                # why：规则 season_offset 形如 "1>9"（源站第1季 = 入库第9季）。
+                # 用户用"入库名"搜索时解析出的季度是目标季(9)，但源站结果实际是源季(1)，
+                # 若仍用目标季去过滤会把正确结果全部删光。这里解析出"源站季度"一并返回，
+                # 供搜索期季度过滤使用，确保用源季匹配源站结果。
+                source_season = self._parse_source_season_from_offset(
+                    rule.data.get('season_offset')
+                )
                 logger.info(
                     f"✓ 识别词反向映射命中: 用户搜索 '{original_keyword}' 匹配规则入库名 "
                     f"'{recognition_title}'，实际改用 '{rule_match_source}' 搜索"
-                    f"（源限定={rule_source_restriction}）"
+                    f"（源限定={rule_source_restriction}，源站季度={source_season}）"
                 )
                 return {
                     "search_title": rule_match_source,
                     "recognition_title": recognition_title,
                     "rule_source_restriction": rule_source_restriction,
+                    "search_season": source_season,  # 源站季度（None 表示不限定/无法解析）
                 }
 
         return None
+
+    def _parse_source_season_from_offset(self, season_offset: Optional[str]) -> Optional[int]:
+        """从 season_offset 规则解析出"源站季度"（搜索期过滤用）。
+
+        season_offset 语法约定：左侧=源站季度，右侧=入库季度。
+        - "1>9"  直接映射：源季=1
+        - "1+8"  加法：源季=1
+        - "9-8"  减法：源季=9
+        - "*+4" / "*>1"  通配：源季不确定，返回 None（不按季过滤）
+        无法解析时返回 None。
+        """
+        if not season_offset:
+            return None
+        s = str(season_offset).strip()
+        if s.startswith('*'):
+            return None
+        for op in ('>', '+', '-'):
+            if op in s:
+                left = s.split(op, 1)[0].strip()
+                try:
+                    return int(left)
+                except (ValueError, TypeError):
+                    return None
+        # 没有运算符时尝试整体解析为季度
+        try:
+            return int(s)
+        except (ValueError, TypeError):
+            return None
 
     async def apply_storage_postprocessing(self, text: str, season: Optional[int] = None, source: Optional[str] = None, episode: Optional[int] = None) -> Tuple[str, Optional[int], bool, Optional[Dict[str, Any]], Optional[int]]:
         """

@@ -123,6 +123,7 @@
  - [Bangumi-syncer](https://github.com/SanaeMio/Bangumi-syncer)
  - [imdbsource](https://github.com/wumode/MoviePilot-Plugins/tree/main/plugins.v2/imdbsource)
  - [MoviePilot](https://github.com/jxxghp/MoviePilot)
+ - [bangumi-data](https://github.com/bangumi-data/bangumi-data) - 番剧别名补全与平台映射的离线索引数据集（通过 jsDelivr CDN 同步）
 
 ---
 
