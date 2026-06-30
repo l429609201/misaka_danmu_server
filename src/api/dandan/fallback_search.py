@@ -210,12 +210,16 @@ async def execute_fallback_search_task(
 
         # 🚀 识别词反向映射（最高优先级）：用户用"入库名"搜索时，自动改用源站真实名去搜
         recognition_title = None  # 识别词指定的入库正确名，命中后写入每条结果
+        # why：规则形如 source=iqiyi 表示该识别词仅对爱奇艺源生效，记录源限定，
+        # 写 recognitionTitle 时仅打给匹配源结果，避免 renren 等无关源被误标。
+        recognition_source_restriction = "all"
         recognition_mapping_applied = False
         if title_recognition_manager:
             try:
                 mapping = await title_recognition_manager.apply_search_title_mapping(original_keyword)
                 if mapping:
                     recognition_title = mapping["recognition_title"]
+                    recognition_source_restriction = mapping.get("rule_source_restriction", "all") or "all"
                     recognition_mapping_applied = True
                     # why：反向映射把搜索词换成源站真实名，但 season_to_filter 仍是用户输入
                     # "入库名"解析出的目标季。源站结果是源季，若不修正会被 line 358 季度过滤删光。
@@ -461,6 +465,12 @@ async def execute_fallback_search_task(
                 episode_ranges = format_episode_ranges(existing_episodes)
                 type_description = f"{base_type_desc}（库内：{episode_ranges}）"
 
+            # why：识别词带 source=xxx 时仅标记该源结果，避免无关源被误标识别词。
+            item_recognition_title = recognition_title
+            if recognition_title and recognition_source_restriction != "all":
+                if result.provider != recognition_source_restriction:
+                    item_recognition_title = None
+
             search_results.append(
                 DandanSearchAnimeItem(
                     animeId=current_virtual_anime_id,
@@ -474,7 +484,7 @@ async def execute_fallback_search_task(
                     episodeCount=result.episodeCount or 0,
                     rating=0.0,
                     isFavorited=False,
-                    recognitionTitle=recognition_title,  # 识别词反向映射命中时的入库正确名
+                    recognitionTitle=item_recognition_title,  # 识别词反向映射命中且源匹配时的入库正确名
                 )
             )
 

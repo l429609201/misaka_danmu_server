@@ -172,12 +172,16 @@ async def search_anime_provider(
         # 例：规则 "说唱巅峰对决2026 => {[...title=中国新说唱 第九季...]}"，
         #     用户搜"中国新说唱 第九季" → 实际用"说唱巅峰对决2026"去搜，结果标记 recognitionTitle
         recognition_title = None  # 识别词指定的入库正确名，命中后写入每条搜索结果
+        # why：规则形如 source=iqiyi 表示该识别词仅对爱奇艺源生效。命中后记录源限定，
+        # 注入 recognitionTitle 时仅打给匹配源的结果，避免 renren 等无关源被误标。
+        recognition_source_restriction = "all"
         recognition_mapping_applied = False
         if title_recognition_manager:
             try:
                 mapping = await title_recognition_manager.apply_search_title_mapping(original_keyword)
                 if mapping:
                     recognition_title = mapping["recognition_title"]
+                    recognition_source_restriction = mapping.get("rule_source_restriction", "all") or "all"
                     recognition_mapping_applied = True
                     # why：反向映射把搜索词换成了源站真实名（如"说唱巅峰对决2026"），
                     # 但 season_to_filter 仍是用户输入"入库名"解析出的目标季(如第9季)。
@@ -270,10 +274,17 @@ async def search_anime_provider(
 
         # 识别词反向映射的入库正确名注入器：给响应中每条结果打 recognitionTitle 标记。
         # 注意：recognitionTitle 是请求级派生信息，不进搜索结果缓存，仅在返回前注入。
+        # why：规则带 source=xxx 时仅注入给该源的结果（source_restriction != 'all'），
+        # 否则全部注入，避免 renren 等无关源被误标识别词。
+        def _match_recognition_source(provider) -> bool:
+            if recognition_source_restriction == "all":
+                return True
+            return provider == recognition_source_restriction
+
         def _inject_recognition(payload: dict) -> dict:
             if recognition_title and isinstance(payload.get("results"), list):
                 for _item in payload["results"]:
-                    if isinstance(_item, dict):
+                    if isinstance(_item, dict) and _match_recognition_source(_item.get("provider")):
                         _item["recognitionTitle"] = recognition_title
             return payload
 
@@ -783,10 +794,12 @@ async def search_anime_provider(
     timer.finish()  # 打印搜索计时报告
     filter_metadata = _extract_filter_metadata(sorted_results)
     # 识别词反向映射命中时，给每条结果打 recognitionTitle 标记（请求级派生，不进搜索缓存）
+    # why：规则带 source=xxx 时仅标记该源结果，避免无关源被误标识别词。
     result_dicts = [item.model_dump() for item in paginated_results]
     if recognition_title:
         for _item in result_dicts:
-            _item["recognitionTitle"] = recognition_title
+            if _match_recognition_source(_item.get("provider")):
+                _item["recognitionTitle"] = recognition_title
     response_payload = {
         "results": result_dicts,
         "supplemental_results": [item.model_dump() for item in supplemental_results] if supplemental_results else [],
