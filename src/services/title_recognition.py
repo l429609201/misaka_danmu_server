@@ -542,6 +542,110 @@ class TitleRecognitionManager:
 
         return None
 
+    async def get_recognition_hint_for_result(
+        self, source_title: str, provider: Optional[str] = None, source_season: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        """AI 认知校正：判断某条搜索结果(源站标题+provider)是否命中带 title 的识别词规则。
+
+        与 apply_search_title_mapping(反向匹配 title) 相反，本方法做"正向匹配"：
+        拿源站结果的真实标题去匹配规则左侧 source，命中则返回该规则的转换意图，
+        供 AI 匹配时理解"这条结果经识别词转换后实际是哪部作品"，避免相似度误判。
+        注意：仅用于认知校正，不参与/不改变 AI 的排序优先级。
+
+        Args:
+            source_title: 搜索结果的源站标题（如 "说唱巅峰对决2026"）
+            provider: 该结果的弹幕源（如 "iqiyi"），用于校验规则的 source_restriction
+            source_season: 该结果的季度（可选，预留）
+
+        Returns:
+            命中时返回 {
+                "source": 规则左侧源站标题,
+                "source_restriction": 规则限定源（"all" 表示不限定）,
+                "recognition_title": 识别词指定的入库名,
+                "season_offset": 季度偏移规则原文（无则 None）,
+            }
+            未命中返回 None
+        """
+        await self._ensure_rules_loaded()
+
+        if not source_title:
+            return None
+
+        for rule in self.recognition_rules:
+            if rule.stage != 'postprocess':
+                continue
+            if rule.rule_type not in ('season_offset', 'metadata_replace'):
+                continue
+            recognition_title = rule.data.get('title')
+            rule_match_source = rule.data.get('source')  # 规则左侧 = 源站真实标题
+            if not recognition_title or not rule_match_source:
+                continue
+
+            # 正向匹配：搜索结果标题 == 规则左侧源站标题
+            if not self._exact_match(source_title, rule_match_source):
+                continue
+
+            # why：规则带 source=iqiyi 表示仅对该源生效；provider 不匹配则视为未命中，
+            # 避免把 renren 等无关源也标成"命中识别词"。
+            rule_source_restriction = rule.data.get('source_restriction', 'all') or 'all'
+            if rule_source_restriction != 'all' and provider and provider != rule_source_restriction:
+                continue
+
+            return {
+                "source": rule_match_source,
+                "source_restriction": rule_source_restriction,
+                "recognition_title": recognition_title,
+                "season_offset": rule.data.get('season_offset'),
+            }
+
+        return None
+
+    async def build_recognition_context_for_results(
+        self, results: List[Any]
+    ) -> Tuple[Dict[str, bool], Optional[str]]:
+        """批量为一组搜索结果构建"识别词认知校正"上下文，供 AI 匹配统一调用。
+
+        收口 webhook/全自动/match 三条 AI 路径里重复的"遍历结果→逐条判定命中→
+        拼装 recognition_info 标记 map + recognition_hint 文案"逻辑，避免多处复制。
+
+        Args:
+            results: 搜索结果列表，每个元素需含 .provider / .mediaId / .title 属性
+
+        Returns:
+            (recognition_info, recognition_hint)
+            - recognition_info: {f"{provider}:{mediaId}" -> True}，命中识别词规则的结果
+            - recognition_hint: 给 AI 的认知校正文案；无命中时为 None
+        """
+        recognition_info: Dict[str, bool] = {}
+        hint_parts: List[str] = []
+
+        for r in results:
+            try:
+                rec = await self.get_recognition_hint_for_result(
+                    getattr(r, "title", None), getattr(r, "provider", None)
+                )
+            except Exception as e:
+                logger.debug(f"识别词命中判定失败: {e}")
+                continue
+            if not rec:
+                continue
+            recognition_info[f"{r.provider}:{r.mediaId}"] = True
+            hint_line = (
+                f"源站标题'{rec['source']}'(源:{rec['source_restriction']})"
+                f"经识别词规则对应入库作品'{rec['recognition_title']}'"
+            )
+            if hint_line not in hint_parts:
+                hint_parts.append(hint_line)
+
+        if not hint_parts:
+            return recognition_info, None
+
+        recognition_hint = (
+            "用户配置了识别词规则: " + "; ".join(hint_parts)
+            + "。命中规则(matchesRecognitionRule=true)的结果即用户想找的作品，请勿因字面标题差异排除。"
+        )
+        return recognition_info, recognition_hint
+
     def _parse_source_season_from_offset(self, season_offset: Optional[str]) -> Optional[int]:
         """从 season_offset 规则解析出"源站季度"（搜索期过滤用）。
 

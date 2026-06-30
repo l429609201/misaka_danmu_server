@@ -733,6 +733,19 @@ async def _reset_ai_match_prompt_v1(conn: AsyncConnection):
     logger.info("aiMatchPrompt 已删除，将在 register_defaults 阶段用新默认值回填。")
 
 
+async def _reset_ai_match_prompt_v2(conn: AsyncConnection):
+    """删除 config 表中的 aiMatchPrompt 条目，使其在 register_defaults 时用新默认值回填。
+
+    why：DEFAULT_AI_MATCH_PROMPT 新增了「matchesRecognitionRule 识别词身份校正」字段说明，
+    用于让 AI 理解某结果经识别词规则转换后的真实身份。register_defaults 只在 key 不存在时
+    写入，老用户 config 表里的旧 prompt 不含该说明，必须删除旧条目使其重新回填最新默认值。
+    若日后再次更新默认提示词需强制刷新，新增 _v3 迁移即可。
+    """
+    logger.info("删除旧的 aiMatchPrompt 配置(v2)，使其用含识别词校正的新默认提示词回填...")
+    await conn.execute(text("DELETE FROM config WHERE config_key = 'aiMatchPrompt'"))
+    logger.info("aiMatchPrompt 已删除(v2)，将在 register_defaults 阶段用新默认值回填。")
+
+
 # 所有迁移任务的 ID 列表（新增迁移时需同步更新此列表）
 ALL_MIGRATION_IDS = [
     "migrate_clear_rate_limit_state_v1",
@@ -745,6 +758,7 @@ ALL_MIGRATION_IDS = [
     "remove_system_token_reset_task_v1",
     "migrate_anime_group_fk_v1",
     "reset_ai_match_prompt_v1",
+    "reset_ai_match_prompt_v2",
 ]
 
 
@@ -783,6 +797,7 @@ async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
         ("remove_system_token_reset_task_v1", _remove_system_token_reset_task_v1, ()),  # 删除已迁移到内部轮询的 tokenReset 定时任务
         ("migrate_anime_group_fk_v1", _migrate_anime_group_fk_v1, (db_type,)),  # 为 anime.group_id 添加外键约束
         ("reset_ai_match_prompt_v1", _reset_ai_match_prompt_v1, ()),  # 删除旧 aiMatchPrompt，用新默认提示词回填
+        ("reset_ai_match_prompt_v2", _reset_ai_match_prompt_v2, ()),  # 再次删除 aiMatchPrompt，回填含识别词校正的新默认值
     ]
 
     for migration_id, migration_func, args in migrations:

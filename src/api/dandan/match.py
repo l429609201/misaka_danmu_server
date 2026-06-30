@@ -62,6 +62,30 @@ from .dependencies import (
 logger = logging.getLogger(__name__)
 
 
+def _build_match_info_from_row(res: Dict[str, Any]) -> DandanMatchInfo:
+    """从库内查询结果行(dict)构建单条 DandanMatchInfo。
+
+    统一收口"库内/TMDB映射"等场景里重复的 DandanMatchInfo 构造逻辑，
+    避免多处复制粘贴 DANDAN_TYPE_MAPPING 转换 + 字段赋值。
+    """
+    return DandanMatchInfo(
+        episodeId=res['episodeId'],
+        animeId=res['animeId'],
+        animeTitle=res['animeTitle'],
+        episodeTitle=res['episodeTitle'],
+        type=DANDAN_TYPE_MAPPING.get(res.get('type'), "other"),
+        typeDescription=DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他"),
+        imageUrl=res.get('imageUrl'),
+    )
+
+
+def _matched_response_from_row(res: Dict[str, Any], log_label: str) -> DandanMatchResponse:
+    """从库内结果行构建"已匹配(isMatched=True)"的单结果响应，并打印日志。"""
+    response = DandanMatchResponse(isMatched=True, matches=[_build_match_info_from_row(res)])
+    logger.info(f"发送匹配响应 ({log_label}): {response.model_dump_json(indent=2)}")
+    return response
+
+
 def parse_filename_for_match(filename: str) -> Optional[Dict[str, Any]]:
     """
     从文件名中解析出番剧标题和集数。
@@ -140,15 +164,7 @@ async def get_match_for_item(
             favorited_results = [r for r in results if r.get('isFavorited')]
             if favorited_results:
                 res = favorited_results[0]
-                dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
-                dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
-                match = DandanMatchInfo(
-                    episodeId=res['episodeId'], animeId=res['animeId'], animeTitle=res['animeTitle'],
-                    episodeTitle=res['episodeTitle'], type=dandan_type, typeDescription=dandan_type_desc,
-                    imageUrl=res.get('imageUrl')
-                )
-                response = DandanMatchResponse(isMatched=True, matches=[match])
-                logger.info(f"发送匹配响应 (精确标记匹配): {response.model_dump_json(indent=2)}")
+                response = _matched_response_from_row(res, "精确标记匹配")
                 return response
 
             # 如果没有精确标记，检查所有匹配项是否都指向同一个番剧ID
@@ -157,27 +173,13 @@ async def get_match_for_item(
 
             if all_from_same_anime:
                 res = results[0]
-                dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
-                dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
-                match = DandanMatchInfo(
-                    episodeId=res['episodeId'], animeId=res['animeId'], animeTitle=res['animeTitle'],
-                    episodeTitle=res['episodeTitle'], type=dandan_type, typeDescription=dandan_type_desc,
-                    imageUrl=res.get('imageUrl')
-                )
-                response = DandanMatchResponse(isMatched=True, matches=[match])
-                logger.info(f"发送匹配响应 (单一作品匹配): {response.model_dump_json(indent=2)}")
+                response = _matched_response_from_row(res, "单一作品匹配")
                 return response
 
             # 如果匹配到了多个不同的番剧，则返回所有结果让用户选择
             matches = []
             for res in results:
-                dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
-                dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
-                matches.append(DandanMatchInfo(
-                    episodeId=res['episodeId'], animeId=res['animeId'], animeTitle=res['animeTitle'],
-                    episodeTitle=res['episodeTitle'], type=dandan_type, typeDescription=dandan_type_desc,
-                    imageUrl=res.get('imageUrl')
-                ))
+                matches.append(_build_match_info_from_row(res))
             response = DandanMatchResponse(isMatched=False, matches=matches)
             logger.info(f"发送匹配响应 (多个匹配): {response.model_dump_json(indent=2)}")
             return response
@@ -203,15 +205,7 @@ async def get_match_for_item(
                 if tmdb_results:
                     logger.info(f"TMDB 映射匹配成功，找到 {len(tmdb_results)} 个结果。")
                     res = tmdb_results[0]
-                    dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
-                    dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
-                    match = DandanMatchInfo(
-                        episodeId=res['episodeId'], animeId=res['animeId'], animeTitle=res['animeTitle'],
-                        episodeTitle=res['episodeTitle'], type=dandan_type, typeDescription=dandan_type_desc,
-                        imageUrl=res.get('imageUrl')
-                    )
-                    response = DandanMatchResponse(isMatched=True, matches=[match])
-                    logger.info(f"发送匹配响应 (TMDB 映射匹配): {response.model_dump_json(indent=2)}")
+                    response = _matched_response_from_row(res, "TMDB 映射匹配")
                     return response
 
             elif anime.get("tmdbId"):
@@ -274,15 +268,7 @@ async def get_match_for_item(
                     if tmdb_results:
                         logger.info(f"AI剧集组选择 + TMDB映射匹配成功，找到 {len(tmdb_results)} 个结果。")
                         res = tmdb_results[0]
-                        dandan_type = DANDAN_TYPE_MAPPING.get(res.get('type'), "other")
-                        dandan_type_desc = DANDAN_TYPE_DESC_MAPPING.get(res.get('type'), "其他")
-                        match = DandanMatchInfo(
-                            episodeId=res['episodeId'], animeId=res['animeId'], animeTitle=res['animeTitle'],
-                            episodeTitle=res['episodeTitle'], type=dandan_type, typeDescription=dandan_type_desc,
-                            imageUrl=res.get('imageUrl')
-                        )
-                        response = DandanMatchResponse(isMatched=True, matches=[match])
-                        logger.info(f"发送匹配响应 (AI剧集组 + TMDB映射): {response.model_dump_json(indent=2)}")
+                        response = _matched_response_from_row(res, "AI剧集组 + TMDB映射")
                         return response
                     else:
                         logger.info(f"AI剧集组选择: 映射已保存但当前集数未在映射中找到匹配，继续后备搜索")
@@ -712,6 +698,12 @@ async def get_match_for_item(
                         key = f"{row.providerName}:{row.mediaId}"
                         favorited_info[key] = True
 
+                # 识别词认知校正上下文（统一函数，命中标记+提示文案；不改排序）
+                recognition_info, recognition_hint = (
+                    await title_recognition_manager.build_recognition_context_for_results(sorted_results)
+                    if title_recognition_manager else ({}, None)
+                )
+
                 # 【性能优化】使用预获取的配置值（不再重复获取）
                 # ai_match_enabled, ai_fallback_enabled, fallback_enabled 已在初始化阶段获取
 
@@ -766,9 +758,13 @@ async def get_match_for_item(
                                 f"(方向: {episode_group_context['match_direction']}, 该季{episode_group_context['season_total_episodes']}集)"
                             )
 
+                        # 注入识别词认知校正提示（仅帮助AI理解条目身份，不改排序）
+                        if recognition_hint:
+                            query_info["recognition_hint"] = recognition_hint
+
                         # 使用AIMatcherManager进行匹配
                         ai_selected_index = await ai_matcher_manager.select_best_match(
-                            query_info, sorted_results, favorited_info
+                            query_info, sorted_results, favorited_info, None, recognition_info
                         )
 
                         if ai_selected_index is None:

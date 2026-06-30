@@ -282,10 +282,16 @@ async def search_anime_provider(
             return provider == recognition_source_restriction
 
         def _inject_recognition(payload: dict) -> dict:
-            if recognition_title and isinstance(payload.get("results"), list):
+            # why：必须"规范化"而非"只增"——旧版本曾把 recognitionTitle 无差别写进
+            # 分页/全量缓存（脏数据），命中缓存时需对不匹配源主动清 None 才能纠正残留。
+            if isinstance(payload.get("results"), list):
                 for _item in payload["results"]:
-                    if isinstance(_item, dict) and _match_recognition_source(_item.get("provider")):
+                    if not isinstance(_item, dict):
+                        continue
+                    if recognition_title and _match_recognition_source(_item.get("provider")):
                         _item["recognitionTitle"] = recognition_title
+                    else:
+                        _item["recognitionTitle"] = None
             return payload
 
         # 缓存键基于核心标题和季度，允许在同一季的不同分集搜索中复用缓存
