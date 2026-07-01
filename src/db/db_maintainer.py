@@ -50,6 +50,9 @@ EQUIVALENT_TYPE_GROUPS = [
     frozenset({'double', 'double precision', 'float8'}),  # 浮点数变体
     frozenset({'varchar', 'character varying'}),  # PostgreSQL VARCHAR 别名
     frozenset({'enum', 'user-defined'}),  # PostgreSQL 枚举类型
+    # PG/MySQL 中 DECIMAL 与 NUMERIC 完全等价（PG 的 information_schema 一律报 numeric，
+    # 而 SQLAlchemy 的 DECIMAL 列类型名解析为 decimal），避免每次同步误报类型不匹配
+    frozenset({'numeric', 'decimal'}),
 ]
 
 

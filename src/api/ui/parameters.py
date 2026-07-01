@@ -112,7 +112,8 @@ async def verify_github_token(
 async def upload_scraper_package(
     file: UploadFile = File(...),
     current_user: models.User = Depends(get_current_user),
-    manager = Depends(get_scraper_manager)
+    manager = Depends(get_scraper_manager),
+    config_manager: ConfigManager = Depends(get_config_manager)
 ):
     """上传并安装弹幕源离线包
 
@@ -321,10 +322,22 @@ async def upload_scraper_package(
                         logger.info(f"已复制文件到备份目录: {f.name}")
 
                 # 复制 versions.json 到 backup 目录
+                # 关键：刷新 updated_at 为当前时间。scraper_manager 启动时靠比较
+                # “备份 versions.json 的 updated_at > scrapers 的 updated_at”决定是否从备份恢复。
+                # 若沿用离线包内的旧 updated_at，重启后可能不被识别为“更新”，导致上传的新版本不生效。
                 versions_file = extract_dir / "versions.json"
                 if versions_file.exists():
-                    shutil.copy2(versions_file, BACKUP_DIR / "versions.json")
-                    logger.info("已复制 versions.json 到备份目录")
+                    try:
+                        _ver_data = json.loads(versions_file.read_text(encoding="utf-8"))
+                        _ver_data["updated_at"] = datetime.now().isoformat()
+                        (BACKUP_DIR / "versions.json").write_text(
+                            json.dumps(_ver_data, indent=2, ensure_ascii=False), encoding="utf-8"
+                        )
+                        logger.info("已复制 versions.json 到备份目录（已刷新 updated_at 为当前时间）")
+                    except Exception as _e:
+                        # 解析失败则退回直接复制，至少保证文件存在
+                        shutil.copy2(versions_file, BACKUP_DIR / "versions.json")
+                        logger.warning(f"刷新 versions.json 的 updated_at 失败，已直接复制: {_e}")
 
                 # 复制或创建 package.json 到 backup 目录
                 package_file = extract_dir / "package.json"
@@ -357,8 +370,9 @@ async def upload_scraper_package(
                         try:
                             import asyncio
                             await asyncio.sleep(1.0)  # 延迟1秒,确保响应已发送
-                            from src.core.config import get_config_manager
-                            config_manager = get_config_manager()
+                            # 直接使用端点注入的 config_manager（闭包引用）。
+                            # 注意：不要 from src.core.config import get_config_manager——
+                            # config.py 中没有该函数，会抛 ImportError 导致重启失败、上传的新版本无法生效。
                             fallback_name = await config_manager.get("containerName", "misaka_danmu_server")
                             result = await restart_container(fallback_name)
                             if result.get("success"):
