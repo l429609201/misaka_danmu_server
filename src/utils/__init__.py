@@ -71,6 +71,9 @@ from .proxy_middleware import init_proxy_middleware
 # HTTP Transport 管理
 from .transport_manager import TransportManager
 
+# 别名语言识别
+from .alias_language import detect_language, classify_aliases
+
 __all__ = [
     # 文件名解析
     'ParseResult',
@@ -118,5 +121,8 @@ __all__ = [
     'init_proxy_middleware',
     # HTTP Transport 管理
     'TransportManager',
+    # 别名语言识别
+    'detect_language',
+    'classify_aliases',
 ]
 

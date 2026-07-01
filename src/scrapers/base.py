@@ -401,6 +401,15 @@ class BaseScraper(ABC):
         """
         raise NotImplementedError
 
+    def select_search_keywords(self, keywords: List[str]) -> List[str]:
+        """从候选关键词列表中挑选本源实际要搜索的关键词。
+
+        keywords 约定 keywords[0] 为主搜索词，其后为别名增强追加的多语言译名。
+        默认策略：只用主搜索词（避免用全量别名对每个源逐个网络搜索，既慢又易 0 结果）。
+        需要按语言挑别名的源（如 gamer 繁中站）覆写本方法叠加自身偏好。
+        """
+        return [keywords[0]] if keywords else []
+
     @abstractmethod
     async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
         """
