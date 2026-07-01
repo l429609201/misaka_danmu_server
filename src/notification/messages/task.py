@@ -629,9 +629,25 @@ def _build_fallback_markdown(d: dict, event_type: str) -> tuple:
     finished_at = d.get("finished_at", "")
     msg_short = _esc((message[:200] + "…") if len(message) > 200 else message)
 
-    # 引用块
+    # 结构化字段（后备下载任务已携带）：优先 payload 顶层，其次 task_parameters。
+    task_params = d.get("task_parameters", {}) or {}
+    anime_title = _esc(d.get("anime_title") or task_params.get("anime_title", ""))
+    season = d.get("season") if d.get("season") is not None else task_params.get("season")
+    episode = d.get("episode") if d.get("episode") is not None else task_params.get("episode")
+    provider = _esc(d.get("provider") or task_params.get("provider", ""))
+    is_movie = d.get("is_movie", task_params.get("is_movie", False))
+
+    # 引用块：有 anime_title 走结构块（作品名/季集/弹幕源）；否则回退旧的 task_title 展示。
     quote_lines = []
-    if task_title:
+    if anime_title:
+        quote_lines.append(f">📺 *{anime_title}*")
+        if episode is not None and season is not None:
+            quote_lines.append(f">📍 S{int(season):02d}E{int(episode):02d}")
+        elif is_movie:
+            quote_lines.append(">📍 电影")
+        if provider:
+            quote_lines.append(f">🎯 弹幕源: {provider}")
+    elif task_title:
         quote_lines.append(f">📺 *{task_title}*")
     if token_name:
         quote_lines.append(f">👤 调用者: {token_name}")
@@ -663,8 +679,24 @@ def _build_fallback_text(d: dict, event_type: str) -> tuple:
     finished_at = d.get("finished_at", "")
     msg_short = (message[:200] + "…") if len(message) > 200 else message
 
+    # 结构化字段（后备下载任务已携带）：优先 payload 顶层，其次 task_parameters。
+    task_params = d.get("task_parameters", {}) or {}
+    anime_title = d.get("anime_title") or task_params.get("anime_title", "")
+    season = d.get("season") if d.get("season") is not None else task_params.get("season")
+    episode = d.get("episode") if d.get("episode") is not None else task_params.get("episode")
+    provider = d.get("provider") or task_params.get("provider", "")
+    is_movie = d.get("is_movie", task_params.get("is_movie", False))
+
     lines = [title, ""]
-    if task_title:
+    if anime_title:
+        lines.append(f"📺 {anime_title}")
+        if episode is not None and season is not None:
+            lines.append(f"📍 S{int(season):02d}E{int(episode):02d}")
+        elif is_movie:
+            lines.append("📍 电影")
+        if provider:
+            lines.append(f"🎯 弹幕源: {provider}")
+    elif task_title:
         lines.append(f"📺 {task_title}")
     if token_name:
         lines.append(f"👤 调用者: {token_name}")

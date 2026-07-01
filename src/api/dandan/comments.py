@@ -660,12 +660,24 @@ async def get_comments_for_dandan(
 
                 # 提交弹幕下载任务到后备队列
                 try:
+                    # 结构化通知参数：供完成通知渲染「作品名/季集/弹幕源/海报」结构块
+                    _mf_params = {
+                        "anime_title": current_display_title or current_final_title or "",
+                        "season": current_final_season,
+                        "episode": current_episode_number,
+                        "provider": current_provider,
+                        "imageUrl": current_imageUrl or "",
+                        # 有具体集数即视为剧集；仅当无集数且类型为 movie 时才按电影展示
+                        "is_movie": (current_episode_number is None and current_media_type == "movie"),
+                        "media_type": current_media_type,
+                    }
                     task_id, done_event = await task_manager.submit_task(
                         download_match_fallback_comments_task,
                         f"匹配后备弹幕下载: {final_title} 第{episode_number}集 [{provider}:{mediaId}]",
                         unique_key=task_unique_key,
                         task_type="download_comments",
-                        queue_type="fallback"  # 使用后备队列
+                        queue_type="fallback",  # 使用后备队列
+                        task_parameters=_mf_params
                     )
                     logger.info(f"已提交匹配后备弹幕下载任务: {task_id}")
 
@@ -1199,12 +1211,27 @@ async def get_comments_for_dandan(
 
                     # 提交弹幕下载任务
                     try:
+                        # 结构化通知参数：从外层已确认的映射信息提取，供完成通知渲染
+                        # 「作品名/季集/弹幕源/海报」结构块（与预下载通知统一）。
+                        _mi = current_mapping_info or {}
+                        _dl_media_type = _mi.get("type", "")
+                        _dl_params = {
+                            "anime_title": _mi.get("original_title") or _mi.get("final_title") or "",
+                            "season": _mi.get("season") if _mi.get("season") is not None else _mi.get("final_season"),
+                            "episode": episode_number,
+                            "provider": current_provider,
+                            "imageUrl": _mi.get("imageUrl") or "",
+                            # 有具体集数即视为剧集；仅当无集数且类型为 movie 时才按电影展示
+                            "is_movie": (episode_number is None and _dl_media_type == "movie"),
+                            "media_type": _dl_media_type,
+                        }
                         task_id, done_event = await task_manager.submit_task(
                             download_comments_task,
                             f"后备搜索弹幕下载: episodeId={episodeId}",
                             unique_key=task_unique_key,
                             task_type="download_comments",
-                            queue_type="fallback"  # 使用后备队列
+                            queue_type="fallback",  # 使用后备队列
+                            task_parameters=_dl_params
                         )
                         logger.info(f"已提交弹幕下载任务: {task_id}")
 
