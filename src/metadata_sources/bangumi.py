@@ -371,6 +371,23 @@ class BangumiMetadataSource(BaseMetadataSource):
     DEFAULT_API_BASE_URL = "https://api.bgm.tv"
     DEFAULT_IMAGE_BASE_URL = "https://lain.bgm.tv"
 
+    # ============ 搜索补充源能力（bangumi-data 离线 id 直链）============
+    # 复用 360 同款补充源模板：当某弹幕源搜索无结果时，用 bangumi-data 离线库里
+    # 人工维护的精确平台 id 直链解析出 (provider, mediaId) 作为兜底，精准命中不靠相似度猜。
+    # 与 360 的差异：离线管理器 resolve_sources_by_title 内部已用 SITE_TO_PROVIDER 转好 provider，
+    # 这里的 PLATFORM_TO_PROVIDER 仅供基类 supplement_search 过滤 empty_providers 判断可补充范围。
+    is_search_supplement_source = True
+    PLATFORM_TO_PROVIDER: Dict[str, str] = {
+        "qq": "tencent",
+        "youku": "youku",
+        "mgtv": "mgtv",
+        "bilibili": "bilibili",
+        "iqiyi": "iqiyi",
+    }
+    configurable_fields = {
+        "searchSupplementEnabled": ("启用搜索补充", "boolean", "启用后，当弹幕源搜索无结果时，将通过 bangumi-data 离线库的平台直链为其补充搜索结果"),
+    }
+
     def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager, scraper_manager: ScraperManager, cache_manager: CacheManager):
         super().__init__(session_factory, config_manager, scraper_manager, cache_manager)
         self._token: Optional[str] = None
@@ -396,6 +413,64 @@ class BangumiMetadataSource(BaseMetadataSource):
             return url
         # 替换域名部分：https://lain.bgm.tv/... → https://custom.domain/...
         return url.replace(self.DEFAULT_IMAGE_BASE_URL, custom_base.rstrip('/'), 1)
+
+    async def _match_supplement_items(
+        self,
+        keyword: str,
+        providers_to_supplement: Set[str],
+        provider_platforms_map: Dict[str, List[str]],
+        user: models.User,
+    ) -> List[models.ProviderSearchInfo]:
+        """搜索补充源实现：用 bangumi-data 离线库的平台直链为空结果弹幕源兜底。
+
+        与 360 的差异：离线管理器 resolve_sources_by_title 返回的 mediaId 已是弹幕源
+        可直接使用的真实 id（如 tencent cid、bilibili ss_id），无需二次 URL 解析。
+        因此这里直接用真实 (provider, mediaId) 构建结果，不套 sup_ 前缀——导入时会走
+        正常弹幕源路径（get_episodes_routed 对非 sup_ 的 mediaId 直接调 scraper.get_episodes）。
+
+        基类 supplement_search 已完成 empty_providers 过滤和去重，这里只需：
+        1. 调离线直链解析
+        2. 仅保留 providers_to_supplement 里需要补充的 provider
+        """
+        from src.services.bangumi_data_manager import get_bangumi_data_manager
+
+        bgm_mgr = get_bangumi_data_manager()
+        if bgm_mgr is None:
+            return []
+
+        # 离线库总开关：与别名增强共用，关闭时不补充
+        if bgm_mgr.config_manager is not None:
+            offline_enabled = (await bgm_mgr.config_manager.get("bangumiDataOfflineEnabled", "true")).lower() == "true"
+            if not offline_enabled:
+                return []
+
+        try:
+            # 用核心标题（去季度/集数后缀）命中离线库并直链解析各平台真实 id
+            core_title = parse_search_keyword(keyword)["title"]
+            direct_sources = await bgm_mgr.resolve_sources_by_title(core_title)
+        except Exception as e:
+            self.logger.warning(f"bangumi-data 直链补充解析失败: {type(e).__name__}: {e}")
+            return []
+
+        if not direct_sources:
+            return []
+
+        items: List[models.ProviderSearchInfo] = []
+        for ds in direct_sources:
+            provider = ds.get("provider")
+            media_id = ds.get("mediaId")
+            # 仅补充「确实没搜到结果」且本源支持的 provider
+            if not provider or not media_id or provider not in providers_to_supplement:
+                continue
+            items.append(models.ProviderSearchInfo(
+                provider=provider,
+                mediaId=str(media_id),
+                title=ds.get("title") or core_title,
+                type=ds.get("type") or "tv_series",
+                season=1,
+                year=ds.get("year"),
+            ))
+        return items
 
     async def _get_from_cache(self, key: str) -> Optional[Any]:
         """从缓存中获取数据。"""
