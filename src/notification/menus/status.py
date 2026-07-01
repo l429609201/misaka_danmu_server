@@ -49,10 +49,9 @@ class StatusMenuMixin:
             lines.append(f"• 弹幕库: {total_anime} 部作品")
             lines.append(f"• 定时任务: {enabled_tasks}/{total_tasks} 已启用")
 
-            # 搜索源
+            # 搜索源：直接使用 scrapers 字典获取已加载的源数量
             if self.scraper_manager:
-                scrapers = self.scraper_manager.get_all_scrapers()
-                enabled_scrapers = sum(1 for s in scrapers if s.get("isEnabled", True))
+                enabled_scrapers = len(self.scraper_manager.scrapers)
                 lines.append(f"• 搜索源: {enabled_scrapers} 个")
 
             # 流控状态

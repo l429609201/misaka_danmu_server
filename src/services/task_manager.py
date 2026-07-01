@@ -108,8 +108,15 @@ class TaskManager:
         title = task.title or ""
         suffix = "_success" if is_success else "_failed"
 
-        # 删除任务不发通知
-        if key.startswith("delete-source-") or key.startswith("delete-bulk-sources-"):
+        # 删除任务不发通知（必须覆盖所有删除前缀，否则会掉到末尾兜底被误判为 import_success，
+        # 导致出现"✅ 导入成功 / 删除成功"这种标题与内容矛盾的通知）
+        if key.startswith((
+            "delete-source-",        # 删除单个数据源
+            "delete-bulk-sources-",  # 批量删除数据源
+            "delete-anime-",         # 删除作品
+            "delete-episode-",       # 删除单个分集
+            "delete-bulk-episodes-", # 批量删除分集
+        )):
             return None
 
         # 定时任务（有 scheduled_task_id）
@@ -173,26 +180,73 @@ class TaskManager:
         # 1. 优先从 task_parameters 取 imageUrl（import/auto_import 任务已有）
         image_url: str = (task.task_parameters or {}).get("imageUrl", "") or ""
 
-        # 2. 刷新任务 task_parameters 里没有 imageUrl，从数据库补查
-        if not image_url and task.unique_key:
+        # 2. 刷新类任务 task_parameters 通常缺标题/集数/年份/海报，从数据库补查。
+        #    db_extra 收集补查到的字段，稍后仅用于填补 payload 中为空的项（不覆盖已有值）。
+        db_extra: Dict[str, Any] = {}
+        if task.unique_key:
             key = task.unique_key
             try:
                 async with self._session_factory() as session:
-                    if key.startswith("refresh-episode-") or key.startswith("full-refresh-"):
-                        # key 格式: refresh-episode-{source_id}-xxx 或 full-refresh-{anime_id}-xxx
-                        parts = key.split("-")
-                        id_val = int(parts[2])
-                        if key.startswith("refresh-episode-"):
-                            info = await crud.get_anime_source_info(session, id_val)
-                            image_url = (info or {}).get("imageUrl", "") or ""
-                        else:
-                            # full-refresh: 直接查 Anime
-                            from src.db.orm_models import Anime as AnimeORM
-                            from sqlalchemy import select as sa_select
-                            row = await session.get(AnimeORM, id_val)
-                            image_url = (row.imageUrl if row else "") or ""
+                    if key.startswith("refresh-episode-") or key.startswith("refresh-latest-"):
+                        # 这两类 key 第三段是 episodeId（refresh-episode-{episodeId} /
+                        # refresh-latest-{source_id}-ep{n} 取 source 走另一分支，这里仅处理 episodeId 形态）
+                        # refresh-episode-{episodeId}
+                        try:
+                            episode_id = int(key.split("-")[2].split("ep")[-1]) if key.startswith("refresh-latest-") else int(key.split("-")[2])
+                        except (ValueError, IndexError):
+                            episode_id = None
+                        if episode_id is not None:
+                            ep_info = await crud.get_episode_provider_info(session, episode_id)
+                            if ep_info:
+                                db_extra["episode"] = ep_info.get("episodeIndex")
+                                # 通过 animeId 反查 Anime 标题/年份/季/海报
+                                from src.db.orm_models import Anime as AnimeORM
+                                anime_row = await session.get(AnimeORM, ep_info.get("animeId"))
+                                if anime_row:
+                                    db_extra["anime_title"] = anime_row.title
+                                    db_extra["season"] = anime_row.season
+                                    db_extra["year"] = anime_row.year
+                                    db_extra["image_url"] = (anime_row.imageUrl or "")
+                                db_extra["source"] = ep_info.get("providerName", "")
+                    elif key.startswith("full-refresh-") or key.startswith("bulk-refresh-"):
+                        # full-refresh-{anime_id}-xxx：直接查 Anime
+                        from src.db.orm_models import Anime as AnimeORM
+                        try:
+                            anime_id = int(key.split("-")[2])
+                        except (ValueError, IndexError):
+                            anime_id = None
+                        if anime_id is not None:
+                            anime_row = await session.get(AnimeORM, anime_id)
+                            if anime_row:
+                                db_extra["anime_title"] = anime_row.title
+                                db_extra["season"] = anime_row.season
+                                db_extra["year"] = anime_row.year
+                                db_extra["image_url"] = (anime_row.imageUrl or "")
             except Exception:
-                pass  # imageUrl 获取失败不影响通知发出
+                pass  # 补查失败不影响通知发出
+
+        # 3. 兜底：task_parameters 带 sourceId 的刷新类任务（如 TG 刷新 tg_refresh、指令刷新），
+        #    其 unique_key 无 refresh 前缀，上面补不到，这里按 sourceId 反查作品/源信息。
+        if not db_extra.get("anime_title"):
+            source_id = (task.task_parameters or {}).get("sourceId")
+            if source_id is not None:
+                try:
+                    async with self._session_factory() as session:
+                        info = await crud.get_anime_source_info(session, int(source_id))
+                        if info:
+                            db_extra["anime_title"] = info.get("title", "")
+                            db_extra["season"] = info.get("season")
+                            db_extra["year"] = info.get("year")
+                            db_extra["source"] = info.get("providerName", "")
+                            db_extra["tmdb_id"] = info.get("tmdbId", "") or ""
+                            if not db_extra.get("image_url"):
+                                db_extra["image_url"] = info.get("imageUrl", "") or ""
+                except Exception:
+                    pass  # 补查失败不影响通知发出
+
+        # image_url 优先用任务参数里的，没有再用补查结果
+        if not image_url:
+            image_url = db_extra.get("image_url", "") or ""
 
         try:
             import datetime
@@ -207,11 +261,21 @@ class TaskManager:
                 "episode_count": params.get("episodeCount"),
                 "webhook_source": params.get("webhookSource", ""),
                 "provider": params.get("provider", "") or params.get("providerName", ""),
+                # source 字段：新消息类导入模板读取 source 展示"来源/弹幕源"，映射自 provider
+                "source": params.get("provider", "") or params.get("providerName", ""),
                 "media_id": params.get("mediaId", "") or params.get("media_id", ""),
                 "tmdb_id": params.get("tmdbId", ""),
                 "media_type": params.get("type", "") or params.get("mediaType", ""),
+                "year": params.get("year"),
                 "finished_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
+            # 用数据库补查结果填补 extra 中为空的字段（不覆盖任务参数已有的值）。
+            # 这样刷新类任务也能在通知里显示标题/集数/年份/季/海报。
+            for _k, _v in db_extra.items():
+                if _v in (None, "") :
+                    continue
+                if extra.get(_k) in (None, "", 0):
+                    extra[_k] = _v
             await self._notification_service.emit_event(event_type, {
                 "task_title": task.title,
                 "message": message,

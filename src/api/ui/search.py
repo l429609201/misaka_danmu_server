@@ -4,11 +4,8 @@ Search相关的API端点
 import asyncio
 import logging
 import re
-try:
-    import regex as _regex_module
-except ImportError:
-    _regex_module = re
 from typing import Any, Dict, Optional, List
+from src.utils.episode_filter import parse_single_episode_filter_rules, apply_single_episode_filter
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -117,91 +114,6 @@ def _paginate_dicts(items: List[Dict[str, Any]], page: int, page_size: int) -> L
     return items[start:start + page_size]
 
 
-def _parse_metadata_block(block: str) -> Dict[str, str]:
-    """解析类似 {[rules=xxx;provider=xxx;mediaId=xxx]} 的配置块。"""
-    text = block.strip()
-    if not (text.startswith("{[") and text.endswith("]}")):
-        return {}
-    text = text[2:-2].strip()
-    data: Dict[str, str] = {}
-    for part in text.split(";"):
-        if "=" not in part:
-            continue
-        key, value = part.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if key:
-            data[key] = value
-    return data
-
-
-def _parse_single_episode_filter_rules(content: str) -> List[Dict[str, str]]:
-    """解析单剧过滤文本配置。格式：作品匹配词 => {[rules=正则;provider=可选;mediaId=可选]}"""
-    rules: List[Dict[str, str]] = []
-    if not content:
-        return rules
-    for line_num, raw_line in enumerate(content.splitlines(), 1):
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if " => " not in line:
-            logger.warning(f"单剧过滤配置第{line_num}行缺少 =>，已跳过: {line}")
-            continue
-        title_pattern, block = line.split(" => ", 1)
-        title_pattern = title_pattern.strip()
-        meta = _parse_metadata_block(block)
-        rule_pattern = meta.get("rules", "").strip()
-        if not title_pattern or not rule_pattern:
-            logger.warning(f"单剧过滤配置第{line_num}行缺少作品匹配词或 rules，已跳过: {line}")
-            continue
-        rules.append({
-            "title": title_pattern,
-            "rules": rule_pattern,
-            "provider": meta.get("provider", "").strip(),
-            "mediaId": meta.get("mediaId", "").strip(),
-        })
-    return rules
-
-
-def _apply_single_episode_filter(
-    episodes: List[models.ProviderEpisodeInfo],
-    rules: List[Dict[str, str]],
-    title: Optional[str],
-    provider: str,
-    media_id: str,
-) -> List[models.ProviderEpisodeInfo]:
-    if not rules or not title:
-        return episodes
-    filtered = episodes
-    for rule in rules:
-        if rule["title"].lower() not in title.lower():
-            continue
-        if rule.get("provider") and rule["provider"] != provider:
-            continue
-        if rule.get("mediaId") and rule["mediaId"] != media_id:
-            continue
-        pattern = rule["rules"]
-        before_count = len(filtered)
-        kept = []
-        removed_titles = []
-        for episode in filtered:
-            episode_title = episode.title or ""
-            try:
-                matched = re.search(pattern, episode_title, re.IGNORECASE) is not None
-            except re.error as e:
-                logger.warning(f"单剧过滤规则正则无效，已跳过: {pattern} ({e})")
-                matched = False
-            if matched:
-                removed_titles.append(episode_title)
-            else:
-                kept.append(episode)
-        if removed_titles:
-            logger.info(
-                f"单剧过滤命中: title={title}, provider={provider}, mediaId={media_id}, "
-                f"rule={rule['title']}，过滤 {len(removed_titles)}/{before_count} 集: {removed_titles[:20]}"
-            )
-        filtered = kept
-    return filtered
 
 
 @router.get(
@@ -252,24 +164,71 @@ async def search_anime_provider(
         original_title = parsed_keyword["title"]
         season_to_filter = parsed_keyword["season"]
         episode_to_filter = parsed_keyword["episode"]
+        # 原始完整关键词（未经拆解），供识别词反向映射使用
+        original_keyword = parsed_keyword.get("original_keyword") or keyword.strip()
         timer.step_end()
 
+        # 🚀 识别词反向映射（最高优先级）：用户用"入库名"搜索时，自动改用源站真实名去搜
+        # 例：规则 "说唱巅峰对决2026 => {[...title=中国新说唱 第九季...]}"，
+        #     用户搜"中国新说唱 第九季" → 实际用"说唱巅峰对决2026"去搜，结果标记 recognitionTitle
+        recognition_title = None  # 识别词指定的入库正确名，命中后写入每条搜索结果
+        # why：规则形如 source=iqiyi 表示该识别词仅对爱奇艺源生效。命中后记录源限定，
+        # 注入 recognitionTitle 时仅打给匹配源的结果，避免 renren 等无关源被误标。
+        recognition_source_restriction = "all"
+        recognition_rule_source = None  # 规则左侧源站标题(如"说唱巅峰对决2026")，用于标题精确校验
+        recognition_mapping_applied = False
+        if title_recognition_manager:
+            try:
+                mapping = await title_recognition_manager.apply_search_title_mapping(original_keyword)
+                if mapping:
+                    recognition_title = mapping["recognition_title"]
+                    recognition_source_restriction = mapping.get("rule_source_restriction", "all") or "all"
+                    recognition_rule_source = mapping.get("search_title")  # 规则 source 值
+                    recognition_mapping_applied = True
+                    # why：反向映射把搜索词换成了源站真实名（如"说唱巅峰对决2026"），
+                    # 但 season_to_filter 仍是用户输入"入库名"解析出的目标季(如第9季)。
+                    # 源站结果实际是源季(如第1季)，若不修正会被季度过滤(line 627)全部删光。
+                    # 这里用规则 season_offset 解析出的"源站季度"覆盖过滤季度，确保能命中源站结果。
+                    mapped_source_season = mapping.get("search_season")
+                    if mapped_source_season is not None:
+                        if season_to_filter != mapped_source_season:
+                            logger.info(
+                                f"✓ 反向映射季度修正: 过滤季度 {season_to_filter} → "
+                                f"源站季度 {mapped_source_season}"
+                            )
+                        season_to_filter = mapped_source_season
+                    else:
+                        # 通配/无法解析源季（如 *+4）：不按季过滤，避免误删源站结果
+                        season_to_filter = None
+                    logger.info(
+                        f"✓ WebUI识别词反向映射: 搜索词 '{keyword}' → 实际搜索 "
+                        f"'{mapping['search_title']}'，入库名标记为 '{recognition_title}'"
+                    )
+            except Exception as e:
+                logger.warning(f"识别词反向映射失败: {e}")
+
         # 🚀 名称转换功能 - 检测非中文标题并尝试转换为中文（在所有处理之前执行）
+        # 注意：识别词反向映射命中时跳过，因为用户已显式指定真实搜索词
         timer.step_start("名称转换")
-        converted_original_title, conversion_applied = await convert_to_chinese_title(
-            original_title,
-            config_manager,
-            metadata_manager,
-            ai_matcher_manager,
-            current_user
-        )
+        if recognition_mapping_applied:
+            converted_original_title = mapping["search_title"]
+            conversion_applied = False
+        else:
+            converted_original_title, conversion_applied = await convert_to_chinese_title(
+                original_title,
+                config_manager,
+                metadata_manager,
+                ai_matcher_manager,
+                current_user
+            )
         timer.step_end()
 
         # 应用搜索预处理规则
         timer.step_start("预处理规则应用")
         search_title = converted_original_title  # 使用转换后的标题作为基础
         search_season = season_to_filter
-        if title_recognition_manager:
+        # 识别词反向映射命中时，跳过常规预处理（避免对真实搜索词二次改写）
+        if title_recognition_manager and not recognition_mapping_applied:
             processed_title, processed_episode, processed_season, preprocessing_applied = await title_recognition_manager.apply_search_preprocessing(converted_original_title, episode_to_filter, season_to_filter)
             if preprocessing_applied:
                 search_title = processed_title
@@ -290,7 +249,8 @@ async def search_anime_provider(
         # 🚀 新增：季度名称映射 - 如果指定了季度，尝试获取该季度的实际名称
         # 例如：搜索 "唐朝诡事录 S03" 时，通过TMDB查询第3季的实际名称 "唐朝诡事录之西行"
         season_mapped_title = None
-        if season_to_filter is not None and season_to_filter > 0:
+        # 识别词反向映射命中时跳过季度名称映射（用户已显式指定真实搜索词）
+        if season_to_filter is not None and season_to_filter > 0 and not recognition_mapping_applied:
             timer.step_start("季度名称映射")
             try:
                 # 获取AI匹配器（如果可用）
@@ -313,6 +273,38 @@ async def search_anime_provider(
 
         # --- 新增：按季缓存逻辑 ---
         timer.step_start("缓存检查")
+
+        # 识别词反向映射的入库正确名注入器：给响应中每条结果打 recognitionTitle 标记。
+        # 注意：recognitionTitle 是请求级派生信息，不进搜索结果缓存，仅在返回前注入。
+        # why：必须同时满足两个条件才打标记——
+        #   1) 源限定：规则带 source=xxx 时仅匹配该源（避免 renren 等无关源被误标）；
+        #   2) 标题精确匹配规则 source：同一源下可能有多条结果（如 iqiyi 的"说唱巅峰对决2026"
+        #      和"中国说唱巅峰对决2022"），只有标题真正等于规则 source 的那条才是目标作品，
+        #      否则会把同源无关结果误标识别词。
+        def _match_recognition_source(item: dict) -> bool:
+            provider = item.get("provider")
+            if recognition_source_restriction != "all" and provider != recognition_source_restriction:
+                return False
+            # 标题精确校验：复用识别词管理器的 _exact_match，与命中判定逻辑一致
+            if recognition_rule_source and title_recognition_manager:
+                return title_recognition_manager._exact_match(
+                    item.get("title") or "", recognition_rule_source
+                )
+            return True
+
+        def _inject_recognition(payload: dict) -> dict:
+            # why：必须"规范化"而非"只增"——旧版本曾把 recognitionTitle 无差别写进
+            # 分页/全量缓存（脏数据），命中缓存时需对不匹配源主动清 None 才能纠正残留。
+            if isinstance(payload.get("results"), list):
+                for _item in payload["results"]:
+                    if not isinstance(_item, dict):
+                        continue
+                    if recognition_title and _match_recognition_source(_item):
+                        _item["recognitionTitle"] = recognition_title
+                    else:
+                        _item["recognitionTitle"] = None
+            return payload
+
         # 缓存键基于核心标题和季度，允许在同一季的不同分集搜索中复用缓存
         cache_key = f"provider_search_{search_title}_{season_to_filter or 'all'}"
         supplemental_cache_key = f"supplemental_search_{search_title}"
@@ -346,7 +338,7 @@ async def search_anime_provider(
             logger.info(f"搜索分页缓存命中: '{page_cache_key}'")
             timer.step_end(details="分页缓存命中")
             timer.finish()
-            return UIProviderSearchResponse(**cached_page_data)
+            return UIProviderSearchResponse(**_inject_recognition(cached_page_data))
 
         if cached_results_data is not None and cached_supplemental_results is not None:
             logger.info(f"搜索全量缓存命中: '{cache_key}'")
@@ -377,7 +369,7 @@ async def search_anime_provider(
             else:
                 await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
             timer.finish()
-            return UIProviderSearchResponse(**response_payload)
+            return UIProviderSearchResponse(**_inject_recognition(response_payload))
 
         timer.step_end(details="缓存未命中")
         logger.info(f"搜索缓存未命中: '{cache_key}'，正在执行完整搜索流程...")
@@ -818,8 +810,15 @@ async def search_anime_provider(
 
     timer.finish()  # 打印搜索计时报告
     filter_metadata = _extract_filter_metadata(sorted_results)
+    # 识别词反向映射命中时，给每条结果打 recognitionTitle 标记（请求级派生，不进搜索缓存）
+    # why：规则带 source=xxx 时仅标记该源结果，且标题需精确匹配规则 source，避免同源无关结果被误标。
+    result_dicts = [item.model_dump() for item in paginated_results]
+    if recognition_title:
+        for _item in result_dicts:
+            if _match_recognition_source(_item):
+                _item["recognitionTitle"] = recognition_title
     response_payload = {
-        "results": [item.model_dump() for item in paginated_results],
+        "results": result_dicts,
         "supplemental_results": [item.model_dump() for item in supplemental_results] if supplemental_results else [],
         "search_season": season_to_filter,
         "search_episode": episode_to_filter,
@@ -858,27 +857,11 @@ async def get_episodes_for_search_result(
     """为指定的搜索结果获取完整的分集列表。自动识别补充源mediaId并路由。"""
     try:
         episodes = await manager.get_episodes_routed(provider, media_id, db_media_type=media_type)
-        # 单剧过滤
+        # 单剧过滤（依赖作品标题，未下沉到 get_episodes_routed）
         filter_content = await config_manager.get("singleEpisodeFilterRules", "")
-        filter_rules = _parse_single_episode_filter_rules(filter_content)
-        episodes = _apply_single_episode_filter(episodes, filter_rules, title, provider, media_id)
-        # 兜底全局分集标题过滤
-        global_filter_enabled = await config_manager.get("globalEpisodeTitleFilterEnabled", "false")
-        if global_filter_enabled == "true":
-            global_filter_regex = await config_manager.get("globalEpisodeTitleFilterRegex", "")
-            if global_filter_regex.strip():
-                before_count = len(episodes)
-                kept = []
-                for ep in episodes:
-                    ep_title = ep.title or ""
-                    try:
-                        if not _regex_module.search(global_filter_regex, ep_title, _regex_module.IGNORECASE):
-                            kept.append(ep)
-                    except _regex_module.error:
-                        kept.append(ep)
-                if len(kept) < before_count:
-                    logger.info(f"兜底全局分集标题过滤: provider={provider}, mediaId={media_id}, 过滤 {before_count - len(kept)}/{before_count} 集")
-                episodes = kept
+        filter_rules = parse_single_episode_filter_rules(filter_content)
+        episodes = apply_single_episode_filter(episodes, filter_rules, title, provider, media_id)
+        # 注：兜底全局分集标题过滤已统一收口到 manager.get_episodes_routed 内部，此处无需重复处理
         return episodes
     except httpx.RequestError as e:
         # 新增：捕获网络错误

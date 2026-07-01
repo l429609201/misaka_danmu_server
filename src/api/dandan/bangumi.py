@@ -147,6 +147,18 @@ async def get_bangumi_details(
                                     actual_episodes = await scraper.get_episodes(media_id, db_media_type=media_type)
 
                                     if actual_episodes:
+                                        # 计算 effective_season（源切换和新剧集分支共用）
+                                        # 优先级：① target_season（搜索词解析） > ② mapping_info.season（搜索结果自带）
+                                        #         > ③ original_title 重新解析 > ④ 默认 1
+                                        _result_season = mapping_info.get("season")
+                                        if target_season is not None:
+                                            effective_season = target_season
+                                        elif _result_season is not None:
+                                            effective_season = _result_season
+                                        else:
+                                            _parsed = parse_search_keyword(original_title)
+                                            effective_season = _parsed.get("season") or 1
+
                                         # 检查是否已经有相同剧集的记录（源切换检测）
                                         existing_anime = await find_existing_anime_by_bangumi_id(session, bangumiId, search_key)
 
@@ -161,31 +173,40 @@ async def get_bangumi_details(
                                                 episode_id = generate_episode_id(real_anime_id, 1, ep_index)
                                                 await update_episode_mapping(
                                                     session, episode_id, provider, media_id,
-                                                    ep_index, original_title
+                                                    ep_index, original_title,
+                                                    season=effective_season
                                                 )
                                             logger.info(f"源切换: '{original_title}' 更新 {len(actual_episodes)} 个分集映射到 {provider}")
                                         else:
                                             # 新剧集，先检查数据库中是否已有相同标题的条目
-                                            # 解析搜索关键词，提取纯标题
-                                            parsed_info = parse_search_keyword(original_title)
-                                            base_title = parsed_info["title"]
+                                            # 先用原始标题查（如"碧蓝之海 第二季"），找不到再用纯标题查（兼容旧数据）
+                                            pure_title = parse_search_keyword(original_title)["title"]
 
-                                            # 直接在数据库中查找相同标题的条目
+                                            # 直接在数据库中查找相同标题+季度的条目
                                             stmt = select(Anime.id, Anime.title).where(
-                                                Anime.title == base_title,
-                                                Anime.season == 1
+                                                Anime.title == original_title,
+                                                Anime.season == effective_season
                                             )
                                             result = await session.execute(stmt)
                                             existing_db_anime = result.mappings().first()
 
+                                            # 兼容旧数据：原始标题找不到，再用纯标题查
+                                            if not existing_db_anime and original_title != pure_title:
+                                                stmt_fallback = select(Anime.id, Anime.title).where(
+                                                    Anime.title == pure_title,
+                                                    Anime.season == effective_season
+                                                )
+                                                result_fallback = await session.execute(stmt_fallback)
+                                                existing_db_anime = result_fallback.mappings().first()
+
                                             if existing_db_anime:
                                                 # 如果数据库中已有相同标题的条目，使用已有的anime_id
                                                 real_anime_id = existing_db_anime['id']
-                                                logger.info(f"复用已存在的番剧: '{base_title}' (ID={real_anime_id}) 共 {len(actual_episodes)} 集")
+                                                logger.info(f"复用已存在的番剧: '{original_title}' (ID={real_anime_id}) 共 {len(actual_episodes)} 集")
                                             else:
                                                 # 如果数据库中没有，获取新的真实animeId
                                                 real_anime_id = await get_next_real_anime_id(session)
-                                                logger.info(f"新剧集: '{base_title}' (ID={real_anime_id}) 共 {len(actual_episodes)} 集")
+                                                logger.info(f"新剧集: '{original_title}' (ID={real_anime_id}) 共 {len(actual_episodes)} 集")
 
                                         # 清除缓存中所有使用这个real_anime_id的其他映射（避免冲突）
                                         all_cache_keys_conflict = await get_cache_keys(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")
@@ -196,10 +217,14 @@ async def get_bangumi_details(
                                                 continue
                                             if si.get("status") == "completed" and "bangumi_mapping" in si:
                                                 for bid, mi in list(si["bangumi_mapping"].items()):
-                                                    # 如果是其他映射使用了相同的real_anime_id，清除它
+                                                    # 如果是其他映射使用了相同的real_anime_id，解除其绑定
+                                                    # 修复：仅解除 real_anime_id 字段，保留条目本身（provider/media_id 等搜索信息）。
+                                                    # 原先 del 整个条目会导致：切换查看其他结果后，回头再点该结果时
+                                                    # bangumi_mapping 中已无此条目 → 无法重建映射 → 看不了分集。
+                                                    # 解绑后，回头点击该 bangumiId 会重新走映射流程，分集恢复正常。
                                                     if mi.get("real_anime_id") == real_anime_id and bid != bangumiId:
-                                                        del si["bangumi_mapping"][bid]
-                                                        logger.info(f"清除冲突的缓存映射: search_key={sk}, bangumiId={bid}, real_anime_id={real_anime_id}")
+                                                        mi.pop("real_anime_id", None)
+                                                        logger.info(f"解除冲突的缓存映射绑定: search_key={sk}, bangumiId={bid}, real_anime_id={real_anime_id}")
                                                 # 保存更新后的缓存
                                                 await set_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, sk, si, FALLBACK_SEARCH_CACHE_TTL)
 
@@ -225,7 +250,8 @@ async def get_bangumi_details(
                                             if not existing_anime:
                                                 await store_episode_mapping(
                                                     session, episode_id, provider, media_id,
-                                                    episode_index, original_title
+                                                    episode_index, original_title,
+                                                    season=effective_season
                                                 )
 
                                             episodes.append(BangumiEpisode(

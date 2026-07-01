@@ -47,10 +47,11 @@ async def _schedule_sync_handler(app: FastAPI) -> None:
         all_calendars = await metadata_manager.get_all_calendars(user)
     except Exception as e:
         logger.error(f"日程同步: 获取外部日历失败: {e}")
-        return
+        all_calendars = {}
 
-    if not all_calendars:
-        return
+    # 注：即使 all_calendars 全空（在线源全挂），下方仍会尝试 bangumi 离线兜底，故不在此提前 return
+    if all_calendars is None:
+        all_calendars = {}
 
     total_updated = 0
     total_bound = 0
@@ -59,6 +60,24 @@ async def _schedule_sync_handler(app: FastAPI) -> None:
         sources = await crud.get_calendar_sources(session)
         if not sources:
             return
+
+        # bangumi 在线日历缺失/为空（api.bgm.tv 常 502）→ 注入离线 bangumi-data 播出星期兜底。
+        # 提到循环前处理：get_all_calendars 在 502 时根本不含 "bangumi" key，循环内补不到。
+        if not all_calendars.get("bangumi"):
+            try:
+                from src.services import get_bangumi_data_manager
+                mgr = get_bangumi_data_manager()
+                if mgr is not None:
+                    offline = await mgr.get_offline_air_schedule()
+                    if offline:
+                        all_calendars["bangumi"] = [
+                            {"bangumiId": bgm_id, "airWeekday": info["airWeekday"],
+                             "airTime": info.get("airTime")}
+                            for bgm_id, info in offline.items()
+                        ]
+                        logger.info(f"日程同步: bangumi 在线无数据，离线兜底提取 {len(offline)} 部")
+            except Exception as e:
+                logger.warning(f"日程同步: bangumi 离线兜底失败: {e}")
 
         for source_name, cal_items in all_calendars.items():
             id_field = "bangumiId" if source_name == "bangumi" else "traktId"

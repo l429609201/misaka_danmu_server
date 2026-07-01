@@ -65,6 +65,44 @@ class TelegramChannel(BaseNotificationChannel):
         return self._CAPABILITIES
 
     @staticmethod
+    def _escape_markdown_v2(text: str) -> str:
+        """转义 MarkdownV2 特殊字符（用于把纯文本 title 安全嵌入 MarkdownV2）"""
+        if not text:
+            return ""
+        special = r'_*[]()~`>#+-=|{}.!'
+        out = []
+        for ch in str(text):
+            if ch in special:
+                out.append("\\" + ch)
+            else:
+                out.append(ch)
+        return "".join(out)
+
+    @staticmethod
+    def _strip_markdown_v2(text: str) -> str:
+        """将 MarkdownV2 文本清洗为纯文本（去转义反斜杠、引用块 > 前缀、加粗/代码符号）"""
+        if not text:
+            return ""
+        lines = []
+        for line in str(text).split("\n"):
+            if line.startswith(">"):
+                line = line[1:]
+            out = []
+            i = 0
+            while i < len(line):
+                ch = line[i]
+                if ch == "\\" and i + 1 < len(line):
+                    out.append(line[i + 1])
+                    i += 2
+                elif ch in ("*", "`"):
+                    i += 1
+                else:
+                    out.append(ch)
+                    i += 1
+            lines.append("".join(out))
+        return "\n".join(lines)
+
+    @staticmethod
     def get_config_schema() -> list:
         return [
             {
@@ -449,10 +487,82 @@ class TelegramChannel(BaseNotificationChannel):
                         )
                         await asyncio.sleep(retry_delay)
                         continue
+                elif "can't parse entities" in err_str:
+                    # MarkdownV2 解析失败，不重试，返回 False 让调用方降级为纯文本
+                    self.logger.warning(f"编辑消息 MarkdownV2 解析失败，将降级为纯文本: {edit_err}")
+                    return False
                 else:
                     # 其他错误直接抛出
                     raise edit_err
         return False
+
+    async def _render_photo_bytes(self, result, chat_id, markup,
+                                  parse_mode, reply_to_message_id):
+        """发送聚合海报图（PNG bytes）。
+
+        Telegram 图片消息的图片本身无法 edit，因此翻页场景（edit_message_id 非空）
+        采用「先删旧消息，再发新图」策略，保证每页都能换成对应的九宫格海报。
+        caption 长度上限 1024，超出时截断。
+        """
+        import io as _io
+        caption = result.text or ""
+        if len(caption) > 1024:
+            caption = caption[:1021] + "..."
+
+        # 翻页：先删除旧消息（图片无法 edit）
+        if result.edit_message_id:
+            try:
+                await asyncio.to_thread(
+                    self._bot.delete_message, chat_id, result.edit_message_id
+                )
+            except Exception as del_err:
+                self.logger.debug(f"删除旧海报消息失败（忽略）: {del_err}")
+
+        sent = None
+        try:
+            photo = _io.BytesIO(result.image_bytes)
+            photo.name = "poster.png"
+            sent = await asyncio.to_thread(
+                self._bot.send_photo, chat_id, photo,
+                caption=caption, reply_markup=markup,
+                parse_mode=parse_mode, reply_to_message_id=reply_to_message_id,
+            )
+        except Exception as photo_err:
+            err_str = str(photo_err).lower()
+            if "can't parse entities" in err_str:
+                # caption 解析失败：去掉 parse_mode 重发
+                try:
+                    photo = _io.BytesIO(result.image_bytes)
+                    photo.name = "poster.png"
+                    sent = await asyncio.to_thread(
+                        self._bot.send_photo, chat_id, photo,
+                        caption=caption, reply_markup=markup,
+                        reply_to_message_id=reply_to_message_id,
+                    )
+                except Exception as e2:
+                    self.logger.warning(f"send_photo(bytes) 重试失败，降级纯文本: {e2}")
+            else:
+                self.logger.warning(f"send_photo(bytes) 失败，降级纯文本: {photo_err}")
+            if sent is None:
+                # 最终降级：发纯文本列表，至少保证用户能选
+                try:
+                    sent = await asyncio.to_thread(
+                        self._bot.send_message, chat_id, result.text,
+                        reply_markup=markup, parse_mode=parse_mode,
+                        reply_to_message_id=reply_to_message_id,
+                    )
+                except Exception:
+                    try:
+                        sent = await asyncio.to_thread(
+                            self._bot.send_message, chat_id, result.text,
+                            reply_markup=markup,
+                        )
+                    except Exception:
+                        pass
+
+        # 回写新消息 id，供后续翻页 edit/删除使用
+        if sent and result.next_state:
+            self.service.update_conversation_message_id(str(chat_id), sent.message_id)
 
     async def _render_result(self, result: CommandResult, chat_id: int,
                              reply_to_message_id: int = None):
@@ -467,6 +577,14 @@ class TelegramChannel(BaseNotificationChannel):
                 markup = self._build_inline_markup(result.reply_markup)
 
             parse_mode = result.parse_mode
+
+            # 聚合海报图：优先以图片消息（bytes）发送。
+            # 翻页等编辑场景下图片本身无法 edit，需删除旧消息后发新图。
+            if result.image_bytes:
+                await self._render_photo_bytes(
+                    result, chat_id, markup, parse_mode, reply_to_message_id
+                )
+                return
 
             if result.edit_message_id:
                 self._log_raw("⬆ 编辑消息", {"chat_id": chat_id, "message_id": result.edit_message_id, "text": result.text[:200]})
@@ -613,7 +731,14 @@ class TelegramChannel(BaseNotificationChannel):
             self.logger.warning("未配置 Chat ID，无法发送消息")
             return
         image: str = kwargs.get("image", "") or ""
-        caption = f"*{title}*\n{text}" if title else text
+        # image_bytes：聚合海报 PNG 字节（如后备搜索九宫格），优先级高于单图 URL
+        image_bytes: Optional[bytes] = kwargs.get("image_bytes")
+        # caption：title 已是纯文本（to_markdown 返回的 title 去掉了 *），需转义后再套 *粗体*
+        # body(text) 已是合法 MarkdownV2，直接拼接
+        safe_title = self._escape_markdown_v2(title) if title else ""
+        caption = f"*{safe_title}*\n{text}" if title else text
+        # 纯文本兜底版（解析失败时使用，去掉所有 markdown 符号）
+        plain_caption = f"{title}\n{self._strip_markdown_v2(text)}" if title else self._strip_markdown_v2(text)
         # edit_message_id：有则 edit 已有消息，无则发新消息
         edit_message_id: Optional[int] = kwargs.get("edit_message_id")
         # _msg_id_out：调用方传入的列表，发新消息后把 message_id 写进去
@@ -626,49 +751,76 @@ class TelegramChannel(BaseNotificationChannel):
                 # 尝试 edit 已有消息（带重试）
                 success = await self._edit_with_retry(
                     chat_id, edit_message_id, caption,
-                    markup=markup, parse_mode="Markdown",
+                    markup=markup, parse_mode="MarkdownV2",
                 )
                 if not success:
-                    # 重试全部失败，降级为发新消息
-                    self.logger.warning(f"edit_message_text 重试全部失败，降级为发新消息")
+                    # 重试全部失败，降级为发新消息（纯文本，不带 parse_mode）
+                    self.logger.warning(f"edit_message_text 重试全部失败，降级为发纯文本新消息")
                     sent = await asyncio.to_thread(
-                        self._bot.send_message, chat_id, caption,
-                        parse_mode="Markdown", reply_markup=markup,
+                        self._bot.send_message, chat_id, plain_caption,
+                        reply_markup=markup,
                     )
                     if msg_id_out is not None and sent:
                         msg_id_out.append(sent.message_id)
-            elif image:
-                # 有封面图：发带图片的消息，正文作为 caption
+            elif image_bytes:
+                # 聚合海报（PNG bytes）：以图片消息发送，正文作为 caption。
+                # 失败时降级为纯文本，确保通知必达。
+                import io as _io
                 try:
-                    sent = await asyncio.to_thread(self._bot.send_photo, chat_id, image, caption=caption, parse_mode="Markdown", reply_markup=markup)
+                    photo = _io.BytesIO(image_bytes)
+                    photo.name = "poster.png"
+                    sent = await asyncio.to_thread(
+                        self._bot.send_photo, chat_id, photo, caption=caption,
+                        parse_mode="MarkdownV2", reply_markup=markup,
+                    )
                 except Exception as photo_err:
                     photo_err_str = str(photo_err).lower()
                     if "can't parse entities" in photo_err_str:
-                        self.logger.warning(f"send_photo Markdown 解析失败，降级为纯文本: {photo_err}")
-                        fallback_caption = f"{title}\n{text}" if title else text
-                        sent = await asyncio.to_thread(self._bot.send_photo, chat_id, image, caption=fallback_caption, reply_markup=markup)
+                        self.logger.warning(f"send_photo(bytes) MarkdownV2 解析失败，降级纯文本caption: {photo_err}")
+                        photo = _io.BytesIO(image_bytes)
+                        photo.name = "poster.png"
+                        sent = await asyncio.to_thread(
+                            self._bot.send_photo, chat_id, photo,
+                            caption=plain_caption, reply_markup=markup,
+                        )
+                    else:
+                        self.logger.warning(f"send_photo(bytes) 失败，降级为纯文本消息: {photo_err}")
+                        sent = await asyncio.to_thread(
+                            self._bot.send_message, chat_id, caption,
+                            parse_mode="MarkdownV2", reply_markup=markup,
+                        )
+                if msg_id_out is not None and sent:
+                    msg_id_out.append(sent.message_id)
+            elif image:
+                # 有封面图：发带图片的消息，正文作为 caption
+                try:
+                    sent = await asyncio.to_thread(self._bot.send_photo, chat_id, image, caption=caption, parse_mode="MarkdownV2", reply_markup=markup)
+                except Exception as photo_err:
+                    photo_err_str = str(photo_err).lower()
+                    if "can't parse entities" in photo_err_str:
+                        self.logger.warning(f"send_photo MarkdownV2 解析失败，降级为纯文本: {photo_err}")
+                        sent = await asyncio.to_thread(self._bot.send_photo, chat_id, image, caption=plain_caption, reply_markup=markup)
                     else:
                         raise
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)
             else:
                 try:
-                    sent = await asyncio.to_thread(self._bot.send_message, chat_id, caption, parse_mode="Markdown", reply_markup=markup)
+                    sent = await asyncio.to_thread(self._bot.send_message, chat_id, caption, parse_mode="MarkdownV2", reply_markup=markup)
                 except Exception as send_err:
                     send_err_str = str(send_err).lower()
                     if "can't parse entities" in send_err_str:
-                        self.logger.warning(f"send_message Markdown 解析失败，降级为纯文本: {send_err}")
-                        fallback_text = f"{title}\n{text}" if title else text
-                        sent = await asyncio.to_thread(self._bot.send_message, chat_id, fallback_text, reply_markup=markup)
+                        self.logger.warning(f"send_message MarkdownV2 解析失败，降级为纯文本: {send_err}")
+                        sent = await asyncio.to_thread(self._bot.send_message, chat_id, plain_caption, reply_markup=markup)
                     else:
                         raise
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)
         except Exception as e:
             self.logger.error(f"发送消息失败: {e}")
-            # 降级为纯文本
+            # 降级为纯文本（清洗掉 MarkdownV2 符号，避免显示反斜杠和 > 前缀）
             try:
-                plain = f"{title}\n{text}" if title else text
+                plain = f"{title}\n{self._strip_markdown_v2(text)}" if title else self._strip_markdown_v2(text)
                 sent = await asyncio.to_thread(self._bot.send_message, chat_id, plain)
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)

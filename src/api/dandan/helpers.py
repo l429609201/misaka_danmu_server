@@ -171,12 +171,14 @@ async def get_cache_keys(session: AsyncSession, pattern: str) -> List[str]:
 
 async def store_episode_mapping(
     session: AsyncSession, episode_id: int, provider: str,
-    media_id: str, episode_index: int, original_title: str
+    media_id: str, episode_index: int, original_title: str,
+    season: int = 1
 ):
     """存储episodeId到源的映射关系到缓存"""
     mapping_data = {
         "provider": provider, "media_id": media_id,
         "episode_index": episode_index, "original_title": original_title,
+        "season": season,
         "timestamp": time.time()
     }
     await set_db_cache(session, EPISODE_MAPPING_CACHE_PREFIX, str(episode_id), mapping_data, 10800)
@@ -222,10 +224,11 @@ async def find_existing_anime_by_bangumi_id(
 
 async def update_episode_mapping(
     session: AsyncSession, episode_id: int, provider: str,
-    media_id: str, episode_index: int, original_title: str
+    media_id: str, episode_index: int, original_title: str,
+    season: int = 1
 ):
     """更新episodeId的映射关系（更新数据库缓存）"""
-    await store_episode_mapping(session, episode_id, provider, media_id, episode_index, original_title)
+    await store_episode_mapping(session, episode_id, provider, media_id, episode_index, original_title, season=season)
     real_anime_id = int(str(episode_id)[2:8])
     try:
         all_cache_keys = await get_cache_keys(session, f"{FALLBACK_SEARCH_CACHE_PREFIX}*")

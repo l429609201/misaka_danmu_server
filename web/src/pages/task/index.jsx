@@ -2,6 +2,7 @@ import { ImportTask } from './components/ImportTask'
 import { ScheduleTask } from './components/ScheduleTask'
 import { RateLimitPanel } from './components/RateLimitPanel'
 import { WebhookTasks } from './components/WebhookTasks'
+import { TaskProfilePanel } from './components/TaskProfilePanel'
 import { Tabs } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -36,6 +37,11 @@ export const Task = () => {
       label: t('taskPage.tabRateLimit'),
       key: 'ratelimit',
       children: <RateLimitPanel />,
+    },
+    {
+      label: t('taskPage.tabProfile'),
+      key: 'profile',
+      children: <TaskProfilePanel />,
     },
   ]
 

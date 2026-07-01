@@ -8,6 +8,7 @@ import dayjs from 'dayjs'
 import { getWeeklyCalendar, syncBangumiSchedule } from '../../apis'
 import { RoutePaths } from '../../general/RoutePaths'
 import { MyIcon } from '../../components/MyIcon'
+import { UpcomingShows } from '../home/components/UpcomingShows'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../store/index.js'
 
@@ -107,6 +108,9 @@ export default function CalendarPage() {
           </div>
         )}
       </div>
+
+      {/* 即将播出 */}
+      <UpcomingShows />
 
       {/* Weekly Grid / Mobile List */}
       {data.stats.total === 0 ? (

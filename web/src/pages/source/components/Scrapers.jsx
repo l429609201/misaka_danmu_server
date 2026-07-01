@@ -217,6 +217,8 @@ export const Scrapers = () => {
   const timer = useRef(0)
   // dandanplay auth mode
   const [dandanAuthMode, setDandanAuthMode] = useState('local') // 'local' or 'proxy'
+  // bilibili 限制内容代理模式：'server'(反向代理地址) 或 'clash'(Clash 本地代理)，二选一互斥
+  const [biliProxyMode, setBiliProxyMode] = useState('server')
   const [showAppSecret, setShowAppSecret] = useState(false)
   const [showDisclaimerModal, setShowDisclaimerModal] = useState(false)
   // 填充默认黑名单加载状态
@@ -1266,6 +1268,14 @@ export const Scrapers = () => {
         setDandanAuthMode('proxy')
       }
     }
+
+    // bilibili 限制内容代理模式：enableClashProxy=true 视为 Clash 模式，否则反代模式
+    if (item.providerName === 'bilibili') {
+      const clashOn = res.data?.enableClashProxy === true
+        || res.data?.enableClashProxy === 'true'
+        || res.data?.enableClashProxy === '1'
+      setBiliProxyMode(clashOn ? 'clash' : 'server')
+    }
   }
 
   const handleSaveSingleScraper = async () => {
@@ -1286,6 +1296,19 @@ export const Scrapers = () => {
         }
         // dandanplay 不使用全局代理，移除该字段
         delete values.useProxy
+      }
+
+      // bilibili 限制内容代理：模式二选一，保存时按模式互斥写入
+      if (setname === 'bilibili') {
+        if (biliProxyMode === 'clash') {
+          // Clash 模式：启用 Clash，清空反代地址
+          values.enableClashProxy = true
+          values.searchProxyServer = ''
+        } else {
+          // 反代模式：关闭 Clash，清空 Clash 地址
+          values.enableClashProxy = false
+          values.clashProxyUrl = ''
+        }
       }
 
       await setSingleScraper({
@@ -1506,6 +1529,12 @@ export const Scrapers = () => {
 
         // 如果是 dandanplay，则跳过所有已在定制UI中处理的字段
         if (setname === 'dandanplay') {
+          return null
+        }
+
+        // bilibili 限制内容代理的 4 个字段改由专属"模式切换"区块渲染，这里跳过
+        if (setname === 'bilibili' &&
+            ['enableSearchProxy', 'searchProxyServer', 'enableClashProxy', 'clashProxyUrl'].includes(key)) {
           return null
         }
 
@@ -2561,19 +2590,99 @@ export const Scrapers = () => {
               >
                 <Switch />
               </Form.Item>
+
+              {/* 搜索限流时 bgmtv 兜底开关（与「分集序号归一化」同区块并列） */}
+              <Form.Item
+                name="dandanplaySearchFallbackBgmtv"
+                label={t('scrapers.searchFallbackBgmtv')}
+                valuePropName="checked"
+                className="mb-4"
+                tooltip={t('scrapers.searchFallbackBgmtvTip')}
+              >
+                <Switch />
+              </Form.Item>
             </>
           )}
 
           {/* 动态渲染表单项 */}
           {renderDynamicFormItems()}
 
+          {/* bilibili 限制内容代理：总开关 + 模式切换（反代地址 / Clash 本地代理，二选一） */}
+          {setname === 'bilibili' && (
+            <>
+              <Form.Item
+                name="enableSearchProxy"
+                label={t('scrapers.biliProxyEnable')}
+                valuePropName="checked"
+                className="mb-4"
+                tooltip={t('scrapers.biliProxyEnableTip')}
+              >
+                <Switch />
+              </Form.Item>
+
+              <Form.Item shouldUpdate={(prev, cur) => prev.enableSearchProxy !== cur.enableSearchProxy} noStyle>
+                {({ getFieldValue }) =>
+                  getFieldValue('enableSearchProxy') ? (
+                    <>
+                      <Form.Item label={t('scrapers.biliProxyMode')} className="mb-4">
+                        <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center gap-4'}`}>
+                          <Switch
+                            checkedChildren={t('scrapers.biliProxyModeClash')}
+                            unCheckedChildren={t('scrapers.biliProxyModeServer')}
+                            checked={biliProxyMode === 'clash'}
+                            onChange={checked => setBiliProxyMode(checked ? 'clash' : 'server')}
+                          />
+                          <div className={`${isMobile ? 'text-sm' : ''} text-gray-400`}>
+                            {biliProxyMode === 'clash'
+                              ? t('scrapers.biliProxyModeClashDesc')
+                              : t('scrapers.biliProxyModeServerDesc')}
+                          </div>
+                        </div>
+                      </Form.Item>
+
+                      {biliProxyMode === 'server' && (
+                        <Form.Item
+                          name="searchProxyServer"
+                          label={t('scrapers.biliProxyServer')}
+                          className="mb-4"
+                          tooltip={t('scrapers.biliProxyServerTip')}
+                        >
+                          <Input placeholder="https://your-proxy-server.com" />
+                        </Form.Item>
+                      )}
+
+                      {biliProxyMode === 'clash' && (
+                        <Form.Item
+                          name="clashProxyUrl"
+                          label={t('scrapers.biliClashUrl')}
+                          className="mb-4"
+                          tooltip={t('scrapers.biliClashUrlTip')}
+                        >
+                          <Input placeholder="http://127.0.0.1:7890" />
+                        </Form.Item>
+                      )}
+                    </>
+                  ) : null
+                }
+              </Form.Item>
+            </>
+          )}
+
           {/* 通用部分 分集标题黑名单 记录原始响应 */}
           <Form.Item
             name={`${setname}EpisodeBlacklistRegex`}
             label={
-              <div className="flex items-center justify-between w-full">
-                <span>{t('scrapers.episodeBlacklist')}</span>
-                <Space size="small">
+              // 移动端窄屏：纵向堆叠（标题在上、按钮组在下并允许换行），
+              // 避免横向 flex 把"分集标题黑名单(正则)"挤压成一字宽竖排。
+              <div
+                className={
+                  isMobile
+                    ? 'flex flex-col items-start gap-1 w-full'
+                    : 'flex items-center justify-between w-full'
+                }
+              >
+                <span className="whitespace-nowrap">{t('scrapers.episodeBlacklist')}</span>
+                <Space size="small" wrap>
                   <Button
                     type="link"
                     size="small"

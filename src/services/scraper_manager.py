@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import json
 import re
 import pkgutil
 import inspect
@@ -14,7 +15,7 @@ from urllib.parse import urlparse
 from src.scrapers.base import BaseScraper
 from src.utils import TransportManager
 from src.utils.buffered_logging import BufferedLogHandler, create_buffered_logger, flush_buffered_logs
-from src.db import models, crud, ConfigManager
+from src.db import models, crud, ConfigManager, orm_models
 
 # 从 models 导入需要的类
 ProviderSearchInfo = models.ProviderSearchInfo
@@ -465,11 +466,26 @@ class ScraperManager:
             temp_logger, buffer_handler = create_buffered_logger(scraper.provider_name, task_id)
             scraper.logger = temp_logger
 
+            # 单源总搜索超时熔断：「搜索超时」配置语义为单个源的整体搜索时长上限，
+            # 而非单次 HTTP 请求超时。源内部可能并行多请求/降级/限流，任一源卡住
+            # 都会拖垮 gather 等待所有源完成，故在此用 wait_for 按配置值强制熔断。
+            source_total_timeout = getattr(scraper, "_search_timeout", 15.0) or 15.0
             try:
-                result = await scraper.search(keyword, episode_info=episode_info)
+                result = await asyncio.wait_for(
+                    scraper.search(keyword, episode_info=episode_info),
+                    timeout=source_total_timeout,
+                )
                 # 从装饰器存储的 _task_timings 中读取耗时（并发安全）
                 duration_ms = scraper._task_timings.pop(task_id, 0) if hasattr(scraper, '_task_timings') else 0
                 return (scraper.provider_name, result, duration_ms, None, buffer_handler)
+            except asyncio.TimeoutError:
+                # 源整体搜索超时：熔断该源，返回空结果，不拖垮其它源
+                duration_ms = scraper._task_timings.pop(task_id, 0) if hasattr(scraper, '_task_timings') else 0
+                scraper.logger.warning(
+                    f"{scraper.provider_name}: 搜索超过单源总超时 {source_total_timeout:.0f}s，已熔断跳过"
+                )
+                return (scraper.provider_name, None, duration_ms,
+                        TimeoutError(f"单源搜索超时 ({source_total_timeout:.0f}s)"), buffer_handler)
             except Exception as e:
                 duration_ms = scraper._task_timings.pop(task_id, 0) if hasattr(scraper, '_task_timings') else 0
                 return (scraper.provider_name, None, duration_ms, e, buffer_handler)
@@ -654,7 +670,40 @@ class ScraperManager:
                 filtered_results.append(item)
         
         logging.getLogger(__name__).info(f"全局标题过滤: 从 {len(all_results)} 个结果中保留了 {len(filtered_results)} 个。")
+
+        # 异步更新弹幕源健康度统计
+        asyncio.create_task(self._update_health_stats(timed_results))
+
         return filtered_results
+
+    async def _update_health_stats(self, timed_results):
+        """异步更新弹幕源健康度统计到 scrapers 表"""
+        from src.core import get_now
+        now = get_now()
+
+        try:
+            async with self._session_factory() as session:
+                for provider_name, result, duration_ms, error, _ in timed_results:
+                    scraper_row = await session.get(orm_models.Scraper, provider_name)
+                    if not scraper_row:
+                        continue
+                    scraper_row.totalSearches = (scraper_row.totalSearches or 0) + 1
+                    scraper_row.totalDurationMs = (scraper_row.totalDurationMs or 0) + duration_ms
+                    if error:
+                        scraper_row.failCount = (scraper_row.failCount or 0) + 1
+                        err_str = str(error)[:500]
+                        scraper_row.lastError = err_str
+                        if "timeout" in err_str.lower() or "timed out" in err_str.lower():
+                            scraper_row.timeoutCount = (scraper_row.timeoutCount or 0) + 1
+                    elif result:
+                        scraper_row.successCount = (scraper_row.successCount or 0) + 1
+                        scraper_row.totalResultCount = (scraper_row.totalResultCount or 0) + len(result)
+                    else:
+                        scraper_row.emptyCount = (scraper_row.emptyCount or 0) + 1
+                    scraper_row.lastSearchAt = now
+                await session.commit()
+        except Exception as e:
+            logging.getLogger(__name__).debug(f"更新弹幕源健康统计失败: {e}")
 
     @staticmethod
     def parse_supplement_media_id(media_id: str) -> Optional[tuple]:
@@ -728,16 +777,25 @@ class ScraperManager:
                         episodeIndex=idx,
                         url=url
                     ))
-            return episodes
+            # 兜底全局分集标题过滤（统一收口，对所有调用路径生效）
+            from src.utils.episode_filter import apply_global_episode_title_filter
+            return await apply_global_episode_title_filter(
+                episodes, self.config_manager, provider, media_id
+            )
         else:
             # 普通弹幕源路径
             scraper = self.get_scraper(provider)
             if not scraper:
                 raise ValueError(f"弹幕源 '{provider}' 不可用")
-            return await scraper.get_episodes(
+            episodes = await scraper.get_episodes(
                 media_id,
                 target_episode_index=target_episode_index,
                 db_media_type=db_media_type
+            )
+            # 兜底全局分集标题过滤（统一收口，对所有调用路径生效）
+            from src.utils.episode_filter import apply_global_episode_title_filter
+            return await apply_global_episode_title_filter(
+                episodes, self.config_manager, provider, media_id
             )
 
     async def search_sequentially(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> Optional[tuple[str, List[ProviderSearchInfo]]]:

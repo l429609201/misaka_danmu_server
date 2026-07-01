@@ -20,7 +20,7 @@ export const MatchFallbackSetting = () => {
   const fetchSettings = async () => {
     try {
       setLoading(true)
-      const [fallbackRes, blacklistRes, tokensRes, tokenListRes, searchFallbackRes, externalApiFallbackRes, preDownloadRes, parallelSearchRes, autoRefreshRes] = await Promise.all([
+      const [fallbackRes, blacklistRes, tokensRes, tokenListRes, searchFallbackRes, externalApiFallbackRes, preDownloadRes, parallelSearchRes, autoRefreshRes, refreshThresholdRes] = await Promise.all([
         getMatchFallback(),
         getMatchFallbackBlacklist(),
         getMatchFallbackTokens(),
@@ -29,7 +29,8 @@ export const MatchFallbackSetting = () => {
         getConfig('externalApiFallbackEnabled'),
         getConfig('preDownloadNextEpisodeEnabled'),
         getConfig('parallelSearchEnabled'),
-        getConfig('danmakuAutoRefreshDays')
+        getConfig('danmakuAutoRefreshDays'),
+        getConfig('danmakuRefreshThreshold')
       ])
       setTokenList(tokenListRes.data || [])
 
@@ -49,7 +50,8 @@ export const MatchFallbackSetting = () => {
         externalApiFallbackEnabled: externalApiFallbackRes.data?.value === 'true',
         preDownloadNextEpisodeEnabled: preDownloadRes.data?.value === 'true',
         parallelSearchEnabled: parallelSearchRes.data?.value === 'true',
-        danmakuAutoRefreshDays: parseInt(autoRefreshRes.data?.value || '0', 10) || 0
+        danmakuAutoRefreshDays: parseInt(autoRefreshRes.data?.value || '0', 10) || 0,
+        danmakuRefreshThreshold: parseInt(refreshThresholdRes.data?.value || '5000', 10) || 0
       })
     } catch (error) {
       messageApi.error(t('bullet.fallbackGetFailed'))
@@ -100,6 +102,10 @@ export const MatchFallbackSetting = () => {
         await setConfig('danmakuAutoRefreshDays', String(changedValues.danmakuAutoRefreshDays ?? 0))
         messageApi.success(t('bullet.fallbackAutoRefreshSaved'))
       }
+      if ('danmakuRefreshThreshold' in changedValues) {
+        await setConfig('danmakuRefreshThreshold', String(changedValues.danmakuRefreshThreshold ?? 5000))
+        messageApi.success(t('bullet.fallbackRefreshThresholdSaved'))
+      }
       // 黑名单不自动保存，需要点击保存按钮
     } catch (error) {
       messageApi.error(t('bullet.fallbackSaveFailed'))
@@ -147,6 +153,7 @@ export const MatchFallbackSetting = () => {
           preDownloadNextEpisodeEnabled: false,
           parallelSearchEnabled: false,
           danmakuAutoRefreshDays: 0,
+          danmakuRefreshThreshold: 5000,
           matchFallbackBlacklist: '',
           matchFallbackTokens: []
         }}
@@ -256,6 +263,23 @@ export const MatchFallbackSetting = () => {
                           style={{ flex: 1 }}
                         >
                           <InputNumber min={0} max={365} precision={0} style={{ width: '100%' }} placeholder={t('bullet.fallbackAutoRefreshPlaceholder')} />
+                        </Form.Item>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                        <Form.Item
+                          name="danmakuRefreshThreshold"
+                          label={
+                            <div className="flex items-center gap-2">
+                              <span>{t('bullet.fallbackRefreshThreshold')}</span>
+                              <Tooltip title={t('bullet.fallbackRefreshThresholdTip')}>
+                                <QuestionCircleOutlined />
+                              </Tooltip>
+                            </div>
+                          }
+                          style={{ flex: 1 }}
+                        >
+                          <InputNumber min={0} max={1000000} precision={0} style={{ width: '100%' }} placeholder={t('bullet.fallbackRefreshThresholdPlaceholder')} />
                         </Form.Item>
                       </div>
                     </>
@@ -381,19 +405,44 @@ export const MatchFallbackSetting = () => {
                 }}
               </Form.Item>
 
-              <Form.Item
-                name="danmakuAutoRefreshDays"
-                label={
-                  <div className="flex items-center gap-2">
-                    <span>{t('bullet.fallbackAutoRefresh')}</span>
-                    <Tooltip title={t('bullet.fallbackAutoRefreshTip')}>
-                      <QuestionCircleOutlined />
-                    </Tooltip>
-                  </div>
-                }
-              >
-                <InputNumber min={0} max={365} precision={0} style={{ width: '100%' }} placeholder={t('bullet.fallbackAutoRefreshPlaceholder')} />
-              </Form.Item>
+              {/* 两个数值输入：删除标题后整列自然上移；addonBefore 宽 80px；controls=false 隐藏右侧上下按钮
+                  数字输入区长度 = InputNumber 总宽 - 80（addonBefore），改下面 width 数字即可单独调节 */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <Form.Item name="danmakuAutoRefreshDays" style={{ marginBottom: 8 }}>
+                  <InputNumber
+                    controls={false}
+                    min={0}
+                    max={365}
+                    precision={0}
+                    style={{ width: 240 }}
+                    placeholder={t('bullet.fallbackAutoRefreshPlaceholder')}
+                    addonBefore={
+                      <Tooltip title={t('bullet.fallbackAutoRefreshTip')}>
+                        <span style={{ display: 'inline-block', width: 80, textAlign: 'center' }}>
+                          {t('bullet.fallbackAutoRefreshShort')}
+                        </span>
+                      </Tooltip>
+                    }
+                  />
+                </Form.Item>
+                <Form.Item name="danmakuRefreshThreshold" style={{ marginBottom: 0 }}>
+                  <InputNumber
+                    controls={false}
+                    min={0}
+                    max={1000000}
+                    precision={0}
+                    style={{ width: 240 }}
+                    placeholder={t('bullet.fallbackRefreshThresholdPlaceholder')}
+                    addonBefore={
+                      <Tooltip title={t('bullet.fallbackRefreshThresholdTip')}>
+                        <span style={{ display: 'inline-block', width: 80, textAlign: 'center' }}>
+                          {t('bullet.fallbackRefreshThresholdShort')}
+                        </span>
+                      </Tooltip>
+                    }
+                  />
+                </Form.Item>
+              </div>
 
             </>
           )}

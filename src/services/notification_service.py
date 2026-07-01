@@ -393,19 +393,28 @@ class NotificationService(
                 if not subscribed and not has_cached_progress:
                     continue
 
-                fmt_result = self._format_event_message(event_type, data)
-                title, text = fmt_result[0], fmt_result[1]
-                reply_markup = fmt_result[2] if len(fmt_result) == 3 else None
-                image_url: str = data.get("image_url", "") or ""
+                # 统一使用新消息类渲染（registry + render_for_channel），不再用旧 _format_event_message
+                rendered = self.notification_manager.render_event_for_channel(
+                    event_type, data, channel_instance
+                )
+                if rendered is None:
+                    # 未注册的事件类型，跳过（由常规路径兜底）
+                    continue
+                # body 已自带标题行，title 传空避免 send_message 二次拼接重复；
+                # 原标题通过 article_title 透传，供图文卡片标题使用
+                text = rendered.body
+                article_title = rendered.title
+                reply_markup = rendered.buttons or None
+                image_url: str = data.get("image_url", "") or rendered.image or ""
 
                 if has_cached_progress:
                     # 有进度消息缓存：edit 已有消息
                     edit_mid = self._task_progress_tg_msg.get(task_id, {}).get(ch_id)
                     msg_id_out: List[int] = []
                     await channel_instance.send_message(
-                        title=title, text=text, image=image_url,
+                        title="", text=text, image=image_url,
                         edit_message_id=edit_mid, _msg_id_out=msg_id_out,
-                        reply_markup=reply_markup,
+                        reply_markup=reply_markup, article_title=article_title,
                     )
                     # 清理该渠道的缓存
                     if task_id in self._task_progress_tg_msg:
@@ -415,8 +424,8 @@ class NotificationService(
                 else:
                     # 无进度缓存：正常发送
                     await channel_instance.send_message(
-                        title=title, text=text, image=image_url,
-                        reply_markup=reply_markup,
+                        title="", text=text, image=image_url,
+                        reply_markup=reply_markup, article_title=article_title,
                     )
             except Exception as e:
                 logger.error(f"渠道 {ch_id} 发送事件 {event_type} 失败: {e}")
@@ -441,12 +450,25 @@ class NotificationService(
                 # 仅 Telegram 支持 edit_message，其他渠道跳过进度推送（完成时才收通知）
                 if getattr(channel_instance, "channel_type", "") != "telegram":
                     continue
-                title, text = self._format_task_progress_message(task_title, progress, description)
+                # 统一使用新 TaskProgressMessage 渲染（合法 MarkdownV2），避免 edit 解析失败刷屏
+                progress_payload = {
+                    "task_title": task_title,
+                    "progress": progress,
+                    "description": description,
+                    "check_event_key": check_event_key,
+                }
+                rendered = self.notification_manager.render_event_for_channel(
+                    "task_progress", progress_payload, channel_instance
+                )
+                if rendered is None:
+                    continue
+                # body 已自带标题行，title 传空避免 send_message 二次拼接重复
+                text = rendered.body
                 edit_mid = self._task_progress_tg_msg.get(task_id, {}).get(ch_id)
                 msg_id_out: List[int] = []
                 logger.debug(f"[进度通知] task_id={task_id[:8]} ch={ch_id} edit_mid={edit_mid} progress={progress}%")
                 await channel_instance.send_message(
-                    title=title, text=text,
+                    title="", text=text,
                     edit_message_id=edit_mid, _msg_id_out=msg_id_out
                 )
                 # 记录新发出的 message_id（首次 send 或 edit 失败降级后均更新缓存）

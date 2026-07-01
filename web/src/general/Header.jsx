@@ -10,7 +10,7 @@ import classNames from 'classnames'
 import { Tag, Dropdown, Modal, Form, Input, Button, Space, Badge, Popconfirm } from 'antd';
 import { logout, changePassword, checkAppUpdate, getDockerStatus, restartService, getVersion } from '../apis/index.js'
 import Cookies from 'js-cookie'
-import { EyeInvisibleOutlined, EyeOutlined, LockOutlined } from '@ant-design/icons'
+import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, SearchOutlined } from '@ant-design/icons'
 import { Tooltip } from 'antd'
 import SessionManager from '@/components/SessionManager'
 import VersionModal from '@/components/VersionModal'
@@ -19,7 +19,9 @@ import PageStylePicker from '@/components/PageStylePicker'
 import LanguagePicker from '@/components/LanguagePicker'
 import RealtimeLogModal from '@/components/RealtimeLogModal'
 import CacheManagerModal from '@/components/CacheManagerModal'
+import HealthOverviewModal from '@/pages/home/components/HealthOverview'
 import HistoryLogModal from '@/components/HistoryLogModal'
+import { FeatureSearch } from '@/components/FeatureSearch'
 import { RateLimitIndicator } from '@/components/RateLimitIndicator'
 import { clearBrowserCache } from '@/utils/clearCache'
 import { useMessage } from '../MessageContext'
@@ -80,18 +82,21 @@ const navItems = [
   { key: RoutePaths.LIBRARY, label: 'nav.library', icon: 'tvlibrary', iconfontIcon: 'icon-tvlibrary', children: [
     { key: 'library', label: 'libraryPage.pageTitle', icon: 'kufangguanli' },
     { key: 'batch', label: 'libraryPage.btnBatchManage', icon: 'piliangguanli' },
+    { key: 'subscriptions', label: 'features.subscriptions.title', icon: 'kufangguanli' },
   ] },
   { key: RoutePaths.TASK, label: 'nav.task', icon: 'renwu', iconfontIcon: 'icon-renwu', children: [
     { key: 'task', label: 'nav.taskRunning', icon: 'tongji-jinhangzhongderenwushuliang' },
     { key: 'webhook', label: 'nav.taskWebhook', icon: 'Webhookrenwu', iconSize: 28, iconClassName: 'ml-px' },
     { key: 'schedule', label: 'nav.taskSchedule', icon: 'dingshirenwu' },
     { key: 'ratelimit', label: 'nav.taskRatelimit', icon: 'liukong' },
+    { key: 'profile', label: 'nav.taskProfile', icon: 'tongji-jinhangzhongderenwushuliang' },
   ]},
   { key: RoutePaths.BULLET, label: 'nav.bullet', icon: 'danmu', iconfontIcon: 'icon-danmu', children: [
     { key: 'token', label: 'nav.bulletToken', icon: 'tokenguanli' },
     { key: 'output', label: 'nav.bulletOutput', icon: 'shuchupeizhi' },
     { key: 'storage', label: 'nav.bulletStorage', icon: 'cunchupeizhi' },
     { key: 'fallback', label: 'nav.bulletFallback', icon: 'sanfangyunpeizhi' },
+    { key: 'data-check', label: 'nav.bulletDataCheck', icon: 'renlianshibie_o' },
   ]},
   { key: RoutePaths.MEDIA_FETCH, label: 'nav.mediaFetch', icon: 'movie', iconfontIcon: 'icon-movie', children: [
     { key: 'library-scan', label: 'nav.mediaLibraryScan', icon: 'meitiduqu', iconSize: 28 , iconClassName: 'ml-px' },
@@ -116,6 +121,7 @@ const navItems = [
     { key: 'notification', label: 'nav.settingNotification', icon: 'jiaohu' },
     { key: 'recognition', label: 'nav.settingRecognition', icon: 'renlianshibie_o' },
     { key: 'automatch', label: 'nav.settingAutomatch', icon: 'ai' },
+    { key: 'security', label: 'nav.settingSecurity', icon: 'anquan' },
   ]},
 ]
 
@@ -146,14 +152,20 @@ const navIconStyle = (size, scale, compact = false) => {
 
 const getChildNavigatePath = (parentItem, childKey) => {
   if (parentItem?.key === RoutePaths.LIBRARY) {
-    return childKey === 'batch' ? RoutePaths.BATCH_MANAGE : RoutePaths.LIBRARY
+    // 弹幕库下三个子页面各自独立路由（library / batch-manage / subscriptions）
+    if (childKey === 'batch') return RoutePaths.BATCH_MANAGE
+    if (childKey === 'subscriptions') return RoutePaths.SUBSCRIPTIONS
+    return RoutePaths.LIBRARY
   }
   return `${parentItem.key}?key=${childKey}`
 }
 
 const getNavChildActiveKey = (parentItem, location, subKey) => {
   if (parentItem?.key === RoutePaths.LIBRARY) {
-    return location.pathname === RoutePaths.BATCH_MANAGE ? 'batch' : 'library'
+    // 按当前路径反推高亮哪个子项
+    if (location.pathname === RoutePaths.BATCH_MANAGE) return 'batch'
+    if (location.pathname === RoutePaths.SUBSCRIPTIONS) return 'subscriptions'
+    return 'library'
   }
   return subKey
 }
@@ -399,6 +411,7 @@ const MobileHeader = ({ activeKey }) => {
   const [isPageStyleOpen, setIsPageStyleOpen] = useState(false)
   const [isLanguageOpen, setIsLanguageOpen] = useState(false)
   const [isCacheModalOpen, setIsCacheModalOpen] = useState(false)
+  const [isHealthModalOpen, setIsHealthModalOpen] = useState(false)
   const [passwordForm] = Form.useForm()
   const [passwordLoading, setPasswordLoading] = useState(false)
   const [currentPasswordVisible, setCurrentPasswordVisible] = useState(false)
@@ -406,6 +419,7 @@ const MobileHeader = ({ activeKey }) => {
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false)
   const [dockerAvailable, setDockerAvailable] = useState(false)
   const [restartLoading, setRestartLoading] = useState(false)
+  const [featureSearchOpen, setFeatureSearchOpen] = useState(false)
   const messageApi = useMessage()
   const setUserinfo = useSetAtom(userinfoAtom)
 
@@ -482,6 +496,8 @@ const MobileHeader = ({ activeKey }) => {
   const handleMenuItemClick = (item, parentItem) => {
     if (item.key === 'logout') {
       onLogout()
+    } else if (item.key === 'feature-search') {
+      setFeatureSearchOpen(true)
     } else if (item.key === 'change-password') {
       setIsPasswordModalOpen(true)
     } else if (item.key === 'session-manager') {
@@ -494,6 +510,8 @@ const MobileHeader = ({ activeKey }) => {
       setIsLanguageOpen(true)
     } else if (item.key === 'cache-manager') {
       setIsCacheModalOpen(true)
+    } else if (item.key === 'health-check') {
+      setIsHealthModalOpen(true)
     } else if (item.key === 'clear-browser-cache') {
       clearBrowserCache()
     } else if (item.key === 'restart-service') {
@@ -568,6 +586,11 @@ const MobileHeader = ({ activeKey }) => {
                     })),
                     ...(it.key === 'user' ? [
                       {
+                        key: 'feature-search',
+                        label: t('featureSearch.menuTitle'),
+                        icon: 'search',
+                      },
+                      {
                         key: 'theme-color',
                         label: t('header.themeColor'),
                         icon: 'MenuIcon-gexinghua-heise',
@@ -596,6 +619,11 @@ const MobileHeader = ({ activeKey }) => {
                         key: 'cache-manager',
                         label: t('header.cacheManager'),
                         icon: 'refresh',
+                      },
+                      {
+                        key: 'health-check',
+                        label: t('header.healthCheck'),
+                        icon: 'checksurface',
                       },
                       {
                         key: 'clear-browser-cache',
@@ -632,6 +660,11 @@ const MobileHeader = ({ activeKey }) => {
           ))}
         </div>
       </div>
+
+      <FeatureSearch
+        open={featureSearchOpen}
+        onClose={() => setFeatureSearchOpen(false)}
+      />
 
       {/* 修改密码弹框 */}
       <Modal
@@ -761,6 +794,10 @@ const MobileHeader = ({ activeKey }) => {
         open={isCacheModalOpen}
         onClose={() => setIsCacheModalOpen(false)}
       />
+      <HealthOverviewModal
+        open={isHealthModalOpen}
+        onClose={() => setIsHealthModalOpen(false)}
+      />
     </>
   )
 }
@@ -781,6 +818,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
   const [isPageStyleOpen, setIsPageStyleOpen] = useState(false)
   const [isLanguageOpen, setIsLanguageOpen] = useState(false)
   const [isCacheModalOpen, setIsCacheModalOpen] = useState(false)
+  const [isHealthModalOpen, setIsHealthModalOpen] = useState(false)
   const [form] = Form.useForm()
   const [showPassword1, setShowPassword1] = useState(false)
   const [showPassword2, setShowPassword2] = useState(false)
@@ -788,6 +826,20 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
   const [isLoading, setIsLoading] = useState(false)
   const [dockerAvailable, setDockerAvailable] = useState(false)
   const [restartLoading, setRestartLoading] = useState(false)
+  // 全功能搜索面板开关
+  const [featureSearchOpen, setFeatureSearchOpen] = useState(false)
+
+  // 全局快捷键 Ctrl/Cmd+K 打开/关闭功能搜索
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        setFeatureSearchOpen(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // ---- 导航挤压检测 ----
   const [compactNav, setCompactNav] = useState(false)
@@ -1100,6 +1152,16 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
               menu={{
                 items: [
                   {
+                    key: 'featureSearch',
+                    icon: <SearchOutlined style={{ fontSize: 16 }} />,
+                    label: (
+                      <div onClick={() => setFeatureSearchOpen(true)} className="text-base">
+                        {t('featureSearch.menuTitle')}
+                        <span className="ml-2 text-xs text-gray-400">Ctrl/⌘+K</span>
+                      </div>
+                    ),
+                  },
+                  {
                     key: 'themeColor',
                     icon: <MyIcon icon="MenuIcon-gexinghua-heise" size={16} />,
                     label: (
@@ -1154,6 +1216,15 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     ),
                   },
                   {
+                    key: 'healthCheck',
+                    icon: <MyIcon icon="checksurface" size={16} />,
+                    label: (
+                      <div onClick={() => setIsHealthModalOpen(true)} className="text-base">
+                        {t('header.healthCheck')}
+                      </div>
+                    ),
+                  },
+                  {
                     key: 'clearCache',
                     icon: <MyIcon icon="qinglihuancun" size={16} />,
                     label: (
@@ -1198,6 +1269,11 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
           </div>
         </div>
       </div>
+
+      <FeatureSearch
+        open={featureSearchOpen}
+        onClose={() => setFeatureSearchOpen(false)}
+      />
 
       <Modal
         title={t('header.changePassword')}
@@ -1327,6 +1403,10 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
       <CacheManagerModal
         open={isCacheModalOpen}
         onClose={() => setIsCacheModalOpen(false)}
+      />
+      <HealthOverviewModal
+        open={isHealthModalOpen}
+        onClose={() => setIsHealthModalOpen(false)}
       />
     </>
   )

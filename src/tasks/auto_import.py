@@ -706,9 +706,17 @@ async def auto_search_and_import_task(
                             key = f"{result.provider}:{result.mediaId}"
                             favorited_info[key] = True
 
+                # 识别词认知校正上下文（统一函数，命中标记+提示文案；不改排序）
+                recognition_info, recognition_hint = (
+                    await title_recognition_manager.build_recognition_context_for_results(all_results)
+                    if title_recognition_manager else ({}, None)
+                )
+                if recognition_hint:
+                    query_info["recognition_hint"] = recognition_hint
+
                 # 使用AIMatcherManager进行匹配
                 ai_selected_index = await ai_matcher_manager.select_best_match(
-                    query_info, all_results, favorited_info
+                    query_info, all_results, favorited_info, None, recognition_info
                 )
 
                 if ai_selected_index is not None:

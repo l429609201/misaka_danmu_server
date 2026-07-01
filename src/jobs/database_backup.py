@@ -3,9 +3,15 @@
 使用 JSON 格式导出数据，支持跨数据库（MySQL/PostgreSQL）兼容
 """
 import gzip
+import hashlib
 import json
 import logging
-from datetime import datetime
+import re
+import base64
+import enum
+import uuid
+from datetime import datetime, date, time, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Callable, List, Dict, Any, Optional
 
@@ -61,25 +67,58 @@ def get_column_mapping(model_class) -> Dict[str, str]:
     return mapping
 
 
+def _serialize_value(value: Any) -> Any:
+    """将 Python 值转换为 JSON 可序列化的类型，全面兼容所有数据库字段类型"""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, time):
+        return value.isoformat()
+    if isinstance(value, timedelta):
+        return value.total_seconds()
+    if isinstance(value, Decimal):
+        # 如果是整数 Decimal 则转 int，否则转 float，保留精度
+        if value == int(value):
+            return int(value)
+        return float(value)
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, enum.Enum):
+        return value.value
+    if isinstance(value, bytes):
+        return base64.b64encode(value).decode('ascii')
+    if isinstance(value, bytearray):
+        return base64.b64encode(bytes(value)).decode('ascii')
+    if isinstance(value, memoryview):
+        return base64.b64encode(bytes(value)).decode('ascii')
+    if isinstance(value, (set, frozenset)):
+        return list(value)
+    # 基本类型直接返回
+    if isinstance(value, (str, int, float, bool, list, dict)):
+        return value
+    # 兜底：尝试 str()
+    return str(value)
+
+
+def _json_default(obj: Any) -> Any:
+    """json.dump 的 default 回调 — 兜底处理所有未知类型，永远不抛异常"""
+    return _serialize_value(obj)
+
+
 def model_to_dict(obj) -> Dict[str, Any]:
-    """将 ORM 对象转换为字典，使用数据库列名作为键"""
+    """将 ORM 对象转换为字典，使用数据库列名作为键，全面处理所有字段类型"""
     result = {}
     mapper = inspect(obj.__class__)
-    # 使用 column_attrs 获取正确的 Python 属性名
     for attr_name, column_prop in mapper.column_attrs.items():
         for column in column_prop.columns:
-            # attr_name 是 Python 属性名
-            # column.name 是数据库列名
             db_column_name = column.name
-
             try:
                 value = getattr(obj, attr_name)
-                # 处理 datetime 类型
-                if isinstance(value, datetime):
-                    value = value.isoformat()
-                result[db_column_name] = value
+                result[db_column_name] = _serialize_value(value)
             except AttributeError:
-                # 如果属性不存在，跳过
                 logger.debug(f"属性 {attr_name} 不存在于 {obj.__class__.__name__}")
                 continue
     return result
@@ -126,17 +165,18 @@ async def create_backup(session: AsyncSession, progress_callback: Optional[Calla
     # 构建备份数据
     backup_data = {
         "metadata": {
-            "version": "1.0",
+            "version": "2.0",
             "source_db_type": settings.database.type.lower(),
             "created_at": get_now().isoformat(),
             "tables": [name for name, _ in BACKUP_TABLES],
+            "table_records": {},  # 每表记录数
         },
         "data": {}
     }
-    
+
     total_tables = len(BACKUP_TABLES)
     total_records = 0
-    
+
     # 收集每个表的导出信息，最后统一打印
     export_summary = []
 
@@ -151,37 +191,66 @@ async def create_backup(session: AsyncSession, progress_callback: Optional[Calla
             records = result.scalars().all()
 
             backup_data["data"][table_name] = [model_to_dict(r) for r in records]
-            total_records += len(records)
-            export_summary.append(f"{table_name}: {len(records)}条")
+            table_count = len(records)
+            total_records += table_count
+            backup_data["metadata"]["table_records"][table_name] = table_count
+            export_summary.append(f"{table_name}: {table_count}条")
         except Exception as e:
             logger.warning(f"导出表 {table_name} 失败: {e}")
             backup_data["data"][table_name] = []
+            backup_data["metadata"]["table_records"][table_name] = 0
             export_summary.append(f"{table_name}: 失败")
+
+    backup_data["metadata"]["total_records"] = total_records
 
     # 一次性打印所有表的导出摘要（多行格式）
     summary_lines = "\n".join(f"  - {item}" for item in export_summary)
     logger.info(f"导出完成 ({len(BACKUP_TABLES)}个表, 共{total_records}条记录):\n{summary_lines}")
-    
+
     # 写入压缩文件
     if progress_callback:
         await progress_callback(85, "正在压缩备份文件...")
-    
+
     with gzip.open(filepath, 'wt', encoding='utf-8') as f:
-        json.dump(backup_data, f, ensure_ascii=False, indent=2)
-    
+        json.dump(backup_data, f, ensure_ascii=False, indent=2, default=_json_default)
+
     file_size = filepath.stat().st_size
-    
+
+    # 计算 SHA256
+    if progress_callback:
+        await progress_callback(88, "正在计算校验和...")
+    sha256_hash = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+        for chunk in iter(lambda: f.read(8192), b''):
+            sha256_hash.update(chunk)
+    file_sha256 = sha256_hash.hexdigest()
+
+    # 自动校验：确认备份文件可正常读取和解析
+    if progress_callback:
+        await progress_callback(89, "正在校验备份文件...")
+    try:
+        with gzip.open(filepath, 'rt', encoding='utf-8') as f:
+            verify_data = json.load(f)
+        verify_tables = len(verify_data.get("data", {}))
+        verify_records = sum(len(v) for v in verify_data.get("data", {}).values())
+        logger.info(f"备份校验通过: {verify_tables}个表, {verify_records}条记录, SHA256={file_sha256[:16]}...")
+    except Exception as e:
+        logger.error(f"备份校验失败: {e}，文件可能已损坏")
+
     # 清理旧备份
     if progress_callback:
         await progress_callback(90, "正在清理旧备份...")
 
     await cleanup_old_backups(backup_path, retention_count)
-    
+
     return {
         "filename": filename,
         "filepath": str(filepath),
         "size": file_size,
         "records": total_records,
+        "sha256": file_sha256,
+        "table_count": len(BACKUP_TABLES),
+        "table_records": backup_data["metadata"]["table_records"],
         "created_at": get_now().isoformat(),
     }
 
@@ -219,26 +288,42 @@ async def list_backups(session: AsyncSession) -> List[Dict[str, Any]]:
     for filepath in backup_path.glob("danmuapi_backup_*.json.gz"):
         try:
             stat = filepath.stat()
-            # 从文件名解析时间和数据库类型
-            # 尝试读取元数据
+            # 尝试读取元数据（只读前 2KB）
             db_type = None
+            total_records = None
+            version = None
             try:
                 with gzip.open(filepath, 'rt', encoding='utf-8') as f:
-                    # 只读取前面一小部分来获取元数据
-                    content = f.read(500)
-                    if '"source_db_type"' in content:
-                        import re
-                        match = re.search(r'"source_db_type"\s*:\s*"(\w+)"', content)
-                        if match:
-                            db_type = match.group(1)
-            except:
+                    content = f.read(2048)
+                    # 提取 source_db_type
+                    match = re.search(r'"source_db_type"\s*:\s*"(\w+)"', content)
+                    if match:
+                        db_type = match.group(1)
+                    # 提取 version
+                    match = re.search(r'"version"\s*:\s*"([\d.]+)"', content)
+                    if match:
+                        version = match.group(1)
+                    # 提取 total_records
+                    match = re.search(r'"total_records"\s*:\s*(\d+)', content)
+                    if match:
+                        total_records = int(match.group(1))
+            except Exception:
                 pass
+
+            # 计算 SHA256（对已压缩的 .gz 文件）
+            sha256_hash = hashlib.sha256()
+            with open(filepath, 'rb') as f:
+                for chunk in iter(lambda: f.read(8192), b''):
+                    sha256_hash.update(chunk)
 
             backups.append({
                 "filename": filepath.name,
                 "size": stat.st_size,
                 "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
                 "db_type": db_type,
+                "sha256": sha256_hash.hexdigest(),
+                "total_records": total_records,
+                "version": version,
             })
         except Exception as e:
             logger.error(f"读取备份文件信息失败 {filepath.name}: {e}")
@@ -265,10 +350,13 @@ async def delete_backup(session: AsyncSession, filename: str) -> bool:
     return True
 
 
-async def restore_backup(session: AsyncSession, filename: str, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+async def restore_backup(session: AsyncSession, filename: str, progress_callback: Optional[Callable] = None, tables: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     从备份还原数据库
     警告：此操作会清空现有数据！
+
+    Args:
+        tables: 指定要恢复的表列表，None 表示全部恢复
     """
     from sqlalchemy import delete
 
@@ -291,8 +379,14 @@ async def restore_backup(session: AsyncSession, filename: str, progress_callback
     if progress_callback:
         await progress_callback(10, "正在验证备份数据...")
 
+    # 确定要操作的表（部分恢复或全部）
+    if tables:
+        target_tables = [(name, cls) for name, cls in BACKUP_TABLES if name in tables]
+    else:
+        target_tables = list(BACKUP_TABLES)
+
     # 按依赖关系的逆序删除数据（先删除有外键依赖的表）
-    tables_reversed = list(reversed(BACKUP_TABLES))
+    tables_reversed = list(reversed(target_tables))
     total_tables = len(tables_reversed)
 
     for idx, (table_name, model_class) in enumerate(tables_reversed):
@@ -309,9 +403,10 @@ async def restore_backup(session: AsyncSession, filename: str, progress_callback
 
     # 按依赖顺序插入数据
     total_records = 0
+    restored_tables = []
     now = get_now()
 
-    for idx, (table_name, model_class) in enumerate(BACKUP_TABLES):
+    for idx, (table_name, model_class) in enumerate(target_tables):
         if progress_callback:
             progress = 50 + int((idx / total_tables) * 45)
             await progress_callback(progress, f"正在还原表: {table_name}...")
@@ -380,29 +475,34 @@ async def restore_backup(session: AsyncSession, filename: str, progress_callback
                         logger.debug(f"忽略无效字段: {db_col_name} -> {attr_name}")
                         continue
 
-                    # 处理 datetime 字段 - 将 ISO 格式字符串转换为 datetime 对象
-                    if isinstance(value, str) and 'T' in value:
-                        try:
-                            value = datetime.fromisoformat(value)
-                        except:
-                            pass
+                    # 根据目标列类型做反序列化转换
+                    if isinstance(value, str):
+                        # 获取目标列的类型
+                        target_col_type = None
+                        for a_name, col_prop in mapper.column_attrs.items():
+                            if a_name == attr_name:
+                                for col in col_prop.columns:
+                                    target_col_type = type(col.type).__name__.upper()
+                                break
 
-                    # 处理 datetime 对象 - 如果目标字段是字符串类型，转换为字符串
-                    if isinstance(value, datetime):
-                        # 检查目标字段是否为字符串类型
-                        if attr_name in not_null_string_attrs or attr_name not in not_null_datetime_attrs:
-                            # 检查该属性对应的列类型
-                            is_string_field = False
-                            for a_name, col_prop in mapper.column_attrs.items():
-                                if a_name == attr_name:
-                                    for col in col_prop.columns:
-                                        col_type = str(col.type).upper()
-                                        if 'VARCHAR' in col_type or 'STRING' in col_type or 'TEXT' in col_type:
-                                            is_string_field = True
-                                            break
-                                    break
-                            if is_string_field:
-                                value = value.isoformat()
+                        # 目标是日期时间列 → 尝试解析 ISO 字符串
+                        if target_col_type and any(t in target_col_type for t in ('DATETIME', 'TIMESTAMP', 'NAIVEDATETIME')):
+                            try:
+                                value = datetime.fromisoformat(value)
+                            except (ValueError, TypeError):
+                                pass
+                        # 目标是纯日期列
+                        elif target_col_type and target_col_type == 'DATE':
+                            try:
+                                value = date.fromisoformat(value)
+                            except (ValueError, TypeError):
+                                pass
+                        # 目标是二进制列 → base64 解码
+                        elif target_col_type and any(t in target_col_type for t in ('BLOB', 'BINARY', 'VARBINARY', 'BYTEA', 'LARGEBINARY')):
+                            try:
+                                value = base64.b64decode(value)
+                            except Exception:
+                                pass
 
                     converted_record[attr_name] = value
 
@@ -455,6 +555,7 @@ async def restore_backup(session: AsyncSession, filename: str, progress_callback
                 session.add(obj)
 
             total_records += len(records)
+            restored_tables.append(table_name)
             logger.info(f"还原表 {table_name}: {len(records)} 条记录")
         except Exception as e:
             logger.error(f"还原表 {table_name} 失败: {e}")
@@ -506,6 +607,7 @@ async def restore_backup(session: AsyncSession, filename: str, progress_callback
         "records": total_records,
         "source_db_type": metadata.get("source_db_type"),
         "backup_created_at": metadata.get("created_at"),
+        "restored_tables": restored_tables,
     }
 
 

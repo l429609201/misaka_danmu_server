@@ -4,6 +4,7 @@ warnings.filterwarnings("ignore", message="urllib3.*doesn't match a supported ve
 import uvicorn
 import asyncio
 import secrets
+import uuid
 import httpx
 import logging
 import json
@@ -32,6 +33,7 @@ from src.services import (
     TransportManager, setup_logging,
     NotificationService, NotificationManager,
     TunnelService, apply_tunnel_from_notification_manager,
+    init_bangumi_data_manager,
 )
 from src.utils import InternalPollingManager, init_proxy_middleware
 from src.api import api_router, control_router
@@ -151,6 +153,7 @@ async def lifespan(app: FastAPI):
     default_configs = get_default_configs(settings=settings, ai_prompts=ai_prompts)
     # 添加运行时生成的配置
     default_configs['jwtSecretKey'] = (secrets.token_hex(32), '用于签名JWT令牌的密钥，在首次启动时自动生成。')
+    default_configs['serverInstanceId'] = (str(uuid.uuid4()), '')
 
     await app.state.config_manager.register_defaults(default_configs)
 
@@ -232,6 +235,18 @@ async def lifespan(app: FastAPI):
     # 初始化媒体服务器管理器
     app.state.media_server_manager = MediaServerManager(session_factory)
     await app.state.media_server_manager.initialize()
+
+    # 初始化 bangumi-data 离线数据层管理器（全局单例，供别名补全/匹配增强/平台直链使用）
+    app.state.bangumi_data_manager = init_bangumi_data_manager(session_factory, app.state.config_manager)
+
+    # 后台异步加载项目内打包的本地 data.json（与 main.py 同级）。
+    # why: 用文件哈希去重，未变更则跳过；create_task 不阻塞启动，失败静默不影响主流程。
+    async def _load_bangumi_local_data():
+        try:
+            await app.state.bangumi_data_manager.sync_from_local()
+        except Exception as e:
+            logger.warning(f"bangumi-data 本地离线数据加载失败（不影响启动）: {e}")
+    asyncio.create_task(_load_bangumi_local_data())
 
     app.state.webhook_manager = WebhookManager(
         session_factory, app.state.task_manager, app.state.scraper_manager,
@@ -386,16 +401,20 @@ def _control_api_openapi():
     if hasattr(app, "_control_openapi_schema") and app._control_openapi_schema:
         return app._control_openapi_schema
 
-    # 只收集 /api/control 前缀的路由
+    _doc_helper_paths = {"/api/control/openapi.json", "/api/control/docs"}
     control_routes = [
         route for route in app.routes
         if hasattr(route, 'path') and route.path.startswith('/api/control')
-        and getattr(route, 'include_in_schema', True)
+        and route.path not in _doc_helper_paths
     ]
 
     schema = get_openapi(
         title="Misaka Danmaku External Control API",
         version="1.0.0",
+        # 固定为 3.0.3：FastAPI 默认生成 OAS 3.1.0，但项目内置的旧版 swagger-ui-bundle
+        # 解析 3.1.0 的 paths 失败，导致文档页显示 "No operations defined in spec!"。
+        # 降级到 3.0.3 可被旧版 UI 正常渲染，且不影响接口本身。
+        openapi_version="3.0.3",
         description="用于外部自动化和集成的API。支持两种鉴权方式：\n"
                     "1. **查询参数**：`?api_key=<你的密钥>`\n"
                     "2. **请求头**：`X-API-KEY: <你的密钥>`（推荐，也用于 MCP 连接）",

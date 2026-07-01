@@ -37,6 +37,7 @@ class ParseResult:
     effect: Optional[str] = None
     original_title: Optional[str] = None
     en_name: Optional[str] = None
+    raw_input: Optional[str] = None  # 用户输入的原始完整文件名/关键词，供识别词等下游环节使用
 
 
 # ============================================================================
@@ -270,10 +271,26 @@ def _roman_to_int(s: str) -> int:
 
 
 def _chinese_num_to_int(s: str) -> Optional[int]:
-    """将中文数字转换为整数，支持阿拉伯数字直通"""
+    """将中文数字转换为整数，支持阿拉伯数字直通和组合中文数字
+
+    支持范围：一~九十九（含十一~十九、二十~二十九等组合形式）
+    示例：十一→11, 二十→20, 三十五→35, 九十九→99
+    """
     if s.isdigit():
         return int(s)
-    return CHINESE_NUM_MAP.get(s)
+    # 单字快速查找
+    if len(s) == 1:
+        return CHINESE_NUM_MAP.get(s)
+    # 组合中文数字解析（十一~九十九）
+    if '十' in s:
+        parts = s.split('十', 1)
+        tens_part = parts[0]  # 十前面的数字（空则为1）
+        ones_part = parts[1]  # 十后面的数字（空则为0）
+        tens = CHINESE_NUM_MAP.get(tens_part, 1) if tens_part else 1
+        ones = CHINESE_NUM_MAP.get(ones_part, 0) if ones_part else 0
+        if isinstance(tens, int) and isinstance(ones, int):
+            return tens * 10 + ones
+    return None
 
 
 def _strip_video_extension(filename: str) -> str:
@@ -655,6 +672,7 @@ def parse_search_keyword(keyword: str) -> Dict[str, Any]:
     支持: "Title S01E01", "Title S01", "Title 第二季", "Title Ⅲ", "Title 2"
     """
     keyword = keyword.strip()
+    _raw = keyword  # 保留原始完整关键词，供下游识别词等最高优先级逻辑使用
 
     # 1. 优先匹配 SxxExx
     m = re.match(r'^(?P<title>.+?)\s*S(?P<season>\d{1,2})E(?P<episode>\d{1,4})$', keyword, re.IGNORECASE)
@@ -663,6 +681,7 @@ def parse_search_keyword(keyword: str) -> Dict[str, Any]:
             "title": m.group('title').strip(),
             "season": int(m.group('season')),
             "episode": int(m.group('episode')),
+            "original_keyword": _raw,
         }
 
     # 2. 匹配季度信息
@@ -686,12 +705,12 @@ def parse_search_keyword(keyword: str) -> Dict[str, Any]:
                 season = handler(m)
                 # 避免将年份误认为季度
                 if season and not (len(title) > 4 and title[-4:].isdigit()):
-                    return {"title": title, "season": season, "episode": None}
+                    return {"title": title, "season": season, "episode": None, "original_keyword": _raw}
             except (ValueError, KeyError, IndexError):
                 continue
 
     # 3. 无匹配，返回原始标题
-    return {"title": keyword, "season": None, "episode": None}
+    return {"title": keyword, "season": None, "episode": None, "original_keyword": _raw}
 
 
 # ============================================================================

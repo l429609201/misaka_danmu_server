@@ -13,6 +13,7 @@ import {
   resetEpisode,
   validateImportUrl,
   importFromUrl,
+  importCollection,
 } from '../../apis'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -47,7 +48,7 @@ import {
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Select, Segmented } from 'antd'
+import { Select, Segmented, Radio } from 'antd'
 import { RoutePaths } from '../../general/RoutePaths'
 import { useModal } from '../../ModalContext'
 import { useMessage } from '../../MessageContext'
@@ -103,6 +104,8 @@ export const EpisodeDetail = () => {
   const [urlValidationResult, setUrlValidationResult] = useState(null)
   // 手动导入模式: 'xml' | 'url' (仅自定义源使用)
   const [manualImportMode, setManualImportMode] = useState('xml')
+  // 合集导入模式: 'single'(仅此视频) | 'collection'(整个合集)，仅当解析结果含合集时生效
+  const [collectionImportMode, setCollectionImportMode] = useState('single')
 
   // 批量编辑相关状态
   const [isBatchEditModalOpen, setIsBatchEditModalOpen] = useState(false)
@@ -914,7 +917,8 @@ export const EpisodeDetail = () => {
           }
         }
         setUrlValidationResult(res.data)
-        // 自动填充表单字段
+        // 每次解析新结果时重置合集选择为「仅此视频」
+        setCollectionImportMode('single')
         if (res.data.isValid) {
           const currentValues = form.getFieldsValue()
           const updates = {}
@@ -952,6 +956,7 @@ export const EpisodeDetail = () => {
   const clearUrlValidation = () => {
     setUrlValidationResult(null)
     setUrlValidating(false)
+    setCollectionImportMode('single')
   }
 
   const handleSave = async () => {
@@ -973,13 +978,23 @@ export const EpisodeDetail = () => {
           setConfirmLoading(false)
           return
         }
-        await manualImportEpisode({
-          sourceId: Number(id),
-          episodeIndex: values.episodeIndex,
-          title: values.title,
-          sourceUrl: values.sourceUrl,
-          urlProvider: urlValidationResult.provider,  // 传入解析出的真实平台名，后端用于 scraper 调用
-        })
+        // 解析结果含合集且用户选择「整个合集」：批量导入合集全部视频为当前源分集
+        if (urlValidationResult.collection && collectionImportMode === 'collection') {
+          await importCollection({
+            sourceId: Number(id),
+            url: values.sourceUrl,
+            title: urlValidationResult.collection.title,
+            startEpisodeIndex: values.episodeIndex,
+          })
+        } else {
+          await manualImportEpisode({
+            sourceId: Number(id),
+            episodeIndex: values.episodeIndex,
+            title: values.title,
+            sourceUrl: values.sourceUrl,
+            urlProvider: urlValidationResult.provider,  // 传入解析出的真实平台名，后端用于 scraper 调用
+          })
+        }
       } else {
         // 普通手动导入（XML或非自定义源URL）
         await manualImportEpisode({
@@ -1593,6 +1608,33 @@ export const EpisodeDetail = () => {
                           <img src={urlValidationResult.imageUrl} alt={t('episodePage.coverAlt')} className="h-20 rounded" />
                         </div>
                       )}
+                      {/* 检测到合集：让用户选择仅导入此视频或整个合集 */}
+                      {urlValidationResult.collection && (
+                        <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">
+                            {t('episodePage.collectionDetected')}
+                          </div>
+                          <Radio.Group
+                            value={collectionImportMode}
+                            onChange={e => setCollectionImportMode(e.target.value)}
+                          >
+                            <Space direction="vertical" size={4}>
+                              <Radio value="single">{t('episodePage.collectionSingleOnly')}</Radio>
+                              <Radio value="collection">
+                                {t('episodePage.collectionImportAll', {
+                                  title: urlValidationResult.collection.title || '',
+                                  total: urlValidationResult.collection.total || '?',
+                                })}
+                              </Radio>
+                            </Space>
+                          </Radio.Group>
+                          {collectionImportMode === 'collection' && (
+                            <div className="text-[11px] text-orange-500 dark:text-orange-400 mt-1.5">
+                              {t('episodePage.collectionImportTip')}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
@@ -1605,7 +1647,6 @@ export const EpisodeDetail = () => {
             </div>
           )}
 
-          {/* 非自定义源且非编辑模式时，显示URL解析功能 */}
           {!isXmlImport && !isEditing && (
             <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: 'var(--color-hover)' }}>
               <div className="text-gray-500 dark:text-gray-400 text-sm mb-2">

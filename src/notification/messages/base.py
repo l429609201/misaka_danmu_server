@@ -52,8 +52,40 @@ class NotificationMessage:
         return (self.message_type, str(self.payload))
 
     def to_text(self) -> tuple:
-        """输出 (title, body) 纯文本内容。默认与 markdown 相同。"""
-        return self.to_markdown()
+        """输出 (title, body) 纯文本内容。
+
+        子类应硬编码独立的纯文本模板（不含任何 Markdown 符号/转义）。
+        若未覆写，则对 to_markdown 输出做兜底清洗：去除 MarkdownV2 转义反斜杠、
+        引用块 > 前缀、加粗 * 符号，保证纯文本渠道（企业微信/Server酱）不显示乱符号。
+        """
+        title, body = self.to_markdown()
+        return (self._strip_markdown(title), self._strip_markdown(body))
+
+    @staticmethod
+    def _strip_markdown(text: str) -> str:
+        """兜底：将 MarkdownV2 文本清洗为纯文本（去转义反斜杠、引用块前缀、加粗星号）"""
+        if not text:
+            return ""
+        lines = []
+        for line in str(text).split("\n"):
+            # 去掉行首引用块标记 >
+            if line.startswith(">"):
+                line = line[1:]
+            # 去掉 MarkdownV2 转义反斜杠（\. \! \- 等）
+            result = []
+            i = 0
+            while i < len(line):
+                ch = line[i]
+                if ch == "\\" and i + 1 < len(line):
+                    result.append(line[i + 1])
+                    i += 2
+                elif ch in ("*", "`"):
+                    i += 1  # 去掉加粗/代码符号
+                else:
+                    result.append(ch)
+                    i += 1
+            lines.append("".join(result))
+        return "\n".join(lines)
 
     def buttons(self) -> List[List[Dict[str, str]]]:
         """输出平台无关按钮结构。默认无按钮。"""
@@ -63,16 +95,34 @@ class NotificationMessage:
         """输出可选图片地址。默认空。"""
         return self.payload.get("image_url", "") or ""
 
+    async def build_image_bytes(self, proxy: Optional[str] = None,
+                                ssl_verify: bool = True) -> Optional[bytes]:
+        """异步生成随消息发送的图片字节（如聚合海报九宫格）。默认无（返回 None）。
+
+        why：海报聚合涉及异步下载多图 + 绘制，无法在同步的 render_for_channel 中完成，
+        故单列异步钩子，由 dispatch（异步上下文）在发送前调用。子类按需覆写。
+        失败应自行吞掉异常并返回 None，避免影响通知正常发出。
+        """
+        return None
+
     def edit_policy(self) -> Optional[int]:
         """是否允许编辑已有消息。返回 message_id 或 None。"""
         return None
 
     @staticmethod
     def _escape_markdown(text: str) -> str:
-        """转义 Telegram Markdown V1 特殊字符: _ * ` ["""
-        for ch in ('_', '*', '`', '['):
-            text = text.replace(ch, f'\\{ch}')
-        return text
+        """转义 Telegram MarkdownV2 特殊字符"""
+        if not text:
+            return ""
+        # MarkdownV2 需要转义的字符: _ * [ ] ( ) ~ ` > # + - = | { } . !
+        special_chars = r'_*[]()~`>#+-=|{}.!'
+        result = []
+        for ch in str(text):
+            if ch in special_chars:
+                result.append(f'\\{ch}')
+            else:
+                result.append(ch)
+        return ''.join(result)
 
 
 @dataclass
@@ -89,3 +139,6 @@ class RenderedMessage:
     buttons: List[List[Dict[str, str]]] = field(default_factory=list)
     edit_message_id: Optional[int] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # 聚合海报图（PNG bytes）。非空时图片渠道优先以图片消息发送，正文作为 caption。
+    # 由 NotificationManager.dispatch 在发送前异步生成填入（见 NotificationMessage.build_image_bytes）。
+    image_bytes: Optional[bytes] = None

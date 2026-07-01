@@ -107,9 +107,9 @@ class WeChatChannel(BaseNotificationChannel):
     display_name_tw = "企業微信"
     hide_proxy = True   # 企业微信使用 wecom_proxy 反代地址，不需要全局 HTTP 代理开关
 
+    # 企业微信发送端使用 msgtype:text 纯文本，不渲染 markdown，故不声明 RICH_TEXT
     _CAPABILITIES = ChannelCapabilities(
         capabilities={
-            ChannelCapability.RICH_TEXT,
             ChannelCapability.LINKS,
             ChannelCapability.MENU_COMMANDS,
         },
@@ -151,9 +151,15 @@ class WeChatChannel(BaseNotificationChannel):
         return f"{proxy}/cgi-bin"
 
     def _relay_headers(self) -> dict:
-        """当使用 VPS 代理时注入认证 Header，防止代理被滥用"""
+        """当使用 VPS 代理且开启「代理鉴权请求头」开关时，注入认证 Header，
+        用于 misaka-relay 这类需要 X-Relay-Key 校验的代理；防止代理被滥用。
+        使用不校验该头的第三方代理时应关闭此开关（默认关闭）。
+        """
         proxy = self.config.get("wecom_proxy", "").strip()
         if not proxy:
+            return {}
+        # 开关控制（默认关闭）：仅在显式开启时才附带鉴权头
+        if str(self.config.get("wecom_proxy_relay_auth", "false")).lower() != "true":
             return {}
         key = self.config.get("__webhook_api_key", "")
         return {"X-Relay-Key": key} if key else {}
@@ -202,9 +208,15 @@ class WeChatChannel(BaseNotificationChannel):
         self._loop = None
         self.logger.info("企业微信渠道已停止")
 
-    async def _get_access_token(self) -> Optional[str]:
+    async def _get_access_token(self, force: bool = False) -> Optional[str]:
+        """获取企业微信 access_token。
+
+        Args:
+            force: 为 True 时忽略缓存强制重新获取（用于 token 失效 42001 后的恢复）。
+        """
         now = time.time()
-        if self._access_token and now < self._token_expires_at - 300:
+        # 非强制刷新时，命中未过期缓存直接返回（提前 300 秒视为过期）
+        if not force and self._access_token and now < self._token_expires_at - 300:
             return self._access_token
         corp_id = self.config.get("corp_id", "").strip()
         corp_secret = self.config.get("corp_secret", "").strip()
@@ -217,7 +229,18 @@ class WeChatChannel(BaseNotificationChannel):
                     params={"corpid": corp_id, "corpsecret": corp_secret},
                     headers=self._relay_headers(),
                 )
-                d = resp.json()
+                # 企业微信正常返回 JSON；若返回空响应/HTML 错误页（常见于代理地址
+                # 配错、VPS 反代未就绪、网络不通），resp.json() 会抛 JSONDecodeError，
+                # 这里单独捕获并打印实际 URL + 状态码 + 正文片段，便于定位代理问题。
+                try:
+                    d = resp.json()
+                except Exception:
+                    body_preview = (resp.text or "")[:200]
+                    self.logger.error(
+                        f"获取 token 失败：服务器未返回 JSON（疑似代理地址配置错误或网络异常）。"
+                        f" URL={self._api_base()}/gettoken, HTTP状态={resp.status_code}, 响应内容={body_preview!r}"
+                    )
+                    return None
                 if d.get("errcode", -1) == 0:
                     self._access_token = d["access_token"]
                     self._token_expires_at = now + d.get("expires_in", 7200)
@@ -228,25 +251,40 @@ class WeChatChannel(BaseNotificationChannel):
         return None
 
     async def _api_post(self, path: str, payload: dict, extra_params: Optional[dict] = None) -> Optional[dict]:
-        """统一 API POST 请求"""
+        """统一 API POST 请求。
+
+        当企业微信返回 errcode 42001（access_token 失效/过期）时，
+        强制刷新 token 并自动重发一次，避免单次失效导致消息丢失。
+        """
         token = await self._get_access_token()
         if not token:
             return None
-        params = {"access_token": token}
-        if extra_params:
-            params.update(extra_params)
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(
-                    f"{self._api_base()}/{path}",
-                    params=params,
-                    json=payload,
-                    headers=self._relay_headers(),
-                )
-                return resp.json()
-        except Exception as e:
-            self.logger.error(f"API [{path}] 异常: {e}")
-            return None
+
+        async def _do_post(access_token: str) -> Optional[dict]:
+            params = {"access_token": access_token}
+            if extra_params:
+                params.update(extra_params)
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.post(
+                        f"{self._api_base()}/{path}",
+                        params=params,
+                        json=payload,
+                        headers=self._relay_headers(),
+                    )
+                    return resp.json()
+            except Exception as e:
+                self.logger.error(f"API [{path}] 异常: {e}")
+                return None
+
+        d = await _do_post(token)
+        # token 失效（42001）：强制刷新后重发一次
+        if d and d.get("errcode", -1) == 42001:
+            self.logger.warning(f"API [{path}] access_token 失效(42001)，强制刷新后重试")
+            new_token = await self._get_access_token(force=True)
+            if new_token:
+                d = await _do_post(new_token)
+        return d
 
     async def send_message(self, title: str, text: str, **kwargs):
         agent_id = self.config.get("agent_id", "").strip()
@@ -255,11 +293,13 @@ class WeChatChannel(BaseNotificationChannel):
         to_user = kwargs.get("to_user") or self.config.get("to_user", "@all").strip() or "@all"
         image: str = kwargs.get("image", "")   # 封面图 URL
         url: str = kwargs.get("url", "")       # 点击跳转 URL
+        # article_title：send_rendered 透传的标题（正文 body 已自带标题，title 为空）
+        article_title = kwargs.get("article_title", "") or title
 
         if image or url:
             # 图文消息（news 类型），参考 MoviePilot 实现
             article = {
-                "title": title or text[:64],
+                "title": article_title or text[:64],
                 "description": text,
                 "picurl": image,
                 "url": url,
@@ -629,6 +669,17 @@ class WeChatChannel(BaseNotificationChannel):
                 "description": "启用后，弹幕库将使用上方「API 反向代理地址」作为 VPS 目标，通过 wstunnel 建立反向隧道，使 VPS 收到的回调自动转发到本地弹幕库。认证密钥使用系统设置 → Webhook API Key。",
                 "description_en": "When enabled, uses the API proxy URL above as VPS target via wstunnel reverse tunnel. VPS callbacks are forwarded to local instance. Auth key uses System Settings → Webhook API Key.",
                 "description_tw": "啟用後，彈幕庫將使用上方「API 反向代理位址」作為 VPS 目標，透過 wstunnel 建立反向隧道，使 VPS 收到的回呼自動轉發到本地彈幕庫。認證金鑰使用系統設定 → Webhook API Key。",
+                "default": False,
+            },
+            {
+                "key": "wecom_proxy_relay_auth",
+                "label": "代理鉴权请求头",
+                "label_en": "Proxy Auth Header",
+                "label_tw": "代理鑑權請求頭",
+                "type": "boolean",
+                "description": "启用后，请求企业微信 API 时附带 X-Relay-Key 鉴权头（值取系统设置 → Webhook API Key），用于 misaka-relay 这类需鉴权的代理。使用不校验该头的第三方代理时请关闭。",
+                "description_en": "When enabled, attaches X-Relay-Key auth header (value from System Settings → Webhook API Key) to WeCom API requests, for proxies like misaka-relay that require it. Disable when using third-party proxies that don't validate this header.",
+                "description_tw": "啟用後，請求企業微信 API 時附帶 X-Relay-Key 鑑權頭（值取系統設定 → Webhook API Key），用於 misaka-relay 這類需鑑權的代理。使用不校驗該頭的第三方代理時請關閉。",
                 "default": False,
             },
             {

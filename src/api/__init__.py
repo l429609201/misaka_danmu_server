@@ -7,7 +7,11 @@ from src.api.ui import (
     anime, source, episode, search, import_api, task,
     token, config_extra, settings, scheduled_task, webhook, system, auth_extra,
     local_danmaku, scraper_resources, parameters, danmaku_storage, backup, danmaku_edit,
-    local_episode_group, poster, notification_routes, anime_group, auth_mfa, calendar
+    local_episode_group, poster, notification_routes, anime_group, auth_mfa, calendar,
+    cache, debug,
+    health, diagnostics, data_check, recognition_check, config_history,
+    trends, audit, calendar_extra, ai_explain, scan_index,
+    subscriptions,
 )
 
 # This router aggregates all non-dandanplay API endpoints.
@@ -70,6 +74,45 @@ api_router.include_router(anime_group.router, prefix="/ui", tags=["AnimeGroup"],
 
 # 日历视图端点
 api_router.include_router(calendar.router, prefix="/ui", tags=["Calendar"], include_in_schema=False)
+
+# 缓存管理端点
+api_router.include_router(cache.router, prefix="/ui", tags=["Cache"], include_in_schema=False)
+
+# 调试工具端点
+api_router.include_router(debug.router, prefix="/ui", tags=["Debug"], include_in_schema=False)
+
+# 系统健康度 / 弹幕源健康度 / 配置完整性 / 番剧优先级
+api_router.include_router(health.router, prefix="/ui", tags=["Health"], include_in_schema=False)
+
+# 诊断中心（日志诊断 + 环境诊断）
+api_router.include_router(diagnostics.router, prefix="/ui", tags=["Diagnostics"], include_in_schema=False)
+
+# 数据体检 / 映射修复
+api_router.include_router(data_check.router, prefix="/ui", tags=["DataCheck"], include_in_schema=False)
+
+# 识别词规则冲突检测
+api_router.include_router(recognition_check.router, prefix="/ui", tags=["RecognitionCheck"], include_in_schema=False)
+
+# 配置变更历史 / 回滚
+api_router.include_router(config_history.router, prefix="/ui", tags=["ConfigHistory"], include_in_schema=False)
+
+# 任务画像 / 容量趋势
+api_router.include_router(trends.router, prefix="/ui", tags=["Trends"], include_in_schema=False)
+
+# 安全审计
+api_router.include_router(audit.router, prefix="/ui", tags=["Audit"], include_in_schema=False)
+
+# 日程增强
+api_router.include_router(calendar_extra.router, prefix="/ui", tags=["CalendarExtra"], include_in_schema=False)
+
+# AI匹配可解释性
+api_router.include_router(ai_explain.router, prefix="/ui", tags=["AIExplain"], include_in_schema=False)
+
+# 本地扫描增量索引
+api_router.include_router(scan_index.router, prefix="/ui", tags=["ScanIndex"], include_in_schema=False)
+
+# 通用订阅助手（订阅源能力探测 + 订阅目标/候选项）
+api_router.include_router(subscriptions.router, prefix="/ui", tags=["Subscriptions"], include_in_schema=False)
 
 api_router.include_router(webhook_router, prefix="/webhook", tags=["Webhook"], include_in_schema=False)
 

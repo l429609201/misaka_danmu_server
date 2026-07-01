@@ -166,6 +166,16 @@ class Scraper(Base):
     isEnabled: Mapped[bool] = mapped_column("is_enabled", Boolean, default=True)
     displayOrder: Mapped[int] = mapped_column("display_order", Integer, default=0)
     useProxy: Mapped[bool] = mapped_column("use_proxy", Boolean, default=False)
+    # 健康度统计字段
+    totalSearches: Mapped[int] = mapped_column("total_searches", Integer, default=0, server_default="0")
+    successCount: Mapped[int] = mapped_column("success_count", Integer, default=0, server_default="0")
+    failCount: Mapped[int] = mapped_column("fail_count", Integer, default=0, server_default="0")
+    timeoutCount: Mapped[int] = mapped_column("timeout_count", Integer, default=0, server_default="0")
+    emptyCount: Mapped[int] = mapped_column("empty_count", Integer, default=0, server_default="0")
+    totalDurationMs: Mapped[float] = mapped_column("total_duration_ms", Integer, default=0, server_default="0")
+    totalResultCount: Mapped[int] = mapped_column("total_result_count", Integer, default=0, server_default="0")
+    lastSearchAt: Mapped[Optional[datetime]] = mapped_column("last_search_at", NaiveDateTime, nullable=True)
+    lastError: Mapped[Optional[str]] = mapped_column("last_error", String(500), nullable=True)
 
 class MetadataSource(Base):
     __tablename__ = "metadata_sources"
@@ -208,6 +218,36 @@ class CacheData(Base):
     cacheKey: Mapped[str] = mapped_column("cache_key", String(500), primary_key=True)
     cacheValue: Mapped[str] = mapped_column("cache_value", TEXT().with_variant(MEDIUMTEXT, "mysql"))
     expiresAt: Mapped[datetime] = mapped_column("expires_at", NaiveDateTime, index=True)
+
+class BangumiDataIndex(Base):
+    """bangumi-data 离线索引表。
+
+    来源：https://unpkg.com/bangumi-data@0.3/dist/data.json（CC BY 4.0），定时同步。
+    作为本地离线数据层，为别名补全(A2)、匹配增强(A2)、平台直链(A3)提供支撑，
+    与在线 Bangumi 元数据源互补（命中本地则省一次在线请求），不耦合其主链路。
+    """
+    __tablename__ = "bangumi_data_index"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # 该番在 bangumi 站点的 subject id（sites 中 site==bangumi 的 id），用于与库内 bangumiId 桥接
+    bangumiId: Mapped[Optional[str]] = mapped_column("bangumi_id", String(32), index=True)
+    titleMain: Mapped[str] = mapped_column("title_main", String(500), index=True)  # 日文原名（title 字段）
+    # 全语言别名扁平化（换行分隔），供 SQL LIKE 跨语言模糊匹配
+    titlesAll: Mapped[Optional[str]] = mapped_column("titles_all", TEXT().with_variant(MEDIUMTEXT, "mysql"))
+    titleZh: Mapped[Optional[str]] = mapped_column("title_zh", String(500))   # 首选简体中文译名
+    titleEn: Mapped[Optional[str]] = mapped_column("title_en", String(500))   # 首选英文名
+    type: Mapped[Optional[str]] = mapped_column("type", String(32))            # tv / movie / ova / ...
+    beginYear: Mapped[Optional[int]] = mapped_column("begin_year", Integer)    # 放送开始年份（保留，兼容旧逻辑）
+    # 新增：补全源 data.json 的完整字段，避免信息丢失（why：原仅存年份/精简映射，无法支撑详情展示与反向解析）
+    lang: Mapped[Optional[str]] = mapped_column("lang", String(16))            # 原始语言（如 ja）
+    officialSite: Mapped[Optional[str]] = mapped_column("official_site", String(500))  # 官方网站
+    beginDate: Mapped[Optional[str]] = mapped_column("begin_date", String(40))  # 完整开播时间（ISO 字符串，原样保留）
+    endDate: Mapped[Optional[str]] = mapped_column("end_date", String(40))      # 完结时间（ISO 字符串，原样保留）
+    broadcast: Mapped[Optional[str]] = mapped_column("broadcast", String(100))  # 放送周期规则（如 R/2022-...P7D）
+    comment: Mapped[Optional[str]] = mapped_column("comment", TEXT)             # 备注
+    # sites 改存「原始 sites 数组」JSON（保留每个站点的 begin/broadcast 子字段），不再重组为 {platform:id}
+    sites: Mapped[Optional[str]] = mapped_column("sites", TEXT)                # JSON：原始 sites 数组
+    updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime, default=get_now, nullable=False)
+
 
 class ApiToken(Base):
     __tablename__ = "api_tokens"
@@ -601,3 +641,42 @@ class ExternalCalendarItem(Base):
         Index('idx_external_fetched_at', 'fetched_at'),                      # 过期清理用
         Index('idx_external_subscription_status', 'is_subscribed', 'subscription_status'),  # 订阅扫描用
     )
+
+
+class SubscriptionCandidateItem(Base):
+    """订阅候选项表（纯候选池）- 存储合集/UP主/番剧扫描出的分集列表。
+
+    设计原则（方案 C）：
+    1. 仅记录「有哪些集」，不记录导入状态（导入与否由 episode 表决定）
+    2. 与 ExternalCalendarItem 是父子关系：parent_id 外键关联
+    3. 前端查询时 JOIN episode 表获取 is_imported 字段
+
+    用途：
+    - 订阅合集/UP主时，扫描出的单集存入此表
+    - 前端「其他作品」列表数据源
+    - 允许用户手动选择导入部分集，未导入的集仍保留在候选池
+    """
+    __tablename__ = "subscription_candidate_item"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    parentId: Mapped[int] = mapped_column(
+        "parent_id", BigInteger, ForeignKey("external_calendar_item.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    externalId: Mapped[str] = mapped_column("external_id", String(255), nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String(500))
+    # 建库所需的扩展字段（aid/cid/episodeIndex/parentTitle/mediaType/season 等），JSON 序列化字符串
+    # 定时扫描导入时需要这些字段拉弹幕+建库，故候选池需保留（不再是纯候选池）
+    extraData: Mapped[Optional[str]] = mapped_column("extra_data", TEXT)
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False)
+
+    # 关联：父订阅目标
+    parent: Mapped["ExternalCalendarItem"] = relationship(
+        "ExternalCalendarItem", foreign_keys=[parentId], backref="candidate_items"
+    )
+
+    __table_args__ = (
+        UniqueConstraint('parent_id', 'external_id', name='uk_candidate_parent_external'),
+        Index('idx_candidate_parent', 'parent_id'),
+    )
+

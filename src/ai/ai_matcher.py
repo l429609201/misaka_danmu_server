@@ -372,7 +372,9 @@ class AIMatcher:
         self,
         query: Dict[str, Any],
         results: List[ProviderSearchInfo],
-        favorited_info: Optional[Dict[str, bool]] = None
+        favorited_info: Optional[Dict[str, bool]] = None,
+        existing_info: Optional[Dict[str, bool]] = None,
+        recognition_info: Optional[Dict[str, bool]] = None
     ) -> Optional[int]:
         """
         使用AI从搜索结果中选择最佳匹配
@@ -381,6 +383,9 @@ class AIMatcher:
             query: 查询信息,包含 title, season, episode, year 等
             results: 搜索结果列表
             favorited_info: 精确标记信息 {provider:mediaId -> isFavorited}
+            existing_info: 库内已有源信息 {provider:mediaId -> inLibrary}
+            recognition_info: 识别词命中信息 {provider:mediaId -> matchesRecognitionRule}
+                （仅作认知校正，标记该结果经识别词规则转换后即用户目标作品，不改变排序优先级）
 
         Returns:
             最佳匹配结果的索引,如果没有合适的匹配则返回None
@@ -401,6 +406,18 @@ class AIMatcher:
                     key = f"{result.provider}:{result.mediaId}"
                     is_favorited = favorited_info.get(key, False)
 
+                # 检查是否已存在于库内（供 AI 优先复用库内源，避免同剧不同集换源）
+                in_library = False
+                if existing_info:
+                    key = f"{result.provider}:{result.mediaId}"
+                    in_library = existing_info.get(key, False)
+
+                # 检查是否命中识别词规则（认知校正：该结果经识别词转换后即用户目标作品）
+                matches_recognition = False
+                if recognition_info:
+                    key = f"{result.provider}:{result.mediaId}"
+                    matches_recognition = recognition_info.get(key, False)
+
                 results_data.append({
                     "index": idx,
                     "provider": result.provider,
@@ -409,7 +426,9 @@ class AIMatcher:
                     "season": result.season,
                     "year": result.year,
                     "episodeCount": result.episodeCount,
-                    "isFavorited": is_favorited
+                    "isFavorited": is_favorited,
+                    "inLibrary": in_library,
+                    "matchesRecognitionRule": matches_recognition
                 })
 
             # 尝试从缓存获取
@@ -453,6 +472,14 @@ class AIMatcher:
                     f"根据TMDB剧集组映射，S{cs}E{ce}(剧集组分季)等价于S{ts}E{te}(TMDB标准分季)，"
                     f"该季度共{total}集。请优先选择集数接近{total}集或标题包含第{cs}季相关信息的弹幕源。"
                 )
+
+            # 识别词认知校正提示：告诉 AI 哪些结果命中了用户的识别词规则及其真实身份。
+            # why：识别词把源站标题(如"说唱巅峰对决2026")映射为入库名(如"中国新说唱 第九季")，
+            # AI 若不知道这层映射，可能因标题字面差异误判 matchesRecognitionRule=true 的正确结果。
+            # 注意：此为身份理解辅助，不改变排序优先级（标记/库内/源顺序优先级不变）。
+            rec_hint = query.get("recognition_hint")
+            if rec_hint:
+                input_data["recognition_hint"] = rec_hint
 
             logger.info(f"AI匹配: 开始分析 {len(results)} 个搜索结果")
             logger.debug(f"查询信息: {query}")

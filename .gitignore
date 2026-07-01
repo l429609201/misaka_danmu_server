@@ -28,3 +28,5 @@ src/scrapers/*
 
 # 嵌套git仓库
 misaka-relay/
+FEATURE_IDEAS.md
+.sanshu-memory/memories.json

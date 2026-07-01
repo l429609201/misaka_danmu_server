@@ -29,26 +29,26 @@ if %errorlevel% neq 0 (
 :: ── 启动后端 ──
 echo [1/2] 正在启动后端服务...
 cd /d "%ROOT_DIR%"
-start /b "" python -m src.main > "%ROOT_DIR%config\logs\backend_console.log" 2>&1
+if not exist "config\logs" mkdir "config\logs"
+:: 已 cd 到项目根目录，用相对路径避免中文路径引号问题
+:: 子 CMD 需要显式设置 UTF-8 编码，否则 Python 输出中文/特殊字符会报 UnicodeEncodeError
+start "" /b cmd /c "chcp 65001 >nul & set PYTHONIOENCODING=utf-8 & python -m src.main >config\logs\backend_console.log 2>&1"
 :: 等待进程启动后获取 PID
-timeout /t 2 /nobreak >nul
-for /f "tokens=2" %%a in ('tasklist /fi "imagename eq python.exe" /fo list ^| findstr /i "PID"') do (
-    set "BACKEND_PID=%%a"
-)
+timeout /t 3 /nobreak >nul
 :: 用 PowerShell 精确获取后端 PID
 for /f %%p in ('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*src.main*' } | Select-Object -ExpandProperty ProcessId -First 1"') do (
     set "BACKEND_PID=%%p"
 )
 if defined BACKEND_PID (
     echo %BACKEND_PID%> "%PID_DIR%\backend.pid"
-    echo     后端已启动 (PID: %BACKEND_PID%)，端口 7768
+    echo     后端已启动 ^(PID: %BACKEND_PID%^)，端口 7768
 ) else (
     echo     [警告] 后端似乎未成功启动，请检查日志: config\logs\backend_console.log
 )
 
 :: ── 启动前端 ──
 if defined SKIP_FRONTEND (
-    echo [2/2] 跳过前端启动 (未安装 npm)
+    echo [2/2] 跳过前端启动 ^(未安装 npm^)
     goto :done
 )
 
@@ -58,14 +58,15 @@ if not exist "node_modules" (
     echo     首次运行，正在安装依赖...
     call npm install
 )
-start /b "" cmd /c "npm run dev > \"%ROOT_DIR%config\logs\frontend_console.log\" 2>&1"
+:: 用 ..\config\logs\ 相对路径，避免中文绝对路径
+start "" /b cmd /c "chcp 65001 >nul & npm run dev >..\config\logs\frontend_console.log 2>&1"
 timeout /t 3 /nobreak >nul
 for /f %%p in ('powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*vite*' } | Select-Object -ExpandProperty ProcessId -First 1"') do (
     set "FRONTEND_PID=%%p"
 )
 if defined FRONTEND_PID (
     echo %FRONTEND_PID%> "%PID_DIR%\frontend.pid"
-    echo     前端已启动 (PID: %FRONTEND_PID%)，端口 5173
+    echo     前端已启动 ^(PID: %FRONTEND_PID%^)，端口 5173
 ) else (
     echo     [警告] 前端似乎未成功启动，请检查日志: config\logs\frontend_console.log
 )

@@ -14,6 +14,22 @@ logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 5
 
+# MarkdownV2 保留字符，进度文本需转义以避免 edit 解析失败导致刷屏
+_MDV2_SPECIAL = r'_*[]()~`>#+-=|{}.!'
+
+
+def _escape_mdv2(text: str) -> str:
+    """转义 Telegram MarkdownV2 保留字符。"""
+    if not text:
+        return ""
+    out = []
+    for ch in str(text):
+        if ch in _MDV2_SPECIAL:
+            out.append('\\' + ch)
+        else:
+            out.append(ch)
+    return ''.join(out)
+
 
 class SearchMenuMixin:
     """处理 /search 命令及编辑导入子流程的所有 cmd_/cb_/_text_ 方法"""
@@ -79,7 +95,10 @@ class SearchMenuMixin:
             desc = _desc_map.get(description, description)
             filled = int(progress / 10)
             bar = "█" * filled + "░" * (10 - filled)
-            text = f"`[{bar}]` {progress}%\n• {desc}"
+            # 进度条用反引号 code 包裹（█░ 不含保留字符）；百分比与描述需转义，
+            # 否则 desc 中的 "..." 等保留字符会导致 MarkdownV2 解析失败 →
+            # edit 失败降级发新消息 → 进度刷屏。
+            text = f"`[{bar}]` {_escape_mdv2(str(progress) + '%')}\n• {_escape_mdv2(desc)}"
             msg_id_out: list = []
             await channel.send_message(
                 title="🔍 搜索中",
@@ -142,12 +161,12 @@ class SearchMenuMixin:
                 suffix += f"E{parsed_episode}"
             display_keyword = keyword + suffix if suffix else keyword
             edit_mid[0] = edit_mid[0] or kw.get("edit_message_id")
-            return self._build_search_page(serialized, display_keyword, 0, edit_message_id=edit_mid[0])
+            return await self._build_search_page(serialized, display_keyword, 0, edit_message_id=edit_mid[0])
         except Exception as e:
             logger.error(f"搜索失败: {e}", exc_info=True)
             return CommandResult(success=False, text=f"搜索出错: {e}", edit_message_id=edit_mid[0])
 
-    def _build_search_page(self, results: list, keyword: str, page: int,
+    async def _build_search_page(self, results: list, keyword: str, page: int,
                            edit_message_id: int = None,
                            parsed_season=None, parsed_episode=None) -> CommandResult:
         total = len(results)
@@ -189,19 +208,65 @@ class SearchMenuMixin:
         if nav:
             buttons.append(nav)
 
+        # 生成当前页的聚合海报图（带序号），失败则回退为文字+单图模式
+        collage = await self._build_page_collage(page_items, start)
+
         return CommandResult(
             text="\n".join(lines),
             reply_markup=buttons,
             edit_message_id=edit_message_id,
             articles=articles,
+            image_bytes=collage,
         )
+
+    async def _build_page_collage(self, page_items: list, start: int):
+        """为当前页结果生成带序号的九宫格海报图。
+
+        受配置开关 telegramSearchPosterCollage 控制（默认开启）。
+        任何异常都吞掉并返回 None，保证搜索结果正常文字展示不受影响。
+        """
+        try:
+            cfg = getattr(self, "config_manager", None)
+            if cfg is not None:
+                enabled = await cfg.get("telegramSearchPosterCollage", "true")
+                if str(enabled).lower() != "true":
+                    return None
+            # 至少要有一项带海报才值得聚合
+            if not any(it.get("imageUrl") for it in page_items):
+                return None
+
+            # 读取代理配置（与 image_utils 下载逻辑保持一致）
+            proxy, ssl_verify = await self._get_proxy_for_collage()
+
+            from src.utils.poster_collage import build_poster_collage
+            items = [
+                {"imageUrl": it.get("imageUrl") or "", "index": start + i + 1}
+                for i, it in enumerate(page_items)
+            ]
+            return await build_poster_collage(items, proxy=proxy, ssl_verify=ssl_verify)
+        except Exception as e:
+            logger.warning(f"生成搜索结果聚合海报失败（不影响文字结果）: {e}")
+            return None
+
+    async def _get_proxy_for_collage(self):
+        """读取全局代理配置，返回 (proxy_url 或 None, ssl_verify)。"""
+        try:
+            cfg = getattr(self, "config_manager", None)
+            if cfg is None:
+                return None, True
+            proxy_enabled = (await cfg.get("proxyEnabled", "false")).lower() == "true"
+            proxy_url = await cfg.get("proxyUrl", "")
+            ssl_verify = (await cfg.get("proxySslVerify", "true")).lower() == "true"
+            return (proxy_url if (proxy_enabled and proxy_url) else None), ssl_verify
+        except Exception:
+            return None, True
 
     async def cb_search_page(self, params, user_id, channel, **kw):
         page = int(params[0]) if params else 0
         conv = self.get_conversation(user_id)
         if not conv or conv.state != "search_results":
             return CommandResult(text="", answer_callback_text="搜索已过期，请重新搜索")
-        return self._build_search_page(
+        return await self._build_search_page(
             conv.data.get("results", []),
             conv.data.get("keyword", ""),
             page,
@@ -286,7 +351,7 @@ class SearchMenuMixin:
         conv = self.get_conversation(user_id)
         if not conv or conv.state != "search_results":
             return CommandResult(text="", answer_callback_text="搜索已过期，请重新搜索")
-        return self._build_search_page(
+        return await self._build_search_page(
             conv.data.get("results", []),
             conv.data.get("keyword", ""),
             page,
@@ -654,7 +719,7 @@ class SearchMenuMixin:
         self.set_conversation(user_id, "search_results", snapshot,
                               chat_id=kw.get("chat_id"))
         keyword = snapshot.get("keyword", "")
-        return self._build_search_page(
+        return await self._build_search_page(
             snapshot["results"], keyword, 0,
             edit_message_id=kw.get("message_id"),
         )

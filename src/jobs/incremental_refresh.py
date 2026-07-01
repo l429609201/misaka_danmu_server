@@ -9,6 +9,7 @@ from fastapi import HTTPException, status
 from src.db import crud, orm_models
 from src.db.crud import external_calendar as ext_cal_crud
 from .base import BaseJob
+from .subscription_scan import SubscriptionScanJob
 from src.services import TaskSuccess
 from src.tasks import generic_import_task, auto_search_and_import_task
 
@@ -188,9 +189,28 @@ class IncrementalRefreshJob(BaseJob):
         return reconciled
 
     async def run(self, session: AsyncSession, progress_callback: Callable):
-        """定时任务核心：阶段0 处理订阅 → 阶段1 抓下一集"""
+        """定时任务核心：阶段A 强标识订阅扫描+导入 → 阶段0 处理订阅 → 阶段1 抓下一集"""
+        # 阶段A：扫描强标识订阅目标（如 Bilibili 合集/UP主），生成候选项并导入弹幕
+        # 复用 SubscriptionScanJob 的逻辑，避免代码重复；两者共享同一套 BaseJob 依赖
+        await progress_callback(0, "阶段A：扫描强标识订阅目标（B站合集等）...")
+        scan_written, scan_imported = 0, 0
+        try:
+            scan_job = SubscriptionScanJob(
+                self._session_factory, self.task_manager, self.scraper_manager,
+                self.rate_limiter, self.metadata_manager, self.config_manager,
+                title_recognition_manager=self.title_recognition_manager,
+                ai_matcher_manager=self.ai_matcher_manager,
+            )
+            # 将扫描阶段的 0-100 进度压缩到 0-5%，避免与后续阶段进度跳动
+            async def _scan_cb(p, desc):
+                await progress_callback(min(int(p) // 20, 4), desc)
+            scan_written = await scan_job._scan_due_targets(session, _scan_cb)
+            scan_imported = await scan_job._import_waiting_items(session, _scan_cb)
+        except Exception as e:
+            self.logger.error(f"阶段A 强标识订阅扫描/导入异常：{e}", exc_info=True)
+
         # 阶段0：处理订阅意向（pending → importing）
-        await progress_callback(0, "阶段0：处理待订阅条目...")
+        await progress_callback(5, "阶段0：处理待订阅条目...")
         try:
             submitted_subs = await self._process_pending_subscriptions(session)
         except Exception as e:
@@ -208,6 +228,7 @@ class IncrementalRefreshJob(BaseJob):
         total_sources = len(source_ids)
         if not total_sources:
             raise TaskSuccess(
+                f"阶段A 扫描候选 {scan_written} 个、导入 {scan_imported} 个；"
                 f"阶段0 提交订阅任务 {submitted_subs} 个；阶段1 没有找到任何启用的追更源，任务结束。"
             )
 
@@ -274,5 +295,6 @@ class IncrementalRefreshJob(BaseJob):
 
         schedule_info = f"（智能调度：{skipped_by_schedule} 个源因非播出日被跳过）" if skipped_by_schedule else ""
         raise TaskSuccess(
+            f"阶段A 扫描候选 {scan_written} 个、导入 {scan_imported} 个；"
             f"阶段0 提交订阅任务 {submitted_subs} 个；阶段1 为 {submitted_count} 个源创建了追更任务。{schedule_info}"
         )

@@ -18,6 +18,9 @@ import {
   getBangumiAuthUrl,
   logoutBangumiAuth,
   refreshBangumiAuth,
+  getBangumiDataStatus,
+  syncBangumiData,
+  clearBangumiData,
   getTmdbConfig,
   getTvdbConfig,
   getDoubanConfig,
@@ -39,6 +42,10 @@ export function BangumiConfig({ form }) {
   const [authInfo, setAuthInfo] = useState({})
   const [showPassword, setShowPassword] = useState(false)
   const [showToken, setShowToken] = useState(false)
+  // bangumi-data 离线索引状态
+  const [bgmDataCount, setBgmDataCount] = useState(null)
+  const [bgmDataSyncing, setBgmDataSyncing] = useState(false)
+  const [bgmDataClearing, setBgmDataClearing] = useState(false)
   const oauthPopupRef = useRef(null)
 
   // 使用 ref 来存储当前状态，避免 useEffect 依赖导致重新加载
@@ -56,6 +63,7 @@ export function BangumiConfig({ form }) {
   // 加载配置 - 只在组件挂载时执行一次
   useEffect(() => {
     loadConfig()
+    loadBgmDataCount()
 
     // 监听 OAuth 完成消息
     const handleMessage = (event) => {
@@ -101,6 +109,10 @@ export function BangumiConfig({ form }) {
         bangumiClientSecret: config.bangumiClientSecret || '',
         bangumiApiBaseUrl: config.bangumiApiBaseUrl || 'https://api.bgm.tv',
         bangumiImageBaseUrl: config.bangumiImageBaseUrl || 'https://lain.bgm.tv',
+        bangumiDataSyncEnabled: config.bangumiDataSyncEnabled ?? false,
+        bangumiDataOfflineEnabled: config.bangumiDataOfflineEnabled ?? true,
+        bangumiDataSyncCron: config.bangumiDataSyncCron || '0 4 * * *',
+        bangumiDataUrl: config.bangumiDataUrl || 'https://unpkg.com/bangumi-data@0.3/dist/data.json',
         authMode: mode, // 保存到表单中
       })
 
@@ -113,6 +125,54 @@ export function BangumiConfig({ form }) {
     } catch (error) {
       console.error('加载 Bangumi 配置失败:', error)
     }
+  }
+
+  // 加载 bangumi-data 离线索引库内条数
+  const loadBgmDataCount = async () => {
+    try {
+      const res = await getBangumiDataStatus()
+      const data = res.data || res
+      setBgmDataCount(data?.count ?? 0)
+    } catch (error) {
+      console.error('加载 bangumi-data 库内条数失败:', error)
+      setBgmDataCount(null)
+    }
+  }
+
+  // 手动触发 bangumi-data 同步
+  const handleSyncBgmData = async () => {
+    try {
+      setBgmDataSyncing(true)
+      const res = await syncBangumiData()
+      const data = res.data || res
+      messageApi.success(data?.message || t('metadataConfig.bgmDataSyncDone'))
+      await loadBgmDataCount()
+    } catch (error) {
+      messageApi.error(`${t('metadataConfig.bgmDataSyncFailed')}: ${error?.response?.data?.detail || error.message}`)
+    } finally {
+      setBgmDataSyncing(false)
+    }
+  }
+
+  // 清除 bangumi-data 离线索引（二次确认防误触）
+  const handleClearBgmData = () => {
+    showModal({
+      title: t('metadataConfig.bgmDataClear'),
+      content: t('metadataConfig.bgmDataClearConfirm'),
+      onOk: async () => {
+        try {
+          setBgmDataClearing(true)
+          const res = await clearBangumiData()
+          const data = res.data || res
+          messageApi.success(data?.message || t('metadataConfig.bgmDataClearDone'))
+          await loadBgmDataCount()
+        } catch (error) {
+          messageApi.error(`${t('metadataConfig.bgmDataClearFailed')}: ${error?.response?.data?.detail || error.message}`)
+        } finally {
+          setBgmDataClearing(false)
+        }
+      },
+    })
   }
 
   const handleOAuthLogin = async () => {
@@ -232,6 +292,68 @@ export function BangumiConfig({ form }) {
       >
         <Input placeholder="https://lain.bgm.tv" />
       </Form.Item>
+
+      {/* bangumi-data 离线索引 */}
+      <div className="border rounded p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="font-medium">{t('metadataConfig.bgmDataTitle')}</div>
+          <div className="text-xs text-gray-500">
+            {t('metadataConfig.bgmDataCount')}：
+            <span className="font-semibold text-blue-500">
+              {bgmDataCount === null ? '—' : bgmDataCount}
+            </span>
+          </div>
+        </div>
+        <div className="text-xs text-gray-500 -mt-1">{t('metadataConfig.bgmDataDesc')}</div>
+
+        {/* 一行三栏：启用离线库方式（左） | 启用定时同步（中） | 立即同步（右） */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <Form.Item
+            name="bangumiDataOfflineEnabled"
+            label={t('metadataConfig.bgmDataOfflineEnabled')}
+            tooltip={t('metadataConfig.bgmDataOfflineEnabledTip')}
+            valuePropName="checked"
+            className="!mb-0"
+          >
+            <Switch />
+          </Form.Item>
+
+          <Form.Item
+            name="bangumiDataSyncEnabled"
+            label={t('metadataConfig.bgmDataSyncEnabled')}
+            valuePropName="checked"
+            className="!mb-0"
+          >
+            <Switch />
+          </Form.Item>
+
+          <Button size="small" type="primary" loading={bgmDataSyncing} onClick={handleSyncBgmData}>
+            {t('metadataConfig.bgmDataSyncNow')}
+          </Button>
+
+          <Button size="small" danger loading={bgmDataClearing} onClick={handleClearBgmData}>
+            {t('metadataConfig.bgmDataClear')}
+          </Button>
+        </div>
+
+        <Form.Item
+          name="bangumiDataSyncCron"
+          label={t('metadataConfig.bgmDataSyncCron')}
+          tooltip={t('metadataConfig.bgmDataSyncCronTip')}
+          className="!mb-0"
+        >
+          <Input placeholder="0 4 * * *" />
+        </Form.Item>
+
+        <Form.Item
+          name="bangumiDataUrl"
+          label={t('metadataConfig.bgmDataUrl')}
+          tooltip={t('metadataConfig.bgmDataUrlTip')}
+          className="!mb-0"
+        >
+          <Input placeholder="https://unpkg.com/bangumi-data@0.3/dist/data.json" />
+        </Form.Item>
+      </div>
 
       {/* 隐藏的 authMode 字段 */}
       <Form.Item name="authMode" hidden>
