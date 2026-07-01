@@ -213,17 +213,12 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           title: item.title
         });
       } else if (item.mediaType === 'tv_season') {
-        // 某一季
-        // 需要找到父级的title
-        const parentKey = key.substring(0, key.lastIndexOf('-'));
-        const parent = findItemByKey(items, parentKey);
-        if (parent) {
-          seasons.push({
-            serverId: serverId,
-            title: parent.title,
-            season: item.season
-          });
-        }
+        // 某一季：季度节点自带 showTitle(父剧名)/serverId，直接使用，不从 key 反推父节点
+        seasons.push({
+          serverId: item.serverId,
+          title: item.showTitle,
+          season: item.season
+        });
       }
     });
 
@@ -303,17 +298,12 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
             title: item.title
           });
         } else if (item.mediaType === 'tv_season') {
-          // 某一季
-          // 需要找到父级的title
-          const parentKey = key.substring(0, key.lastIndexOf('-'));
-          const parent = findItemByKey(items, parentKey);
-          if (parent) {
-            seasons.push({
-              serverId: serverId,
-              title: parent.title,
-              season: item.season
-            });
-          }
+          // 某一季：季度节点自带 showTitle(父剧名)/serverId，直接使用，不从 key 反推父节点
+          seasons.push({
+            serverId: item.serverId,
+            title: item.showTitle,
+            season: item.season
+          });
         }
       }
     });
@@ -487,24 +477,21 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
               <Popconfirm
                 title={t('mediaFetch.mediaItemList.confirmDeleteSeason', { season: record.season })}
                 onConfirm={() => {
-                  // 删除该季度
-                  // 需要找到父级的title
-                  const parentKey = record.key.substring(0, record.key.lastIndexOf('-'));
-                  const parent = findItemByKey(items, parentKey);
-                  if (parent) {
-                    batchDeleteMediaItems({
-                      seasons: [{
-                        serverId: serverId,
-                        title: parent.title,
-                        season: record.season
-                      }]
+                  // 删除该季度：季度节点自带 showTitle(父剧名)/serverId，直接使用，
+                  // 不再从 key 反推父节点（反推 season-{标题}-S{n} => season-{标题} 与父 show-{标题} 不符，
+                  // 会导致 findItemByKey 返回 null 而整个操作静默失效）。
+                  batchDeleteMediaItems({
+                    seasons: [{
+                      serverId: record.serverId,
+                      title: record.showTitle,
+                      season: record.season
+                    }]
+                  })
+                    .then(() => {
+                      message.success(t('mediaFetch.mediaItemList.deleteSeasonSuccess', { season: record.season }));
+                      loadItems(pagination.current, pagination.pageSize);
                     })
-                      .then(() => {
-                        message.success(t('mediaFetch.mediaItemList.deleteSeasonSuccess', { season: record.season }));
-                        loadItems(pagination.current, pagination.pageSize);
-                      })
-                      .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
-                  }
+                    .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
                 }}
                 okText={t('mediaFetch.mediaItemList.confirm')}
                 cancelText={t('mediaFetch.mediaItemList.cancel')}
@@ -518,24 +505,19 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 size="small"
                 icon={<ImportOutlined />}
                 onClick={() => {
-                  // 导入该季度
-                  // 需要找到父级的title
-                  const parentKey = record.key.substring(0, record.key.lastIndexOf('-'));
-                  const parent = findItemByKey(items, parentKey);
-                  if (parent) {
-                    importMediaItems({
-                      seasons: [{
-                        serverId: serverId,
-                        title: parent.title,
-                        season: record.season
-                      }]
+                  // 导入该季度：直接用季度节点自带的 showTitle/serverId（同上，不反推父节点）
+                  importMediaItems({
+                    seasons: [{
+                      serverId: record.serverId,
+                      title: record.showTitle,
+                      season: record.season
+                    }]
+                  })
+                    .then((res) => {
+                      message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
+                      loadItems(pagination.current, pagination.pageSize);
                     })
-                      .then((res) => {
-                        message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
-                        loadItems(pagination.current, pagination.pageSize);
-                      })
-                      .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
-                  }
+                    .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
                 }}
               >
                 {t('mediaFetch.mediaItemList.importSeasonAct')}
@@ -695,24 +677,19 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           size="small"
           icon={<ImportOutlined />}
           onClick={() => {
-            // 导入该季度
-            // 需要找到父级的title
-            const parentKey = record.key.substring(0, record.key.lastIndexOf('-'));
-            const parent = findItemByKey(items, parentKey);
-            if (parent) {
-              importMediaItems({
-                seasons: [{
-                  serverId: serverId,
-                  title: parent.title,
-                  season: record.season
-                }]
+            // 导入该季度：直接用季度节点自带的 showTitle/serverId，不从 key 反推父节点
+            importMediaItems({
+              seasons: [{
+                serverId: record.serverId,
+                title: record.showTitle,
+                season: record.season
+              }]
+            })
+              .then((res) => {
+                message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
+                loadItems(pagination.current, pagination.pageSize);
               })
-                .then((res) => {
-                  message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
-                  loadItems(pagination.current, pagination.pageSize);
-                })
-                .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
-            }
+              .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
           }}
         >
           {t('mediaFetch.mediaItemList.importSeasonAct')}
@@ -730,24 +707,19 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           key="delete-season"
           title={t('mediaFetch.mediaItemList.confirmDeleteSeason', { season: record.season })}
           onConfirm={() => {
-            // 删除该季度
-            // 需要找到父级的title
-            const parentKey = record.key.substring(0, record.key.lastIndexOf('-'));
-            const parent = findItemByKey(items, parentKey);
-            if (parent) {
-              batchDeleteMediaItems({
-                seasons: [{
-                  serverId: serverId,
-                  title: parent.title,
-                  season: record.season
-                }]
+            // 删除该季度：直接用季度节点自带的 showTitle/serverId，不从 key 反推父节点
+            batchDeleteMediaItems({
+              seasons: [{
+                serverId: record.serverId,
+                title: record.showTitle,
+                season: record.season
+              }]
+            })
+              .then(() => {
+                message.success(t('mediaFetch.mediaItemList.deleteSeasonSuccess', { season: record.season }));
+                loadItems(pagination.current, pagination.pageSize);
               })
-                .then(() => {
-                  message.success(t('mediaFetch.mediaItemList.deleteSeasonSuccess', { season: record.season }));
-                  loadItems(pagination.current, pagination.pageSize);
-                })
-                .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
-            }
+              .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
           }}
           okText={t('mediaFetch.mediaItemList.confirm')}
           cancelText={t('mediaFetch.mediaItemList.cancel')}
@@ -891,22 +863,19 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           icon: <ImportOutlined />,
           label: t('mediaFetch.mediaItemList.importSeasonAct'),
           onClick: () => {
-            const parentKey = record.key.substring(0, record.key.lastIndexOf('-'));
-            const parent = findItemByKey(items, parentKey);
-            if (parent) {
-              importMediaItems({
-                seasons: [{
-                  serverId: serverId,
-                  title: parent.title,
-                  season: record.season
-                }]
+            // 直接用季度节点自带的 showTitle/serverId，不从 key 反推父节点
+            importMediaItems({
+              seasons: [{
+                serverId: record.serverId,
+                title: record.showTitle,
+                season: record.season
+              }]
+            })
+              .then((res) => {
+                message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
+                loadItems(pagination.current, pagination.pageSize);
               })
-                .then((res) => {
-                  message.success(res.data.message || t('mediaFetch.mediaItemList.importSubmitted'));
-                  loadItems(pagination.current, pagination.pageSize);
-                })
-                .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
-            }
+              .catch(() => message.error(t('mediaFetch.mediaItemList.importFailed')));
           }
         },
         {
@@ -921,22 +890,19 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
           label: t('mediaFetch.mediaItemList.deleteSeasonAct'),
           danger: true,
           onClick: () => {
-            const parentKey = record.key.substring(0, record.key.lastIndexOf('-'));
-            const parent = findItemByKey(items, parentKey);
-            if (parent) {
-              batchDeleteMediaItems({
-                seasons: [{
-                  serverId: serverId,
-                  title: parent.title,
-                  season: record.season
-                }]
+            // 直接用季度节点自带的 showTitle/serverId，不从 key 反推父节点
+            batchDeleteMediaItems({
+              seasons: [{
+                serverId: record.serverId,
+                title: record.showTitle,
+                season: record.season
+              }]
+            })
+              .then(() => {
+                message.success(t('mediaFetch.mediaItemList.deleteSeasonSuccess', { season: record.season }));
+                loadItems(pagination.current, pagination.pageSize);
               })
-                .then(() => {
-                  message.success(t('mediaFetch.mediaItemList.deleteSeasonSuccess', { season: record.season }));
-                  loadItems(pagination.current, pagination.pageSize);
-                })
-                .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
-            }
+              .catch(() => message.error(t('mediaFetch.mediaItemList.deleteFailed')));
           }
         }
       );
