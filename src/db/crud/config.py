@@ -69,6 +69,41 @@ async def update_config_value(session: AsyncSession, key: str, value: str):
     await session.commit()
 
 
+# 后备搜索已分配过的最大真实 animeId 计数器（config key）。
+# why: 见 allocate_next_counter_value / get_next_real_anime_id 的说明——防止删除后 id 被重用导致 episodeId 串台。
+LAST_ALLOCATED_ANIME_ID_KEY = "lastAllocatedRealAnimeId"
+
+
+async def allocate_next_counter_value(session: AsyncSession, key: str, floor: int, description: str = "") -> int:
+    """分配下一个自增计数值：返回 max(已存计数值, floor) + 1，并把结果回写。
+    不提交事务，跟随调用方事务（flush）。
+
+    why: 用于 animeId 分配。简单的 MAX(id)+1 在删除最大 id 的作品后 MAX 会回退，
+    导致新作品重用已删 id，其 episodeId 与旧作品完全重叠 → 命中旧作品残留的后备缓存 →
+    新剧被错误写成旧剧（串台）。改用持久化计数器（只增不减）记住"曾分配过的最大 id"，
+    每次返回 max(计数器, 当前DB最大值) + 1，删除作品不影响计数器，id 永不重用。
+
+    :param floor: 下限基准（传数据库当前 MAX(id)），确保即使计数器异常落后也不会分配出已存在的 id。
+    Returns: 本次分配的计数值（严格大于历史所有分配值与 floor）。
+    """
+    config_row = await session.get(Config, key)
+    current = 0
+    if config_row is not None:
+        try:
+            current = int(config_row.configValue or "0")
+        except (ValueError, TypeError):
+            current = 0
+
+    next_value = max(current, floor) + 1
+
+    if config_row is None:
+        session.add(Config(configKey=key, configValue=str(next_value), description=description or None))
+    else:
+        config_row.configValue = str(next_value)
+    await session.flush()
+    return next_value
+
+
 async def initialize_configs(session: AsyncSession, defaults: Dict[str, tuple[Any, str]]):
     """
     初始化默认配置(仅插入数据库中不存在的配置项)

@@ -10,12 +10,63 @@ from sqlalchemy.exc import OperationalError
 
 from src.db import orm_models, crud
 from src.services import TaskSuccess
+from src.core.cache import get_cache_backend
 
 # 从 crud 导入需要的常量和函数
 DANMAKU_BASE_DIR = crud.DANMAKU_BASE_DIR
 _get_fs_path_from_web_path = crud._get_fs_path_from_web_path
 
+# 后备缓存前缀（与 dandan/constants.py 保持一致，避免循环导入）
+_FALLBACK_SEARCH_CACHE_PREFIX = "fallback_search_"
+_EPISODE_MAPPING_CACHE_PREFIX = "episode_mapping_"
+
 logger = logging.getLogger(__name__)
+
+
+async def _clear_fallback_caches_for_anime(
+    session: AsyncSession,
+    anime_id: int,
+    anime_title: str,
+    anime_season: int,
+    source_orders: List[int],
+) -> None:
+    """删除作品/源后清理后备映射缓存，作为 id 不重用修复的双保险。
+
+    why: 即使 get_next_real_anime_id 已改为持久化计数器保证 id 不重用，
+    但残留缓存（fallback_episode_* / match_season_*）在 TTL 期间（1-3h）内
+    仍可能被其他代码路径命中（如整季缓存复用），清理后完全消除串台风险。
+    """
+    backend = get_cache_backend()
+
+    async def _del(full_cache_key: str) -> None:
+        """统一删除：优先走缓存后端，失败则回退到数据库。"""
+        if backend is not None:
+            try:
+                await backend.delete(full_cache_key, region="default")
+                logger.debug(f"已从缓存后端清理: {full_cache_key}")
+                return
+            except Exception as e:
+                logger.debug(f"缓存后端删除失败，回退到数据库: {full_cache_key}, {e}")
+        try:
+            await crud.delete_cache(session, full_cache_key)
+            logger.debug(f"已从数据库缓存清理: {full_cache_key}")
+        except Exception as e:
+            logger.debug(f"清理缓存 {full_cache_key} 失败（可忽略）: {e}")
+
+    # 1. 清整部剧级别的后备映射缓存（格式：fallback_episode_25{animeId:06d}{sourceOrder:02d}0000）
+    #    为每个已知 source_order 清理；写入时无前缀（set_db_cache 第二参数为 ""）
+    for so in source_orders:
+        virtual_base = 25000000000000 + anime_id * 1000000 + so * 10000
+        await _del(f"fallback_episode_{virtual_base}")
+
+    # 2. 清整季缓存（格式：fallback_search_match_season_{title}_{season}）
+    #    写入时前缀为 FALLBACK_SEARCH_CACHE_PREFIX = "fallback_search_"
+    await _del(f"{_FALLBACK_SEARCH_CACHE_PREFIX}match_season_{anime_title}_{anime_season}")
+
+    logger.info(
+        f"已清理作品 {anime_id}（{anime_title} S{anime_season}）的后备映射缓存"
+        f"（清理了 {len(source_orders)} 个系列缓存 + 1 个整季缓存）"
+    )
 
 
 def _determine_cleanup_stop_dir(fs_path: Path) -> Path:
@@ -215,6 +266,16 @@ async def delete_anime_task(animeId: int, session: AsyncSession, progress_callba
             if not anime_exists:
                 raise TaskSuccess("作品未找到，无需删除。")
 
+            # 提前捕获后备缓存清理所需信息（删除后 anime_exists 将失效）
+            # why: 删除作品后需清理残留的后备映射缓存，防止新剧命中旧缓存串台
+            cache_anime_title = anime_exists.title
+            cache_anime_season = anime_exists.season or 1
+            so_stmt = select(orm_models.AnimeSource.sourceOrder).where(
+                orm_models.AnimeSource.animeId == animeId
+            )
+            so_result = await session.execute(so_stmt)
+            cache_source_orders = [so for so in so_result.scalars().all() if so is not None]
+
             # 1. 删除关联的弹幕文件（支持自定义路径）
             if delete_files:
                 await progress_callback(30, "正在删除关联的弹幕文件...")
@@ -249,6 +310,15 @@ async def delete_anime_task(animeId: int, session: AsyncSession, progress_callba
             await session.delete(anime_exists)
 
             await session.commit()
+
+            # 3. 清理残留的后备映射缓存（双保险，防止新剧命中旧缓存串台）
+            try:
+                await _clear_fallback_caches_for_anime(
+                    session, animeId, cache_anime_title, cache_anime_season, cache_source_orders
+                )
+            except Exception as e:
+                logger.warning(f"清理作品 {animeId} 后备缓存失败（不影响删除结果）: {e}")
+
             msg = "删除成功。" if delete_files else "删除成功（保留了弹幕文件）。"
             raise TaskSuccess(msg)
         except OperationalError as e:
@@ -292,6 +362,12 @@ async def delete_source_task(sourceId: int, session: AsyncSession, progress_call
 
         # 记录 anime ID，用于后续检查是否需要删除 anime
         anime_id = source_exists.animeId
+        # 提前捕获后备缓存清理所需信息（删除后 source_exists/anime 将失效）
+        # why: 删除源后需清理残留的后备映射缓存，防止新剧命中旧缓存串台
+        cache_source_order = source_exists.sourceOrder or 1
+        anime_for_cache = await session.get(orm_models.Anime, anime_id)
+        cache_anime_title = anime_for_cache.title if anime_for_cache else ""
+        cache_anime_season = (anime_for_cache.season or 1) if anime_for_cache else 1
 
         # 在删除数据库记录前，先删除关联的物理文件
         if delete_files:
@@ -324,6 +400,14 @@ async def delete_source_task(sourceId: int, session: AsyncSession, progress_call
                 await session.commit()
                 orphan_msg = "，并清理了空的作品条目"
                 logger.info(f"已删除没有源的作品条目 (ID: {anime_id})")
+
+        # 清理残留的后备映射缓存（防止新剧命中旧缓存串台）；失败不影响删除结果
+        try:
+            await _clear_fallback_caches_for_anime(
+                session, anime_id, cache_anime_title, cache_anime_season, [cache_source_order]
+            )
+        except Exception as e:
+            logger.warning(f"清理后备缓存失败（不影响删除）: {e}")
 
         msg = f"删除成功{orphan_msg}。" if delete_files else f"删除成功（保留了弹幕文件）{orphan_msg}。"
         raise TaskSuccess(msg)
