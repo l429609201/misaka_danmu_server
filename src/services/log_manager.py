@@ -207,17 +207,19 @@ def setup_logging():
     # 添加新的过滤器到根日志记录器，以便翻译所有输出
     logger.addFilter(ApschedulerLogTranslatorFilter())
     logger.addFilter(SensitiveInfoFilter())  # 添加敏感信息过滤器到所有处理器
-    logger.addFilter(SQLAlchemyPoolShutdownFilter())  # 压制连接池关闭时的良性噪音
 
     logger.addHandler(logging.StreamHandler()) # 控制台处理器
     logger.addHandler(logging.handlers.RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=5, encoding='utf-8')) # 文件处理器
 
-    # 把 MCP 高频请求日志降级过滤器挂到所有处理器上。
-    # why：filter 必须加在 handler 上才对子 logger(mcp.*)传播来的记录生效；
-    # 加在 root logger 上只对 root 直接产生的记录有效。
+    # 把 MCP 高频请求日志降级 + SQLAlchemy 连接池关闭噪音过滤器挂到所有处理器上。
+    # why：filter 必须加在 handler 上才对子 logger 传播来的记录生效；加在 root logger
+    # 上只对 root 直接产生的记录有效。连接池报错来自子 logger(sqlalchemy.pool.*)，
+    # 原先把 SQLAlchemyPoolShutdownFilter 加在 root 上（addFilter）对其不生效，故改挂 handler。
     mcp_filter = McpRequestLogDowngradeFilter()
+    pool_filter = SQLAlchemyPoolShutdownFilter()  # 压制连接池 terminate 连接的良性噪音
     for handler in logger.handlers:
         handler.addFilter(mcp_filter)
+        handler.addFilter(pool_filter)
 
     # 配置httpx logger,确保其日志也经过敏感信息过滤
     httpx_logger = logging.getLogger("httpx")
@@ -228,6 +230,7 @@ def setup_logging():
     deque_handler.addFilter(NoHttpxLogFilter())
     deque_handler.addFilter(BilibiliInfoFilter()) # 添加新的过滤器
     deque_handler.addFilter(mcp_filter)  # UI 日志同样降级 MCP 高频请求噪音
+    deque_handler.addFilter(pool_filter)  # UI 日志同样压制连接池关闭噪音（deque_handler 在上面 for 循环后创建，需单独补挂）
     logger.addHandler(deque_handler)
 
     # 为所有处理器设置格式
