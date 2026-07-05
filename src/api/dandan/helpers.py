@@ -13,6 +13,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, orm_models, CacheManager
+from src.db.crud.config import allocate_next_counter_value, LAST_ALLOCATED_ANIME_ID_KEY
 from src.core.cache import get_cache_backend
 
 # 同包内相对导入
@@ -299,8 +300,22 @@ async def get_next_virtual_anime_id(session: AsyncSession) -> int:
 
 
 async def get_next_real_anime_id(session: AsyncSession) -> int:
-    """获取下一个真实的animeId（当前最大animeId + 1）"""
+    """获取下一个真实的 animeId，保证不重用已删除的 id。
+
+    why: 简单 MAX(id)+1 在删除库内最大 id 的作品后会回退，导致新作品拿到旧 id。
+    旧 id 对应的 episodeId（格式 25{animeId:06d}...）命中残留的后备缓存
+    （fallback_episode_* / match_season_*），新剧标题/provider 被错误写成被删作品内容（串台）。
+    修复：用持久化计数器 lastAllocatedRealAnimeId 记住"曾分配过的最大 id"，
+    每次分配取 max(计数器, 数据库 MAX) + 1 并回写。删除操作不影响计数器，id 只增不减。
+    """
     result = await session.execute(select(func.max(orm_models.Anime.id)))
-    max_id = result.scalar()
-    return 1 if max_id is None else max_id + 1
+    db_max = result.scalar() or 0
+
+    # allocate_next_counter_value 返回 max(counter, db_max) + 1 并回写，内部仅 flush 不 commit
+    return await allocate_next_counter_value(
+        session,
+        LAST_ALLOCATED_ANIME_ID_KEY,
+        floor=db_max,
+        description="后备搜索已分配的最大真实 animeId（只增不减，防止删除后 id 重用导致 episodeId 串台）",
+    )
 

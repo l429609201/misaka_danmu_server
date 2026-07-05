@@ -266,7 +266,18 @@ async def try_predownload_next_episode(
                 f"预下载弹幕: {anime.title} 第{next_episode_index}集",
                 unique_key=unique_key,
                 task_type="predownload",
-                queue_type="fallback"  # 预下载使用后备队列
+                queue_type="fallback",  # 预下载使用后备队列
+                # 结构化参数：供预下载完成通知渲染「作品名/季集/弹幕源」结构块 + 海报，
+                # 与匹配后备通知样式统一（imageUrl 会被 task_manager 映射为通知 image_url）。
+                task_parameters={
+                    "anime_title": anime.title,
+                    "season": anime.season,
+                    "episode": next_episode_index,
+                    "provider": provider,
+                    "year": anime.year,
+                    "imageUrl": anime.imageUrl or "",
+                    "is_movie": (anime.type == "movie"),
+                },
             )
             logger.info(f"✓ 预下载任务已提交: anime='{anime.title}', index={next_episode_index}, taskId={task_id}")
 

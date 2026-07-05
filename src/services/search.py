@@ -180,11 +180,10 @@ async def unified_search(
             max_results_per_source = 30
             logger.warning(f"无效的searchMaxResultsPerSource配置值: {config_value}，使用默认值30")
 
-    # 🚀 bangumi-data 别名增强 + id 直链补充源
+    # 🚀 bangumi-data 别名增强
     # 别名增强：把离线库命中的全语言译名（尤其繁中）也加入搜索关键词，解决「官方主名 vs 平台译名」不一致。
-    # id 直链：把命中番的各平台精确 id 直接解析为 (provider, mediaId)，作为补充源注入，精准命中不靠相似度猜。
+    # 注：id 直链补充源已迁移到 bangumi 元数据源的 supplement_search 模板（仅弹幕源空结果时兜底，全入口统一）。
     search_keywords = [search_term]
-    bgm_direct_task = None  # id 直链补充源任务（并行）
     try:
         from src.services.bangumi_data_manager import get_bangumi_data_manager
         _bgm_mgr = get_bangumi_data_manager()
@@ -204,8 +203,6 @@ async def unified_search(
                         search_keywords.append(a)
                 if len(search_keywords) > 1:
                     logger.info(f"bangumi-data 别名增强: '{search_term}' 追加 {len(search_keywords)-1} 个译名搜索词")
-                # 并行启动 id 直链解析（不阻塞，稍后与搜索结果合并）
-                bgm_direct_task = asyncio.create_task(_bgm_mgr.resolve_sources_by_title(_core))
     except Exception as e:
         logger.warning(f"bangumi-data 别名增强失败（忽略）: {type(e).__name__}: {e}")
 
@@ -352,35 +349,6 @@ async def unified_search(
                        f"长度跳过={skipped_by_length}, 字符跳过={skipped_by_chars}")
 
         logger.info(f"别名过滤: 从 {len(all_results)} 个原始结果中，保留了 {len(filtered_results)} 个相关结果。")
-
-    # 3.5 注入 bangumi-data id 直链补充源（精准命中，绕过标题相似度过滤）
-    # 直链结果是「人工维护的精确平台 id」，比站内搜索按相似度猜更准；按 (provider, mediaId) 去重，直链优先。
-    if bgm_direct_task is not None:
-        try:
-            from src.db import models as _models
-            direct_sources = await bgm_direct_task
-            if direct_sources:
-                existing_pairs = {(r.provider, str(r.mediaId)) for r in filtered_results}
-                injected = 0
-                for ds in direct_sources:
-                    pair = (ds["provider"], str(ds["mediaId"]))
-                    if pair in existing_pairs:
-                        continue  # 站内搜已有同源，去重（保留原有，避免重复）
-                    existing_pairs.add(pair)
-                    filtered_results.insert(0, _models.ProviderSearchInfo(
-                        provider=ds["provider"],
-                        mediaId=str(ds["mediaId"]),
-                        title=ds.get("title") or search_term,
-                        type=ds.get("type") or "tv_series",
-                        season=1,
-                        year=ds.get("year"),
-                        currentEpisodeIndex=episode_info.get("episode") if episode_info else None,
-                    ))
-                    injected += 1
-                if injected:
-                    logger.info(f"bangumi-data id 直链补充源: 注入 {injected} 个精准结果（绕过标题过滤）")
-        except Exception as e:
-            logger.warning(f"bangumi-data id 直链注入失败（忽略）: {type(e).__name__}: {e}")
 
     # 4. 排序
     await progress_callback(70, "排序搜索结果...")

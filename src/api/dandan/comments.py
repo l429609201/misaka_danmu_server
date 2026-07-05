@@ -273,34 +273,34 @@ async def get_comments_for_dandan(
                     age_days = (now - fetched_at).total_seconds() / 86400
                     if age_days >= auto_refresh_days:
                         unique_key = f"refresh-episode-{episodeId}"
-                    # 检查是否已有刷新任务在跑（避免重复提交）
-                    already_running = False
-                    async with task_manager._lock:
-                        already_running = unique_key in task_manager._active_unique_keys
+                        # 检查是否已有刷新任务在跑（避免重复提交）
+                        already_running = False
+                        async with task_manager._lock:
+                            already_running = unique_key in task_manager._active_unique_keys
 
-                    if not already_running:
-                        logger.info(f"[自动刷新] episodeId={episodeId} 弹幕已 {age_days:.1f} 天未更新（阈值={auto_refresh_days}天），触发自动刷新")
-                        try:
-                            _ep_id = episodeId
-                            _scraper = scraper_manager
-                            _rl = rate_limiter
-                            _cfg = config_manager
-                            await task_manager.submit_task(
-                                lambda s, cb, _eid=_ep_id, _sm=_scraper, _r=_rl, _c=_cfg: tasks.refresh_episode_task(
-                                    _eid, s, _sm, _r, cb, _c
-                                ),
-                                f"自动刷新弹幕: episodeId={episodeId}",
-                                unique_key=unique_key,
-                                run_immediately=True
-                            )
-                        except Exception as e:
-                            logger.warning(f"[自动刷新] 提交刷新任务失败: {e}")
+                        if not already_running:
+                            logger.info(f"[自动刷新] episodeId={episodeId} 弹幕已 {age_days:.1f} 天未更新（阈值={auto_refresh_days}天），触发自动刷新")
+                            try:
+                                _ep_id = episodeId
+                                _scraper = scraper_manager
+                                _rl = rate_limiter
+                                _cfg = config_manager
+                                await task_manager.submit_task(
+                                    lambda s, cb, _eid=_ep_id, _sm=_scraper, _r=_rl, _c=_cfg: tasks.refresh_episode_task(
+                                        _eid, s, _sm, _r, cb, _c
+                                    ),
+                                    f"自动刷新弹幕: episodeId={episodeId}",
+                                    unique_key=unique_key,
+                                    run_immediately=True
+                                )
+                            except Exception as e:
+                                logger.warning(f"[自动刷新] 提交刷新任务失败: {e}")
 
-                    # 等待刷新任务完成（最多30秒），完成后重取弹幕
-                    refreshed = await wait_for_refresh_task(episodeId, task_manager, max_wait_seconds=30.0)
-                    if refreshed:
-                        comments_data = await crud.fetch_comments(session, episodeId)
-                        logger.info(f"[自动刷新] episodeId={episodeId} 刷新完成，重新获取弹幕 {len(comments_data)} 条")
+                        # 等待刷新任务完成（最多30秒），完成后重取弹幕
+                        refreshed = await wait_for_refresh_task(episodeId, task_manager, max_wait_seconds=30.0)
+                        if refreshed:
+                            comments_data = await crud.fetch_comments(session, episodeId)
+                            logger.info(f"[自动刷新] episodeId={episodeId} 刷新完成，重新获取弹幕 {len(comments_data)} 条")
 
     # 预下载下一集弹幕 (异步,不阻塞当前响应)
     # 只有当前集已存在于数据库时才触发预下载（后备场景会在任务完成后单独触发）
@@ -660,12 +660,24 @@ async def get_comments_for_dandan(
 
                 # 提交弹幕下载任务到后备队列
                 try:
+                    # 结构化通知参数：供完成通知渲染「作品名/季集/弹幕源/海报」结构块
+                    _mf_params = {
+                        "anime_title": current_display_title or current_final_title or "",
+                        "season": current_final_season,
+                        "episode": current_episode_number,
+                        "provider": current_provider,
+                        "imageUrl": current_imageUrl or "",
+                        # 有具体集数即视为剧集；仅当无集数且类型为 movie 时才按电影展示
+                        "is_movie": (current_episode_number is None and current_media_type == "movie"),
+                        "media_type": current_media_type,
+                    }
                     task_id, done_event = await task_manager.submit_task(
                         download_match_fallback_comments_task,
                         f"匹配后备弹幕下载: {final_title} 第{episode_number}集 [{provider}:{mediaId}]",
                         unique_key=task_unique_key,
                         task_type="download_comments",
-                        queue_type="fallback"  # 使用后备队列
+                        queue_type="fallback",  # 使用后备队列
+                        task_parameters=_mf_params
                     )
                     logger.info(f"已提交匹配后备弹幕下载任务: {task_id}")
 
@@ -1199,12 +1211,27 @@ async def get_comments_for_dandan(
 
                     # 提交弹幕下载任务
                     try:
+                        # 结构化通知参数：从外层已确认的映射信息提取，供完成通知渲染
+                        # 「作品名/季集/弹幕源/海报」结构块（与预下载通知统一）。
+                        _mi = current_mapping_info or {}
+                        _dl_media_type = _mi.get("type", "")
+                        _dl_params = {
+                            "anime_title": _mi.get("original_title") or _mi.get("final_title") or "",
+                            "season": _mi.get("season") if _mi.get("season") is not None else _mi.get("final_season"),
+                            "episode": episode_number,
+                            "provider": current_provider,
+                            "imageUrl": _mi.get("imageUrl") or "",
+                            # 有具体集数即视为剧集；仅当无集数且类型为 movie 时才按电影展示
+                            "is_movie": (episode_number is None and _dl_media_type == "movie"),
+                            "media_type": _dl_media_type,
+                        }
                         task_id, done_event = await task_manager.submit_task(
                             download_comments_task,
                             f"后备搜索弹幕下载: episodeId={episodeId}",
                             unique_key=task_unique_key,
                             task_type="download_comments",
-                            queue_type="fallback"  # 使用后备队列
+                            queue_type="fallback",  # 使用后备队列
+                            task_parameters=_dl_params
                         )
                         logger.info(f"已提交弹幕下载任务: {task_id}")
 

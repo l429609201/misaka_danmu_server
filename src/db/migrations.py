@@ -746,6 +746,12 @@ async def _reset_ai_match_prompt_v2(conn: AsyncConnection):
     logger.info("aiMatchPrompt 已删除(v2)，将在 register_defaults 阶段用新默认值回填。")
 
 
+async def _reset_server_instance_id_v1(conn: AsyncConnection):
+    """删除 config 表中的 serverInstanceId 条目
+    """
+    await conn.execute(text("DELETE FROM config WHERE config_key = 'serverInstanceId'"))
+
+
 # 所有迁移任务的 ID 列表（新增迁移时需同步更新此列表）
 ALL_MIGRATION_IDS = [
     "migrate_clear_rate_limit_state_v1",
@@ -759,6 +765,7 @@ ALL_MIGRATION_IDS = [
     "migrate_anime_group_fk_v1",
     "reset_ai_match_prompt_v1",
     "reset_ai_match_prompt_v2",
+    "reset_server_instance_id_v1",
 ]
 
 
@@ -798,6 +805,7 @@ async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
         ("migrate_anime_group_fk_v1", _migrate_anime_group_fk_v1, (db_type,)),  # 为 anime.group_id 添加外键约束
         ("reset_ai_match_prompt_v1", _reset_ai_match_prompt_v1, ()),  # 删除旧 aiMatchPrompt，用新默认提示词回填
         ("reset_ai_match_prompt_v2", _reset_ai_match_prompt_v2, ()),  # 再次删除 aiMatchPrompt，回填含识别词校正的新默认值
+        ("reset_server_instance_id_v1", _reset_server_instance_id_v1, ()),  
     ]
 
     for migration_id, migration_func, args in migrations:

@@ -1194,7 +1194,9 @@ async def get_match_for_item(
                     "final_title": final_title,
                     "final_season": final_season,
                     "episode_number": episode_number,
-                    "is_movie": is_movie
+                    "is_movie": is_movie,
+                    # 海报URL：供匹配后备完成通知渲染海报图片（task_manager 会把 imageUrl 映射为通知的 image_url）
+                    "imageUrl": best_match.imageUrl,
                 }
                 # 将匹配详情写入 task 对象的 parameters（供通知消息使用）
                 _tid = task_id_ref.get("id")

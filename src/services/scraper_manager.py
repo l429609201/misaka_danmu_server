@@ -493,9 +493,16 @@ class ScraperManager:
                 # 恢复原始 logger
                 scraper.logger = original_logger
 
+        # 分发策略：每个源自行决定要搜哪些关键词（BaseScraper 默认只用主搜索词 keywords[0]，
+        # gamer 等源覆写 select_search_keywords 按语言挑别名），不再「全量别名 × 全部源」笛卡尔积。
         tasks = []
-        for keyword in keywords:
-            for scraper in enabled_scrapers:
+        for scraper in enabled_scrapers:
+            try:
+                scraper_keywords = scraper.select_search_keywords(keywords)
+            except Exception:
+                # 挑词异常不影响搜索：回退主搜索词
+                scraper_keywords = [keywords[0]] if keywords else []
+            for keyword in scraper_keywords:
                 tasks.append(timed_search(scraper, keyword))
 
         # 并行启动补充源搜索（乐观策略：先搜所有可映射平台，后续再过滤）

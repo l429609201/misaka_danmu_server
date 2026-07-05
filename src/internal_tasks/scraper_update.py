@@ -39,115 +39,87 @@ class SystemUser:
     username = "system_auto_update"
 
 
-# ── 增量/逐文件自动更新失败冷却机制 ──
-# why：非全量替换（逐文件/增量）自动更新此前没有失败冷却，一旦某个 remote_version 更新后
-# 无法正确持久化（如版本回退），轮询会反复对同一版本下载→重启，形成无限重启循环。
-# 这里记录“最近一次尝试更新的 remote_version + 时间”，冷却期内跳过同版本的重复更新。
-_AUTO_UPDATE_COOLDOWN_MINUTES = 60
-
-
-def _get_auto_update_attempt_flag() -> Path:
-    """获取自动更新尝试记录标志文件路径（放在持久化的 config 目录）。"""
-    base = Path("/app/config") if Path("/.dockerenv").exists() else Path("config")
-    return base / "scraper_auto_update_attempt"
-
-
-def _is_version_in_cooldown(remote_version: str) -> bool:
-    """判断指定 remote_version 是否处于失败冷却期内（True 表示应跳过本次更新）。"""
-    flag = _get_auto_update_attempt_flag()
-    if not flag.exists():
-        return False
-    try:
-        from datetime import datetime
-        data = json.loads(flag.read_text())
-        if data.get("version") != remote_version:
-            return False
-        attempt_time = datetime.fromisoformat(data.get("time", ""))
-        elapsed_min = (datetime.now() - attempt_time).total_seconds() / 60
-        if elapsed_min < _AUTO_UPDATE_COOLDOWN_MINUTES:
-            logger.warning(
-                f"版本 {remote_version} 在 {int(elapsed_min)} 分钟前已尝试自动更新，"
-                f"冷却期 {_AUTO_UPDATE_COOLDOWN_MINUTES} 分钟内跳过，避免重复下载重启。"
-                f"如更新确未生效，请检查日志或手动更新。"
-            )
-            return True
-        # 冷却期已过，清除标志
-        flag.unlink(missing_ok=True)
-        return False
-    except Exception:
-        # 标志文件异常，清除并放行
-        flag.unlink(missing_ok=True)
-        return False
-
-
-def _record_auto_update_attempt(remote_version: str) -> None:
-    """记录本次自动更新尝试的版本与时间（用于失败冷却判断）。"""
-    try:
-        from datetime import datetime
-        flag = _get_auto_update_attempt_flag()
-        flag.parent.mkdir(parents=True, exist_ok=True)
-        flag.write_text(json.dumps(
-            {"version": remote_version, "time": datetime.now().isoformat()},
-            ensure_ascii=False
-        ))
-    except Exception as e:
-        logger.debug(f"记录自动更新尝试标志失败（忽略）: {e}")
-
-
-def _clear_auto_update_attempt() -> None:
-    """更新成功（或确认版本已生效）后清除尝试标志。"""
-    try:
-        _get_auto_update_attempt_flag().unlink(missing_ok=True)
-    except Exception:
-        pass
-
-
 def _get_backup_dir_path() -> Path:
     """获取持久化备份目录路径（与 scraper_resources.BACKUP_DIR 一致）。"""
     return Path("/app/config/scrapers_backup") if Path("/.dockerenv").exists() else Path("config/scrapers_backup")
 
 
-def _verify_backup_version(remote_version: str) -> bool:
-    """校验备份目录是否已成功落盘为远程新版本。
+def _get_backup_version() -> Optional[str]:
+    """读取备份目录 package.json 的版本号（用于版本状态校验）。无则返回 None。"""
+    try:
+        backup_pkg = _get_backup_dir_path() / "package.json"
+        if backup_pkg.exists():
+            data = json.loads(backup_pkg.read_text())
+            return data.get("version")
+    except Exception:
+        pass
+    return None
 
-    判据（满足其一即视为成功）：
-    - 备份目录 package.json 的 version == remote_version；
-    - 或备份目录 versions.json 的 updated_at 存在且备份目录含 .so/.pyd 文件（保证有可恢复的源）。
 
-    why：仅在确认新版本已持久化到备份目录后才允许重启，避免重启后版本回退导致无限循环。
-    """
+def _backup_has_binaries() -> bool:
+    """备份目录是否含可恢复的 .so/.pyd 文件。"""
     try:
         backup_dir = _get_backup_dir_path()
         if not backup_dir.exists():
             return False
-        # 必须有实际的编译文件，否则重启后无源可恢复
-        has_binary = any(
+        return any(
             f.suffix in (".so", ".pyd") for f in backup_dir.iterdir() if f.is_file()
         )
-        if not has_binary:
+    except Exception:
+        return False
+
+
+def _verify_backup_version(remote_version: str) -> bool:
+    """校验备份目录是否已成功落盘为指定的目标版本。
+
+    判据（必须同时满足）：
+    - 备份目录含 .so/.pyd 文件（保证重启后有可恢复的源）；
+    - 备份目录 package.json 的 version == remote_version（严格版本匹配）。
+
+    why：以“版本状态”而非“时间冷却”决策——仅在确认目标版本已真正持久化到备份目录后，
+    才允许重启，避免重启后版本回退导致无限循环。
+    """
+    try:
+        if not _backup_has_binaries():
             return False
-        # 校验版本号
-        backup_pkg = backup_dir / "package.json"
-        if backup_pkg.exists():
-            try:
-                data = json.loads(backup_pkg.read_text())
-                if data.get("version") == remote_version:
-                    return True
-            except Exception:
-                pass
-        # 版本号未对上时，退而确认 versions.json 是否已带 updated_at（新写入的标志）
-        backup_versions = backup_dir / "versions.json"
-        if backup_versions.exists():
-            try:
-                data = json.loads(backup_versions.read_text())
-                if data.get("updated_at"):
-                    return True
-            except Exception:
-                pass
-        return False
+        return _get_backup_version() == remote_version
     except Exception as e:
-        logger.debug(f"校验备份版本失败（视为未成功）: {e}")
+        logger.debug(f"校验备份版本失败（视为未就绪）: {e}")
         return False
+
+
+async def _restart_to_apply_backup(config_manager, target_version: str) -> None:
+    """备份目录已是目标版本、只差重启生效时，触发容器重启（不重复下载）。
+
+    why：以版本状态决策——当上一轮已把新版本下载/上传到备份目录、但因重启失败等原因
+    未生效时，无需重新下载，只要重启让 scraper_manager 从备份恢复即可。
+    """
+    from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
+    import sys
+
+    docker_available = is_docker_socket_available() and is_running_in_docker()
+    if not docker_available:
+        logger.warning(
+            f"备份目录已是目标版本 {target_version}，但未检测到 Docker 套接字，"
+            f"无法自动重启。请手动重启容器以加载新弹幕源（.so 需重启生效）。"
+        )
+        return
+
+    logger.info(f"备份目录已是目标版本 {target_version}，无需重复下载，准备重启容器使其生效...")
+    for handler in logging.getLogger().handlers:
+        handler.flush()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    await asyncio.sleep(1.0)
+
+    container_name = await config_manager.get("containerName", "misaka-danmu-server")
+    result = await restart_container(container_name)
+    if result.get("success"):
+        logger.info(f"已向容器 '{container_name}' 发送重启指令，重启后将从备份恢复到 {target_version}")
+    else:
+        logger.warning(f"重启容器失败: {result.get('message')}，请手动重启容器")
+
+
 
 
 class ScraperAutoUpdateTask(BasePollingTask):
@@ -222,12 +194,12 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
 
     logger.info(f"检测到新版本: {local_version} -> {remote_version}，开始自动更新...")
 
-    # 失败冷却检查：同一 remote_version 在冷却期内已尝试过则跳过，防止无限下载重启循环
-    if _is_version_in_cooldown(remote_version):
+    # 版本状态预校（代替时间冷却）：若备份目录已经是目标版本，说明上一轮已下载/上传好，
+    # 只是尚未重启生效（如上次重启失败）。此时不重复下载，直接触发重启让备份生效即可。
+    # why：以“版本状态”而非“时间”决策，既避免重复下载重启循环，又不会误伤正常更新。
+    if _verify_backup_version(remote_version):
+        await _restart_to_apply_backup(config_manager, remote_version)
         return
-
-    # 记录本次尝试（版本+时间），更新成功后会清除；失败则冷却期内不再重复尝试同版本
-    _record_auto_update_attempt(remote_version)
 
     # 执行更新
     await _perform_update(
@@ -518,8 +490,6 @@ async def _perform_update(
 
                         # 全量替换成功，清除失败标志
                         FULL_REPLACE_FAIL_FLAG.unlink(missing_ok=True)
-                        # 全量替换成功，清除自动更新失败冷却标志
-                        _clear_auto_update_attempt()
                         return
                     else:
                         logger.warning("全量替换失败，回退到逐文件下载模式")
@@ -666,8 +636,6 @@ async def _perform_update(
             try:
                 await scraper_manager.load_and_sync_scrapers()
                 logger.info(f"弹幕源首次下载完成（热加载）: {remote_version} (下载: {download_count})")
-                # 首次下载即已生效，清除冷却标志
-                _clear_auto_update_attempt()
             except Exception as e:
                 logger.error(f"热加载失败: {e}")
         else:

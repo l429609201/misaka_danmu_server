@@ -1543,7 +1543,7 @@ export const SearchResult = () => {
                     <InputNumber
                       value={editSeason}
                       onChange={value => setEditSeason(value)}
-                      min={1}
+                      min={0}
                       step={1}
                       disabled={editMediaType === 'movie'}
                       style={{ width: 70 }}
@@ -1630,7 +1630,7 @@ export const SearchResult = () => {
                   <InputNumber
                     value={editSeason}
                     onChange={value => setEditSeason(value)}
-                    min={1}
+                    min={0}
                     step={1}
                     disabled={editMediaType === 'movie'}
                     style={{ width: 80 }}

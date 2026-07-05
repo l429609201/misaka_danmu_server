@@ -328,6 +328,13 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
         if added_count > 0:
             raise TaskSuccess(f"刷新完成，新增 {added_count} 条弹幕。")
         else:
+            # 已成功从源抓到弹幕、只是数量未增加（save_danmaku_for_episode 会 return 0 且不更新时间戳）。
+            # 必须在此更新 fetchedAt，否则自动刷新的“距今超过阈值”判断永远成立，
+            # 会导致同一集被反复触发刷新、后台任务无限循环（见 comments.py 自动刷新逻辑）。
+            # 注意：与“完全没抓到弹幕”（上方 not all_comments_from_source 分支）区分——
+            # 那种情况刻意不更新时间戳以保留重试机会。
+            await crud.update_episode_fetch_time(session, episodeId)
+            await session.commit()
             raise TaskSuccess("刷新完成，该分集暂无新弹幕。")
     except TaskSuccess:
         # 任务成功完成，直接重新抛出，由 TaskManager 处理
@@ -477,6 +484,10 @@ async def refresh_bulk_episodes_task(episodeIds: List[int], session: AsyncSessio
                     session, episode_id, all_comments_from_source, config_manager,
                     fire_threshold=scraper.likes_fire_threshold
                 )
+                # 若抓到弹幕但数量未增加（save 返回 0 且内部不更新时间戳），
+                # 仍需更新 fetchedAt，避免该集下次被自动刷新逻辑误判为“超期”反复触发。
+                if added_count == 0:
+                    await crud.update_episode_fetch_time(session, episode_id)
                 total_added_comments += added_count
                 success_episodes.append((episode_index, episode_id))
 

@@ -127,7 +127,11 @@ async def refresh_single_episode(
     media_id = episode.get('mediaId', '?')
     task_title = f"刷新分集: {episode['title']} - [{provider_name}] (mediaId={media_id})"
     task_coro = lambda session, callback: tasks.refresh_episode_task(episodeId, session, scraper_manager, rate_limiter, callback, config_manager)
-    task_id, _ = await task_manager.submit_task(task_coro, task_title)
+    # 传入 unique_key，使任务完成后 _determine_event_type 能正确归类为 refresh 通知。
+    # 否则空 unique_key 会导致通知事件类型判定为 None，刷新完成后不发任何通知。
+    task_id, _ = await task_manager.submit_task(
+        task_coro, task_title, unique_key=f"refresh-episode-{episodeId}"
+    )
 
     return {"message": f"分集 '{episode['title']}' 的刷新任务已提交。", "taskId": task_id}
 
@@ -154,7 +158,11 @@ async def refresh_episodes_bulk(
 
     task_title = f"批量刷新 {len(episode_ids)} 个分集"
     task_coro = lambda s, cb: tasks.refresh_bulk_episodes_task(episode_ids, s, scraper_manager, rate_limiter, cb, config_manager)
-    task_id, _ = await task_manager.submit_task(task_coro, task_title)
+    # 传入 unique_key（bulk-refresh- 前缀），使任务完成后 _determine_event_type 正确归类为 refresh 通知。
+    # 否则空 unique_key 会导致通知事件类型判定为 None，批量刷新完成后不发通知。
+    ids_str = ",".join(sorted(str(eid) for eid in episode_ids))
+    unique_key = f"bulk-refresh-{hashlib.md5(ids_str.encode('utf-8')).hexdigest()[:8]}"
+    task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
 
     return {"message": f"已提交批量刷新任务，共 {len(episode_ids)} 个分集", "taskId": task_id}
 

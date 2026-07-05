@@ -7,7 +7,7 @@ from sqlalchemy import NullPool
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import text
-from sqlalchemy.exc import OperationalError # Import specific SQLAlchemy exceptions
+from sqlalchemy.exc import OperationalError, DBAPIError # Import specific SQLAlchemy exceptions
 from src.core.config import settings
 from .orm_models import Base # type: ignore
 from src.core.timezone import get_app_timezone, get_timezone_offset_str, get_now
@@ -88,6 +88,27 @@ def _get_db_url(include_db_name: bool = True, for_server: bool = False) -> URL:
         host=settings.database.host, port=settings.database.port, database=database, query=query,
     )
 
+def _get_connect_args() -> dict:
+    """
+    根据数据库类型生成驱动层的网络超时参数（connect_args）。
+
+    why: pool_pre_ping 只在"借出连接的瞬间"检测存活，无法防止连接被借出后、
+    在请求/事务执行途中被服务端(wait_timeout)或网络抖动掐断。给驱动加上
+    连接/命令超时，可以让卡死的网络操作快速失败并释放，避免长时间挂起，
+    是缓解 MySQL(asyncmy/aiomysql) 与 PG(asyncpg) 连接失效错误的关键一环。
+    """
+    db_type = get_db_type()
+
+    if db_type == "mysql":
+        # asyncmy 与 aiomysql 均支持 connect_timeout（建立连接的超时，单位秒）
+        return {"connect_timeout": 10}
+    elif db_type == "postgresql":
+        # asyncpg dialect：timeout=建立连接超时；command_timeout=单条语句超时（秒）
+        # command_timeout 设为 None 表示不限制单条语句，避免误杀正常的慢查询/长事务
+        return {"timeout": 10, "command_timeout": None}
+    return {}
+
+
 def _log_db_connection_error(context_message: str, e: Exception):
     """
     按照三个方面记录数据库连接错误：连接、用户名密码、权限
@@ -154,6 +175,8 @@ async def create_db_engine_and_session(app: FastAPI):
             "pool_pre_ping": db_cfg.pool_pre_ping,
             "pool_recycle": db_cfg.pool_recycle,
             "poolclass": pool_class,
+            # 驱动层网络超时，避免死连接长时间挂起（详见 _get_connect_args 说明）
+            "connect_args": _get_connect_args(),
         }
 
         # QueuePool 特有参数，NullPool 不需要这些
@@ -220,8 +243,20 @@ async def _create_db_if_not_exists():
 async def get_db_session(request: Request) -> AsyncSession:
     """依赖项：从应用状态获取数据库会话"""
     session_factory = request.app.state.db_session_factory
-    async with session_factory() as session:
+    session = session_factory()
+    try:
         yield session
+    finally:
+        # why: 连接可能在请求执行途中被服务端(wait_timeout)或网络抖动断开，
+        # 此时 async with 自动触发的 rollback()/close() 会对死连接操作而抛出
+        # asyncmy.InternalError / asyncpg 相关异常，刷一屏 traceback。
+        # 这里显式 close，并吞掉"断连型"异常降级为一条 warning：连接既然已断，
+        # 回滚本就无意义，SQLAlchemy 会把这条坏连接从池中作废(invalidate)，
+        # 不影响后续请求；其它未知异常仍向上抛出，避免掩盖真实问题。
+        try:
+            await session.close()
+        except (DBAPIError, OperationalError) as e:
+            logger.warning(f"关闭数据库会话时连接已失效（已自动作废该连接，不影响后续请求）: {e}")
 
 async def close_db_engine(app: FastAPI):
     """关闭数据库引擎"""

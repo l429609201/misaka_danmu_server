@@ -4,7 +4,6 @@ warnings.filterwarnings("ignore", message="urllib3.*doesn't match a supported ve
 import uvicorn
 import asyncio
 import secrets
-import uuid
 import httpx
 import logging
 import json
@@ -153,7 +152,7 @@ async def lifespan(app: FastAPI):
     default_configs = get_default_configs(settings=settings, ai_prompts=ai_prompts)
     # 添加运行时生成的配置
     default_configs['jwtSecretKey'] = (secrets.token_hex(32), '用于签名JWT令牌的密钥，在首次启动时自动生成。')
-    default_configs['serverInstanceId'] = (str(uuid.uuid4()), '')
+    default_configs['serverInstanceId'] = (secrets.token_hex(32), '')
 
     await app.state.config_manager.register_defaults(default_configs)
 

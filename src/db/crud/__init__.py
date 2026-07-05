@@ -8,6 +8,8 @@ from .config import (
     get_config_value,
     update_config_value,
     initialize_configs,
+    allocate_next_counter_value,
+    LAST_ALLOCATED_ANIME_ID_KEY,
 )
 
 # User模块
@@ -334,6 +336,8 @@ __all__ = [
     'get_config_value',
     'update_config_value',
     'initialize_configs',
+    'allocate_next_counter_value',
+    'LAST_ALLOCATED_ANIME_ID_KEY',
     # User
     'get_user_by_id',
     'get_user_by_username',
