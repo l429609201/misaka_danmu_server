@@ -133,6 +133,8 @@ async def import_from_provider(
         "season": request_data.season,
         "year": request_data.year,
         "currentEpisodeIndex": request_data.currentEpisodeIndex,
+        # episode 供完成通知模板展示集号（模板读 episode 而非 currentEpisodeIndex）
+        "episode": request_data.currentEpisodeIndex,
         "imageUrl": request_data.imageUrl,
         "doubanId": request_data.doubanId,
         "tmdbId": request_data.tmdbId,
@@ -452,7 +454,20 @@ async def import_from_url(
     unique_key = "-".join(filter(None, unique_key_parts))
 
     task_title = f"URL导入: {final_title} ({provider})"
-    task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+    # 补齐 task_parameters：供完成通知展示作品名/季/类型/来源
+    url_task_parameters = {
+        "provider": provider,
+        "mediaId": media_id,
+        "animeTitle": final_title,
+        "mediaType": final_media_type,
+        "season": final_season,
+        "year": year,
+        "imageUrl": image_url,
+    }
+    task_id, _ = await task_manager.submit_task(
+        task_coro, task_title, unique_key=unique_key,
+        task_parameters=url_task_parameters,
+    )
 
     return {"message": f"'{final_title}' 的URL导入任务已提交。", "taskId": task_id}
 

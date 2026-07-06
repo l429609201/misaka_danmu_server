@@ -46,14 +46,26 @@ class WebhookTriggeredMessage(NotificationMessage):
         source = _esc(d.get("webhook_source", ""))
         delayed = d.get("delayed", False)
         delay_hours = d.get("delay_hours", "")
+        season = d.get("season")
+        episode = d.get("episode")
+        media_type = _esc(d.get("media_type", ""))
 
         title = "📡 *Webhook 触发*"
         op_str = f"⏳ 延迟入库 {_esc(str(delay_hours))} 小时后执行" if delayed else "⚡ 即时导入"
         quote_lines = [
             f">📺 *{anime_title}*",
         ]
+        # 季集行：SxxExx / 类型
+        se_str = ""
+        if season is not None and episode is not None:
+            se_str = f"S{int(season):02d}E{int(episode):02d}"
+        elif season is not None:
+            se_str = f"S{int(season):02d}"
+        loc_parts = [p for p in [se_str, media_type] if p]
+        if loc_parts:
+            quote_lines.append(f">📍 {' \\| '.join(loc_parts)}")
         if source:
-            quote_lines.append(f">📍 来源: {source}")
+            quote_lines.append(f">🎬 来源: {source}")
         quote_lines.append(f">{op_str}")
 
         lines = [title, ""]
@@ -66,11 +78,22 @@ class WebhookTriggeredMessage(NotificationMessage):
         source = d.get("webhook_source", "")
         delayed = d.get("delayed", False)
         delay_hours = d.get("delay_hours", "")
+        season = d.get("season")
+        episode = d.get("episode")
+        media_type = d.get("media_type", "")
 
         op_str = f"⏳ 延迟入库 {delay_hours} 小时后执行" if delayed else "⚡ 即时导入"
         lines = ["📡 Webhook 触发", "", f"📺 {anime_title}"]
+        se_str = ""
+        if season is not None and episode is not None:
+            se_str = f"S{int(season):02d}E{int(episode):02d}"
+        elif season is not None:
+            se_str = f"S{int(season):02d}"
+        loc_parts = [p for p in [se_str, media_type] if p]
+        if loc_parts:
+            lines.append(f"📍 {' | '.join(loc_parts)}")
         if source:
-            lines.append(f"📍 来源: {source}")
+            lines.append(f"🎬 来源: {source}")
         lines.append(op_str)
         return ("📡 Webhook 触发", "\n".join(lines))
 

@@ -14,6 +14,63 @@ from src.db import models, crud, ConfigManager
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_import_unique_key(key: str) -> Optional[Tuple[str, str, Optional[int]]]:
+    """从导入类 unique_key 解析出 (provider, media_id, season)。
+
+    支持的格式：
+      - import-{provider}-{mediaId}-S{season}-ep{ep}
+      - import-{provider}-{mediaId}-{8位hash}
+      - ui-import-{provider}-{mediaId}-season-{s}-episode-{e}-{type}
+      - url-import-{provider}-{mediaId}-{type}-season-{s} / url-import-{provider}-{mediaId}-{type}
+
+    why：mediaId 可能含连字符，故不能简单 split。先剥离已知前缀，再从尾部
+    剥离已知后缀标记（-S{n}-ep{m} / -season-{n}[-...] / 末尾8位hash），
+    剩余部分首段为 provider、其余为 mediaId。解析失败返回 None（调用方静默跳过）。
+    """
+    import re
+    if not key:
+        return None
+    # 剥离前缀
+    prefix = None
+    for p in ("ui-import-", "url-import-", "import-"):
+        if key.startswith(p):
+            prefix = p
+            break
+    if prefix is None:
+        return None
+    body = key[len(prefix):]
+
+    season: Optional[int] = None
+    # 剥离 -S{season}-ep{ep} 尾部（webhook 导入）
+    m = re.search(r"-S(\d+)-ep\d*$", body)
+    if m:
+        season = int(m.group(1))
+        body = body[:m.start()]
+    else:
+        # 剥离 -season-{s}[-episode-{e}][-{type}] 尾部（ui-import / url-import）
+        m2 = re.search(r"-season-(\d+)(?:-.*)?$", body)
+        if m2:
+            season = int(m2.group(1))
+            body = body[:m2.start()]
+        else:
+            # 剥离末尾 8 位 hash（编辑导入 import-{provider}-{mediaId}-{hash}）
+            m3 = re.search(r"-[0-9a-f]{8}$", body)
+            if m3:
+                body = body[:m3.start()]
+            else:
+                # url-import-{provider}-{mediaId}-{type}：剥离末尾已知类型
+                m4 = re.search(r"-(movie|tv_series|tv|other)$", body)
+                if m4:
+                    body = body[:m4.start()]
+
+    parts = body.split("-", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None
+    provider, media_id = parts[0], parts[1]
+    return provider, media_id, season
+
+
 class TaskStatus(str, Enum):
     PENDING = "排队中"
     RUNNING = "运行中"
@@ -241,6 +298,39 @@ class TaskManager:
                             db_extra["tmdb_id"] = info.get("tmdbId", "") or ""
                             if not db_extra.get("image_url"):
                                 db_extra["image_url"] = info.get("imageUrl", "") or ""
+                except Exception:
+                    pass  # 补查失败不影响通知发出
+
+        # 4. 兜底：导入类任务（import-/ui-import-/url-import- 前缀）若 task_parameters
+        #    未带 animeTitle（如 direct_import / URL导入 / 旧路径），从 unique_key 解析
+        #    provider+mediaId 反查 DB 补齐作品名/季/来源。why：媒体库逐集导入等路径
+        #    的微信通知只剩弹幕数，看不出是哪部作品。
+        if not db_extra.get("anime_title") and not (task.task_parameters or {}).get("animeTitle"):
+            key = task.unique_key or ""
+            parsed = _parse_import_unique_key(key)
+            if parsed:
+                provider, media_id, season_hint = parsed
+                try:
+                    async with self._session_factory() as session:
+                        anime_id = await crud.get_anime_id_by_source_media_id(
+                            session, provider, media_id, season=season_hint
+                        )
+                        # season 提示查不到时退化为不带 season 再查一次
+                        if anime_id is None and season_hint is not None:
+                            anime_id = await crud.get_anime_id_by_source_media_id(
+                                session, provider, media_id
+                            )
+                        if anime_id is not None:
+                            from src.db.orm_models import Anime as AnimeORM
+                            anime_row = await session.get(AnimeORM, anime_id)
+                            if anime_row:
+                                db_extra["anime_title"] = anime_row.title
+                                db_extra["season"] = anime_row.season
+                                db_extra["year"] = anime_row.year
+                                db_extra["media_type"] = anime_row.type
+                                if not db_extra.get("image_url"):
+                                    db_extra["image_url"] = (anime_row.imageUrl or "")
+                            db_extra["source"] = provider
                 except Exception:
                     pass  # 补查失败不影响通知发出
 
