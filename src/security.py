@@ -497,6 +497,38 @@ async def get_current_user(
     )
 
 
+async def get_current_user_no_db_hold(
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme_optional),
+) -> models.User:
+    """流式端点专用鉴权：不通过 Depends(get_db_session) 持有请求级连接。
+
+    why：SSE 等 StreamingResponse 端点的响应生命周期会持续到流关闭（可达数小时）。
+    若鉴权用 Depends(get_current_user)（内部 Depends(get_db_session)），那条 DB 连接
+    会被整个流挂住不归还，客户端断开时该空闲连接被 cancel scope 级联取消，触发连接池
+    terminate 二次异常刷屏。这里改为「函数体内开临时 session，验证完立即关闭」，
+    鉴权只占用连接 0.01s，SSE 流期间不占任何 DB 连接。
+    """
+    session_factory = request.app.state.db_session_factory
+    async with session_factory() as session:
+        if token:
+            try:
+                user, _ = await _get_user_from_token(token, session)
+                return user
+            except HTTPException:
+                pass  # token 无效，继续检查白名单
+
+        whitelist_user = await check_ip_whitelist(request, session)
+        if whitelist_user:
+            return whitelist_user
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 async def get_current_user_with_jti(
     request: Request,
     token: Optional[str] = Depends(oauth2_scheme_optional),

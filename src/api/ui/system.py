@@ -396,7 +396,7 @@ async def parse_filename_test(
 
 
 @router.get("/logs/stream", summary="SSE实时日志推送")
-async def stream_server_logs(current_user: models.User = Depends(security.get_current_user)):
+async def stream_server_logs(current_user: models.User = Depends(security.get_current_user_no_db_hold)):
     """使用Server-Sent Events实时推送服务器日志。"""
 
     async def event_generator():
@@ -630,7 +630,6 @@ async def _build_rate_limit_status_data(
 async def get_rate_limit_status(
     request: Request,
     stream: bool = Query(False, description="启用SSE流式推送模式"),
-    session: AsyncSession = Depends(get_db_session),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
 ):
@@ -640,12 +639,16 @@ async def get_rate_limit_status(
     - 默认模式 (stream=false): 返回一次性 JSON 响应
     - SSE模式 (stream=true): 通过 Server-Sent Events 每秒推送最新状态
     """
-    if not stream:
-        return await _build_rate_limit_status_data(session, scraper_manager, rate_limiter)
-
-    # SSE 流式推送模式
+    # why：不再用 Depends(get_db_session) 注入请求级 session。SSE 模式下响应生命周期
+    # 会持续到流关闭，注入的连接会被整个流挂住，客户端断开时触发连接池 terminate 刷屏。
+    # 改为两个分支各自开临时 session，用完即还。
     session_factory = request.app.state.db_session_factory
 
+    if not stream:
+        async with session_factory() as session:
+            return await _build_rate_limit_status_data(session, scraper_manager, rate_limiter)
+
+    # SSE 流式推送模式
     async def event_generator():
         try:
             while True:
@@ -718,7 +721,7 @@ async def get_docker_status_endpoint(
 
 @router.get("/docker/stats", summary="获取容器资源使用统计（SSE 实时推送）")
 async def get_docker_stats_endpoint(
-    _: models.User = Depends(security.get_current_user)
+    _: models.User = Depends(security.get_current_user_no_db_hold)
 ):
     """
     获取当前容器的资源使用统计信息，包括 CPU、内存、网络 I/O 等。

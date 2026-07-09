@@ -173,6 +173,7 @@ class TaskManager:
             "delete-anime-",         # 删除作品
             "delete-episode-",       # 删除单个分集
             "delete-bulk-episodes-", # 批量删除分集
+            "modify-episodes-",      # 集数偏移（管理类操作，非导入，避免误判为"导入成功"）
         )):
             return None
 
@@ -184,8 +185,9 @@ class TaskManager:
         if key.startswith("webhook-search-"):
             return f"webhook_import{suffix}"
 
-        # 数据源刷新
-        if key.startswith("refresh-episode-") or key.startswith("full-refresh-") or key.startswith("bulk-refresh-"):
+        # 数据源刷新（含定时"刷新最新集" refresh-latest- 前缀，否则会掉到末尾兜底被误判为导入）
+        if (key.startswith("refresh-episode-") or key.startswith("full-refresh-")
+                or key.startswith("bulk-refresh-") or key.startswith("refresh-latest-")):
             return f"refresh{suffix}"
 
         # 追更刷新（增量刷新 job 提交的导入任务，通过 title 识别）
@@ -244,12 +246,10 @@ class TaskManager:
             key = task.unique_key
             try:
                 async with self._session_factory() as session:
-                    if key.startswith("refresh-episode-") or key.startswith("refresh-latest-"):
-                        # 这两类 key 第三段是 episodeId（refresh-episode-{episodeId} /
-                        # refresh-latest-{source_id}-ep{n} 取 source 走另一分支，这里仅处理 episodeId 形态）
-                        # refresh-episode-{episodeId}
+                    if key.startswith("refresh-episode-"):
+                        # refresh-episode-{episodeId}：第三段是 episodeId
                         try:
-                            episode_id = int(key.split("-")[2].split("ep")[-1]) if key.startswith("refresh-latest-") else int(key.split("-")[2])
+                            episode_id = int(key.split("-")[2])
                         except (ValueError, IndexError):
                             episode_id = None
                         if episode_id is not None:
@@ -265,6 +265,29 @@ class TaskManager:
                                     db_extra["year"] = anime_row.year
                                     db_extra["image_url"] = (anime_row.imageUrl or "")
                                 db_extra["source"] = ep_info.get("providerName", "")
+                    elif key.startswith("refresh-latest-"):
+                        # refresh-latest-{sourceId}-ep{n}：第三段是 sourceId，ep 后是集号（非 episodeId）。
+                        # 按 sourceId 反查作品/源信息，集号从 -ep 后解析。
+                        source_id = None
+                        ep_index = None
+                        try:
+                            rest = key[len("refresh-latest-"):]
+                            sid_part, _, ep_part = rest.partition("-ep")
+                            source_id = int(sid_part)
+                            if ep_part:
+                                ep_index = int(ep_part)
+                        except (ValueError, IndexError):
+                            pass
+                        if source_id is not None:
+                            info = await crud.get_anime_source_info(session, source_id)
+                            if info:
+                                db_extra["anime_title"] = info.get("title", "")
+                                db_extra["season"] = info.get("season")
+                                db_extra["year"] = info.get("year")
+                                db_extra["source"] = info.get("providerName", "")
+                                db_extra["image_url"] = info.get("imageUrl", "") or ""
+                                if ep_index is not None:
+                                    db_extra["episode"] = ep_index
                     elif key.startswith("full-refresh-") or key.startswith("bulk-refresh-"):
                         # full-refresh-{anime_id}-xxx：直接查 Anime
                         from src.db.orm_models import Anime as AnimeORM
