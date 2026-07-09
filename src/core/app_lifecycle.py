@@ -30,6 +30,7 @@ from src.services import (
     init_bangumi_data_manager,
 )
 from src.utils import InternalPollingManager, init_proxy_middleware
+from src.rate_limiter import RateLimiter
 from src.ai import AIMatcherManager
 from src.ai.ai_prompts import (
     DEFAULT_AI_MATCH_PROMPT, DEFAULT_AI_RECOGNITION_PROMPT,
