@@ -143,18 +143,31 @@ async def check_anime_existence(
             return {"found": True, "anime_id": int(anime_id), "source_id": None, "stage": "metadata", "reason": detail}
 
     # ── Stage 3: title + season 兜底 ──
+    # 防串台：标题+季度命中后，若双方 year 都存在且不相等，判为不同作品（如"凡人修仙传"
+    # 2020动漫 vs 2025剧版，同名同季但不同年），不复用、继续走新建。任一方 year 缺失时
+    # 无法判断则维持复用（兼容大量不带 year 的导入，不改变原有行为）。
+    def _year_conflict(existing_year: Optional[int]) -> bool:
+        return year is not None and existing_year is not None and int(existing_year) != int(year)
+
     if title and season is not None:
         # 3a: 严格标题匹配
         title_stmt = (
-            select(Anime.id)
+            select(Anime.id, Anime.year)
             .where(Anime.title == title, Anime.season == season)
             .limit(1)
         )
-        anime_id = (await session.execute(title_stmt)).scalar_one_or_none()
-        if anime_id is not None:
-            detail = f"标题精确命中(title={title}, season={season})"
-            logger.info(f"存在性检查 Stage3a 命中: {detail}, anime_id={anime_id}")
-            return {"found": True, "anime_id": int(anime_id), "source_id": None, "stage": "title", "reason": detail}
+        row = (await session.execute(title_stmt)).first()
+        if row is not None:
+            anime_id, existing_year = row
+            if _year_conflict(existing_year):
+                logger.info(
+                    f"存在性检查 Stage3a 命中标题但年份冲突，拒绝复用: title={title}, season={season}, "
+                    f"导入year={year}, 库内year={existing_year}, anime_id={anime_id}（将新建条目）"
+                )
+            else:
+                detail = f"标题精确命中(title={title}, season={season})"
+                logger.info(f"存在性检查 Stage3a 命中: {detail}, anime_id={anime_id}")
+                return {"found": True, "anime_id": int(anime_id), "source_id": None, "stage": "title", "reason": detail}
 
         # 3b: 识别词转换后匹配
         if title_recognition_manager:
@@ -163,15 +176,23 @@ async def check_anime_existence(
             )
             if was_converted:
                 conv_stmt = (
-                    select(Anime.id)
+                    select(Anime.id, Anime.year)
                     .where(Anime.title == converted_title, Anime.season == converted_season)
                     .limit(1)
                 )
-                anime_id = (await session.execute(conv_stmt)).scalar_one_or_none()
-                if anime_id is not None:
-                    detail = f"识别词转换命中('{title}' S{season:02d} -> '{converted_title}' S{converted_season:02d})"
-                    logger.info(f"存在性检查 Stage3b 命中: {detail}, anime_id={anime_id}")
-                    return {"found": True, "anime_id": int(anime_id), "source_id": None, "stage": "title", "reason": detail}
+                conv_row = (await session.execute(conv_stmt)).first()
+                if conv_row is not None:
+                    anime_id, existing_year = conv_row
+                    if _year_conflict(existing_year):
+                        logger.info(
+                            f"存在性检查 Stage3b 命中标题但年份冲突，拒绝复用: "
+                            f"'{title}' S{season:02d} -> '{converted_title}' S{converted_season:02d}, "
+                            f"导入year={year}, 库内year={existing_year}, anime_id={anime_id}（将新建条目）"
+                        )
+                    else:
+                        detail = f"识别词转换命中('{title}' S{season:02d} -> '{converted_title}' S{converted_season:02d})"
+                        logger.info(f"存在性检查 Stage3b 命中: {detail}, anime_id={anime_id}")
+                        return {"found": True, "anime_id": int(anime_id), "source_id": None, "stage": "title", "reason": detail}
 
     return NOT_FOUND
 # ──────────────────────────────────────────────

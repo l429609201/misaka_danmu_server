@@ -372,6 +372,49 @@ async def get_comments_for_dandan(
             if fallback_info:
                 episode_number = fallback_info.get("episode_number")
 
+        # DB 兜底：缓存全部 miss 但 episodeId 编码的 (animeId, sourceOrder) 在库中真实存在时，
+        # 直接从 Anime + AnimeSource 反查 provider/mediaId 重建后备信息。
+        # why：缓存(fallback_episode_*)会被清理或过期，而 episodeId 本身编码了 animeId+sourceOrder，
+        # 只要作品与源仍在库中（如仅删了弹幕文件/清了缓存），就应能重新触发后备下载，
+        # 而非卡在"尝试直接从源站获取"无任何后续动作。
+        if not fallback_info and episodeId >= 25000000000000:
+            try:
+                db_anime = (await session.execute(
+                    select(Anime).where(Anime.id == anime_id_part)
+                )).scalar_one_or_none()
+                db_src = (await session.execute(
+                    select(AnimeSource.providerName, AnimeSource.mediaId)
+                    .where(
+                        AnimeSource.animeId == anime_id_part,
+                        AnimeSource.sourceOrder == source_order_part,
+                    )
+                    .limit(1)
+                )).first()
+                if db_anime and db_src:
+                    _db_provider, _db_media_id = db_src
+                    fallback_info = {
+                        "real_anime_id": anime_id_part,
+                        "provider": _db_provider,
+                        "mediaId": _db_media_id,
+                        "final_title": db_anime.title,
+                        "original_title": db_anime.title,
+                        "final_season": db_anime.season,
+                        "media_type": db_anime.type,
+                        "imageUrl": db_anime.imageUrl,
+                        "year": db_anime.year,
+                    }
+                    logger.info(
+                        f"[DB兜底] 缓存缺失，从数据库重建后备信息: anime_id={anime_id_part}, "
+                        f"provider={_db_provider}, mediaId={_db_media_id}, 集号={episode_number}"
+                    )
+                else:
+                    logger.debug(
+                        f"[DB兜底] 未找到可重建的作品/源 (anime_id={anime_id_part}, "
+                        f"source_order={source_order_part})，跳过 DB 兜底"
+                    )
+            except Exception as e:
+                logger.warning(f"[DB兜底] 从数据库重建后备信息失败: {e}")
+
         if fallback_info:
             logger.info(f"检测到后备搜索/匹配后备的episodeId: {episodeId}, 集数: {episode_number}")
 
