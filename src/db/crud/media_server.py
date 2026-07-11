@@ -710,15 +710,51 @@ async def mark_media_items_imported(session: AsyncSession, item_ids: List[int]) 
     return total_updated
 
 
+def _media_item_has_danmaku_exists():
+    """构造一个关联子查询：判断某个 MediaItem 对应的作品在弹幕库中是否已有真实弹幕。
+
+    why：原逻辑用 MediaItem.isImported==False 判定"未导入"，但 isImported 只表示
+    "曾提交过导入任务"，与是否真正抓到弹幕无关（见 issue #441）。导入失败的项
+    isImported 也被置为 True，导致"一键导入/定时任务"永远跳过这些失败项，无法重试。
+    改为以弹幕库真实状态判定：只要弹幕库中没有对应且含弹幕的分集，就视为未导入，允许重新导入。
+
+    匹配规则（A2 方案，已知局限：以标题+季度为准，需与库内 Anime 命名一致）：
+      - 标题去空格后精确匹配 Anime.title
+      - 电视剧额外要求季度一致；电影/其他不比季度
+      - 仅统计 commentCount > 0 的分集，避免"建了空壳条目但无弹幕"被误判为已导入
+    """
+    A = orm_models.Anime
+    S = orm_models.AnimeSource
+    E = orm_models.Episode
+    MI = orm_models.MediaItem
+    return (
+        select(literal(1))
+        .select_from(A)
+        .join(S, S.animeId == A.id)
+        .join(E, E.sourceId == S.id)
+        .where(
+            func.replace(A.title, ' ', '') == func.replace(MI.title, ' ', ''),
+            or_(MI.mediaType != 'tv_series', A.season == MI.season),
+            E.commentCount > 0,
+        )
+        .correlate(MI)
+        .exists()
+    )
+
+
 async def get_unimported_item_ids(
     session: AsyncSession,
     server_id: int,
     media_type: Optional[str] = None
 ) -> List[int]:
-    """获取指定服务器下所有未导入的媒体项ID"""
+    """获取指定服务器下所有"弹幕库中尚无对应弹幕"的媒体项ID（可重新导入）。
+
+    修复 issue #441：不再依赖 isImported 标志（该标志失败也会置 True 导致无法重试），
+    改为以弹幕库真实状态判定——弹幕库中无对应弹幕的媒体项都视为未导入。
+    """
     stmt = select(orm_models.MediaItem.id).where(
         orm_models.MediaItem.serverId == server_id,
-        orm_models.MediaItem.isImported == False
+        ~_media_item_has_danmaku_exists(),  # 弹幕库中无对应弹幕才算"未导入"
     )
     if media_type is not None:
         stmt = stmt.where(orm_models.MediaItem.mediaType == media_type)
@@ -731,10 +767,10 @@ async def get_unimported_count(
     server_id: int,
     media_type: Optional[str] = None
 ) -> int:
-    """获取指定服务器下未导入的媒体项数量"""
+    """获取指定服务器下"弹幕库中尚无对应弹幕"的媒体项数量（与 get_unimported_item_ids 判定一致）。"""
     stmt = select(func.count(orm_models.MediaItem.id)).where(
         orm_models.MediaItem.serverId == server_id,
-        orm_models.MediaItem.isImported == False
+        ~_media_item_has_danmaku_exists(),  # 与 get_unimported_item_ids 保持同一判定
     )
     if media_type is not None:
         stmt = stmt.where(orm_models.MediaItem.mediaType == media_type)

@@ -412,7 +412,12 @@ async def _perform_update(
                             "scrapers": scrapers_versions,
                             "hashes": scrapers_hashes,
                             "full_replace": True,
-                            "update_time": datetime.now().isoformat()
+                            # 关键修复(重启循环)：字段名必须为 updated_at。
+                            # scraper_manager 重启恢复逻辑只比较 versions.json 的 updated_at 字段
+                            # (backup.updated_at > scrapers.updated_at 才从备份恢复)，此前误写成
+                            # update_time 导致 scrapers/backup 两边 updated_at 均为空 → 恒不恢复
+                            # → .so 回退镜像旧版 → 轮询又发现新版 → 无限下载重启循环。
+                            "updated_at": datetime.now().isoformat()
                         }
                         if min_server_version:
                             versions_data['min_server_version'] = min_server_version
@@ -441,6 +446,22 @@ async def _perform_update(
                             logger.info("全量替换资源备份完成")
                         except Exception as backup_error:
                             logger.warning(f"备份资源失败: {backup_error}")
+
+                        # 关键防护(重启循环)：校验备份目录是否已落盘为目标版本。
+                        # 全量替换已先更新 scrapers/versions.json+package.json(含 updated_at 与新 version)，
+                        # backup_scrapers 无参复制即把新版本写入持久化备份目录；此处再校验一次，
+                        # 若备份未成功落盘则绝不重启——否则重启后 scrapers 回退镜像旧版、备份也无新版，
+                        # 轮询又检测到新版 → 无限下载重启循环。
+                        full_replace_backup_ok = _verify_backup_version(release_version)
+                        if not full_replace_backup_ok:
+                            logger.error(
+                                f"全量替换备份校验失败：备份目录版本未更新为 {release_version}，"
+                                "为避免版本回退导致无限重启循环，本次不重启容器。请检查备份目录权限或磁盘空间。"
+                            )
+                            import src.api.ui.scraper_resources as sr
+                            sr._version_cache = None
+                            sr._version_cache_time = None
+                            return
 
                         # 检查是否在 Docker 容器内且有 Docker socket
                         from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container

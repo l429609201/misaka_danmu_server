@@ -24,7 +24,6 @@ from src.api.mcp import setup_mcp
 from src.frontend import register_pwa_routes
 from src.utils.asgi_middleware import NotFoundGuardMiddleware, CaptureApiResponseMiddleware
 from src.api.control.openapi_docs import register_control_api_docs
-# 统一的容器环境检测（收口到 src/core/env，避免重复定义）
 from src.core.env import is_docker_environment as _is_docker_environment
 from src.core.app_lifecycle import run_startup, run_shutdown
 

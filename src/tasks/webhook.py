@@ -200,6 +200,7 @@ async def webhook_search_and_dispatch_task(
                     mediaServerSeasonId=mediaServerSeasonId, mediaServerEpisodeId=mediaServerEpisodeId,
                 )
                 # 补齐 task_parameters：供完成通知展示作品名/季/集/类型/来源（否则微信通知只剩弹幕数）
+                # currentEpisodeIndex/selectedEpisodes 供 _rebuild_coro_factory 的 generic_import 分支重建（任务重启恢复）
                 fav_task_parameters = {
                     "provider": favorited_source['providerName'],
                     "mediaId": favorited_source['mediaId'],
@@ -207,13 +208,21 @@ async def webhook_search_and_dispatch_task(
                     "mediaType": favorited_source.get('mediaType'),
                     "season": season,
                     "episode": currentEpisodeIndex,
+                    "currentEpisodeIndex": currentEpisodeIndex,
+                    "selectedEpisodes": selectedEpisodes,
                     "year": year,
+                    "tmdbId": tmdbId,
+                    "imdbId": imdbId,
+                    "tvdbId": tvdbId,
+                    "doubanId": doubanId,
+                    "bangumiId": bangumiId,
                     "imageUrl": favorited_source.get('imageUrl'),
                     "webhookSource": webhookSource,
                 }
                 try:
                     await task_manager.submit_task(
                         task_coro, task_title, unique_key=unique_key,
+                        task_type="generic_import",
                         task_parameters=fav_task_parameters,
                     )
                 except HTTPException as e:
@@ -648,6 +657,8 @@ async def webhook_search_and_dispatch_task(
                 mediaServerSeasonId=mediaServerSeasonId, mediaServerEpisodeId=mediaServerEpisodeId,
             )
             # 补齐 task_parameters：供完成通知展示作品名/季/集/类型/来源
+            # currentEpisodeIndex/selectedEpisodes/元数据ID 供 _rebuild_coro_factory 的
+            # generic_import 分支重建（任务重启恢复），否则重启后此叶子导入任务无法恢复。
             match_task_parameters = {
                 "provider": best_match.provider,
                 "mediaId": best_match.mediaId,
@@ -655,13 +666,21 @@ async def webhook_search_and_dispatch_task(
                 "mediaType": best_match.type,
                 "season": season,
                 "episode": currentEpisodeIndex,
+                "currentEpisodeIndex": currentEpisodeIndex,
+                "selectedEpisodes": selectedEpisodes,
                 "year": final_year,
+                "tmdbId": tmdbId,
+                "imdbId": imdbId,
+                "tvdbId": tvdbId,
+                "doubanId": doubanId,
+                "bangumiId": bangumiId,
                 "imageUrl": best_match.imageUrl,
                 "webhookSource": webhookSource,
             }
             try:
                 await task_manager.submit_task(
                     task_coro, task_title, unique_key=unique_key,
+                    task_type="generic_import",
                     task_parameters=match_task_parameters,
                 )
             except HTTPException as e:
@@ -787,6 +806,8 @@ async def webhook_search_and_dispatch_task(
                 mediaServerSeasonId=mediaServerSeasonId, mediaServerEpisodeId=mediaServerEpisodeId,
             )
             # 补齐 task_parameters：供完成通知展示作品名/季/集/类型/来源
+            # currentEpisodeIndex/selectedEpisodes/元数据ID 供 _rebuild_coro_factory 的
+            # generic_import 分支重建（任务重启恢复），否则重启后此叶子导入任务无法恢复。
             match_task_parameters = {
                 "provider": best_match.provider,
                 "mediaId": best_match.mediaId,
@@ -794,13 +815,21 @@ async def webhook_search_and_dispatch_task(
                 "mediaType": best_match.type,
                 "season": season,
                 "episode": currentEpisodeIndex,
+                "currentEpisodeIndex": currentEpisodeIndex,
+                "selectedEpisodes": selectedEpisodes,
                 "year": final_year,
+                "tmdbId": tmdbId,
+                "imdbId": imdbId,
+                "tvdbId": tvdbId,
+                "doubanId": doubanId,
+                "bangumiId": bangumiId,
                 "imageUrl": best_match.imageUrl,
                 "webhookSource": webhookSource,
             }
             try:
                 await task_manager.submit_task(
                     task_coro, task_title, unique_key=unique_key,
+                    task_type="generic_import",
                     task_parameters=match_task_parameters,
                 )
             except HTTPException as e:
@@ -897,6 +926,8 @@ async def webhook_search_and_dispatch_task(
             mediaServerSeasonId=mediaServerSeasonId, mediaServerEpisodeId=mediaServerEpisodeId,
         )
         # 补齐 task_parameters：供完成通知展示作品名/季/集/类型/来源
+        # currentEpisodeIndex/selectedEpisodes/元数据ID 供 _rebuild_coro_factory 的
+        # generic_import 分支重建（任务重启恢复），否则重启后此叶子导入任务无法恢复。
         match_task_parameters = {
             "provider": best_match.provider,
             "mediaId": best_match.mediaId,
@@ -904,13 +935,21 @@ async def webhook_search_and_dispatch_task(
             "mediaType": best_match.type,
             "season": season,
             "episode": currentEpisodeIndex,
+            "currentEpisodeIndex": currentEpisodeIndex,
+            "selectedEpisodes": selectedEpisodes,
             "year": final_year,
+            "tmdbId": tmdbId,
+            "imdbId": imdbId,
+            "tvdbId": tvdbId,
+            "doubanId": doubanId,
+            "bangumiId": bangumiId,
             "imageUrl": best_match.imageUrl,
             "webhookSource": webhookSource,
         }
         try:
             await task_manager.submit_task(
                 task_coro, task_title, unique_key=unique_key,
+                task_type="generic_import",
                 task_parameters=match_task_parameters,
             )
         except HTTPException as e:
