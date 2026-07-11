@@ -100,6 +100,8 @@ from .scraper import (
     update_scraper_proxy,
     update_scrapers_settings,
     remove_stale_scrapers,
+    save_scraper_order_snapshot,
+    apply_scraper_order_from_snapshot,
 )
 
 # MetadataSource模块
@@ -408,6 +410,8 @@ __all__ = [
     'update_scraper_proxy',
     'update_scrapers_settings',
     'remove_stale_scrapers',
+    'save_scraper_order_snapshot',
+    'apply_scraper_order_from_snapshot',
     # MetadataSource
     'sync_metadata_sources_to_db',
     'get_all_metadata_source_settings',

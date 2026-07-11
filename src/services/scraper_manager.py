@@ -336,6 +336,11 @@ class ScraperManager:
             providers_to_sync = discovered_providers + ['custom']
             await crud.sync_scrapers_to_db(session, providers_to_sync)
 
+            # 2.5 按用户保存的顺序快照重排 display_order。
+            #    why：弹幕源更新/重启时源可能短暂缺失被删、回归后被当新源追加到末尾，
+            #    用 config 表的顺序快照恢复用户调好的顺序，避免顺序反复丢失。
+            await crud.apply_scraper_order_from_snapshot(session)
+
             # 3. 重新加载所有设置。
             settings_list = await crud.get_all_scraper_settings(session)
         self.scraper_settings = {s['providerName']: s for s in settings_list}
