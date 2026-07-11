@@ -360,14 +360,16 @@ async def search_anime_provider(
                 "pageSize": pageSize,
                 **filter_metadata,
             }
-            if _backend is not None:
-                try:
-                    await _backend.set(page_cache_key, response_payload, ttl=10800, region="search")
-                except Exception as e:
-                    logger.warning(f"分页缓存写入失败，回退到数据库: {e}")
+            # 防御：过滤后结果为空时不写分页缓存，避免空结果被缓存 3 小时导致后续一直返回空。
+            if paginated_results:
+                if _backend is not None:
+                    try:
+                        await _backend.set(page_cache_key, response_payload, ttl=10800, region="search")
+                    except Exception as e:
+                        logger.warning(f"分页缓存写入失败，回退到数据库: {e}")
+                        await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
+                else:
                     await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
-            else:
-                await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
             timer.finish()
             return UIProviderSearchResponse(**_inject_recognition(response_payload))
 
