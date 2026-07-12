@@ -781,23 +781,15 @@ class MetadataSourceManager:
                 else:
                     config_fields_to_update[config_key] = str(value if value is not None else "")
 
-        # 2b. 识别属于 config 表的字段
-        allowed_keys_map = {
-            "tmdb": ["tmdbApiKey", "tmdbApiBaseUrl", "tmdbImageBaseUrl"],
-            "bangumi": ["bangumiClientId", "bangumiClientSecret", "bangumiToken"],
-            "douban": ["doubanCookie"],
-            "tvdb": ["tvdbApiKey"],
-            "imdb": ["imdbUseApi", "imdbEnableFallback"],
-        }
-        allowed_keys = allowed_keys_map.get(providerName)
-        if allowed_keys:
-            for key, value in payload.items():
-                if key in allowed_keys:
-                    # 对于布尔值,转换为字符串 "true" 或 "false"
-                    if isinstance(value, bool):
-                        config_fields_to_update[key] = str(value).lower()
-                    else:
-                        config_fields_to_update[key] = str(value if value is not None else "")
+        # 2b. 按源类声明的 config_keys 通用保存，避免新增元信息源时重复维护硬编码白名单。
+        allowed_keys = set(getattr(source_class, 'config_keys', [])) if source_class else set()
+        for key, value in payload.items():
+            if key not in allowed_keys:
+                continue
+            if isinstance(value, bool):
+                config_fields_to_update[key] = str(value).lower()
+            else:
+                config_fields_to_update[key] = str(value if value is not None else "")
 
         # 3. 检查是否有任何需要更新的内容
         if not db_fields_to_update and not config_fields_to_update:

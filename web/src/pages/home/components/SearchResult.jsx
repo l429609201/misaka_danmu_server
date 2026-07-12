@@ -1286,7 +1286,9 @@ export const SearchResult = () => {
                               }
 
                               const res = await getEditEpisodes(params)
-                              let episodes = res.data
+                              // 兼容旧版数组响应；新版同时返回后端黑名单过滤掉的分集。
+                              let episodes = Array.isArray(res.data) ? res.data : (res.data?.episodes || [])
+                              let excludedEpisodes = Array.isArray(res.data) ? [] : (res.data?.excludedEpisodes || [])
                               setEditImportOpen(true)
                               setEditItem(item)
                               setEditMediaType(item.type || 'tv_series')
@@ -1310,14 +1312,18 @@ export const SearchResult = () => {
                                       const newIndex = offsetMap[ep.episodeIndex]
                                       return newIndex != null ? { ...ep, episodeIndex: newIndex } : ep
                                     })
+                                    excludedEpisodes = excludedEpisodes.map(ep => {
+                                      const newIndex = offsetMap[ep.episodeIndex]
+                                      return newIndex != null ? { ...ep, episodeIndex: newIndex } : ep
+                                    })
                                   }
                                 } catch {
                                   // 偏移预览失败，使用原始集数
                                 }
                               }
                               setEditEpisodeList(episodes)
-                              // 重置「不导入」列表与分页/Tab（每次打开编辑导入都是全新状态）
-                              setExcludedEpisodeList([])
+                              // 后端黑名单过滤项进入“不导入”，用户仍可手动恢复。
+                              setExcludedEpisodeList(excludedEpisodes)
                               setExcludedPage(1)
                               setEpisodePage(1)
                               setActiveEpisodeTab('include')
@@ -1549,7 +1555,7 @@ export const SearchResult = () => {
             {t('searchResult.confirmImport')}
           </Button>,
         ]}
-        styles={{ body: { overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: isMobile ? '75vh' : '70vh', padding: isMobile ? '12px 16px' : undefined } }}
+        styles={{ body: { overflowY: 'auto', display: 'flex', flexDirection: 'column', maxHeight: isMobile ? '75vh' : '70vh', padding: isMobile ? '12px 16px' : undefined } }}
       >
           {isMobile ? (
             <div className="space-y-3 mb-3 shrink-0">
@@ -1754,7 +1760,7 @@ export const SearchResult = () => {
             </>
           )}
           <Tabs
-            className="flex-1 min-h-0 edit-episode-tabs"
+            className="edit-episode-tabs shrink-0"
             activeKey={activeEpisodeTab}
             onChange={key => setActiveEpisodeTab(key)}
             items={[
@@ -1774,7 +1780,7 @@ export const SearchResult = () => {
                   <>
                     <Card
                       size="small"
-                      className="flex-1 min-h-0"
+                      className="max-h-[42vh]"
                       style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
                       styles={{ body: { padding: '8px 12px', flex: 1, minHeight: 0, overflowY: 'auto' } }}
                     >
@@ -1863,7 +1869,7 @@ export const SearchResult = () => {
                   <>
                     <Card
                       size="small"
-                      className="flex-1 min-h-0"
+                      className="max-h-[42vh]"
                       style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
                       styles={{ body: { padding: '8px 12px', flex: 1, minHeight: 0, overflowY: 'auto' } }}
                     >
@@ -1879,7 +1885,14 @@ export const SearchResult = () => {
                               <span className="shrink-0 text-gray-500 dark:text-gray-400">
                                 {t('searchResult.episodeIndexShort', { index: item.episodeIndex })}
                               </span>
-                              <span className="flex-1 truncate" title={item.title}>{item.title}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="truncate" title={item.title}>{item.title}</div>
+                                {item.filterReason && (
+                                  <div className="text-xs text-orange-500 truncate" title={item.filterReason}>
+                                    {item.filterReason}
+                                  </div>
+                                )}
+                              </div>
                               <Button
                                 size="small"
                                 type="link"

@@ -525,6 +525,9 @@ class BaseScraper(ABC):
             for ep, rule in filtered_out:
                 log_lines.append(f"    ✗ {ep.title} （黑名单正则匹配：{rule}）")
 
+        # 保留本次过滤明细，供编辑导入接口展示“不导入”列表；普通导入仍只使用 kept_episodes。
+        self._last_logged_filtered_out = list(filtered_out)
+
         log_lines.append(f"└─── {self.provider_name} ───")
         self.logger.info("\n".join(log_lines))
 

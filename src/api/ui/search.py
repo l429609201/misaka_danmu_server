@@ -360,7 +360,7 @@ async def search_anime_provider(
                 "pageSize": pageSize,
                 **filter_metadata,
             }
-            # 防御：过滤后结果为空时不写分页缓存，避免空结果被缓存 3 小时导致后续一直返回空。
+            # 空结果可能来自瞬时超时/限流，不能缓存 3 小时，否则同条件搜索会持续返回空。
             if paginated_results:
                 if _backend is not None:
                     try:
@@ -846,7 +846,7 @@ async def search_anime_provider(
 
 
 
-@router.get("/search/episodes", response_model=List[models.ProviderEpisodeInfo], summary="获取搜索结果的分集列表")
+@router.get("/search/episodes", response_model=Dict[str, Any], summary="获取搜索结果的分集列表")
 async def get_episodes_for_search_result(
     provider: str = Query(...),
     media_id: str = Query(...),
@@ -858,13 +858,24 @@ async def get_episodes_for_search_result(
 ):
     """为指定的搜索结果获取完整的分集列表。自动识别补充源mediaId并路由。"""
     try:
-        episodes = await manager.get_episodes_routed(provider, media_id, db_media_type=media_type)
+        episodes, excluded = await manager.get_episodes_routed(
+            provider, media_id, db_media_type=media_type, return_filtered=True
+        )
         # 单剧过滤（依赖作品标题，未下沉到 get_episodes_routed）
         filter_content = await config_manager.get("singleEpisodeFilterRules", "")
         filter_rules = parse_single_episode_filter_rules(filter_content)
-        episodes = apply_single_episode_filter(episodes, filter_rules, title, provider, media_id)
+        episodes, single_excluded = apply_single_episode_filter(
+            episodes, filter_rules, title, provider, media_id, return_filtered=True
+        )
+        excluded.extend(single_excluded)
         # 注：兜底全局分集标题过滤已统一收口到 manager.get_episodes_routed 内部，此处无需重复处理
-        return episodes
+        return {
+            "episodes": episodes,
+            "excludedEpisodes": [
+                {**episode.model_dump(), "filterReason": reason}
+                for episode, reason in excluded
+            ],
+        }
     except httpx.RequestError as e:
         # 新增：捕获网络错误
         error_message = f"从 {provider} 获取分集列表时发生网络错误: {e}"
