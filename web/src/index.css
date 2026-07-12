@@ -251,6 +251,60 @@ a:hover {
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
+/* 编辑导入只允许分集列表滚动；滚动条默认隐去，悬停列表时再显示，减少双滚动视觉噪音。 */
+.edit-import-modal .ant-modal-body {
+  min-height: 0;
+}
+
+.edit-episode-tabs,
+.edit-episode-tabs > .ant-tabs-content-holder,
+.edit-episode-tabs > .ant-tabs-content-holder > .ant-tabs-content,
+.edit-episode-tabs .ant-tabs-tabpane {
+  min-height: 0;
+}
+
+.edit-episode-tabs > .ant-tabs-content-holder,
+.edit-episode-tabs > .ant-tabs-content-holder > .ant-tabs-content,
+.edit-episode-tabs .ant-tabs-tabpane,
+.edit-episode-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.edit-episode-pane .ant-card-body {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.edit-episode-pane .ant-card-body:hover {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.edit-episode-pane .ant-card-body::-webkit-scrollbar {
+  width: 5px;
+}
+
+.edit-episode-pane .ant-card-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.edit-episode-pane .ant-card-body::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.edit-episode-pane .ant-card-body:hover::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+}
+
+@media (max-width: 768px) {
+  .edit-import-modal .ant-modal-body {
+    max-height: none;
+    overflow: hidden;
+  }
+}
+
 /* 全局卡片间距 */
 .ant-card + .ant-card {
   margin-top: 20px;

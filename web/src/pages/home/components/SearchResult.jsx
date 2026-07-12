@@ -1519,6 +1519,7 @@ export const SearchResult = () => {
       <Modal
         title={t('searchResult.editImportTitle', { title: editItem.title })}
         open={editImportOpen}
+        width={isMobile ? 'calc(100vw - 24px)' : 860}
         onCancel={() => {
           setEditImportOpen(false)
           setEditAnimeTitle('')
@@ -1555,7 +1556,8 @@ export const SearchResult = () => {
             {t('searchResult.confirmImport')}
           </Button>,
         ]}
-        styles={{ body: { overflowY: 'auto', display: 'flex', flexDirection: 'column', maxHeight: isMobile ? '75vh' : '70vh', padding: isMobile ? '12px 16px' : undefined } }}
+        className="edit-import-modal"
+        styles={{ body: { overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? '72vh' : '82vh', padding: isMobile ? '12px 16px' : undefined } }}
       >
           {isMobile ? (
             <div className="space-y-3 mb-3 shrink-0">
@@ -1656,9 +1658,9 @@ export const SearchResult = () => {
             </div>
           ) : (
             <>
-              <div className="flex items-wrap md:flex-nowrap justify-between items-center gap-3 my-6 shrink-0">
-                <div className="shrink-0">{t('searchResult.animeTitleColon')}</div>
-                <div className="w-full">
+              <div className="flex items-center gap-3 mb-3 shrink-0">
+                <div className="shrink-0 text-sm text-gray-500 dark:text-gray-400">{t('searchResult.animeTitleColon')}</div>
+                <div className="flex-1 min-w-0">
                   <Input
                     value={editAnimeTitle || editItem.title}
                     placeholder={t('searchResult.inputAnimeTitle')}
@@ -1677,8 +1679,8 @@ export const SearchResult = () => {
                   {t('searchResult.reshuffleImport')}
                 </Button>
               </div>
-              <div className="flex items-wrap md:flex-nowrap justify-between items-center gap-3 my-6 shrink-0">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center gap-4 mb-3 shrink-0 rounded-lg border border-gray-200 dark:border-white/10 px-3 py-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <Segmented
                     value={editMediaType}
                     onChange={value => {
@@ -1691,7 +1693,7 @@ export const SearchResult = () => {
                     ]}
                   />
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <span className="shrink-0">{t('searchResult.seasonColon')}</span>
                   <InputNumber
                     value={editSeason}
@@ -1702,7 +1704,7 @@ export const SearchResult = () => {
                     style={{ width: 80 }}
                   />
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <span className="shrink-0">{t('searchResult.yearColon')}</span>
                   <InputNumber
                     value={editYear}
@@ -1715,11 +1717,10 @@ export const SearchResult = () => {
                     style={{ width: 100 }}
                   />
                 </div>
-              </div>
-              <div className="flex items-wrap md:flex-nowrap justify-between items-center gap-3 my-6 shrink-0">
-                <div className="shrink-0">{t('searchResult.episodeRangeColon')}</div>
-                <div className="w-full flex items-center justify-between flex-wrap md:flex-nowrap gap-2">
-                  <div className="flex items-center justify-start gap-2">
+                <div className="h-5 w-px bg-gray-200 dark:bg-white/10" />
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <span className="shrink-0 text-sm text-gray-500 dark:text-gray-400">{t('searchResult.episodeRangeColon')}</span>
+                  <div className="flex items-center gap-2">
                     <span>{t('searchResult.from')}</span>
                     <InputNumber
                       value={range[0]}
@@ -1727,9 +1728,7 @@ export const SearchResult = () => {
                       min={1}
                       max={range[1]}
                       step={1}
-                      style={{
-                        width: '100%',
-                      }}
+                      style={{ width: 86 }}
                     />
                     <span>{t('searchResult.to')}</span>
                     <InputNumber
@@ -1737,14 +1736,12 @@ export const SearchResult = () => {
                       onChange={value => setRange(r => [r[0], value])}
                       min={range[0]}
                       step={1}
-                      style={{
-                        width: '100%',
-                      }}
+                      style={{ width: 86 }}
                     />
                   </div>
                   <Button
                     type="primary"
-                    block
+                    className="shrink-0"
                     onClick={() => {
                       // 区间外的分集移入「不导入」列表（不再彻底丢弃）
                       excludeEpisodes(
@@ -1760,7 +1757,7 @@ export const SearchResult = () => {
             </>
           )}
           <Tabs
-            className="edit-episode-tabs shrink-0"
+            className="edit-episode-tabs flex-1 min-h-0"
             activeKey={activeEpisodeTab}
             onChange={key => setActiveEpisodeTab(key)}
             items={[
@@ -1777,10 +1774,10 @@ export const SearchResult = () => {
                   </span>
                 ),
                 children: (
-                  <>
+                  <div className="edit-episode-pane">
                     <Card
                       size="small"
-                      className="max-h-[42vh]"
+                      className="flex-1 min-h-0"
                       style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
                       styles={{ body: { padding: '8px 12px', flex: 1, minHeight: 0, overflowY: 'auto' } }}
                     >
@@ -1850,7 +1847,7 @@ export const SearchResult = () => {
                         </Dropdown>
                       </div>
                     )}
-                  </>
+                  </div>
                 ),
               },
               {
@@ -1866,10 +1863,10 @@ export const SearchResult = () => {
                   </span>
                 ),
                 children: (
-                  <>
+                  <div className="edit-episode-pane">
                     <Card
                       size="small"
-                      className="max-h-[42vh]"
+                      className="flex-1 min-h-0"
                       style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
                       styles={{ body: { padding: '8px 12px', flex: 1, minHeight: 0, overflowY: 'auto' } }}
                     >
@@ -1888,9 +1885,15 @@ export const SearchResult = () => {
                               <div className="flex-1 min-w-0">
                                 <div className="truncate" title={item.title}>{item.title}</div>
                                 {item.filterReason && (
-                                  <div className="text-xs text-orange-500 truncate" title={item.filterReason}>
-                                    {item.filterReason}
-                                  </div>
+                                  <Popover content={item.filterReason} title={t('searchResult.tabExclude')}>
+                                    <Tag color="orange" className="!mt-1 !mr-0 cursor-help">
+                                      {item.filterReason.startsWith('全局过滤')
+                                        ? '全局过滤'
+                                        : item.filterReason.startsWith('单剧过滤')
+                                          ? '单剧过滤'
+                                          : '源黑名单'}
+                                    </Tag>
+                                  </Popover>
                                 )}
                               </div>
                               <Button
@@ -1918,7 +1921,7 @@ export const SearchResult = () => {
                         />
                       </div>
                     )}
-                  </>
+                  </div>
                 ),
               },
             ]}
