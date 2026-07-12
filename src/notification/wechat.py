@@ -8,11 +8,13 @@
 import asyncio
 import base64
 import hashlib
-import logging
+import mimetypes
 import struct
 import time
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, Optional
+import logging
+
 
 import httpx
 
@@ -27,6 +29,7 @@ from src.notification.base import (
     ChannelCapability, ChannelCapabilities, CommandResult,
 )
 from src._version import APP_VERSION
+from src.utils.image_utils import load_image_bytes
 
 logger = logging.getLogger(__name__)
 bot_raw_logger = logging.getLogger("bot_raw")
@@ -110,6 +113,7 @@ class WeChatChannel(BaseNotificationChannel):
     # 企业微信发送端使用 msgtype:text 纯文本，不渲染 markdown，故不声明 RICH_TEXT
     _CAPABILITIES = ChannelCapabilities(
         capabilities={
+            ChannelCapability.IMAGES,
             ChannelCapability.LINKS,
             ChannelCapability.MENU_COMMANDS,
         },
@@ -286,41 +290,75 @@ class WeChatChannel(BaseNotificationChannel):
                 d = await _do_post(new_token)
         return d
 
-    async def send_message(self, title: str, text: str, **kwargs):
-        agent_id = self.config.get("agent_id", "").strip()
-        if not agent_id:
-            return
-        to_user = kwargs.get("to_user") or self.config.get("to_user", "@all").strip() or "@all"
-        image: str = kwargs.get("image", "")   # 封面图 URL
-        url: str = kwargs.get("url", "")       # 点击跳转 URL
-        # article_title：send_rendered 透传的标题（正文 body 已自带标题，title 为空）
-        article_title = kwargs.get("article_title", "") or title
+    async def _upload_image_media(self, image_bytes: bytes, filename: str = "poster.jpg") -> Optional[str]:
+        """上传企业微信临时图片素材并返回 media_id。"""
+        token = await self._get_access_token()
+        if not token or not image_bytes:
+            return None
 
-        if image or url:
-            # 图文消息（news 类型），参考 MoviePilot 实现
-            article = {
-                "title": article_title or text[:64],
-                "description": text,
-                "picurl": image,
-                "url": url,
-            }
-            payload = {
-                "touser": to_user,
-                "msgtype": "news",
-                "agentid": int(agent_id),
-                "news": {"articles": [article]},
-            }
-        else:
-            content = f"【{title}】\n{text}" if title else text
-            payload = {
-                "touser": to_user,
-                "msgtype": "text",
-                "agentid": int(agent_id),
-                "text": {"content": content},
-            }
-        d = await self._api_post("message/send", payload)
-        if d and d.get("errcode", -1) != 0:
-            self.logger.error(f"发送消息失败: {d.get('errmsg')}")
+        async def _upload(access_token: str) -> Optional[dict]:
+            content_type = mimetypes.guess_type(filename)[0] or "image/jpeg"
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        f"{self._api_base()}/media/upload",
+                        params={"access_token": access_token, "type": "image"},
+                        files={"media": (filename, image_bytes, content_type)},
+                        headers=self._relay_headers(),
+                    )
+                    return response.json()
+            except Exception as e:
+                self.logger.warning(f"企业微信上传图片素材失败: {e}")
+                return None
+
+        result = await _upload(token)
+        if result and result.get("errcode") == 42001:
+            token = await self._get_access_token(force=True)
+            result = await _upload(token) if token else None
+        if not result or result.get("errcode", 0) != 0:
+            self.logger.warning(f"企业微信上传图片素材失败: {(result or {}).get('errmsg', '无响应')}")
+            return None
+        return result.get("media_id")
+
+    async def _send_image_to(self, to_user: str, media_id: str, agent_id: int) -> bool:
+        """发送已上传的企业微信图片消息。"""
+        payload = {
+            "touser": to_user, "msgtype": "image", "agentid": agent_id,
+            "image": {"media_id": media_id},
+        }
+        result = await self._api_post("message/send", payload)
+        if result and result.get("errcode", -1) == 0:
+            return True
+        self.logger.warning(f"企业微信图片消息发送失败: {(result or {}).get('errmsg', '无响应')}")
+        return False
+
+    async def send_message(self, title: str, text: str, **kwargs):
+        agent_id_raw = self.config.get("agent_id", "").strip()
+        if not agent_id_raw:
+            return
+        agent_id = int(agent_id_raw)
+        to_user = kwargs.get("to_user") or self.config.get("to_user", "@all").strip() or "@all"
+        image_url: str = kwargs.get("image", "")
+        image_bytes: Optional[bytes] = kwargs.get("image_bytes")
+
+        # why：企业微信主动拉取 news.picurl 容易受防盗链和内网地址影响，改为服务端取图后上传素材。
+        if not image_bytes and image_url:
+            image_bytes = await load_image_bytes(image_url)
+        if image_bytes:
+            media_id = await self._upload_image_media(image_bytes)
+            if media_id:
+                await self._send_image_to(to_user, media_id, agent_id)
+
+        content = f"【{title}】\n{text}" if title else text
+        payload = {
+            "touser": to_user,
+            "msgtype": "text",
+            "agentid": agent_id,
+            "text": {"content": content},
+        }
+        result = await self._api_post("message/send", payload)
+        if result and result.get("errcode", -1) != 0:
+            self.logger.error(f"发送消息失败: {result.get('errmsg')}")
 
     async def _send_text_to(self, to_user: str, text: str):
         """回复消息给指定用户"""

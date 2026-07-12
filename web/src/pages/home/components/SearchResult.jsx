@@ -9,6 +9,7 @@ import {
   getAnimeLibrary,
 } from '../../../apis'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import {
   Button,
@@ -391,6 +392,27 @@ export const SearchResult = () => {
   }
 
   const handleImportEdit = async () => {
+    const episodeCount = new Map()
+    editEpisodeList.forEach(item => {
+      episodeCount.set(item.episodeIndex, (episodeCount.get(item.episodeIndex) || 0) + 1)
+    })
+    const duplicateIndices = [...episodeCount.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([index]) => index)
+      .sort((a, b) => a - b)
+
+    if (duplicateIndices.length > 0) {
+      // why：重复集号会在入库时互相覆盖，必须返回编辑状态先完成唯一编号。
+      await modalApi.confirm({
+        title: t('searchResult.duplicateEpisodeTitle'),
+        content: t('searchResult.duplicateEpisodeContent', { indices: duplicateIndices.join('、') }),
+        okText: t('searchResult.renumberEpisodes'),
+        cancelText: t('searchResult.backToEdit'),
+        onOk: handleRenumberEpisodes,
+      })
+      return
+    }
+
     try {
       if (editConfirmLoading) return
       setEditConfirmLoading(true)
@@ -539,7 +561,7 @@ export const SearchResult = () => {
 
       if (activeIndex !== -1 && overIndex !== -1) {
         // 1. 重新排列数组
-        const newList = [...editEpisodeList]
+        const newList = [...list]
         const [movedItem] = newList.splice(activeIndex, 1)
         newList.splice(overIndex, 0, movedItem)
 
@@ -617,7 +639,11 @@ export const SearchResult = () => {
     const { active } = event
     // 找到当前拖拽的项
     const item = editEpisodeList.find(item => item.episodeId === active.id)
-    setActiveItem(item)
+    // why：记录源条目的实际宽度，Portal 中的覆盖层才能保持与原条目一致。
+    setActiveItem(item ? {
+      ...item,
+      overlayWidth: active.rect.current.initial?.width,
+    } : null)
   }
 
   // 按当前排序方向对分集列表排序（加回/移入时保持顺序一致）
@@ -696,7 +722,10 @@ export const SearchResult = () => {
     if (!activeItem) return null
 
     return (
-      <div ref={dragOverlayRef} style={{ width: '100%', maxWidth: '100%' }}>
+      <div
+        ref={dragOverlayRef}
+        style={{ width: activeItem.overlayWidth || '100%', maxWidth: 'calc(100vw - 32px)' }}
+      >
         <List.Item
           style={{
             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
@@ -726,7 +755,22 @@ export const SearchResult = () => {
     )
   }
 
-  // 新增：切换排序的处理函数
+  const handleRenumberEpisodes = () => {
+    if (editEpisodeList.length === 0) return
+    const validIndices = editEpisodeList
+      .map(item => Number(item.episodeIndex))
+      .filter(Number.isFinite)
+    const startIndex = validIndices.length > 0 ? Math.min(...validIndices) : 1
+
+    // why：以当前显示顺序连续编号，既保留用户拖拽结果，也确保每个待导入分集编号唯一。
+    setEditEpisodeList(list =>
+      list.map((item, index) => ({ ...item, episodeIndex: startIndex + index }))
+    )
+    setEpisodeOrder('asc')
+    setEpisodePage(1)
+  }
+
+  // 切换按集号排序的处理函数
   const handleToggleOrder = () => {
     const newOrder = episodeOrder === 'asc' ? 'desc' : 'asc'
     setEpisodeOrder(newOrder)
@@ -1519,7 +1563,6 @@ export const SearchResult = () => {
       <Modal
         title={t('searchResult.editImportTitle', { title: editItem.title })}
         open={editImportOpen}
-        width={isMobile ? 'calc(100vw - 24px)' : 860}
         onCancel={() => {
           setEditImportOpen(false)
           setEditAnimeTitle('')
@@ -1535,6 +1578,13 @@ export const SearchResult = () => {
             style={{ float: 'left' }}
           >
             {episodeOrder === 'asc' ? t('searchResult.asc') : t('searchResult.desc')}
+          </Button>,
+          <Button
+            key="renumber"
+            onClick={handleRenumberEpisodes}
+            style={{ float: 'left' }}
+          >
+            {t('searchResult.renumberEpisodes')}
           </Button>,
           <Button key="cancel" onClick={() => {
             setEditImportOpen(false)
@@ -1557,7 +1607,7 @@ export const SearchResult = () => {
           </Button>,
         ]}
         className="edit-import-modal"
-        styles={{ body: { overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? '72vh' : '82vh', padding: isMobile ? '12px 16px' : undefined } }}
+        styles={{ body: { overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? '75vh' : '70vh', maxHeight: 'calc(100vh - 180px)', padding: isMobile ? '12px 16px' : undefined } }}
       >
           {isMobile ? (
             <div className="space-y-3 mb-3 shrink-0">
@@ -1679,8 +1729,8 @@ export const SearchResult = () => {
                   {t('searchResult.reshuffleImport')}
                 </Button>
               </div>
-              <div className="flex items-center gap-4 mb-3 shrink-0 rounded-lg border border-gray-200 dark:border-white/10 px-3 py-2">
-                <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center justify-between gap-4 mb-3 shrink-0">
+                <div className="flex items-center gap-3">
                   <Segmented
                     value={editMediaType}
                     onChange={value => {
@@ -1692,19 +1742,19 @@ export const SearchResult = () => {
                       { label: <span className="inline-flex items-center gap-1"><MyIcon icon="tv" size={14} /> {t('searchResult.tvType')}</span>, value: 'tv_series' },
                     ]}
                   />
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0">{t('searchResult.seasonColon')}</span>
+                    <InputNumber
+                      value={editSeason}
+                      onChange={value => setEditSeason(value)}
+                      min={0}
+                      step={1}
+                      disabled={editMediaType === 'movie'}
+                      style={{ width: 80 }}
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="shrink-0">{t('searchResult.seasonColon')}</span>
-                  <InputNumber
-                    value={editSeason}
-                    onChange={value => setEditSeason(value)}
-                    min={0}
-                    step={1}
-                    disabled={editMediaType === 'movie'}
-                    style={{ width: 80 }}
-                  />
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2">
                   <span className="shrink-0">{t('searchResult.yearColon')}</span>
                   <InputNumber
                     value={editYear}
@@ -1714,45 +1764,40 @@ export const SearchResult = () => {
                     step={1}
                     controls={false}
                     placeholder={t('searchResult.yearPlaceholder')}
-                    style={{ width: 100 }}
+                    style={{ width: 140 }}
                   />
                 </div>
-                <div className="h-5 w-px bg-gray-200 dark:bg-white/10" />
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <span className="shrink-0 text-sm text-gray-500 dark:text-gray-400">{t('searchResult.episodeRangeColon')}</span>
-                  <div className="flex items-center gap-2">
-                    <span>{t('searchResult.from')}</span>
-                    <InputNumber
-                      value={range[0]}
-                      onChange={value => setRange(r => [value, r[1]])}
-                      min={1}
-                      max={range[1]}
-                      step={1}
-                      style={{ width: 86 }}
-                    />
-                    <span>{t('searchResult.to')}</span>
-                    <InputNumber
-                      value={range[1]}
-                      onChange={value => setRange(r => [r[0], value])}
-                      min={range[0]}
-                      step={1}
-                      style={{ width: 86 }}
-                    />
-                  </div>
-                  <Button
-                    type="primary"
-                    className="shrink-0"
-                    onClick={() => {
-                      // 区间外的分集移入「不导入」列表（不再彻底丢弃）
-                      excludeEpisodes(
-                        it =>
-                          !(it.episodeIndex >= range[0] && it.episodeIndex <= range[1])
-                      )
-                    }}
-                  >
-                    {t('searchResult.confirmRange')}
-                  </Button>
-                </div>
+              </div>
+              <div className="flex items-center gap-3 mb-3 shrink-0">
+                <span className="shrink-0">{t('searchResult.episodeRangeColon')}</span>
+                <span>{t('searchResult.from')}</span>
+                <InputNumber
+                  value={range[0]}
+                  onChange={value => setRange(r => [value, r[1]])}
+                  min={1}
+                  max={range[1]}
+                  step={1}
+                  style={{ width: 100 }}
+                />
+                <span>{t('searchResult.to')}</span>
+                <InputNumber
+                  value={range[1]}
+                  onChange={value => setRange(r => [r[0], value])}
+                  min={range[0]}
+                  step={1}
+                  style={{ width: 100 }}
+                />
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    // 区间外的分集移入「不导入」列表（不再彻底丢弃）
+                    excludeEpisodes(
+                      it => !(it.episodeIndex >= range[0] && it.episodeIndex <= range[1])
+                    )
+                  }}
+                >
+                  {t('searchResult.confirmRange')}
+                </Button>
               </div>
             </>
           )}
@@ -1787,8 +1832,11 @@ export const SearchResult = () => {
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
                       >
+                        {/* why：只注册当前页可见条目，避免碰撞检测命中不可见分页项。 */}
                         <SortableContext
-                          items={editEpisodeList.map(item => item.episodeId)}
+                          items={editEpisodeList
+                            .slice((episodePage - 1) * episodePageSize, episodePage * episodePageSize)
+                            .map(item => item.episodeId)}
                           strategy={verticalListSortingStrategy}
                         >
                           <List
@@ -1810,8 +1858,11 @@ export const SearchResult = () => {
                           />
                         </SortableContext>
 
-                        {/* 拖拽覆盖层 */}
-                        <DragOverlay>{renderDragOverlay()}</DragOverlay>
+                        {/* why：Portal 到 body，脱离 Modal 的 transform 坐标系，覆盖层才能贴着鼠标。 */}
+                        {createPortal(
+                          <DragOverlay dropAnimation={null}>{renderDragOverlay()}</DragOverlay>,
+                          document.body
+                        )}
                       </DndContext>
                     </Card>
                     {editEpisodeList.length > episodePageSize && (
@@ -1821,6 +1872,7 @@ export const SearchResult = () => {
                           pageSize={episodePageSize}
                           total={editEpisodeList.length}
                           onChange={(page) => setEpisodePage(page)}
+                          showQuickJumper={!isMobile}
                           showSizeChanger={false}
                           showLessItems
                           size="small"
@@ -1915,6 +1967,7 @@ export const SearchResult = () => {
                           pageSize={episodePageSize}
                           total={excludedEpisodeList.length}
                           onChange={(page) => setExcludedPage(page)}
+                          showQuickJumper={!isMobile}
                           showSizeChanger={false}
                           showLessItems
                           size="small"

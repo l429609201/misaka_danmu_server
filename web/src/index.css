@@ -251,7 +251,7 @@ a:hover {
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
-/* 编辑导入只允许分集列表滚动；滚动条默认隐去，悬停列表时再显示，减少双滚动视觉噪音。 */
+/* 编辑导入只允许当前激活的分集面板滚动；不能覆盖 AntD 对隐藏 Tab 的 display:none。 */
 .edit-import-modal .ant-modal-body {
   min-height: 0;
 }
@@ -259,17 +259,36 @@ a:hover {
 .edit-episode-tabs,
 .edit-episode-tabs > .ant-tabs-content-holder,
 .edit-episode-tabs > .ant-tabs-content-holder > .ant-tabs-content,
-.edit-episode-tabs .ant-tabs-tabpane {
+.edit-episode-tabs .ant-tabs-tabpane-active {
   min-height: 0;
+}
+
+/* why：Tabs 默认会按列表内容撑高，Modal body 又是 overflow:hidden，最终把分页栏裁掉。
+   明确截断中间内容区，让 Card 承担滚动，分页栏始终保留在底部。 */
+.edit-episode-tabs {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .edit-episode-tabs > .ant-tabs-content-holder,
 .edit-episode-tabs > .ant-tabs-content-holder > .ant-tabs-content,
-.edit-episode-tabs .ant-tabs-tabpane,
+.edit-episode-tabs .ant-tabs-tabpane-active,
 .edit-episode-pane {
   display: flex;
   flex: 1;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.edit-episode-tabs > .ant-tabs-content-holder > .ant-tabs-content,
+.edit-episode-tabs .ant-tabs-tabpane-active,
+.edit-episode-pane {
+  height: 100%;
+}
+
+.edit-episode-tabs .ant-tabs-tabpane-hidden {
+  display: none;
 }
 
 .edit-episode-pane .ant-card-body {
