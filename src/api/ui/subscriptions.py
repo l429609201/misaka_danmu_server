@@ -21,6 +21,7 @@ from src import security
 from src.db import models
 from src.api.dependencies import get_metadata_manager, get_scraper_manager
 from src.services import MetadataSourceManager, ScraperManager
+from src.services.subscription_manager import SubscriptionManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/subscriptions", tags=["Subscriptions"])
@@ -391,8 +392,11 @@ async def scan_target(
             detail=f"订阅源 '{target['provider']}' 未加载或不支持订阅",
         )
 
+    manager = SubscriptionManager(scraper_manager, metadata_manager)
     try:
-        items = await source.scan_subscription_target(target)
+        scan_result = await manager.scan_target(target, session=session)
+        # why：元数据源可返回“展开为订阅目标”，不能把结果字典误当候选列表遍历。
+        written = await manager.persist_scan_result(session, target, scan_result)
     except NotImplementedError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"'{target['provider']}' 未实现扫描能力")
     except Exception as e:
@@ -402,22 +406,23 @@ async def scan_target(
         )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"扫描失败: {e}")
 
-    written = 0
-    for item in items or []:
-        await ext_cal_crud.upsert_subscription_item(
-            session,
-            provider=item.get("provider", target["provider"]),
-            external_id=item["externalId"],
-            title=item.get("title") or "",
-            subscription_type=item.get("subscriptionType") or "",
-            parent_external_id=item.get("extraData", {}).get("parentExternalId") or target["externalId"],
-            extra={k: v for k, v in (item.get("extraData") or {}).items()},
-            status=item.get("status", "waiting"),
-        )
-        written += 1
+    if scan_result.get("mode") == "candidates":
+        for item in scan_result.get("items") or []:
+            await ext_cal_crud.upsert_subscription_item(
+                session,
+                provider=item.get("provider", target["provider"]),
+                external_id=item["externalId"],
+                title=item.get("title") or "",
+                subscription_type=item.get("subscriptionType") or "",
+                parent_external_id=item.get("extraData", {}).get("parentExternalId") or target["externalId"],
+                extra={k: v for k, v in (item.get("extraData") or {}).items()},
+                status=item.get("status", "waiting"),
+            )
+            written += 1
 
     await ext_cal_crud.update_subscription_next_scan(session, target["provider"], target["externalId"])
-    return {"scanned": written, "message": f"扫描完成，写入 {written} 个候选项"}
+    target_label = "订阅目标" if scan_result.get("mode") == "subscriptions" else "候选项"
+    return {"scanned": written, "message": f"扫描完成，写入 {written} 个{target_label}"}
 
 
 # ============ 订阅候选项 ============

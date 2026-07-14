@@ -1,7 +1,9 @@
 """AniBT 元信息源：统一标题搜索、详情、单季度探索与私有 RSS 订阅。"""
+import asyncio
 import hashlib
 import re
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urljoin, urlparse
 
@@ -80,42 +82,90 @@ class AniBTMetadataSource(BaseMetadataSource):
         if not year and item.get("date"):
             try:
                 year = int(str(item["date"])[:4])
-            except ValueError:
+            except (TypeError, ValueError):
                 year = None
+        if not year and item.get("airingAt"):
+            try:
+                timestamp = float(item["airingAt"])
+                if timestamp > 10_000_000_000:
+                    timestamp /= 1000
+                year = datetime.fromtimestamp(timestamp, tz=timezone.utc).year
+            except (TypeError, ValueError, OSError, OverflowError):
+                year = None
+
+        # why：AniBT 搜索接口按语言拆分标题，必须完整映射，不能只保留繁体中文一个别名。
+        aliases_cn = list(dict.fromkeys(
+            value for value in [titles.get("chinese"), titles.get("chineseTraditional"), item.get("nameCn")]
+            if value and value != title
+        ))
+        name_jp = titles.get("japanese") or titles.get("native") or item.get("name")
+        aliases_jp = list(dict.fromkeys(
+            value for value in [titles.get("japanese"), titles.get("native")]
+            if value and value != name_jp
+        ))
         genres = item.get("genres") or []
-        details = item.get("description") or " / ".join(filter(None, [str(item.get("format") or ""), f"{item.get('episodes')}集" if item.get("episodes") else "", f"评分{item.get('averageScore') or item.get('rating')}" if item.get("averageScore") or item.get("rating") else ""]))
-        aliases_cn = [x for x in [titles.get("chineseTraditional")] if x and x != title]
+        details = item.get("description") or " / ".join(filter(None, [
+            str(item.get("format") or ""),
+            f"{item.get('episodes')}集" if item.get("episodes") else "",
+            f"评分{item.get('averageScore') or item.get('rating')}" if item.get("averageScore") or item.get("rating") else "",
+            "、".join(str(genre) for genre in genres[:5]) if genres else "",
+        ]))
         return models.MetadataDetailsResponse(
             id=str(bgm_id or item.get("_id") or item.get("animeId")), provider=self.provider_name,
             title=title, type=self._media_type(item), bangumiId=str(bgm_id) if bgm_id else None,
-            nameEn=titles.get("english"), nameJp=titles.get("native") or item.get("name"),
+            nameEn=titles.get("english"), nameJp=name_jp,
             nameRomaji=titles.get("romaji") or item.get("titleRomaji"), aliasesCn=aliases_cn,
-            aliasesJp=[titles["native"]] if titles.get("native") else [], imageUrl=await self._pick_image(item),
+            aliasesJp=aliases_jp, imageUrl=await self._pick_image(item),
             details=details, year=year,
             extra={"animeId": item.get("animeId") or item.get("_id"), "format": item.get("format"),
                    "status": item.get("status"), "season": item.get("season"), "genres": genres,
                    "officialSite": item.get("officialSite"), "episodes": item.get("episodes"),
+                   "airingAt": item.get("airingAt"), "weekday": item.get("weekday"),
+                   "scheduleStatus": item.get("scheduleStatus"),
                    "rssReleaseCount": item.get("rssReleaseCount"), "hasRelease": item.get("hasRelease")},
         )
 
-    async def _search_endpoint(self, keyword: str) -> List[models.MetadataDetailsResponse]:
+    @staticmethod
+    def _merge_result(base: models.MetadataDetailsResponse, detail: models.MetadataDetailsResponse) -> None:
+        """把 AniBT 详情字段合并回搜索结果，保持插件内部自行补全。"""
+        base.aliasesCn = list(dict.fromkeys((base.aliasesCn or []) + (detail.aliasesCn or [])))
+        base.aliasesJp = list(dict.fromkeys((base.aliasesJp or []) + (detail.aliasesJp or [])))
+        for field in ("nameEn", "nameJp", "nameRomaji", "year", "imageUrl"):
+            if not getattr(base, field, None) and getattr(detail, field, None):
+                setattr(base, field, getattr(detail, field))
+        if detail.details and (not base.details or len(detail.details) > len(base.details)):
+            base.details = detail.details
+        if base.type in ("", "unknown", "other") and detail.type:
+            base.type = detail.type
+        base.extra = {**(base.extra or {}), **(detail.extra or {})}
+
+    async def _search_endpoint(self, keyword: str, user: models.User) -> List[models.MetadataDetailsResponse]:
         # why：季度接口的 query 是 AniBT 官方统一标题索引，会跨季度匹配全部标题字段。
         async with await self._client() as client:
             response = await client.get("/api/seasons/anime", params={"query": keyword[:120]})
             response.raise_for_status()
             data = response.json().get("data", {})
         rows = [row for group in data.get("byWeekday", []) for row in group.get("animes", [])]
-        return [await self._to_result(row) for row in rows[:50]]
+        results = [await self._to_result(row) for row in rows[:50]]
+
+        # why：AniBT 搜索接口偏精简，由插件自己补拉前三个候选详情，不污染通用元数据管理器。
+        detail_tasks = [self.get_details(item.bangumiId or item.id, user) for item in results[:3]]
+        if detail_tasks:
+            details = await asyncio.gather(*detail_tasks, return_exceptions=True)
+            for base, detail in zip(results[:3], details):
+                if isinstance(detail, models.MetadataDetailsResponse):
+                    self._merge_result(base, detail)
+        return results
 
     async def search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
         keyword = (keyword or "").strip()
         if not keyword:
             return []
-        cache_key = f"season_query:{mediaType or 'all'}:{keyword[:120]}"
+        cache_key = f"season_query_v2:{mediaType or 'all'}:{keyword[:120]}"
         cached = await self.cache_manager.get("anibt_search", cache_key)
         if isinstance(cached, list):
             return [models.MetadataDetailsResponse(**row) for row in cached]
-        results = await self._search_endpoint(keyword)
+        results = await self._search_endpoint(keyword, user)
         if mediaType:
             results = [item for item in results if item.type == mediaType]
         await self.cache_manager.set(
@@ -128,7 +178,8 @@ class AniBTMetadataSource(BaseMetadataSource):
         bgm_id = str(item_id).removeprefix("bgm:").strip()
         if not bgm_id.isdigit():
             return None
-        cached = await self.cache_manager.get("anibt_details", bgm_id)
+        cache_key = f"v2:{bgm_id}"
+        cached = await self.cache_manager.get("anibt_details", cache_key)
         if isinstance(cached, dict):
             return models.MetadataDetailsResponse(**cached)
         async with await self._client() as client:
@@ -140,7 +191,7 @@ class AniBTMetadataSource(BaseMetadataSource):
         if not anime:
             return None
         result = await self._to_result(anime)
-        await self.cache_manager.set("anibt_details", bgm_id, result.model_dump(), ttl_seconds=21600)
+        await self.cache_manager.set("anibt_details", cache_key, result.model_dump(), ttl_seconds=21600)
         return result
 
     async def search_aliases(self, keyword: str, user: models.User) -> Set[str]:
