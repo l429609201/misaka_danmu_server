@@ -359,6 +359,25 @@ export const SearchResult = () => {
   const handleImportDanmu = async item => {
     try {
       if (loading) return
+
+      let finalType = item.type
+      if (item.typeDecision === 'needs_confirmation' && item.typeSuggestion) {
+        // why：低置信度冲突不能静默覆盖，让用户在来源类型和元数据建议之间明确选择。
+        const useSourceType = await modalApi.confirm({
+          title: t('searchResult.typeConflictTitle'),
+          content: (
+            <div className="space-y-2">
+              <div>{t('searchResult.typeConflictContent')}</div>
+              <div>{t('searchResult.sourceTypeLabel', { value: t(`searchResult.${item.sourceType === 'movie' ? 'movie' : 'tvType'}`) })}</div>
+              <div>{t('searchResult.suggestedTypeLabel', { value: t(`searchResult.${item.typeSuggestion === 'movie' ? 'movie' : 'tvType'}`) })}</div>
+            </div>
+          ),
+          okText: t('searchResult.useSuggestedType'),
+          cancelText: t('searchResult.useSourceType'),
+        })
+        finalType = useSourceType === false ? (item.sourceType || item.type) : item.typeSuggestion
+      }
+
       setLoading(true)
 
       // 检查是否有补充源 - 查找所有以主源key开头的补充源
@@ -371,7 +390,7 @@ export const SearchResult = () => {
         provider: item.provider,
         mediaId: item.mediaId,
         animeTitle: item.title,
-        type: item.type,
+        type: finalType,
         // 关键修正：如果用户搜索时指定了季度，则优先使用该季度
         // 否则，使用从单个结果中解析出的季度
         season: searchSeason ?? item.season,
@@ -448,6 +467,13 @@ export const SearchResult = () => {
   }
 
   const handleBatchImport = () => {
+    const uncertainCount = selectList.filter(item => item.typeDecision === 'needs_confirmation').length
+    if (uncertainCount > 0) {
+      // why：批量任务无法逐条表达不同选择，必须先让用户处理类型冲突，避免静默导错。
+      messageApi.warning(t('searchResult.batchTypeUncertain', { count: uncertainCount }))
+      return
+    }
+
     let tmdbparams = {}
     if (importMode === 'merge') {
       if (!title) {
@@ -1280,6 +1306,12 @@ export const SearchResult = () => {
                                 <Tag color="green">
                                   {t('searchResult.recognitionLabel', { value: item.recognitionTitle })}
                                 </Tag>
+                              )}
+                              {item.typeDecision === 'corrected' && (
+                                <Tag color="green">{t('searchResult.typeCorrectedTag')}</Tag>
+                              )}
+                              {item.typeDecision === 'needs_confirmation' && (
+                                <Tag color="warning">{t('searchResult.typeUncertainTag')}</Tag>
                               )}
                               {item.type !== 'movie' && (
                                 <Tag color="orange">

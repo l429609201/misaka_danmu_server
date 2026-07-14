@@ -1,4 +1,5 @@
 """核心导入任务模块"""
+import asyncio
 import logging
 from typing import Callable, Optional, List
 from sqlalchemy import select, update as sql_update
@@ -12,6 +13,10 @@ from src.utils import download_image
 from src.utils.episode_filter import get_and_apply_single_episode_filter
 
 logger = logging.getLogger(__name__)
+
+# why：作品身份创建是极短的数据库步骤，使用单锁可覆盖别名/识别词导致的不同标题键，
+# 同时避免立即任务与下载、后备队列并发各建一条；弹幕获取与导入不在锁内。
+_ANIME_CREATE_LOCK = asyncio.Lock()
 
 
 # 延迟导入辅助函数
@@ -55,32 +60,54 @@ async def _get_or_create_anime_with_deduplication(
 
     返回 anime_id
     """
-    # 使用独立的三段式检查工具
-    result = await check_anime_existence(
-        session,
-        provider=provider,
-        media_id=mediaId,
-        title=title,
-        season=season,
-        year=year,
-        tmdb_id=tmdb_id,
-        tvdb_id=tvdb_id,
-        imdb_id=imdb_id,
-        title_recognition_manager=title_recognition_manager,
-    )
+    async with _ANIME_CREATE_LOCK:
+        # why：锁内必须二次查询并把创建结果提交；否则其它 session 看不到 flush 的未提交行，
+        # 立即任务与下载/fallback 队列仍可能同时各建一条。
+        result = await check_anime_existence(
+            session,
+            provider=provider,
+            media_id=mediaId,
+            title=title,
+            media_type=mediaType,
+            season=season,
+            year=year,
+            tmdb_id=tmdb_id,
+            tvdb_id=tvdb_id,
+            imdb_id=imdb_id,
+            title_recognition_manager=title_recognition_manager,
+        )
 
-    if result["found"]:
-        stage = result["stage"]
-        anime_id = result["anime_id"]
-        logger.info(f"✓ 三段式检查命中({stage}): {result['reason']}, 复用anime_id={anime_id}")
+        if result["found"]:
+            anime_id = result["anime_id"]
+            logger.info(
+                f"✓ 三段式检查命中({result['stage']}): {result['reason']}, "
+                f"复用anime_id={anime_id}"
+            )
+            # why：强标识需在释放创建锁前落库，后续并发任务才能立即通过 Stage2 复用。
+            await crud.update_metadata_if_empty(
+                session, anime_id, tmdb_id=tmdb_id, tvdb_id=tvdb_id, imdb_id=imdb_id,
+            )
+            if mediaId and str(mediaId).strip():
+                await crud.link_source_to_anime(session, anime_id, provider, mediaId)
+            await session.commit()
+            return anime_id
+
+        logger.info(
+            f"○ 三段式检查未命中，创建新条目: title='{title}', "
+            f"season={season}, type={mediaType}, year={year}"
+        )
+        anime_id = await crud.get_or_create_anime(
+            session, title, mediaType, season, imageUrl, local_image_path,
+            year, title_recognition_manager, provider,
+        )
+        await crud.update_metadata_if_empty(
+            session, anime_id, tmdb_id=tmdb_id, tvdb_id=tvdb_id, imdb_id=imdb_id,
+        )
+        if mediaId and str(mediaId).strip():
+            await crud.link_source_to_anime(session, anime_id, provider, mediaId)
+        # why：先提交作品身份、数据源与强标识再释放锁，后续并发任务可立即复用。
+        await session.commit()
         return anime_id
-
-    # 三段式全部未命中 → 使用现有 get_or_create_anime 创建新条目
-    logger.info(f"○ 三段式检查未命中，创建新条目: title='{title}', season={season}")
-    anime_id = await crud.get_or_create_anime(
-        session, title, mediaType, season, imageUrl, local_image_path, year, title_recognition_manager, provider
-    )
-    return anime_id
 
 
 async def generic_import_task(
@@ -278,6 +305,9 @@ async def generic_import_task(
                     local_image_path=local_image_path,
                     year=year,
                     title_recognition_manager=title_recognition_manager,
+                    tmdb_id=tmdbId,
+                    tvdb_id=tvdbId,
+                    imdb_id=imdbId,
                 )
 
                 # 更新元数据（如果anime是新创建的或字段为空）
@@ -812,6 +842,9 @@ async def edited_import_task(
                 local_image_path=local_image_path,
                 year=request_data.year,
                 title_recognition_manager=title_recognition_manager,
+                tmdb_id=request_data.tmdbId,
+                tvdb_id=request_data.tvdbId,
+                imdb_id=request_data.imdbId,
             )
 
             # 更新元数据

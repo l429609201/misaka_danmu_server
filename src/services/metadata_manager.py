@@ -291,8 +291,18 @@ class MetadataSourceManager:
 
         all_aliases: Set[str] = set()
         supplemental_results: List[models.ProviderSearchInfo] = []
-        # 标题→类型映射：用于帮助弹幕源修正媒体类型
+        # 标题→类型映射：同一标题出现类型冲突时标记为 ambiguous，禁止自动覆盖。
         title_type_map: Dict[str, str] = {}
+
+        def _record_title_type(title: Optional[str], media_type: Optional[str]) -> None:
+            if not title or not media_type:
+                return
+            previous = title_type_map.get(title)
+            if previous and previous != media_type:
+                # why：多个元数据候选对同一标题给出不同类型时，不能把任一结果当成高置信度。
+                title_type_map[title] = "ambiguous"
+            else:
+                title_type_map[title] = media_type
         self.last_aux_search_timing = []
 
         for provider_name, res, search_dur, detail_info, error in pipeline_results:
@@ -330,13 +340,11 @@ class MetadataSourceManager:
                     item_type = 'tv_series'
 
                 all_aliases.add(item.title)
-                if item_type:
-                    title_type_map[item.title] = item_type
+                _record_title_type(item.title, item_type)
                 if item.aliasesCn:
                     all_aliases.update(item.aliasesCn)
-                    if item_type:
-                        for alias in item.aliasesCn:
-                            title_type_map[alias] = item_type
+                    for alias in item.aliasesCn:
+                        _record_title_type(alias, item_type)
                 if item.aliasesJp:
                     all_aliases.update(item.aliasesJp)
                 if item.nameJp:

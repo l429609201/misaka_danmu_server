@@ -317,13 +317,20 @@ async def get_or_create_anime(session: AsyncSession, title: str, media_type: str
     original_title = title
     original_season = season
 
-    # 步骤1：先尝试完全匹配（不应用识别词转换）
-    logger.info(f"🔍 数据库查找（完全匹配）: title='{original_title}', season={original_season}, year={year}")
-    stmt = select(Anime).where(Anime.title == original_title, Anime.season == original_season)
-    if year:
-        stmt = stmt.where(Anime.year == year)
-    result = await session.execute(stmt)
-    anime = result.scalar_one_or_none()
+    def _apply_identity_filters(stmt, match_title: str, match_season: int):
+        """弱标题身份必须完整匹配类型与年份状态。"""
+        stmt = stmt.where(
+            Anime.title == match_title,
+            Anime.season == match_season,
+            Anime.type == media_type,
+        )
+        # why：未知年份只复用未知年份，不能猜测并入任一确定年份作品。
+        return stmt.where(Anime.year.is_(None) if year is None else Anime.year == year)
+
+    # 步骤1：先尝试完整身份匹配（不应用识别词转换）
+    logger.info(f"🔍 数据库查找（完整身份）: title='{original_title}', season={original_season}, type={media_type}, year={year}")
+    stmt = _apply_identity_filters(select(Anime), original_title, original_season).order_by(Anime.id)
+    anime = (await session.execute(stmt)).scalars().first()
 
     if anime:
         logger.info(f"✓ 完全匹配成功: ID={anime.id}, 标题='{anime.title}', 季数={anime.season}, 年份={anime.year}")
@@ -355,12 +362,9 @@ async def get_or_create_anime(session: AsyncSession, title: str, media_type: str
             converted_season_str = f"S{converted_season:02d}" if converted_season is not None else "S??"
             logger.info(f"🔍 尝试识别词转换匹配: '{original_title}' {original_season_str} -> '{converted_title}' {converted_season_str}")
 
-            # 使用转换后的标题和季数进行查找
-            stmt = select(Anime).where(Anime.title == converted_title, Anime.season == converted_season)
-            if year:
-                stmt = stmt.where(Anime.year == year)
-            result = await session.execute(stmt)
-            anime = result.scalar_one_or_none()
+            # 使用转换后的标题、季度、类型和明确年份状态查找。
+            stmt = _apply_identity_filters(select(Anime), converted_title, converted_season).order_by(Anime.id)
+            anime = (await session.execute(stmt)).scalars().first()
 
             if anime:
                 logger.info(f"✓ 识别词转换匹配成功: ID={anime.id}, 标题='{anime.title}', 季数={anime.season}, 年份={anime.year}")
@@ -399,12 +403,14 @@ async def get_or_create_anime(session: AsyncSession, title: str, media_type: str
         )
         alias_stmt = select(Anime).join(
             AnimeAlias, Anime.id == AnimeAlias.animeId
-        ).where(alias_conditions, Anime.season == final_season)
-        if year:
-            alias_stmt = alias_stmt.where(Anime.year == year)
+        ).where(
+            alias_conditions,
+            Anime.season == final_season,
+            Anime.type == media_type,
+            Anime.year.is_(None) if year is None else Anime.year == year,
+        ).order_by(Anime.id)
 
-        result = await session.execute(alias_stmt)
-        anime = result.scalar_one_or_none()
+        anime = (await session.execute(alias_stmt)).scalars().first()
         if anime:
             logger.info(f"✓ 别名匹配成功: ID={anime.id}, 标题='{anime.title}', 通过别名'{search_title}' 命中")
             # 检查并更新海报
@@ -423,9 +429,11 @@ async def get_or_create_anime(session: AsyncSession, title: str, media_type: str
     # 步骤2.5b：模糊标题匹配 — 用 thefuzz 做标题相似度比较
     try:
         from thefuzz import fuzz
-        fuzzy_stmt = select(Anime).where(Anime.season == final_season)
-        if year:
-            fuzzy_stmt = fuzzy_stmt.where(Anime.year == year)
+        fuzzy_stmt = select(Anime).where(
+            Anime.season == final_season,
+            Anime.type == media_type,
+            Anime.year.is_(None) if year is None else Anime.year == year,
+        )
         result = await session.execute(fuzzy_stmt)
         candidates = result.scalars().all()
 
