@@ -406,21 +406,27 @@ async def scan_target(
         )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"扫描失败: {e}")
 
-    if scan_result.get("mode") == "candidates":
-        for item in scan_result.get("items") or []:
-            await ext_cal_crud.upsert_subscription_item(
-                session,
-                provider=item.get("provider", target["provider"]),
-                external_id=item["externalId"],
-                title=item.get("title") or "",
-                subscription_type=item.get("subscriptionType") or "",
-                parent_external_id=item.get("extraData", {}).get("parentExternalId") or target["externalId"],
-                extra={k: v for k, v in (item.get("extraData") or {}).items()},
-                status=item.get("status", "waiting"),
-            )
-            written += 1
+    try:
+        if scan_result.get("mode") == "candidates":
+            for item in scan_result.get("items") or []:
+                await ext_cal_crud.upsert_subscription_item(
+                    session,
+                    provider=item.get("provider", target["provider"]),
+                    external_id=item["externalId"],
+                    title=item.get("title") or "",
+                    subscription_type=item.get("subscriptionType") or "",
+                    parent_external_id=item.get("extraData", {}).get("parentExternalId") or target["externalId"],
+                    extra={k: v for k, v in (item.get("extraData") or {}).items()},
+                    status=item.get("status", "waiting"),
+                    commit=False,
+                )
+                written += 1
 
-    await ext_cal_crud.update_subscription_next_scan(session, target["provider"], target["externalId"])
+        # why：候选项与本次扫描时间属于同一结果，最后一次提交可避免部分候选落库。
+        await ext_cal_crud.update_subscription_next_scan(session, target["provider"], target["externalId"])
+    except BaseException:
+        await session.rollback()
+        raise
     target_label = "订阅目标" if scan_result.get("mode") == "subscriptions" else "候选项"
     return {"scanned": written, "message": f"扫描完成，写入 {written} 个{target_label}"}
 

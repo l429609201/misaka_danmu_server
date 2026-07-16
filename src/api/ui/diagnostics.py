@@ -23,6 +23,7 @@ from src._version import APP_VERSION
 from src.api.dependencies import get_config_manager
 from src.db import ConfigManager
 from src.db.database import get_db_type
+from src.core.env import is_docker_environment
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -90,7 +91,7 @@ async def get_environment_info(
 ):
     config_dir = os.path.join(os.getcwd(), "config")
     logs_dir = os.path.join(config_dir, "logs")
-    is_docker = os.path.exists("/.dockerenv") or os.environ.get("DOCKER_CONTAINER", "") == "true"
+    is_docker = is_docker_environment()
     uvloop_enabled = False
     try:
         import uvloop

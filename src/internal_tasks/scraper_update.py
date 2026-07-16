@@ -14,6 +14,7 @@ import httpx
 from fastapi import FastAPI
 
 from .base import BasePollingTask
+from src.core.env import is_docker_environment
 
 # 复用 scraper_resources 中的工具函数
 from ..api.ui.scraper_resources import (
@@ -41,7 +42,7 @@ class SystemUser:
 
 def _get_backup_dir_path() -> Path:
     """获取持久化备份目录路径（与 scraper_resources.BACKUP_DIR 一致）。"""
-    return Path("/app/config/scrapers_backup") if Path("/.dockerenv").exists() else Path("config/scrapers_backup")
+    return Path("/app/config/scrapers_backup") if is_docker_environment() else Path("config/scrapers_backup")
 
 
 def _get_backup_version() -> Optional[str]:
@@ -318,7 +319,7 @@ async def _perform_update(
         use_full_replace = full_replace_enabled.lower() == "true"
 
         # 全量替换防御：检查最近是否失败过（防止 native crash 导致无限重启循环）
-        FULL_REPLACE_FAIL_FLAG = Path("/app/config/full_replace_failed") if Path("/.dockerenv").exists() else Path("config/full_replace_failed")
+        FULL_REPLACE_FAIL_FLAG = Path("/app/config/full_replace_failed") if is_docker_environment() else Path("config/full_replace_failed")
         if use_full_replace and FULL_REPLACE_FAIL_FLAG.exists():
             try:
                 from datetime import datetime
@@ -535,7 +536,7 @@ async def _perform_update(
                     pass
                 # 尝试从备份恢复
                 try:
-                    backup_dir = Path("/app/config/scrapers_backup") if Path("/.dockerenv").exists() else Path("config/scrapers_backup")
+                    backup_dir = Path("/app/config/scrapers_backup") if is_docker_environment() else Path("config/scrapers_backup")
                     if backup_dir.exists():
                         import shutil
                         backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))

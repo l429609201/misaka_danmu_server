@@ -29,6 +29,21 @@ logger = logging.getLogger(__name__)
 # 默认备份路径
 DEFAULT_BACKUP_PATH = "/app/config/sql_backup"
 DEFAULT_RETENTION_COUNT = 5
+_BACKUP_FILENAME_RE = re.compile(r"^danmuapi_backup_[0-9]{8}_[0-9]{6}(?:_[0-9]{3})?\.json\.gz$")
+
+
+def resolve_backup_file(backup_path: Path, filename: str) -> Path:
+    """解析并校验备份文件路径，确保最终路径始终位于备份目录内。"""
+    if not filename or Path(filename).name != filename or not _BACKUP_FILENAME_RE.fullmatch(filename):
+        raise ValueError("无效的备份文件名")
+
+    base_path = backup_path.resolve()
+    candidate = (base_path / filename).resolve()
+    try:
+        candidate.relative_to(base_path)
+    except ValueError as exc:
+        raise ValueError("备份文件路径越界") from exc
+    return candidate
 
 
 def _build_backup_tables() -> List[tuple]:
@@ -334,15 +349,11 @@ async def list_backups(session: AsyncSession) -> List[Dict[str, Any]]:
 
 
 async def delete_backup(session: AsyncSession, filename: str) -> bool:
-    """删除指定备份文件"""
+    """删除指定备份文件。"""
     backup_path = await get_backup_path(session)
-    filepath = backup_path / filename
+    filepath = resolve_backup_file(backup_path, filename)
 
-    # 安全检查：确保文件名合法
-    if not filename.startswith("danmuapi_backup_") or not filename.endswith(".json.gz"):
-        raise ValueError("无效的备份文件名")
-
-    if not filepath.exists():
+    if not filepath.is_file():
         raise FileNotFoundError(f"备份文件不存在: {filename}")
 
     filepath.unlink()
@@ -361,9 +372,9 @@ async def restore_backup(session: AsyncSession, filename: str, progress_callback
     from sqlalchemy import delete
 
     backup_path = await get_backup_path(session)
-    filepath = backup_path / filename
+    filepath = resolve_backup_file(backup_path, filename)
 
-    if not filepath.exists():
+    if not filepath.is_file():
         raise FileNotFoundError(f"备份文件不存在: {filename}")
 
     # 读取备份数据

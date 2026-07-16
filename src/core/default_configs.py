@@ -155,7 +155,7 @@ def get_default_configs(settings=None, ai_prompts=None):
 
     # 添加需要settings的配置
     if settings:
-        configs['jwtExpireMinutes'] = (settings.jwt.access_token_expire_minutes, 'JWT令牌的有效期（分钟）。-1 表示永不过期。')
+        configs['jwtExpireMinutes'] = (settings.jwt.access_token_expire_minutes, 'JWT令牌的有效期（分钟），范围 1～43200（最长30天）。')
 
     # 添加AI相关配置
     if ai_prompts:

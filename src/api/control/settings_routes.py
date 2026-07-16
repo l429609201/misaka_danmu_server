@@ -38,10 +38,13 @@ async def update_danmaku_output_settings(
     config_manager: ConfigManager = Depends(get_config_manager)
 ):
     """更新全局的弹幕输出设置，包括输出上限和合并输出选项。"""
-    await crud.update_config_value(session, 'danmakuOutputLimitPerSource', str(payload.limitPerSource))  # type: ignore
-    await crud.update_config_value(session, 'danmakuMergeOutputEnabled', str(payload.mergeOutputEnabled).lower())  # type: ignore
-    config_manager.invalidate('danmakuOutputLimitPerSource')
-    config_manager.invalidate('danmakuMergeOutputEnabled')
+    config_values = {
+        'danmakuOutputLimitPerSource': str(payload.limitPerSource),
+        'danmakuMergeOutputEnabled': str(payload.mergeOutputEnabled).lower(),
+    }
+    await crud.update_config_values_atomic(session, config_values)
+    for key in config_values:
+        config_manager.invalidate(key)
     return {"message": "弹幕输出设置已更新。"}
 
 

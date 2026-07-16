@@ -244,14 +244,15 @@ async def check_ip_whitelist(request: Request, session: AsyncSession) -> Optiona
 
             # 获取 JWT 有效期配置（与正常登录一致）
             expire_minutes_str = await crud.get_config_value(session, 'jwtExpireMinutes', str(settings.jwt.access_token_expire_minutes))
-            expire_minutes = int(expire_minutes_str)
-            # 如果是 -1（永不过期），使用一个较大的值（7天）
-            if expire_minutes == -1:
-                ttl_seconds = 7 * 24 * 60 * 60  # 7 天
-                db_expire_minutes = None  # 数据库中不设置过期时间
-            else:
-                ttl_seconds = expire_minutes * 60  # 转换为秒
-                db_expire_minutes = expire_minutes
+            try:
+                expire_minutes = int(expire_minutes_str)
+            except (TypeError, ValueError):
+                expire_minutes = settings.jwt.access_token_expire_minutes
+            if expire_minutes <= 0:
+                expire_minutes = 3 * 24 * 60
+            expire_minutes = min(expire_minutes, 30 * 24 * 60)
+            ttl_seconds = expire_minutes * 60
+            db_expire_minutes = expire_minutes
 
             # 使用 IP + UA哈希 作为会话 ID，区分同 IP 不同浏览器
             jti = f"whitelist_{client_ip_str}_{ua_hash}"
@@ -448,12 +449,20 @@ async def create_access_token(data: dict, session: AsyncSession, expires_delta: 
 
     secret_key = await crud.get_config_value(session, 'jwtSecretKey', settings.jwt.secret_key) # type: ignore
     expire_minutes_str = await crud.get_config_value(session, 'jwtExpireMinutes', str(settings.jwt.access_token_expire_minutes)) # type: ignore
-    expire_minutes = int(expire_minutes_str)
-    # 如果有效期不为-1，则设置过期时间
-    if expire_minutes != -1:
-        expire = now + timedelta(minutes=expire_minutes)
-        to_encode.update({"exp": expire})
-    # 如果是-1，则不添加 "exp" 字段，令牌将永不过期
+    default_expire_minutes = settings.jwt.access_token_expire_minutes
+    if default_expire_minutes <= 0:
+        default_expire_minutes = 3 * 24 * 60
+    try:
+        expire_minutes = int(expire_minutes_str)
+    except (TypeError, ValueError):
+        expire_minutes = default_expire_minutes
+
+    # why: 永不过期令牌一旦泄露就可长期访问；无效配置回退到有限期默认值。
+    if expire_minutes <= 0:
+        expire_minutes = default_expire_minutes
+    expire_minutes = min(expire_minutes, 30 * 24 * 60)
+    expire = now + timedelta(minutes=expire_minutes)
+    to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, secret_key, algorithm=settings.jwt.algorithm)
     return encoded_jwt, jti, expire_minutes
 

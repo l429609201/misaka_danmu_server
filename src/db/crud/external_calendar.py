@@ -95,11 +95,17 @@ def _build_row_values(provider: str, item: Dict[str, Any]) -> Optional[Dict[str,
 
 # ============ 公开 API ============
 
-async def upsert_items(session: AsyncSession, provider: str, items: List[Dict[str, Any]]) -> int:
+async def upsert_items(
+    session: AsyncSession,
+    provider: str,
+    items: List[Dict[str, Any]],
+    commit: bool = True,
+) -> int:
     """批量 Upsert 外部日历条目。
 
     :param provider: 数据源标识（'bangumi' | 'trakt' | ...）
     :param items: 标准化条目列表，每项至少包含 externalId（或可推导出的 bangumiId/traktId）
+    :param commit: 是否立即提交；组合业务应传 False 并在外层统一提交
     :return: 实际写入的条目数（跳过无 externalId 的项）
     """
     if not items:
@@ -127,7 +133,8 @@ async def upsert_items(session: AsyncSession, provider: str, items: List[Dict[st
         raise NotImplementedError(f"upsert_items 尚未为数据库类型 '{dialect}' 实现")
 
     await session.execute(stmt)
-    await session.commit()
+    if commit:
+        await session.commit()
     logger.debug(f"ExternalCalendarItem upsert: provider={provider} count={len(rows)}")
     return len(rows)
 
@@ -355,11 +362,13 @@ async def mark_subscribed(
     external_id: str,
     status: str = "pending",
     item: Optional[Dict[str, Any]] = None,
+    commit: bool = True,
 ) -> bool:
     """把某个外部条目标记为已订阅（订阅意向）。
 
     :param status: 'pending' | 'importing' | 'imported' | 'failed'
     :param item: 找不到精确 external_id 时用于按 ID 反查现有外部记录；极端情况下才创建外部表记录
+    :param commit: 是否立即提交；组合业务应传 False 并在外层统一提交
     :return: True 表示成功标记/创建
     """
     stmt = select(ExternalCalendarItem).where(
@@ -406,14 +415,20 @@ async def mark_subscribed(
             updatedAt=get_now(),
         )
         session.add(row)
-        await session.commit()
+        if commit:
+            await session.commit()
+        else:
+            await session.flush()
         return True
     row.isSubscribed = True
     row.subscriptionStatus = status
     if status == "importing":
         row.subscriptionLastAttemptAt = get_now()
     row.updatedAt = get_now()
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return True
 
 
@@ -576,11 +591,13 @@ async def upsert_subscription_target(
     subscription_type: str,
     extra: Optional[Dict[str, Any]] = None,
     status: str = "pending",
+    commit: bool = True,
 ) -> Dict[str, Any]:
     """通用创建/更新一个订阅目标。
 
     内部复用 upsert_items + mark_subscribed，把 subscriptionType 与 provider 私有字段
     平铺进 payload，由 _build_row_values 收集到 extraData。
+    :param commit: 是否立即提交；批量扫描应传 False 并在外层统一提交
     :return: 写入后的订阅目标 dict
     """
     extra = dict(extra or {})
@@ -593,10 +610,26 @@ async def upsert_subscription_target(
         "subscriptionType": subscription_type,
         **extra,
     }
-    await upsert_items(session, provider, [payload])
-    await mark_subscribed(session, provider, str(external_id), status=status, item=payload)
-    item = await get_by_external_id(session, provider, str(external_id))
-    return item or payload
+    try:
+        await upsert_items(session, provider, [payload], commit=False)
+        await mark_subscribed(
+            session,
+            provider,
+            str(external_id),
+            status=status,
+            item=payload,
+            commit=False,
+        )
+        # why：返回值查询仍属于写入事务，必须在提交前完成；否则提交后查询失败会出现“已落库但接口报错”。
+        item = await get_by_external_id(session, provider, str(external_id))
+        if commit:
+            # why：基础条目与订阅状态是同一业务对象，避免任一步失败留下半成品。
+            await session.commit()
+        return item or payload
+    except BaseException:
+        if commit:
+            await session.rollback()
+        raise
 
 
 async def list_subscription_targets(
@@ -681,11 +714,13 @@ async def upsert_subscription_item(
     parent_external_id: str,
     extra: Optional[Dict[str, Any]] = None,
     status: str = "waiting",
+    commit: bool = True,
 ) -> Dict[str, Any]:
     """写入扫描产生的候选项（视频候选 / 番剧分集候选）。
 
     候选项 isSubscribed=False，通过 extraData.parentExternalId 关联父订阅目标。
     status 存入 extraData.itemStatus，避免与父目标的 subscriptionStatus 语义混淆。
+    :param commit: 是否立即提交；批量扫描应传 False 并在外层统一提交
     """
     extra = dict(extra or {})
     extra["parentExternalId"] = parent_external_id
@@ -698,9 +733,17 @@ async def upsert_subscription_item(
         "subscriptionType": subscription_type,
         **extra,
     }
-    await upsert_items(session, provider, [payload])
-    item = await get_by_external_id(session, provider, str(external_id))
-    return item or payload
+    try:
+        await upsert_items(session, provider, [payload], commit=False)
+        # why：候选项返回值查询必须早于提交，确保查询失败时仍能完整回滚写入。
+        item = await get_by_external_id(session, provider, str(external_id))
+        if commit:
+            await session.commit()
+        return item or payload
+    except BaseException:
+        if commit:
+            await session.rollback()
+        raise
 
 
 async def list_subscription_items(

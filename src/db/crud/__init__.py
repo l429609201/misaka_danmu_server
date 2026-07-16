@@ -7,6 +7,7 @@ CRUD模块
 from .config import (
     get_config_value,
     update_config_value,
+    update_config_values_atomic,
     initialize_configs,
     allocate_next_counter_value,
     LAST_ALLOCATED_ANIME_ID_KEY,
@@ -242,6 +243,8 @@ from .cache import (
     clear_all_cache,
     delete_cache,
     get_cache_keys_by_pattern,
+    count_cache_keys_by_pattern,
+    list_cache_keys_by_pattern,
 )
 
 # ApiToken模块
@@ -336,6 +339,7 @@ __all__ = [
     # Config
     'get_config_value',
     'update_config_value',
+    'update_config_values_atomic',
     'initialize_configs',
     'allocate_next_counter_value',
     'LAST_ALLOCATED_ANIME_ID_KEY',
@@ -519,6 +523,8 @@ __all__ = [
     'clear_all_cache',
     'delete_cache',
     'get_cache_keys_by_pattern',
+    'count_cache_keys_by_pattern',
+    'list_cache_keys_by_pattern',
     'clear_task_state_cache',
     # ApiToken
     'get_all_api_tokens',

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Input, message, Checkbox, Popconfirm, Tag, List, Row, Col, Dropdown, Segmented, Pagination, Popover } from 'antd';
-import { SearchOutlined, DeleteOutlined, EditOutlined, ImportOutlined, FolderOpenOutlined, AppstoreOutlined, TableOutlined, MoreOutlined, VideoCameraOutlined, PlaySquareOutlined } from '@ant-design/icons';
+import { useState, useEffect } from 'react';
+import { Card, Table, Button, Space, Input, message, Checkbox, Popconfirm, Tag, List, Row, Col, Dropdown, Pagination, Popover } from 'antd';
+import { SearchOutlined, DeleteOutlined, EditOutlined, ImportOutlined, FolderOpenOutlined, AppstoreOutlined, TableOutlined, MoreOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { getMediaWorks, deleteMediaItem, batchDeleteMediaItems, importMediaItems } from '../../../apis';
 import MediaItemEditor from './MediaItemEditor';

@@ -7,6 +7,7 @@ from typing import List, Set
 import asyncio
 
 from src.core.config import settings
+from src.core.env import is_docker_environment
 
 # 这个双端队列将用于在内存中存储最新的日志，以供Web界面展示
 _logs_deque = collections.deque(maxlen=200)
@@ -181,21 +182,7 @@ def setup_logging():
     以及一个用于API的内存双端队列。
     此函数应在应用启动时被调用一次。
     """
-    def _is_docker_environment():
-        """检测是否在Docker容器中运行"""
-        import os
-        # 方法1: 检查 /.dockerenv 文件（Docker标准做法）
-        if Path("/.dockerenv").exists():
-            return True
-        # 方法2: 检查环境变量
-        if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-            return True
-        # 方法3: 检查当前工作目录是否为 /app
-        if Path.cwd() == Path("/app"):
-            return True
-        return False
-
-    if _is_docker_environment():
+    if is_docker_environment():
         log_dir = Path("/app/config/logs")
     else:
         log_dir = Path("config/logs")
@@ -313,8 +300,7 @@ def get_logs() -> List[str]:
 
 def get_log_dir() -> Path:
     """返回日志目录路径。"""
-    import os
-    if Path("/.dockerenv").exists() or os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true" or Path.cwd() == Path("/app"):
+    if is_docker_environment():
         return Path("/app/config/logs")
     return Path("config/logs")
 

@@ -1274,7 +1274,7 @@ export const setAnimeGroupMembership = (animeId, data) => api.patch(`/api/ui/ani
 export const getCacheStats = () => api.get('/api/ui/cache/stats')
 
 /** 获取缓存条目列表 */
-export const getCacheList = (params) => api.get('/api/ui/cache/list', { params })
+export const getCacheList = (params) => api.get('/api/ui/cache/list', params)
 
 /** 清除缓存 */
 export const clearCache = (region) => api.delete('/api/ui/cache/clear', { params: { region } })
@@ -1284,7 +1284,7 @@ export const deleteCacheKey = (key, region) => api.delete('/api/ui/cache/key', {
 /** ---------------------------------------------------缓存管理相关结束------------------------------------------------ */
 
 /** 获取单条缓存完整值 */
-export const getCacheDetail = (key, region) => api.get('/api/ui/cache/detail', { params: { key, region } })
+export const getCacheDetail = (key, region) => api.get('/api/ui/cache/detail', { key, region })
 
 /** 获取备份详情 */
 export const getBackupDetail = (filename) => api.get(`/api/ui/backup/detail/${filename}`)
@@ -1319,18 +1319,18 @@ export const checkRecognitionConflicts = () => api.get('/api/ui/recognition-chec
 export const testRecognitionRule = (data) => api.post('/api/ui/recognition-check/test', data)
 
 // ==================== 配置变更历史 ====================
-export const getConfigHistory = (params) => api.get('/api/ui/config-history/list', { params })
+export const getConfigHistory = (params) => api.get('/api/ui/config-history/list', params)
 export const rollbackConfig = (data) => api.post('/api/ui/config-history/rollback', data)
 export const clearConfigHistory = () => api.post('/api/ui/config-history/clear')
 
 // ==================== 任务画像 / 容量趋势 ====================
 export const getTaskProfiles = (days = 7) => api.get(`/api/ui/task-profile/summary?days=${days}`)
-export const getTaskTimeline = (taskId) => api.get('/api/ui/task-profile/timeline', { params: { task_id: taskId } })
+export const getTaskTimeline = (taskId) => api.get('/api/ui/task-profile/timeline', { task_id: taskId })
 export const getCapacityTrends = () => api.get('/api/ui/trends/capacity')
 export const getCurrentCapacity = () => api.get('/api/ui/trends/current')
 
 // ==================== 安全审计 ====================
-export const getAuditLogs = (params) => api.get('/api/ui/audit/logs', { params })
+export const getAuditLogs = (params) => api.get('/api/ui/audit/logs', params)
 export const getSessionStats = () => api.get('/api/ui/audit/session-stats')
 export const clearAuditLogs = () => api.post('/api/ui/audit/clear')
 
@@ -1346,4 +1346,4 @@ export const getLowConfidenceMatches = () => api.get('/api/ui/ai-explain/low-con
 // ==================== 本地扫描增量 ====================
 export const getScanIndexStats = () => api.get('/api/ui/local-scan/index-stats')
 export const rebuildScanIndex = () => api.post('/api/ui/local-scan/rebuild-index')
-export const getScanIndexDetail = (params) => api.get('/api/ui/local-scan/index-detail', { params })
+export const getScanIndexDetail = (params) => api.get('/api/ui/local-scan/index-detail', params)

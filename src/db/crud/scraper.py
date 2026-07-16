@@ -78,19 +78,29 @@ async def update_scraper_proxy(session: AsyncSession, provider_name: str, use_pr
 
 
 async def update_scrapers_settings(session: AsyncSession, settings: List[models.ScraperSetting]):
-    """批量更新搜索源设置"""
-    for s in settings:
-        await session.execute(
-            update(Scraper)
-            .where(Scraper.providerName == s.providerName)
-            .values(isEnabled=s.isEnabled, displayOrder=s.displayOrder, useProxy=s.useProxy)
-        )
-    await session.commit()
-    # 用户保存后单独存一份顺序到 config 表，供启动/更新导致源缺失后按此顺序重载 display_order。
+    """批量更新搜索源设置，并在同一事务保存用户顺序快照。"""
+    from .config import upsert_config_values
+
     try:
-        await save_scraper_order_snapshot(session)
-    except Exception as e:
-        logger.warning(f"保存弹幕源顺序快照失败（不影响本次设置保存）: {e}")
+        for s in settings:
+            await session.execute(
+                update(Scraper)
+                .where(Scraper.providerName == s.providerName)
+                .values(isEnabled=s.isEnabled, displayOrder=s.displayOrder, useProxy=s.useProxy)
+            )
+
+        ordered_stmt = select(Scraper.providerName).order_by(Scraper.displayOrder)
+        ordered = list((await session.execute(ordered_stmt)).scalars().all())
+        # why: Scraper 设置与恢复顺序快照属于同一次用户保存，任一写入失败都应整体回滚。
+        await upsert_config_values(
+            session,
+            {_SCRAPER_ORDER_KEY: json.dumps(ordered, ensure_ascii=False)},
+        )
+        await session.commit()
+        logger.info(f"已保存弹幕源设置与顺序快照: {ordered}")
+    except BaseException:
+        await session.rollback()
+        raise
 
 
 async def save_scraper_order_snapshot(session: AsyncSession):

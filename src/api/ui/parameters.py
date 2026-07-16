@@ -16,21 +16,87 @@ import httpx
 from src.db import models, ConfigManager
 from src.security import get_current_user
 from src.api.dependencies import get_config_manager, get_scraper_manager
+from src.core.env import is_docker_environment as _is_docker_environment
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+_MAX_UPLOAD_BYTES = 256 * 1024 * 1024
+_MAX_ARCHIVE_MEMBERS = 256
+_MAX_MEMBER_BYTES = 128 * 1024 * 1024
+_MAX_EXTRACTED_BYTES = 512 * 1024 * 1024
+_MAX_COMPRESSION_RATIO = 200
 
-def _is_docker_environment():
-    """检测是否在Docker容器中运行"""
-    import os
-    if Path("/.dockerenv").exists():
-        return True
-    if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-        return True
-    if Path.cwd() == Path("/app"):
-        return True
-    return False
+
+def _safe_archive_target(extract_dir: Path, member_name: str) -> Path:
+    """解析压缩包成员路径，拒绝绝对路径和目录穿越。"""
+    base = extract_dir.resolve()
+    target = (base / member_name).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"检测到恶意压缩包路径: {member_name}") from exc
+    return target
+
+
+def _validate_archive_size(member_count: int, member_size: int, total_size: int, packed_size: int) -> None:
+    """限制压缩包规模，避免 zip bomb 耗尽内存或磁盘。"""
+    if member_count > _MAX_ARCHIVE_MEMBERS:
+        raise HTTPException(status_code=400, detail=f"压缩包文件数超过限制（{_MAX_ARCHIVE_MEMBERS}）")
+    if member_size > _MAX_MEMBER_BYTES:
+        raise HTTPException(status_code=400, detail="压缩包内单个文件过大")
+    if total_size > _MAX_EXTRACTED_BYTES:
+        raise HTTPException(status_code=400, detail="压缩包解压后总大小超过限制")
+    if packed_size > 0 and total_size / packed_size > _MAX_COMPRESSION_RATIO:
+        raise HTTPException(status_code=400, detail="压缩包压缩比异常，已拒绝解压")
+
+
+def _extract_archive_safely(file_path: Path, extract_dir: Path) -> None:
+    """逐成员安全解压，并限制文件数量、大小、类型和压缩比。"""
+    total_size = 0
+    total_packed_size = 0
+    if file_path.name.endswith('.zip'):
+        with zipfile.ZipFile(file_path, 'r') as archive:
+            members = archive.infolist()
+            if len(members) > _MAX_ARCHIVE_MEMBERS:
+                raise HTTPException(status_code=400, detail=f"压缩包文件数超过限制（{_MAX_ARCHIVE_MEMBERS}）")
+            for index, member in enumerate(members, 1):
+                total_size += member.file_size
+                total_packed_size += member.compress_size
+                _validate_archive_size(index, member.file_size, total_size, total_packed_size)
+                # why: ZipInfo 可伪装成符号链接，不能让其逃逸解压目录。
+                if (member.external_attr >> 16) & 0o170000 == 0o120000:
+                    raise HTTPException(status_code=400, detail=f"压缩包包含符号链接: {member.filename}")
+                target = _safe_archive_target(extract_dir, member.filename)
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member) as src, open(target, 'wb') as dst:
+                    shutil.copyfileobj(src, dst, length=1024 * 1024)
+        return
+
+    if file_path.name.endswith(('.tar.gz', '.tgz')):
+        with tarfile.open(file_path, 'r:gz') as archive:
+            packed_size = max(file_path.stat().st_size, 1)
+            for index, member in enumerate(archive, 1):
+                total_size += member.size
+                _validate_archive_size(index, member.size, total_size, packed_size)
+                if not (member.isdir() or member.isfile()):
+                    raise HTTPException(status_code=400, detail=f"压缩包包含不安全成员: {member.name}")
+                target = _safe_archive_target(extract_dir, member.name)
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                source = archive.extractfile(member)
+                if source is None:
+                    raise HTTPException(status_code=400, detail=f"无法读取压缩包成员: {member.name}")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with source, open(target, 'wb') as dst:
+                    shutil.copyfileobj(source, dst, length=1024 * 1024)
+        return
+
+    raise HTTPException(status_code=400, detail="不支持的文件格式，仅支持 .zip 或 .tar.gz")
 
 
 def _get_scrapers_dir() -> Path:
@@ -73,25 +139,25 @@ async def verify_github_token(
     token = payload.get("token", "")
     if not token:
         raise HTTPException(status_code=400, detail="Token不能为空")
-    
+
     try:
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.v3+json"
         }
-        
+
         async with httpx.AsyncClient() as client:
             # 获取用户信息
             user_response = await client.get("https://api.github.com/user", headers=headers)
             if user_response.status_code != 200:
                 raise HTTPException(status_code=400, detail="Token无效")
-            
+
             user_data = user_response.json()
-            
+
             # 获取速率限制信息
             rate_response = await client.get("https://api.github.com/rate_limit", headers=headers)
             rate_data = rate_response.json()
-            
+
             return {
                 "valid": True,
                 "username": user_data.get("login"),
@@ -125,48 +191,25 @@ async def upload_scraper_package(
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
 
-            # 保存上传的文件
-            file_path = temp_path / file.filename
-            with open(file_path, "wb") as f:
-                content = await file.read()
-                f.write(content)
+            # 客户端文件名不可信，只保留基础名并校验扩展名。
+            safe_filename = Path(file.filename or "").name
+            if not safe_filename or safe_filename != file.filename:
+                raise HTTPException(status_code=400, detail="无效的上传文件名")
+            if not safe_filename.endswith(('.zip', '.tar.gz', '.tgz')):
+                raise HTTPException(status_code=400, detail="不支持的文件格式，仅支持 .zip 或 .tar.gz")
 
-            # 解压文件
+            file_path = temp_path / safe_filename
+            uploaded_size = 0
+            with open(file_path, "wb") as output:
+                while chunk := await file.read(1024 * 1024):
+                    uploaded_size += len(chunk)
+                    if uploaded_size > _MAX_UPLOAD_BYTES:
+                        raise HTTPException(status_code=413, detail="上传文件超过 256 MiB 限制")
+                    output.write(chunk)
+
             extract_dir = temp_path / "extracted"
             extract_dir.mkdir()
-
-            if file.filename.endswith('.zip'):
-                with zipfile.ZipFile(file_path, 'r') as zip_ref:
-                    # 安全检查：防止 Zip Slip 攻击
-                    for member in zip_ref.namelist():
-                        # 检查路径穿越
-                        member_path = (extract_dir / member).resolve()
-                        if not str(member_path).startswith(str(extract_dir.resolve())):
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"检测到恶意压缩包：路径穿越尝试 ({member})"
-                            )
-                    zip_ref.extractall(extract_dir)
-            elif file.filename.endswith(('.tar.gz', '.tgz')):
-                with tarfile.open(file_path, 'r:gz') as tar_ref:
-                    # 安全检查：防止 Zip Slip 攻击
-                    for member in tar_ref.getmembers():
-                        # 检查路径穿越
-                        member_path = (extract_dir / member.name).resolve()
-                        if not str(member_path).startswith(str(extract_dir.resolve())):
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"检测到恶意压缩包：路径穿越尝试 ({member.name})"
-                            )
-                        # 检查符号链接
-                        if member.issym() or member.islnk():
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"检测到恶意压缩包：包含符号链接 ({member.name})"
-                            )
-                    tar_ref.extractall(extract_dir)
-            else:
-                raise HTTPException(status_code=400, detail="不支持的文件格式,仅支持 .zip 或 .tar.gz")
+            _extract_archive_safely(file_path, extract_dir)
 
             # 验证 versions.json
             versions_file = extract_dir / "versions.json"

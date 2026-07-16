@@ -64,7 +64,7 @@ const getTypeLabel = (type, t) => {
 
 // ============ CalCard：海报卡片（顶层组件 + React.memo，防止父组件重渲染时 <img> 重新挂载导致海报重复请求 307） ============
 const CalCard = React.memo(function CalCard({
-  item, isToday, horizontal, day, isMobile, selected, t,
+  item, isToday, horizontal, isMobile, selected, t,
   posterSrc, displayTitle, displayYear, countdown,
   onToggleSelect, onSubscribe, onUnsubscribe, isSubscribing,
 }) {
@@ -250,7 +250,7 @@ const CalCard = React.memo(function CalCard({
           {item.providerName && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-gray-500/8 text-gray-500 dark:text-gray-400">{item.providerName}</span>}
           {item.rating && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500">★{item.rating}</span>}
           {/* 年份 / 类型 / 播出星期 / 开播时间：统一圆角胶囊，有则展示 */}
-          {(item.year || (item.origin === 'trakt' && item.traktTmdbId)) && getDisplayYear(item) && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-gray-500/10 text-gray-500 dark:text-gray-400">{getDisplayYear(item)}</span>}
+          {displayYear && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-gray-500/10 text-gray-500 dark:text-gray-400">{displayYear}</span>}
           {(item.animeType || item.type) && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-500 dark:text-purple-400">{getTypeLabel(item.animeType || item.type, t)}</span>}
           {item.airWeekday >= 1 && item.airWeekday <= 7 && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-500 dark:text-sky-400">{t(DAYS_KEYS[item.airWeekday - 1])}</span>}
           {item.airTime && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 dark:text-amber-400">🕐 {item.airTime}</span>}
@@ -301,7 +301,10 @@ export const CalendarView = ({ data, loading, isMobile, t, filter = 'local', onF
         const parsed = JSON.parse(raw)
         if (parsed && parsed.ts && Date.now() - parsed.ts < LS_TTL) lsCache = parsed.data || {}
       }
-    } catch {}
+    } catch {
+      // why: localStorage 可能被浏览器策略禁用，忽略后继续走网络查询即可。
+      lsCache = {}
+    }
     // 已在 localStorage 中的直接命中
     const idsToFetch = []
     const fromCache = {}
@@ -337,10 +340,12 @@ export const CalendarView = ({ data, loading, isMobile, t, filter = 'local', onF
       try {
         const merged = { ...lsCache, ...results }
         localStorage.setItem(LS_KEY, JSON.stringify({ ts: Date.now(), data: merged }))
-      } catch {}
+      } catch {
+        // why: 持久化失败不应影响已获取结果在当前页面展示。
+      }
     })()
     return () => { cancelled = true }
-  }, [data])
+  }, [data, localizedTitles])
 
   // 监听 7 天容器尺寸变化，按需更新 dayCanScroll（控制 ‹ › 按钮显隐）
   // 关键：依赖 [data, filter, searchKeyword]，items 变化时重建 ResizeObserver
@@ -667,7 +672,7 @@ export const CalendarView = ({ data, loading, isMobile, t, filter = 'local', onF
       item={item}
       isToday={isToday}
       horizontal={horizontal}
-      day={day}
+
       isMobile={isMobile}
       selected={isSelected(item)}
       t={t}

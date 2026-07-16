@@ -24,6 +24,7 @@ from src.services import get_download_task_manager
 from src.services.download_task_manager import TaskStatus
 from src.api.dependencies import get_scraper_manager, get_config_manager
 from src._version import APP_VERSION
+from src.core.env import is_docker_environment as _is_docker_environment
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -35,21 +36,6 @@ _download_lock = asyncio.Lock()
 _version_cache: Optional[Dict[str, Any]] = None
 _version_cache_time: Optional[datetime] = None
 _VERSION_CACHE_DURATION = timedelta(minutes=3)  # 缓存3分钟
-
-
-def _is_docker_environment():
-    """检测是否在Docker容器中运行"""
-    import os
-    # 方法1: 检查 /.dockerenv 文件（Docker标准做法）
-    if Path("/.dockerenv").exists():
-        return True
-    # 方法2: 检查环境变量
-    if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-        return True
-    # 方法3: 检查当前工作目录是否为 /app
-    if Path.cwd() == Path("/app"):
-        return True
-    return False
 
 
 def _get_scrapers_dir() -> Path:

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.db import ConfigManager
 from src.rate_limiter import RateLimiter
 from src.webhook.base import BaseWebhook
+from src.core.env import is_docker_environment
 from .task_manager import TaskManager
 from .scraper_manager import ScraperManager
 from .metadata_manager import MetadataSourceManager
@@ -33,22 +34,8 @@ class WebhookManager:
     def _load_handlers(self):
         """动态发现并加载 'webhook' 目录下的所有处理器，使用文件名作为类型。"""
         # 修正：根据运行环境自动调整路径
-        def _is_docker_environment():
-            """检测是否在Docker容器中运行"""
-            import os
-            # 方法1: 检查 /.dockerenv 文件（Docker标准做法）
-            if Path("/.dockerenv").exists():
-                return True
-            # 方法2: 检查环境变量
-            if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-                return True
-            # 方法3: 检查当前工作目录是否为 /app
-            if Path.cwd() == Path("/app"):
-                return True
-            return False
-
         def _get_webhook_path():
-            if _is_docker_environment():
+            if is_docker_environment():
                 # 容器环境
                 return str(Path("/app/src/webhook"))
             else:

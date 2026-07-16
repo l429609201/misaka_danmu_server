@@ -311,7 +311,7 @@ async def get_next_real_anime_id(session: AsyncSession) -> int:
     result = await session.execute(select(func.max(orm_models.Anime.id)))
     db_max = result.scalar() or 0
 
-    # allocate_next_counter_value 返回 max(counter, db_max) + 1 并回写，内部仅 flush 不 commit
+    # allocate_next_counter_value 返回 max(counter, db_max) + 1，并原子提交计数器租约。
     return await allocate_next_counter_value(
         session,
         LAST_ALLOCATED_ANIME_ID_KEY,

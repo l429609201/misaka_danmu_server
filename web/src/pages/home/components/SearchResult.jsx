@@ -25,7 +25,6 @@ import {
   Empty,
   InputNumber,
   Dropdown,
-  Space,
   Checkbox,
   Popover,
   Select,
@@ -440,10 +439,9 @@ export const SearchResult = () => {
       const finalSeason = editMediaType === 'movie' ? 1 : editSeason
       // 年份：用户手动填的优先，留空则不传（后端按无年份的原模式处理）
       const finalYear = editYear ?? null
-      const { animeTitle: _a, mediaType: _m, season: _s, episodes: _e, year: _y, ...restEditItem } = editItem
       const res = await importEdit(
         JSON.stringify({
-          ...restEditItem,
+          ...editItem,
           animeTitle: finalTitle,
           mediaType: finalMediaType,
           season: finalSeason,
@@ -554,7 +552,7 @@ export const SearchResult = () => {
             ? 'tv'
             : 'movie',
       })
-      if (!!res?.data?.length) {
+      if (res?.data?.length) {
         setTmdbResult(res?.data || [])
         setTmdbOpen(true)
       } else {
@@ -769,7 +767,7 @@ export const SearchResult = () => {
                   width: '100%',
                 }}
                 value={activeItem.title}
-                onChange={e => {}}
+                readOnly
               />
               <div>
                 <CloseCircleOutlined />
@@ -1238,7 +1236,7 @@ export const SearchResult = () => {
             className="overflow-y-auto overflow-x-hidden border border-gray-200 rounded-lg px-1 py-1"
             style={{ maxHeight: '600px' }}
           >
-          {!!renderData?.length ? (
+          {renderData?.length ? (
             <List
               itemLayout="vertical"
               size="large"
@@ -1411,6 +1409,10 @@ export const SearchResult = () => {
                                 setRange([1, 1])
                               }
                             } catch (error) {
+                              // why：编辑分集加载失败不能静默无反馈，否则用户会误以为按钮无效。
+                              messageApi.error(
+                                `${t('searchResult.importTaskFailed')}: ${error?.message || t('common.unknown')}`
+                              )
                             } finally {
                               setEditLoading(false)
                             }

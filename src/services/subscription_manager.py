@@ -65,15 +65,23 @@ class SubscriptionManager:
         if result.get("mode") != "subscriptions":
             return 0
         count = 0
-        for item in result.get("items") or []:
-            await ext_cal_crud.upsert_subscription_target(
-                session,
-                provider=item["provider"],
-                external_id=str(item["externalId"]),
-                title=item.get("title") or "",
-                subscription_type=item.get("subscriptionType") or "subject",
-                extra={**(item.get("extraData") or {}), "animeType": item.get("animeType", "tv_series")},
-                status=item.get("status") or "pending",
-            )
-            count += 1
+        try:
+            for item in result.get("items") or []:
+                await ext_cal_crud.upsert_subscription_target(
+                    session,
+                    provider=item["provider"],
+                    external_id=str(item["externalId"]),
+                    title=item.get("title") or "",
+                    subscription_type=item.get("subscriptionType") or "subject",
+                    extra={**(item.get("extraData") or {}), "animeType": item.get("animeType", "tv_series")},
+                    status=item.get("status") or "pending",
+                    commit=False,
+                )
+                count += 1
+            if count:
+                # why：一次扫描展开的目标属于同一批结果，必须全部成功后一次提交。
+                await session.commit()
+        except BaseException:
+            await session.rollback()
+            raise
         return count

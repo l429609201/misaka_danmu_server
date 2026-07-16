@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  addSourceToAnime,
   checkReassociationConflicts,
   deleteAnimeSource,
   deleteAnimeSourceSingle,
@@ -26,12 +25,10 @@ import {
   Empty,
   Input,
   List,
-  message,
   Modal,
   Row,
   Space,
   Switch,
-  Table,
   Tooltip,
   Tag,
 } from 'antd'
@@ -609,12 +606,6 @@ export const AnimeDetail = () => {
     },
   ]
 
-  const rowSelection = {
-    onChange: (_, selectedRows) => {
-      setSelectedRows(selectedRows)
-    },
-  }
-
   useEffect(() => {
     getDetail()
   }, [])
@@ -707,7 +698,7 @@ export const AnimeDetail = () => {
               {t('animePage.btnAddSource')}
             </Button>
           </div>
-          {!!sourceList?.length ? (
+          {sourceList?.length ? (
             <ResponsiveTable
               pagination={false}
               size="small"

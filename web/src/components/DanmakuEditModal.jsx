@@ -8,13 +8,10 @@ import {
   Button,
   Table,
   Checkbox,
-  Space,
   Spin,
   Empty,
   Tag,
-  Tooltip,
   Input,
-  Form,
   Divider,
   Progress,
 } from 'antd'
@@ -30,7 +27,6 @@ import {
 import { useMessage } from '../MessageContext'
 import {
   getDanmakuEditDetail,
-  getDanmakuEditComments,
   applyDanmakuOffset,
   splitEpisodeDanmaku,
   mergeEpisodesDanmaku,
@@ -60,7 +56,7 @@ const formatTime = (seconds) => {
 }
 
 // 可拖拽的合并项组件
-const SortableMergeItem = ({ item, index, onOffsetChange, onRemove }) => {
+const SortableMergeItem = ({ item, onOffsetChange, onRemove }) => {
   const { t } = useTranslation()
   const {
     attributes,
@@ -110,11 +106,10 @@ const SortableMergeItem = ({ item, index, onOffsetChange, onRemove }) => {
   )
 }
 
-export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceInfo }) => {
+export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes }) => {
   const { t } = useTranslation()
   const messageApi = useMessage()
   const [activeTab, setActiveTab] = useState('detail')
-  const [loading, setLoading] = useState(false)
   
   // 弹幕详情状态
   const [selectedDetailEpisode, setSelectedDetailEpisode] = useState(null)
@@ -700,11 +695,10 @@ export const DanmakuEditModal = ({ open, onCancel, onSuccess, episodes, sourceIn
                   items={mergeEpisodes.map((e) => e.episodeId)}
                   strategy={verticalListSortingStrategy}
                 >
-                  {mergeEpisodes.map((item, index) => (
+                  {mergeEpisodes.map(item => (
                     <SortableMergeItem
                       key={item.episodeId}
                       item={item}
-                      index={index}
                       onOffsetChange={updateMergeOffset}
                       onRemove={removeMergeEpisode}
                     />

@@ -56,6 +56,10 @@ class ScheduleSyncJob(BaseJob):
         total_updated += trakt_count
         results.append(f"Trakt: 更新 {trakt_count} 部")
 
+        if total_updated > 0:
+            # why: Bangumi 与 Trakt 共用同一任务会话，统一提交保证整轮日程更新原子落盘。
+            await session.commit()
+
         summary = "、".join(results)
         raise TaskSuccess(f"日程同步完成。{summary}，共更新 {total_updated} 部。")
 
@@ -110,7 +114,13 @@ class ScheduleSyncJob(BaseJob):
             # airTime：离线兜底有则用离线值，否则沿用原值
             new_airtime = bgm_airtime.get(bgm_id, s.get("airTime"))
             if new_weekday != s.get("airWeekday") or new_airtime != s.get("airTime"):
-                await crud.update_air_schedule(session, s["animeId"], new_weekday, new_airtime)
+                await crud.update_air_schedule(
+                    session,
+                    s["animeId"],
+                    new_weekday,
+                    new_airtime,
+                    commit=False,
+                )
                 updated += 1
                 self.logger.info(f"Bangumi 日程更新: '{s['animeTitle']}' → 星期{new_weekday}")
 
@@ -188,7 +198,13 @@ class ScheduleSyncJob(BaseJob):
                 continue
             new_weekday = trakt_schedule[trakt_id]
             if new_weekday != s.get("airWeekday"):
-                await crud.update_air_schedule(session, s["animeId"], new_weekday, s.get("airTime"))
+                await crud.update_air_schedule(
+                    session,
+                    s["animeId"],
+                    new_weekday,
+                    s.get("airTime"),
+                    commit=False,
+                )
                 updated += 1
                 self.logger.info(f"Trakt 日程更新: '{s['animeTitle']}' → 星期{new_weekday}")
 

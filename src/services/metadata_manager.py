@@ -14,6 +14,7 @@ import httpx
 from src.db import crud, models, orm_models, ConfigManager, CacheManager
 from .scraper_manager import ScraperManager
 from src.metadata_sources.base import BaseMetadataSource
+from src.core.env import is_docker_environment
 
 logger = logging.getLogger(__name__)
 
@@ -124,21 +125,7 @@ class MetadataSourceManager:
         discovered_providers = []
 
         # 检测环境并使用正确的路径
-        def _is_docker_environment():
-            """检测是否在Docker容器中运行"""
-            import os
-            # 方法1: 检查 /.dockerenv 文件（Docker标准做法）
-            if Path("/.dockerenv").exists():
-                return True
-            # 方法2: 检查环境变量
-            if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-                return True
-            # 方法3: 检查当前工作目录是否为 /app
-            if Path.cwd() == Path("/app"):
-                return True
-            return False
-
-        if _is_docker_environment():
+        if is_docker_environment():
             sources_package_path = [str(Path("/app/src/metadata_sources"))]
         else:
             # 源码运行环境：__file__ 在 src/services/ 下，需要往上一级到 src/，再拼 metadata_sources
@@ -804,17 +791,21 @@ class MetadataSourceManager:
             self.logger.info(f"为提供商 '{providerName}' 收到配置更新请求，但没有可识别的字段需要更新。")
             return {"message": "没有可更新的配置项。"}
 
-        # 4. 执行数据库操作
+        # 4. 在同一事务内写入源设置与关联配置。
         async with self._session_factory() as session:
             if db_fields_to_update:
                 await crud.update_metadata_source_specific_settings(session, providerName, db_fields_to_update)
-            
+
             if config_fields_to_update:
-                for key, value in config_fields_to_update.items():
-                    await crud.update_config_value(session, key, value)
-                    self._config_manager.invalidate(key)
-            
-            await session.commit()
+                # why: 提供商配置是一个整体；逐键提交会在中途失败时留下半套配置，
+                # 且会把上面的 MetadataSource 更新提前提交。
+                await crud.update_config_values_atomic(session, config_fields_to_update)
+            else:
+                await session.commit()
+
+        # 数据库全部提交成功后再失效缓存，避免失败事务对应的旧值被提前清除。
+        for key in config_fields_to_update:
+            self._config_manager.invalidate(key)
         
         # 如果是元数据源的配置更新，重新加载它们以使更改生效
         if providerName in self.sources:

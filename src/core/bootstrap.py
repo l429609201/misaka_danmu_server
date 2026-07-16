@@ -17,6 +17,8 @@ import secrets
 import logging
 from pathlib import Path
 
+from src.core.env import is_docker_environment as _is_docker_environment
+
 logger = logging.getLogger("bootstrap")
 
 # 需要显示来源的核心参数（精简版）
@@ -32,17 +34,6 @@ _CORE_ENV_KEYS = [
     ("DANMUAPI_CACHE__REDIS_URL", "cache.redis_url", "Redis地址"),
     ("DANMUAPI_SERVER__PORT", "server.port", "监听端口"),
 ]
-
-
-def _is_docker_environment() -> bool:
-    """检测是否在 Docker 容器中运行"""
-    if Path("/.dockerenv").exists():
-        return True
-    if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-        return True
-    if Path.cwd() == Path("/app"):
-        return True
-    return False
 
 
 def _get_config_path() -> Path:
