@@ -1,6 +1,7 @@
 import {
   Card,
   Form,
+  Input,
   List,
   Modal,
   Switch,
@@ -451,12 +452,11 @@ export const Metadata = () => {
                     {selectedSource?.providerName === 'douban' && <DoubanConfig form={form} />}
                     {selectedSource?.providerName === 'imdb' && <ImdbConfig form={form} />}
                     {selectedSource?.providerName === 'trakt' && <TraktConfig form={form} />}
-                    {/* 动态渲染 configurableFields 声明的字段 */}
+                    {/* 动态渲染源声明的配置字段，避免每增加一个源都新增专属组件。 */}
                     {configData?.configurableFields && Object.entries(configData.configurableFields).map(([key, fieldInfo]) => {
-                      // 解析字段配置（兼容元组和对象格式）
                       const config = Array.isArray(fieldInfo)
                         ? { label: fieldInfo[0], type: fieldInfo[1] || 'string', tooltip: fieldInfo[2] || '' }
-                        : { type: 'string', tooltip: '', ...fieldInfo }
+                        : { type: 'string', tooltip: '', required: false, ...fieldInfo }
 
                       if (config.type === 'boolean') {
                         return (
@@ -469,14 +469,27 @@ export const Metadata = () => {
                             >
                               <Switch />
                             </Form.Item>
-                            {config.tooltip && (
-                              <div className="w-full text-gray-500">{config.tooltip}</div>
-                            )}
+                            {config.tooltip && <div className="w-full text-gray-500">{config.tooltip}</div>}
                           </div>
                         )
                       }
-                      // 其他类型暂不渲染（未来可扩展）
-                      return null
+
+                      if (!['string', 'url', 'password'].includes(config.type)) return null
+                      const input = config.type === 'password'
+                        ? <Input.Password placeholder={config.placeholder} />
+                        : <Input type={config.type === 'url' ? 'url' : 'text'} placeholder={config.placeholder} />
+
+                      return (
+                        <Form.Item
+                          key={key}
+                          name={key}
+                          label={config.label}
+                          tooltip={config.tooltip}
+                          rules={config.required ? [{ required: true, message: `请输入${config.label || key}` }] : []}
+                        >
+                          {input}
+                        </Form.Item>
+                      )
                     })}
                     {!['bangumi', 'tmdb', 'tvdb', 'douban', 'imdb', 'trakt'].includes(selectedSource?.providerName)
                       && !configData?.configurableFields && (

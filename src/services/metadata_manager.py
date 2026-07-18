@@ -674,6 +674,8 @@ class MetadataSourceManager:
         config keys 从源类的 config_keys 属性自动获取，无需在此硬编码。
         """
 
+        source_class = self._source_classes.get(providerName)
+        configurable_fields = getattr(source_class, 'configurable_fields', {}) if source_class else {}
         keys_to_fetch = self.get_config_keys(providerName)
         bool_keys = set(self.get_bool_config_keys(providerName))
 
@@ -687,7 +689,10 @@ class MetadataSourceManager:
         else:
             config_values = {}
             for key in keys_to_fetch:
-                value_str = await self._config_manager.get(key, "")
+                field_info = configurable_fields.get(key, {})
+                default_value = field_info.get('default', '') if isinstance(field_info, dict) else ''
+                # why：首次读取即使用源声明的默认值，避免 ConfigManager 把空值缓存后覆盖运行时默认地址。
+                value_str = await self._config_manager.get(key, default_value)
                 if key in bool_keys:
                     config_values[key] = value_str.lower() == 'true' if value_str else True
                 else:
@@ -710,22 +715,33 @@ class MetadataSourceManager:
         if source_class:
             config_values['isFailoverSource'] = getattr(source_class, 'is_failover_source', False)
 
-            # 返回 configurableFields 元数据，让前端动态渲染
+            # 返回 configurableFields 元数据，让前端动态渲染。
+            # why：config_keys 使用原始键名，旧动态字段使用 provider_ 前缀；这里统一兼容两种存储约定。
             cf = getattr(source_class, 'configurable_fields', {})
             if cf:
                 config_values['configurableFields'] = cf
-                # 动态读取每个 configurable_field 的当前值
-                for field_key in cf:
-                    camel_key = field_key
-                    stored_value = await self._config_manager.get(f"{providerName}_{field_key}", "")
-                    if stored_value:
-                        # 元组或字典格式，取 type
-                        field_info = cf[field_key]
-                        field_type = field_info[1] if isinstance(field_info, (list, tuple)) else field_info.get('type', 'string')
-                        if field_type == 'boolean':
-                            config_values[camel_key] = stored_value.lower() == 'true'
+                declared_config_keys = set(getattr(source_class, 'config_keys', []))
+                for field_key, field_info in cf.items():
+                    field_meta = field_info if isinstance(field_info, dict) else {}
+                    storage_key = field_meta.get('configKey') or (
+                        field_key if field_key in declared_config_keys else f"{providerName}_{field_key}"
+                    )
+                    default_value = field_meta.get('default', '')
+                    stored_value = config_values.get(field_key)
+                    if stored_value in (None, ''):
+                        stored_value = await self._config_manager.get(storage_key, default_value)
+
+                    field_type = (
+                        field_info[1] if isinstance(field_info, (list, tuple))
+                        else field_meta.get('type', 'string')
+                    )
+                    if field_type == 'boolean':
+                        if isinstance(stored_value, bool):
+                            config_values[field_key] = stored_value
                         else:
-                            config_values[camel_key] = stored_value
+                            config_values[field_key] = str(stored_value).lower() == 'true'
+                    else:
+                        config_values[field_key] = stored_value
 
 
         # 添加特殊逻辑：Bangumi 认证模式
@@ -763,21 +779,26 @@ class MetadataSourceManager:
             config_key = f"{providerName}_force_aux_search"
             config_fields_to_update[config_key] = force_enabled_value
 
-        # 动态处理 configurable_fields 中声明的字段，存储到 config 表
+        # 动态处理 configurable_fields 中声明的字段，存储到 config 表。
+        # why：config_keys 使用原始键名，旧动态字段使用 provider_ 前缀；保存时必须与读取规则一致。
         source_class = self._source_classes.get(providerName)
         cf = getattr(source_class, 'configurable_fields', {}) if source_class else {}
+        declared_config_keys = set(getattr(source_class, 'config_keys', [])) if source_class else set()
         self.logger.info(f"updateProviderConfig: provider={providerName}, source_class={'found' if source_class else 'NOT FOUND'}, cf_keys={list(cf.keys())}, remaining_payload={list(payload.keys())}")
-        for field_key in cf:
+        for field_key, field_info in cf.items():
             if field_key in payload:
                 value = payload.pop(field_key)
-                config_key = f"{providerName}_{field_key}"
+                field_meta = field_info if isinstance(field_info, dict) else {}
+                config_key = field_meta.get('configKey') or (
+                    field_key if field_key in declared_config_keys else f"{providerName}_{field_key}"
+                )
                 if isinstance(value, bool):
                     config_fields_to_update[config_key] = str(value).lower()
                 else:
                     config_fields_to_update[config_key] = str(value if value is not None else "")
 
         # 2b. 按源类声明的 config_keys 通用保存，避免新增元信息源时重复维护硬编码白名单。
-        allowed_keys = set(getattr(source_class, 'config_keys', [])) if source_class else set()
+        allowed_keys = declared_config_keys
         for key, value in payload.items():
             if key not in allowed_keys:
                 continue

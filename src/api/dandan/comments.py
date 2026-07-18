@@ -345,6 +345,7 @@ async def get_comments_for_dandan(
         # 缓存key格式: fallback_episode_25000166010000 (最后4位为0000表示整部剧)
 
         fallback_info = None
+        match_fallback_handled = False
         episode_number = None
 
         # 尝试解析虚拟episodeId
@@ -416,6 +417,8 @@ async def get_comments_for_dandan(
                 logger.warning(f"[DB兜底] 从数据库重建后备信息失败: {e}")
 
         if fallback_info:
+            # why：本请求已由匹配后备链路接管，后续不得再次落入 fallback_comments 第二套下载链路。
+            match_fallback_handled = True
             logger.info(f"检测到后备搜索/匹配后备的episodeId: {episodeId}, 集数: {episode_number}")
 
             # 从缓存中获取信息
@@ -503,18 +506,34 @@ async def get_comments_for_dandan(
 
             # 检查是否已有相同的弹幕下载任务正在进行
             task_unique_key = f"match_fallback_comments_{episodeId}"
-            existing_task = await crud.find_recent_task_by_unique_key(session, task_unique_key, 1)
+            recent_task = await crud.find_recent_task_by_unique_key(session, task_unique_key, 1)
+            # why：历史查询也会返回最近完成的任务；只有活跃状态才应阻止重新提交。
+            existing_task = (
+                recent_task
+                if recent_task and recent_task.status in {'排队中', '运行中', '已暂停'}
+                else None
+            )
             if existing_task:
-                logger.info(f"弹幕下载任务已存在: {task_unique_key}，等待任务完成...")
+                logger.info(f"弹幕下载任务正在执行: {task_unique_key}，等待任务完成...")
                 # 等待最多30秒，检查缓存中是否有结果
                 cache_key = f"comments_{episodeId}"
-                for i in range(30):
+                for _ in range(30):
                     await asyncio.sleep(1)
                     cached_comments = await get_db_cache(session, COMMENTS_FETCH_CACHE_PREFIX, cache_key)
                     if cached_comments:
+                        comments_data = cached_comments
                         logger.info(f"从缓存中获取到弹幕数据，共 {len(cached_comments)} 条")
                         break
-                # 跳过任务提交，直接进入缓存读取逻辑
+                if not comments_data:
+                    # why：已有匹配后备任务仍在运行时，当前请求不能继续提交 fallback_comments，
+                    # 否则同一 episodeId 会同时沿用旧 episode_mapping 再跑一套下载。
+                    await _release_coalesce(episodeId)
+                    if async_mode:
+                        return models.CommentResponse(
+                            count=0, comments=[], status="pending", taskId=existing_task.taskId,
+                        )
+                    return models.CommentResponse(count=0, comments=[])
+                # 已取得缓存结果，跳过任务提交并进入统一输出处理。
             else:
                 # 任务不存在，提交新任务
                 # 保存当前作用域的变量，避免闭包问题
@@ -838,7 +857,7 @@ async def get_comments_for_dandan(
 
         # 任务完成后,弹幕已经保存到数据库,不再从缓存读取
         # 2. 检查是否是后备搜索的特殊episodeId（以25开头的新格式）
-        if str(episodeId).startswith("25") and len(str(episodeId)) >= 13:  # 新的ID格式
+        if not match_fallback_handled and str(episodeId).startswith("25") and len(str(episodeId)) >= 13:  # 新的ID格式
             # 解析episodeId：25 + animeId(6位) + 源顺序(2位) + 集编号(4位)
             episode_id_str = str(episodeId)
             real_anime_id = int(episode_id_str[2:8])  # 提取真实animeId
@@ -854,7 +873,7 @@ async def get_comments_for_dandan(
             if mapping_data:
                 episode_url = mapping_data["media_id"]
                 provider = mapping_data["provider"]
-                logger.info(f"从缓存获取episodeId映射: episodeId={episodeId}, provider={provider}, url={episode_url}")
+                logger.info(f"从缓存获取episodeId映射: episodeId={episodeId}, provider={provider}, mediaId={episode_url}")
             else:
                 # 如果缓存中没有，从数据库缓存中查找
                 # 首先尝试根据用户最后的选择来确定源
@@ -904,7 +923,7 @@ async def get_comments_for_dandan(
                         logger.error(f"查找真实animeId映射失败: {e}")
 
             if episode_url and provider:
-                logger.info(f"找到后备搜索映射: provider={provider}, url={episode_url}")
+                logger.info(f"找到后备搜索映射: provider={provider}, mediaId={episode_url}")
 
                 # 检查是否已有相同的弹幕下载任务正在进行或最近完成
                 task_unique_key = f"fallback_comments_{episodeId}"

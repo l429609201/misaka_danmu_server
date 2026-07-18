@@ -18,7 +18,22 @@ class AniBTMetadataSource(BaseMetadataSource):
     provider_name = "anibt"
     config_keys = ["anibtApiBaseUrl", "anibtImageBaseUrl"]
     bool_config_keys: List[str] = []
-    configurable_fields: Dict[str, Any] = {}
+    configurable_fields: Dict[str, Any] = {
+        "anibtApiBaseUrl": {
+            "label": "API 地址",
+            "type": "url",
+            "tooltip": "AniBT API 服务地址，通常无需修改",
+            "placeholder": "https://anibt.net",
+            "default": "https://anibt.net",
+        },
+        "anibtImageBaseUrl": {
+            "label": "图片地址",
+            "type": "url",
+            "tooltip": "可选；留空时使用 API 地址解析相对图片路径",
+            "placeholder": "https://anibt.net",
+            "default": "",
+        },
+    }
     test_url = "https://anibt.net"
     supports_subscription = True
     handled_domains = ["anibt.net"]

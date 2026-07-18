@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Select, Input, Button, message, Popover, List, Avatar, Empty, Spin, Tag, Divider, Tooltip } from 'antd'
+import { Select, Input, Button, message, Popover, List, Avatar, Empty, Spin, Tag, Divider, Tooltip, Modal, Alert, Form } from 'antd'
 import { SearchOutlined, LinkOutlined } from '@ant-design/icons'
 import {
   getAvailableSubscriptionSources,
@@ -42,6 +42,9 @@ export const SubscriptionSearchBar = ({ t, onSubscribed }) => {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [submittingKey, setSubmittingKey] = useState(null)
   const [urlModalOpen, setUrlModalOpen] = useState(false)  // URL 解析独立弹框开关
+  const [anibtRssModalOpen, setAnibtRssModalOpen] = useState(false)
+  const [anibtRssSubmitting, setAnibtRssSubmitting] = useState(false)
+  const [anibtRssForm] = Form.useForm()
 
   const loadSources = useCallback(async () => {
     try {
@@ -170,6 +173,31 @@ export const SubscriptionSearchBar = ({ t, onSubscribed }) => {
   // URL 解析按钮：打开独立弹框（不再内嵌 discover）
   const handleUrlImport = () => {
     setUrlModalOpen(true)
+  }
+
+  const anibtSource = useMemo(() => sources.find(s => s.provider === 'anibt'), [sources])
+
+  const handleCreateAnibtRss = async () => {
+    try {
+      const { rssUrl } = await anibtRssForm.validateFields()
+      setAnibtRssSubmitting(true)
+      await createSubscriptionTarget({
+        provider: 'anibt',
+        type: 'anibt_rss_feed',
+        payload: { rssUrl: rssUrl.trim() },
+      })
+      message.success(t('subscription.createSuccess', '订阅目标已创建'))
+      anibtRssForm.resetFields()
+      setAnibtRssModalOpen(false)
+      onSubscribed?.()
+    } catch (e) {
+      // 表单校验失败由 Form 自己展示，不额外弹错误消息。
+      if (e?.errorFields) return
+      const reason = _stringifyReason(e?.response?.data?.detail) || e?.message || t('subscription.createFailed', '创建订阅失败')
+      message.error(reason)
+    } finally {
+      setAnibtRssSubmitting(false)
+    }
   }
 
   const handlePick = async (item, idx) => {
@@ -317,6 +345,11 @@ export const SubscriptionSearchBar = ({ t, onSubscribed }) => {
       <Button onClick={handleUrlImport} icon={<LinkOutlined />}>
         {t('subscription.parseUrl', 'URL 解析')}
       </Button>
+      {anibtSource && (
+        <Button onClick={() => setAnibtRssModalOpen(true)}>
+          {t('subscription.anibtPrivateRss', 'AniBT 私有 RSS')}
+        </Button>
+      )}
       <SubscriptionUrlModal
         open={urlModalOpen}
         onClose={() => setUrlModalOpen(false)}
@@ -324,6 +357,42 @@ export const SubscriptionSearchBar = ({ t, onSubscribed }) => {
         t={t}
         onSubscribed={onSubscribed}
       />
+      <Modal
+        title={t('subscription.anibtPrivateRss', 'AniBT 私有 RSS')}
+        open={anibtRssModalOpen}
+        onOk={handleCreateAnibtRss}
+        onCancel={() => {
+          setAnibtRssModalOpen(false)
+          anibtRssForm.resetFields()
+        }}
+        okText={t('subscription.subscribe', '订阅')}
+        cancelText={t('common.cancel', '取消')}
+        confirmLoading={anibtRssSubmitting}
+        destroyOnClose
+      >
+        <Alert
+          type="info"
+          showIcon
+          className="mb-4"
+          message={t('subscription.anibtRssTip', '粘贴 AniBT 生成的带鉴权密钥 RSS 地址。地址仅用于后台同步，不会显示在订阅列表中。')}
+        />
+        <Form form={anibtRssForm} layout="vertical" preserve={false}>
+          <Form.Item
+            name="rssUrl"
+            label={t('subscription.privateRssUrl', '私有 RSS 地址')}
+            rules={[
+              { required: true, message: t('subscription.enterPrivateRssUrl', '请输入私有 RSS 地址') },
+              { type: 'url', message: t('subscription.invalidRssUrl', '请输入有效的 HTTP(S) 地址') },
+            ]}
+          >
+            <Input.Password
+              placeholder="https://anibt.net/..."
+              autoComplete="new-password"
+              onPressEnter={handleCreateAnibtRss}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }
