@@ -30,6 +30,7 @@ from src.services import (
     init_bangumi_data_manager,
 )
 from src.utils import InternalPollingManager, init_proxy_middleware
+from src.utils.server_instance_id import generate_server_instance_id
 from src.rate_limiter import RateLimiter
 from src.ai import AIMatcherManager
 from src.ai.ai_prompts import (
@@ -124,7 +125,7 @@ async def run_startup(app: FastAPI):
     }
     default_configs = get_default_configs(settings=settings, ai_prompts=ai_prompts)
     default_configs['jwtSecretKey'] = (secrets.token_hex(32), '用于签名JWT令牌的密钥，在首次启动时自动生成。')
-    default_configs['serverInstanceId'] = (secrets.token_hex(32), '')
+    default_configs['serverInstanceId'] = (generate_server_instance_id(), '实例ID')
     await app.state.config_manager.register_defaults(default_configs)
 
     # 初始化 TransportManager
