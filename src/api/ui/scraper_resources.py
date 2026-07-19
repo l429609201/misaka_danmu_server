@@ -2169,6 +2169,89 @@ def _find_matching_asset(
     return None
 
 
+def _persist_new_version_to_backup(extract_dir: Path, release_version: str) -> None:
+    """将临时目录中解压好的新版弹幕源持久化到备份目录（覆盖运行 .so 之前调用）。
+
+    why(断无限重启循环)：备份目录是唯一持久化的位置，且重启恢复逻辑依据
+    backup/versions.json 的 updated_at 判定是否需要恢复。必须在覆盖运行中的 .so
+    （可能 native crash）之前，就把新版 .so + package.json + 带新 updated_at 的
+    versions.json 落盘到备份目录；否则一旦覆盖时崩溃，backup 仍是旧版 → 重启后回退
+    → 轮询又发现新版 → 无限循环。
+
+    versions.json 的 updated_at 必须写为当前时间且版本号为新版，确保重启后
+    backup.updated_at > scrapers.updated_at 时恢复到的是新版本。
+    """
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 1) 复制临时目录的所有新版文件（.so/.pyd/.json）到备份目录
+    backup_count = 0
+    for f in extract_dir.iterdir():
+        if f.is_file():
+            shutil.copy2(f, BACKUP_DIR / f.name)
+            backup_count += 1
+
+    # 2) 从临时目录的 package.json 提取各源版本号与当前平台哈希
+    platform_info = get_platform_info()
+    platform_key = f"{platform_info['platform']}_{platform_info['arch']}"
+    scrapers_versions: Dict[str, str] = {}
+    scrapers_hashes: Dict[str, str] = {}
+    min_server_version = None
+    tmp_package_file = extract_dir / "package.json"
+    if tmp_package_file.exists():
+        try:
+            package_content = json.loads(tmp_package_file.read_text(encoding="utf-8"))
+            min_server_version = package_content.get('min_server_version')
+            for scraper_name, scraper_info in (package_content.get('resources', {}) or {}).items():
+                if isinstance(scraper_info, dict):
+                    ver = scraper_info.get('version')
+                    if ver:
+                        scrapers_versions[scraper_name] = ver
+                    hashes = scraper_info.get('hashes', {}) or {}
+                    if platform_key in hashes:
+                        scrapers_hashes[scraper_name] = hashes[platform_key]
+        except Exception as e:
+            logger.warning(f"读取临时 package.json 版本信息失败: {e}")
+
+    # 临时目录若自带 versions.json，也读取其 min_server_version 作为兜底
+    tmp_versions_file = extract_dir / "versions.json"
+    if not min_server_version and tmp_versions_file.exists():
+        try:
+            min_server_version = json.loads(tmp_versions_file.read_text(encoding="utf-8")).get('min_server_version')
+        except Exception:
+            pass
+
+    # 3) 写备份目录的 versions.json（关键：updated_at=当前时间，version=新版）
+    versions_data = {
+        "platform": platform_info['platform'],
+        "type": platform_info['arch'],
+        "version": release_version,
+        "scrapers": scrapers_versions,
+        "hashes": scrapers_hashes,
+        "full_replace": True,
+        "updated_at": datetime.now().isoformat(),
+    }
+    if min_server_version:
+        versions_data['min_server_version'] = min_server_version
+    (BACKUP_DIR / "versions.json").write_text(
+        json.dumps(versions_data, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+    # 4) 备份元数据
+    try:
+        metadata = {
+            "backup_time": datetime.now().isoformat(),
+            "backup_user": "system_full_replace",
+            "file_count": backup_count,
+            "platform": get_platform_key(),
+            "package_version": release_version,
+        }
+        BACKUP_METADATA_FILE.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"写备份元数据失败: {e}")
+
+    logger.info(f"已将新版 {release_version} 持久化到备份目录: {backup_count} 个文件, {len(scrapers_versions)} 个源版本")
+
+
 async def _download_and_extract_release(
     asset_info: Dict[str, Any],
     scrapers_dir: Path,
@@ -2290,7 +2373,24 @@ async def _download_and_extract_release(
             if file.suffix in ['.so', '.pyd']
         }
 
-        # 解压新文件（直接覆盖写入，不先删除旧文件，保证原子性）
+        # 方案A(断无限重启循环)：先解压到临时目录，持久化 backup 落盘新版后，
+        # 才覆盖运行目录里正在被加载的 .so。
+        # why: 直接 write_bytes 覆盖运行中的 .so 在 ARM64/uvloop 下易触发 native crash，
+        # 崩溃点若发生在"写 versions.json + 备份到持久化目录"之前，会导致 scrapers 已是
+        # 新版 .so 但 versions.json/backup 仍是旧版 → 重启后从旧 backup 恢复 → 轮询又发现
+        # 新版 → 无限下载重启循环。将危险的覆盖操作放到持久化之后，即使覆盖时崩溃，重启后
+        # backup 已是新版，恢复的就是新版，循环终结。
+        import shutil as _shutil
+        extract_dir = scrapers_dir / ".tmp_update"
+        try:
+            if extract_dir.exists():
+                _shutil.rmtree(extract_dir, ignore_errors=True)
+            extract_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.error(f"创建临时解压目录失败: {e}")
+            return False
+
+        # 解压新文件到临时目录（不碰运行中的 .so）
         extracted_count = 0
         new_files = set()
 
@@ -2311,11 +2411,12 @@ async def _download_and_extract_release(
                             logger.warning(f"跳过可疑文件名: {member.name}")
                             continue
 
-                        target_path = scrapers_dir / base_name
+                        # 先写入临时目录（extract_dir），持久化后再覆盖运行目录
+                        target_path = extract_dir / base_name
 
-                        # 安全检查：确保目标路径在 scrapers_dir 内
+                        # 安全检查：确保目标路径在 extract_dir 内
                         try:
-                            target_path.resolve().relative_to(scrapers_dir.resolve())
+                            target_path.resolve().relative_to(extract_dir.resolve())
                         except ValueError:
                             logger.warning(f"检测到路径穿越尝试: {member.name}")
                             continue
@@ -2344,11 +2445,12 @@ async def _download_and_extract_release(
                             logger.warning(f"跳过可疑文件名: {zip_info.filename}")
                             continue
 
-                        target_path = scrapers_dir / base_name
+                        # 先写入临时目录（extract_dir），持久化后再覆盖运行目录
+                        target_path = extract_dir / base_name
 
-                        # 安全检查：确保目标路径在 scrapers_dir 内
+                        # 安全检查：确保目标路径在 extract_dir 内
                         try:
-                            target_path.resolve().relative_to(scrapers_dir.resolve())
+                            target_path.resolve().relative_to(extract_dir.resolve())
                         except ValueError:
                             logger.warning(f"检测到路径穿越尝试: {zip_info.filename}")
                             continue
@@ -2364,11 +2466,41 @@ async def _download_and_extract_release(
                             new_files.add(base_name)
                         logger.debug(f"解压: {base_name} ({len(file_content)} 字节)")
 
-        logger.info(f"解压完成: 共 {extracted_count} 个文件")
+        logger.info(f"解压完成（临时目录）: 共 {extracted_count} 个文件")
 
-        # 解压成功后，清理不再存在于新包中的旧文件
+        if extracted_count <= 0:
+            _shutil.rmtree(extract_dir, ignore_errors=True)
+            logger.error("解压结果为空，取消更新")
+            return False
+
+        # ========== 关键顺序（断循环）：先把新版持久化到 backup 目录，再覆盖运行目录 ==========
+        # why: 只有 backup 目录（/app/config/scrapers_backup）是持久化的。必须保证在覆盖
+        # 运行中的 .so（可能 native crash）之前，backup 已是新版；这样即便覆盖时崩溃，重启后
+        # 恢复逻辑读到的 backup 就是新版，不会回退到旧版触发无限重启循环。
+        try:
+            release_version = str(asset_info.get('version', '')).lstrip('v')
+            _persist_new_version_to_backup(extract_dir, release_version)
+        except Exception as persist_err:
+            logger.error(f"持久化新版到备份目录失败，取消覆盖运行目录以避免版本回退循环: {persist_err}", exc_info=True)
+            _shutil.rmtree(extract_dir, ignore_errors=True)
+            return False
+
+        # 持久化完成后，才覆盖运行目录里正在被加载的 .so（危险操作放最后）
+        if progress_callback:
+            await progress_callback("正在应用更新...")
+        overlay_count = 0
+        for f in extract_dir.iterdir():
+            if not f.is_file():
+                continue
+            try:
+                _shutil.copy2(f, scrapers_dir / f.name)
+                overlay_count += 1
+            except Exception as e:
+                logger.warning(f"覆盖运行目录文件 {f.name} 失败: {e}")
+
+        # 覆盖成功后，清理不再存在于新包中的旧文件
         stale_files = old_files - new_files
-        if stale_files and extracted_count > 0:
+        if stale_files and overlay_count > 0:
             for stale_name in stale_files:
                 try:
                     (scrapers_dir / stale_name).unlink(missing_ok=True)
@@ -2376,10 +2508,14 @@ async def _download_and_extract_release(
                 except Exception as e:
                     logger.warning(f"清理旧文件 {stale_name} 失败: {e}")
 
+        # 清理临时目录
+        _shutil.rmtree(extract_dir, ignore_errors=True)
+
+        logger.info(f"更新已应用到运行目录: {overlay_count} 个文件")
         if progress_callback:
             await progress_callback(f"解压完成: {extracted_count} 个文件")
 
-        return extracted_count > 0
+        return overlay_count > 0
 
     except zipfile.BadZipFile:
         logger.error("ZIP 压缩包格式错误")

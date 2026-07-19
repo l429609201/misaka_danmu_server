@@ -815,7 +815,7 @@ class So360MetadataSource(BaseMetadataSource):
         try:
             # 综艺类型处理
             if cat_id == '3' or (item_data.get('cat_name') and '综艺' in item_data.get('cat_name', '')):
-                return await self._get_zongyi_episodes(ent_id, site, item_data)
+                return await self._get_zongyi_episodes_raw(ent_id, site, item_data)
             else:
                 # 电视剧/动漫处理
                 return await self._get_series_episodes(cat_id, en_id or ent_id, site)
@@ -823,18 +823,33 @@ class So360MetadataSource(BaseMetadataSource):
             self.logger.error(f"360获取分集失败 (site={site}): {e}")
             return []
 
-    async def _get_zongyi_episodes(self, ent_id: str, site: str, item_data: dict) -> List[Any]:
-        """获取综艺分集 (基于参考实现)"""
+    async def _get_zongyi_episodes_raw(self, ent_id: str, site: str, item_data: Any) -> List[Any]:
+        """获取综艺分集【原始字典列表】(基于参考实现，供 failover 链路使用)。
+
+        why：此方法返回 360 API 的原始分集 dict 列表（调用方 _get_episode_url_from_360
+        会自行从 dict 取 url）。而 get_episode_urls 用的是同名的 _get_zongyi_episodes
+        （返回 (集数,url) 2元组）——两者契约不同，故必须区分方法名，否则后定义会覆盖前者，
+        导致 get_episode_urls 拿到原始 dict、上层 `for idx, url in episode_urls` 解包报
+        'too many values to unpack (expected 2)'（表现为分集接口 403）。
+
+        兼容 dict 与 So360SearchResultItem(pydantic) 两种入参：用 _read 统一取值。
+        """
         all_episodes = []
+
+        def _read(key: str, default=None):
+            if isinstance(item_data, dict):
+                return item_data.get(key, default)
+            return getattr(item_data, key, default)
 
         # 获取年份列表
         years = []
-        if item_data.get('playlinks_year') and site in item_data['playlinks_year']:
-            years = [str(y) for y in item_data['playlinks_year'][site] if y]
-        elif item_data.get('years'):
-            years = [str(y) for y in item_data['years'] if y]
-        elif item_data.get('year'):
-            years = [str(item_data['year'])]
+        playlinks_year = _read('playlinks_year')
+        if playlinks_year and site in playlinks_year:
+            years = [str(y) for y in playlinks_year[site] if y]
+        elif _read('years'):
+            years = [str(y) for y in _read('years') if y]
+        elif _read('year'):
+            years = [str(_read('year'))]
 
         if not years:
             years = ['']
@@ -940,8 +955,10 @@ class So360MetadataSource(BaseMetadataSource):
         for site in platforms_to_check:
             try:
                 # 尝试获取第一集URL
+                # why：此处 item 为 dict 且下方按原始分集字典取 url（first_ep.get('url')），
+                # 需调用返回原始 dict 列表的 raw 版本，而非返回 (集数,url) 2元组的版本。
                 if cat_id == '3' or '综艺' in cat_name:
-                    episodes = await self._get_zongyi_episodes(ent_id, site, item)
+                    episodes = await self._get_zongyi_episodes_raw(ent_id, site, item)
                 else:
                     episodes = await self._get_series_episodes(cat_id, en_id or ent_id, site)
 
