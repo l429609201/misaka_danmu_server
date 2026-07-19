@@ -318,9 +318,19 @@ a:hover {
 }
 
 @media (max-width: 768px) {
+  /* why：移动端弹窗内容整体高度自适应，由 Modal 外层容器承担滚动，
+     配合下方分集列表最小高度，避免列表被顶部表单挤到看不见且滑不开。 */
   .edit-import-modal .ant-modal-body {
     max-height: none;
-    overflow: hidden;
+  }
+
+  /* why：给分集列表面板强制最小高度，保证在小屏上也能展开出足够可视/可滑动区域。 */
+  .edit-import-modal .edit-episode-pane {
+    min-height: 45vh;
+  }
+
+  .edit-import-modal .edit-episode-pane .ant-card {
+    min-height: 40vh;
   }
 }
 

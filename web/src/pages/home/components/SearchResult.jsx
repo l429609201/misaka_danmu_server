@@ -1641,7 +1641,16 @@ export const SearchResult = () => {
           </Button>,
         ]}
         className="edit-import-modal"
-        styles={{ body: { overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? '75vh' : '70vh', maxHeight: 'calc(100vh - 180px)', padding: isMobile ? '12px 16px' : undefined } }}
+        styles={{ body: {
+          // why：移动端内容整体可滚动 + 高度自适应（配合 .edit-episode-pane 最小高度），
+          // 桌面端保持固定高度 + 内部滚动的原有布局。
+          overflow: isMobile ? 'visible' : 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          height: isMobile ? 'auto' : '70vh',
+          maxHeight: isMobile ? 'none' : 'calc(100vh - 180px)',
+          padding: isMobile ? '12px 16px' : undefined,
+        } }}
       >
           {isMobile ? (
             <div className="space-y-3 mb-3 shrink-0">
