@@ -219,6 +219,29 @@ async def upload_scraper_package(
             with open(versions_file, 'r', encoding='utf-8') as f:
                 versions_data = json.load(f)
 
+            # 校验弹幕源最低服务器版本：优先取包内 package.json，其次 versions.json。
+            # why：与远程下载/全量替换路径一致，离线包也必须先卡最低服务器版本，
+            # 避免装入需要更高服务器版本的弹幕源后加载失败或行为异常。
+            min_server_version = None
+            package_file = extract_dir / "package.json"
+            if package_file.exists():
+                try:
+                    with open(package_file, 'r', encoding='utf-8') as pf:
+                        min_server_version = json.load(pf).get('min_server_version')
+                except Exception as e:
+                    logger.warning(f"离线包 package.json 解析失败，回退 versions.json: {e}")
+            if not min_server_version:
+                min_server_version = versions_data.get('min_server_version')
+            if min_server_version:
+                from src._version import APP_VERSION
+                from src.services.scraper_manager import _version_satisfies
+                if not _version_satisfies(APP_VERSION, min_server_version):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"离线包要求服务器版本 >= {min_server_version}，当前版本 {APP_VERSION}，请先升级服务器",
+                    )
+                logger.info(f"离线包版本检查通过: 服务器 {APP_VERSION} >= 弹幕源包要求 {min_server_version}")
+
             # 验证平台和架构
             import platform
             import sys
