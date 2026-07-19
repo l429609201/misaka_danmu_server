@@ -823,18 +823,28 @@ class So360MetadataSource(BaseMetadataSource):
             self.logger.error(f"360获取分集失败 (site={site}): {e}")
             return []
 
-    async def _get_zongyi_episodes(self, ent_id: str, site: str, item_data: dict) -> List[Any]:
-        """获取综艺分集 (基于参考实现)"""
+    async def _get_zongyi_episodes(self, ent_id: str, site: str, item_data: Any) -> List[Any]:
+        """获取综艺分集 (基于参考实现)。
+
+        why：两个调用点分别传入 dict 与 So360SearchResultItem(pydantic) 对象，
+        统一用 _read 兼容取值，避免对 pydantic 对象调用 .get 触发 AttributeError。
+        """
         all_episodes = []
+
+        def _read(key: str, default=None):
+            if isinstance(item_data, dict):
+                return item_data.get(key, default)
+            return getattr(item_data, key, default)
 
         # 获取年份列表
         years = []
-        if item_data.get('playlinks_year') and site in item_data['playlinks_year']:
-            years = [str(y) for y in item_data['playlinks_year'][site] if y]
-        elif item_data.get('years'):
-            years = [str(y) for y in item_data['years'] if y]
-        elif item_data.get('year'):
-            years = [str(item_data['year'])]
+        playlinks_year = _read('playlinks_year')
+        if playlinks_year and site in playlinks_year:
+            years = [str(y) for y in playlinks_year[site] if y]
+        elif _read('years'):
+            years = [str(y) for y in _read('years') if y]
+        elif _read('year'):
+            years = [str(_read('year'))]
 
         if not years:
             years = ['']
