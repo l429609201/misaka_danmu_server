@@ -833,6 +833,18 @@ class MetadataSourceManager:
             await self.load_and_sync_sources()
             self.logger.info(f"元数据源 '{providerName}' 的配置已更新并重新加载。")
 
+        # 通用钩子：源可在配置保存后据此同步订阅目标（如 AniBT 私有 RSS）。
+        # why：避免在此处针对具体 provider 硬编码；实现该钩子的源自行处理配置→订阅联动。
+        source = self.sources.get(providerName)
+        if source is not None and hasattr(source, "sync_config_subscriptions"):
+            try:
+                async with self._session_factory() as session:
+                    await source.sync_config_subscriptions(session)
+                    await session.commit()
+                self.logger.info(f"元数据源 '{providerName}' 已同步配置驱动的订阅目标。")
+            except Exception as e:
+                self.logger.error(f"元数据源 '{providerName}' 同步订阅目标失败: {e}", exc_info=True)
+
         return {"message": "配置已成功更新。"}
 
     async def update_tmdb_mappings(self, tmdb_tv_id: int, group_id: str, user: models.User):

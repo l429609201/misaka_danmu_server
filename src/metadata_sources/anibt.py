@@ -11,12 +11,16 @@ import httpx
 from fastapi import Request
 
 from src.db import crud, models
+from src._version import APP_VERSION
 from .base import BaseMetadataSource
+
+# 规范化 UA：如实声明弹幕库身份与版本，不伪装浏览器。
+_ANIBT_UA = f"Misaka_Danmu_Server/{APP_VERSION} (https://github.com/l429609201/misaka_danmu_server)"
 
 
 class AniBTMetadataSource(BaseMetadataSource):
     provider_name = "anibt"
-    config_keys = ["anibtApiBaseUrl", "anibtImageBaseUrl"]
+    config_keys = ["anibtApiBaseUrl", "anibtImageBaseUrl", "anibtRssUrl"]
     bool_config_keys: List[str] = []
     configurable_fields: Dict[str, Any] = {
         "anibtApiBaseUrl": {
@@ -31,6 +35,13 @@ class AniBTMetadataSource(BaseMetadataSource):
             "type": "url",
             "tooltip": "可选；留空时使用 API 地址解析相对图片路径",
             "placeholder": "https://anibt.net",
+            "default": "",
+        },
+        "anibtRssUrl": {
+            "label": "私有 RSS 地址",
+            "type": "password",
+            "tooltip": "粘贴 AniBT 生成的带鉴权密钥 RSS 地址；保存后自动同步其中的追番订阅。留空则取消订阅。",
+            "placeholder": "https://anibt.net/rss/...",
             "default": "",
         },
     }
@@ -60,7 +71,10 @@ class AniBTMetadataSource(BaseMetadataSource):
                 setting = await crud.get_metadata_source_setting_by_name(session, self.provider_name)
             if setting and setting.get("useProxy"):
                 proxy = await self.config_manager.get("proxyUrl", "") or None
-        return httpx.AsyncClient(base_url=await self._base_url(), timeout=15.0, proxy=proxy)
+        return httpx.AsyncClient(
+            base_url=await self._base_url(), timeout=15.0, proxy=proxy,
+            headers={"User-Agent": _ANIBT_UA},
+        )
 
     async def _image_url(self, value: Optional[str]) -> Optional[str]:
         if not value:
@@ -250,10 +264,62 @@ class AniBTMetadataSource(BaseMetadataSource):
 
 
     async def check_subscription_capability(self, user=None) -> Dict[str, Any]:
+        # why：入口改到源配置页填写私有 RSS，订阅由 sync_config_subscriptions 保存时自动创建。
+        rss_url = (await self.config_manager.get("anibtRssUrl", "") or "").strip()
+        if not rss_url:
+            return {
+                "available": False, "authRequired": True, "authStatus": "user_url",
+                "reason": "请在元数据源配置中填写 AniBT 私有 RSS 地址",
+                "subscriptionTypes": self.subscription_types,
+            }
         return {
-            "available": True, "authRequired": True, "authStatus": "user_url",
-            "reason": "需要用户提供 AniBT 私有 RSS 地址", "subscriptionTypes": self.subscription_types,
+            "available": True, "authRequired": False, "authStatus": "configured",
+            "reason": None, "subscriptionTypes": self.subscription_types,
         }
+
+    async def sync_config_subscriptions(self, session) -> None:
+        """源配置保存后回调：按当前 anibtRssUrl 配置增量维护 RSS 订阅目标。
+
+        why：私有 RSS 属于源级配置。填写后自动 upsert 一条订阅目标（供 SubscriptionScanJob 扫描），
+        清空则取消对应订阅，避免用户还要去订阅页重复操作。
+        """
+        from src.db.crud import external_calendar as ext_cal_crud
+
+        rss_url = (await self.config_manager.get("anibtRssUrl", "") or "").strip()
+        # 找出当前 anibt 已有的 RSS 订阅目标（externalId 以 rss- 开头）
+        existing = await ext_cal_crud.list_subscription_targets(
+            session, provider=self.provider_name, subscription_type="anibt_rss_feed",
+            page=1, page_size=200,
+        )
+        existing_targets = existing.get("items", []) if isinstance(existing, dict) else (existing or [])
+
+        if not rss_url:
+            # 配置清空：取消所有 anibt RSS 订阅目标
+            for target in existing_targets:
+                await ext_cal_crud.unsubscribe(session, self.provider_name, target.get("externalId"))
+            return
+
+        parsed = urlparse(rss_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("请输入有效的 AniBT RSS 地址")
+        if parsed.hostname != "anibt.net" and not (parsed.hostname or "").endswith(".anibt.net"):
+            raise ValueError("RSS 地址必须来自 anibt.net")
+
+        # why：externalId 只存摘要，避免列表/日志泄露私有鉴权参数。
+        feed_id = hashlib.sha256(rss_url.encode("utf-8")).hexdigest()[:20]
+        new_external_id = f"rss-{feed_id}"
+
+        # 清理指向旧 RSS 地址的历史订阅目标（换地址时避免遗留）
+        for target in existing_targets:
+            if target.get("externalId") != new_external_id:
+                await ext_cal_crud.unsubscribe(session, self.provider_name, target.get("externalId"))
+
+        await ext_cal_crud.upsert_subscription_target(
+            session, provider=self.provider_name, external_id=new_external_id,
+            title="AniBT 私有 RSS", subscription_type="anibt_rss_feed",
+            extra={"animeType": "subscription_feed", "rssUrl": rss_url},
+            status="pending", commit=False,
+        )
 
     async def validate_subscription_payload(self, subscription_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         if subscription_type != "anibt_rss_feed":
