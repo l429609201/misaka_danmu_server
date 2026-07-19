@@ -815,7 +815,7 @@ class So360MetadataSource(BaseMetadataSource):
         try:
             # 综艺类型处理
             if cat_id == '3' or (item_data.get('cat_name') and '综艺' in item_data.get('cat_name', '')):
-                return await self._get_zongyi_episodes(ent_id, site, item_data)
+                return await self._get_zongyi_episodes_raw(ent_id, site, item_data)
             else:
                 # 电视剧/动漫处理
                 return await self._get_series_episodes(cat_id, en_id or ent_id, site)
@@ -823,11 +823,16 @@ class So360MetadataSource(BaseMetadataSource):
             self.logger.error(f"360获取分集失败 (site={site}): {e}")
             return []
 
-    async def _get_zongyi_episodes(self, ent_id: str, site: str, item_data: Any) -> List[Any]:
-        """获取综艺分集 (基于参考实现)。
+    async def _get_zongyi_episodes_raw(self, ent_id: str, site: str, item_data: Any) -> List[Any]:
+        """获取综艺分集【原始字典列表】(基于参考实现，供 failover 链路使用)。
 
-        why：两个调用点分别传入 dict 与 So360SearchResultItem(pydantic) 对象，
-        统一用 _read 兼容取值，避免对 pydantic 对象调用 .get 触发 AttributeError。
+        why：此方法返回 360 API 的原始分集 dict 列表（调用方 _get_episode_url_from_360
+        会自行从 dict 取 url）。而 get_episode_urls 用的是同名的 _get_zongyi_episodes
+        （返回 (集数,url) 2元组）——两者契约不同，故必须区分方法名，否则后定义会覆盖前者，
+        导致 get_episode_urls 拿到原始 dict、上层 `for idx, url in episode_urls` 解包报
+        'too many values to unpack (expected 2)'（表现为分集接口 403）。
+
+        兼容 dict 与 So360SearchResultItem(pydantic) 两种入参：用 _read 统一取值。
         """
         all_episodes = []
 
@@ -950,8 +955,10 @@ class So360MetadataSource(BaseMetadataSource):
         for site in platforms_to_check:
             try:
                 # 尝试获取第一集URL
+                # why：此处 item 为 dict 且下方按原始分集字典取 url（first_ep.get('url')），
+                # 需调用返回原始 dict 列表的 raw 版本，而非返回 (集数,url) 2元组的版本。
                 if cat_id == '3' or '综艺' in cat_name:
-                    episodes = await self._get_zongyi_episodes(ent_id, site, item)
+                    episodes = await self._get_zongyi_episodes_raw(ent_id, site, item)
                 else:
                     episodes = await self._get_series_episodes(cat_id, en_id or ent_id, site)
 
