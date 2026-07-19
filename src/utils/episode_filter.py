@@ -61,6 +61,7 @@ def apply_single_episode_filter(
     title: Optional[str],
     provider: str,
     media_id: str,
+    return_filtered: bool = False,
 ):
     """根据单剧过滤规则过滤分集列表。
 
@@ -75,8 +76,9 @@ def apply_single_episode_filter(
         过滤后的分集列表
     """
     if not rules or not title:
-        return episodes
+        return (episodes, []) if return_filtered else episodes
     filtered = episodes
+    filtered_out = []
     for rule in rules:
         if rule["title"].lower() not in title.lower():
             continue
@@ -97,6 +99,7 @@ def apply_single_episode_filter(
                 matched = False
             if matched:
                 removed_titles.append(episode_title)
+                filtered_out.append((episode, f"单剧过滤：{pattern}"))
             else:
                 kept.append(episode)
         if removed_titles:
@@ -105,7 +108,7 @@ def apply_single_episode_filter(
                 f"rule={rule['title']}，过滤 {len(removed_titles)}/{before_count} 集: {removed_titles[:20]}"
             )
         filtered = kept
-    return filtered
+    return (filtered, filtered_out) if return_filtered else filtered
 
 
 async def get_and_apply_single_episode_filter(
@@ -143,6 +146,7 @@ async def apply_global_episode_title_filter(
     config_manager,
     provider: str = "",
     media_id: str = "",
+    return_filtered: bool = False,
 ):
     """兜底全局分集标题过滤（不依赖作品标题，按全局正则过滤分集标题）。
 
@@ -164,24 +168,26 @@ async def apply_global_episode_title_filter(
         过滤后的分集列表
     """
     if not episodes:
-        return episodes
+        return (episodes, []) if return_filtered else episodes
     enabled = await config_manager.get("globalEpisodeTitleFilterEnabled", "false")
     if str(enabled).lower() != "true":
-        return episodes
+        return (episodes, []) if return_filtered else episodes
     pattern = (await config_manager.get("globalEpisodeTitleFilterRegex", "") or "").strip()
     if not pattern:
-        return episodes
+        return (episodes, []) if return_filtered else episodes
 
     before_count = len(episodes)
     kept = []
+    filtered_out = []
     for ep in episodes:
         ep_title = getattr(ep, "title", "") or ""
         try:
             if re.search(pattern, ep_title, re.IGNORECASE):
+                filtered_out.append((ep, f"全局过滤：{pattern}"))
                 continue  # 命中过滤规则，丢弃
         except re.error as e:
             logger.warning(f"兜底全局分集标题过滤正则无效，已跳过过滤: {pattern} ({e})")
-            return episodes  # 正则无效时整体不过滤，避免误删
+            return (episodes, []) if return_filtered else episodes  # 正则无效时整体不过滤，避免误删
         kept.append(ep)
 
     removed = before_count - len(kept)
@@ -190,4 +196,4 @@ async def apply_global_episode_title_filter(
             f"兜底全局分集标题过滤: provider={provider}, mediaId={media_id}, "
             f"过滤 {removed}/{before_count} 集"
         )
-    return kept
+    return (kept, filtered_out) if return_filtered else kept

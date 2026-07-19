@@ -7,6 +7,7 @@ CRUD模块
 from .config import (
     get_config_value,
     update_config_value,
+    update_config_values_atomic,
     initialize_configs,
     allocate_next_counter_value,
     LAST_ALLOCATED_ANIME_ID_KEY,
@@ -62,6 +63,7 @@ from .task import (
     create_webhook_task,
     get_webhook_tasks,
     delete_webhook_tasks,
+    delete_all_webhook_tasks,
     get_due_webhook_tasks,
     update_webhook_task_status,
     save_task_state_cache,
@@ -100,6 +102,8 @@ from .scraper import (
     update_scraper_proxy,
     update_scrapers_settings,
     remove_stale_scrapers,
+    save_scraper_order_snapshot,
+    apply_scraper_order_from_snapshot,
 )
 
 # MetadataSource模块
@@ -239,6 +243,8 @@ from .cache import (
     clear_all_cache,
     delete_cache,
     get_cache_keys_by_pattern,
+    count_cache_keys_by_pattern,
+    list_cache_keys_by_pattern,
 )
 
 # ApiToken模块
@@ -313,8 +319,6 @@ from .utility import (
     find_recent_task_by_unique_key,
     get_all_running_task_states,
     mark_interrupted_tasks_as_failed,
-    get_due_webhook_tasks,
-    delete_webhook_tasks,
     get_last_run_result_for_scheduled_task,
     get_execution_task_id_from_scheduler_task,
     force_delete_task_from_history,
@@ -335,6 +339,7 @@ __all__ = [
     # Config
     'get_config_value',
     'update_config_value',
+    'update_config_values_atomic',
     'initialize_configs',
     'allocate_next_counter_value',
     'LAST_ALLOCATED_ANIME_ID_KEY',
@@ -382,6 +387,7 @@ __all__ = [
     'create_webhook_task',
     'get_webhook_tasks',
     'delete_webhook_tasks',
+    'delete_all_webhook_tasks',
     'get_due_webhook_tasks',
     'update_webhook_task_status',
     'save_task_state_cache',
@@ -408,6 +414,8 @@ __all__ = [
     'update_scraper_proxy',
     'update_scrapers_settings',
     'remove_stale_scrapers',
+    'save_scraper_order_snapshot',
+    'apply_scraper_order_from_snapshot',
     # MetadataSource
     'sync_metadata_sources_to_db',
     'get_all_metadata_source_settings',
@@ -515,6 +523,8 @@ __all__ = [
     'clear_all_cache',
     'delete_cache',
     'get_cache_keys_by_pattern',
+    'count_cache_keys_by_pattern',
+    'list_cache_keys_by_pattern',
     'clear_task_state_cache',
     # ApiToken
     'get_all_api_tokens',

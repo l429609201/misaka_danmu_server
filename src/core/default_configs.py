@@ -40,6 +40,11 @@ def get_default_configs(settings=None, ai_prompts=None):
         # Telegram 搜索体验
         'telegramSearchPosterCollage': ('true', 'Telegram 搜索结果是否将各条目海报聚合为一张带序号的九宫格图先发出。'),
 
+        # 通知消息汇总（智能洪峰检测）
+        'notificationSurgeAggregationEnabled': ('true', '是否启用通知消息智能汇总。启用后，当短时间内产生大量同类通知（如批量导入）时，自动合并为一条汇总消息，避免消息轰炸。仅对成功类通知生效，失败类通知始终逐条发送。'),
+        'notificationSurgeWindowSeconds': ('30', '通知汇总的时间窗口（秒）。在此窗口内统计同类通知数量并合并发送。'),
+        'notificationSurgeThreshold': ('5', '通知汇总触发阈值。当同类成功通知在时间窗口内达到此数量后，后续同类通知转入汇总合并发送。'),
+
         # 登录安全
         'loginMaxFailCount': (3, '登录失败次数上限。同一 IP 在达到此次数后将被临时锁定。0为禁用暴力破解防护。'),
         'loginLockoutMinutes': (60, '登录锁定时长（分钟）。超过失败上限后，该 IP 需等待此时长才能重试。'),
@@ -150,7 +155,7 @@ def get_default_configs(settings=None, ai_prompts=None):
 
     # 添加需要settings的配置
     if settings:
-        configs['jwtExpireMinutes'] = (settings.jwt.access_token_expire_minutes, 'JWT令牌的有效期（分钟）。-1 表示永不过期。')
+        configs['jwtExpireMinutes'] = (settings.jwt.access_token_expire_minutes, 'JWT令牌的有效期（分钟），范围 1～43200（最长30天）。')
 
     # 添加AI相关配置
     if ai_prompts:

@@ -1,376 +1,43 @@
-import time
 import warnings
 warnings.filterwarnings("ignore", message="urllib3.*doesn't match a supported version")
 import uvicorn
-import asyncio
-import secrets
 import httpx
 import logging
-import json
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Request, Depends, status
+from fastapi import FastAPI, Request, status
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, JSONResponse, Response # noqa: F401
+from fastapi.responses import JSONResponse
+
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
 
 # 启动预处理：检查配置文件、环境变量、打印来源日志
 # 必须在 settings 导入之前调用，确保配置文件存在
 from src.core.bootstrap import preload_config
 preload_config()
 
-# 内部模块导入 - 使用聚合式导入
+# 内部模块导入
 from src.core import settings
-from src.core.default_configs import get_default_configs
-from src.core.cache import init_cache_backend, close_cache_backend
-from src.db import crud, orm_models, init_db_tables, close_db_engine, create_initial_admin_user, get_db_type, DatabaseStartupError
-from src.db import ConfigManager, CacheManager  # 管理器从 db 层导入
-from src.services import (
-    TaskManager, MetadataSourceManager, ScraperManager, WebhookManager,
-    SchedulerManager, TitleRecognitionManager, MediaServerManager,
-    TransportManager, setup_logging,
-    NotificationService, NotificationManager,
-    TunnelService, apply_tunnel_from_notification_manager,
-    init_bangumi_data_manager,
-)
-from src.utils import InternalPollingManager, init_proxy_middleware
 from src.api import api_router, control_router
 from src.api.dandan import dandan_router
-from src.api.middleware import log_not_found_requests, capture_api_response
 from src.api.mcp import setup_mcp
-from src.ai import AIMatcherManager
-from src.ai.ai_prompts import DEFAULT_AI_MATCH_PROMPT, DEFAULT_AI_RECOGNITION_PROMPT, DEFAULT_AI_ALIAS_VALIDATION_PROMPT, DEFAULT_AI_ALIAS_EXPANSION_PROMPT, DEFAULT_AI_SEASON_MAPPING_PROMPT
-from src.rate_limiter import RateLimiter
-from src._version import APP_VERSION
-from src import security
-from src.frontend import mount_frontend, register_pwa_routes
+from src.frontend import register_pwa_routes
+from src.utils.asgi_middleware import NotFoundGuardMiddleware, CaptureApiResponseMiddleware
+from src.api.control.openapi_docs import register_control_api_docs
+from src.core.env import is_docker_environment as _is_docker_environment
+from src.core.app_lifecycle import run_startup, run_shutdown
 
 logger = logging.getLogger(__name__)
 logger.info(f"当前环境: {settings.environment}")
 
-def _is_docker_environment():
-    """检测是否在Docker容器中运行"""
-    import os
-    # 方法1: 检查 /.dockerenv 文件（Docker标准做法）
-    if Path("/.dockerenv").exists():
-        return True
-    # 方法2: 检查环境变量
-    if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-        return True
-    # 方法3: 检查当前工作目录是否为 /app
-    if Path.cwd() == Path("/app"):
-        return True
-    return False
-
-def _ensure_required_directories():
-    """确保应用运行所需的目录存在"""
-    if _is_docker_environment():
-        required_dirs = [
-            Path("/app/config/image"),
-        ]
-    else:
-        required_dirs = [
-            Path("config/image"),
-        ]
-
-    for dir_path in required_dirs:
-        try:
-            dir_path.mkdir(parents=True, exist_ok=True)
-            logger.info(f"确保目录存在: {dir_path}")
-        except (OSError, PermissionError) as e:
-            logger.warning(f"无法创建目录 {dir_path}: {e}")
-
-def _get_default_danmaku_path_template():
-    """根据运行环境获取默认弹幕路径模板"""
-
-    if _is_docker_environment():
-        return '/app/config/danmaku/${animeId}/${episodeId}'
-    else:
-        return 'config/danmaku/${animeId}/${episodeId}'
-
-
-async def _apply_tunnel_from_channels(app):
-    await apply_tunnel_from_notification_manager(
-        tunnel_service=app.state.tunnel_service,
-        notification_manager=app.state.notification_manager,
-        config_manager=app.state.config_manager,
-        local_port=settings.server.port,
-    )
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    应用生命周期管理器。
-    - `yield` 之前的部分在应用启动时执行。
-    - `yield` 之后的部分在应用关闭时执行。
-    """
-    # --- Startup Logic ---
-    setup_logging()
-
-    # 新增：在日志系统初始化后立即打印版本号
-    logger.info(f"Misaka Danmaku API 版本 {APP_VERSION} 正在启动...")
-
-    # 创建必要的目录
-    _ensure_required_directories()
-
-    # init_db_tables 现在处理数据库创建、引擎和会话工厂的创建
-    try:
-        await init_db_tables(app)
-    except DatabaseStartupError:
-        import os
-        os._exit(1)
-    session_factory = app.state.db_session_factory
-
-    # 注意：中断任务的处理已移至 TaskManager._handle_interrupted_tasks()
-    # 该方法会在 task_manager.start() 时自动执行，尝试恢复可恢复的任务，
-    # 并将无法恢复的任务标记为失败。不要在此处提前标记，否则会导致任务无法恢复。
-
-    # 新增:PostgreSQL序列自动修复(防止主键冲突)
-    if get_db_type() == "postgresql":
-        async with session_factory() as session:
-            try:
-                await session.execute(text(
-                    "SELECT setval('anime_id_seq', (SELECT COALESCE(MAX(id), 0) FROM anime))"
-                ))
-                await session.commit()
-                logger.info("已自动同步PostgreSQL的anime_id_seq序列")
-            except Exception as e:
-                logger.warning(f"同步PostgreSQL序列时出错(可忽略): {e}")
-
-    # 初始化配置管理器
-    app.state.config_manager = ConfigManager(session_factory)
-
-    # 注册默认配置(从default_configs.py导入)
-    ai_prompts = {
-        'DEFAULT_AI_MATCH_PROMPT': DEFAULT_AI_MATCH_PROMPT,
-        'DEFAULT_AI_RECOGNITION_PROMPT': DEFAULT_AI_RECOGNITION_PROMPT,
-        'DEFAULT_AI_ALIAS_VALIDATION_PROMPT': DEFAULT_AI_ALIAS_VALIDATION_PROMPT,
-        'DEFAULT_AI_ALIAS_EXPANSION_PROMPT': DEFAULT_AI_ALIAS_EXPANSION_PROMPT,
-        'DEFAULT_AI_SEASON_MAPPING_PROMPT': DEFAULT_AI_SEASON_MAPPING_PROMPT,
-    }
-    default_configs = get_default_configs(settings=settings, ai_prompts=ai_prompts)
-    # 添加运行时生成的配置
-    default_configs['jwtSecretKey'] = (secrets.token_hex(32), '用于签名JWT令牌的密钥，在首次启动时自动生成。')
-    default_configs['serverInstanceId'] = (secrets.token_hex(32), '')
-
-    await app.state.config_manager.register_defaults(default_configs)
-
-    # 初始化 TransportManager
-    app.state.transport_manager = TransportManager()
-
-    # 初始化缓存后端（Memory/Redis/Database/Hybrid，Redis 不可用时自动降级）
-    cache_backend = await init_cache_backend(
-        session_factory=session_factory,
-        cache_config=settings.cache,
-    )
-
-    # 初始化 CacheManager（使用新的缓存后端）
-    app.state.cache_manager = CacheManager(session_factory, backend=cache_backend)
-    logger.info("缓存管理器已初始化")
-
-    # 初始化 ProxyMiddleware
-    app.state.proxy_middleware = init_proxy_middleware(app.state.config_manager)
-    logger.info("代理中间件已初始化")
-
-    # 初始化 AIMatcherManager（传入 session_factory 用于 AI 调用统计持久化）
-    app.state.ai_matcher_manager = AIMatcherManager(app.state.config_manager, session_factory)
-    logger.info("AI匹配管理器已初始化")
-
-    # --- 并行优化的初始化顺序 ---
-    startup_start = time.time()
-
-    # 1-3. 创建管理器实例（不阻塞）
-    app.state.metadata_manager = MetadataSourceManager(session_factory, app.state.config_manager, None, app.state.cache_manager)
-    app.state.scraper_manager = ScraperManager(session_factory, app.state.config_manager, app.state.metadata_manager, app.state.transport_manager)
-    app.state.metadata_manager.scraper_manager = app.state.scraper_manager
-
-    # 4. 【并行优化】同时初始化 + 预热
-    logger.info("开始并行初始化...")
-    init_start = time.time()
-
-    # 先并行初始化两个管理器
-    await asyncio.gather(
-        app.state.scraper_manager.initialize(),
-        app.state.metadata_manager.initialize()
-    )
-
-    # 【优化】预加载所有配置到缓存
-    logger.info("预加载配置缓存...")
-    async with session_factory() as session:
-        # 预加载代理相关配置
-        proxy_mode = await crud.get_config_value(session, "proxyMode", "none")
-        proxy_url = await crud.get_config_value(session, "proxyUrl", "")
-        proxy_enabled = await crud.get_config_value(session, "proxyEnabled", "false")
-        accelerate_proxy_url = await crud.get_config_value(session, "accelerateProxyUrl", "")
-        app.state.config_manager._cache["proxyMode"] = proxy_mode
-        app.state.config_manager._cache["proxyUrl"] = proxy_url
-        app.state.config_manager._cache["proxyEnabled"] = proxy_enabled
-        app.state.config_manager._cache["accelerateProxyUrl"] = accelerate_proxy_url
-
-        # 一次性查询所有 scraper 设置并缓存
-        scraper_settings = await crud.get_all_scraper_settings(session)
-        # 存储到 scraper_manager 中供后续使用,避免重复查询
-        app.state.scraper_manager._cached_scraper_settings = {
-            s['providerName']: s for s in scraper_settings
-        }
-
-    # 初始化关键组件（同步执行，确保启动正常）
-    app.state.rate_limiter = RateLimiter(session_factory, app.state.scraper_manager)
-    app.include_router(app.state.metadata_manager.router, prefix="/api/metadata")
-
-    # Add bangumi specific routes with /bangumi prefix
-    if 'bangumi' in app.state.metadata_manager.sources:
-        bangumi_router = app.state.metadata_manager.sources['bangumi'].api_router
-        app.include_router(bangumi_router, prefix="/api/bangumi", tags=["Bangumi"])
-
-
-
-    app.state.task_manager = TaskManager(session_factory, app.state.config_manager)
-
-    # 初始化识别词管理器
-    app.state.title_recognition_manager = TitleRecognitionManager(session_factory)
-
-    # 初始化媒体服务器管理器
-    app.state.media_server_manager = MediaServerManager(session_factory)
-    await app.state.media_server_manager.initialize()
-
-    # 初始化 bangumi-data 离线数据层管理器（全局单例，供别名补全/匹配增强/平台直链使用）
-    app.state.bangumi_data_manager = init_bangumi_data_manager(session_factory, app.state.config_manager)
-
-    # 后台异步加载项目内打包的本地 data.json（与 main.py 同级）。
-    # why: 用文件哈希去重，未变更则跳过；create_task 不阻塞启动，失败静默不影响主流程。
-    async def _load_bangumi_local_data():
-        try:
-            await app.state.bangumi_data_manager.sync_from_local()
-        except Exception as e:
-            logger.warning(f"bangumi-data 本地离线数据加载失败（不影响启动）: {e}")
-    asyncio.create_task(_load_bangumi_local_data())
-
-    app.state.webhook_manager = WebhookManager(
-        session_factory, app.state.task_manager, app.state.scraper_manager,
-        app.state.rate_limiter, app.state.metadata_manager,
-        app.state.config_manager, app.state.title_recognition_manager,
-        app.state.ai_matcher_manager
-    )
-
-    init_time = time.time() - init_start
-    logger.info(f"并行初始化完成，耗时 {init_time:.2f} 秒")
-
-    # 设置任务恢复所需的依赖，用于重启后恢复排队中的任务
-    app.state.task_manager.set_recovery_dependencies({
-        "scraper_manager": app.state.scraper_manager,
-        "rate_limiter": app.state.rate_limiter,
-        "metadata_manager": app.state.metadata_manager,
-        "ai_matcher_manager": app.state.ai_matcher_manager,
-        "title_recognition_manager": app.state.title_recognition_manager,
-    })
-
-    # 5. 启动服务（必须在上面完成后）
-    app.state.task_manager.start()
-    await create_initial_admin_user(app)
-
-    # 一次性清理：删除旧的 system_token_reset 定时任务（已迁移到内部轮询任务）
-    async with session_factory() as session:
-        old_task = await session.get(orm_models.ScheduledTask, "system_token_reset")
-        if old_task:
-            await session.delete(old_task)
-            await session.commit()
-            logger.info("已清理旧的 system_token_reset 定时任务（已迁移到内部轮询任务）")
-
-    app.state.cleanup_task = asyncio.create_task(cleanup_task(app))
-    app.state.scheduler_manager = SchedulerManager(
-        session_factory, app.state.task_manager, app.state.scraper_manager,
-        app.state.rate_limiter, app.state.metadata_manager,
-        app.state.config_manager, app.state.ai_matcher_manager,
-        app.state.title_recognition_manager
-    )
-    await app.state.scheduler_manager.start()
-
-    # 内置轮询任务管理器（任务在 start() 中自动注册）
-    app.state.internal_polling = InternalPollingManager(app)
-    await app.state.internal_polling.start()
-
-    # 初始化通知服务
-    app.state.notification_service = NotificationService(session_factory)
-    app.state.notification_service.set_dependencies(
-        scraper_manager=app.state.scraper_manager,
-        metadata_manager=app.state.metadata_manager,
-        task_manager=app.state.task_manager,
-        scheduler_manager=app.state.scheduler_manager,
-        config_manager=app.state.config_manager,
-        rate_limiter=app.state.rate_limiter,
-        title_recognition_manager=app.state.title_recognition_manager,
-        ai_matcher_manager=app.state.ai_matcher_manager,
-    )
-    app.state.notification_manager = NotificationManager(session_factory, app.state.notification_service)
-    await app.state.notification_manager.initialize()
-    app.state.notification_service.notification_manager = app.state.notification_manager
-    await app.state.notification_manager.start_channels()
-
-    # 初始化 TunnelService，并根据渠道配置决定是否启动隧道
-    app.state.tunnel_service = TunnelService()
-    await _apply_tunnel_from_channels(app)
-    logger.info("隧道服务已初始化")
-
-    # 将通知服务注入 TaskManager 和 WebhookManager
-    app.state.task_manager.set_notification_service(app.state.notification_service)
-    app.state.webhook_manager.notification_service = app.state.notification_service
-
-    total_time = time.time() - startup_start
-    logger.info(f"应用启动完成，总耗时 {total_time:.2f} 秒")
-
-    # 发射系统启动通知
-    try:
-        await app.state.notification_service.emit_event("system_start", {})
-    except Exception as e:
-        logger.error(f"发射 system_start 事件失败: {e}")
-
-    # --- 前端服务 ---
-    # 在所有API路由注册完毕后，再挂载前端服务，以确保API路由优先匹配。
-    mount_frontend(app, settings)
-
+    """应用生命周期：启动/关闭逻辑委托给 src.core.app_lifecycle（保持薄壳）。"""
+    await run_startup(app)
     yield
+    await run_shutdown(app)
 
-    # --- Shutdown Logic ---
-    logger.info("应用正在关闭...")
-
-    if hasattr(app.state, "cleanup_task"):
-        app.state.cleanup_task.cancel()
-        try:
-            await app.state.cleanup_task
-        except asyncio.CancelledError:
-            pass
-
-    # 关闭缓存后端
-    await close_cache_backend()
-
-    await close_db_engine(app)
-    if hasattr(app.state, "scraper_manager"):
-        await app.state.scraper_manager.close_all()
-    # 关闭 TransportManager
-    if hasattr(app.state, "transport_manager"):
-        try:
-            await app.state.transport_manager.close_all()
-        except Exception as e:
-            logger.exception(f"关闭 TransportManager 时发生错误: {e}")
-    if hasattr(app.state, "task_manager"):
-        await app.state.task_manager.stop()
-    # 新增：在关闭时也关闭元数据管理器
-    if hasattr(app.state, "metadata_manager"):
-        await app.state.metadata_manager.close_all()
-    if hasattr(app.state, "notification_manager"):
-        await app.state.notification_manager.stop_channels()
-    if hasattr(app.state, "tunnel_service"):
-        await app.state.tunnel_service.stop()
-    if hasattr(app.state, "media_server_manager"):
-        await app.state.media_server_manager.close_all()
-    if hasattr(app.state, "scheduler_manager"):
-        await app.state.scheduler_manager.stop()
-    if hasattr(app.state, "internal_polling"):
-        await app.state.internal_polling.stop()
-
-    logger.info("应用已完全关闭")
 
 app = FastAPI(
     title="Misaka Danmaku External Control API",
@@ -392,75 +59,8 @@ async def health_check():
 # --- 前端 PWA 路由（favicon / manifest / registerSW / sw / workbox）---
 register_pwa_routes(app)
 
-# --- 新增：自定义本地化的 Swagger UI 文档路由 ---
-# 为外部控制API生成独立的 OpenAPI 文档，只包含 API Key 安全方案
-def _control_api_openapi():
-    """生成仅包含外部控制API路由和API Key认证的独立 OpenAPI schema"""
-    from fastapi.openapi.utils import get_openapi
-    if hasattr(app, "_control_openapi_schema") and app._control_openapi_schema:
-        return app._control_openapi_schema
-
-    _doc_helper_paths = {"/api/control/openapi.json", "/api/control/docs"}
-    control_routes = [
-        route for route in app.routes
-        if hasattr(route, 'path') and route.path.startswith('/api/control')
-        and route.path not in _doc_helper_paths
-    ]
-
-    schema = get_openapi(
-        title="Misaka Danmaku External Control API",
-        version="1.0.0",
-        # 固定为 3.0.3：FastAPI 默认生成 OAS 3.1.0，但项目内置的旧版 swagger-ui-bundle
-        # 解析 3.1.0 的 paths 失败，导致文档页显示 "No operations defined in spec!"。
-        # 降级到 3.0.3 可被旧版 UI 正常渲染，且不影响接口本身。
-        openapi_version="3.0.3",
-        description="用于外部自动化和集成的API。支持两种鉴权方式：\n"
-                    "1. **查询参数**：`?api_key=<你的密钥>`\n"
-                    "2. **请求头**：`X-API-KEY: <你的密钥>`（推荐，也用于 MCP 连接）",
-        routes=control_routes,
-    )
-
-    # 替换安全方案：同时支持查询参数和请求头
-    schema["components"] = schema.get("components", {})
-    schema["components"]["securitySchemes"] = {
-        "APIKeyQuery": {
-            "type": "apiKey",
-            "in": "query",
-            "name": "api_key",
-            "description": "通过 URL 查询参数传递 API Key"
-        },
-        "APIKeyHeader": {
-            "type": "apiKey",
-            "in": "header",
-            "name": "X-API-KEY",
-            "description": "通过请求头传递 API Key（推荐，也用于 MCP 连接）"
-        }
-    }
-
-    # 给所有路径添加 API Key 安全要求（两种方式任选其一）
-    for path_item in schema.get("paths", {}).values():
-        for operation in path_item.values():
-            if isinstance(operation, dict):
-                operation["security"] = [{"APIKeyQuery": []}, {"APIKeyHeader": []}]
-
-    app._control_openapi_schema = schema
-    return schema
-
-
-@app.get("/api/control/openapi.json", include_in_schema=False)
-async def control_api_openapi_json():
-    """外部控制API的独立 OpenAPI JSON"""
-    return JSONResponse(content=_control_api_openapi())
-
-
-@app.get("/api/control/docs", include_in_schema=False)
-async def custom_swagger_ui_html():
-    """提供一个使用本地静态资源、部分汉化的 Swagger UI 页面。"""
-    from src.utils.swagger_cn import get_swagger_ui_html_cn
-    return get_swagger_ui_html_cn(
-        openapi_url="/api/control/openapi.json",
-        title="Misaka Danmaku 外部控制 API 文档",
-    )
+# --- 外部控制 API 的本地化 Swagger UI 文档路由（实现见 openapi_docs 模块）---
+register_control_api_docs(app)
 
 # CORS 配置 — 全放开，兼容反代、PWA、Service Worker 等各种场景
 app.add_middleware(
@@ -493,35 +93,15 @@ async def httpx_timeout_error_handler(request: Request, exc: httpx.TimeoutExcept
 
 
 
-@app.middleware("http")
-async def _log_not_found(request: Request, call_next):
-    return await log_not_found_requests(request, call_next)
+# 纯 ASGI 中间件注册（替代原两个 @app.middleware("http")）。
+# why：BaseHTTPMiddleware 在客户端断开时 cancel scope 会级联取消下游 DB 操作，
+# 触发连接池 terminate 二次异常刷屏；纯 ASGI 中间件不套 task group，从源头规避。
+# add_middleware 后注册者在外层，此顺序与原装饰器（_log_not_found 先、_capture 后）等价。
+app.add_middleware(NotFoundGuardMiddleware)
+app.add_middleware(CaptureApiResponseMiddleware)
 
 
-@app.middleware("http")
-async def _capture_api_response(request: Request, call_next):
-    return await capture_api_response(request, call_next)
-
-
-async def cleanup_task(app: FastAPI):
-    """定期清理过期缓存和OAuth states的后台任务。"""
-    session_factory = app.state.db_session_factory
-    while True:
-        try:
-            await asyncio.sleep(3600) # 每小时清理一次
-            async with session_factory() as session:
-                await crud.clear_expired_cache(session)
-                await crud.clear_expired_oauth_states(session)
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logging.getLogger(__name__).error(f"缓存清理任务出错: {e}")
-
-
-
-
-
-# 新增：显式地挂载外部控制API路由，以确保其优先级
+# 显式地挂载外部控制API路由，以确保其优先级
 app.include_router(control_router, prefix="/api/control", tags=["External Control API"])
 
 app.include_router(dandan_router, prefix="/api/v1", tags=["DanDanPlay Compatible"], include_in_schema=False)
@@ -533,21 +113,7 @@ app.include_router(api_router, prefix="/api")
 # 必须在所有路由注册完毕后调用，这样 fastapi-mcp 才能扫描到所有外部控制 API
 setup_mcp(app)
 
-# --- 新增：挂载 Swagger UI 的静态文件目录 ---
-def _is_docker_environment():
-    """检测是否在Docker容器中运行"""
-    import os
-    # 方法1: 检查 /.dockerenv 文件（Docker标准做法）
-    if Path("/.dockerenv").exists():
-        return True
-    # 方法2: 检查环境变量
-    if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-        return True
-    # 方法3: 检查当前工作目录是否为 /app
-    if Path.cwd() == Path("/app"):
-        return True
-    return False
-
+# --- 挂载 Swagger UI 的静态文件目录 ---
 def _get_static_dir():
     """获取静态文件目录，根据运行环境自动调整"""
     if _is_docker_environment():

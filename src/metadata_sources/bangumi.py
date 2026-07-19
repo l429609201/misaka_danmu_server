@@ -533,7 +533,8 @@ class BangumiMetadataSource(BaseMetadataSource):
 
     async def _create_client(self, user: models.User) -> httpx.AsyncClient:
         await self._ensure_config()
-        headers = {"User-Agent": f"DanmuApiServer/1.0 ({settings.jwt.secret_key[:8]})"}
+        # why: User-Agent 会经过目标站与代理日志，不能携带任何密钥片段。
+        headers = {"User-Agent": "DanmuApiServer/1.0"}
         if self._token:
             self.logger.debug("Bangumi: 正在使用 Access Token 进行认证。")
             headers["Authorization"] = f"Bearer {self._token}"

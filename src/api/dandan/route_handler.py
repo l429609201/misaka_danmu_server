@@ -6,7 +6,6 @@
 """
 
 import re
-import json
 import logging
 import ipaddress
 from typing import Callable
@@ -19,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db import crud, get_db_session, ConfigManager
 from src.core import get_now, get_app_timezone
 from src.api.middleware import normalize_ip
+from src.utils.audit_logging import build_audit_request_headers, capture_audit_request_body
 
 logger = logging.getLogger(__name__)
 
@@ -151,25 +151,19 @@ async def get_token_from_path(
     should_log = not any(skip in log_path for skip in _skip_log_paths)
 
     if should_log:
-        # 捕获请求头（过滤敏感信息）
-        request_headers_str = None
+        # 与外部控制 API 共用审计脱敏策略，避免 Token 接口日志落入凭据。
         try:
-            filtered_headers = {
-                k: v for k, v in request.headers.items()
-                if k.lower() not in ('authorization', 'cookie')
-            }
-            request_headers_str = json.dumps(filtered_headers, ensure_ascii=False, indent=2)
+            request_headers_str = build_audit_request_headers(request)
         except Exception:
-            pass
+            request_headers_str = None
 
-        request_body_str = None
         try:
-            if request.method in ("POST", "PUT", "PATCH"):
-                body_bytes = await request.body()
-                if body_bytes and len(body_bytes) < 10000:  # 限制10KB
-                    request_body_str = body_bytes.decode("utf-8", "ignore")
+            request_body_str = (
+                await capture_audit_request_body(request)
+                if request.method in ("POST", "PUT", "PATCH") else None
+            )
         except Exception:
-            pass
+            request_body_str = None
 
         # 使用 awaited 版本获取 log_id，供中间件回填响应
         log_id = await crud.create_token_access_log_awaited(

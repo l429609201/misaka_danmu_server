@@ -116,11 +116,7 @@ async def update_proxy_settings(
     config_manager: ConfigManager = Depends(get_config_manager)
 ):
     """更新全局代理配置。"""
-    # 保存代理模式
-    await crud.update_config_value(session, "proxyMode", payload.proxyMode)
-    config_manager.invalidate("proxyMode")
-
-    # 构建并保存 HTTP/SOCKS 代理 URL
+    # 构建 HTTP/SOCKS 代理 URL
     proxy_url = ""
     if payload.proxyHost and payload.proxyPort:
         # URL-encode username and password to handle special characters like '@'
@@ -133,20 +129,18 @@ async def update_proxy_settings(
 
         proxy_url = f"{payload.proxyProtocol}://{userinfo}{payload.proxyHost}:{payload.proxyPort}"
 
-    await crud.update_config_value(session, "proxyUrl", proxy_url)
-    config_manager.invalidate("proxyUrl")
-
-    # 保存兼容性字段 proxyEnabled（根据 proxyMode 自动设置）
+    # why: 代理设置是一个整体，必须全部写入成功后再提交，避免半套配置生效。
     proxy_enabled = payload.proxyMode != "none"
-    await crud.update_config_value(session, "proxyEnabled", str(proxy_enabled).lower())
-    config_manager.invalidate("proxyEnabled")
-
-    await crud.update_config_value(session, "proxySslVerify", str(payload.proxySslVerify).lower())
-    config_manager.invalidate("proxySslVerify")
-
-    # 保存加速代理地址
-    await crud.update_config_value(session, "accelerateProxyUrl", payload.accelerateProxyUrl or "")
-    config_manager.invalidate("accelerateProxyUrl")
+    config_values = {
+        "proxyMode": payload.proxyMode,
+        "proxyUrl": proxy_url,
+        "proxyEnabled": str(proxy_enabled).lower(),
+        "proxySslVerify": str(payload.proxySslVerify).lower(),
+        "accelerateProxyUrl": payload.accelerateProxyUrl or "",
+    }
+    await crud.update_config_values_atomic(session, config_values)
+    for key in config_values:
+        config_manager.invalidate(key)
 
     logger.info(f"用户 '{current_user.username}' 更新了代理配置 (mode={payload.proxyMode})。")
 
@@ -503,10 +497,13 @@ async def set_custom_danmaku_path(
             logger.error(f"模板验证失败: {e}")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"路径模板格式错误: {str(e)}")
 
-    await crud.update_config_value(session, "customDanmakuPathEnabled", request.enabled)
-    await crud.update_config_value(session, "customDanmakuPathTemplate", request.template)
-    config_manager.invalidate("customDanmakuPathEnabled")
-    config_manager.invalidate("customDanmakuPathTemplate")
+    config_values = {
+        "customDanmakuPathEnabled": request.enabled,
+        "customDanmakuPathTemplate": request.template,
+    }
+    await crud.update_config_values_atomic(session, config_values)
+    for key in config_values:
+        config_manager.invalidate(key)
     logger.info(f"自定义弹幕路径配置已保存")
     return CustomDanmakuPathResponse(enabled=request.enabled, template=request.template)
 
@@ -634,6 +631,15 @@ async def update_config_item(
     value = payload.get("value")
     if value is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing 'value' in request body")
+
+    # why: 该路由是实际注册的通用配置入口，必须阻止重新启用永不过期令牌。
+    if config_key == "jwtExpireMinutes":
+        try:
+            expire_minutes = int(value)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="JWT 有效期必须是整数分钟") from exc
+        if not 1 <= expire_minutes <= 30 * 24 * 60:
+            raise HTTPException(status_code=400, detail="JWT 有效期必须在 1～43200 分钟之间")
 
     # 确保value是字符串类型
     value_str = str(value) if value is not None else ""

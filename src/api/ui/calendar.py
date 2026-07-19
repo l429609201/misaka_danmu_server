@@ -655,7 +655,12 @@ async def sync_bangumi_schedule(
                 if results:
                     matched = results[0]
                     matched_id = str(matched.id)
-                    await crud.update_metadata_ids(session, s["animeId"], **{id_field: matched_id})
+                    await crud.update_metadata_ids(
+                        session,
+                        s["animeId"],
+                        commit=False,
+                        **{id_field: matched_id},
+                    )
                     total_bound += 1
                     logger.info(f"自动绑定: '{anime_title}' → {source_name}:{matched_id} ({matched.title})")
                 else:
@@ -664,6 +669,8 @@ async def sync_bangumi_schedule(
                 logger.warning(f"搜索匹配 '{anime_title}' on {source_name} 失败: {e}")
 
     if total_bound > 0:
+        # why: 阶段1可能绑定多部作品，统一提交避免循环内部分成功。
+        await session.commit()
         details.append(f"自动绑定 {total_bound} 部")
         # 重新查询（ID 已更新）
         sources = await crud.get_calendar_sources(session)
@@ -693,12 +700,22 @@ async def sync_bangumi_schedule(
                 continue
             new_weekday = schedule_map[str(local_id)]
             if new_weekday != s.get("airWeekday"):
-                await crud.update_air_schedule(session, s["animeId"], new_weekday, s.get("airTime"))
+                await crud.update_air_schedule(
+                    session,
+                    s["animeId"],
+                    new_weekday,
+                    s.get("airTime"),
+                    commit=False,
+                )
                 updated += 1
 
         if updated > 0:
             total_updated += updated
             details.append(f"{source_name}: 日程更新 {updated} 部")
+
+    if total_updated > 0:
+        # why: 阶段2按外部源批量更新日程，统一提交避免只保存前半批。
+        await session.commit()
 
     # ====== 阶段3: 强制刷新弹幕源番剧时间表（Bilibili）======
     try:

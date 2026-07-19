@@ -199,8 +199,32 @@ async def webhook_search_and_dispatch_task(
                     mediaServerType=mediaServerType, mediaServerSeriesId=mediaServerSeriesId,
                     mediaServerSeasonId=mediaServerSeasonId, mediaServerEpisodeId=mediaServerEpisodeId,
                 )
+                # 补齐 task_parameters：供完成通知展示作品名/季/集/类型/来源（否则微信通知只剩弹幕数）
+                # currentEpisodeIndex/selectedEpisodes 供 _rebuild_coro_factory 的 generic_import 分支重建（任务重启恢复）
+                fav_task_parameters = {
+                    "provider": favorited_source['providerName'],
+                    "mediaId": favorited_source['mediaId'],
+                    "animeTitle": favorited_source['animeTitle'],
+                    "mediaType": favorited_source.get('mediaType'),
+                    "season": season,
+                    "episode": currentEpisodeIndex,
+                    "currentEpisodeIndex": currentEpisodeIndex,
+                    "selectedEpisodes": selectedEpisodes,
+                    "year": year,
+                    "tmdbId": tmdbId,
+                    "imdbId": imdbId,
+                    "tvdbId": tvdbId,
+                    "doubanId": doubanId,
+                    "bangumiId": bangumiId,
+                    "imageUrl": favorited_source.get('imageUrl'),
+                    "webhookSource": webhookSource,
+                }
                 try:
-                    await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+                    await task_manager.submit_task(
+                        task_coro, task_title, unique_key=unique_key,
+                        task_type="generic_import",
+                        task_parameters=fav_task_parameters,
+                    )
                 except HTTPException as e:
                     if e.status_code == 409:
                         # 409 表示已有相同任务在队列中，视为成功
@@ -632,8 +656,33 @@ async def webhook_search_and_dispatch_task(
                 mediaServerType=mediaServerType, mediaServerSeriesId=mediaServerSeriesId,
                 mediaServerSeasonId=mediaServerSeasonId, mediaServerEpisodeId=mediaServerEpisodeId,
             )
+            # 补齐 task_parameters：供完成通知展示作品名/季/集/类型/来源
+            # currentEpisodeIndex/selectedEpisodes/元数据ID 供 _rebuild_coro_factory 的
+            # generic_import 分支重建（任务重启恢复），否则重启后此叶子导入任务无法恢复。
+            match_task_parameters = {
+                "provider": best_match.provider,
+                "mediaId": best_match.mediaId,
+                "animeTitle": best_match.title,
+                "mediaType": best_match.type,
+                "season": season,
+                "episode": currentEpisodeIndex,
+                "currentEpisodeIndex": currentEpisodeIndex,
+                "selectedEpisodes": selectedEpisodes,
+                "year": final_year,
+                "tmdbId": tmdbId,
+                "imdbId": imdbId,
+                "tvdbId": tvdbId,
+                "doubanId": doubanId,
+                "bangumiId": bangumiId,
+                "imageUrl": best_match.imageUrl,
+                "webhookSource": webhookSource,
+            }
             try:
-                await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+                await task_manager.submit_task(
+                    task_coro, task_title, unique_key=unique_key,
+                    task_type="generic_import",
+                    task_parameters=match_task_parameters,
+                )
             except HTTPException as e:
                 if e.status_code == 409:
                     logger.info(f"Webhook 任务: AI匹配任务已在队列中 (unique_key={unique_key})，跳过重复提交。")
@@ -756,8 +805,33 @@ async def webhook_search_and_dispatch_task(
                 mediaServerType=mediaServerType, mediaServerSeriesId=mediaServerSeriesId,
                 mediaServerSeasonId=mediaServerSeasonId, mediaServerEpisodeId=mediaServerEpisodeId,
             )
+            # 补齐 task_parameters：供完成通知展示作品名/季/集/类型/来源
+            # currentEpisodeIndex/selectedEpisodes/元数据ID 供 _rebuild_coro_factory 的
+            # generic_import 分支重建（任务重启恢复），否则重启后此叶子导入任务无法恢复。
+            match_task_parameters = {
+                "provider": best_match.provider,
+                "mediaId": best_match.mediaId,
+                "animeTitle": best_match.title,
+                "mediaType": best_match.type,
+                "season": season,
+                "episode": currentEpisodeIndex,
+                "currentEpisodeIndex": currentEpisodeIndex,
+                "selectedEpisodes": selectedEpisodes,
+                "year": final_year,
+                "tmdbId": tmdbId,
+                "imdbId": imdbId,
+                "tvdbId": tvdbId,
+                "doubanId": doubanId,
+                "bangumiId": bangumiId,
+                "imageUrl": best_match.imageUrl,
+                "webhookSource": webhookSource,
+            }
             try:
-                await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+                await task_manager.submit_task(
+                    task_coro, task_title, unique_key=unique_key,
+                    task_type="generic_import",
+                    task_parameters=match_task_parameters,
+                )
             except HTTPException as e:
                 if e.status_code == 409:
                     logger.info(f"Webhook 任务: 传统匹配任务已在队列中 (unique_key={unique_key})，跳过重复提交。")
@@ -851,8 +925,33 @@ async def webhook_search_and_dispatch_task(
             mediaServerType=mediaServerType, mediaServerSeriesId=mediaServerSeriesId,
             mediaServerSeasonId=mediaServerSeasonId, mediaServerEpisodeId=mediaServerEpisodeId,
         )
+        # 补齐 task_parameters：供完成通知展示作品名/季/集/类型/来源
+        # currentEpisodeIndex/selectedEpisodes/元数据ID 供 _rebuild_coro_factory 的
+        # generic_import 分支重建（任务重启恢复），否则重启后此叶子导入任务无法恢复。
+        match_task_parameters = {
+            "provider": best_match.provider,
+            "mediaId": best_match.mediaId,
+            "animeTitle": best_match.title,
+            "mediaType": best_match.type,
+            "season": season,
+            "episode": currentEpisodeIndex,
+            "currentEpisodeIndex": currentEpisodeIndex,
+            "selectedEpisodes": selectedEpisodes,
+            "year": final_year,
+            "tmdbId": tmdbId,
+            "imdbId": imdbId,
+            "tvdbId": tvdbId,
+            "doubanId": doubanId,
+            "bangumiId": bangumiId,
+            "imageUrl": best_match.imageUrl,
+            "webhookSource": webhookSource,
+        }
         try:
-            await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+            await task_manager.submit_task(
+                task_coro, task_title, unique_key=unique_key,
+                task_type="generic_import",
+                task_parameters=match_task_parameters,
+            )
         except HTTPException as e:
             if e.status_code == 409:
                 logger.info(f"Webhook 任务: 顺延匹配任务已在队列中 (unique_key={unique_key})，跳过重复提交。")

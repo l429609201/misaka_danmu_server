@@ -132,6 +132,35 @@ class NotificationManager:
             logger.warning(f"读取 Webhook API Key 失败: {e}")
         return ""
 
+    async def reload_surge_config(self):
+        """从数据库读取通知汇总（智能洪峰检测）配置并应用到聚合器。
+
+        供启动初始化和配置变更后调用。读取失败时保留默认值，不影响通知功能。
+        """
+        try:
+            async with self._session_factory() as session:
+                enabled_str = await crud.get_config_value(
+                    session, "notificationSurgeAggregationEnabled", "true")
+                window_str = await crud.get_config_value(
+                    session, "notificationSurgeWindowSeconds", "30")
+                threshold_str = await crud.get_config_value(
+                    session, "notificationSurgeThreshold", "5")
+            enabled = str(enabled_str).lower() == "true"
+            try:
+                window = float(window_str)
+            except (ValueError, TypeError):
+                window = 30.0
+            try:
+                threshold = int(threshold_str)
+            except (ValueError, TypeError):
+                threshold = 5
+            self._aggregator.configure_surge(enabled, window, threshold)
+            # 汇总桶的时间窗口与洪峰窗口保持一致，确保汇总桶按同样节奏 flush
+            self._aggregator._time_window = window
+            logger.info(f"通知汇总配置已加载: 启用={enabled}, 窗口={window}s, 阈值={threshold}")
+        except Exception as e:
+            logger.warning(f"读取通知汇总配置失败，使用默认值: {e}")
+
     async def initialize(self):
         """从数据库加载所有启用的渠道实例"""
         async with self._session_factory() as session:
@@ -144,6 +173,9 @@ class NotificationManager:
         for ch_data in all_channels:
             if ch_data.get("isEnabled"):
                 await self._load_channel(ch_data, proxy_url=proxy_url, webhook_api_key=webhook_api_key)
+
+        # 加载通知汇总（智能洪峰检测）配置
+        await self.reload_surge_config()
 
         # 汇总输出
         _P = "  - "

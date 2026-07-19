@@ -7,6 +7,7 @@ import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 from src.db import crud
+from src.core.env import is_docker_environment as _is_docker_environment
 
 if TYPE_CHECKING:
     from src.services import ScraperManager
@@ -14,20 +15,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # 图片存储在 config/image/ 目录下
-def _is_docker_environment():
-    """检测是否在Docker容器中运行"""
-    import os
-    # 方法1: 检查 /.dockerenv 文件（Docker标准做法）
-    if Path("/.dockerenv").exists():
-        return True
-    # 方法2: 检查环境变量
-    if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-        return True
-    # 方法3: 检查当前工作目录是否为 /app
-    if Path.cwd() == Path("/app"):
-        return True
-    return False
-
 def _get_image_dir():
     """获取图片目录，根据运行环境自动调整"""
     if _is_docker_environment():
@@ -46,6 +33,54 @@ def _ensure_image_dir():
         logger.warning(f"无法创建图片目录 {IMAGE_DIR}: {e}")
 
 # 延迟创建目录，避免在模块加载时就尝试创建
+
+async def load_image_bytes(image_source: Optional[str], max_bytes: int = 10 * 1024 * 1024) -> Optional[bytes]:
+    """把远程 URL、本地图片 URL 或 file:// 地址统一读取为图片字节。
+
+    why：通知渠道只应负责平台发送协议；图片路径解析、防盗链请求头、响应校验在此统一处理。
+    """
+    if not image_source:
+        return None
+
+    try:
+        if image_source.startswith("/data/images/"):
+            image_path = IMAGE_DIR / Path(image_source).name
+            return image_path.read_bytes() if image_path.is_file() else None
+
+        if image_source.startswith("file://"):
+            from urllib.parse import unquote, urlparse
+            image_path = Path(unquote(urlparse(image_source).path))
+            return image_path.read_bytes() if image_path.is_file() else None
+
+        if image_source.startswith("//"):
+            image_source = f"https:{image_source}"
+        if not image_source.startswith(("http://", "https://")):
+            return None
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "image/*",
+        }
+        if "iqiyipic.com" in image_source:
+            headers["Referer"] = "https://www.iqiyi.com/"
+        elif "hdslb.com" in image_source:
+            headers["Referer"] = "https://www.bilibili.com/"
+
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=headers) as client:
+            response = await client.get(image_source)
+            response.raise_for_status()
+            content_type = response.headers.get("content-type", "").lower()
+            if content_type and not content_type.startswith("image/"):
+                logger.warning(f"图片响应类型无效: {content_type}")
+                return None
+            if len(response.content) > max_bytes:
+                logger.warning(f"图片超过大小限制: {len(response.content)} > {max_bytes}")
+                return None
+            return response.content
+    except Exception as e:
+        logger.warning(f"读取图片失败: {e}")
+        return None
+
 
 async def download_image(image_url: Optional[str], session: AsyncSession, scraper_manager: "ScraperManager", provider_name: Optional[str] = None) -> Optional[str]:
     """
@@ -77,11 +112,11 @@ async def download_image(image_url: Optional[str], session: AsyncSession, scrape
         # 修正：将并发的 gather 调用改为顺序的 await，以避免 SQLAlchemy 会话错误
         scraper_settings = await crud.get_all_scraper_settings(session)
         metadata_settings = await crud.get_all_metadata_source_settings(session)
-        
+
         provider_setting = next((s for s in scraper_settings if s['providerName'] == provider_name), None)
         if not provider_setting:
             provider_setting = next((s for s in metadata_settings if s['providerName'] == provider_name), None)
-        
+
         if provider_setting:
             use_proxy_for_this_provider = provider_setting.get('useProxy', False)
 
@@ -101,7 +136,7 @@ async def download_image(image_url: Optional[str], session: AsyncSession, scrape
         client_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
-        
+
         # 修正：简化并修正Referer逻辑
         # 默认不发送Referer，但如果提供了provider_name，则使用该源的Referer
         if provider_name:
@@ -111,7 +146,7 @@ async def download_image(image_url: Optional[str], session: AsyncSession, scrape
                     client_headers["Referer"] = scraper.referer
             except ValueError:
                 logger.warning(f"下载图片时未找到提供方为 '{provider_name}' 的搜索源，将不发送 Referer。")
-        
+
         # 针对特定源的特殊处理：确保Referer是正确的，即使provider_name不是该源（例如从TMDB获取的图片链接）
         if 'iqiyipic.com' in image_url:
             client_headers["Referer"] = "https://www.iqiyi.com/"

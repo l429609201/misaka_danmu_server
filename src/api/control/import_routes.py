@@ -504,7 +504,22 @@ async def direct_import(
             progress_callback=cb, session=session, manager=manager, task_manager=task_manager,
             rate_limiter=rate_limiter, title_recognition_manager=title_recognition_manager
         )
-        task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key)
+        # 补齐 task_parameters：供完成通知展示作品名/季/集/类型/来源
+        direct_task_parameters = {
+            "provider": item_to_import.provider,
+            "mediaId": item_to_import.mediaId,
+            "animeTitle": item_to_import.title,
+            "mediaType": item_to_import.type,
+            "season": item_to_import.season,
+            "episode": item_to_import.currentEpisodeIndex,
+            "year": item_to_import.year,
+            "imageUrl": item_to_import.imageUrl,
+            "tmdbId": payload.tmdbId or "",
+        }
+        task_id, _ = await task_manager.submit_task(
+            task_coro, task_title, unique_key=unique_key,
+            task_parameters=direct_task_parameters,
+        )
         return {"message": "导入任务已提交", "taskId": task_id}
     except HTTPException as e:
         raise e

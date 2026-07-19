@@ -61,7 +61,7 @@ export const DataCheckPanel = () => {
         <List size="small" dataSource={results} renderItem={item => (
           <List.Item actions={
             (item.category === 'orphan_episodes' || item.category === 'broken_mapping')
-              ? [<Button size="small" type="link" danger onClick={() => handleFix(item.category)}>{t('dataCheck.fix')}</Button>]
+              ? [<Button key="fix" size="small" type="link" danger onClick={() => handleFix(item.category)}>{t('dataCheck.fix')}</Button>]
               : undefined
           }>
             <List.Item.Meta

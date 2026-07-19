@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import logging
-from typing import Any, Dict, List, Optional, Set, Type,Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker # type: ignore
 from fastapi import Request
@@ -19,8 +19,8 @@ class BaseMetadataSource(ABC):
     config_keys: List[str] = []
     # 布尔类型的 config key（存储为字符串 "true"/"false"，读取时自动转换）
     bool_config_keys: List[str] = []
-    # 新增：声明可配置字段 { "db_key": ("UI标签", "类型", "提示") }
-    configurable_fields: Dict[str, Tuple[str, str, str]] = {}
+    # 声明可配置字段；兼容旧元组格式与包含 label/type/tooltip/default 等属性的字典格式。
+    configurable_fields: Dict[str, Any] = {}
     # 新增：是否支持获取分集URL (用于补充源功能)
     supports_episode_urls: bool = False
     # 新增：是否为搜索补充源（当弹幕源搜索无结果时，可为对应平台提供兜底数据）

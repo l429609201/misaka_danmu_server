@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 # normalize_title 已迁移至统一模块
 from src.utils.filename_parser import normalize_title  # noqa: E402
+from src.core.env import is_docker_environment
 
 
 class DanmakuPathTemplate:
@@ -301,21 +302,7 @@ async def generate_danmaku_path(episode, config_manager=None) -> tuple[str, Path
             logger.error(f"使用自定义路径模板失败: {e}，回退到默认路径")
 
     # 默认路径逻辑 - 根据运行环境自动调整
-    def _is_docker_environment():
-        """检测是否在Docker容器中运行"""
-        import os
-        # 方法1: 检查 /.dockerenv 文件（Docker标准做法）
-        if Path("/.dockerenv").exists():
-            return True
-        # 方法2: 检查环境变量
-        if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-            return True
-        # 方法3: 检查当前工作目录是否为 /app
-        if Path.cwd() == Path("/app"):
-            return True
-        return False
-
-    if _is_docker_environment():
+    if is_docker_environment():
         # Docker容器环境
         web_path = f"/app/config/danmaku/{anime_id}/{episode_id}.xml"
         absolute_path = Path(f"/app/config/danmaku/{anime_id}/{episode_id}.xml")

@@ -9,6 +9,7 @@ import {
   getAnimeLibrary,
 } from '../../../apis'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import {
   Button,
@@ -24,13 +25,14 @@ import {
   Empty,
   InputNumber,
   Dropdown,
-  Space,
   Checkbox,
   Popover,
   Select,
   Pagination,
   Spin,
   Segmented,
+  Tabs,
+  Badge,
 } from 'antd'
 import { useAtom } from 'jotai'
 import {
@@ -112,9 +114,15 @@ export const SearchResult = () => {
   const [range, setRange] = useState([1, 1])
   const [episodePageSize, setEpisodePageSize] = useState(10)
   const [episodePage, setEpisodePage] = useState(1)
+  // 不导入列表（被删除/被过滤的分集移入此处，可再删回待导入列表）
+  const [excludedEpisodeList, setExcludedEpisodeList] = useState([])
+  const [excludedPage, setExcludedPage] = useState(1)
+  // 编辑导入分集区当前激活的 Tab：'include'=待导入 | 'exclude'=不导入
+  const [activeEpisodeTab, setActiveEpisodeTab] = useState('include')
   const [episodeOrder, setEpisodeOrder] = useState('asc') // 新增：排序状态
   const [editMediaType, setEditMediaType] = useState('tv_series') // 编辑导入：媒体类型
   const [editSeason, setEditSeason] = useState(1) // 编辑导入：季度
+  const [editYear, setEditYear] = useState(null) // 编辑导入：年份（默认取搜索结果，可手动改，用于同名不同年区分）
 
   // 重整分集导入子弹窗状态
   const [reshuffleOpen, setReshuffleOpen] = useState(false)
@@ -350,6 +358,25 @@ export const SearchResult = () => {
   const handleImportDanmu = async item => {
     try {
       if (loading) return
+
+      let finalType = item.type
+      if (item.typeDecision === 'needs_confirmation' && item.typeSuggestion) {
+        // why：低置信度冲突不能静默覆盖，让用户在来源类型和元数据建议之间明确选择。
+        const useSourceType = await modalApi.confirm({
+          title: t('searchResult.typeConflictTitle'),
+          content: (
+            <div className="space-y-2">
+              <div>{t('searchResult.typeConflictContent')}</div>
+              <div>{t('searchResult.sourceTypeLabel', { value: t(`searchResult.${item.sourceType === 'movie' ? 'movie' : 'tvType'}`) })}</div>
+              <div>{t('searchResult.suggestedTypeLabel', { value: t(`searchResult.${item.typeSuggestion === 'movie' ? 'movie' : 'tvType'}`) })}</div>
+            </div>
+          ),
+          okText: t('searchResult.useSuggestedType'),
+          cancelText: t('searchResult.useSourceType'),
+        })
+        finalType = useSourceType === false ? (item.sourceType || item.type) : item.typeSuggestion
+      }
+
       setLoading(true)
 
       // 检查是否有补充源 - 查找所有以主源key开头的补充源
@@ -362,7 +389,7 @@ export const SearchResult = () => {
         provider: item.provider,
         mediaId: item.mediaId,
         animeTitle: item.title,
-        type: item.type,
+        type: finalType,
         // 关键修正：如果用户搜索时指定了季度，则优先使用该季度
         // 否则，使用从单个结果中解析出的季度
         season: searchSeason ?? item.season,
@@ -383,19 +410,42 @@ export const SearchResult = () => {
   }
 
   const handleImportEdit = async () => {
+    const episodeCount = new Map()
+    editEpisodeList.forEach(item => {
+      episodeCount.set(item.episodeIndex, (episodeCount.get(item.episodeIndex) || 0) + 1)
+    })
+    const duplicateIndices = [...episodeCount.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([index]) => index)
+      .sort((a, b) => a - b)
+
+    if (duplicateIndices.length > 0) {
+      // why：重复集号会在入库时互相覆盖，必须返回编辑状态先完成唯一编号。
+      await modalApi.confirm({
+        title: t('searchResult.duplicateEpisodeTitle'),
+        content: t('searchResult.duplicateEpisodeContent', { indices: duplicateIndices.join('、') }),
+        okText: t('searchResult.renumberEpisodes'),
+        cancelText: t('searchResult.backToEdit'),
+        onOk: handleRenumberEpisodes,
+      })
+      return
+    }
+
     try {
       if (editConfirmLoading) return
       setEditConfirmLoading(true)
       const finalTitle = editAnimeTitle || editItem.title
       const finalMediaType = editMediaType
       const finalSeason = editMediaType === 'movie' ? 1 : editSeason
-      const { animeTitle: _a, mediaType: _m, season: _s, episodes: _e, ...restEditItem } = editItem
+      // 年份：用户手动填的优先，留空则不传（后端按无年份的原模式处理）
+      const finalYear = editYear ?? null
       const res = await importEdit(
         JSON.stringify({
-          ...restEditItem,
+          ...editItem,
           animeTitle: finalTitle,
           mediaType: finalMediaType,
           season: finalSeason,
+          year: finalYear,
           episodes: editEpisodeList ?? [],
         })
       )
@@ -410,10 +460,18 @@ export const SearchResult = () => {
       setEditAnimeTitle('')
       setEditMediaType('tv_series')
       setEditSeason(1)
+      setEditYear(null)
     }
   }
 
   const handleBatchImport = () => {
+    const uncertainCount = selectList.filter(item => item.typeDecision === 'needs_confirmation').length
+    if (uncertainCount > 0) {
+      // why：批量任务无法逐条表达不同选择，必须先让用户处理类型冲突，避免静默导错。
+      messageApi.warning(t('searchResult.batchTypeUncertain', { count: uncertainCount }))
+      return
+    }
+
     let tmdbparams = {}
     if (importMode === 'merge') {
       if (!title) {
@@ -494,7 +552,7 @@ export const SearchResult = () => {
             ? 'tv'
             : 'movie',
       })
-      if (!!res?.data?.length) {
+      if (res?.data?.length) {
         setTmdbResult(res?.data || [])
         setTmdbOpen(true)
       } else {
@@ -527,7 +585,7 @@ export const SearchResult = () => {
 
       if (activeIndex !== -1 && overIndex !== -1) {
         // 1. 重新排列数组
-        const newList = [...editEpisodeList]
+        const newList = [...list]
         const [movedItem] = newList.splice(activeIndex, 1)
         newList.splice(overIndex, 0, movedItem)
 
@@ -605,23 +663,54 @@ export const SearchResult = () => {
     const { active } = event
     // 找到当前拖拽的项
     const item = editEpisodeList.find(item => item.episodeId === active.id)
-    setActiveItem(item)
+    // why：记录源条目的实际宽度，Portal 中的覆盖层才能保持与原条目一致。
+    setActiveItem(item ? {
+      ...item,
+      overlayWidth: active.rect.current.initial?.width,
+    } : null)
   }
 
-  const handleDelete = item => {
-    // 3. 更新状态
-    setEditEpisodeList(list => {
-      const activeIndex = list.findIndex(o => o.episodeId === item.episodeId)
-      const newList = [...list]
-      newList.splice(activeIndex, 1)
+  // 按当前排序方向对分集列表排序（加回/移入时保持顺序一致）
+  const sortEpisodes = list => {
+    return [...list].sort((a, b) =>
+      episodeOrder === 'asc'
+        ? a.episodeIndex - b.episodeIndex
+        : b.episodeIndex - a.episodeIndex
+    )
+  }
 
-      // const updatedList = newList.map((item, index) => ({
-      //   ...item,
-      //   episodeIndex: index + 1, // 排序值从1开始
-      // }))
-      return newList
+  // 待导入列表：点击删除 → 移入「不导入」列表（不再彻底丢弃）
+  const handleDelete = item => {
+    setEditEpisodeList(list => list.filter(o => o.episodeId !== item.episodeId))
+    setExcludedEpisodeList(list => {
+      if (list.some(o => o.episodeId === item.episodeId)) return list
+      return sortEpisodes([...list, item])
     })
   }
+
+  // 不导入列表：点击删除 → 移回「待导入」列表
+  const handleRestore = item => {
+    setExcludedEpisodeList(list => list.filter(o => o.episodeId !== item.episodeId))
+    setEditEpisodeList(list => {
+      if (list.some(o => o.episodeId === item.episodeId)) return list
+      return sortEpisodes([...list, item])
+    })
+  }
+
+  // 批量把一组分集从「待导入」移入「不导入」（区间过滤 / 重整过滤复用）
+  const excludeEpisodes = predicate => {
+    setEditEpisodeList(list => {
+      const toExclude = list.filter(predicate)
+      if (toExclude.length === 0) return list
+      setExcludedEpisodeList(prev => {
+        const existed = new Set(prev.map(o => o.episodeId))
+        const merged = [...prev, ...toExclude.filter(o => !existed.has(o.episodeId))]
+        return sortEpisodes(merged)
+      })
+      return list.filter(it => !predicate(it))
+    })
+  }
+
 
   const handleEditTitle = (item, value) => {
     setEditEpisodeList(list => {
@@ -657,7 +746,10 @@ export const SearchResult = () => {
     if (!activeItem) return null
 
     return (
-      <div ref={dragOverlayRef} style={{ width: '100%', maxWidth: '100%' }}>
+      <div
+        ref={dragOverlayRef}
+        style={{ width: activeItem.overlayWidth || '100%', maxWidth: 'calc(100vw - 32px)' }}
+      >
         <List.Item
           style={{
             boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
@@ -675,7 +767,7 @@ export const SearchResult = () => {
                   width: '100%',
                 }}
                 value={activeItem.title}
-                onChange={e => {}}
+                readOnly
               />
               <div>
                 <CloseCircleOutlined />
@@ -687,7 +779,22 @@ export const SearchResult = () => {
     )
   }
 
-  // 新增：切换排序的处理函数
+  const handleRenumberEpisodes = () => {
+    if (editEpisodeList.length === 0) return
+    const validIndices = editEpisodeList
+      .map(item => Number(item.episodeIndex))
+      .filter(Number.isFinite)
+    const startIndex = validIndices.length > 0 ? Math.min(...validIndices) : 1
+
+    // why：以当前显示顺序连续编号，既保留用户拖拽结果，也确保每个待导入分集编号唯一。
+    setEditEpisodeList(list =>
+      list.map((item, index) => ({ ...item, episodeIndex: startIndex + index }))
+    )
+    setEpisodeOrder('asc')
+    setEpisodePage(1)
+  }
+
+  // 切换按集号排序的处理函数
   const handleToggleOrder = () => {
     const newOrder = episodeOrder === 'asc' ? 'desc' : 'asc'
     setEpisodeOrder(newOrder)
@@ -1129,7 +1236,7 @@ export const SearchResult = () => {
             className="overflow-y-auto overflow-x-hidden border border-gray-200 rounded-lg px-1 py-1"
             style={{ maxHeight: '600px' }}
           >
-          {!!renderData?.length ? (
+          {renderData?.length ? (
             <List
               itemLayout="vertical"
               size="large"
@@ -1198,6 +1305,12 @@ export const SearchResult = () => {
                                   {t('searchResult.recognitionLabel', { value: item.recognitionTitle })}
                                 </Tag>
                               )}
+                              {item.typeDecision === 'corrected' && (
+                                <Tag color="green">{t('searchResult.typeCorrectedTag')}</Tag>
+                              )}
+                              {item.typeDecision === 'needs_confirmation' && (
+                                <Tag color="warning">{t('searchResult.typeUncertainTag')}</Tag>
+                              )}
                               {item.type !== 'movie' && (
                                 <Tag color="orange">
                                   {t('searchResult.seasonLabel', { value: item.season ?? t('searchResult.unknown') })}
@@ -1247,11 +1360,15 @@ export const SearchResult = () => {
                               }
 
                               const res = await getEditEpisodes(params)
-                              let episodes = res.data
+                              // 兼容旧版数组响应；新版同时返回后端黑名单过滤掉的分集。
+                              let episodes = Array.isArray(res.data) ? res.data : (res.data?.episodes || [])
+                              let excludedEpisodes = Array.isArray(res.data) ? [] : (res.data?.excludedEpisodes || [])
                               setEditImportOpen(true)
                               setEditItem(item)
                               setEditMediaType(item.type || 'tv_series')
                               setEditSeason(item.season ?? 1)
+                              // 年份默认取搜索结果，允许用户手动修改（用于同名不同年区分）
+                              setEditYear(item.year ?? null)
 
                               // 应用集数偏移（根据自定义识别词的 partial_offset 规则）
                               const title = item.title
@@ -1269,12 +1386,21 @@ export const SearchResult = () => {
                                       const newIndex = offsetMap[ep.episodeIndex]
                                       return newIndex != null ? { ...ep, episodeIndex: newIndex } : ep
                                     })
+                                    excludedEpisodes = excludedEpisodes.map(ep => {
+                                      const newIndex = offsetMap[ep.episodeIndex]
+                                      return newIndex != null ? { ...ep, episodeIndex: newIndex } : ep
+                                    })
                                   }
                                 } catch {
                                   // 偏移预览失败，使用原始集数
                                 }
                               }
                               setEditEpisodeList(episodes)
+                              // 后端黑名单过滤项进入“不导入”，用户仍可手动恢复。
+                              setExcludedEpisodeList(excludedEpisodes)
+                              setExcludedPage(1)
+                              setEpisodePage(1)
+                              setActiveEpisodeTab('include')
                               // 修正：区间范围基于实际分集的 episodeIndex（兼容偏移后的集号）
                               if (episodes.length > 0) {
                                 const indices = episodes.map(ep => ep.episodeIndex)
@@ -1283,6 +1409,10 @@ export const SearchResult = () => {
                                 setRange([1, 1])
                               }
                             } catch (error) {
+                              // why：编辑分集加载失败不能静默无反馈，否则用户会误以为按钮无效。
+                              messageApi.error(
+                                `${t('searchResult.importTaskFailed')}: ${error?.message || t('common.unknown')}`
+                              )
                             } finally {
                               setEditLoading(false)
                             }
@@ -1472,6 +1602,7 @@ export const SearchResult = () => {
           setEditAnimeTitle('')
           setEditMediaType('tv_series')
           setEditSeason(1)
+          setEditYear(null)
         }}
         footer={[
           <Button
@@ -1482,11 +1613,19 @@ export const SearchResult = () => {
           >
             {episodeOrder === 'asc' ? t('searchResult.asc') : t('searchResult.desc')}
           </Button>,
+          <Button
+            key="renumber"
+            onClick={handleRenumberEpisodes}
+            style={{ float: 'left' }}
+          >
+            {t('searchResult.renumberEpisodes')}
+          </Button>,
           <Button key="cancel" onClick={() => {
             setEditImportOpen(false)
             setEditAnimeTitle('')
             setEditMediaType('tv_series')
             setEditSeason(1)
+            setEditYear(null)
           }}>
             {t('common.cancel')}
           </Button>,
@@ -1501,7 +1640,8 @@ export const SearchResult = () => {
             {t('searchResult.confirmImport')}
           </Button>,
         ]}
-        styles={{ body: { overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: isMobile ? '75vh' : '70vh', padding: isMobile ? '12px 16px' : undefined } }}
+        className="edit-import-modal"
+        styles={{ body: { overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? '75vh' : '70vh', maxHeight: 'calc(100vh - 180px)', padding: isMobile ? '12px 16px' : undefined } }}
       >
           {isMobile ? (
             <div className="space-y-3 mb-3 shrink-0">
@@ -1552,6 +1692,19 @@ export const SearchResult = () => {
                 </div>
               </div>
               <div>
+                <div className="font-medium text-sm mb-2">{t('searchResult.yearLabel')}</div>
+                <InputNumber
+                  value={editYear}
+                  onChange={value => setEditYear(value)}
+                  min={1900}
+                  max={2100}
+                  step={1}
+                  controls={false}
+                  placeholder={t('searchResult.yearPlaceholder')}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div>
                 <div className="font-medium text-sm mb-2">{t('searchResult.episodeRange')}</div>
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-sm">{t('searchResult.from')}</span>
@@ -1576,12 +1729,11 @@ export const SearchResult = () => {
                   type="primary"
                   block
                   onClick={() => {
-                    setEditEpisodeList(list => {
-                      return list.filter(
-                        it =>
-                          it.episodeIndex >= range[0] && it.episodeIndex <= range[1]
-                      )
-                    })
+                    // 区间外的分集移入「不导入」列表（不再彻底丢弃）
+                    excludeEpisodes(
+                      it =>
+                        !(it.episodeIndex >= range[0] && it.episodeIndex <= range[1])
+                    )
                   }}
                 >
                   {t('searchResult.confirmRange')}
@@ -1590,9 +1742,9 @@ export const SearchResult = () => {
             </div>
           ) : (
             <>
-              <div className="flex items-wrap md:flex-nowrap justify-between items-center gap-3 my-6 shrink-0">
-                <div className="shrink-0">{t('searchResult.animeTitleColon')}</div>
-                <div className="w-full">
+              <div className="flex items-center gap-3 mb-3 shrink-0">
+                <div className="shrink-0 text-sm text-gray-500 dark:text-gray-400">{t('searchResult.animeTitleColon')}</div>
+                <div className="flex-1 min-w-0">
                   <Input
                     value={editAnimeTitle || editItem.title}
                     placeholder={t('searchResult.inputAnimeTitle')}
@@ -1611,8 +1763,8 @@ export const SearchResult = () => {
                   {t('searchResult.reshuffleImport')}
                 </Button>
               </div>
-              <div className="flex items-wrap md:flex-nowrap justify-between items-center gap-3 my-6 shrink-0">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-4 mb-3 shrink-0">
+                <div className="flex items-center gap-3">
                   <Segmented
                     value={editMediaType}
                     onChange={value => {
@@ -1624,134 +1776,243 @@ export const SearchResult = () => {
                       { label: <span className="inline-flex items-center gap-1"><MyIcon icon="tv" size={14} /> {t('searchResult.tvType')}</span>, value: 'tv_series' },
                     ]}
                   />
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0">{t('searchResult.seasonColon')}</span>
+                    <InputNumber
+                      value={editSeason}
+                      onChange={value => setEditSeason(value)}
+                      min={0}
+                      step={1}
+                      disabled={editMediaType === 'movie'}
+                      style={{ width: 80 }}
+                    />
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="shrink-0">{t('searchResult.seasonColon')}</span>
+                  <span className="shrink-0">{t('searchResult.yearColon')}</span>
                   <InputNumber
-                    value={editSeason}
-                    onChange={value => setEditSeason(value)}
-                    min={0}
+                    value={editYear}
+                    onChange={value => setEditYear(value)}
+                    min={1900}
+                    max={2100}
                     step={1}
-                    disabled={editMediaType === 'movie'}
-                    style={{ width: 80 }}
+                    controls={false}
+                    placeholder={t('searchResult.yearPlaceholder')}
+                    style={{ width: 140 }}
                   />
                 </div>
               </div>
-              <div className="flex items-wrap md:flex-nowrap justify-between items-center gap-3 my-6 shrink-0">
-                <div className="shrink-0">{t('searchResult.episodeRangeColon')}</div>
-                <div className="w-full flex items-center justify-between flex-wrap md:flex-nowrap gap-2">
-                  <div className="flex items-center justify-start gap-2">
-                    <span>{t('searchResult.from')}</span>
-                    <InputNumber
-                      value={range[0]}
-                      onChange={value => setRange(r => [value, r[1]])}
-                      min={1}
-                      max={range[1]}
-                      step={1}
-                      style={{
-                        width: '100%',
-                      }}
-                    />
-                    <span>{t('searchResult.to')}</span>
-                    <InputNumber
-                      value={range[1]}
-                      onChange={value => setRange(r => [r[0], value])}
-                      min={range[0]}
-                      step={1}
-                      style={{
-                        width: '100%',
-                      }}
-                    />
-                  </div>
-                  <Button
-                    type="primary"
-                    block
-                    onClick={() => {
-                      setEditEpisodeList(list => {
-                        return list.filter(
-                          it =>
-                            it.episodeIndex >= range[0] && it.episodeIndex <= range[1]
-                        )
-                      })
-                    }}
-                  >
-                    {t('searchResult.confirmRange')}
-                  </Button>
-                </div>
+              <div className="flex items-center gap-3 mb-3 shrink-0">
+                <span className="shrink-0">{t('searchResult.episodeRangeColon')}</span>
+                <span>{t('searchResult.from')}</span>
+                <InputNumber
+                  value={range[0]}
+                  onChange={value => setRange(r => [value, r[1]])}
+                  min={1}
+                  max={range[1]}
+                  step={1}
+                  style={{ width: 100 }}
+                />
+                <span>{t('searchResult.to')}</span>
+                <InputNumber
+                  value={range[1]}
+                  onChange={value => setRange(r => [r[0], value])}
+                  min={range[0]}
+                  step={1}
+                  style={{ width: 100 }}
+                />
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    // 区间外的分集移入「不导入」列表（不再彻底丢弃）
+                    excludeEpisodes(
+                      it => !(it.episodeIndex >= range[0] && it.episodeIndex <= range[1])
+                    )
+                  }}
+                >
+                  {t('searchResult.confirmRange')}
+                </Button>
               </div>
             </>
           )}
-          <Card
-            size="small"
-            className="flex-1 min-h-0"
-            style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-            styles={{ body: { padding: '8px 12px', flex: 1, minHeight: 0, overflowY: 'auto' } }}
-          >
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCorners}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={editEpisodeList.map(item => item.episodeId)}
-                strategy={verticalListSortingStrategy}
-              >
-                <List
-                  itemLayout="vertical"
-                  size="large"
-                  pagination={false}
-                  dataSource={editEpisodeList.slice((episodePage - 1) * episodePageSize, episodePage * episodePageSize)}
-                  renderItem={(item, index) => (
-                    <SortableItem
-                      key={item.episodeId}
-                      item={item}
-                      index={index}
-                      handleDelete={() => handleDelete(item)}
-                      handleEditTitle={value => handleEditTitle(item, value)}
-                      handleEditIndex={value => handleEditIndex(item, value)}
+          <Tabs
+            className="edit-episode-tabs flex-1 min-h-0"
+            activeKey={activeEpisodeTab}
+            onChange={key => setActiveEpisodeTab(key)}
+            items={[
+              {
+                key: 'include',
+                label: (
+                  <span>
+                    {t('searchResult.tabInclude')}
+                    <Badge
+                      count={editEpisodeList.length}
+                      showZero
+                      style={{ marginLeft: 6, backgroundColor: '#52c41a' }}
                     />
-                  )}
-                />
-              </SortableContext>
+                  </span>
+                ),
+                children: (
+                  <div className="edit-episode-pane">
+                    <Card
+                      size="small"
+                      className="flex-1 min-h-0"
+                      style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                      styles={{ body: { padding: '8px 12px', flex: 1, minHeight: 0, overflowY: 'auto' } }}
+                    >
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCorners}
+                        onDragStart={handleDragStart}
+                        onDragEnd={handleDragEnd}
+                      >
+                        {/* why：只注册当前页可见条目，避免碰撞检测命中不可见分页项。 */}
+                        <SortableContext
+                          items={editEpisodeList
+                            .slice((episodePage - 1) * episodePageSize, episodePage * episodePageSize)
+                            .map(item => item.episodeId)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <List
+                            itemLayout="vertical"
+                            size="large"
+                            pagination={false}
+                            locale={{ emptyText: t('searchResult.noIncludeEpisodes') }}
+                            dataSource={editEpisodeList.slice((episodePage - 1) * episodePageSize, episodePage * episodePageSize)}
+                            renderItem={(item, index) => (
+                              <SortableItem
+                                key={item.episodeId}
+                                item={item}
+                                index={index}
+                                handleDelete={() => handleDelete(item)}
+                                handleEditTitle={value => handleEditTitle(item, value)}
+                                handleEditIndex={value => handleEditIndex(item, value)}
+                              />
+                            )}
+                          />
+                        </SortableContext>
 
-              {/* 拖拽覆盖层 */}
-              <DragOverlay>{renderDragOverlay()}</DragOverlay>
-            </DndContext>
-          </Card>
-          {editEpisodeList.length > episodePageSize && (
-            <div className="flex justify-center items-center mt-3 shrink-0 gap-3">
-              <Pagination
-                current={episodePage}
-                pageSize={episodePageSize}
-                total={editEpisodeList.length}
-                onChange={(page) => setEpisodePage(page)}
-                showSizeChanger={false}
-                showLessItems
-                size="small"
-              />
-              <Dropdown
-                menu={{
-                  items: [
-                    { key: '5', label: t('searchResult.perPage', { size: 5 }) },
-                    { key: '10', label: t('searchResult.perPage', { size: 10 }) },
-                    { key: '20', label: t('searchResult.perPage', { size: 20 }) },
-                    { key: '50', label: t('searchResult.perPage', { size: 50 }) },
-                  ],
-                  selectedKeys: [String(episodePageSize)],
-                  onClick: ({ key }) => {
-                    setEpisodePageSize(Number(key))
-                    setEpisodePage(1)
-                  },
-                }}
-                trigger={['click']}
-              >
-                <Button size="small" className="shrink-0">
-                  {t('searchResult.perPage', { size: episodePageSize })} <DownOutlined />
-                </Button>
-              </Dropdown>
-            </div>
-          )}
+                        {/* why：Portal 到 body，脱离 Modal 的 transform 坐标系，覆盖层才能贴着鼠标。 */}
+                        {createPortal(
+                          <DragOverlay dropAnimation={null}>{renderDragOverlay()}</DragOverlay>,
+                          document.body
+                        )}
+                      </DndContext>
+                    </Card>
+                    {editEpisodeList.length > episodePageSize && (
+                      <div className="flex justify-center items-center mt-3 shrink-0 gap-3">
+                        <Pagination
+                          current={episodePage}
+                          pageSize={episodePageSize}
+                          total={editEpisodeList.length}
+                          onChange={(page) => setEpisodePage(page)}
+                          showQuickJumper={!isMobile}
+                          showSizeChanger={false}
+                          showLessItems
+                          size="small"
+                        />
+                        <Dropdown
+                          menu={{
+                            items: [
+                              { key: '5', label: t('searchResult.perPage', { size: 5 }) },
+                              { key: '10', label: t('searchResult.perPage', { size: 10 }) },
+                              { key: '20', label: t('searchResult.perPage', { size: 20 }) },
+                              { key: '50', label: t('searchResult.perPage', { size: 50 }) },
+                            ],
+                            selectedKeys: [String(episodePageSize)],
+                            onClick: ({ key }) => {
+                              setEpisodePageSize(Number(key))
+                              setEpisodePage(1)
+                            },
+                          }}
+                          trigger={['click']}
+                        >
+                          <Button size="small" className="shrink-0">
+                            {t('searchResult.perPage', { size: episodePageSize })} <DownOutlined />
+                          </Button>
+                        </Dropdown>
+                      </div>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                key: 'exclude',
+                label: (
+                  <span>
+                    {t('searchResult.tabExclude')}
+                    <Badge
+                      count={excludedEpisodeList.length}
+                      showZero
+                      style={{ marginLeft: 6, backgroundColor: '#faad14' }}
+                    />
+                  </span>
+                ),
+                children: (
+                  <div className="edit-episode-pane">
+                    <Card
+                      size="small"
+                      className="flex-1 min-h-0"
+                      style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                      styles={{ body: { padding: '8px 12px', flex: 1, minHeight: 0, overflowY: 'auto' } }}
+                    >
+                      <List
+                        itemLayout="vertical"
+                        size="large"
+                        pagination={false}
+                        locale={{ emptyText: t('searchResult.noExcludeEpisodes') }}
+                        dataSource={excludedEpisodeList.slice((excludedPage - 1) * episodePageSize, excludedPage * episodePageSize)}
+                        renderItem={item => (
+                          <List.Item key={item.episodeId}>
+                            <div className="w-full flex items-center justify-between gap-3">
+                              <span className="shrink-0 text-gray-500 dark:text-gray-400">
+                                {t('searchResult.episodeIndexShort', { index: item.episodeIndex })}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="truncate" title={item.title}>{item.title}</div>
+                                {item.filterReason && (
+                                  <Popover content={item.filterReason} title={t('searchResult.tabExclude')}>
+                                    <Tag color="orange" className="!mt-1 !mr-0 cursor-help">
+                                      {item.filterReason.startsWith('全局过滤')
+                                        ? '全局过滤'
+                                        : item.filterReason.startsWith('单剧过滤')
+                                          ? '单剧过滤'
+                                          : '源黑名单'}
+                                    </Tag>
+                                  </Popover>
+                                )}
+                              </div>
+                              <Button
+                                size="small"
+                                type="link"
+                                onClick={() => handleRestore(item)}
+                              >
+                                {t('searchResult.restoreToInclude')}
+                              </Button>
+                            </div>
+                          </List.Item>
+                        )}
+                      />
+                    </Card>
+                    {excludedEpisodeList.length > episodePageSize && (
+                      <div className="flex justify-center items-center mt-3 shrink-0 gap-3">
+                        <Pagination
+                          current={excludedPage}
+                          pageSize={episodePageSize}
+                          total={excludedEpisodeList.length}
+                          onChange={(page) => setExcludedPage(page)}
+                          showQuickJumper={!isMobile}
+                          showSizeChanger={false}
+                          showLessItems
+                          size="small"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+          />
       </Modal>
       {/* 重整分集导入子弹窗 */}
       <Modal
@@ -1792,12 +2053,11 @@ export const SearchResult = () => {
                   return
                 }
                 const existingIndices = new Set(res.data)
-                setEditEpisodeList(list =>
-                  list.filter(it => !existingIndices.has(it.episodeIndex))
-                )
                 const removedCount = editEpisodeList.filter(it =>
                   existingIndices.has(it.episodeIndex)
                 ).length
+                // 库内已存在的分集移入「不导入」列表（不再彻底丢弃）
+                excludeEpisodes(it => existingIndices.has(it.episodeIndex))
                 messageApi.success(
                   t('searchResult.reshuffleDone', { title: selectedReshuffleItem.title, count: removedCount })
                 )

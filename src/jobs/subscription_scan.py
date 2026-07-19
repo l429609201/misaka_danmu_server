@@ -21,6 +21,7 @@ from src.db.crud import external_calendar as ext_cal_crud
 from src.db.crud import subscription_candidate as cand_crud
 from .base import BaseJob
 from src.services import TaskSuccess
+from src.services.subscription_manager import SubscriptionManager
 
 
 async def import_subscription_item(
@@ -99,26 +100,19 @@ class SubscriptionScanJob(BaseJob):
                 self.logger.warning(f"订阅目标 {provider}:{external_id} 缺少 id 字段，跳过")
                 continue
 
-            scraper = self.scraper_manager.get_scraper(provider)
-            if scraper is None or not getattr(scraper, "supports_subscription", False):
-                self.logger.warning(f"订阅源 '{provider}' 未加载或不支持订阅，跳过目标 {external_id}")
-                continue
+            subscription_manager = SubscriptionManager(self.scraper_manager, self.metadata_manager)
             try:
-                items = await scraper.scan_subscription_target(target)
+                scan_result = await subscription_manager.scan_target(target, session=session)
+                # why：定时任务只面向统一扫描结果，不感知具体 provider。
+                expanded = await subscription_manager.persist_scan_result(session, target, scan_result)
+                total_written += expanded
+                items = scan_result.get("items") or [] if scan_result.get("mode") == "candidates" else []
             except Exception as e:
                 self.logger.error(f"扫描订阅目标 {provider}:{external_id} 失败: {e}", exc_info=True)
                 await ext_cal_crud.update_subscription_next_scan(
                     session, provider, external_id, last_error=str(e)
                 )
                 continue
-
-            # 🔧 增量逻辑：针对 Bilibili 合集订阅，按发布时间排序并筛选新增集
-            if items and provider == "bilibili":
-                subscription_type = target.get("subscriptionType") or ""
-                if subscription_type == "bilibili_collection":
-                    items = await self._filter_incremental_collection_items(
-                        session, target, items, external_id
-                    )
 
             # 写入候选项到新表 subscription_candidate_item（纯候选池，无状态）
             if items:

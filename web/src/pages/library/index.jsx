@@ -1,13 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Card,
-  Empty,
   Form,
   Input,
   InputNumber,
   List,
-  message,
   Modal,
   Pagination,
   Radio,
@@ -24,7 +22,6 @@ import {
 } from 'antd'
 import { QuestionCircleOutlined, MenuOutlined, FolderOpenOutlined, SearchOutlined, LinkOutlined, EyeOutlined, AppstoreOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import {
-  createAnimeEntry,
   deleteAnime,
   fetchLocalEpisodeGroupUrl,
   applyLocalEpisodeGroup,
@@ -783,7 +780,7 @@ export const Library = () => {
         keyword: title,
         mediaType: type === DANDAN_TYPE_MAPPING.tvseries ? 'tv' : 'movie',
       })
-      if (!!res?.data?.length) {
+      if (res?.data?.length) {
         setTmdbResult(res?.data || [])
         setTmdbOpen(true)
       } else {
@@ -807,7 +804,7 @@ export const Library = () => {
         keyword: title,
         mediaType: type === DANDAN_TYPE_MAPPING.tvseries ? 'series' : 'movie',
       })
-      if (!!res?.data?.length) {
+      if (res?.data?.length) {
         setTvdbResult(res?.data || [])
         setTvdbOpen(true)
       } else {
@@ -830,7 +827,7 @@ export const Library = () => {
       const res = await getDoubanSearch({
         keyword: title,
       })
-      if (!!res?.data?.length) {
+      if (res?.data?.length) {
         setDoubanResult(res?.data || [])
         setDoubanOpen(true)
       } else {
@@ -854,7 +851,7 @@ export const Library = () => {
         keyword: title,
         mediaType: type === DANDAN_TYPE_MAPPING.tvseries ? 'series' : 'movie',
       })
-      if (!!res?.data?.length) {
+      if (res?.data?.length) {
         setImdbResult(res?.data || [])
         setImdbOpen(true)
       } else {
@@ -950,7 +947,7 @@ export const Library = () => {
   // ---- 查看/编辑剧集组 ----
   const [editEgOpen, setEditEgOpen] = useState(false)
   const [editEgData, setEditEgData] = useState(null) // { id, name, description, groups: [...] }
-  const [editEgLoading, setEditEgLoading] = useState(false)
+  const [, setEditEgLoading] = useState(false)
   const [editEgSaving, setEditEgSaving] = useState(false)
 
   const handleOpenEditEg = async () => {
@@ -1151,7 +1148,7 @@ export const Library = () => {
         tmdbId: tmdbId,
         egid: item.id,
       })
-      if (!!res?.data?.id) {
+      if (res?.data?.id) {
         setAllEpisode(res?.data || {})
         setEpisodeOpen(true)
       } else {
@@ -1186,7 +1183,7 @@ export const Library = () => {
       const res = await getBgmSearch({
         keyword: title,
       })
-      if (!!res?.data?.length) {
+      if (res?.data?.length) {
         setBgmResult(res?.data || [])
         setBgmOpen(true)
       } else {
@@ -1445,7 +1442,7 @@ export const Library = () => {
       <ScanDuplicatesModal
         open={isScanDuplicatesOpen}
         onCancel={() => setIsScanDuplicatesOpen(false)}
-        onSuccess={() => { setIsScanDuplicatesOpen(false); fetchList() }}
+        onSuccess={() => { setIsScanDuplicatesOpen(false); getList() }}
       />
       <Modal
         title={t('libraryPage.editTitle')}

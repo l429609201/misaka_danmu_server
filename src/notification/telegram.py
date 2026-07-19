@@ -747,7 +747,11 @@ class TelegramChannel(BaseNotificationChannel):
         raw_markup = kwargs.get("reply_markup")
         markup = self._build_inline_markup(raw_markup) if raw_markup else None
         try:
-            if edit_message_id:
+            # 仅当"纯文本编辑"时才走 edit_message_text（如任务进度消息反复刷新同一条）。
+            # 若同时带图（image/image_bytes，如刷新完成的海报通知），则不能走此分支：
+            # Telegram 无法把纯文本消息 edit 成图片消息，需改为"先删旧消息再发新图"，
+            # 落入下方 image_bytes / image 分支处理。
+            if edit_message_id and not (image or image_bytes):
                 # 尝试 edit 已有消息（带重试）
                 success = await self._edit_with_retry(
                     chat_id, edit_message_id, caption,
@@ -765,6 +769,15 @@ class TelegramChannel(BaseNotificationChannel):
             elif image_bytes:
                 # 聚合海报（PNG bytes）：以图片消息发送，正文作为 caption。
                 # 失败时降级为纯文本，确保通知必达。
+                # why：若带 edit_message_id（完成消息取代原进度消息），先删旧进度消息，
+                # 因为图片消息无法由文本消息 edit 而来，只能"先删后发"。
+                if edit_message_id:
+                    try:
+                        await asyncio.to_thread(
+                            self._bot.delete_message, chat_id, edit_message_id
+                        )
+                    except Exception as del_err:
+                        self.logger.debug(f"删除旧进度消息失败（忽略）: {del_err}")
                 import io as _io
                 try:
                     photo = _io.BytesIO(image_bytes)
@@ -793,6 +806,15 @@ class TelegramChannel(BaseNotificationChannel):
                     msg_id_out.append(sent.message_id)
             elif image:
                 # 有封面图：发带图片的消息，正文作为 caption
+                # why：若带 edit_message_id（完成消息取代原进度消息），先删旧进度消息，
+                # 因为图片消息无法由文本消息 edit 而来，只能"先删后发"。
+                if edit_message_id:
+                    try:
+                        await asyncio.to_thread(
+                            self._bot.delete_message, chat_id, edit_message_id
+                        )
+                    except Exception as del_err:
+                        self.logger.debug(f"删除旧进度消息失败（忽略）: {del_err}")
                 try:
                     sent = await asyncio.to_thread(self._bot.send_photo, chat_id, image, caption=caption, parse_mode="MarkdownV2", reply_markup=markup)
                 except Exception as photo_err:

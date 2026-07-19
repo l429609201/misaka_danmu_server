@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Input, Button, Card, Checkbox, Tag, Spin, Empty, Space, message, Dropdown, Pagination, Popover, Modal, Tooltip } from 'antd'
-import { WarningOutlined, CheckCircleOutlined, CloseCircleOutlined, DownOutlined, SearchOutlined, ArrowLeftOutlined } from '@ant-design/icons'
+import { Input, Button, Card, Checkbox, Spin, Empty, message, Dropdown, Pagination, Popover, Modal, Tooltip } from 'antd'
+import { DownOutlined } from '@ant-design/icons'
 import { MyIcon } from '../../components/MyIcon'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../store/index.js'
@@ -172,7 +172,6 @@ export const BatchManagePage = () => {
 
   const handleSelectAll = () => setSelectedSourceIds(animeGroups.flatMap(g => g.sources.map(s => s.sourceId)))
   const handleDeselectAll = () => setSelectedSourceIds([])
-  const handleCheckboxChange = (sourceId, checked) => setSelectedSourceIds(prev => checked ? [...prev, sourceId] : prev.filter(id => id !== sourceId))
   const toggleGroupSelection = (group) => {
     const ids = group.sources.map(s => s.sourceId)
     const allSelected = ids.every(id => selectedSourceIds.includes(id))
@@ -185,12 +184,6 @@ export const BatchManagePage = () => {
 
   // ---- Computed ----
   const finishedCount = animeGroups.reduce((acc, g) => acc + g.sources.filter(s => s.isFinished).length, 0)
-  const statIconBgClass = {
-    indigo: 'bg-indigo-500/10',
-    blue: 'bg-blue-500/10',
-    amber: 'bg-amber-500/10',
-    green: 'bg-green-500/10',
-  }
   const getPoster = (group) => {
     let src = group.localImagePath || group.imageUrl
     if (src?.startsWith('/images/')) src = src.replace('/images/', '/data/images/')

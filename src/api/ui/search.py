@@ -306,7 +306,7 @@ async def search_anime_provider(
             return payload
 
         # 缓存键基于核心标题和季度，允许在同一季的不同分集搜索中复用缓存
-        cache_key = f"provider_search_{search_title}_{season_to_filter or 'all'}"
+        cache_key = f"provider_search_v2_{search_title}_{season_to_filter or 'all'}"
         supplemental_cache_key = f"supplemental_search_{search_title}"
         cached_results_data = None
         cached_supplemental_results = None
@@ -360,14 +360,16 @@ async def search_anime_provider(
                 "pageSize": pageSize,
                 **filter_metadata,
             }
-            if _backend is not None:
-                try:
-                    await _backend.set(page_cache_key, response_payload, ttl=10800, region="search")
-                except Exception as e:
-                    logger.warning(f"分页缓存写入失败，回退到数据库: {e}")
+            # 空结果可能来自瞬时超时/限流，不能缓存 3 小时，否则同条件搜索会持续返回空。
+            if paginated_results:
+                if _backend is not None:
+                    try:
+                        await _backend.set(page_cache_key, response_payload, ttl=10800, region="search")
+                    except Exception as e:
+                        logger.warning(f"分页缓存写入失败，回退到数据库: {e}")
+                        await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
+                else:
                     await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
-            else:
-                await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
             timer.finish()
             return UIProviderSearchResponse(**_inject_recognition(response_payload))
 
@@ -646,31 +648,80 @@ async def search_anime_provider(
         logger.error(error_message, exc_info=True)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=error_message)
 
-    # 根据标题关键词修正媒体类型
+    # 分级判定媒体类型：保留来源原值，精确元数据命中可自动修正，模糊命中只提示确认。
+    valid_types = {'tv_series', 'movie'}
+    usable_type_map = {
+        title: media_type for title, media_type in (aux_title_type_map or {}).items()
+        if media_type in valid_types
+    }
+    type_corrected = 0
+    type_uncertain = 0
     for item in results:
-        if item.type == 'tv_series' and is_movie_by_title(item.title):
-            logger.info(f"标题 '{item.title}' 包含电影关键词，类型从 'tv_series' 修正为 'movie'。")
-            item.type = 'movie'
+        source_type = 'tv_series' if item.type == 'tv' else item.type
+        item.type = source_type
+        item.sourceType = source_type
 
-    # 根据辅助源（TMDB/360等）的类型信息修正弹幕源结果
-    # 注意：只有当弹幕源返回的类型为 'unknown' 时才用辅助源覆盖
-    # 弹幕源自己返回的 tv_series/movie 等明确类型优先级更高
-    if aux_title_type_map:
-        type_corrected = 0
-        for item in results:
-            if item.title in aux_title_type_map and item.type in ('unknown', None, ''):
-                aux_type = aux_title_type_map[item.title]
-                logger.debug(f"辅助源类型修正: '{item.title}' {item.type} → {aux_type}")
-                item.type = aux_type
+        # why：标题中的电影强关键词比弹幕源默认 tv_series 更可信，但仍允许精确元数据覆盖。
+        if item.type == 'tv_series' and is_movie_by_title(item.title):
+            item.type = 'movie'
+            item.typeSuggestion = 'movie'
+            item.typeDecision = 'corrected'
+            item.typeDecisionReason = 'title_keyword'
+            type_corrected += 1
+
+        exact_type = usable_type_map.get(item.title)
+        if exact_type:
+            if exact_type != item.type:
+                item.type = exact_type
+                item.typeSuggestion = exact_type
+                item.typeDecision = 'corrected'
+                item.typeDecisionReason = 'metadata_exact_title'
                 type_corrected += 1
-        if type_corrected:
-            logger.info(f"辅助源类型修正: 共修正 {type_corrected} 个结果的媒体类型")
+            elif source_type not in valid_types:
+                item.type = exact_type
+                item.typeSuggestion = exact_type
+                item.typeDecision = 'corrected'
+                item.typeDecisionReason = 'metadata_exact_title'
+                type_corrected += 1
+            continue
+
+        if item.typeDecisionReason == 'title_keyword':
+            # why：电影强关键词已给出明确结论，不能再被相似标题的低置信元数据降级为存疑。
+            continue
+
+        # 非精确标题只提供建议，不自动覆盖，避免相似作品或剧场版误匹配。
+        best_title = None
+        best_score = 0
+        for candidate_title in usable_type_map:
+            score = fuzz.token_set_ratio(item.title, candidate_title)
+            if score > best_score:
+                best_title, best_score = candidate_title, score
+        if best_title and best_score >= 85:
+            suggested_type = usable_type_map[best_title]
+            if suggested_type != item.type and item.type in valid_types:
+                item.typeSuggestion = suggested_type
+                item.typeDecision = 'needs_confirmation'
+                item.typeDecisionReason = f'metadata_similar_title:{best_score}'
+                type_uncertain += 1
+            elif item.type not in valid_types:
+                item.type = suggested_type
+                item.typeSuggestion = suggested_type
+                item.typeDecision = 'corrected'
+                item.typeDecisionReason = f'metadata_similar_title:{best_score}'
+                type_corrected += 1
+
+    if type_corrected or type_uncertain:
+        logger.info(f"媒体类型分级判定: 自动修正 {type_corrected} 个，需确认 {type_uncertain} 个")
 
     # 如果用户在搜索词中明确指定了季度，则对结果进行过滤
     if season_to_filter:
         original_count = len(results)
-        # 当指定季度时，我们只关心电视剧类型
-        filtered_by_type = [item for item in results if item.type == 'tv_series']
+        # 当元数据低置信度建议为电视剧时也保留，让用户有机会确认，不能在季度过滤阶段提前丢弃。
+        filtered_by_type = [
+            item for item in results
+            if item.type == 'tv_series'
+            or (item.typeDecision == 'needs_confirmation' and item.typeSuggestion == 'tv_series')
+        ]
 
         # 然后在电视剧类型中，我们按季度号过滤
         filtered_by_season = []
@@ -844,7 +895,7 @@ async def search_anime_provider(
 
 
 
-@router.get("/search/episodes", response_model=List[models.ProviderEpisodeInfo], summary="获取搜索结果的分集列表")
+@router.get("/search/episodes", response_model=Dict[str, Any], summary="获取搜索结果的分集列表")
 async def get_episodes_for_search_result(
     provider: str = Query(...),
     media_id: str = Query(...),
@@ -856,13 +907,24 @@ async def get_episodes_for_search_result(
 ):
     """为指定的搜索结果获取完整的分集列表。自动识别补充源mediaId并路由。"""
     try:
-        episodes = await manager.get_episodes_routed(provider, media_id, db_media_type=media_type)
+        episodes, excluded = await manager.get_episodes_routed(
+            provider, media_id, db_media_type=media_type, return_filtered=True
+        )
         # 单剧过滤（依赖作品标题，未下沉到 get_episodes_routed）
         filter_content = await config_manager.get("singleEpisodeFilterRules", "")
         filter_rules = parse_single_episode_filter_rules(filter_content)
-        episodes = apply_single_episode_filter(episodes, filter_rules, title, provider, media_id)
+        episodes, single_excluded = apply_single_episode_filter(
+            episodes, filter_rules, title, provider, media_id, return_filtered=True
+        )
+        excluded.extend(single_excluded)
         # 注：兜底全局分集标题过滤已统一收口到 manager.get_episodes_routed 内部，此处无需重复处理
-        return episodes
+        return {
+            "episodes": episodes,
+            "excludedEpisodes": [
+                {**episode.model_dump(), "filterReason": reason}
+                for episode, reason in excluded
+            ],
+        }
     except httpx.RequestError as e:
         # 新增：捕获网络错误
         error_message = f"从 {provider} 获取分集列表时发生网络错误: {e}"

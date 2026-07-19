@@ -44,6 +44,11 @@ class IncrementalRefreshJob(BaseJob):
         submitted = 0
 
         for item in pending:
+            # why：RSS 目标只是用户订阅清单容器，由 SubscriptionScanJob 展开；
+            # 它本身不是作品，不能提交标题自动导入任务。
+            if item.get("subscriptionType") == "anibt_rss_feed":
+                continue
+
             provider = item.get("provider")
             external_id = item.get("externalId")
             anime_title = item.get("animeTitle") or "未知"

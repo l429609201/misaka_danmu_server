@@ -16,6 +16,7 @@ from src.scrapers.base import BaseScraper
 from src.utils import TransportManager
 from src.utils.buffered_logging import BufferedLogHandler, create_buffered_logger, flush_buffered_logs
 from src.db import models, crud, ConfigManager, orm_models
+from src.core.env import is_docker_environment
 
 # 从 models 导入需要的类
 ProviderSearchInfo = models.ProviderSearchInfo
@@ -46,6 +47,8 @@ class ScraperManager:
         self._search_locks: set[str] = set()
         # 存储最后一次 search_all 的单源耗时信息: [(provider_name, duration_ms, result_count), ...]
         self.last_search_timing: List[Tuple[str, float, int]] = []
+        # 编辑导入展示用：分集列表命中源缓存时，仍保留最近一次黑名单过滤明细。
+        self._episode_filtered_details: Dict[Tuple[str, str], list] = {}
         self._webhook_search_locks: set[str] = set()  # Webhook 搜索锁（基于 animeTitle-season）
         self._lock = asyncio.Lock()
         self.config_manager = config_manager
@@ -99,21 +102,7 @@ class ScraperManager:
         self.scraper_settings.clear()
 
         # 检查是否需要从备份恢复
-        def _is_docker_environment():
-            """检测是否在Docker容器中运行"""
-            import os
-            # 方法1: 检查 /.dockerenv 文件（Docker标准做法）
-            if Path("/.dockerenv").exists():
-                return True
-            # 方法2: 检查环境变量
-            if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-                return True
-            # 方法3: 检查当前工作目录是否为 /app
-            if Path.cwd() == Path("/app"):
-                return True
-            return False
-
-        if _is_docker_environment():
+        if is_docker_environment():
             scrapers_dir = Path("/app/src/scrapers")
             backup_dir = Path("/app/config/scrapers_backup")
         else:
@@ -335,6 +324,11 @@ class ScraperManager:
             #    这会添加任何新的搜索源，包括首次添加 'custom'。
             providers_to_sync = discovered_providers + ['custom']
             await crud.sync_scrapers_to_db(session, providers_to_sync)
+
+            # 2.5 按用户保存的顺序快照重排 display_order。
+            #    why：弹幕源更新/重启时源可能短暂缺失被删、回归后被当新源追加到末尾，
+            #    用 config 表的顺序快照恢复用户调好的顺序，避免顺序反复丢失。
+            await crud.apply_scraper_order_from_snapshot(session)
 
             # 3. 重新加载所有设置。
             settings_list = await crud.get_all_scraper_settings(session)
@@ -732,7 +726,8 @@ class ScraperManager:
         media_id: str,
         db_media_type: Optional[str] = None,
         target_episode_index: Optional[int] = None,
-    ) -> List[ProviderSearchInfo]:
+        return_filtered: bool = False,
+    ):
         """统一分集获取路由：自动识别补充源 mediaId 并路由到正确的数据源。
 
         如果 media_id 以 'sup_' 开头，转给对应补充源的 get_episode_urls()；
@@ -787,7 +782,8 @@ class ScraperManager:
             # 兜底全局分集标题过滤（统一收口，对所有调用路径生效）
             from src.utils.episode_filter import apply_global_episode_title_filter
             return await apply_global_episode_title_filter(
-                episodes, self.config_manager, provider, media_id
+                episodes, self.config_manager, provider, media_id,
+                return_filtered=return_filtered,
             )
         else:
             # 普通弹幕源路径
@@ -799,11 +795,24 @@ class ScraperManager:
                 target_episode_index=target_episode_index,
                 db_media_type=db_media_type
             )
+            # 弹幕源内部已完成自身黑名单过滤；编辑导入需要取回其过滤明细。
+            filtered_key = (provider, str(media_id))
+            source_filtered = list(getattr(scraper, '_last_logged_filtered_out', []))
+            scraper._last_logged_filtered_out = []
+            if source_filtered:
+                self._episode_filtered_details[filtered_key] = source_filtered
+            elif return_filtered:
+                source_filtered = list(self._episode_filtered_details.get(filtered_key, []))
             # 兜底全局分集标题过滤（统一收口，对所有调用路径生效）
             from src.utils.episode_filter import apply_global_episode_title_filter
-            return await apply_global_episode_title_filter(
-                episodes, self.config_manager, provider, media_id
+            global_result = await apply_global_episode_title_filter(
+                episodes, self.config_manager, provider, media_id,
+                return_filtered=return_filtered,
             )
+            if not return_filtered:
+                return global_result
+            kept, global_filtered = global_result
+            return kept, [*source_filtered, *global_filtered]
 
     async def search_sequentially(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> Optional[tuple[str, List[ProviderSearchInfo]]]:
         """

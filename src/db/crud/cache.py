@@ -106,3 +106,29 @@ async def get_cache_keys_by_pattern(session: AsyncSession, pattern: str) -> List
     result = await session.execute(stmt)
     return [row[0] for row in result.fetchall()]
 
+
+
+
+async def count_cache_keys_by_pattern(session: AsyncSession, pattern: str) -> int:
+    """统计未过期且匹配模式的缓存键，不加载键列表。"""
+    sql_pattern = pattern.replace('*', '%')
+    stmt = select(func.count()).select_from(CacheData).where(
+        CacheData.cacheKey.like(sql_pattern),
+        CacheData.expiresAt > func.now(),
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
+async def list_cache_keys_by_pattern(
+    session: AsyncSession, pattern: str, offset: int, limit: int
+) -> List[str]:
+    """在数据库层排序并分页返回未过期缓存键。"""
+    sql_pattern = pattern.replace('*', '%')
+    stmt = (
+        select(CacheData.cacheKey)
+        .where(CacheData.cacheKey.like(sql_pattern), CacheData.expiresAt > func.now())
+        .order_by(CacheData.cacheKey)
+        .offset(offset)
+        .limit(limit)
+    )
+    return list((await session.execute(stmt)).scalars().all())

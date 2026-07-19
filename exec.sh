@@ -17,16 +17,14 @@ umask ${UMASK}
 echo "正在更新 /app/config 和 /app/src/scrapers 目录的所有权为 ${PUID}:${PGID}..."
 chown -R ${PUID}:${PGID} /app/config /app/src/scrapers
 
-# 如果 docker.sock 存在，确保运行用户有访问权限
+# Docker socket 等价于宿主机高权限，禁止自动放宽为 0666。
+# why: 权限不足时宁可禁用一键更新，也不能让容器内任意进程控制宿主 Docker。
 if [ -S /var/run/docker.sock ]; then
-    # 检测目标用户是否已有访问权限
-    if su-exec ${PUID}:${PGID} test -r /var/run/docker.sock -a -w /var/run/docker.sock 2>/dev/null; then
-        echo "Docker 套接字权限正常，无需修改"
+    if su-exec ${PUID}:${PGID} sh -c 'test -r /var/run/docker.sock && test -w /var/run/docker.sock' 2>/dev/null; then
+        echo "Docker 套接字权限正常"
     else
-        echo "检测到 Docker 套接字权限不足，正在授权..."
-        chmod 666 /var/run/docker.sock 2>/dev/null && \
-            echo "已授予 Docker 套接字访问权限" || \
-            echo "警告: 无法修改 Docker 套接字权限"
+        echo "警告: 当前用户无权访问 Docker socket，一键重启/更新功能将不可用"
+        echo "请在宿主机按 docker 组 GID 授权，脚本不会自动修改 socket 权限"
     fi
 fi
 

@@ -345,20 +345,28 @@ async def get_calendar_sources(session: AsyncSession) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-async def update_air_schedule(session: AsyncSession, anime_id: int, air_weekday: Optional[int], air_time: Optional[str]):
-    """更新番剧的播出日程信息。"""
+async def update_air_schedule(
+    session: AsyncSession,
+    anime_id: int,
+    air_weekday: Optional[int],
+    air_time: Optional[str],
+    commit: bool = True,
+):
+    """更新番剧的播出日程信息；批量调用方可延迟提交。"""
     stmt = select(AnimeMetadata).where(AnimeMetadata.animeId == anime_id)
     meta = (await session.execute(stmt)).scalar_one_or_none()
     if meta:
         meta.airWeekday = air_weekday
         meta.airTime = air_time
-        await session.commit()
+        if commit:
+            await session.commit()
 
 
-async def update_metadata_ids(session: AsyncSession, anime_id: int, **kwargs):
+async def update_metadata_ids(session: AsyncSession, anime_id: int, commit: bool = True, **kwargs):
     """更新番剧的元数据 ID（bangumiId, traktId, tmdbId 等）和日程信息。
 
     用法: await update_metadata_ids(session, anime_id, bangumiId="12345", airWeekday=6)
+    批量调用方传 ``commit=False``，由业务层统一提交。
     """
     stmt = select(AnimeMetadata).where(AnimeMetadata.animeId == anime_id)
     meta = (await session.execute(stmt)).scalar_one_or_none()
@@ -370,7 +378,8 @@ async def update_metadata_ids(session: AsyncSession, anime_id: int, **kwargs):
     for key, value in kwargs.items():
         if key in allowed_fields and value is not None:
             setattr(meta, key, value)
-    await session.commit()
+    if commit:
+        await session.commit()
 
 # --- Scheduled Tasks ---
 

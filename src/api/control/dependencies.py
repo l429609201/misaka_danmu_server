@@ -3,7 +3,6 @@
 """
 
 import re
-import json
 import logging
 import secrets
 import ipaddress
@@ -17,6 +16,7 @@ from src.services import ScraperManager, TaskManager, SchedulerManager, Metadata
 from src.rate_limiter import RateLimiter
 from src.ai import AIMatcherManager
 from src.api.middleware import normalize_ip
+from src.utils.audit_logging import build_audit_request_headers, capture_audit_request_body
 
 logger = logging.getLogger(__name__)
 
@@ -120,31 +120,14 @@ async def verify_api_key(
 
     endpoint = request.url.path
 
-    # --- 捕获请求头和请求体 ---
+    # 审计日志只读取小请求体，并按结构递归脱敏，避免泄密和内存放大。
     try:
-        # 过滤敏感头信息，保留有用的请求头
-        filtered_headers = {
-            k: v for k, v in request.headers.items()
-            if k.lower() not in ('authorization', 'cookie')
-        }
-        # 从查询参数中移除 api_key
-        query_str = str(request.url.query) if request.url.query else ""
-        if query_str:
-            import re as _re
-            query_str = _re.sub(r'api_key=[^&]*', 'api_key=***', query_str)
-            filtered_headers['_query'] = query_str
-        request_headers_str = json.dumps(filtered_headers, ensure_ascii=False, indent=2)
+        request_headers_str = build_audit_request_headers(request)
     except Exception:
         request_headers_str = None
 
     try:
-        raw_body = await request.body()
-        request_body_str = raw_body.decode(errors='ignore') if raw_body else None
-        # 将body放回请求流，确保后续端点能正常读取
-        if raw_body:
-            async def receive():
-                return {"type": "http.request", "body": raw_body}
-            request._receive = receive
+        request_body_str = await capture_audit_request_body(request)
     except Exception:
         request_body_str = None
 

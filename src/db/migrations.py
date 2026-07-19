@@ -752,6 +752,12 @@ async def _reset_server_instance_id_v1(conn: AsyncConnection):
     await conn.execute(text("DELETE FROM config WHERE config_key = 'serverInstanceId'"))
 
 
+async def _reset_server_instance_id_v2(conn: AsyncConnection):
+    """删除旧的 serverInstanceId。
+    """
+    await conn.execute(text("DELETE FROM config WHERE config_key = 'serverInstanceId'"))
+
+
 # 所有迁移任务的 ID 列表（新增迁移时需同步更新此列表）
 ALL_MIGRATION_IDS = [
     "migrate_clear_rate_limit_state_v1",
@@ -766,6 +772,7 @@ ALL_MIGRATION_IDS = [
     "reset_ai_match_prompt_v1",
     "reset_ai_match_prompt_v2",
     "reset_server_instance_id_v1",
+    "reset_server_instance_id_v2",
 ]
 
 
@@ -805,7 +812,8 @@ async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
         ("migrate_anime_group_fk_v1", _migrate_anime_group_fk_v1, (db_type,)),  # 为 anime.group_id 添加外键约束
         ("reset_ai_match_prompt_v1", _reset_ai_match_prompt_v1, ()),  # 删除旧 aiMatchPrompt，用新默认提示词回填
         ("reset_ai_match_prompt_v2", _reset_ai_match_prompt_v2, ()),  # 再次删除 aiMatchPrompt，回填含识别词校正的新默认值
-        ("reset_server_instance_id_v1", _reset_server_instance_id_v1, ()),  
+        ("reset_server_instance_id_v1", _reset_server_instance_id_v1, ()),
+        ("reset_server_instance_id_v2", _reset_server_instance_id_v2, ()),  # 重置为带归属标记的可反解格式
     ]
 
     for migration_id, migration_func, args in migrations:

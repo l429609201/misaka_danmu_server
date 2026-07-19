@@ -16,13 +16,21 @@ from src import security
 from src.services import SchedulerManager
 from src.jobs.database_backup import (
     create_backup, list_backups, delete_backup, restore_backup,
-    get_backup_path, get_retention_count
+    get_backup_path, get_retention_count, resolve_backup_file
 )
 from src.api.dependencies import get_scheduler_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/backup", tags=["备份管理"])
+
+
+def _resolve_backup_file_or_400(backup_path, filename: str):
+    """将底层文件名校验错误转换为稳定的 API 400 响应。"""
+    try:
+        return resolve_backup_file(backup_path, filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 class BackupInfo(BaseModel):
@@ -112,14 +120,10 @@ async def download_backup(
         session=session,
     )
     _ = current_user
-    # 安全检查
-    if not filename.startswith("danmuapi_backup_") or not filename.endswith(".json.gz"):
-        raise HTTPException(status_code=400, detail="无效的备份文件名")
-    
     backup_path = await get_backup_path(session)
-    filepath = backup_path / filename
+    filepath = _resolve_backup_file_or_400(backup_path, filename)
     
-    if not filepath.exists():
+    if not filepath.is_file():
         raise HTTPException(status_code=404, detail="备份文件不存在")
     
     return FileResponse(
@@ -214,6 +218,8 @@ async def restore_from_backup(
         }
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"还原备份失败: {e}", exc_info=True)
         await session.rollback()
@@ -323,9 +329,9 @@ async def get_backup_detail(
     import hashlib
 
     backup_path = await get_backup_path(session)
-    filepath = backup_path / filename
+    filepath = _resolve_backup_file_or_400(backup_path, filename)
 
-    if not filepath.exists():
+    if not filepath.is_file():
         raise HTTPException(status_code=404, detail="备份文件不存在")
 
     # 计算 SHA256
@@ -382,9 +388,9 @@ async def backup_dry_run(
     from sqlalchemy import select, func
 
     backup_path = await get_backup_path(session)
-    filepath = backup_path / filename_safe(request.filename)
+    filepath = _resolve_backup_file_or_400(backup_path, request.filename)
 
-    if not filepath.exists():
+    if not filepath.is_file():
         raise HTTPException(status_code=404, detail="备份文件不存在")
 
     try:
@@ -428,11 +434,3 @@ async def backup_dry_run(
         "total_backup_records": sum(c["backup_count"] for c in comparison),
         "total_current_records": sum(c["current_count"] for c in comparison if c["current_count"] >= 0),
     }
-
-
-def filename_safe(filename: str) -> str:
-    """安全验证文件名"""
-    if not filename.startswith("danmuapi_backup_") or not filename.endswith(".json.gz"):
-        raise HTTPException(status_code=400, detail="无效的备份文件名")
-    return filename
-

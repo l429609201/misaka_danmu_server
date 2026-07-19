@@ -227,7 +227,27 @@ async def import_media_items(
                     mediaServerEpisodeId=str(m.episodeId or m.mediaId) if (m.episodeId or m.mediaId) is not None else None,
                 ),
                 title=f"自动导入 (库内): {movie.title}",
-                queue_type="download"
+                queue_type="download",
+                # 关键修复(任务重启恢复)：补 task_type + task_parameters。
+                # 原先未传 task_type → _run_task_wrapper 不写 TaskStateCache → 程序重启后
+                # 无法恢复，只能被标"因程序重启而中断"。task_type=webhook_search 对应
+                # _rebuild_coro_factory 的 webhook_search 分支（重建 webhook_search_and_dispatch_task）。
+                task_type="webhook_search",
+                task_parameters={
+                    "animeTitle": movie.title,
+                    "mediaType": "movie",
+                    "season": 1,
+                    "currentEpisodeIndex": 1,
+                    "searchKeyword": movie.title,
+                    "year": movie.year,
+                    "tmdbId": movie.tmdbId,
+                    "tvdbId": movie.tvdbId,
+                    "imdbId": movie.imdbId,
+                    "doubanId": None,
+                    "bangumiId": None,
+                    "webhookSource": "media_server",
+                    "imageUrl": movie.posterUrl,
+                },
             )
             logger.info(f"电影 {movie.title} 导入任务已提交: {task_id}")
 
@@ -292,7 +312,26 @@ async def import_media_items(
                     mediaServerEpisodeId=str(item.episodeId or item.mediaId) if (item.episodeId or item.mediaId) is not None else None,
                 ),
                 title=f"自动导入 (库内): {title} S{season:02d} (共 {len(season_items)} 集)",
-                queue_type="download"
+                queue_type="download",
+                # 关键修复(任务重启恢复)：补 task_type=webhook_search + task_parameters，
+                # 使 _run_task_wrapper 能写 TaskStateCache，程序重启后可经 _rebuild_coro_factory 恢复。
+                task_type="webhook_search",
+                task_parameters={
+                    "animeTitle": representative_item.title,
+                    "mediaType": "tv_series",
+                    "season": representative_item.season,
+                    "currentEpisodeIndex": representative_item.episode,
+                    "searchKeyword": f"{representative_item.title} S{representative_item.season or 1:02d}E{representative_item.episode or 1:02d}",
+                    "year": representative_item.year,
+                    "tmdbId": representative_item.tmdbId,
+                    "tvdbId": representative_item.tvdbId,
+                    "imdbId": representative_item.imdbId,
+                    "doubanId": None,
+                    "bangumiId": None,
+                    "webhookSource": "media_server",
+                    "selectedEpisodes": selected_episodes,
+                    "imageUrl": representative_item.posterUrl,
+                },
             )
             logger.info(f"电视节目 {title} S{season:02d} (共 {len(season_items)} 集) 导入任务已提交: {task_id}")
 

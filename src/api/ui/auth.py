@@ -406,10 +406,25 @@ async def revoke_other_sessions(
 
 # ========== 登录锁定管理 API ==========
 
+async def _authorize_login_lockout_management(
+    request: Request,
+    token: Optional[str] = Depends(security.oauth2_scheme_optional),
+    session: AsyncSession = Depends(get_db_session),
+) -> Optional[models.User]:
+    """仅允许本机维护脚本免登录调用，远程请求仍走完整鉴权。"""
+    client_host = request.client.host if request.client else ""
+    try:
+        if ipaddress.ip_address(client_host).is_loopback:
+            return None
+    except ValueError:
+        pass
+    return await security.get_current_user(request, token, session)
+
+
 @router.delete("/login-lockout", summary="清除登录锁定")
 async def clear_login_lockout(
     ip: Optional[str] = None,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: Optional[models.User] = Depends(_authorize_login_lockout_management),
 ):
     """
     清除登录暴力破解防护的 IP 锁定记录。
@@ -417,17 +432,18 @@ async def clear_login_lockout(
     - 不传 ip 参数：清除所有 IP 的锁定
     - 传 ip 参数：仅清除指定 IP 的锁定
     """
+    operator = current_user.username if current_user else "本机维护脚本"
     if ip:
         removed = _login_fail_tracker.pop(ip, None)
         if removed:
-            logger.info(f"[登录防护] 管理员 {current_user.username} 清除了 IP {ip} 的登录锁定")
+            logger.info(f"[登录防护] {operator} 清除了 IP {ip} 的登录锁定")
             return {"message": f"已清除 IP {ip} 的登录锁定", "cleared": 1}
         return {"message": f"IP {ip} 无锁定记录", "cleared": 0}
     else:
         count = len(_login_fail_tracker)
         _login_fail_tracker.clear()
-        logger.info(f"[登录防护] 管理员 {current_user.username} 清除了所有登录锁定（{count} 条）")
-        return {"message": f"已清除所有登录锁定", "cleared": count}
+        logger.info(f"[登录防护] {operator} 清除了所有登录锁定（{count} 条）")
+        return {"message": "已清除所有登录锁定", "cleared": count}
 
 
 @router.get("/login-lockout", summary="查看登录锁定状态")

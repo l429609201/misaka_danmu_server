@@ -2,6 +2,7 @@
 缓存管理 API 端点
 提供缓存的查询、查看详情、删除、清除等管理操作。
 """
+import asyncio
 import json
 import logging
 from typing import Optional
@@ -10,10 +11,29 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src import security
 from src.db import models
+from src.utils.cache_listing import count_region_keys, list_cache_page
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def _build_cache_preview(backend, region: str, key: str) -> dict:
+    """读取单个预览；由调用方有限并发执行，避免逐项串行等待。"""
+    try:
+        raw_value = await backend.get(key, region=region)
+        if raw_value is None:
+            preview = ""
+        else:
+            text = json.dumps(raw_value, ensure_ascii=False) if isinstance(raw_value, (dict, list)) else str(raw_value)
+            preview = text[:200] + ("..." if len(text) > 200 else "")
+    except Exception as exc:
+        logger.warning(
+            "读取缓存预览失败: region=%s key=%s error=%s",
+            region, key, exc,
+        )
+        preview = "<读取失败>"
+    return {"region": region, "key": key, "value_preview": preview}
 
 
 @router.get("/cache/stats", summary="获取缓存统计信息")
@@ -25,19 +45,29 @@ async def get_cache_stats(
     backend = get_cache_backend()
 
     regions = ["default", "search", "metadata", "episodes", "comments"]
-    stats = {}
-    total = 0
-    for region in regions:
-        try:
-            region_keys = await backend.keys("*", region=region)
-            count = len(region_keys)
-            if count > 0:
-                stats[region] = count
-                total += count
-        except Exception:
-            pass
-
-    return {"total": total, "regions": stats}
+    results = await asyncio.gather(
+        *(count_region_keys(backend, "*", region) for region in regions),
+        return_exceptions=True,
+    )
+    failed_regions = []
+    for region, result in zip(regions, results):
+        if isinstance(result, BaseException):
+            failed_regions.append(region)
+            logger.warning(
+                "统计缓存区域失败: region=%s error=%s",
+                region, result,
+            )
+    stats = {
+        region: count for region, count in zip(regions, results)
+        if isinstance(count, int) and count > 0
+    }
+    if len(failed_regions) == len(regions):
+        raise HTTPException(status_code=503, detail="缓存后端暂时不可用")
+    return {
+        "total": sum(stats.values()),
+        "regions": stats,
+        "failedRegions": failed_regions,
+    }
 
 
 @router.get("/cache/list", summary="获取缓存条目列表")
@@ -58,38 +88,25 @@ async def get_cache_list(
     all_regions = ["default", "search", "metadata", "episodes", "comments"]
     regions_to_query = all_regions if region == "all" else [region]
 
-    all_items = []  # [(region, key)]
-    for r in regions_to_query:
-        try:
-            region_keys = await backend.keys(pattern, region=r)
-            for k in region_keys:
-                all_items.append((r, k))
-        except Exception:
-            pass
-
-    all_items.sort(key=lambda x: (x[0], x[1]))
-
-    total = len(all_items)
     start = (page - 1) * pageSize
-    end = start + pageSize
-    paged_items = all_items[start:end]
+    try:
+        total, paged_items = await list_cache_page(
+            backend, regions_to_query, pattern, start, pageSize
+        )
+    except Exception as exc:
+        logger.warning(
+            "列出缓存失败: regions=%s pattern=%s error=%s",
+            regions_to_query, pattern, exc,
+        )
+        raise HTTPException(status_code=503, detail="读取缓存列表失败") from exc
 
-    # 获取键值预览
+    # why: 页面最多读取100项，分批并发避免数据库/Redis连接被瞬间打满。
     items = []
-    for r, k in paged_items:
-        value_preview = ""
-        try:
-            raw_value = await backend.get(k, region=r)
-            if raw_value is not None:
-                if isinstance(raw_value, (dict, list)):
-                    text = json.dumps(raw_value, ensure_ascii=False)
-                else:
-                    text = str(raw_value)
-                # 截断预览，最多200字符
-                value_preview = text[:200] + ("..." if len(text) > 200 else "")
-        except Exception:
-            value_preview = "<读取失败>"
-        items.append({"region": r, "key": k, "value_preview": value_preview})
+    for index in range(0, len(paged_items), 10):
+        batch = paged_items[index:index + 10]
+        items.extend(await asyncio.gather(
+            *(_build_cache_preview(backend, item_region, key) for item_region, key in batch)
+        ))
 
     return {"total": total, "page": page, "pageSize": pageSize, "region": region, "items": items}
 

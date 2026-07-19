@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Form, Input, Switch, Button, Space, message, Card, Divider, Typography, Select, Row, Col, Tabs, Table, Modal, Tag, Checkbox, Tooltip, Collapse, Popover } from 'antd';
-import { FolderOpenOutlined, CheckCircleOutlined, FileOutlined, SwapOutlined, EditOutlined, SyncOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined, RocketOutlined } from '@ant-design/icons';
+import { Form, Input, InputNumber, Switch, Button, Space, message, Card, Divider, Typography, Select, Row, Col, Tabs, Table, Modal, Tag, Checkbox, Tooltip, Collapse, Popover } from 'antd';
+import { FolderOpenOutlined, CheckCircleOutlined, FileOutlined, SwapOutlined, EditOutlined, SyncOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { getConfig, setConfig, getAnimeLibrary, previewMigrateDanmaku, batchMigrateDanmaku, previewRenameDanmaku, batchRenameDanmaku, previewDanmakuTemplate, applyDanmakuTemplate, getTemplateVariables, getDanmakuLikesFetchEnabled, setDanmakuLikesFetchEnabled } from '@/apis';
 import DirectoryBrowser from '../../media-fetch/components/DirectoryBrowser';
 import { useTranslation } from 'react-i18next';
@@ -9,24 +9,8 @@ const { Text } = Typography;
 const { Option } = Select;
 const { TabPane } = Tabs;
 
-// 模板定义（国际化版本）
-const getTemplates = (t) => ({
-  movie: [
-    { label: t('danmakuStorage.tmplMovieByTitle'), value: '${title}/${episodeId}', desc: '${title}/${episodeId}' },
-    { label: t('danmakuStorage.tmplMovieTitleYear'), value: '${title} (${year})/${episodeId}', desc: '${title} (${year})/${episodeId}' },
-    { label: t('danmakuStorage.tmplFlat'), value: '${episodeId}', desc: '${episodeId}' },
-  ],
-  tv: [
-    { label: t('danmakuStorage.tmplTvByAnimeId'), value: '${animeId}/${episodeId}', desc: '${animeId}/${episodeId}' },
-    { label: t('danmakuStorage.tmplTvByTitleSeason'), value: '${title}/Season ${season}/${episodeId}', desc: '${title}/Season ${season}/${episodeId}' },
-    { label: t('danmakuStorage.tmplPlexStyle'), value: '${title}/${title} - S${season:02d}E${episode:02d}', desc: '${title}/${title} - S${season:02d}E${episode:02d}' },
-    { label: t('danmakuStorage.tmplFlat'), value: '${episodeId}', desc: '${episodeId}' },
-  ]
-});
-
 const DanmakuStorage = () => {
   const { t } = useTranslation();
-  const TEMPLATES = useMemo(() => getTemplates(t), [t]);
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [customDanmakuPathEnabled, setCustomDanmakuPathEnabled] = useState(false);
@@ -40,10 +24,6 @@ const DanmakuStorage = () => {
   const [tvDanmakuDirectoryPath, setTvDanmakuDirectoryPath] = useState('/app/config/danmaku/tv');
   const [tvDanmakuFilenameTemplate, setTvDanmakuFilenameTemplate] = useState('${animeId}/${episodeId}');
   const [tvPreviewPath, setTvPreviewPath] = useState('');
-
-  // 模板选择器状态
-  const [selectedType, setSelectedType] = useState('movie');
-  const [selectedTemplate, setSelectedTemplate] = useState('${title}/${episodeId}');
 
   // 目录浏览器状态
   const [browserVisible, setBrowserVisible] = useState(false);
@@ -76,13 +56,14 @@ const DanmakuStorage = () => {
   const [migrateKeepStructure, setMigrateKeepStructure] = useState(true);
   const [migrateConflictAction, setMigrateConflictAction] = useState('skip');
   const [migratePreviewData, setMigratePreviewData] = useState(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  // why：预览请求仍需更新状态以保持异步流程完整，当前界面无需单独读取该状态。
+  const [, setPreviewLoading] = useState(false);
   // 重命名配置 - 多规则系统
   const [renameRules, setRenameRules] = useState([]);
   const [selectedRuleType, setSelectedRuleType] = useState('replace');
   const [ruleParams, setRuleParams] = useState({});
   const [renamePreviewData, setRenamePreviewData] = useState(null);
-  const [renamePreviewLoading, setRenamePreviewLoading] = useState(false);
+  const [, setRenamePreviewLoading] = useState(false);
   const [isRenamePreviewMode, setIsRenamePreviewMode] = useState(false);
   const [renameOriginalItems, setRenameOriginalItems] = useState([]); // 保存原始文件名列表
   // 模板转换配置
@@ -138,59 +119,53 @@ const DanmakuStorage = () => {
             : filename.replace(new RegExp((rule.params.search || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), rule.params.replace || '');
         case 'regex':
           return filename.replace(new RegExp(rule.params.pattern || '', 'g'), rule.params.replace || '');
-        case 'insert':
+        case 'insert': {
           if (rule.params.position === 'start') return (rule.params.text || '') + filename;
           if (rule.params.position === 'end') return filename + (rule.params.text || '');
           const pos = parseInt(rule.params.index) || 0;
           return filename.slice(0, pos) + (rule.params.text || '') + filename.slice(pos);
-        case 'delete':
+        }
+        case 'delete': {
           const deleteMode = rule.params.mode || 'text';
-
           switch (deleteMode) {
             case 'text':
-              // 删除指定文本
               return rule.params.caseSensitive
                 ? filename.split(rule.params.text || '').join('')
                 : filename.replace(new RegExp((rule.params.text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '');
-
-            case 'first':
-              // 删除前N个字符
+            case 'first': {
               const firstCount = parseInt(rule.params.count) || 0;
               return filename.slice(firstCount);
-
-            case 'last':
-              // 删除后N个字符
+            }
+            case 'last': {
               const lastCount = parseInt(rule.params.count) || 0;
               return filename.slice(0, -lastCount || undefined);
-
-            case 'toText':
-              // 从开头删除到指定文本（包含该文本）
+            }
+            case 'toText': {
               const toText = rule.params.text || '';
               if (!toText) return filename;
               const toIndex = rule.params.caseSensitive
                 ? filename.indexOf(toText)
                 : filename.toLowerCase().indexOf(toText.toLowerCase());
               return toIndex >= 0 ? filename.slice(toIndex + toText.length) : filename;
-
-            case 'fromText':
-              // 从指定文本删除到结尾（包含该文本）
+            }
+            case 'fromText': {
               const fromText = rule.params.text || '';
               if (!fromText) return filename;
               const fromIndex = rule.params.caseSensitive
                 ? filename.indexOf(fromText)
                 : filename.toLowerCase().indexOf(fromText.toLowerCase());
               return fromIndex >= 0 ? filename.slice(0, fromIndex) : filename;
-
-            case 'range':
-              // 删除指定范围（从位置X删除Y个字符）
+            }
+            case 'range': {
               const from = parseInt(rule.params.from) || 0;
               const count = parseInt(rule.params.count) || 0;
               return filename.slice(0, from) + filename.slice(from + count);
-
+            }
             default:
               return filename;
           }
-        case 'serialize':
+        }
+        case 'serialize': {
           const start = parseInt(rule.params.start) || 1;
           const step = parseInt(rule.params.step) || 1;
           const digits = parseInt(rule.params.digits) || 2;
@@ -199,17 +174,19 @@ const DanmakuStorage = () => {
           if (rule.params.position === 'start') return serialized + filename;
           if (rule.params.position === 'end') return filename + serialized;
           return serialized;
+        }
         case 'case':
           if (rule.params.mode === 'upper') return filename.toUpperCase();
           if (rule.params.mode === 'lower') return filename.toLowerCase();
           if (rule.params.mode === 'title') return filename.charAt(0).toUpperCase() + filename.slice(1).toLowerCase();
           return filename;
-        case 'strip':
+        case 'strip': {
           let result = filename;
           if (rule.params.trimSpaces) result = result.trim();
           if (rule.params.trimDuplicateSpaces) result = result.replace(/\s+/g, ' ');
           if (rule.params.chars) result = result.split(rule.params.chars).join('');
           return result;
+        }
         default:
           return filename;
       }
@@ -321,12 +298,6 @@ const DanmakuStorage = () => {
   useEffect(() => {
     updatePreview();
   }, [customDanmakuPathEnabled, movieDanmakuDirectoryPath, movieDanmakuFilenameTemplate, tvDanmakuDirectoryPath, tvDanmakuFilenameTemplate]);
-
-  // 当选择类型改变时，更新默认模板
-  useEffect(() => {
-    const defaultTemplate = selectedType === 'movie' ? '${title}/${episodeId}' : '${animeId}/${episodeId}';
-    setSelectedTemplate(defaultTemplate);
-  }, [selectedType]);
 
   // 监听自定义模板变化，自动预览（防抖）
   const templatePreviewTimerRef = useRef(null);
@@ -507,11 +478,11 @@ const DanmakuStorage = () => {
     moviePreview = moviePreview.replace(/\$\{(\w+)\}/g, (match, varName) => {
       return movieExampleContext[varName] || match;
     });
-    const movieDir = movieDanmakuDirectoryPath.replace(/[\/\\]+$/, '');
-    const movieFilename = moviePreview.replace(/^[\/\\]+/, '');
+    const movieDir = movieDanmakuDirectoryPath.replace(/[/\\]+$/, '');
+    const movieFilename = moviePreview.replace(/^[/\\]+/, '');
     // 检测目录路径使用的分隔符，保持一致
     const sep = movieDir.includes('\\') ? '\\' : '/';
-    const movieFullPath = `${movieDir}${sep}${movieFilename.replace(/[\/\\]/g, sep)}${movieFilename.endsWith('.xml') ? '' : '.xml'}`;
+    const movieFullPath = `${movieDir}${sep}${movieFilename.replace(/[/\\]/g, sep)}${movieFilename.endsWith('.xml') ? '' : '.xml'}`;
     setMoviePreviewPath(movieFullPath);
 
     // 生成电视预览
@@ -528,10 +499,10 @@ const DanmakuStorage = () => {
     tvPreview = tvPreview.replace(/\$\{(\w+)\}/g, (match, varName) => {
       return tvExampleContext[varName] || match;
     });
-    const tvDir = tvDanmakuDirectoryPath.replace(/[\/\\]+$/, '');
-    const tvFilename = tvPreview.replace(/^[\/\\]+/, '');
+    const tvDir = tvDanmakuDirectoryPath.replace(/[/\\]+$/, '');
+    const tvFilename = tvPreview.replace(/^[/\\]+/, '');
     const tvSep = tvDir.includes('\\') ? '\\' : '/';
-    const tvFullPath = `${tvDir}${tvSep}${tvFilename.replace(/[\/\\]/g, tvSep)}${tvFilename.endsWith('.xml') ? '' : '.xml'}`;
+    const tvFullPath = `${tvDir}${tvSep}${tvFilename.replace(/[/\\]/g, tvSep)}${tvFilename.endsWith('.xml') ? '' : '.xml'}`;
     setTvPreviewPath(tvFullPath);
   };
 
@@ -697,27 +668,6 @@ const DanmakuStorage = () => {
     }
   };
 
-  // 预览迁移
-  const handlePreviewMigrate = async () => {
-    if (!migrateTargetPath) {
-      message.warning(t('danmakuStorage.targetDirRequired'));
-      return;
-    }
-    setPreviewLoading(true);
-    try {
-      const response = await previewMigrateDanmaku({
-        animeIds: selectedRowKeys,
-        targetPath: migrateTargetPath,
-        keepStructure: migrateKeepStructure,
-      });
-      setMigratePreviewData(response.data);
-    } catch (error) {
-      message.error(t('danmakuStorage.previewFailed', { error: error.message || t('common.unknown') }));
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
-
   // 打开重命名Modal
   const handleOpenRenameModal = async () => {
     if (selectedRows.length === 0) {
@@ -771,23 +721,6 @@ const DanmakuStorage = () => {
     setTemplatePreviewData(null);
     setTemplateModalVisible(true);
     // 打开时自动预览
-    setTemplatePreviewLoading(true);
-    try {
-      const response = await previewDanmakuTemplate({
-        animeIds: selectedRowKeys,
-        templateType: templateTarget,
-        customTemplate: templateTarget === 'custom' ? customTemplate : undefined,
-      });
-      setTemplatePreviewData(response.data);
-    } catch (error) {
-      message.error(t('danmakuStorage.previewFailed', { error: error.message || t('common.unknown') }));
-    } finally {
-      setTemplatePreviewLoading(false);
-    }
-  };
-
-  // 预览应用模板
-  const handlePreviewTemplate = async () => {
     setTemplatePreviewLoading(true);
     try {
       const response = await previewDanmakuTemplate({
@@ -908,24 +841,6 @@ const DanmakuStorage = () => {
       message.error(t('danmakuStorage.templateFailed', { error: error.message || t('common.unknown') }));
     } finally {
       setOperationLoading(false);
-    }
-  };
-
-  // 应用模板
-  const applyTemplate = () => {
-    if (!selectedTemplate) {
-      message.warning(t('danmakuStorage.selectTemplateFirst'));
-      return;
-    }
-
-    if (selectedType === 'movie') {
-      setMovieDanmakuFilenameTemplate(selectedTemplate);
-      form.setFieldValue('movieDanmakuFilenameTemplate', selectedTemplate);
-      message.success(t('danmakuStorage.movieTemplateApplied'));
-    } else {
-      setTvDanmakuFilenameTemplate(selectedTemplate);
-      form.setFieldValue('tvDanmakuFilenameTemplate', selectedTemplate);
-      message.success(t('danmakuStorage.tvTemplateApplied'));
     }
   };
 

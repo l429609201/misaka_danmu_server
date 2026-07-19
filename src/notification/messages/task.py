@@ -140,6 +140,22 @@ class ScheduledTaskMessage(NotificationMessage):
         quote_lines = []
         if task_title:
             quote_lines.append(f">⚙️ 任务: {task_title}")
+        # 单作品定时刷新场景：有作品信息时一并展示（否则批量任务只显示任务名）
+        anime_title = _esc(d.get("anime_title", ""))
+        season = d.get("season")
+        episode = d.get("episode")
+        source = _esc(d.get("source", ""))
+        if anime_title:
+            quote_lines.append(f">📺 *{anime_title}*")
+            se_str = ""
+            if season is not None and episode is not None:
+                se_str = f"S{int(season):02d}E{int(episode):02d}"
+            elif season is not None:
+                se_str = f"S{int(season):02d}"
+            if se_str:
+                quote_lines.append(f">📍 {se_str}")
+        if source:
+            quote_lines.append(f">🎬 弹幕源: {source}")
 
         # 组装
         lines = [title, ""]
@@ -165,6 +181,21 @@ class ScheduledTaskMessage(NotificationMessage):
         lines = [title, ""]
         if task_title:
             lines.append(f"⚙️ 任务: {task_title}")
+        anime_title = d.get("anime_title", "")
+        season = d.get("season")
+        episode = d.get("episode")
+        source = d.get("source", "")
+        if anime_title:
+            lines.append(f"📺 {anime_title}")
+            se_str = ""
+            if season is not None and episode is not None:
+                se_str = f"S{int(season):02d}E{int(episode):02d}"
+            elif season is not None:
+                se_str = f"S{int(season):02d}"
+            if se_str:
+                lines.append(f"📍 {se_str}")
+        if source:
+            lines.append(f"🎬 弹幕源: {source}")
         if msg_short:
             lines.append("")
             lines.append(f"📋 {msg_short}")
@@ -719,23 +750,65 @@ class AggregatedSummaryMessage(NotificationMessage):
 
     def __post_init__(self):
         self.category = MessageCategory.TASK
-        self.severity = MessageSeverity.WARNING
+        self.severity = MessageSeverity.INFO
         self.subscription_key = self.payload.get("original_subscription_key", "")
+
+    # 洪峰聚合类型 → 汇总标题（中文）
+    _SUMMARY_TITLES = {
+        "surge:import_success": "批量导入完成",
+        "surge:webhook_import_success": "批量 Webhook 导入完成",
+        "surge:auto_import_success": "批量自动导入完成",
+        "surge:refresh_success": "批量刷新完成",
+        "surge:incremental_refresh_success": "批量追更完成",
+    }
+
+    def _summary_title(self) -> str:
+        agg_key = self.payload.get("aggregation_key", "")
+        return self._SUMMARY_TITLES.get(agg_key, "批量通知汇总")
+
+    @staticmethod
+    def _fmt_item_line(item: dict) -> str:
+        """把单条明细格式化为 '作品名 SxxExx (源)' 的展示行。"""
+        name = item.get("anime_title") or "未知"
+        season = item.get("season")
+        episode = item.get("episode")
+        source = item.get("source") or item.get("provider") or ""
+        se = ""
+        if season is not None and episode is not None:
+            try:
+                se = f" S{int(season):02d}E{int(episode):02d}"
+            except (ValueError, TypeError):
+                se = ""
+        elif season is not None:
+            try:
+                se = f" S{int(season):02d}"
+            except (ValueError, TypeError):
+                se = ""
+        src = f" ({source})" if source else ""
+        return f"{name}{se}{src}"
 
     def to_markdown(self) -> tuple:
         count = self.payload.get("count", 0)
         items = self.payload.get("items", [])
         time_range = self.payload.get("time_range", "")
-        title = f"⚠️ *批量通知汇总* \\({_esc(str(count))} 条\\)"
-        # 按作品名分组统计
-        anime_counts: Dict[str, int] = {}
+        summary_title = self._summary_title()
+        title = f"📦 *{_esc(summary_title)}* \\({_esc(str(count))} 条\\)"
+
+        # 逐条列出作品（去重，最多展示 15 条，超出折叠）
+        seen = set()
+        item_lines = []
         for item in items:
-            name = item.get("anime_title", "未知")
-            anime_counts[name] = anime_counts.get(name, 0) + 1
+            line = self._fmt_item_line(item)
+            if line in seen:
+                continue
+            seen.add(line)
+            item_lines.append(line)
 
         quote_lines = []
-        for name, cnt in anime_counts.items():
-            quote_lines.append(f">📺 {_esc(name)}: {cnt} 条")
+        for line in item_lines[:15]:
+            quote_lines.append(f">📺 {_esc(line)}")
+        if len(item_lines) > 15:
+            quote_lines.append(f">… 等共 {len(item_lines)} 部作品")
 
         lines = [title, ""]
         if time_range:
@@ -743,36 +816,31 @@ class AggregatedSummaryMessage(NotificationMessage):
             lines.append("")
         lines.extend(quote_lines)
 
-        # 附带最后一条错误摘要
-        if items:
-            last_msg = items[-1].get("message", "")
-            if last_msg:
-                short = (last_msg[:200] + "…") if len(last_msg) > 200 else last_msg
-                lines.extend(["", f"📋 最近错误: {_esc(short)}"])
-
-        return ("⚠️ 批量通知汇总", "\n".join(l for l in lines if l))
+        return (summary_title, "\n".join(l for l in lines if l))
 
     def to_text(self) -> tuple:
         count = self.payload.get("count", 0)
         items = self.payload.get("items", [])
         time_range = self.payload.get("time_range", "")
-        title = f"⚠️ 批量通知汇总 ({count} 条)"
-        anime_counts: Dict[str, int] = {}
+        summary_title = self._summary_title()
+        title = f"📦 {summary_title} ({count} 条)"
+
+        seen = set()
+        item_lines = []
         for item in items:
-            name = item.get("anime_title", "未知")
-            anime_counts[name] = anime_counts.get(name, 0) + 1
+            line = self._fmt_item_line(item)
+            if line in seen:
+                continue
+            seen.add(line)
+            item_lines.append(line)
 
         lines = [title, ""]
         if time_range:
             lines.append(f"⏰ {time_range}")
             lines.append("")
-        for name, cnt in anime_counts.items():
-            lines.append(f"📺 {name}: {cnt} 条")
+        for line in item_lines[:15]:
+            lines.append(f"📺 {line}")
+        if len(item_lines) > 15:
+            lines.append(f"… 等共 {len(item_lines)} 部作品")
 
-        if items:
-            last_msg = items[-1].get("message", "")
-            if last_msg:
-                short = (last_msg[:200] + "…") if len(last_msg) > 200 else last_msg
-                lines.extend(["", f"📋 最近错误: {short}"])
-
-        return ("⚠️ 批量通知汇总", "\n".join(l for l in lines if l))
+        return (summary_title, "\n".join(l for l in lines if l))

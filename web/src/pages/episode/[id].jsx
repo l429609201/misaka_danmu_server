@@ -12,7 +12,6 @@ import {
   refreshEpisodesBulk,
   resetEpisode,
   validateImportUrl,
-  importFromUrl,
   importCollection,
 } from '../../apis'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -235,7 +234,7 @@ export const EpisodeDetail = () => {
           <div
             className="cursor-pointer flex items-center justify-center"
             onClick={(e) => {
-              const newSelected = [...selectedRows]
+
               if (e.shiftKey && lastClickedIndex !== null) {
                 const start = Math.min(lastClickedIndex, index)
                 const end = Math.max(lastClickedIndex, index)
@@ -510,59 +509,53 @@ export const EpisodeDetail = () => {
             : title.replace(new RegExp(rule.params.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), rule.params.replace || '')
         case 'regex':
           return title.replace(new RegExp(rule.params.pattern, 'g'), rule.params.replace || '')
-        case 'insert':
+        case 'insert': {
           if (rule.params.position === 'start') return (rule.params.text || '') + title
           if (rule.params.position === 'end') return title + (rule.params.text || '')
           const pos = parseInt(rule.params.index) || 0
           return title.slice(0, pos) + (rule.params.text || '') + title.slice(pos)
-        case 'delete':
+        }
+        case 'delete': {
           const deleteMode = rule.params.mode || 'text'
-
           switch (deleteMode) {
             case 'text':
-              // 删除指定文本
               return rule.params.caseSensitive
                 ? title.split(rule.params.text).join('')
                 : title.replace(new RegExp(rule.params.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '')
-
-            case 'first':
-              // 删除前N个字符
+            case 'first': {
               const firstCount = parseInt(rule.params.count) || 0
               return title.slice(firstCount)
-
-            case 'last':
-              // 删除后N个字符
+            }
+            case 'last': {
               const lastCount = parseInt(rule.params.count) || 0
               return title.slice(0, -lastCount || undefined)
-
-            case 'toText':
-              // 从开头删除到指定文本（包含该文本）
+            }
+            case 'toText': {
               const toText = rule.params.text || ''
               if (!toText) return title
               const toIndex = rule.params.caseSensitive
                 ? title.indexOf(toText)
                 : title.toLowerCase().indexOf(toText.toLowerCase())
               return toIndex >= 0 ? title.slice(toIndex + toText.length) : title
-
-            case 'fromText':
-              // 从指定文本删除到结尾（包含该文本）
+            }
+            case 'fromText': {
               const fromText = rule.params.text || ''
               if (!fromText) return title
               const fromIndex = rule.params.caseSensitive
                 ? title.indexOf(fromText)
                 : title.toLowerCase().indexOf(fromText.toLowerCase())
               return fromIndex >= 0 ? title.slice(0, fromIndex) : title
-
-            case 'range':
-              // 删除指定范围（从位置X删除Y个字符）
+            }
+            case 'range': {
               const from = parseInt(rule.params.from) || 0
               const count = parseInt(rule.params.count) || 0
               return title.slice(0, from) + title.slice(from + count)
-
+            }
             default:
               return title
           }
-        case 'serialize':
+        }
+        case 'serialize': {
           const start = parseInt(rule.params.start) || 1
           const step = parseInt(rule.params.step) || 1
           const digits = parseInt(rule.params.digits) || 2
@@ -570,18 +563,20 @@ export const EpisodeDetail = () => {
           const serialized = (rule.params.prefix || '') + num + (rule.params.suffix || '')
           if (rule.params.position === 'start') return serialized + title
           if (rule.params.position === 'end') return title + serialized
-          return serialized // 替换原标题
+          return serialized
+        }
         case 'case':
           if (rule.params.mode === 'upper') return title.toUpperCase()
           if (rule.params.mode === 'lower') return title.toLowerCase()
           if (rule.params.mode === 'title') return title.charAt(0).toUpperCase() + title.slice(1).toLowerCase()
           return title
-        case 'strip':
+        case 'strip': {
           let result = title
           if (rule.params.trimSpaces) result = result.trim()
           if (rule.params.trimDuplicateSpaces) result = result.replace(/\s+/g, ' ')
           if (rule.params.chars) result = result.split(rule.params.chars).join('')
           return result
+        }
         default:
           return title
       }
@@ -1320,7 +1315,7 @@ export const EpisodeDetail = () => {
           </div>
         </div>
         <div className="mb-4"></div>
-        {!!episodeList?.length ? (
+        {episodeList?.length ? (
           <ResponsiveTable
             pagination={{
               ...pagination,
@@ -1368,9 +1363,9 @@ export const EpisodeDetail = () => {
                     }
 
                     const currentIndex = episodeList.findIndex(ep => ep.episodeId === record.episodeId)
-                    if (e.shiftKey && lastSelectedIndex !== null) {
-                      const start = Math.min(lastSelectedIndex, currentIndex)
-                      const end = Math.max(lastSelectedIndex, currentIndex)
+                    if (e.shiftKey && lastClickedIndex !== null) {
+                      const start = Math.min(lastClickedIndex, currentIndex)
+                      const end = Math.max(lastClickedIndex, currentIndex)
                       const range = episodeList.slice(start, end + 1)
                       const newSelected = [...selectedRows]
                       range.forEach(ep => {

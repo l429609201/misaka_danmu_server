@@ -97,7 +97,13 @@ async def _schedule_sync_handler(app: FastAPI) -> None:
                     # 已有 ID → 直接匹配日程
                     new_weekday = schedule_map[str(local_id)]
                     if new_weekday != s.get("airWeekday"):
-                        await crud.update_air_schedule(session, s["animeId"], new_weekday, s.get("airTime"))
+                        await crud.update_air_schedule(
+                            session,
+                            s["animeId"],
+                            new_weekday,
+                            s.get("airTime"),
+                            commit=False,
+                        )
                         total_updated += 1
                 elif not local_id:
                     # 没有 ID → 用已有的元数据搜索能力自动匹配
@@ -112,12 +118,21 @@ async def _schedule_sync_handler(app: FastAPI) -> None:
                             update_fields = {id_field: matched_id}
                             if matched_id in schedule_map:
                                 update_fields["airWeekday"] = schedule_map[matched_id]
-                            await crud.update_metadata_ids(session, s["animeId"], **update_fields)
+                            await crud.update_metadata_ids(
+                                session,
+                                s["animeId"],
+                                commit=False,
+                                **update_fields,
+                            )
                             total_bound += 1
                             total_updated += 1
                             logger.info(f"自动匹配: '{anime_title}' → {source_name}:{matched_id} ({matched.title})")
                     except Exception as e:
                         logger.debug(f"搜索匹配 '{anime_title}' on {source_name} 失败: {e}")
+
+        if total_updated > 0 or total_bound > 0:
+            # why: 一轮日程同步可能更新多部作品，统一提交避免循环中只保存前半批。
+            await session.commit()
 
     if total_updated > 0 or total_bound > 0:
         logger.info(f"日程同步完成: 更新{total_updated}部, 自动绑定{total_bound}部")

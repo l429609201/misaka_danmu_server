@@ -88,6 +88,11 @@ class BaseWebhook(ABC):
                         "task_title": task_title,
                         "delayed": delayed_enabled,
                         "delay_hours": delay_hours if delayed_enabled else 0,
+                        # 补充季/集/类型，供通知展示（否则只有作品名和来源）
+                        "season": payload.get("season"),
+                        "episode": payload.get("currentEpisodeIndex"),
+                        "media_type": payload.get("mediaType", ""),
+                        "year": payload.get("year"),
                     })
                 except Exception as e:
                     self.logger.error(f"发射 webhook_triggered 事件失败: {e}")

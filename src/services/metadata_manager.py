@@ -14,6 +14,7 @@ import httpx
 from src.db import crud, models, orm_models, ConfigManager, CacheManager
 from .scraper_manager import ScraperManager
 from src.metadata_sources.base import BaseMetadataSource
+from src.core.env import is_docker_environment
 
 logger = logging.getLogger(__name__)
 
@@ -124,21 +125,7 @@ class MetadataSourceManager:
         discovered_providers = []
 
         # 检测环境并使用正确的路径
-        def _is_docker_environment():
-            """检测是否在Docker容器中运行"""
-            import os
-            # 方法1: 检查 /.dockerenv 文件（Docker标准做法）
-            if Path("/.dockerenv").exists():
-                return True
-            # 方法2: 检查环境变量
-            if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-                return True
-            # 方法3: 检查当前工作目录是否为 /app
-            if Path.cwd() == Path("/app"):
-                return True
-            return False
-
-        if _is_docker_environment():
+        if is_docker_environment():
             sources_package_path = [str(Path("/app/src/metadata_sources"))]
         else:
             # 源码运行环境：__file__ 在 src/services/ 下，需要往上一级到 src/，再拼 metadata_sources
@@ -291,8 +278,18 @@ class MetadataSourceManager:
 
         all_aliases: Set[str] = set()
         supplemental_results: List[models.ProviderSearchInfo] = []
-        # 标题→类型映射：用于帮助弹幕源修正媒体类型
+        # 标题→类型映射：同一标题出现类型冲突时标记为 ambiguous，禁止自动覆盖。
         title_type_map: Dict[str, str] = {}
+
+        def _record_title_type(title: Optional[str], media_type: Optional[str]) -> None:
+            if not title or not media_type:
+                return
+            previous = title_type_map.get(title)
+            if previous and previous != media_type:
+                # why：多个元数据候选对同一标题给出不同类型时，不能把任一结果当成高置信度。
+                title_type_map[title] = "ambiguous"
+            else:
+                title_type_map[title] = media_type
         self.last_aux_search_timing = []
 
         for provider_name, res, search_dur, detail_info, error in pipeline_results:
@@ -330,13 +327,11 @@ class MetadataSourceManager:
                     item_type = 'tv_series'
 
                 all_aliases.add(item.title)
-                if item_type:
-                    title_type_map[item.title] = item_type
+                _record_title_type(item.title, item_type)
                 if item.aliasesCn:
                     all_aliases.update(item.aliasesCn)
-                    if item_type:
-                        for alias in item.aliasesCn:
-                            title_type_map[alias] = item_type
+                    for alias in item.aliasesCn:
+                        _record_title_type(alias, item_type)
                 if item.aliasesJp:
                     all_aliases.update(item.aliasesJp)
                 if item.nameJp:
@@ -679,6 +674,8 @@ class MetadataSourceManager:
         config keys 从源类的 config_keys 属性自动获取，无需在此硬编码。
         """
 
+        source_class = self._source_classes.get(providerName)
+        configurable_fields = getattr(source_class, 'configurable_fields', {}) if source_class else {}
         keys_to_fetch = self.get_config_keys(providerName)
         bool_keys = set(self.get_bool_config_keys(providerName))
 
@@ -692,7 +689,10 @@ class MetadataSourceManager:
         else:
             config_values = {}
             for key in keys_to_fetch:
-                value_str = await self._config_manager.get(key, "")
+                field_info = configurable_fields.get(key, {})
+                default_value = field_info.get('default', '') if isinstance(field_info, dict) else ''
+                # why：首次读取即使用源声明的默认值，避免 ConfigManager 把空值缓存后覆盖运行时默认地址。
+                value_str = await self._config_manager.get(key, default_value)
                 if key in bool_keys:
                     config_values[key] = value_str.lower() == 'true' if value_str else True
                 else:
@@ -715,22 +715,33 @@ class MetadataSourceManager:
         if source_class:
             config_values['isFailoverSource'] = getattr(source_class, 'is_failover_source', False)
 
-            # 返回 configurableFields 元数据，让前端动态渲染
+            # 返回 configurableFields 元数据，让前端动态渲染。
+            # why：config_keys 使用原始键名，旧动态字段使用 provider_ 前缀；这里统一兼容两种存储约定。
             cf = getattr(source_class, 'configurable_fields', {})
             if cf:
                 config_values['configurableFields'] = cf
-                # 动态读取每个 configurable_field 的当前值
-                for field_key in cf:
-                    camel_key = field_key
-                    stored_value = await self._config_manager.get(f"{providerName}_{field_key}", "")
-                    if stored_value:
-                        # 元组或字典格式，取 type
-                        field_info = cf[field_key]
-                        field_type = field_info[1] if isinstance(field_info, (list, tuple)) else field_info.get('type', 'string')
-                        if field_type == 'boolean':
-                            config_values[camel_key] = stored_value.lower() == 'true'
+                declared_config_keys = set(getattr(source_class, 'config_keys', []))
+                for field_key, field_info in cf.items():
+                    field_meta = field_info if isinstance(field_info, dict) else {}
+                    storage_key = field_meta.get('configKey') or (
+                        field_key if field_key in declared_config_keys else f"{providerName}_{field_key}"
+                    )
+                    default_value = field_meta.get('default', '')
+                    stored_value = config_values.get(field_key)
+                    if stored_value in (None, ''):
+                        stored_value = await self._config_manager.get(storage_key, default_value)
+
+                    field_type = (
+                        field_info[1] if isinstance(field_info, (list, tuple))
+                        else field_meta.get('type', 'string')
+                    )
+                    if field_type == 'boolean':
+                        if isinstance(stored_value, bool):
+                            config_values[field_key] = stored_value
                         else:
-                            config_values[camel_key] = stored_value
+                            config_values[field_key] = str(stored_value).lower() == 'true'
+                    else:
+                        config_values[field_key] = stored_value
 
 
         # 添加特殊逻辑：Bangumi 认证模式
@@ -768,58 +779,71 @@ class MetadataSourceManager:
             config_key = f"{providerName}_force_aux_search"
             config_fields_to_update[config_key] = force_enabled_value
 
-        # 动态处理 configurable_fields 中声明的字段，存储到 config 表
+        # 动态处理 configurable_fields 中声明的字段，存储到 config 表。
+        # why：config_keys 使用原始键名，旧动态字段使用 provider_ 前缀；保存时必须与读取规则一致。
         source_class = self._source_classes.get(providerName)
         cf = getattr(source_class, 'configurable_fields', {}) if source_class else {}
+        declared_config_keys = set(getattr(source_class, 'config_keys', [])) if source_class else set()
         self.logger.info(f"updateProviderConfig: provider={providerName}, source_class={'found' if source_class else 'NOT FOUND'}, cf_keys={list(cf.keys())}, remaining_payload={list(payload.keys())}")
-        for field_key in cf:
+        for field_key, field_info in cf.items():
             if field_key in payload:
                 value = payload.pop(field_key)
-                config_key = f"{providerName}_{field_key}"
+                field_meta = field_info if isinstance(field_info, dict) else {}
+                config_key = field_meta.get('configKey') or (
+                    field_key if field_key in declared_config_keys else f"{providerName}_{field_key}"
+                )
                 if isinstance(value, bool):
                     config_fields_to_update[config_key] = str(value).lower()
                 else:
                     config_fields_to_update[config_key] = str(value if value is not None else "")
 
-        # 2b. 识别属于 config 表的字段
-        allowed_keys_map = {
-            "tmdb": ["tmdbApiKey", "tmdbApiBaseUrl", "tmdbImageBaseUrl"],
-            "bangumi": ["bangumiClientId", "bangumiClientSecret", "bangumiToken"],
-            "douban": ["doubanCookie"],
-            "tvdb": ["tvdbApiKey"],
-            "imdb": ["imdbUseApi", "imdbEnableFallback"],
-        }
-        allowed_keys = allowed_keys_map.get(providerName)
-        if allowed_keys:
-            for key, value in payload.items():
-                if key in allowed_keys:
-                    # 对于布尔值,转换为字符串 "true" 或 "false"
-                    if isinstance(value, bool):
-                        config_fields_to_update[key] = str(value).lower()
-                    else:
-                        config_fields_to_update[key] = str(value if value is not None else "")
+        # 2b. 按源类声明的 config_keys 通用保存，避免新增元信息源时重复维护硬编码白名单。
+        allowed_keys = declared_config_keys
+        for key, value in payload.items():
+            if key not in allowed_keys:
+                continue
+            if isinstance(value, bool):
+                config_fields_to_update[key] = str(value).lower()
+            else:
+                config_fields_to_update[key] = str(value if value is not None else "")
 
         # 3. 检查是否有任何需要更新的内容
         if not db_fields_to_update and not config_fields_to_update:
             self.logger.info(f"为提供商 '{providerName}' 收到配置更新请求，但没有可识别的字段需要更新。")
             return {"message": "没有可更新的配置项。"}
 
-        # 4. 执行数据库操作
+        # 4. 在同一事务内写入源设置与关联配置。
         async with self._session_factory() as session:
             if db_fields_to_update:
                 await crud.update_metadata_source_specific_settings(session, providerName, db_fields_to_update)
-            
+
             if config_fields_to_update:
-                for key, value in config_fields_to_update.items():
-                    await crud.update_config_value(session, key, value)
-                    self._config_manager.invalidate(key)
-            
-            await session.commit()
+                # why: 提供商配置是一个整体；逐键提交会在中途失败时留下半套配置，
+                # 且会把上面的 MetadataSource 更新提前提交。
+                await crud.update_config_values_atomic(session, config_fields_to_update)
+            else:
+                await session.commit()
+
+        # 数据库全部提交成功后再失效缓存，避免失败事务对应的旧值被提前清除。
+        for key in config_fields_to_update:
+            self._config_manager.invalidate(key)
         
         # 如果是元数据源的配置更新，重新加载它们以使更改生效
         if providerName in self.sources:
             await self.load_and_sync_sources()
             self.logger.info(f"元数据源 '{providerName}' 的配置已更新并重新加载。")
+
+        # 通用钩子：源可在配置保存后据此同步订阅目标（如 AniBT 私有 RSS）。
+        # why：避免在此处针对具体 provider 硬编码；实现该钩子的源自行处理配置→订阅联动。
+        source = self.sources.get(providerName)
+        if source is not None and hasattr(source, "sync_config_subscriptions"):
+            try:
+                async with self._session_factory() as session:
+                    await source.sync_config_subscriptions(session)
+                    await session.commit()
+                self.logger.info(f"元数据源 '{providerName}' 已同步配置驱动的订阅目标。")
+            except Exception as e:
+                self.logger.error(f"元数据源 '{providerName}' 同步订阅目标失败: {e}", exc_info=True)
 
         return {"message": "配置已成功更新。"}
 

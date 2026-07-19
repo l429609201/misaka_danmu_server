@@ -267,6 +267,7 @@ const Security = () => {
               <List.Item
                 actions={[
                   <Button
+                    key="rename"
                     size="small"
                     icon={<EditOutlined />}
                     onClick={() => {

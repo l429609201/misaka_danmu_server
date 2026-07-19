@@ -7,9 +7,7 @@ import {
   Input,
   InputNumber,
   List,
-  message,
   Modal,
-  Row,
   Select,
   Slider,
   Spin,
@@ -39,7 +37,6 @@ import {
   getRepoRefs,
   saveResourceRepo,
   getScraperVersions,
-  loadScraperResources,
   backupScrapers,
   restoreScrapers,
   reloadScrapers,
@@ -54,8 +51,6 @@ import {
   getScraperDefaultBlacklist,
   getCommonBlacklist,
   startScraperDownload,
-  getScraperDownloadStatus,
-  getCurrentScraperDownload,
   cancelScraperDownload,
   generateRegex,
 } from '../../../apis'
@@ -195,7 +190,7 @@ export const Scrapers = () => {
   const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [list, setList] = useState([])
-  const [activeItem, setActiveItem] = useState(null)
+  const [, setActiveItem] = useState(null)
   const eventSourceRef = useRef(null)
   // 设置窗口
   const [open, setOpen] = useState(false)
@@ -219,7 +214,7 @@ export const Scrapers = () => {
   const [dandanAuthMode, setDandanAuthMode] = useState('local') // 'local' or 'proxy'
   // bilibili 限制内容代理模式：'server'(反向代理地址) 或 'clash'(Clash 本地代理)，二选一互斥
   const [biliProxyMode, setBiliProxyMode] = useState('server')
-  const [showAppSecret, setShowAppSecret] = useState(false)
+
   const [showDisclaimerModal, setShowDisclaimerModal] = useState(false)
   // 填充默认黑名单加载状态
   const [loadingDefaultBlacklist, setLoadingDefaultBlacklist] = useState(false)
@@ -244,7 +239,7 @@ export const Scrapers = () => {
   const [loadingVersions, setLoadingVersions] = useState(false)
   const [changelogModal, setChangelogModal] = useState({ open: false, title: '', content: '' })
   const [uploadingPackage, setUploadingPackage] = useState(false)
-  const [sseConnected, setSseConnected] = useState(false)
+
 
   // 自动更新相关
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false)
@@ -307,10 +302,7 @@ export const Scrapers = () => {
           Authorization: `Bearer ${token}`,
         },
         onopen: async response => {
-          if (response.ok) {
-            setSseConnected(true)
-          } else {
-            setSseConnected(false)
+          if (!response.ok) {
             throw new Error(`连接失败: ${response.status}`)
           }
         },
@@ -328,7 +320,6 @@ export const Scrapers = () => {
         },
         onerror: error => {
           console.error('版本信息 SSE 连接错误:', error)
-          setSseConnected(false)
           throw error
         },
       }).catch(error => {
@@ -352,6 +343,8 @@ export const Scrapers = () => {
         currentDownloadTaskId.current = null
       }
     }
+    // why: 此 Effect 只负责组件挂载时初始化并建立唯一 SSE；加入动态函数依赖会重复连接。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
 
@@ -364,6 +357,7 @@ export const Scrapers = () => {
       scraperList = res1.data ?? []
       setList(scraperList)
     } catch (error) {
+      console.error('加载弹幕源列表失败:', error)
     } finally {
       setLoading(false)
     }
@@ -374,6 +368,7 @@ export const Scrapers = () => {
         const res2 = await getbiliUserinfo()
         setBiliUserinfo(res2.data)
       } catch (error) {
+        console.warn('读取 Bilibili 登录状态失败:', error)
       }
     }
   }
@@ -509,8 +504,7 @@ export const Scrapers = () => {
         Authorization: `Bearer ${token}`,
       },
       onopen: async response => {
-        if (response.ok) {
-        } else {
+        if (!response.ok) {
           throw new Error(`连接失败: ${response.status}`)
         }
       },
@@ -817,7 +811,7 @@ export const Scrapers = () => {
                   taskCompleted = true
                   const downloadedCount = data.downloaded_count || 0
                   const skippedCount = data.skipped_count || 0
-                  const failedCount = data.failed_count || 0
+
 
                   if (data.need_restart) {
                     // 容器正在重启，不在这里刷新，让 checkServiceReady() 处理
@@ -1030,7 +1024,6 @@ export const Scrapers = () => {
           const checkServiceReady = async () => {
             const maxWaitSeconds = 120
             let waitSeconds = 0
-            let serviceWentDown = false
 
             // 第一阶段：等待服务停止
             setDownloadProgress(prev => ({
@@ -1054,11 +1047,9 @@ export const Scrapers = () => {
                   signal: AbortSignal.timeout(2000)
                 })
                 if (!response.ok) {
-                  serviceWentDown = true
                   break
                 }
-              } catch (e) {
-                serviceWentDown = true
+              } catch {
                 break
               }
 
@@ -1348,7 +1339,7 @@ export const Scrapers = () => {
             getInfo()
           }
         })
-        .catch(error => {
+        .catch(() => {
           setBiliQrcodeStatus('error')
           clearInterval(timer.current)
         })
@@ -1464,7 +1455,10 @@ export const Scrapers = () => {
           await biliLogout()
           getInfo()
           setBiliQrcodeStatus('')
-        } catch (err) { }
+        } catch (error) {
+          console.error('退出 Bilibili 登录失败:', error)
+          messageApi.error(t('scrapers.logoutFailed', '退出登录失败'))
+        }
       },
     })
   }
@@ -1638,8 +1632,8 @@ export const Scrapers = () => {
               </Form.Item>
             )
 
-          case 'action':
-            // action 类型：渲染一个按钮，点击后调用后端 action
+          case 'action': {
+            // action 类型：配置字段只在当前 case 生效，避免 switch 词法作用域冲突
             const { actionName, buttonText, buttonType, confirmText, successMessage, errorMessage } = config
             return (
               <Form.Item
@@ -1671,6 +1665,7 @@ export const Scrapers = () => {
                 </Button>
               </Form.Item>
             )
+          } // why: action case 使用独立块声明局部变量，必须在下一个 case 前闭合。
 
           case 'string':
           default:

@@ -7,6 +7,7 @@ from typing import List, Set
 import asyncio
 
 from src.core.config import settings
+from src.core.env import is_docker_environment
 
 # 这个双端队列将用于在内存中存储最新的日志，以供Web界面展示
 _logs_deque = collections.deque(maxlen=200)
@@ -84,34 +85,58 @@ class BilibiliInfoFilter(logging.Filter):
                 return False
         return True  # 其他所有日志都通过
 
-# 新增：过滤 SQLAlchemy 连接池关闭时的良性噪音
+# 新增：过滤 SQLAlchemy 连接池 terminate 连接时的良性噪音
 class SQLAlchemyPoolShutdownFilter(logging.Filter):
     """
-    服务关闭时，SQLAlchemy 连接池尝试 terminate 连接，
-    但 uvloop TCPTransport 已关闭，会抛出 RuntimeError。
-    这是已知的良性噪音，降级为 DEBUG 避免误报。
+    压制 SQLAlchemy 连接池 terminate 一条连接时的良性 ERROR 噪音（"Exception terminating connection"）。
+
+    两类触发场景（表象相同，均无害——连接会被池作废重建，不影响功能）：
+    1. 运行期：客户端在请求完成前断开，cancel scope 级联取消正被占用的连接
+       → 尾部为 asyncio.CancelledError（Cancelled via ... BaseHTTPMiddleware）。
+    2. 关闭/重启期：engine.dispose() 批量回收连接，但 uvloop transport 已先关
+       → 尾部为 RuntimeError: unable to perform operation on <TCPTransport closed=True>。
+
+    这条 ERROR 由 SQLAlchemy 在 pool/base.py._close_connection 内部 logger.error(exc_info=True)
+    直接打出（异常已在池内被 catch），因此**只能在日志层过滤**。
+
+    why 直接丢弃而非降级：filter 早于 handler 的级别判定执行，仅改 record.levelno 不会阻止输出
+    （旧实现的 bug）。故这里在非 DEBUG 全局级别下直接 return False 丢弃；DEBUG 模式保留以便排查。
     """
+    _MSG_MARKERS = (
+        'Exception terminating connection',
+        'Exception closing connection',
+        'unable to perform operation',
+        'TCPTransport closed',
+        'the handler is closed',
+    )
+    _EXC_MARKERS = (
+        'TCPTransport closed',
+        'the handler is closed',
+        'unable to perform operation',
+        'CancelledError',
+        'Cancelled via cancel scope',
+    )
+
     def filter(self, record):
-        if record.levelno >= logging.ERROR:
-            msg = record.getMessage()
-            # 检查主消息
-            is_pool_noise = (
-                'Exception terminating connection' in msg
-                or 'unable to perform operation' in msg
-                or 'TCPTransport closed' in msg
-                or 'the handler is closed' in msg
-            )
-            # 检查异常堆栈（RuntimeError 详情可能只在 exc_info 里）
-            if not is_pool_noise and record.exc_info:
-                exc_text = str(record.exc_info[1]) if record.exc_info[1] else ''
-                is_pool_noise = (
-                    'TCPTransport closed' in exc_text
-                    or 'the handler is closed' in exc_text
-                    or 'unable to perform operation' in exc_text
-                )
-            if is_pool_noise:
+        if record.levelno < logging.ERROR:
+            return True
+
+        msg = record.getMessage()
+        is_pool_noise = any(m in msg for m in self._MSG_MARKERS)
+
+        # 主消息未命中时，检查异常堆栈（CancelledError/RuntimeError 详情常只在 exc_info 里）
+        if not is_pool_noise and record.exc_info and record.exc_info[1] is not None:
+            exc = record.exc_info[1]
+            exc_text = f"{type(exc).__name__}: {exc}"
+            is_pool_noise = any(m in exc_text for m in self._EXC_MARKERS)
+
+        if is_pool_noise:
+            # 全局 DEBUG 级别时保留（降级为 DEBUG 便于排查）；否则直接丢弃，日志彻底干净
+            if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
                 record.levelno = logging.DEBUG
                 record.levelname = 'DEBUG'
+                return True
+            return False
         return True
 
 # 新增：一个过滤器，用于翻译 apscheduler 的日志
@@ -157,21 +182,7 @@ def setup_logging():
     以及一个用于API的内存双端队列。
     此函数应在应用启动时被调用一次。
     """
-    def _is_docker_environment():
-        """检测是否在Docker容器中运行"""
-        import os
-        # 方法1: 检查 /.dockerenv 文件（Docker标准做法）
-        if Path("/.dockerenv").exists():
-            return True
-        # 方法2: 检查环境变量
-        if os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true":
-            return True
-        # 方法3: 检查当前工作目录是否为 /app
-        if Path.cwd() == Path("/app"):
-            return True
-        return False
-
-    if _is_docker_environment():
+    if is_docker_environment():
         log_dir = Path("/app/config/logs")
     else:
         log_dir = Path("config/logs")
@@ -289,8 +300,7 @@ def get_logs() -> List[str]:
 
 def get_log_dir() -> Path:
     """返回日志目录路径。"""
-    import os
-    if Path("/.dockerenv").exists() or os.getenv("DOCKER_CONTAINER") == "true" or os.getenv("IN_DOCKER") == "true" or Path.cwd() == Path("/app"):
+    if is_docker_environment():
         return Path("/app/config/logs")
     return Path("config/logs")
 
