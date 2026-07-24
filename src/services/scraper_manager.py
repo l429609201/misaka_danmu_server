@@ -780,29 +780,34 @@ class ScraperManager:
             # 尝试用弹幕源解析URL为分集信息
             from src.db.models import ProviderEpisodeInfo
             scraper = self.get_scraper(provider)
+            if not scraper:
+                logger.warning(f"补充源路由: 弹幕源 '{provider}' 不可用，无法将分集URL解析为原生ID")
+                return []
             episodes = []
             for idx, url in episode_urls:
                 try:
-                    if scraper:
-                        episode_id = await scraper.get_id_from_url(url)
-                    else:
-                        episode_id = None
-                    episodes.append(ProviderEpisodeInfo(
-                        provider=provider,
-                        episodeId=episode_id or url,
-                        title=f"第{idx}集",
-                        episodeIndex=idx,
-                        url=url
-                    ))
+                    raw_id = await scraper.get_id_from_url(url)
                 except Exception as e:
-                    logger.debug(f"补充源分集URL解析失败 (第{idx}集): {e}")
-                    episodes.append(ProviderEpisodeInfo(
-                        provider=provider,
-                        episodeId=url,
-                        title=f"第{idx}集",
-                        episodeIndex=idx,
-                        url=url
-                    ))
+                    # 解析异常：跳过该集，不塞 URL 制造必然取不到弹幕的假分集
+                    logger.warning(f"补充源分集URL解析异常，跳过第{idx}集: url={url}, 原因={e}")
+                    continue
+
+                if not raw_id:
+                    # 无法从 URL 解析出弹幕源原生ID：该集在此源下无法取弹幕，跳过
+                    logger.warning(f"补充源无法从URL解析出 {provider} 原生分集ID，跳过第{idx}集: url={url}")
+                    continue
+
+                # 归一化为 get_comments 可解析的字符串（如 mgtv 的 "cid,vid"）。
+                # get_id_from_url 可能返回 dict（mgtv={cid,vid}、bilibili={aid,cid}）或字符串，
+                # 统一经 format_episode_id_for_comments 转成 get_comments 期望的字符串格式。
+                episode_id = scraper.format_episode_id_for_comments(raw_id)
+                episodes.append(ProviderEpisodeInfo(
+                    provider=provider,
+                    episodeId=episode_id,
+                    title=f"第{idx}集",
+                    episodeIndex=idx,
+                    url=url
+                ))
             # 兜底全局分集标题过滤（统一收口，对所有调用路径生效）
             from src.utils.episode_filter import apply_global_episode_title_filter
             return await apply_global_episode_title_filter(
