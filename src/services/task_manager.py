@@ -82,6 +82,16 @@ class TaskSuccess(Exception):
     """自定义异常，用于表示任务成功完成并附带一条最终消息。"""
     pass
 
+class TaskFailed(Exception):
+    """自定义异常，用于表示任务【业务失败】并附带一条失败消息。
+
+    why：区别于 TaskSuccess（会标记 COMPLETED 并发"成功"通知）和未捕获的普通异常
+    （会被当作程序崩溃、打印完整 traceback）。TaskFailed 表示"可预期的业务失败"
+    （如数据源验证失败、未获取到弹幕、未创建条目），任务框架会标记 FAILED 并发
+    "失败"通知，但不打印 traceback（失败原因已在消息中说明，避免日志噪音）。
+    """
+    pass
+
 class TaskPauseForRateLimit(Exception):
     """自定义异常，用于表示任务因速率限制需要暂停"""
     def __init__(self, retry_after_seconds: float, message: str = ""):
@@ -539,6 +549,12 @@ class TaskManager:
             await self._safe_finalize_task(task.task_id, TaskStatus.COMPLETED, final_message)
             self.logger.info(f"任务 '{task.title}' (ID: {task.task_id}) 已成功完成，消息: {final_message}")
             await self._emit_task_event(task, True, final_message)
+        except TaskFailed as e:
+            # 业务失败：标记 FAILED 并发"失败"通知，但不打印 traceback（失败原因已在消息中）
+            final_message = str(e) if str(e) else "任务失败"
+            await self._safe_finalize_task(task.task_id, TaskStatus.FAILED, final_message)
+            self.logger.warning(f"任务 '{task.title}' (ID: {task.task_id}) 业务失败，消息: {final_message}")
+            await self._emit_task_event(task, False, final_message)
         except asyncio.CancelledError:
             if self._is_shutting_down:
                 # 程序优雅关闭导致的取消，不修改数据库状态

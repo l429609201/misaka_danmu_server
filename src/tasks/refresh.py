@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, orm_models, models, ConfigManager
 from src.rate_limiter import RateLimiter, RateLimitExceededError
-from src.services import ScraperManager, MetadataSourceManager, TaskManager, TaskSuccess, TitleRecognitionManager
+from src.services import ScraperManager, MetadataSourceManager, TaskManager, TaskSuccess, TaskFailed, TitleRecognitionManager
 from .delete import delete_danmaku_file
 from .utils import generate_episode_range_string
 
@@ -59,7 +59,7 @@ async def full_refresh_task(sourceId: int, session: AsyncSession, scraper_manage
         existing_episodes = episodes_result.scalars().all()
 
         if not existing_episodes:
-            raise TaskSuccess("刷新失败：该源没有已存储的分集。请先导入分集。")
+            raise TaskFailed("刷新失败：该源没有已存储的分集。请先导入分集。")
 
         logger.info(f"从数据库获取到 {len(existing_episodes)} 个已存储的分集")
 
@@ -224,7 +224,7 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
             parts = provider_episode_id.split("_", 3)  # ['fallback', provider, mediaId, episodeNumber]
             if len(parts) < 4:
                 logger.error(f"fallback providerEpisodeId 格式异常，无法解析: {provider_episode_id}")
-                raise TaskSuccess(f"刷新失败：fallback ID 格式异常: {provider_episode_id}")
+                raise TaskFailed(f"刷新失败：fallback ID 格式异常: {provider_episode_id}")
 
             fb_provider = parts[1]
             fb_media_id = parts[2]
@@ -232,14 +232,14 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
                 fb_episode_number = int(parts[3])
             except ValueError:
                 logger.error(f"fallback providerEpisodeId 集数部分非数字: {parts[3]}")
-                raise TaskSuccess(f"刷新失败：fallback ID 集数格式异常: {provider_episode_id}")
+                raise TaskFailed(f"刷新失败：fallback ID 集数格式异常: {provider_episode_id}")
 
             logger.info(f"检测到 fallback 格式 providerEpisodeId，解析: provider={fb_provider}, mediaId={fb_media_id}, episode={fb_episode_number}")
 
             scraper = manager.get_scraper(fb_provider)
             if not scraper:
                 logger.error(f"找不到 {fb_provider} 的 scraper，无法刷新")
-                raise TaskSuccess("刷新失败：找不到对应的弹幕源")
+                raise TaskFailed("刷新失败：找不到对应的弹幕源")
 
             await progress_callback(15, "正在重新获取分集信息...")
             try:
@@ -261,20 +261,20 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
                         await session.flush()
                     else:
                         logger.warning(f"分集列表中未找到第 {fb_episode_number} 集")
-                        raise TaskSuccess(f"刷新失败：分集列表中未找到第 {fb_episode_number} 集")
+                        raise TaskFailed(f"刷新失败：分集列表中未找到第 {fb_episode_number} 集")
                 else:
                     logger.warning(f"从 {fb_provider} 获取分集列表为空: mediaId={fb_media_id}")
-                    raise TaskSuccess("刷新失败：获取分集列表为空")
-            except TaskSuccess:
+                    raise TaskFailed("刷新失败：获取分集列表为空")
+            except TaskFailed:
                 raise
             except Exception as e:
                 logger.error(f"解析 fallback providerEpisodeId 失败: {e}")
-                raise TaskSuccess(f"刷新失败：{e}")
+                raise TaskFailed(f"刷新失败：{e}")
 
             # 二次校验：确保 provider_episode_id 已经被替换为真实值
             if provider_episode_id.startswith("fallback_"):
                 logger.error(f"fallback 解析后 provider_episode_id 仍为占位符: {provider_episode_id}")
-                raise TaskSuccess("刷新失败：无法从源站获取真实的分集ID")
+                raise TaskFailed("刷新失败：无法从源站获取真实的分集ID")
 
         scraper = manager.get_scraper(provider_name)
 

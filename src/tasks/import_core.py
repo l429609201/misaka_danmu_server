@@ -6,7 +6,7 @@ from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, orm_models, models, sync_postgres_sequence, ConfigManager
-from src.services import ScraperManager, TaskManager, TaskSuccess, TaskPauseForRateLimit, MetadataSourceManager, TitleRecognitionManager
+from src.services import ScraperManager, TaskManager, TaskSuccess, TaskFailed, TaskPauseForRateLimit, MetadataSourceManager, TitleRecognitionManager
 from src.services.import_existence_checker import check_anime_existence
 from src.rate_limiter import RateLimiter, RateLimitExceededError
 from src.utils import download_image
@@ -224,8 +224,22 @@ async def generic_import_task(
 
     # 应用单剧过滤规则
     if episodes:
+        # 适配识别词：过滤规则可能按识别词转换后的"入库名"配置，而 title_to_use 常为源站原名。
+        # 用 apply_storage_postprocessing 正向转换出入库名，作为额外匹配候选一起传入。
+        extra_filter_titles = []
+        if title_recognition_manager:
+            try:
+                converted_title, _, was_converted, _, _ = await title_recognition_manager.apply_storage_postprocessing(
+                    title_to_use, season_to_use, provider
+                )
+                if was_converted and converted_title and converted_title != title_to_use:
+                    extra_filter_titles.append(converted_title)
+                    logger.info(f"单剧过滤适配识别词: 原名 '{title_to_use}' + 入库名候选 '{converted_title}'")
+            except Exception as e:
+                logger.warning(f"单剧过滤识别词转换失败，仅用原名匹配: {e}")
         episodes = await get_and_apply_single_episode_filter(
-            episodes, config_manager, title_to_use, provider, mediaId
+            episodes, config_manager, title_to_use, provider, mediaId,
+            extra_titles=extra_filter_titles
         )
 
     # 如果主源无分集且有补充源,使用补充源获取分集URL
@@ -625,7 +639,8 @@ async def generic_import_task(
 
     # 如果第一集验证失败，不创建条目
     if not first_episode_success:
-        raise TaskSuccess("数据源验证失败，未能获取到任何弹幕，未创建数据库条目。")
+        # 业务失败：未创建条目，应发"失败"通知而非"成功"
+        raise TaskFailed("数据源验证失败，未能获取到任何弹幕，未创建数据库条目。")
 
     # 处理所有分集（包括第一集）
     try:
@@ -863,7 +878,8 @@ async def edited_import_task(
             # 验证分集没有弹幕，数据源无效
             error_msg = f"数据源验证失败：'{first_episode.title}' 未获取到任何弹幕数据。请到 {request_data.provider} 源验证该视频是否有弹幕。未创建数据库条目。"
             logger.warning(error_msg)
-            raise TaskSuccess(error_msg)
+            # 业务失败：未创建条目，应发"失败"通知而非"成功"（原用 TaskSuccess 会误报导入成功）
+            raise TaskFailed(error_msg)
     except RateLimitExceededError as e:
         # 抛出暂停异常，让任务管理器处理
         logger.warning(f"编辑后导入任务因达到速率限制而暂停: {e}")
@@ -874,12 +890,16 @@ async def edited_import_task(
     except TaskSuccess:
         # 重新抛出 TaskSuccess 异常
         raise
+    except TaskFailed:
+        # 重新抛出 TaskFailed（业务失败），避免被下方 except Exception 吞掉重新包装
+        raise
     except Exception as e:
         # 其他异常（网络错误、解析错误等）
         short_error = _extract_short_error_message(e)
         error_msg = f"数据源验证失败：获取 '{first_episode.title}' 弹幕时发生错误 - {short_error}。未创建数据库条目。"
         logger.error(f"数据源验证失败：获取 '{first_episode.title}' 弹幕时发生错误: {e}", exc_info=True)
-        raise TaskSuccess(error_msg)
+        # 业务失败：未创建条目，应发"失败"通知而非"成功"
+        raise TaskFailed(error_msg)
 
     # 处理所有分集
     try:

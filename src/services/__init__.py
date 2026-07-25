@@ -8,7 +8,7 @@
 """
 
 # 任务管理
-from .task_manager import TaskManager, TaskStatus, TaskSuccess, TaskPauseForRateLimit
+from .task_manager import TaskManager, TaskStatus, TaskSuccess, TaskFailed, TaskPauseForRateLimit
 
 # 弹幕源管理
 from .scraper_manager import ScraperManager
@@ -69,6 +69,7 @@ __all__ = [
     'TaskManager',
     'TaskStatus',
     'TaskSuccess',
+    'TaskFailed',
     'TaskPauseForRateLimit',
     # 弹幕源管理
     'ScraperManager',
