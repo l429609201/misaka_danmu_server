@@ -469,7 +469,27 @@ export const Notification = () => {
             )}
           </Row>
 
-          {currentSchema.filter(f => f.key !== 'log_raw').map(field => renderConfigField(field))}
+          {/* 渲染 schema 字段：桌面端将相邻的两个开关字段合并成一行两列，避免每个开关独占一行造成大量右侧留白 */}
+          {(() => {
+            const visibleFields = currentSchema.filter(f => f.key !== 'log_raw' && isFieldVisible(f))
+            const nodes = []
+            for (let i = 0; i < visibleFields.length; i++) {
+              const field = visibleFields[i]
+              const nextField = visibleFields[i + 1]
+              if (!isMobile && field.type === 'boolean' && nextField?.type === 'boolean') {
+                nodes.push(
+                  <Row gutter={24} key={`pair-${field.key}`}>
+                    <Col span={12}>{renderConfigField(field)}</Col>
+                    <Col span={12}>{renderConfigField(nextField)}</Col>
+                  </Row>
+                )
+                i++ // 跳过已被配对渲染的下一个字段
+                continue
+              }
+              nodes.push(renderConfigField(field))
+            }
+            return nodes
+          })()}
 
           {/* 编辑已有渠道 + webhook 模式时，展示完整回调地址 */}
           {editingChannel?.id && (configValues?.mode === 'webhook' || selectedType === 'wechat') && (() => {
