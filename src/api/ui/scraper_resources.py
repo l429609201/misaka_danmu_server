@@ -2252,12 +2252,83 @@ def _persist_new_version_to_backup(extract_dir: Path, release_version: str) -> N
     logger.info(f"已将新版 {release_version} 持久化到备份目录: {backup_count} 个文件, {len(scrapers_versions)} 个源版本")
 
 
+def _get_deferred_overlay_dir(scrapers_dir: Optional[Path] = None) -> Path:
+    """推迟覆盖时使用的临时目录（存放已解压待生效的新版文件）"""
+    base = scrapers_dir if scrapers_dir is not None else _get_scrapers_dir()
+    return base / ".tmp_update"
+
+
+def _overlay_extract_dir_to_scrapers(
+    extract_dir: Path,
+    scrapers_dir: Path,
+    old_files: Optional[set] = None,
+    new_files: Optional[set] = None,
+) -> int:
+    """把临时目录里的新版文件覆盖到运行目录，并清理不再存在于新包中的旧 .so/.pyd
+
+    危险操作：覆盖后进程内存中的旧模块与磁盘新二进制不一致，调用方必须紧接着重启，
+    中间不要再执行业务代码。
+    """
+    import shutil as _shutil
+
+    overlay_count = 0
+    for f in extract_dir.iterdir():
+        if not f.is_file():
+            continue
+        try:
+            _shutil.copy2(f, scrapers_dir / f.name)
+            overlay_count += 1
+        except Exception as e:
+            logger.warning(f"覆盖运行目录文件 {f.name} 失败: {e}")
+
+    # 覆盖成功后，清理不再存在于新包中的旧文件
+    if old_files and overlay_count > 0:
+        stale_files = old_files - (new_files or set())
+        for stale_name in stale_files:
+            try:
+                (scrapers_dir / stale_name).unlink(missing_ok=True)
+                logger.info(f"清理旧文件: {stale_name}")
+            except Exception as e:
+                logger.warning(f"清理旧文件 {stale_name} 失败: {e}")
+
+    # 清理临时目录
+    _shutil.rmtree(extract_dir, ignore_errors=True)
+    return overlay_count
+
+
+def apply_deferred_overlay(scrapers_dir: Optional[Path] = None) -> int:
+    """应用被推迟的覆盖操作（供 executor 在「SSE 终态已发送 + 即将重启」时调用）
+
+    Returns:
+        覆盖的文件数；无待应用内容时返回 0
+    """
+    target_dir = scrapers_dir if scrapers_dir is not None else _get_scrapers_dir()
+    extract_dir = _get_deferred_overlay_dir(target_dir)
+    if not extract_dir.is_dir():
+        logger.warning("没有待应用的更新（临时目录不存在），跳过覆盖")
+        return 0
+
+    # 运行目录里现存的 .so/.pyd，用于覆盖后清理已从新包中移除的旧文件
+    old_files = {
+        f.name for f in target_dir.glob("*")
+        if f.is_file() and f.suffix in ['.so', '.pyd']
+    }
+    new_files = {
+        f.name for f in extract_dir.glob("*")
+        if f.is_file() and f.suffix in ['.so', '.pyd']
+    }
+    overlay_count = _overlay_extract_dir_to_scrapers(extract_dir, target_dir, old_files, new_files)
+    logger.info(f"已应用推迟的更新: {overlay_count} 个文件")
+    return overlay_count
+
+
 async def _download_and_extract_release(
     asset_info: Dict[str, Any],
     scrapers_dir: Path,
     headers: Dict[str, str],
     proxy: Optional[str] = None,
-    progress_callback = None
+    progress_callback = None,
+    defer_overlay: bool = False
 ) -> bool:
     """
     下载并解压 Release 压缩包（支持 .zip 和 .tar.gz）
@@ -2268,6 +2339,11 @@ async def _download_and_extract_release(
         headers: HTTP 请求头
         proxy: 代理URL
         progress_callback: 进度回调函数
+        defer_overlay: 为 True 时只解压到临时目录并完成持久化，不覆盖运行目录的 .so。
+            why: 覆盖正在被加载的 .so 后，进程内存中是旧模块而磁盘已是新二进制，
+            此后任何延迟 import / 未加载符号的访问都可能 segfault（表现为 SSE 心跳
+            永久消失、前端卡住）。因此对齐逐文件更新路径的做法——把覆盖动作推迟到
+            最后，等 SSE 终态消息发完，紧邻重启时再执行。
 
     Returns:
         是否成功
@@ -2298,16 +2374,44 @@ async def _download_and_extract_release(
                     await progress_callback("正在下载压缩包...")
 
             async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True, proxy=proxy) as client:
-                response = await client.get(download_url)
-                if response.status_code == 200:
-                    archive_content = response.content
-                    logger.info(f"压缩包下载完成: {len(archive_content)} 字节")
-                    break  # 下载成功，跳出重试循环
-                else:
-                    logger.warning(f"下载压缩包失败: HTTP {response.status_code} (重试 {retry_count}/{max_retries})")
-                    if retry_count == max_retries:
-                        logger.error(f"下载压缩包失败，已重试 {max_retries} 次: HTTP {response.status_code}")
-                        return False
+                # 流式下载并周期性回报进度
+                # why: 原先用 client.get() 一次性读完整个包，期间无任何进度反馈。
+                # 大包 + GitHub 直连较慢时，前端会长时间停在"正在下载压缩包..."看起来像卡死
+                # （最坏 4 次尝试 x 180s 超时 ≈ 12 分钟无变化）。改为流式下载，按进度推送文案，
+                # 让用户能看到实际下载速度与百分比。
+                async with client.stream("GET", download_url) as response:
+                    if response.status_code == 200:
+                        total_size = int(response.headers.get("content-length") or 0)
+                        chunks = []
+                        downloaded = 0
+                        last_report = 0.0
+                        async for chunk in response.aiter_bytes(chunk_size=65536):
+                            chunks.append(chunk)
+                            downloaded += len(chunk)
+                            # 每累计 512KB 或每 1% 回报一次，避免刷屏
+                            if progress_callback and (downloaded - last_report >= 512 * 1024):
+                                last_report = downloaded
+                                mb = downloaded / 1024 / 1024
+                                if total_size > 0:
+                                    pct = downloaded * 100 // total_size
+                                    total_mb = total_size / 1024 / 1024
+                                    await progress_callback(
+                                        f"正在下载压缩包... {pct}% ({mb:.1f}/{total_mb:.1f} MB)"
+                                    )
+                                else:
+                                    await progress_callback(f"正在下载压缩包... 已下载 {mb:.1f} MB")
+                        archive_content = b"".join(chunks)
+                        logger.info(f"压缩包下载完成: {len(archive_content)} 字节")
+                        if progress_callback:
+                            await progress_callback(
+                                f"下载完成 ({len(archive_content) / 1024 / 1024:.1f} MB)，准备解压..."
+                            )
+                        break  # 下载成功，跳出重试循环
+                    else:
+                        logger.warning(f"下载压缩包失败: HTTP {response.status_code} (重试 {retry_count}/{max_retries})")
+                        if retry_count == max_retries:
+                            logger.error(f"下载压缩包失败，已重试 {max_retries} 次: HTTP {response.status_code}")
+                            return False
 
         except (httpx.TimeoutException, asyncio.TimeoutError) as e:
             logger.warning(f"下载压缩包超时 (重试 {retry_count}/{max_retries}): {e}")
@@ -2381,7 +2485,7 @@ async def _download_and_extract_release(
         # 新版 → 无限下载重启循环。将危险的覆盖操作放到持久化之后，即使覆盖时崩溃，重启后
         # backup 已是新版，恢复的就是新版，循环终结。
         import shutil as _shutil
-        extract_dir = scrapers_dir / ".tmp_update"
+        extract_dir = _get_deferred_overlay_dir(scrapers_dir)
         try:
             if extract_dir.exists():
                 _shutil.rmtree(extract_dir, ignore_errors=True)
@@ -2477,6 +2581,8 @@ async def _download_and_extract_release(
         # why: 只有 backup 目录（/app/config/scrapers_backup）是持久化的。必须保证在覆盖
         # 运行中的 .so（可能 native crash）之前，backup 已是新版；这样即便覆盖时崩溃，重启后
         # 恢复逻辑读到的 backup 就是新版，不会回退到旧版触发无限重启循环。
+        if progress_callback:
+            await progress_callback("正在备份新版本到持久化目录...")
         try:
             release_version = str(asset_info.get('version', '')).lstrip('v')
             _persist_new_version_to_backup(extract_dir, release_version)
@@ -2485,28 +2591,19 @@ async def _download_and_extract_release(
             _shutil.rmtree(extract_dir, ignore_errors=True)
             return False
 
+        # defer_overlay: 不在此处覆盖运行目录，交由调用方在「SSE 终态已发送 + 即将重启」时执行。
+        # why: 覆盖正在加载的 .so 之后再跑任何业务代码都有 segfault 风险，会导致 SSE 心跳
+        # 永久消失、前端卡在中间状态。此处保留临时目录供后续 _apply_deferred_overlay 使用。
+        if defer_overlay:
+            logger.info(f"已解压并持久化新版（{extracted_count} 个文件），覆盖运行目录已推迟至重启前")
+            if progress_callback:
+                await progress_callback(f"新版本已就绪: {extracted_count} 个文件")
+            return True
+
         # 持久化完成后，才覆盖运行目录里正在被加载的 .so（危险操作放最后）
         if progress_callback:
             await progress_callback("正在应用更新...")
-        overlay_count = 0
-        for f in extract_dir.iterdir():
-            if not f.is_file():
-                continue
-            try:
-                _shutil.copy2(f, scrapers_dir / f.name)
-                overlay_count += 1
-            except Exception as e:
-                logger.warning(f"覆盖运行目录文件 {f.name} 失败: {e}")
-
-        # 覆盖成功后，清理不再存在于新包中的旧文件
-        stale_files = old_files - new_files
-        if stale_files and overlay_count > 0:
-            for stale_name in stale_files:
-                try:
-                    (scrapers_dir / stale_name).unlink(missing_ok=True)
-                    logger.info(f"清理旧文件: {stale_name}")
-                except Exception as e:
-                    logger.warning(f"清理旧文件 {stale_name} 失败: {e}")
+        overlay_count = _overlay_extract_dir_to_scrapers(extract_dir, scrapers_dir, old_files, new_files)
 
         # 清理临时目录
         _shutil.rmtree(extract_dir, ignore_errors=True)
