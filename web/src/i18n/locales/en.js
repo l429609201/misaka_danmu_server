@@ -885,7 +885,8 @@ export default {
     from: 'From',
     to: 'To',
     confirmRange: 'Confirm Range',
-    yearLabel: 'Year',
+    // why：原键名与上方结果标签的 yearLabel('Year: {{value}}') 重复，后定义会覆盖前者导致年份数值丢失，故改名 yearField
+    yearField: 'Year',
     yearColon: 'Year:',
     yearPlaceholder: 'Leave blank to skip year matching',
     tabInclude: 'To Import',
