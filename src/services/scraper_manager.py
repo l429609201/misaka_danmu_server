@@ -808,6 +808,8 @@ class ScraperManager:
                     episodeIndex=idx,
                     url=url
                 ))
+            # 汇总日志（单条解析细节已降级为 DEBUG，此处统一打印一条 INFO 汇总，避免刷屏）
+            logger.info(f"补充源URL解析完成: {provider} 成功解析 {len(episodes)}/{len(episode_urls)} 个分集为原生ID")
             # 兜底全局分集标题过滤（统一收口，对所有调用路径生效）
             from src.utils.episode_filter import apply_global_episode_title_filter
             return await apply_global_episode_title_filter(
