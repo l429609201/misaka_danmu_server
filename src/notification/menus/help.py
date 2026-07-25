@@ -16,7 +16,7 @@ class HelpMenuMixin:
         "🔗 /url - 从URL导入弹幕\n"
         "♻️ /refresh - 弹幕库管理\n"
         "🔑 /tokens - Token管理\n"
-        "📋 /tasks - 定时任务列表\n"
+        "📋 /tasks - 任务中心（任务管理器 + 定时任务）\n"
         "🗑️ /cache - 清除缓存\n"
         "❌ /cancel - 取消当前操作\n\n"
         "💡 点击下方按钮可快速执行命令"
@@ -28,7 +28,7 @@ class HelpMenuMixin:
         [{"text": "🔗 URL导入", "callback_data": "help_cmd:url"},
          {"text": "♻️ 弹幕库管理", "callback_data": "help_cmd:refresh"}],
         [{"text": "🔑 Token管理", "callback_data": "help_cmd:tokens"},
-         {"text": "📋 任务列表", "callback_data": "help_cmd:tasks"}],
+         {"text": "📋 任务中心", "callback_data": "help_cmd:tasks"}],
         [{"text": "🗑️ 清除缓存", "callback_data": "help_cmd:cache"}],
     ]
 
@@ -54,6 +54,7 @@ class HelpMenuMixin:
         """帮助页内联按钮 — 点击后触发对应命令"""
         cmd = params[0] if params else ""
         handler_map = {
+            "help": self.cmd_help,
             "search": self.cmd_search,
             "auto": self.cmd_auto,
             "url": self.cmd_url,

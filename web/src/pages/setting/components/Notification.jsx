@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Card, Button, Tag, Switch, Space, Form, Input, Select, Slider,
+  Card, Button, Tag, Switch, Space, Form, Input, Select, Slider, Segmented,
   Popconfirm, Spin, Empty, message, Tooltip, Row, Col,
 } from 'antd'
 import {
@@ -266,6 +266,18 @@ export const Notification = () => {
               {field.switchLabels?.checked || t('notification.optionB')}
             </Select.Option>
           </Select>
+        </Form.Item>
+      )
+    }
+    if (field.type === 'segmented') {
+      // 三档拨动开关（如图片发送模式：纯文字 / 海报 / 图片模式）
+      return (
+        <Form.Item key={field.key} label={field.label} name={name}
+          tooltip={field.description} initialValue={field.default}>
+          <Segmented block options={(field.options || []).map(o => ({
+            label: getLocalizedField(o, 'label') || o.label || o.value,
+            value: o.value,
+          }))} />
         </Form.Item>
       )
     }

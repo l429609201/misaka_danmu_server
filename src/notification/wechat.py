@@ -26,7 +26,7 @@ except ImportError:
 
 from src.notification.base import (
     BaseNotificationChannel,
-    ChannelCapability, ChannelCapabilities, CommandResult,
+    ChannelCapability, ChannelCapabilities, CommandResult, IMAGE_MODE_FIELD,
 )
 from src._version import APP_VERSION
 from src.utils.image_utils import load_image_bytes
@@ -341,15 +341,37 @@ class WeChatChannel(BaseNotificationChannel):
         image_url: str = kwargs.get("image", "")
         image_bytes: Optional[bytes] = kwargs.get("image_bytes")
 
+        # 图片发送模式：
+        # base.send_rendered 已在「纯文字」模式下不传图片，故此处只需区分
+        # separate（图片与文字分两条，历史行为）与 poster（图文合一 news 卡片）。
+        separate = bool(kwargs.get("image_separate"))
+        poster_mode = (image_url or image_bytes) and not separate
+
         # why：企业微信主动拉取 news.picurl 容易受防盗链和内网地址影响，改为服务端取图后上传素材。
         if not image_bytes and image_url:
             image_bytes = await load_image_bytes(image_url)
+
+        content = f"【{title}】\n{text}" if title else text
+
+        if poster_mode and image_url:
+            # 海报模式：用 news 图文卡片实现图文合一（需要可访问的 picurl）
+            article_title = kwargs.get("article_title") or title or "通知"
+            try:
+                await self._send_news_to(to_user, [{
+                    "title": article_title,
+                    "description": text[:512],
+                    "url": kwargs.get("link") or image_url,
+                    "picurl": image_url,
+                }])
+                return
+            except Exception as news_err:
+                self.logger.warning(f"海报模式发送 news 卡片失败，降级为图片+文字: {news_err}")
+
         if image_bytes:
             media_id = await self._upload_image_media(image_bytes)
             if media_id:
                 await self._send_image_to(to_user, media_id, agent_id)
 
-        content = f"【{title}】\n{text}" if title else text
         payload = {
             "touser": to_user,
             "msgtype": "text",
@@ -742,4 +764,5 @@ class WeChatChannel(BaseNotificationChannel):
                 "description_tw": "啟用後，Bot 的所有收發訊息將記錄到 config/logs/bot_raw.log 檔案中，用於除錯",
                 "default": False,
             },
+            IMAGE_MODE_FIELD,
         ]

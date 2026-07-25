@@ -30,6 +30,36 @@ class ChannelCapability(Enum):
     LINKS = "links"                          # 支持链接
 
 
+# ── 图片发送模式（各渠道通用）──
+IMAGE_MODE_TEXT = "text"          # 纯文字：丢弃图片，只发文本
+IMAGE_MODE_POSTER = "poster"      # 海报：图文合一（图片带 caption）
+IMAGE_MODE_SEPARATE = "separate"  # 图片模式：图片与文字分两条消息发送
+IMAGE_MODE_DEFAULT = IMAGE_MODE_POSTER
+
+# 各渠道 configFields 共享的「图片发送模式」三档开关定义。
+# why: 四个渠道都需要该配置，集中定义避免重复；前端 renderConfigField 的
+# segmented 分支会渲染成左中右三档拨动开关。
+IMAGE_MODE_FIELD = {
+    "key": "image_mode",
+    "label": "图片发送模式",
+    "label_en": "Image Sending Mode",
+    "label_tw": "圖片傳送模式",
+    "type": "segmented",
+    "description": "纯文字=不发图片；海报=图文合一；图片模式=图片与文字分两条发送",
+    "description_en": "Text only = no image; Poster = image with caption; Separate = image and text as two messages",
+    "description_tw": "純文字=不傳圖片；海報=圖文合一；圖片模式=圖片與文字分兩條傳送",
+    "options": [
+        {"value": IMAGE_MODE_TEXT, "label": "纯文字",
+         "label_en": "Text Only", "label_tw": "純文字"},
+        {"value": IMAGE_MODE_POSTER, "label": "海报",
+         "label_en": "Poster", "label_tw": "海報"},
+        {"value": IMAGE_MODE_SEPARATE, "label": "图片模式",
+         "label_en": "Separate", "label_tw": "圖片模式"},
+    ],
+    "default": IMAGE_MODE_DEFAULT,
+}
+
+
 @dataclass
 class ChannelCapabilities:
     """渠道能力配置 — 描述渠道的能力集合和限制"""
@@ -166,6 +196,14 @@ class BaseNotificationChannel(ABC):
         """
         return False
 
+    @property
+    def image_mode(self) -> str:
+        """当前渠道的图片发送模式（text / poster / separate）"""
+        mode = (self.config or {}).get("image_mode") or IMAGE_MODE_DEFAULT
+        if mode not in (IMAGE_MODE_TEXT, IMAGE_MODE_POSTER, IMAGE_MODE_SEPARATE):
+            return IMAGE_MODE_DEFAULT
+        return mode
+
     async def send_rendered(self, rendered: RenderedMessage):
         """发送标准渲染消息。
 
@@ -179,10 +217,18 @@ class BaseNotificationChannel(ABC):
         title = rendered.title
         body = rendered.body
         kwargs = {}
-        if rendered.image:
-            kwargs["image"] = rendered.image
-        if rendered.image_bytes:
-            kwargs["image_bytes"] = rendered.image_bytes
+        # 按渠道配置的图片发送模式决定图片如何附带：
+        # text     → 丢弃图片，只发文本
+        # poster   → 图文合一（交给渠道以 caption 形式发送）
+        # separate → 图片与文字分两条发送，由渠道读取 image_separate 标记
+        mode = self.image_mode
+        if mode != IMAGE_MODE_TEXT:
+            if rendered.image:
+                kwargs["image"] = rendered.image
+            if rendered.image_bytes:
+                kwargs["image_bytes"] = rendered.image_bytes
+            if mode == IMAGE_MODE_SEPARATE and (rendered.image or rendered.image_bytes):
+                kwargs["image_separate"] = True
         if rendered.buttons:
             kwargs["reply_markup"] = rendered.buttons
         if rendered.edit_message_id:

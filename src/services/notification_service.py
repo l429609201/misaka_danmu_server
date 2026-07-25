@@ -20,6 +20,7 @@ from src.notification.menus import (
     LibraryMenuMixin,
     TokensMenuMixin,
     TasksMenuMixin,
+    TaskManagerMenuMixin,
     CacheMenuMixin,
     StatusMenuMixin,
 )
@@ -39,6 +40,7 @@ class NotificationService(
     LibraryMenuMixin,
     TokensMenuMixin,
     TasksMenuMixin,
+    TaskManagerMenuMixin,
     CacheMenuMixin,
     StatusMenuMixin,
 ):
@@ -63,6 +65,8 @@ class NotificationService(
         # 用于 TG edit_message 功能（发新消息后记录 message_id，后续进度更新时 edit）
         # 同时覆盖 fallback 和普通下载任务
         self._task_progress_tg_msg: Dict[str, Dict[str, int]] = {}
+        # 任务管理器自动刷新协程: user_id -> asyncio.Task
+        self._tm_refresh_tasks: Dict[str, Any] = {}
 
     def cleanup_task_progress(self, task_id: str):
         """清理指定任务的进度消息缓存（任务结束但无需发通知时调用）"""
@@ -189,7 +193,15 @@ class NotificationService(
             # status
             "status_refresh": self.cb_status_refresh,
             # tasks
+            "tasks_home": self.cb_tasks_home,
+            "tasks_sched": self.cb_tasks_sched,
             "tasks_refresh": self.cb_tasks_refresh,
+            # 任务管理器（后台任务）
+            "tm_list": self.cb_tm_list,
+            "tm_auto": self.cb_tm_auto,
+            "tm_pause": self.cb_tm_pause,
+            "tm_resume": self.cb_tm_resume,
+            "tm_abort": self.cb_tm_abort,
             "task_toggle": self.cb_task_toggle,
             "task_run": self.cb_task_run,
             "task_del": self.cb_task_del,

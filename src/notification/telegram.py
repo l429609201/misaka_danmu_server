@@ -14,7 +14,7 @@ from src._version import APP_VERSION
 
 from src.notification.base import (
     BaseNotificationChannel, CommandResult,
-    ChannelCapability, ChannelCapabilities,
+    ChannelCapability, ChannelCapabilities, IMAGE_MODE_FIELD,
 )
 
 logger = logging.getLogger(__name__)
@@ -205,6 +205,7 @@ class TelegramChannel(BaseNotificationChannel):
                 "description_tw": "啟用後，Bot 的所有收發訊息將記錄到 config/logs/bot_raw.log 檔案中，用於除錯",
                 "default": False,
             },
+            IMAGE_MODE_FIELD,
         ]
 
     def _is_log_raw(self) -> bool:
@@ -746,6 +747,24 @@ class TelegramChannel(BaseNotificationChannel):
         # reply_markup：内联键盘按钮（列表格式同 CommandResult.reply_markup）
         raw_markup = kwargs.get("reply_markup")
         markup = self._build_inline_markup(raw_markup) if raw_markup else None
+        # image_separate：图片模式 — 图片与文字分两条消息发送。
+        # why: 先单独发图（无 caption），再走下方纯文本分支发文字，
+        # 观感与企业微信的「图片模式」一致。
+        if kwargs.get("image_separate") and (image or image_bytes) and not edit_message_id:
+            try:
+                if image_bytes:
+                    import io as _sep_io
+                    _photo = _sep_io.BytesIO(image_bytes)
+                    _photo.name = "poster.png"
+                    await asyncio.to_thread(self._bot.send_photo, chat_id, _photo)
+                else:
+                    await asyncio.to_thread(self._bot.send_photo, chat_id, image)
+            except Exception as sep_err:
+                self.logger.warning(f"图片模式单独发图失败，改为仅发文本: {sep_err}")
+            # 图片已单独发出，后续按纯文本处理
+            image = ""
+            image_bytes = None
+
         try:
             # 仅当"纯文本编辑"时才走 edit_message_text（如任务进度消息反复刷新同一条）。
             # 若同时带图（image/image_bytes，如刷新完成的海报通知），则不能走此分支：
