@@ -2951,12 +2951,11 @@ export default {
       noImportableItems: '没有可导入的项目',
       importSubmitted: '导入任务已提交',
       batchImportFailed: '批量导入失败: ',
-      noUnimported: '当前没有未导入的媒体项',
       importAllTitle: '一键导入全部未导入',
-      importAllContent: '当前有 {{count}} 个未导入的媒体项，确定要全部导入吗？导入过程可能需要较长时间。',
+      // why：改为异步任务后不再预先统计数量，文案不能再依赖 count 占位符
+      importAllContentAsync: '将扫描并导入当前媒体服务器下全部未导入的媒体项。任务提交后可在「任务管理器」查看统计与导入进度，确定继续吗？',
       confirmImport: '确定导入',
       importFailed: '导入失败: ',
-      getUnimportedFailed: '获取未导入数量失败: ',
     },
 
     // 服务器配置面板 ServerConfigPanel
@@ -3215,6 +3214,10 @@ export default {
       searchTitlePlaceholder: '搜索标题...',
       clear: '清除',
       search: '搜索',
+      modePage: '分页',
+      modeAuto: '自动加载',
+      scrollLoadMore: '加载更多',
+      loadedCount: '已加载 {{loaded}} / {{total}} 条',
     },
 
     // 本地项目列表 LocalItemList

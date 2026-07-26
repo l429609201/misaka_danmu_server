@@ -2413,12 +2413,11 @@ export default {
       noImportableItems: '沒有可匯入的項目',
       importSubmitted: '匯入任務已提交',
       batchImportFailed: '批次匯入失敗: ',
-      noUnimported: '目前沒有未匯入的媒體項',
       importAllTitle: '一鍵匯入全部未匯入',
-      importAllContent: '目前有 {{count}} 個未匯入的媒體項，確定要全部匯入嗎？匯入過程可能需要較長時間。',
+      // why：改為非同步任務後不再預先統計數量，文案不能再依賴 count 佔位符
+      importAllContentAsync: '將掃描並匯入目前媒體伺服器下全部未匯入的媒體項。任務提交後可在「任務管理器」查看統計與匯入進度，確定繼續嗎？',
       confirmImport: '確定匯入',
       importFailed: '匯入失敗: ',
-      getUnimportedFailed: '取得未匯入數量失敗: ',
     },
 
     // 伺服器設定面板 ServerConfigPanel
@@ -2677,6 +2676,10 @@ export default {
       searchTitlePlaceholder: '搜尋標題...',
       clear: '清除',
       search: '搜尋',
+      modePage: '分頁',
+      modeAuto: '自動載入',
+      scrollLoadMore: '載入更多',
+      loadedCount: '已載入 {{loaded}} / {{total}} 筆',
     },
 
     // 本機項目列表 LocalItemList

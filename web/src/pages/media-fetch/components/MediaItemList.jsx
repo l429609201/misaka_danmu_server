@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Input, message, Checkbox, Popconfirm, Tag, List, Row, Col, Dropdown, Pagination, Popover } from 'antd';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Card, Table, Button, Space, Input, message, Checkbox, Popconfirm, Tag, List, Row, Col, Dropdown, Pagination, Popover, Segmented, Spin } from 'antd';
 import { SearchOutlined, DeleteOutlined, EditOutlined, ImportOutlined, FolderOpenOutlined, AppstoreOutlined, TableOutlined, MoreOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { getMediaWorks, deleteMediaItem, batchDeleteMediaItems, importMediaItems } from '../../../apis';
@@ -23,13 +23,22 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
   const [episodeModalVisible, setEpisodeModalVisible] = useState(false);
   const [selectedShow, setSelectedShow] = useState(null);
   const [viewMode, setViewMode] = useState('table'); // 'table' or 'card'
+  // 自动加载模式：往下滚动时累积追加数据，便于跨页全选后一次性导入
+  const [autoLoadMode, setAutoLoadMode] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // why：滚动回调与 loadItems 都需要读取「是否还有下一页」，用 ref 保存最新分页状态，
+  // 避免把 pagination 加进 useCallback 依赖导致监听频繁重绑。
+  const paginationRef = useRef(pagination);
+  paginationRef.current = pagination;
 
   // 使用外部传入的 mediaTypeFilter,如果没有则使用默认值
   const mediaTypeFilter = externalMediaTypeFilter || 'all';
 
   // 加载作品列表
-  const loadItems = async (page = 1, pageSize = 100) => {
-    setLoading(true);
+  // append=true 时把结果追加到现有列表（自动加载模式），否则整页替换
+  const loadItems = async (page = 1, pageSize = 100, append = false) => {
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     try {
       const params = {
         server_id: serverId,
@@ -59,7 +68,15 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
       // 构建树形结构(只包含作品和季度,不包含集)
       // 【优化】buildTreeData 现在是同步函数，不再需要 await
       const treeData = buildTreeData(data.list);
-      setItems(treeData);
+      if (append) {
+        // why：后端分页在并发/数据变动下可能返回重复项，按 key 去重避免 React 重复 key 报错
+        setItems(prev => {
+          const existedKeys = new Set(prev.map(item => item.key));
+          return [...prev, ...treeData.filter(item => !existedKeys.has(item.key))];
+        });
+      } else {
+        setItems(treeData);
+      }
       setPagination({
         current: page,
         pageSize,
@@ -69,7 +86,8 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
       message.error(t('mediaFetch.mediaItemList.loadFailed'));
       console.error(error);
     } finally {
-      setLoading(false);
+      if (append) setLoadingMore(false);
+      else setLoading(false);
     }
   };
 
@@ -141,6 +159,42 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId, refreshTrigger, externalMediaTypeFilter, searchText, yearFrom, yearTo]);
+
+  // 加载下一页并追加（自动加载模式）
+  const loadMore = useCallback(() => {
+    const { current, pageSize, total } = paginationRef.current;
+    if (loadingMore || loading) return;
+    // 已加载条数达到总数则不再请求
+    if (current * pageSize >= total) return;
+    loadItems(current + 1, pageSize, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingMore, loading]);
+
+  // 滚动到底部时自动加载下一页
+  // why：媒体项列表由页面整体滚动（无独立滚动容器），故监听 window 而非某个 ref
+  useEffect(() => {
+    if (!autoLoadMode) return;
+
+    const handleScroll = () => {
+      const scrollTop = window.scrollY || document.documentElement.scrollTop;
+      const { scrollHeight } = document.documentElement;
+      // 距离底部 150px 时触发
+      if (scrollHeight - scrollTop - window.innerHeight < 150) {
+        loadMore();
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [autoLoadMode, loadMore]);
+
+  // 切换分页/自动加载模式
+  const handleLoadModeChange = (mode) => {
+    const isAuto = mode === 'auto';
+    setAutoLoadMode(isAuto);
+    // 两种模式的数据累积方式不同，切换时回到第一页重新加载，避免残留数据错位
+    loadItems(1, paginationRef.current.pageSize);
+  };
 
   // 同步外部选中的项目
   useEffect(() => {
@@ -972,6 +1026,44 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
     );
   };
 
+  // 列表底部：分页模式显示分页器，自动加载模式显示已加载进度
+  // why：表格视图与卡片视图底部结构一致，抽出复用避免两处重复维护
+  const renderListFooter = () => {
+    const loadedCount = items.length;
+    const hasMore = pagination.current * pagination.pageSize < pagination.total;
+
+    if (autoLoadMode) {
+      return (
+        <div style={{ textAlign: 'center', marginTop: 16, color: 'var(--color-text-secondary)' }}>
+          {loadingMore ? (
+            <Spin size="small" />
+          ) : hasMore ? (
+            <Button type="link" onClick={loadMore}>
+              {t('mediaFetch.mediaItemList.scrollLoadMore')}
+            </Button>
+          ) : null}
+          <div style={{ fontSize: 12, marginTop: 4 }}>
+            {t('mediaFetch.mediaItemList.loadedCount', { loaded: loadedCount, total: pagination.total })}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+        <Pagination
+          {...pagination}
+          showSizeChanger={true}
+          showQuickJumper={true}
+          hideOnSinglePage={false}
+          size="small"
+          pageSizeOptions={['10', '20', '50', '100', '200']}
+          onChange={(page, pageSize) => loadItems(page, pageSize)}
+        />
+      </div>
+    );
+  };
+
   return (
     <>
       <Card
@@ -1000,6 +1092,16 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
               >
                 {t('mediaFetch.mediaItemList.card')}
               </Button>
+              {/* 分页 / 自动加载（滚动累积）模式切换 */}
+              <Segmented
+                size="small"
+                value={autoLoadMode ? 'auto' : 'page'}
+                onChange={handleLoadModeChange}
+                options={[
+                  { label: t('mediaFetch.mediaItemList.modePage'), value: 'page' },
+                  { label: t('mediaFetch.mediaItemList.modeAuto'), value: 'auto' },
+                ]}
+              />
               <Popover
                 trigger="click"
                 placement="bottom"
@@ -1155,18 +1257,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
               size="small"
               className="desktop-only"
             />
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
-              <Pagination
-                {...pagination}
-                showSizeChanger={true}
-                showQuickJumper={true}
-                position={['bottomCenter']}
-                hideOnSinglePage={false}
-                size="small"
-                pageSizeOptions={['10', '20', '50', '100', '200']}
-                onChange={(page, pageSize) => loadItems(page, pageSize)}
-              />
-            </div>
+            {renderListFooter()}
           </div>
         ) : (
           <div>
@@ -1212,17 +1303,7 @@ const MediaItemList = ({ serverId, refreshTrigger, selectedItems = [], onSelecti
                 </List.Item>
               )}
             />
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
-              <Pagination
-                {...pagination}
-                showSizeChanger={true}
-                showQuickJumper={true}
-                hideOnSinglePage={false}
-                size="small"
-                pageSizeOptions={['10', '20', '50', '100', '200']}
-                onChange={(page, pageSize) => loadItems(page, pageSize)}
-              />
-            </div>
+            {renderListFooter()}
           </div>
         )}</Card>
 

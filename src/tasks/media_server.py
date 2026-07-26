@@ -112,6 +112,54 @@ async def scan_media_server_library(
     raise TaskSuccess(f"媒体库扫描完成,共扫描到 {total_items} 个媒体项")
 
 
+async def import_all_unimported_media_items(
+    server_id: int,
+    media_type: Optional[str],
+    session: AsyncSession,
+    task_manager: TaskManager,
+    progress_callback: Callable,
+    scraper_manager=None,
+    metadata_manager=None,
+    config_manager=None,
+    ai_matcher_manager=None,
+    rate_limiter=None,
+    title_recognition_manager=None
+):
+    """一键导入指定服务器下全部"未导入"媒体项。
+
+    why：未导入清单的计算依赖 crud.get_unimported_item_ids 中的关联子查询
+    （Anime×AnimeSource×Episode 三表 JOIN + func.replace 比对标题，索引失效），
+    媒体库较大时耗时可达数十秒。原实现放在 HTTP 接口内同步执行，用户点击按钮后
+    长时间无任何反馈，误以为功能失效（issue #441）。
+    改为在任务内部计算：接口立即返回 taskId，耗时过程有进度可见。
+    """
+    await progress_callback(0, "正在统计未导入的媒体项...")
+
+    item_ids = await crud.get_unimported_item_ids(session, server_id, media_type)
+    if not item_ids:
+        raise TaskSuccess("没有未导入的媒体项")
+
+    await progress_callback(5, f"共 {len(item_ids)} 个未导入媒体项，开始导入...")
+
+    # 复用既有导入逻辑；进度回调做区间压缩，把 5%~100% 留给实际导入过程
+    async def _scaled_callback(progress: int, description: str):
+        scaled = 5 + int(progress * 0.95)
+        await progress_callback(min(scaled, 100), description)
+
+    await import_media_items(
+        item_ids,
+        session,
+        task_manager,
+        _scaled_callback,
+        scraper_manager=scraper_manager,
+        metadata_manager=metadata_manager,
+        config_manager=config_manager,
+        ai_matcher_manager=ai_matcher_manager,
+        rate_limiter=rate_limiter,
+        title_recognition_manager=title_recognition_manager
+    )
+
+
 async def import_media_items(
     item_ids: List[int],
     session: AsyncSession,

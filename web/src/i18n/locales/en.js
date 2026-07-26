@@ -2411,12 +2411,11 @@ Singer 2024 => {[rules=extra|pure version|preview|behind the scenes]}`,
       noImportableItems: 'No items to import',
       importSubmitted: 'Import task submitted',
       batchImportFailed: 'Batch import failed: ',
-      noUnimported: 'No unimported media items at the moment',
       importAllTitle: 'Import All Unimported',
-      importAllContent: 'There are {{count}} unimported media items. Are you sure you want to import them all? This may take a long time.',
+      // why：改为异步任务后不再预先统计数量，文案不能再依赖 count 占位符
+      importAllContentAsync: 'This will scan and import all unimported media items on the current media server. After the task is submitted, you can track counting and import progress in Task Manager. Continue?',
       confirmImport: 'Confirm Import',
       importFailed: 'Import failed: ',
-      getUnimportedFailed: 'Failed to get unimported count: ',
     },
 
     // Server Config Panel
@@ -2675,6 +2674,10 @@ Singer 2024 => {[rules=extra|pure version|preview|behind the scenes]}`,
       searchTitlePlaceholder: 'Search title...',
       clear: 'Clear',
       search: 'Search',
+      modePage: 'Paged',
+      modeAuto: 'Auto Load',
+      scrollLoadMore: 'Load More',
+      loadedCount: 'Loaded {{loaded}} / {{total}}',
     },
 
     // Local Item List

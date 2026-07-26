@@ -1488,6 +1488,27 @@ class TaskManager:
                     title_recognition_manager=title_recognition_manager,
                 )
 
+            elif task_type == "import_all_unimported":
+                # why：一键导入全部未导入的清单是在任务内部实时统计的，
+                # 重启后只需 serverId/mediaType 即可重新计算，无需持久化 itemIds。
+                from src import tasks as all_tasks
+                server_id = task_parameters.get("serverId")
+                if not server_id:
+                    return None
+                return lambda session, callback: all_tasks.import_all_unimported_media_items(
+                    server_id,
+                    task_parameters.get("mediaType"),
+                    session,
+                    self,
+                    callback,
+                    scraper_manager=scraper_manager,
+                    metadata_manager=metadata_manager,
+                    config_manager=self.config_manager,
+                    ai_matcher_manager=ai_matcher_manager,
+                    rate_limiter=rate_limiter,
+                    title_recognition_manager=title_recognition_manager,
+                )
+
             else:
                 self.logger.warning(f"未知的任务类型 '{task_type}'，无法重建协程工厂")
                 return None

@@ -5,7 +5,7 @@ import { ReloadOutlined, PlusOutlined, ScanOutlined, SettingOutlined, SaveOutlin
 import { useTranslation } from 'react-i18next';
 import ServerConfigPanel from './ServerConfigPanel';
 import MediaItemList from './MediaItemList';
-import { getMediaServers, scanMediaServer, getMediaServerLibraries, updateMediaServer, batchDeleteMediaItems, importMediaItems, deleteMediaServer, getUnimportedCount, importAllUnimported } from '../../../apis';
+import { getMediaServers, scanMediaServer, getMediaServerLibraries, updateMediaServer, batchDeleteMediaItems, importMediaItems, deleteMediaServer, importAllUnimported } from '../../../apis';
 
 const { Option } = Select;
 const { Title, Text } = Typography;
@@ -357,43 +357,31 @@ const LibraryScan = () => {
   };
 
   // 一键导入全部未导入
-  const handleImportAllUnimported = async () => {
+  // why：原实现先调 getUnimportedCount 拿数量再弹确认框，该统计接口含无法命中索引的
+  // 关联子查询，媒体库大时要等数十秒才弹窗，用户误判为按钮无效（issue #441）。
+  // 现改为点击即弹确认框，统计与导入都下沉到后端任务，接口立即返回 taskId。
+  const handleImportAllUnimported = () => {
     if (!selectedServerId) {
       message.warning(t('mediaFetch.libraryScan.scanTipNoServer'));
       return;
     }
 
-    try {
-      // 先获取未导入数量
-      const countRes = await getUnimportedCount(selectedServerId);
-      const count = countRes.data.count;
-
-      if (count === 0) {
-        message.info(t('mediaFetch.libraryScan.noUnimported'));
-        return;
-      }
-
-      // 弹出确认框
-      Modal.confirm({
-        title: t('mediaFetch.libraryScan.importAllTitle'),
-        content: t('mediaFetch.libraryScan.importAllContent', { count }),
-        okText: t('mediaFetch.libraryScan.confirmImport'),
-        cancelText: t('mediaFetch.libraryScan.cancel'),
-        onOk: async () => {
-          try {
-            const res = await importAllUnimported({ serverId: selectedServerId });
-            message.success(res.data.message || t('mediaFetch.libraryScan.importSubmitted'));
-            setRefreshTrigger(prev => prev + 1);
-          } catch (error) {
-            message.error(t('mediaFetch.libraryScan.importFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
-            console.error(error);
-          }
+    Modal.confirm({
+      title: t('mediaFetch.libraryScan.importAllTitle'),
+      content: t('mediaFetch.libraryScan.importAllContentAsync'),
+      okText: t('mediaFetch.libraryScan.confirmImport'),
+      cancelText: t('mediaFetch.libraryScan.cancel'),
+      onOk: async () => {
+        try {
+          const res = await importAllUnimported({ serverId: selectedServerId });
+          message.success(res.data.message || t('mediaFetch.libraryScan.importSubmitted'));
+          setRefreshTrigger(prev => prev + 1);
+        } catch (error) {
+          message.error(t('mediaFetch.libraryScan.importFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
+          console.error(error);
         }
-      });
-    } catch (error) {
-      message.error(t('mediaFetch.libraryScan.getUnimportedFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
-      console.error(error);
-    }
+      }
+    });
   };
 
   const currentServer = servers.find(s => s.id === selectedServerId);
