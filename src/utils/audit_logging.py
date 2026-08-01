@@ -102,7 +102,15 @@ def format_audit_request_body(raw_body: bytes, content_type: str) -> str | None:
 
 
 async def capture_audit_request_body(request: Request) -> str | None:
-    """仅读取可确认不超过 16 KiB 的请求体，避免审计逻辑放大内存占用。"""
+    """仅读取可确认不超过 16 KiB 的请求体，避免审计逻辑放大内存占用。
+
+    读完 body 后立即将 request._receive 覆盖为重播版本。
+    why：request.body() 消费了 ASGI receive 通道里的 http.request 消息；
+    普通 FastAPI 路由通过 request._body 缓存访问，不受影响；
+    但 fastapi-mcp 等直接调用原始 request.receive 的 ASGI 下游
+    会因通道已空而永久阻塞（已通过 repro 验证）。
+    重置 _receive 为幂等的重播闭包，确保任意下游都能再次取到完整请求体。
+    """
     content_type = request.headers.get("content-type", "")
     length_header = request.headers.get("content-length")
     try:
@@ -113,7 +121,15 @@ async def capture_audit_request_body(request: Request) -> str | None:
         return _metadata(content_type, None, "缺少有效 Content-Length，未读取请求体")
     if content_length > _MAX_REQUEST_BODY_BYTES:
         return _metadata(content_type, content_length, "请求体超过 16 KiB，未读取原文")
+
     raw_body = await request.body()
+
+    # 立即重置 receive 通道，幂等可重复调用
+    _snapshot = raw_body
+    async def _replay_receive():
+        return {"type": "http.request", "body": _snapshot, "more_body": False}
+    request._receive = _replay_receive
+
     if len(raw_body) > _MAX_REQUEST_BODY_BYTES:
         return _metadata(content_type, len(raw_body), "实际请求体超过 16 KiB，未记录原文")
     return format_audit_request_body(raw_body, content_type)
