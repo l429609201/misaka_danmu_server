@@ -143,13 +143,12 @@ def setup_mcp(app: FastAPI) -> None:
     try:
         from fastapi_mcp import FastApiMCP, AuthConfig
     except Exception as e:
-        # why：不仅缺包会失败；dist-info 被裁剪时也会抛 PackageNotFoundError。
-        # 记录具体异常和堆栈，避免路由静默缺失后只能看到 SPA HTML。
+        # why：MCP 是已声明的服务能力，初始化失败时禁止应用假装健康并让请求落到 SPA 405。
         logger.error(
-            f"fastapi-mcp 导入失败，MCP Server 功能不可用: {e}",
+            f"fastapi-mcp 导入失败，应用无法提供 MCP 服务: {e}",
             exc_info=True,
         )
-        return
+        raise RuntimeError("MCP 依赖导入失败") from e
 
     try:
         mcp = FastApiMCP(
@@ -180,5 +179,6 @@ def setup_mcp(app: FastAPI) -> None:
         )
 
     except Exception as e:
-        logger.error(f"MCP Server 初始化失败: {e}")
-        logger.exception("MCP 初始化详细错误:")
+        # why：挂载失败也必须终止启动，不能让健康检查通过后由 SPA 返回误导性的 405。
+        logger.error(f"MCP Server 初始化失败: {e}", exc_info=True)
+        raise RuntimeError("MCP Server 初始化失败") from e

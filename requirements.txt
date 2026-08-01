@@ -52,7 +52,9 @@ pyTelegramBotAPI
 # Redis 缓存后端（可选，仅 cache.backend 配置为 redis 时需要）
 redis>=5.0.0  # redis-py，含 asyncio 支持
 # MCP Server（Model Context Protocol）支持
-fastapi-mcp>=0.3.0  # 将FastAPI路由暴露为MCP工具
+# why：fastapi-mcp 0.4.0 未声明 mcp<2，宽松解析会安装不兼容的 mcp 2.x。
+fastapi-mcp==0.4.0
+mcp==1.29.0
 # 两步验证 (TOTP)
 pyotp  # RFC 6238 TOTP 实现
 # WebAuthn PassKey 支持
