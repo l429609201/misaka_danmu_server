@@ -35,11 +35,11 @@ WORKDIR /install
 COPY requirements.txt .
 # 将所有包安装到当前目录 (/install)
 # --no-compile: 不生成 .pyc 文件（运行时 PYTHONDONTWRITEBYTECODE=1 会处理）
+# 保留 dist-info：MCP SDK 会通过 importlib.metadata 读取包版本，删除元数据会导致路由初始化失败。
 RUN pip install --no-cache-dir --no-compile -r requirements.txt --target . \
     && find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
     && find . -type f -name '*.pyc' -delete \
     && find . -type f -name '*.pyo' -delete \
-    && find . -type d -name '*.dist-info' -exec rm -rf {} + 2>/dev/null || true \
     && find . -type d -name 'tests' -exec rm -rf {} + 2>/dev/null || true \
     && find . -type d -name 'test' -exec rm -rf {} + 2>/dev/null || true \
     && find . -type d -name 'docs' -exec rm -rf {} + 2>/dev/null || true \

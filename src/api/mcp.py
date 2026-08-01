@@ -142,10 +142,12 @@ def setup_mcp(app: FastAPI) -> None:
     """
     try:
         from fastapi_mcp import FastApiMCP, AuthConfig
-    except ImportError:
-        logger.warning(
-            "fastapi-mcp 库未安装，MCP Server 功能不可用。"
-            "请运行 `pip install fastapi-mcp` 安装。"
+    except Exception as e:
+        # why：不仅缺包会失败；dist-info 被裁剪时也会抛 PackageNotFoundError。
+        # 记录具体异常和堆栈，避免路由静默缺失后只能看到 SPA HTML。
+        logger.error(
+            f"fastapi-mcp 导入失败，MCP Server 功能不可用: {e}",
+            exc_info=True,
         )
         return
 
