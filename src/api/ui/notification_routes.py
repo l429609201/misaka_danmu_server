@@ -98,7 +98,7 @@ def _validate_public_domain_format(raw_domain: str) -> str:
 async def _probe_public_domain(session: AsyncSession) -> Dict[str, Any]:
     """验证自定义域名能通过真实外网地址读取本服务的图片静态路由。"""
     domain = _validate_public_domain_format(
-        await crud.get_config_value(session, "customApiDomain", "")
+        await crud.get_config_value(session, "custom_api_domain", "")
     )
     probe_path = IMAGE_DIR / _PUBLIC_URL_PROBE_NAME
     try:

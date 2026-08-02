@@ -142,7 +142,7 @@ class NotificationManager:
         try:
             async with self._session_factory() as session:
                 from src.db import crud as _crud
-                return await _crud.get_config_value(session, "customApiDomain", "") or ""
+                return await _crud.get_config_value(session, "custom_api_domain", "") or ""
         except Exception as e:
             logger.warning(f"读取自定义域名失败: {e}")
         return ""
