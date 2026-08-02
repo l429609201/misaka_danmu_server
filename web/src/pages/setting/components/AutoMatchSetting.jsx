@@ -10,6 +10,15 @@ import AIMetrics from './AIMetrics'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store/index.js'
 import { useTranslation } from 'react-i18next'
+import { useHashTab } from '@/hooks/useHashTab'
+
+// 功能搜索锚点 -> 内层 Tab key。定义在模块级保证引用稳定。
+const AUTOMATCH_ANCHOR_TABS = {
+  'feat-ai-connection': 'connection',
+  'feat-ai-match': 'match',
+  'feat-ai-season-mapping': 'match',
+  'feat-ai-recognition': 'recognition',
+}
 
 const CustomSwitch = (props) => {
   return <Switch {...props} />
@@ -17,6 +26,8 @@ const CustomSwitch = (props) => {
 
 const AutoMatchSetting = () => {
   const { t } = useTranslation()
+  // 功能搜索深链：锚点哈希映射到内层 Tab key
+  const [activeTab, setActiveTab] = useHashTab(AUTOMATCH_ANCHOR_TABS, 'connection')
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -497,9 +508,10 @@ const AutoMatchSetting = () => {
             }
           }}
         >
-          <Tabs defaultActiveKey="connection">
+          <Tabs activeKey={activeTab} onChange={setActiveTab}>
             {/* 标签页1: AI连接配置 */}
             <TabPane tab={t('autoMatch.tabConnection')} key="connection">
+              <div id="feat-ai-connection" />
               <Form.Item
                 name="aiProvider"
                 label={
@@ -776,6 +788,7 @@ const AutoMatchSetting = () => {
 
             {/* 标签页2: AI自动匹配 */}
             <TabPane tab={t('autoMatch.tabMatch')} key="match">
+              <div id="feat-ai-match" />
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={8}>
                   <Card size="small" style={{ marginBottom: '16px' }}>
@@ -837,6 +850,7 @@ const AutoMatchSetting = () => {
 
               {/* 季度映射配置 */}
               <Card
+                id="feat-ai-season-mapping"
                 title={t('autoMatch.cardSeasonMapping')}
                 size="small"
                 style={{ marginBottom: '16px' }}
@@ -1044,6 +1058,7 @@ const AutoMatchSetting = () => {
 
             {/* 标签页3: AI识别增强 */}
             <TabPane tab={t('autoMatch.tabRecognition')} key="recognition">
+              <div id="feat-ai-recognition" />
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={6}>
                   <Card size="small" style={{ marginBottom: '16px' }}>

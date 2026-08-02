@@ -147,7 +147,7 @@ export const Ua = () => {
 
   return (
     <div className="my-6">
-      <Card title={t('bullet.uaTitle')}>
+      <Card id="feat-ua-filter" title={t('bullet.uaTitle')}>
         <div className="mb-4">
           {t('bullet.uaDesc')}
         </div>

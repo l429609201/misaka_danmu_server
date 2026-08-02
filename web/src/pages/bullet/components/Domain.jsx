@@ -30,7 +30,7 @@ export const Domain = ({ domain: propDomain, onDomainChange }) => {
 
   return (
     <div className="my-6">
-      <Card loading={loading} title={t('bullet.domainTitle')}>
+      <Card id="feat-custom-domain" loading={loading} title={t('bullet.domainTitle')}>
         <div>
           {t('bullet.domainDesc')}
         </div>

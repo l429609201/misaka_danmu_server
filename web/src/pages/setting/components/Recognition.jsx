@@ -180,7 +180,7 @@ BLOCK:预告
         </div>
       </Card>
 
-      <Card title={t('recognition.testCardTitle')} size="small">
+      <Card id="feat-recognition-test" title={t('recognition.testCardTitle')} size="small">
         <div className="space-y-3">
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex-1 min-w-[200px]">

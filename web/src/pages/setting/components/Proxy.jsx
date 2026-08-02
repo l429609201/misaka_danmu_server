@@ -336,6 +336,7 @@ export const Proxy = () => {
 
       {/* 测速结果卡片 - 常驻显示 */}
       <Card
+        id="feat-proxy-speedtest"
         className="mt-4"
         title={
           <div className="flex items-center gap-2">

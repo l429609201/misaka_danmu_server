@@ -162,7 +162,7 @@ const Security = () => {
   return (
     <div className="space-y-6">
       {/* TOTP 两步验证 */}
-      <Card title={<><SafetyOutlined className="mr-2" />{t('security.totpTitle')}</>} size="small">
+      <Card id="feat-security-totp" title={<><SafetyOutlined className="mr-2" />{t('security.totpTitle')}</>} size="small">
         <div className="flex items-center justify-between mb-4">
           <div>
             <Text>{t('security.totpDesc')}</Text>
@@ -214,6 +214,7 @@ const Security = () => {
 
       {/* PassKey */}
       <Card
+        id="feat-security-passkey"
         title={<><KeyOutlined className="mr-2" />{t('security.passkeyTitle')}</>}
         size="small"
         extra={

@@ -434,6 +434,7 @@ export const Token = ({ domain }) => {
   return (
     <div className="my-6">
       <Card
+        id="feat-bullet-token-list"
         loading={loading}
         title={t('bullet.tokenCardTitle')}
         extra={

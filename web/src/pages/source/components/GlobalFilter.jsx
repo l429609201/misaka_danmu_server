@@ -18,10 +18,19 @@ import {
 import { QuestionCircleOutlined } from '@ant-design/icons'
 import { useMessage } from '../../../MessageContext'
 import { useTranslation } from 'react-i18next'
+import { useHashTab } from '@/hooks/useHashTab'
 
+// 功能搜索锚点 -> 内层 Tab key。定义在模块级保证引用稳定。
+const FILTER_ANCHOR_TABS = {
+  'feat-global-filter': 'global',
+  'feat-episode-title-filter': 'episodeFilter',
+  'feat-single-filter': 'single',
+}
 
 export const GlobalFilter = () => {
   const { t } = useTranslation()
+  // 功能搜索深链：锚点哈希映射到内层 Tab key
+  const [activeTab, setActiveTab] = useHashTab(FILTER_ANCHOR_TABS, 'global')
   const [loading, setLoading] = useState(true)
   const [form] = Form.useForm()
   const [isSaveLoading, setIsSaveLoading] = useState(false)
@@ -365,7 +374,7 @@ export const GlobalFilter = () => {
 
   return (
     <div className="my-6" id="feat-global-filter">
-      <Tabs defaultActiveKey="global" items={[
+      <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
         {
           key: 'global',
           label: t('globalFilter.title'),
@@ -447,7 +456,7 @@ export const GlobalFilter = () => {
           key: 'episodeFilter',
           label: t('globalEpisodeTitleFilter.title'),
           children: loading ? null : (
-            <div className="px-2 pb-4 space-y-4">
+            <div className="px-2 pb-4 space-y-4" id="feat-episode-title-filter">
               <div className="text-sm text-gray-500 dark:text-gray-400">
                 {t('globalEpisodeTitleFilter.desc')}
               </div>
@@ -505,7 +514,7 @@ export const GlobalFilter = () => {
           key: 'single',
           label: t('singleEpisodeFilter.title'),
           children: loading ? null : (
-            <div className="px-2 pb-4 space-y-4">
+            <div className="px-2 pb-4 space-y-4" id="feat-single-filter">
               <div className="text-sm text-gray-500 dark:text-gray-400">
                 {t('singleEpisodeFilter.desc')}
               </div>
