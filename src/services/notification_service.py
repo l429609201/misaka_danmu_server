@@ -412,33 +412,19 @@ class NotificationService(
                 if rendered is None:
                     # 未注册的事件类型，跳过（由常规路径兜底）
                     continue
-                # body 已自带标题行，title 传空避免 send_message 二次拼接重复；
-                # 原标题通过 article_title 透传，供图文卡片标题使用
-                text = rendered.body
-                article_title = rendered.title
-                reply_markup = rendered.buttons or None
-                image_url: str = data.get("image_url", "") or rendered.image or ""
-
+                # why：特殊进度编辑路径也必须复用 send_rendered，不能绕过图片外链处理。
                 if has_cached_progress:
-                    # 有进度消息缓存：edit 已有消息
                     edit_mid = self._task_progress_tg_msg.get(task_id, {}).get(ch_id)
-                    msg_id_out: List[int] = []
-                    await channel_instance.send_message(
-                        title="", text=text, image=image_url,
-                        edit_message_id=edit_mid, _msg_id_out=msg_id_out,
-                        reply_markup=reply_markup, article_title=article_title,
-                    )
+                    rendered.edit_message_id = edit_mid
+                    rendered.metadata["_msg_id_out"] = []
+                    await channel_instance.send_rendered(rendered)
                     # 清理该渠道的缓存
                     if task_id in self._task_progress_tg_msg:
                         self._task_progress_tg_msg[task_id].pop(ch_id, None)
                         if not self._task_progress_tg_msg[task_id]:
                             self._task_progress_tg_msg.pop(task_id, None)
                 else:
-                    # 无进度缓存：正常发送
-                    await channel_instance.send_message(
-                        title="", text=text, image=image_url,
-                        reply_markup=reply_markup, article_title=article_title,
-                    )
+                    await channel_instance.send_rendered(rendered)
             except Exception as e:
                 logger.error(f"渠道 {ch_id} 发送事件 {event_type} 失败: {e}")
 

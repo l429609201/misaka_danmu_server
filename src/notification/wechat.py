@@ -602,11 +602,12 @@ class WeChatChannel(BaseNotificationChannel):
             self._button_mappings.pop(user_id, None)
 
         # 有图文 articles 时先发 news 卡片（仅有 picurl 的条目才有意义）
-        # 同时把文字正文只保留第一行（标题行），去掉重复列表，只保留操作提示
+        # why：交互卡片不走 send_rendered，发送前需显式复用统一外链处理。
         if result.articles:
-            has_image = any(a.get("picurl") for a in result.articles)
+            articles = await self.localize_articles(result.articles)
+            has_image = any(a.get("picurl") for a in articles)
             if has_image:
-                await self._send_news_to(user_id, result.articles)
+                await self._send_news_to(user_id, articles)
                 # 文字部分去掉结果列表，只保留第一行标题 + 操作选项
                 first_line = text.split("\n")[0]
                 ops_start = text.find("可用操作：")

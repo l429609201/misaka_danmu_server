@@ -606,8 +606,10 @@ class TelegramChannel(BaseNotificationChannel):
                         )[self.channel_id] = sent.message_id
             else:
                 cover_url = ""
-                if result.articles:
-                    for a in result.articles:
+                # why：交互卡片不走 send_rendered，外链模式下需先本地化海报地址。
+                articles = await self.localize_articles(result.articles)
+                if articles:
+                    for a in articles:
                         if a.get("picurl"):
                             cover_url = a["picurl"]
                             break

@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Set
 import logging
 import time
 
-from src.notification.messages.base import RenderedMessage
+from src.notification.messages.base import NotificationMessage, RenderedMessage
 
 
 # ═══════════════════════════════════════════
@@ -226,20 +226,27 @@ class BaseNotificationChannel(ABC):
         return ""
 
     async def _build_public_image_url(self, rendered: RenderedMessage) -> str:
-        """把消息图片转存为 W500 缩略图，并拼成外网可访问的 https 地址。
+        """把消息图片转存为 W500 缩略图，并拼成外网可访问的 https 地址。"""
+        return await self.build_public_image_url(
+            rendered.image, image_bytes=rendered.image_bytes
+        )
 
-        取不到外网地址、或图片转存失败时返回空串，由调用方决定降级策略。
+    async def build_public_image_url(
+        self, image_url: str = "", image_bytes: Optional[bytes] = None,
+    ) -> str:
+        """把任意图片引用转成当前渠道的本地 W500 公网地址。
+
+        why：事件通知和交互卡片都可能携带图片，统一入口可避免某条发送路径
+        绕过外链模式后继续暴露源站地址。
         """
         base = self.public_base_url()
         if not base:
             return ""
 
-        # 已经是本渠道外网地址下的图片时无需重复处理
-        if rendered.image.startswith(f"{base}/data/images/"):
-            return rendered.image
+        if image_url.startswith(f"{base}/data/images/"):
+            return image_url
 
-        # 优先用已在内存里的字节（如聚合海报），避免再发一次网络请求
-        source = rendered.image_bytes or rendered.image
+        source = image_bytes or image_url
         if not source:
             return ""
 
@@ -252,37 +259,53 @@ class BaseNotificationChannel(ABC):
 
         return f"{base}{web_path}" if web_path else ""
 
+    async def localize_articles(self, articles: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """按外链模式本地化交互卡片海报，并避免点击后跳回源站图片。"""
+        if self.image_mode != IMAGE_MODE_PUBLIC_URL:
+            return articles
+
+        localized = []
+        for article in articles:
+            item = dict(article)
+            original = item.get("picurl", "")
+            if original:
+                public_url = await self.build_public_image_url(original)
+                if public_url:
+                    item["picurl"] = public_url
+                    # why：空链接或原本就是图片链接时，点击目标也必须同步换成本地外链。
+                    if not item.get("url") or item.get("url") == original:
+                        item["url"] = public_url
+            localized.append(item)
+        return localized
+
     async def send_rendered(self, rendered: RenderedMessage):
         """发送标准渲染消息。
 
-        默认实现将 RenderedMessage 转发到 send_message，
-        保持与旧渠道实现的兼容性。子类可覆写以获得更精细的控制。
-
-        注意：消息系统的 to_markdown/to_text 返回的 body 已自带标题行，
-        因此这里 title 传空，避免 send_message 二次拼接导致标题重复；
-        title 通过 metadata 透传，供图文消息的 article 标题使用。
+        默认实现将 RenderedMessage 转发到 send_message，保持与旧渠道实现兼容。
+        消息正文已自带标题行，因此 title 传空；原标题通过 article_title 透传。
         """
         title = rendered.title
         body = rendered.body
         kwargs = {}
-        # 按渠道配置的图片发送模式决定图片如何附带：
-        # text       → 丢弃图片，只发文本
-        # poster     → 图文合一（交给渠道以 caption 形式发送）
-        # separate   → 图片与文字分两条发送，由渠道读取 image_separate 标记
-        # public_url → 先转存为 W500 缩略图，再把外网 https 地址交给平台自行抓取
         mode = self.image_mode
         if mode != IMAGE_MODE_TEXT:
             image_ref = rendered.image
             image_bytes = rendered.image_bytes
 
             if mode == IMAGE_MODE_PUBLIC_URL:
+                original_image = image_ref
                 public_url = await self._build_public_image_url(rendered)
                 if public_url:
-                    # 交给平台按 URL 抓取，不再上传字节，避免重复传输同一张图
                     image_ref = public_url
                     image_bytes = None
+                    if original_image:
+                        # why：正文模板也会展示海报链接，必须与卡片图片同步替换。
+                        body = body.replace(original_image, public_url)
+                        body = body.replace(
+                            NotificationMessage._escape_markdown(original_image),
+                            NotificationMessage._escape_markdown(public_url),
+                        )
                 else:
-                    # 外网地址缺失/非 https/转存失败：退回海报模式，保证图片不丢
                     self.logger.warning(
                         "外链模式不可用，本次按海报模式发送。"
                         "请在「弹幕 → Token 管理 → 自定义域名」填写公网可访问的 "
@@ -301,7 +324,6 @@ class BaseNotificationChannel(ABC):
         if rendered.edit_message_id:
             kwargs["edit_message_id"] = rendered.edit_message_id
         kwargs.update(rendered.metadata)
-        # article_title 供图文卡片标题使用（body 已含标题，正文 title 传空避免重复）
         kwargs["article_title"] = title
         await self.send_message(title="", text=body, **kwargs)
 
