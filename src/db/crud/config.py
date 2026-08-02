@@ -181,11 +181,24 @@ async def initialize_configs(session: AsyncSession, defaults: Dict[str, tuple[An
     existing_stmt = select(Config.configKey)
     existing_keys = set((await session.execute(existing_stmt)).scalars().all())
 
-    new_configs = [
-        Config(configKey=key, configValue=str(value), description=description)
-        for key, (value, description) in defaults.items()
-        if key not in existing_keys
-    ]
+    # why：defaults 来自各弹幕源/元数据源声明的 _DEFAULT_CONFIGS，属于外部可插拔内容。
+    # 单个源写错格式（如值写成裸字符串而非 (value, description) 二元组）不得中断整批
+    # 注册——否则一个第三方源的笔误会让主程序启动直接失败。逐条校验、坏条目跳过并告警。
+    new_configs = []
+    for key, raw in defaults.items():
+        if key in existing_keys:
+            continue
+        if not isinstance(raw, (tuple, list)) or len(raw) != 2:
+            logger.warning(
+                f"跳过格式错误的默认配置 '{key}'：期望 (默认值, 描述) 二元组，"
+                f"实际为 {type(raw).__name__}={raw!r}"
+            )
+            continue
+        value, description = raw
+        new_configs.append(
+            Config(configKey=key, configValue=str(value), description=str(description))
+        )
+
     if new_configs:
         session.add_all(new_configs)
         await session.commit()

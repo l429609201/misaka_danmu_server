@@ -242,7 +242,14 @@ class ScraperManager:
 
                 for name, obj in inspect.getmembers(module, inspect.isclass):
                     if issubclass(obj, BaseScraper) and obj is not BaseScraper:
-                        provider_name = obj.provider_name # 直接访问类属性，避免实例化
+                        # [E] provider_name 必须是非空字符串，否则后续用作 dict key 会静默污染
+                        provider_name = getattr(obj, 'provider_name', None)
+                        if not provider_name or not isinstance(provider_name, str):
+                            logging.getLogger(__name__).warning(
+                                f"跳过 {module_name_stem} 中的类 {name}："
+                                f"provider_name 缺失或非字符串（值={provider_name!r}）"
+                            )
+                            continue
 
                         # 单源最低服务器版本检查：类属性 min_server_version（空字符串或未定义则不限制）
                         source_min_ver = getattr(obj, 'min_server_version', None) or ''
@@ -260,21 +267,50 @@ class ScraperManager:
                                 continue
 
                         discovered_providers.append(provider_name)
-                        # (新增) 注册该刮削器能处理的域名
-                        for domain in getattr(obj, 'handled_domains', []):
-                            self._domain_map[domain] = provider_name
+                        # [C] handled_domains 必须是可迭代的字符串序列，不能是裸字符串
+                        # （裸字符串会被逐字符迭代，把 "b","i","l"... 写入 _domain_map）
+                        raw_domains = getattr(obj, 'handled_domains', [])
+                        if isinstance(raw_domains, str):
+                            logging.getLogger(__name__).warning(
+                                f"{provider_name}.handled_domains 是裸字符串 {raw_domains!r}，"
+                                f"应为列表；已自动包装为单元素列表。"
+                            )
+                            raw_domains = [raw_domains]
+                        for domain in raw_domains:
+                            if isinstance(domain, str) and domain:
+                                self._domain_map[domain] = provider_name
 
                         # 在加载时直接发现并收集提供商特定的默认配置
                         if hasattr(obj, '_PROVIDER_SPECIFIC_BLACKLIST_DEFAULT'):
                             config_key = f"{provider_name}_episode_blacklist_regex"
-                            default_value = getattr(obj, '_PROVIDER_SPECIFIC_BLACKLIST_DEFAULT')
+                            # [D] 默认值必须是字符串；compiled pattern 等类型 str() 兜底
+                            default_value = getattr(obj, '_PROVIDER_SPECIFIC_BLACKLIST_DEFAULT', '')
+                            if not isinstance(default_value, str):
+                                default_value = str(default_value)
                             description = f"{provider_name.capitalize()} 源的特定分集标题黑名单 (正则表达式)。"
                             default_configs_to_register[config_key] = (default_value, description)
 
                         # 收集 scraper 声明的其他默认配置（如 dandanplay 的跨域代理配置）
                         if hasattr(obj, '_DEFAULT_CONFIGS'):
-                            scraper_default_configs = getattr(obj, '_DEFAULT_CONFIGS', {})
+                            # [B] 显式 _DEFAULT_CONFIGS = None 时 getattr 返回 None，.items() 会崩
+                            scraper_default_configs = getattr(obj, '_DEFAULT_CONFIGS', None)
+                            if not isinstance(scraper_default_configs, dict):
+                                if scraper_default_configs is not None:
+                                    logging.getLogger(__name__).warning(
+                                        f"跳过 {provider_name}._DEFAULT_CONFIGS：应为 dict，"
+                                        f"实际类型为 {type(scraper_default_configs).__name__}。"
+                                    )
+                                scraper_default_configs = {}
                             for config_key, config_tuple in scraper_default_configs.items():
+                                # why：值必须是 (默认值, 描述) 二元组；裸字符串会被
+                                # initialize_configs 按字符解包，直接崩启动流程。
+                                if not (isinstance(config_tuple, (tuple, list)) and len(config_tuple) == 2):
+                                    logging.getLogger(__name__).warning(
+                                        f"跳过 {provider_name}._DEFAULT_CONFIGS[{config_key!r}]："
+                                        f"值应为 (默认值, 描述) 二元组，"
+                                        f"实际类型为 {type(config_tuple).__name__}={config_tuple!r}。"
+                                    )
+                                    continue
                                 default_configs_to_register[config_key] = config_tuple
                                 logging.getLogger(__name__).debug(f"发现 {provider_name} 的默认配置: {config_key}")
 
@@ -305,8 +341,19 @@ class ScraperManager:
         
         # 在同步数据库之前，注册所有发现的默认配置
         if default_configs_to_register:
-            await self.config_manager.register_defaults(default_configs_to_register)
-            logging.getLogger(__name__).info(f"已为 {len(default_configs_to_register)} 个搜索源注册默认分集黑名单。")
+            try:
+                await self.config_manager.register_defaults(default_configs_to_register)
+                logging.getLogger(__name__).info(
+                    f"已为 {len(default_configs_to_register)} 个搜索源注册默认配置。"
+                )
+            except Exception as e:
+                # why：兜底——收集阶段的格式校验应已过滤坏数据，
+                # 但若仍有漏网条目导致注册失败，记录错误后继续启动而非崩溃。
+                # 默认配置注册失败的最坏结果是某些配置项没有默认值，
+                # 不应因此阻塞整个弹幕服务的启动。
+                logging.getLogger(__name__).error(
+                    f"注册弹幕源默认配置时出错（已跳过，不影响启动）: {e}", exc_info=True
+                )
 
         # ── 远程版本校验：拉取公共仓库 package.json，比较全局最低版本要求 ──
         if await self._check_remote_min_version():
@@ -339,15 +386,36 @@ class ScraperManager:
         disabled_count = 0
         scraper_items = []  # (order, name, status)
 
-        for provider_name, scraper_class in self._scraper_classes.items():
-            scraper_instance = scraper_class(self._session_factory, self.config_manager, self.transport_manager)
-            # 【优化】设置 scraper_manager 引用,以便使用缓存的配置
-            scraper_instance._scraper_manager_ref = self
+        for provider_name, scraper_class in list(self._scraper_classes.items()):
+            # why：__init__ 是第三方源自己的代码，可能因源内部错误（读配置、编译正则、
+            # 建 httpx 客户端等）抛异常。原实现无保护，一个源构造失败会中断整个循环，
+            # 后续所有源都不会被实例化，直接导致主程序启动失败。改为逐源隔离：
+            # 失败的源移出 _scraper_classes 并计入 failed，其余源照常可用。
+            try:
+                scraper_instance = scraper_class(self._session_factory, self.config_manager, self.transport_manager)
+                # 【优化】设置 scraper_manager 引用,以便使用缓存的配置
+                scraper_instance._scraper_manager_ref = self
+            except Exception as e:
+                logging.getLogger(__name__).error(
+                    f"实例化搜索源 '{provider_name}' 失败，已跳过该源: {e}", exc_info=True
+                )
+                self._scraper_classes.pop(provider_name, None)
+                self._scraper_versions.pop(provider_name, None)
+                # 同步清理域名映射，避免 URL 路由到一个不存在的实例
+                for domain in [d for d, p in self._domain_map.items() if p == provider_name]:
+                    self._domain_map.pop(domain, None)
+                continue
+
             self.scrapers[provider_name] = scraper_instance
             setting = self.scraper_settings.get(provider_name, {})
 
             is_enabled = setting.get('isEnabled', True)
-            order = setting.get('displayOrder', 999)
+            # why：displayOrder 来自数据库，历史脏数据可能是 None 或字符串。
+            # 直接拿去排序/格式化会抛 TypeError，让整段汇总日志连带启动一起失败。
+            try:
+                order = int(setting.get('displayOrder', 999))
+            except (TypeError, ValueError):
+                order = 999
             if is_enabled:
                 enabled_count += 1
             else:
@@ -358,7 +426,7 @@ class ScraperManager:
                 logging.getLogger(__name__).warning(f"已加载搜索源 '{provider_name}'，但在数据库中未找到其设置。")
 
         # 汇总输出（按顺序排列）
-        scraper_items.sort(key=lambda x: x[0])
+        scraper_items.sort(key=lambda x: (x[0], x[1]))
         _P = "  - "
         total = enabled_count + disabled_count
         log_lines = [f"已加载 {total} 个搜索源 (已启用: {enabled_count}, 已禁用: {disabled_count})"]
