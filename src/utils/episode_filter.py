@@ -62,6 +62,7 @@ def apply_single_episode_filter(
     provider: str,
     media_id: str,
     return_filtered: bool = False,
+    extra_titles: Optional[List[str]] = None,
 ):
     """根据单剧过滤规则过滤分集列表。
 
@@ -71,16 +72,24 @@ def apply_single_episode_filter(
         title: 当前作品标题
         provider: 数据源名称
         media_id: 媒体ID
+        extra_titles: 额外的作品标题候选（如识别词转换后的入库名）。
+            规则匹配词只要命中 title 或任一 extra_titles 即生效。
+            why: 用户可能按识别词转换后的"入库名"配置过滤规则，而 title 传入的是
+            源站原名（或反之），需用多候选匹配以适配识别词场景。
 
     Returns:
         过滤后的分集列表
     """
     if not rules or not title:
         return (episodes, []) if return_filtered else episodes
+    # 构建标题候选集（去重、去空），规则匹配词命中任一候选即视为该规则适用
+    title_candidates = [t for t in ([title] + list(extra_titles or [])) if t]
+    lowered_candidates = [t.lower() for t in title_candidates]
     filtered = episodes
     filtered_out = []
     for rule in rules:
-        if rule["title"].lower() not in title.lower():
+        rule_title = rule["title"].lower()
+        if not any(rule_title in cand for cand in lowered_candidates):
             continue
         if rule.get("provider") and rule["provider"] != provider:
             continue
@@ -117,6 +126,7 @@ async def get_and_apply_single_episode_filter(
     title: Optional[str],
     provider: str,
     media_id: str,
+    extra_titles: Optional[List[str]] = None,
 ):
     """从配置中读取单剧过滤规则并应用。便捷函数。
 
@@ -126,6 +136,7 @@ async def get_and_apply_single_episode_filter(
         title: 当前作品标题
         provider: 数据源名称
         media_id: 媒体ID
+        extra_titles: 额外标题候选（如识别词转换后的入库名），用于适配识别词场景
 
     Returns:
         过滤后的分集列表
@@ -138,7 +149,9 @@ async def get_and_apply_single_episode_filter(
     rules = parse_single_episode_filter_rules(filter_content)
     if not rules:
         return episodes
-    return apply_single_episode_filter(episodes, rules, title, provider, media_id)
+    return apply_single_episode_filter(
+        episodes, rules, title, provider, media_id, extra_titles=extra_titles
+    )
 
 
 async def apply_global_episode_title_filter(

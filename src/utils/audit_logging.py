@@ -101,6 +101,29 @@ def format_audit_request_body(raw_body: bytes, content_type: str) -> str | None:
     return _metadata(content_type, len(raw_body), "二进制内容不落盘", digest)
 
 
+def _restore_receive(request: Request, raw_body: bytes) -> None:
+    """把已被 request.body() 消费掉的 ASGI receive 通道补回去。
+
+    why：request.body() 会消费 receive 通道里的 http.request 消息。普通 FastAPI
+    路由靠 request._body 缓存读取，不受影响；但 fastapi-mcp 这类直接把
+    request.receive 交给原生 ASGI 下游的场景，会因通道已空而永久阻塞。
+
+    严格遵循 ASGI 协议：首次调用投递完整 body（more_body=False），之后一律返回
+    http.disconnect。不能重复投递 http.request——MCP 的 StreamableHTTP 会话管理器
+    靠读到 disconnect 才结束读循环，重复投递会让它一直卡在循环里收不到断开信号。
+    """
+    delivered = False
+
+    async def _replay_receive():
+        nonlocal delivered
+        if not delivered:
+            delivered = True
+            return {"type": "http.request", "body": raw_body, "more_body": False}
+        return {"type": "http.disconnect"}
+
+    request._receive = _replay_receive
+
+
 async def capture_audit_request_body(request: Request) -> str | None:
     """仅读取可确认不超过 16 KiB 的请求体，避免审计逻辑放大内存占用。"""
     content_type = request.headers.get("content-type", "")
@@ -113,7 +136,11 @@ async def capture_audit_request_body(request: Request) -> str | None:
         return _metadata(content_type, None, "缺少有效 Content-Length，未读取请求体")
     if content_length > _MAX_REQUEST_BODY_BYTES:
         return _metadata(content_type, content_length, "请求体超过 16 KiB，未读取原文")
+
     raw_body = await request.body()
+    # 读完立刻补回 receive 通道，保证后续无论走哪条分支返回都不影响下游
+    _restore_receive(request, raw_body)
+
     if len(raw_body) > _MAX_REQUEST_BODY_BYTES:
         return _metadata(content_type, len(raw_body), "实际请求体超过 16 KiB，未记录原文")
     return format_audit_request_body(raw_body, content_type)

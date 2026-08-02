@@ -903,6 +903,7 @@ async def get_episodes_for_search_result(
     title: Optional[str] = Query(None, description="搜索结果标题，用于匹配单剧过滤规则"),
     manager: ScraperManager = Depends(get_scraper_manager),
     config_manager: ConfigManager = Depends(get_config_manager),
+    title_recognition_manager: TitleRecognitionManager = Depends(get_title_recognition_manager),
     current_user: models.User = Depends(security.get_current_user)
 ):
     """为指定的搜索结果获取完整的分集列表。自动识别补充源mediaId并路由。"""
@@ -913,8 +914,21 @@ async def get_episodes_for_search_result(
         # 单剧过滤（依赖作品标题，未下沉到 get_episodes_routed）
         filter_content = await config_manager.get("singleEpisodeFilterRules", "")
         filter_rules = parse_single_episode_filter_rules(filter_content)
+        # 适配识别词：title 为源站原名，过滤规则可能按识别词转换后的"入库名"配置。
+        # 用 apply_storage_postprocessing 正向转换出入库名作为额外匹配候选。
+        extra_filter_titles = []
+        if title_recognition_manager and title:
+            try:
+                converted_title, _, was_converted, _, _ = await title_recognition_manager.apply_storage_postprocessing(
+                    title, None, provider
+                )
+                if was_converted and converted_title and converted_title != title:
+                    extra_filter_titles.append(converted_title)
+            except Exception as e:
+                logger.warning(f"单剧过滤识别词转换失败，仅用原名匹配: {e}")
         episodes, single_excluded = apply_single_episode_filter(
-            episodes, filter_rules, title, provider, media_id, return_filtered=True
+            episodes, filter_rules, title, provider, media_id,
+            return_filtered=True, extra_titles=extra_filter_titles
         )
         excluded.extend(single_excluded)
         # 注：兜底全局分集标题过滤已统一收口到 manager.get_episodes_routed 内部，此处无需重复处理

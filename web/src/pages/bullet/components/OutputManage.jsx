@@ -375,7 +375,7 @@ export const OutputManage = () => {
         </div>
       </Card>
 
-      <Card loading={loading} title={t('bullet.colorTitle')} className="mt-4">
+      <Card id="feat-bullet-color" loading={loading} title={t('bullet.colorTitle')} className="mt-4">
         <div className="text-sm text-gray-600 mb-3">
           {t('bullet.colorDesc')}
         </div>
@@ -458,7 +458,7 @@ export const OutputManage = () => {
         </div>
       </Card>
 
-      <Card loading={loading} title={t('bullet.blacklistTitle')} className="mt-4">
+      <Card id="feat-bullet-blacklist" loading={loading} title={t('bullet.blacklistTitle')} className="mt-4">
         <div className="text-sm text-gray-600 mb-4">
           {t('bullet.blacklistDesc')}
         </div>

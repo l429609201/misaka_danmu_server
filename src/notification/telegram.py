@@ -14,7 +14,7 @@ from src._version import APP_VERSION
 
 from src.notification.base import (
     BaseNotificationChannel, CommandResult,
-    ChannelCapability, ChannelCapabilities,
+    ChannelCapability, ChannelCapabilities, IMAGE_MODE_FIELD,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,10 +59,6 @@ class TelegramChannel(BaseNotificationChannel):
         self._polling_thread: Optional[threading.Thread] = None
         self._running = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None  # 主事件循环引用
-
-    def get_capabilities(self) -> ChannelCapabilities:
-        """返回 Telegram 渠道能力"""
-        return self._CAPABILITIES
 
     @staticmethod
     def _escape_markdown_v2(text: str) -> str:
@@ -205,6 +201,7 @@ class TelegramChannel(BaseNotificationChannel):
                 "description_tw": "啟用後，Bot 的所有收發訊息將記錄到 config/logs/bot_raw.log 檔案中，用於除錯",
                 "default": False,
             },
+            IMAGE_MODE_FIELD,
         ]
 
     def _is_log_raw(self) -> bool:
@@ -605,8 +602,10 @@ class TelegramChannel(BaseNotificationChannel):
                         )[self.channel_id] = sent.message_id
             else:
                 cover_url = ""
-                if result.articles:
-                    for a in result.articles:
+                # why：交互卡片不走 send_rendered，外链模式下需先本地化海报地址。
+                articles = await self.localize_articles(result.articles)
+                if articles:
+                    for a in articles:
                         if a.get("picurl"):
                             cover_url = a["picurl"]
                             break
@@ -746,6 +745,24 @@ class TelegramChannel(BaseNotificationChannel):
         # reply_markup：内联键盘按钮（列表格式同 CommandResult.reply_markup）
         raw_markup = kwargs.get("reply_markup")
         markup = self._build_inline_markup(raw_markup) if raw_markup else None
+        # image_separate：图片模式 — 图片与文字分两条消息发送。
+        # why: 先单独发图（无 caption），再走下方纯文本分支发文字，
+        # 观感与企业微信的「图片模式」一致。
+        if kwargs.get("image_separate") and (image or image_bytes) and not edit_message_id:
+            try:
+                if image_bytes:
+                    import io as _sep_io
+                    _photo = _sep_io.BytesIO(image_bytes)
+                    _photo.name = "poster.png"
+                    await asyncio.to_thread(self._bot.send_photo, chat_id, _photo)
+                else:
+                    await asyncio.to_thread(self._bot.send_photo, chat_id, image)
+            except Exception as sep_err:
+                self.logger.warning(f"图片模式单独发图失败，改为仅发文本: {sep_err}")
+            # 图片已单独发出，后续按纯文本处理
+            image = ""
+            image_bytes = None
+
         try:
             # 仅当"纯文本编辑"时才走 edit_message_text（如任务进度消息反复刷新同一条）。
             # 若同时带图（image/image_bytes，如刷新完成的海报通知），则不能走此分支：
@@ -848,6 +865,19 @@ class TelegramChannel(BaseNotificationChannel):
                     msg_id_out.append(sent.message_id)
             except Exception:
                 pass
+
+    def render_progress_text(self, progress: int, description: str) -> str:
+        """渲染 MarkdownV2 进度条。
+
+        why：进度条本体用反引号 code 包裹（█░ 不含 MarkdownV2 保留字符），
+        但百分比和描述必须转义——description 里的 "..." 含保留字符 "."，
+        未转义会导致 edit 时解析失败 → 降级发新消息 → 进度刷屏。
+        """
+        filled = max(0, min(10, int(progress / 10)))
+        bar = "█" * filled + "░" * (10 - filled)
+        pct = self._escape_markdown_v2(f"{progress}%")
+        desc = self._escape_markdown_v2(description)
+        return f"`[{bar}]` {pct}\n• {desc}"
 
     async def send_quick(self, text: str, chat_id=None) -> Optional[int]:
         """发送一条快速消息，返回 message_id 供后续 edit 使用"""

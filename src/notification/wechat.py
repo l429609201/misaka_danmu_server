@@ -26,7 +26,7 @@ except ImportError:
 
 from src.notification.base import (
     BaseNotificationChannel,
-    ChannelCapability, ChannelCapabilities, CommandResult,
+    ChannelCapability, ChannelCapabilities, CommandResult, IMAGE_MODE_FIELD,
 )
 from src._version import APP_VERSION
 from src.utils.image_utils import load_image_bytes
@@ -127,9 +127,6 @@ class WeChatChannel(BaseNotificationChannel):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         # 按钮编号→callback_data 映射（用于数字选择降级交互）
         self._button_mappings: Dict[str, list] = {}
-
-    def get_capabilities(self) -> ChannelCapabilities:
-        return self._CAPABILITIES
 
     def _api_base(self) -> str:
         """返回企业微信 API Base URL，智能识别代理格式：
@@ -341,15 +338,37 @@ class WeChatChannel(BaseNotificationChannel):
         image_url: str = kwargs.get("image", "")
         image_bytes: Optional[bytes] = kwargs.get("image_bytes")
 
+        # 图片发送模式：
+        # base.send_rendered 已在「纯文字」模式下不传图片，故此处只需区分
+        # separate（图片与文字分两条，历史行为）与 poster（图文合一 news 卡片）。
+        separate = bool(kwargs.get("image_separate"))
+        poster_mode = (image_url or image_bytes) and not separate
+
         # why：企业微信主动拉取 news.picurl 容易受防盗链和内网地址影响，改为服务端取图后上传素材。
         if not image_bytes and image_url:
             image_bytes = await load_image_bytes(image_url)
+
+        content = f"【{title}】\n{text}" if title else text
+
+        if poster_mode and image_url:
+            # 海报模式：用 news 图文卡片实现图文合一（需要可访问的 picurl）
+            article_title = kwargs.get("article_title") or title or "通知"
+            try:
+                await self._send_news_to(to_user, [{
+                    "title": article_title,
+                    "description": text[:512],
+                    "url": kwargs.get("link") or image_url,
+                    "picurl": image_url,
+                }])
+                return
+            except Exception as news_err:
+                self.logger.warning(f"海报模式发送 news 卡片失败，降级为图片+文字: {news_err}")
+
         if image_bytes:
             media_id = await self._upload_image_media(image_bytes)
             if media_id:
                 await self._send_image_to(to_user, media_id, agent_id)
 
-        content = f"【{title}】\n{text}" if title else text
         payload = {
             "touser": to_user,
             "msgtype": "text",
@@ -378,6 +397,10 @@ class WeChatChannel(BaseNotificationChannel):
         if loop and loop.is_running():
             asyncio.run_coroutine_threadsafe(self._register_menu_async(commands), loop)
 
+    # 一级菜单分组名。按 MENU_COMMANDS 的顺序每 5 个命令归一组：
+    # 第 1 组是搜索/导入类，第 2 组是库与系统管理类。
+    _MENU_GROUP_NAMES = ["搜索导入", "管理设置", "更多功能"]
+
     async def _register_menu_async(self, commands: Dict[str, str]):
         agent_id = self.config.get("agent_id", "").strip()
         if not agent_id:
@@ -387,23 +410,44 @@ class WeChatChannel(BaseNotificationChannel):
         items = list(commands.items())
         for i in range(0, min(len(items), 15), 5):
             chunk = items[i:i + 5]
+            group_idx = i // 5
             if len(chunk) == 1:
                 cmd, desc = chunk[0]
-                buttons.append({"type": "click", "name": desc[:8], "key": cmd})
+                buttons.append({"type": "click", "name": desc[:8], "key": self._menu_key(cmd)})
             else:
+                group_name = (
+                    self._MENU_GROUP_NAMES[group_idx]
+                    if group_idx < len(self._MENU_GROUP_NAMES)
+                    else f"功能{group_idx + 1}"
+                )
                 buttons.append({
-                    "name": f"功能{i // 5 + 1}",
-                    "sub_button": [{"type": "click", "name": d[:8], "key": c} for c, d in chunk],
+                    "name": group_name,
+                    "sub_button": [
+                        {"type": "click", "name": d[:8], "key": self._menu_key(c)}
+                        for c, d in chunk
+                    ],
                 })
         if not buttons:
             return
-        d = await self._api_post("menu/create", {"button": buttons[:3]}, extra_params={"agentid": agent_id})
+        payload = {"button": buttons[:3]}
+        self._log_raw("⬆ menu/create 请求", payload)
+        d = await self._api_post("menu/create", payload, extra_params={"agentid": agent_id})
         if d is None:
             return
         if d.get("errcode", -1) == 0:
             self.logger.info("企业微信菜单注册成功")
         else:
-            self.logger.error(f"菜单注册失败: {d.get('errmsg')}")
+            self.logger.error(f"菜单注册失败: {d.get('errmsg')} (code={d.get('errcode')})")
+
+    @staticmethod
+    def _menu_key(command: str) -> str:
+        """把内部命令名转换为企业微信菜单按钮的 key。
+
+        why：MENU_COMMANDS 的键带 "/" 前缀（如 /help），但企业微信菜单 key 只接受
+        字母数字下划线。带 "/" 时菜单能建成、按钮也能显示，但点击回调的 EventKey
+        对不上命令表，表现为「点了没反应」。这里统一去掉前缀。
+        """
+        return command.lstrip("/")
 
     def process_webhook_update(self, update_data: dict) -> Any:
         """
@@ -580,11 +624,12 @@ class WeChatChannel(BaseNotificationChannel):
             self._button_mappings.pop(user_id, None)
 
         # 有图文 articles 时先发 news 卡片（仅有 picurl 的条目才有意义）
-        # 同时把文字正文只保留第一行（标题行），去掉重复列表，只保留操作提示
+        # why：交互卡片不走 send_rendered，发送前需显式复用统一外链处理。
         if result.articles:
-            has_image = any(a.get("picurl") for a in result.articles)
+            articles = await self.localize_articles(result.articles)
+            has_image = any(a.get("picurl") for a in articles)
             if has_image:
-                await self._send_news_to(user_id, result.articles)
+                await self._send_news_to(user_id, articles)
                 # 文字部分去掉结果列表，只保留第一行标题 + 操作选项
                 first_line = text.split("\n")[0]
                 ops_start = text.find("可用操作：")
@@ -742,4 +787,5 @@ class WeChatChannel(BaseNotificationChannel):
                 "description_tw": "啟用後，Bot 的所有收發訊息將記錄到 config/logs/bot_raw.log 檔案中，用於除錯",
                 "default": False,
             },
+            IMAGE_MODE_FIELD,
         ]

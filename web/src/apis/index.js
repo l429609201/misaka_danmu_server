@@ -1237,6 +1237,10 @@ export const deleteNotificationChannel = (channelId) => api.delete(`/api/ui/noti
 /** 测试通知渠道连接 */
 export const testNotificationChannel = (channelId) => api.post(`/api/ui/notification/channels/${channelId}/test`)
 
+/** 校验外链模式使用的自定义域名与图片静态路由 */
+export const validateNotificationPublicDomain = () => api.get('/api/ui/notification/public-domain/validate')
+
+
 // ========== 海报搜索 ==========
 
 /** 查找作品的本地海报路径 */

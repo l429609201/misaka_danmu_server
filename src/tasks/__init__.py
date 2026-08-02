@@ -81,6 +81,7 @@ from .webhook import (
 from .media_server import (
     scan_media_server_library,
     import_media_items,
+    import_all_unimported_media_items,
 )
 
 __all__ = [
@@ -131,5 +132,6 @@ __all__ = [
     # 媒体服务器任务
     'scan_media_server_library',
     'import_media_items',
+    'import_all_unimported_media_items',
 ]
 

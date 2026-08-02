@@ -132,6 +132,21 @@ class NotificationManager:
             logger.warning(f"读取 Webhook API Key 失败: {e}")
         return ""
 
+    async def _get_custom_api_domain(self) -> str:
+        """从数据库读取「弹幕 → Token 管理 → 自定义域名」。
+
+        why：图片外链模式要把本机图片地址交给第三方平台抓取，需要一个对外可达的
+        站点根地址。该地址全站唯一，就是 Token 管理里配置的自定义域名，
+        因此在此统一读取并注入各渠道，避免每个渠道各自再配一遍。
+        """
+        try:
+            async with self._session_factory() as session:
+                from src.db import crud as _crud
+                return await _crud.get_config_value(session, "custom_api_domain", "") or ""
+        except Exception as e:
+            logger.warning(f"读取自定义域名失败: {e}")
+        return ""
+
     async def reload_surge_config(self):
         """从数据库读取通知汇总（智能洪峰检测）配置并应用到聚合器。
 
@@ -166,13 +181,17 @@ class NotificationManager:
         async with self._session_factory() as session:
             all_channels = await crud.get_all_notification_channels(session)
 
-        # 预读全局代理 URL 和 Webhook API Key
+        # 预读全局代理 URL、Webhook API Key 和自定义域名
         proxy_url = await self._get_proxy_url()
         webhook_api_key = await self._get_webhook_api_key()
+        custom_api_domain = await self._get_custom_api_domain()
 
         for ch_data in all_channels:
             if ch_data.get("isEnabled"):
-                await self._load_channel(ch_data, proxy_url=proxy_url, webhook_api_key=webhook_api_key)
+                await self._load_channel(
+                    ch_data, proxy_url=proxy_url, webhook_api_key=webhook_api_key,
+                    custom_api_domain=custom_api_domain,
+                )
 
         # 加载通知汇总（智能洪峰检测）配置
         await self.reload_surge_config()
@@ -192,7 +211,8 @@ class NotificationManager:
                 log_lines.append(f"{_P}[可用] {cls.display_name}")
         logger.info("\n".join(log_lines))
 
-    async def _load_channel(self, ch_data: dict, proxy_url: str = "", webhook_api_key: str = ""):
+    async def _load_channel(self, ch_data: dict, proxy_url: str = "",
+                            webhook_api_key: str = "", custom_api_domain: str = ""):
         """加载单个渠道实例"""
         channel_type = ch_data["channelType"]
         channel_id = ch_data["id"]
@@ -215,6 +235,11 @@ class NotificationManager:
             config["__webhook_api_key"] = webhook_api_key
         else:
             config.pop("__webhook_api_key", None)
+        # 注入自定义域名（图片外链模式据此拼出对外可访问的图片地址）
+        if custom_api_domain:
+            config["__custom_api_domain"] = custom_api_domain
+        else:
+            config.pop("__custom_api_domain", None)
 
         try:
             instance = cls(
@@ -272,10 +297,14 @@ class NotificationManager:
         if not ch_data or not ch_data.get("isEnabled"):
             return
 
-        # 预读全局代理 URL 和 Webhook API Key
+        # 预读全局代理 URL、Webhook API Key 和自定义域名
         proxy_url = await self._get_proxy_url()
         webhook_api_key = await self._get_webhook_api_key()
-        await self._load_channel(ch_data, proxy_url=proxy_url, webhook_api_key=webhook_api_key)
+        custom_api_domain = await self._get_custom_api_domain()
+        await self._load_channel(
+            ch_data, proxy_url=proxy_url, webhook_api_key=webhook_api_key,
+            custom_api_domain=custom_api_domain,
+        )
         new_instance = self.channels.get(channel_id)
         if new_instance:
             try:

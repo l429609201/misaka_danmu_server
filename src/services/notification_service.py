@@ -9,7 +9,9 @@ NotificationService — 通知系统的通用内部 API
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
-from src.notification.base import CommandResult, ConversationState, ChannelCapabilities
+from src.notification.base import (
+    CommandResult, ConversationState, ChannelCapabilities,
+)
 from src.notification.menus import (
     ImportBaseMixin,
     MessagesMixin,
@@ -20,6 +22,7 @@ from src.notification.menus import (
     LibraryMenuMixin,
     TokensMenuMixin,
     TasksMenuMixin,
+    TaskManagerMenuMixin,
     CacheMenuMixin,
     StatusMenuMixin,
 )
@@ -39,6 +42,7 @@ class NotificationService(
     LibraryMenuMixin,
     TokensMenuMixin,
     TasksMenuMixin,
+    TaskManagerMenuMixin,
     CacheMenuMixin,
     StatusMenuMixin,
 ):
@@ -63,6 +67,8 @@ class NotificationService(
         # 用于 TG edit_message 功能（发新消息后记录 message_id，后续进度更新时 edit）
         # 同时覆盖 fallback 和普通下载任务
         self._task_progress_tg_msg: Dict[str, Dict[str, int]] = {}
+        # 任务管理器自动刷新协程: user_id -> asyncio.Task
+        self._tm_refresh_tasks: Dict[str, Any] = {}
 
     def cleanup_task_progress(self, task_id: str):
         """清理指定任务的进度消息缓存（任务结束但无需发通知时调用）"""
@@ -189,7 +195,15 @@ class NotificationService(
             # status
             "status_refresh": self.cb_status_refresh,
             # tasks
+            "tasks_home": self.cb_tasks_home,
+            "tasks_sched": self.cb_tasks_sched,
             "tasks_refresh": self.cb_tasks_refresh,
+            # 任务管理器（后台任务）
+            "tm_list": self.cb_tm_list,
+            "tm_auto": self.cb_tm_auto,
+            "tm_pause": self.cb_tm_pause,
+            "tm_resume": self.cb_tm_resume,
+            "tm_abort": self.cb_tm_abort,
             "task_toggle": self.cb_task_toggle,
             "task_run": self.cb_task_run,
             "task_del": self.cb_task_del,
@@ -400,33 +414,19 @@ class NotificationService(
                 if rendered is None:
                     # 未注册的事件类型，跳过（由常规路径兜底）
                     continue
-                # body 已自带标题行，title 传空避免 send_message 二次拼接重复；
-                # 原标题通过 article_title 透传，供图文卡片标题使用
-                text = rendered.body
-                article_title = rendered.title
-                reply_markup = rendered.buttons or None
-                image_url: str = data.get("image_url", "") or rendered.image or ""
-
+                # why：特殊进度编辑路径也必须复用 send_rendered，不能绕过图片外链处理。
                 if has_cached_progress:
-                    # 有进度消息缓存：edit 已有消息
                     edit_mid = self._task_progress_tg_msg.get(task_id, {}).get(ch_id)
-                    msg_id_out: List[int] = []
-                    await channel_instance.send_message(
-                        title="", text=text, image=image_url,
-                        edit_message_id=edit_mid, _msg_id_out=msg_id_out,
-                        reply_markup=reply_markup, article_title=article_title,
-                    )
+                    rendered.edit_message_id = edit_mid
+                    rendered.metadata["_msg_id_out"] = []
+                    await channel_instance.send_rendered(rendered)
                     # 清理该渠道的缓存
                     if task_id in self._task_progress_tg_msg:
                         self._task_progress_tg_msg[task_id].pop(ch_id, None)
                         if not self._task_progress_tg_msg[task_id]:
                             self._task_progress_tg_msg.pop(task_id, None)
                 else:
-                    # 无进度缓存：正常发送
-                    await channel_instance.send_message(
-                        title="", text=text, image=image_url,
-                        reply_markup=reply_markup, article_title=article_title,
-                    )
+                    await channel_instance.send_rendered(rendered)
             except Exception as e:
                 logger.error(f"渠道 {ch_id} 发送事件 {event_type} 失败: {e}")
 
@@ -447,8 +447,11 @@ class NotificationService(
                 events_cfg = channel_instance.config.get("__events_config", {})
                 if not events_cfg.get(check_event_key, False):
                     continue
-                # 仅 Telegram 支持 edit_message，其他渠道跳过进度推送（完成时才收通知）
-                if getattr(channel_instance, "channel_type", "") != "telegram":
+                # why：进度消息靠「编辑同一条消息」刷新百分比，只有声明了
+                # MESSAGE_EDITING 能力的渠道才支持。不具备该能力的渠道（企业微信/
+                # Server酱）若逐条推送进度，会变成刷屏的进度条垃圾消息，
+                # 因此这里按能力而非渠道类型判断，新增渠道无需再改这里。
+                if not channel_instance.get_capabilities().supports_editing:
                     continue
                 # 统一使用新 TaskProgressMessage 渲染（合法 MarkdownV2），避免 edit 解析失败刷屏
                 progress_payload = {

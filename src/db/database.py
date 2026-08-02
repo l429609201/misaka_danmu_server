@@ -257,6 +257,16 @@ async def get_db_session(request: Request) -> AsyncSession:
             await session.close()
         except (DBAPIError, OperationalError) as e:
             logger.warning(f"关闭数据库会话时连接已失效（已自动作废该连接，不影响后续请求）: {e}")
+            # why: close() 内 rollback 因断连失败时，Session._close_impl 中途退出，
+            # sync_session._transaction 未被清为 None。GC 回收 session 对象时，
+            # SQLAlchemy __del__ 见 _transaction is not None，会再次调度
+            # asyncio.ensure_future(session.close())，该 Task 同样失败 →
+            # "Task exception was never retrieved" 刷屏。
+            # 手动置 None 与 _close_impl 正常结束时行为等价，阻止重复调度。
+            try:
+                session.sync_session._transaction = None
+            except Exception:
+                pass
 
 async def close_db_engine(app: FastAPI):
     """关闭数据库引擎"""

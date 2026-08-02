@@ -14,23 +14,6 @@ logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 5
 
-# MarkdownV2 保留字符，进度文本需转义以避免 edit 解析失败导致刷屏
-_MDV2_SPECIAL = r'_*[]()~`>#+-=|{}.!'
-
-
-def _escape_mdv2(text: str) -> str:
-    """转义 Telegram MarkdownV2 保留字符。"""
-    if not text:
-        return ""
-    out = []
-    for ch in str(text):
-        if ch in _MDV2_SPECIAL:
-            out.append('\\' + ch)
-        else:
-            out.append(ch)
-    return ''.join(out)
-
-
 class SearchMenuMixin:
     """处理 /search 命令及编辑导入子流程的所有 cmd_/cb_/_text_ 方法"""
 
@@ -79,37 +62,28 @@ class SearchMenuMixin:
             keyword = raw_keyword
         if not self.scraper_manager:
             return CommandResult(success=False, text="搜索服务未就绪。")
-        # 进度消息 message_id（由调用方通过 send_quick 发出，或 cmd_search 首次更新时创建）
-        edit_mid: list = [kw.get("edit_message_id")]  # 用列表包裹，方便闭包写入
         chat_id = kw.get("chat_id")
+        # 进度反馈交由渠道统一裁决：能力判断、占位消息、message_id 生命周期和
+        # 文本转义都在 ProgressTracker 内部处理，不支持编辑的渠道全程静默。
+        tracker = await channel.begin_progress(
+            "🔍 搜索中",
+            placeholder="🔍 搜索中，请稍候...",
+            chat_id=chat_id,
+            message_id=kw.get("edit_message_id"),  # 从卡片按钮进入时复用原消息
+        )
+
+        # 搜索服务的内部阶段名 → 面向用户的描述
+        _DESC_MAP = {
+            "获取别名...": "正在获取别名...",
+            "执行全网搜索...": "正在搜索各弹幕源...",
+            "搜索完成...": "整理搜索结果...",
+            "过滤搜索结果...": "过滤无关结果...",
+            "排序搜索结果...": "按优先级排序...",
+        }
 
         async def _search_progress(progress: int, description: str):
-            """实时更新 TG 搜索进度条（edit 已有消息）"""
-            _desc_map = {
-                "获取别名...": "正在获取别名...",
-                "执行全网搜索...": "正在搜索各弹幕源...",
-                "搜索完成...": "整理搜索结果...",
-                "过滤搜索结果...": "过滤无关结果...",
-                "排序搜索结果...": "按优先级排序...",
-            }
-            desc = _desc_map.get(description, description)
-            filled = int(progress / 10)
-            bar = "█" * filled + "░" * (10 - filled)
-            # 进度条用反引号 code 包裹（█░ 不含保留字符）；百分比与描述需转义，
-            # 否则 desc 中的 "..." 等保留字符会导致 MarkdownV2 解析失败 →
-            # edit 失败降级发新消息 → 进度刷屏。
-            text = f"`[{bar}]` {_escape_mdv2(str(progress) + '%')}\n• {_escape_mdv2(desc)}"
-            msg_id_out: list = []
-            await channel.send_message(
-                title="🔍 搜索中",
-                text=text,
-                chat_id=chat_id,
-                edit_message_id=edit_mid[0],
-                _msg_id_out=msg_id_out,
-            )
-            # 首次 send 时记录 message_id，后续复用
-            if msg_id_out and not edit_mid[0]:
-                edit_mid[0] = msg_id_out[0]
+            """上报搜索进度，是否真正发送由渠道能力决定"""
+            await tracker.update(progress, _DESC_MAP.get(description, description))
 
         try:
             async with self._session_factory() as session:
@@ -127,7 +101,7 @@ class SearchMenuMixin:
             if not results:
                 return CommandResult(
                     text=f"🔍 未找到与「{keyword}」相关的结果。",
-                    edit_message_id=edit_mid[0],
+                    edit_message_id=tracker.message_id,
                 )
             serialized = []
             for r in results:
@@ -160,17 +134,33 @@ class SearchMenuMixin:
             if parsed_episode is not None:
                 suffix += f"E{parsed_episode}"
             display_keyword = keyword + suffix if suffix else keyword
-            edit_mid[0] = edit_mid[0] or kw.get("edit_message_id")
-            return await self._build_search_page(serialized, display_keyword, 0, edit_message_id=edit_mid[0])
+            # 最终结果编辑掉进度消息；不支持编辑的渠道 message_id 为 None，直接发新消息
+            return await self._build_search_page(
+                serialized, display_keyword, 0, channel=channel,
+                edit_message_id=tracker.message_id
+            )
         except Exception as e:
             logger.error(f"搜索失败: {e}", exc_info=True)
-            return CommandResult(success=False, text=f"搜索出错: {e}", edit_message_id=edit_mid[0])
+            return CommandResult(success=False, text=f"搜索出错: {e}", edit_message_id=tracker.message_id)
+
+    @staticmethod
+    def _search_page_size(channel) -> int:
+        """根据渠道能力决定每页搜索结果条数。
+
+        why：内联按钮每行最多 7 个，支持内联按钮的渠道（TG）可以排两行共 10 条；
+        不支持按钮的渠道只能文字交互，7 条一页已经足够，超出反而难以阅读。
+        """
+        from src.notification.base import ChannelCapability
+        if channel.get_capabilities().supports(ChannelCapability.INLINE_BUTTONS):
+            return 10  # TG：2 行 × 5 个按钮
+        return 7       # 文字渠道：1 行 × 5 个按钮
 
     async def _build_search_page(self, results: list, keyword: str, page: int,
+                           channel=None,
                            edit_message_id: int = None,
                            parsed_season=None, parsed_episode=None) -> CommandResult:
         total = len(results)
-        page_size = 10  # 每页 10 条（2行×5个按钮）
+        page_size = self._search_page_size(channel) if channel is not None else 10
         start = page * page_size
         end = min(start + page_size, total)
         page_items = results[start:end]
@@ -270,6 +260,7 @@ class SearchMenuMixin:
             conv.data.get("results", []),
             conv.data.get("keyword", ""),
             page,
+            channel=channel,
             edit_message_id=kw.get("message_id"),
         )
 
@@ -355,6 +346,7 @@ class SearchMenuMixin:
             conv.data.get("results", []),
             conv.data.get("keyword", ""),
             page,
+            channel=channel,
             edit_message_id=kw.get("message_id"),
             parsed_season=conv.data.get("parsed_season"),
             parsed_episode=conv.data.get("parsed_episode"),
@@ -720,7 +712,7 @@ class SearchMenuMixin:
                               chat_id=kw.get("chat_id"))
         keyword = snapshot.get("keyword", "")
         return await self._build_search_page(
-            snapshot["results"], keyword, 0,
+            snapshot["results"], keyword, 0, channel=channel,
             edit_message_id=kw.get("message_id"),
         )
 
@@ -791,19 +783,11 @@ class SearchMenuMixin:
     async def _text_search_keyword_input(self, text: str, user_id: str, channel, **kw):
         """直接搜索关键词输入"""
         self.clear_conversation(user_id)
-        chat_id = kw.get("chat_id")
-        mid = await channel.send_quick("🔍 搜索中，请稍候...", chat_id=chat_id)
-        if mid:
-            kw = {**kw, "edit_message_id": mid}
         return await self.cmd_search(text.strip(), user_id, channel, **kw)
 
     async def _text_search_keyword_season_input(self, text: str, user_id: str, channel, **kw):
         """搜索关键词+季数输入，格式: 关键词 季数数字"""
         self.clear_conversation(user_id)
-        chat_id = kw.get("chat_id")
-        mid = await channel.send_quick("🔍 搜索中，请稍候...", chat_id=chat_id)
-        if mid:
-            kw = {**kw, "edit_message_id": mid}
         parts = text.strip().rsplit(None, 1)
         if len(parts) == 2:
             keyword, season_raw = parts
@@ -818,10 +802,6 @@ class SearchMenuMixin:
     async def _text_search_keyword_episode_input(self, text: str, user_id: str, channel, **kw):
         """搜索关键词+季集输入，格式: 关键词 S01E05"""
         self.clear_conversation(user_id)
-        chat_id = kw.get("chat_id")
-        mid = await channel.send_quick("🔍 搜索中，请稍候...", chat_id=chat_id)
-        if mid:
-            kw = {**kw, "edit_message_id": mid}
         return await self.cmd_search(text.strip(), user_id, channel, **kw)
 
     async def _text_search_notify_season(self, text: str, user_id: str, channel, **kw):

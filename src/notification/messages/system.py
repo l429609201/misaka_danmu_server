@@ -6,6 +6,7 @@
 from dataclasses import dataclass
 from typing import Dict
 
+from ..base import _progress_bar_str
 from .base import (
     NotificationMessage, MessageCategory, MessageSeverity,
 )
@@ -135,8 +136,7 @@ class TaskProgressMessage(NotificationMessage):
         progress = d.get("progress", 0)
         description = d.get("description", "")
 
-        filled = int(progress / 10)
-        bar = "█" * filled + "░" * (10 - filled)
+        bar = _progress_bar_str(progress)
         safe_title = _esc(task_title) if task_title else ""
         safe_desc = _esc(description) if description else ""
 
@@ -157,8 +157,7 @@ class TaskProgressMessage(NotificationMessage):
         progress = d.get("progress", 0)
         description = d.get("description", "")
 
-        filled = int(progress / 10)
-        bar = "█" * filled + "░" * (10 - filled)
+        bar = _progress_bar_str(progress)
 
         lines = ["⬇️ 任务进行中", ""]
         if task_title:

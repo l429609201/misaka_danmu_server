@@ -14,7 +14,53 @@ class TasksMenuMixin:
     """处理 /tasks 命令及任务详情回调的所有方法"""
 
     async def cmd_list_tasks(self, args: str, user_id: str, channel, **kw) -> CommandResult:
-        return await self._build_tasks_result()
+        """/tasks 入口 — 展示任务中心一级分类"""
+        # 进入一级菜单时停掉可能残留的自动刷新协程
+        self._tm_stop_auto_refresh(user_id)
+        return await self._build_tasks_home()
+
+    async def _build_tasks_home(self, edit_message_id: int = None) -> CommandResult:
+        """任务中心一级菜单：任务管理器 / 定时任务"""
+        running = await self._tm_count_running()
+
+        sched_total = 0
+        sched_enabled = 0
+        if self.scheduler_manager:
+            try:
+                tasks = await self.scheduler_manager.get_all_tasks()
+                sched_total = len(tasks)
+                sched_enabled = sum(1 for t in tasks if t.get("isEnabled"))
+            except Exception as e:
+                logger.warning(f"统计定时任务失败: {e}")
+
+        lines = [
+            "📋 *任务中心*",
+            "",
+            f"⚙️ 任务管理器：{running} 个进行中",
+            f"⏰ 定时任务：{sched_total} 个（{sched_enabled} 启用）",
+        ]
+        buttons = [
+            [{"text": f"⚙️ 任务管理器 ({running})", "callback_data": "tm_list:in_progress:1:1"},
+             {"text": f"⏰ 定时任务 ({sched_total})", "callback_data": "tasks_sched"}],
+            [{"text": "🔄 刷新", "callback_data": "tasks_home"},
+             {"text": "🏠 主菜单", "callback_data": "help_cmd:help"}],
+        ]
+        return CommandResult(
+            text="\n".join(lines),
+            reply_markup=buttons,
+            parse_mode="Markdown",
+            edit_message_id=edit_message_id,
+        )
+
+    async def cb_tasks_home(self, params, user_id, channel, **kw):
+        """返回任务中心一级菜单"""
+        self._tm_stop_auto_refresh(user_id)
+        return await self._build_tasks_home(edit_message_id=kw.get("message_id"))
+
+    async def cb_tasks_sched(self, params, user_id, channel, **kw):
+        """进入定时任务列表"""
+        self._tm_stop_auto_refresh(user_id)
+        return await self._build_tasks_result(edit_message_id=kw.get("message_id"))
 
     def _get_job_name(self, job_type: str) -> str:
         """将 jobType 映射为可读的中文名"""
@@ -32,7 +78,10 @@ class TasksMenuMixin:
             if not tasks:
                 return CommandResult(
                     text="📋 当前没有定时任务。",
-                    reply_markup=[[{"text": "➕ 添加任务", "callback_data": "task_add:start"}]],
+                    reply_markup=[
+                        [{"text": "➕ 添加任务", "callback_data": "task_add:start"}],
+                        [{"text": "🔙 返回", "callback_data": "tasks_home"}],
+                    ],
                     edit_message_id=edit_message_id,
                 )
             lines = ["📋 定时任务列表:\n"]
@@ -54,6 +103,7 @@ class TasksMenuMixin:
                 {"text": "➕ 添加任务", "callback_data": "task_add:start"},
                 {"text": "🔄 刷新", "callback_data": "tasks_refresh"},
             ])
+            buttons.append([{"text": "🔙 返回", "callback_data": "tasks_home"}])
             return CommandResult(
                 text="\n".join(lines),
                 reply_markup=buttons,
@@ -89,7 +139,8 @@ class TasksMenuMixin:
 
             lines = [
                 f"{status_icon} 调度任务: {title}",
-                f"状态: {status} | 进度: {progress}%",
+                f"状态: {status}",
+                f"[{self._tm_progress_bar(progress)}] {progress}%",
             ]
             if desc:
                 short_desc = desc[:200] + "..." if len(desc) > 200 else desc
@@ -118,12 +169,14 @@ class TasksMenuMixin:
                     }.get(exec_status, "❓")
                     lines.append("")
                     lines.append(f"{exec_icon} 执行任务: {exec_title}")
-                    lines.append(f"状态: {exec_status} | 进度: {exec_progress}%")
+                    lines.append(f"状态: {exec_status}")
+                    lines.append(f"[{self._tm_progress_bar(exec_progress)}] {exec_progress}%")
                     if exec_desc:
                         short_exec = exec_desc[:200] + "..." if len(exec_desc) > 200 else exec_desc
                         lines.append(f"详情: {short_exec}")
                     buttons.append([{"text": "📦 查看执行任务", "callback_data": f"task_detail:{exec_task_id}"}])
 
+            buttons.append([{"text": "🔙 返回", "callback_data": "tasks_home"}])
             return CommandResult(
                 text="\n".join(lines),
                 reply_markup=buttons,

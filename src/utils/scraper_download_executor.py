@@ -438,7 +438,11 @@ class ScraperDownloadExecutor:
             scrapers_dir=scrapers_dir,
             headers=headers,
             proxy=proxy_to_use,
-            progress_callback=self._log_async
+            progress_callback=self._log_async,
+            # 只解压到临时目录 + 持久化到 backup，不覆盖运行中的 .so。
+            # why: 对齐逐文件更新路径的做法——覆盖 .so 之后进程随时可能 segfault，
+            # 必须等版本信息写完、SSE 终态发完，才在紧邻重启处执行覆盖。
+            defer_overlay=True
         )
 
         if not success:
@@ -448,9 +452,18 @@ class ScraperDownloadExecutor:
             self._log("已还原备份")
             raise ValueError("全量替换失败")
 
-        # 下载成功，更新 versions.json
+        # 下载成功（新版已解压到临时目录并持久化到 backup，运行目录尚未被覆盖）
+        from src.api.ui.scraper_resources import (
+            _get_deferred_overlay_dir,
+            apply_deferred_overlay,
+        )
+        pending_dir = _get_deferred_overlay_dir(scrapers_dir)
+
+        # 更新 versions.json（从临时目录读取新包的 package.json）
         self._log("正在更新版本信息...")
-        full_replace_min_ver = await self._update_versions_json(asset_info, scrapers_dir, platform_key)
+        full_replace_min_ver = await self._update_versions_json(
+            asset_info, scrapers_dir, platform_key, source_dir=pending_dir
+        )
 
         # 全量替换后检查：解压出的弹幕源包是否要求更高的服务器版本
         if full_replace_min_ver:
@@ -459,9 +472,12 @@ class ScraperDownloadExecutor:
             if not _version_satisfies(APP_VERSION, full_replace_min_ver):
                 msg = (
                     f"远程弹幕源包要求服务器版本 >= {full_replace_min_ver}，"
-                    f"当前版本 {APP_VERSION}，正在还原备份..."
+                    f"当前版本 {APP_VERSION}，已取消本次更新"
                 )
                 self._log(f"⚠️ {msg}", "warning")
+                # 运行目录的 .so 还没被覆盖，只需丢弃临时目录并还原备份中的版本信息
+                import shutil
+                await asyncio.to_thread(shutil.rmtree, pending_dir, True)
                 await restore_scrapers(self.current_user, self.scraper_manager)
                 self._log("已还原备份，请先升级服务器版本")
                 raise ValueError(msg)
@@ -473,19 +489,17 @@ class ScraperDownloadExecutor:
         self.task.progress.total = 1
         self.task.progress.downloaded.append("full_replace")
         self._log("全量替换完成")
-
-        # 备份新下载的资源
-        self._log("正在备份新下载的资源...")
-        await backup_scrapers(self.current_user)
-        self._log("✓ 新资源备份完成")
+        # 注：新版本已由解压流程持久化到 backup 目录，无需再次 backup_scrapers
 
         # 判断是否是首次下载（本地没有任何弹幕源）
         existing_scrapers = set(self.scraper_manager.scrapers.keys())
         is_first_download = len(existing_scrapers) == 0
 
         if is_first_download:
-            # 首次下载：执行热加载
-            self._log("检测到首次下载弹幕源，正在热加载...")
+            # 首次下载：进程内还没加载任何 .so，覆盖是安全的，直接热加载
+            self._log("检测到首次下载弹幕源，正在应用更新...")
+            overlay_count = await asyncio.to_thread(apply_deferred_overlay, scrapers_dir)
+            self._log(f"✓ 已应用 {overlay_count} 个文件")
             logger.info(f"用户 '{self.current_user.username}' 首次通过全量替换模式下载了弹幕源，正在热加载")
             await self.scraper_manager.load_and_sync_scrapers()
             self._log("✓ 弹幕源加载完成")
@@ -543,6 +557,26 @@ class ScraperDownloadExecutor:
 
                 fallback_name = await self.config_manager.get("containerName", "misaka_danmu_server")
 
+                # ========== 最后一步：覆盖运行目录里正在被加载的 .so，然后立即重启 ==========
+                # why: 覆盖后进程内存中是旧模块而磁盘已是新二进制，此后任何延迟 import 或
+                # 未加载符号的访问都可能 segfault（旧实现就是在覆盖后继续执行
+                # _update_versions_json / backup_scrapers 而崩溃，导致 SSE 心跳永久消失、
+                # 前端一直卡在中间状态）。这里对齐逐文件更新路径：SSE 终态消息已发送完毕，
+                # 覆盖完只做重启，中间不执行任何业务代码。
+                logger.info(f"[任务 {self.task.task_id}] 正在应用新版 .so 到运行目录...")
+                for handler in logging.getLogger().handlers:
+                    handler.flush()
+                try:
+                    overlay_count = apply_deferred_overlay(scrapers_dir)
+                    logger.info(f"[任务 {self.task.task_id}] 已应用 {overlay_count} 个文件，立即重启")
+                except Exception as overlay_err:
+                    # 覆盖失败不影响重启：backup 目录已是新版，重启后会从备份恢复
+                    logger.error(f"[任务 {self.task.task_id}] 应用新版文件失败: {overlay_err}")
+                for handler in logging.getLogger().handlers:
+                    handler.flush()
+                sys.stdout.flush()
+                sys.stderr.flush()
+
                 # 在重启前再次刷新所有日志
                 logger.info(f"[任务 {self.task.task_id}] 正在发送容器重启指令...")
                 for handler in logging.getLogger().handlers:
@@ -571,10 +605,24 @@ class ScraperDownloadExecutor:
                 # 任务状态已在上面设置，直接返回
                 return
             else:
-                # 非首次下载且没有 Docker socket：提示手动重启，不执行热加载
+                # 非首次下载且没有 Docker socket：应用更新后提示手动重启，不执行热加载
+                # 覆盖放在最后并紧跟返回，覆盖后不再执行业务代码（见上方 segfault 说明）
                 self._log("⚠️ 未检测到 Docker 套接字，无法自动重启容器")
-                self._log("⚠️ 请手动重启容器以加载新的弹幕源（.so 文件需要重启才能生效）")
+                self.task.status = TaskStatus.COMPLETED
+                await self._persist_task_status("completed", need_restart=True)
+                self._log("正在应用新版文件...")
+                self.task.need_restart = True
+                # 等 SSE 把上面的消息推送出去，再执行危险的覆盖操作
+                await asyncio.sleep(1.5)
+                try:
+                    overlay_count = apply_deferred_overlay(scrapers_dir)
+                    logger.info(f"已应用 {overlay_count} 个文件（等待手动重启生效）")
+                except Exception as overlay_err:
+                    logger.error(f"应用新版文件失败: {overlay_err}")
                 logger.info(f"用户 '{self.current_user.username}' 通过全量替换模式更新了弹幕源，需要手动重启容器")
+                logger.warning("⚠️ 请手动重启容器以加载新的弹幕源（.so 文件需要重启才能生效）")
+                self.task.restart_pending = True
+                return
 
         self.task.status = TaskStatus.COMPLETED
 
@@ -1390,20 +1438,32 @@ class ScraperDownloadExecutor:
         except Exception as e:
             logger.warning(f"清除版本缓存失败: {e}")
 
-    async def _update_versions_json(self, asset_info: Dict[str, Any], scrapers_dir: Path, platform_key: str) -> Optional[str]:
-        """全量替换后更新 versions.json，返回 min_server_version（如有）"""
+    async def _update_versions_json(
+        self,
+        asset_info: Dict[str, Any],
+        scrapers_dir: Path,
+        platform_key: str,
+        source_dir: Optional[Path] = None,
+    ) -> Optional[str]:
+        """全量替换后更新 versions.json，返回 min_server_version（如有）
+
+        Args:
+            source_dir: 新包内 package.json / versions.json 的所在目录。
+                推迟覆盖模式下新文件还在临时目录里，需从那里读取；默认取 scrapers_dir。
+        """
         try:
             platform_info = get_platform_info()
             release_version = asset_info['version'].lstrip('v')
 
-            # 从解压后的 package.json 读取各个源的版本信息
+            # 从新包的 package.json 读取各个源的版本信息
+            read_dir = source_dir if source_dir is not None else scrapers_dir
             scrapers_versions = {}
             scrapers_hashes = {}
-            local_package_file = scrapers_dir / "package.json"
+            local_package_file = read_dir / "package.json"
 
-            # 从解压后的 versions.json 读取全局版本限制字段（覆盖前读取）
+            # 从新包的 versions.json 读取全局版本限制字段
             min_server_version = None
-            existing_versions_file = scrapers_dir / "versions.json"
+            existing_versions_file = read_dir / "versions.json"
             if existing_versions_file.exists():
                 try:
                     existing_ver_data = json.loads(await asyncio.to_thread(existing_versions_file.read_text))
@@ -1451,18 +1511,9 @@ class ScraperDownloadExecutor:
             await asyncio.to_thread(versions_file.write_text, versions_json_str)
             logger.info(f"已更新 versions.json: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
 
-            # 同步到 backup 目录
-            from src.api.ui.scraper_resources import BACKUP_DIR
-            import shutil
-            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-            backup_versions_file = BACKUP_DIR / "versions.json"
-            backup_package_file = BACKUP_DIR / "package.json"
-            shutil.copy2(versions_file, backup_versions_file)
-            if local_package_file.exists():
-                shutil.copy2(local_package_file, backup_package_file)
-            logger.info("已同步版本信息到备份目录")
-
-            # 同时更新 package.json 的版本号（前端从这里读取整体版本）
+            # 先更新 package.json 的版本号（前端从这里读取整体版本），再同步到备份目录
+            # why: 原先先同步 backup 再改版本号，导致 backup 里的 package.json 版本号仍是旧值
+            package_written_to: Optional[Path] = None
             try:
                 if local_package_file.exists():
                     package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
@@ -1470,10 +1521,27 @@ class ScraperDownloadExecutor:
                 else:
                     package_content = {"version": release_version}
                 package_json_str = json.dumps(package_content, indent=2, ensure_ascii=False)
+                # 写回新包所在目录（推迟覆盖模式下即临时目录，后续会被覆盖到运行目录）
                 await asyncio.to_thread(local_package_file.write_text, package_json_str)
+                package_written_to = local_package_file
+                # 同时写入运行目录，保证前端立即能读到新版本号
+                scrapers_package_file = scrapers_dir / "package.json"
+                if scrapers_package_file != local_package_file:
+                    await asyncio.to_thread(scrapers_package_file.write_text, package_json_str)
                 logger.info(f"已更新 package.json 版本号为: {release_version}")
             except Exception as pkg_err:
                 logger.warning(f"更新 package.json 失败: {pkg_err}")
+
+            # 同步到 backup 目录
+            from src.api.ui.scraper_resources import BACKUP_DIR
+            import shutil
+            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            backup_versions_file = BACKUP_DIR / "versions.json"
+            backup_package_file = BACKUP_DIR / "package.json"
+            shutil.copy2(versions_file, backup_versions_file)
+            if package_written_to and package_written_to.exists():
+                shutil.copy2(package_written_to, backup_package_file)
+            logger.info("已同步版本信息到备份目录")
 
             return min_server_version
 

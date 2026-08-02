@@ -1701,7 +1701,7 @@ export const SearchResult = () => {
                 </div>
               </div>
               <div>
-                <div className="font-medium text-sm mb-2">{t('searchResult.yearLabel')}</div>
+                <div className="font-medium text-sm mb-2">{t('searchResult.yearField')}</div>
                 <InputNumber
                   value={editYear}
                   onChange={value => setEditYear(value)}

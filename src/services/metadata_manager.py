@@ -18,6 +18,16 @@ from src.core.env import is_docker_environment
 
 logger = logging.getLogger(__name__)
 
+
+def _sanitize_name(value: str) -> str:
+    """清除名称中的控制字符（\\r、\\n、\\t 等）并去掉首尾空白。
+
+    why：这些名称会被拼进多行汇总日志。名字里只要混入 \\r，终端渲染时光标
+    会退回行首覆盖已输出内容，导致日志出现残缺的孤立字符与空行。
+    """
+    return "".join(ch for ch in value if ch.isprintable()).strip()
+
+
 class MetadataSourceManager:
     """
     通过动态加载来管理元数据源的状态和状态。
@@ -142,7 +152,28 @@ class MetadataSourceManager:
                     if (issubclass(obj, BaseMetadataSource) and
                         obj is not BaseMetadataSource and
                         obj.__module__ == module_name):
-                        provider_name = obj.provider_name
+                        # provider_name 必须是非空字符串，且清掉首尾空白与控制字符。
+                        # why：它会作为 dict key、数据库主键与日志内容使用；名字里混入
+                        # \r 会让多行汇总日志出现光标回退、显示被覆盖的错乱输出。
+                        raw_provider_name = getattr(obj, 'provider_name', None)
+                        if not raw_provider_name or not isinstance(raw_provider_name, str):
+                            self.logger.warning(
+                                f"跳过 {name} 中的类 {class_name}："
+                                f"provider_name 缺失或非字符串（值={raw_provider_name!r}）"
+                            )
+                            continue
+                        provider_name = _sanitize_name(raw_provider_name)
+                        if not provider_name:
+                            self.logger.warning(
+                                f"跳过 {name} 中的类 {class_name}："
+                                f"provider_name 仅含空白或控制字符（值={raw_provider_name!r}）"
+                            )
+                            continue
+                        if provider_name != raw_provider_name:
+                            self.logger.warning(
+                                f"{name}.provider_name 含空白或控制字符，已规范化为 "
+                                f"{provider_name!r}（原值={raw_provider_name!r}）"
+                            )
                         if provider_name in self._source_classes:
                             self.logger.warning(f"发现重复的元数据源 '{provider_name}'。将被覆盖。")
 
@@ -157,14 +188,26 @@ class MetadataSourceManager:
 
         self.source_settings = {s['providerName']: s for s in settings_list}
 
-        for provider_name, source_class in self._source_classes.items():
-            self.sources[provider_name] = source_class(self._session_factory, self._config_manager, self.scraper_manager, self.cache_manager)
+        # why：__init__ 是各元数据源自己的代码，可能因内部错误抛异常。原实现无保护，
+        # 一个源构造失败会中断整个循环，后续源全部不会被实例化，直接拖垮启动。
+        # 改为逐源隔离：坏源跳过并记录，其余源照常可用。
+        for provider_name, source_class in list(self._source_classes.items()):
+            try:
+                self.sources[provider_name] = source_class(
+                    self._session_factory, self._config_manager,
+                    self.scraper_manager, self.cache_manager,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"实例化元数据源 '{provider_name}' 失败，已跳过该源: {e}", exc_info=True
+                )
+                self._source_classes.pop(provider_name, None)
 
-        # 汇总输出
+        # 汇总输出（名称再过一遍控制字符清理，避免单个源污染整段多行日志）
         _P = "  - "
         log_lines = [f"已加载 {len(self.sources)} 个元数据源"]
         for pn in sorted(self.sources.keys()):
-            log_lines.append(f"{_P}{pn}")
+            log_lines.append(f"{_P}{_sanitize_name(pn)}")
         self.logger.info("\n".join(log_lines))
 
     async def search_aliases_from_enabled_sources(self, keyword: str, user: models.User) -> Set[str]:

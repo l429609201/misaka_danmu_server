@@ -86,6 +86,29 @@ export const FEATURES = [
     path: '/task', tabKey: 'profile', icon: 'tongji-jinhangzhongderenwushuliang',
   },
 
+  // ============ 弹幕（Token 页子卡片）============
+  {
+    id: 'bullet-token-list',
+    titleKey: 'features.bulletTokenList.title',
+    descKey: 'features.bulletTokenList.desc',
+    keywords: ['token列表', '令牌列表', '新建token', '生成token', 'api令牌', '调用次数'],
+    path: '/bullet', tabKey: 'token', anchor: 'feat-bullet-token-list', icon: 'tokenguanli',
+  },
+  {
+    id: 'bullet-custom-domain',
+    titleKey: 'features.bulletCustomDomain.title',
+    descKey: 'features.bulletCustomDomain.desc',
+    keywords: ['自定义域名', '外链域名', '公网域名', 'custom domain', 'https域名', '图片外链'],
+    path: '/bullet', tabKey: 'token', anchor: 'feat-custom-domain', icon: 'tokenguanli',
+  },
+  {
+    id: 'bullet-ua-filter',
+    titleKey: 'features.bulletUaFilter.title',
+    descKey: 'features.bulletUaFilter.desc',
+    keywords: ['ua过滤', 'user agent', 'ua规则', 'user-agent', 'ua白名单', '客户端过滤'],
+    path: '/bullet', tabKey: 'token', anchor: 'feat-ua-filter', icon: 'tokenguanli',
+  },
+
   // ============ 弹幕 ============
   {
     id: 'bullet-token',
@@ -100,6 +123,20 @@ export const FEATURES = [
     descKey: 'features.bulletOutput.desc',
     keywords: ['弹幕输出', '输出配置', '输出上限', '合并输出', '简繁转换', '点赞', '随机颜色', '黑名单', '弹幕类型', '顶部', '底部', '滚动', 'output', 'convert'],
     path: '/bullet', tabKey: 'output', anchor: 'feat-bullet-output', icon: 'shuchupeizhi',
+  },
+  {
+    id: 'bullet-color',
+    titleKey: 'features.bulletColor.title',
+    descKey: 'features.bulletColor.desc',
+    keywords: ['弹幕颜色', '随机颜色', '颜色规则', '彩色弹幕', 'color', '颜色设置'],
+    path: '/bullet', tabKey: 'output', anchor: 'feat-bullet-color', icon: 'shuchupeizhi',
+  },
+  {
+    id: 'bullet-blacklist',
+    titleKey: 'features.bulletBlacklist.title',
+    descKey: 'features.bulletBlacklist.desc',
+    keywords: ['弹幕黑名单', '屏蔽词', '过滤词', '关键词过滤', 'blacklist', '屏蔽'],
+    path: '/bullet', tabKey: 'output', anchor: 'feat-bullet-blacklist', icon: 'shuchupeizhi',
   },
   {
     id: 'bullet-storage',
@@ -161,6 +198,20 @@ export const FEATURES = [
     keywords: ['过滤配置', '全局过滤', '分集过滤', '分集标题过滤', '单剧过滤', '兜底过滤', 'filter', '黑名单'],
     path: '/source', tabKey: 'global-filter', anchor: 'feat-global-filter', icon: 'guolvshezhi',
   },
+  {
+    id: 'source-episode-title-filter',
+    titleKey: 'features.sourceEpisodeTitleFilter.title',
+    descKey: 'features.sourceEpisodeTitleFilter.desc',
+    keywords: ['分集标题过滤', '集数标题', '正则过滤', '标题过滤', 'episode title filter', '集标'],
+    path: '/source', tabKey: 'global-filter', anchor: 'feat-episode-title-filter', icon: 'guolvshezhi',
+  },
+  {
+    id: 'source-single-filter',
+    titleKey: 'features.sourceSingleFilter.title',
+    descKey: 'features.sourceSingleFilter.desc',
+    keywords: ['单剧过滤', '按作品过滤', '单剧规则', 'per-title filter', '剧名过滤', 'single filter'],
+    path: '/source', tabKey: 'global-filter', anchor: 'feat-single-filter', icon: 'guolvshezhi',
+  },
 
   // ============ 外部控制 ============
   {
@@ -215,6 +266,13 @@ export const FEATURES = [
     path: '/setting', tabKey: 'proxy', icon: 'dailipeizhi',
   },
   {
+    id: 'proxy-speedtest',
+    titleKey: 'features.proxySpeedtest.title',
+    descKey: 'features.proxySpeedtest.desc',
+    keywords: ['测速', '代理测速', '延迟', '连通性', 'speedtest', 'ping', '延时测试'],
+    path: '/setting', tabKey: 'proxy', anchor: 'feat-proxy-speedtest', icon: 'dailipeizhi',
+  },
+  {
     id: 'setting-webhook',
     titleKey: 'features.settingWebhook.title',
     descKey: 'features.settingWebhook.desc',
@@ -236,6 +294,13 @@ export const FEATURES = [
     path: '/setting', tabKey: 'recognition', icon: 'renlianshibie_o',
   },
   {
+    id: 'recognition-test',
+    titleKey: 'features.recognitionTest.title',
+    descKey: 'features.recognitionTest.desc',
+    keywords: ['识别词测试', '测试识别', '识别调试', 'recognition test', '识别结果'],
+    path: '/setting', tabKey: 'recognition', anchor: 'feat-recognition-test', icon: 'renlianshibie_o',
+  },
+  {
     id: 'setting-automatch',
     titleKey: 'features.settingAutomatch.title',
     descKey: 'features.settingAutomatch.desc',
@@ -243,10 +308,45 @@ export const FEATURES = [
     path: '/setting', tabKey: 'automatch', icon: 'ai',
   },
   {
+    id: 'automatch-connection',
+    titleKey: 'features.automatchConnection.title',
+    descKey: 'features.automatchConnection.desc',
+    keywords: ['ai连接', 'ai key', 'openai', 'deepseek', 'gemini', 'claude', 'ai模型', 'api key', 'base url'],
+    path: '/setting', tabKey: 'automatch', anchor: 'feat-ai-connection', icon: 'ai',
+  },
+  {
+    id: 'automatch-season-mapping',
+    titleKey: 'features.automatchSeasonMapping.title',
+    descKey: 'features.automatchSeasonMapping.desc',
+    keywords: ['季度映射', 'tmdb季度', '剧集组', 'season mapping', '映射配置', '季度配置'],
+    path: '/setting', tabKey: 'automatch', anchor: 'feat-ai-season-mapping', icon: 'ai',
+  },
+  {
+    id: 'automatch-recognition',
+    titleKey: 'features.automatchRecognition.title',
+    descKey: 'features.automatchRecognition.desc',
+    keywords: ['ai识别', '识别增强', '别名纠错', '别名扩展', '名称转换', 'ai recognition', '简繁'],
+    path: '/setting', tabKey: 'automatch', anchor: 'feat-ai-recognition', icon: 'ai',
+  },
+  {
     id: 'setting-security',
     titleKey: 'features.settingSecurity.title',
     descKey: 'features.settingSecurity.desc',
     keywords: ['安全', 'security', '白名单', 'ua规则', '密码', 'mfa', '双因素'],
     path: '/setting', tabKey: 'security', icon: 'anquan',
+  },
+  {
+    id: 'security-totp',
+    titleKey: 'features.securityTotp.title',
+    descKey: 'features.securityTotp.desc',
+    keywords: ['totp', '两步验证', '双因素', '2fa', 'mfa', 'otp', '验证器', '动态码'],
+    path: '/setting', tabKey: 'security', anchor: 'feat-security-totp', icon: 'anquan',
+  },
+  {
+    id: 'security-passkey',
+    titleKey: 'features.securityPasskey.title',
+    descKey: 'features.securityPasskey.desc',
+    keywords: ['passkey', '免密登录', 'webauthn', '指纹', '人脸', 'fido', '无密码登录'],
+    path: '/setting', tabKey: 'security', anchor: 'feat-security-passkey', icon: 'anquan',
   },
 ]

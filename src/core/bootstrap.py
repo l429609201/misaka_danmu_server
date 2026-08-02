@@ -21,8 +21,17 @@ from src.core.env import is_docker_environment as _is_docker_environment
 
 logger = logging.getLogger("bootstrap")
 
+# 日志前缀（原先在多个函数里各自定义一遍局部变量）
+_TAG = "[启动预检]"
+
+# 热重载子进程标记：父进程写入环境变量，子进程继承后据此跳过重复预检
+_RELOAD_MARK = "_DANMUAPI_BOOTSTRAP_DONE"
+
 # 需要显示来源的核心参数（精简版）
 _CORE_ENV_KEYS = [
+    # why：environment 决定 uvicorn 是否 reload（development 走双进程热重载，
+    # 启动耗时翻倍）。它是影响最大的启动开关，必须让用户看到取值与来源。
+    ("DANMUAPI_ENVIRONMENT", "environment", "启动类型"),
     ("DANMUAPI_DATABASE__TYPE", "database.type", "数据库类型"),
     ("DANMUAPI_DATABASE__HOST", "database.host", "数据库地址"),
     ("DANMUAPI_DATABASE__PORT", "database.port", "数据库端口"),
@@ -124,11 +133,64 @@ def _safe_print(msg: str) -> None:
         print(msg.encode("ascii", errors="replace").decode("ascii"))
 
 
+def _mask_url_credentials(url: str) -> str:
+    """遮蔽连接串 userinfo 段里的密码，保留其余结构。
+
+    redis://:pass@host:6379/5        → redis://:***@host:6379/5
+    mysql://user:pass@host:3306/db   → mysql://user:***@host:3306/db
+    redis://host:6379/0              → 原样返回（无凭据）
+
+    why：这类值需要留着 host/port/db 供排查，不能像密码字段那样整串截断，
+    但内嵌的密码必须遮住。手写解析而不用 urlsplit，是为了对畸形串也不抛异常。
+    """
+    try:
+        scheme_sep = url.index("://") + 3
+    except ValueError:
+        return url
+
+    scheme, rest = url[:scheme_sep], url[scheme_sep:]
+
+    # userinfo 只可能出现在第一个 @ 之前，且不能跨过路径分隔符
+    at_idx = rest.rfind("@")
+    if at_idx == -1:
+        return url
+    path_idx = rest.find("/")
+    if path_idx != -1 and path_idx < at_idx:
+        return url
+
+    userinfo, host_part = rest[:at_idx], rest[at_idx:]
+    if ":" not in userinfo:
+        # 形如 scheme://user@host —— 没有密码可遮
+        return url
+
+    user, _ = userinfo.split(":", 1)
+    return f"{scheme}{user}:***{host_part}"
+
+
+def _wait_port_released(port: int, timeout: float = 3.0) -> None:
+    """轮询等待端口释放，最多等 timeout 秒。
+
+    why：原实现无条件 time.sleep(1)，端口通常在几十毫秒内就已释放，
+    这一秒纯属浪费；热重载模式下预检执行两次，白等两秒。
+    改为 50ms 轮询探测，端口一释放立刻返回。
+    """
+    import time
+    import socket
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.2)
+            # connect 失败说明已无人监听，端口已释放
+            if sock.connect_ex(("127.0.0.1", port)) != 0:
+                return
+        time.sleep(0.05)
+
+
 def _kill_old_instances(port: int) -> None:
     """检查并杀死占用指定端口的旧后端进程（排除自身）"""
     import subprocess
     my_pid = os.getpid()
-    _TAG = "[启动预检]"
 
     try:
         # Windows: netstat 查端口占用
@@ -157,9 +219,7 @@ def _kill_old_instances(port: int) -> None:
                         _safe_print(f"{_TAG} 已终止占用端口 {port} 的旧进程 (PID: {pid})")
                     except Exception:
                         pass
-                # 等待端口释放
-                import time
-                time.sleep(1)
+                _wait_port_released(port)
         else:
             # Linux/macOS: lsof 或 fuser
             try:
@@ -168,16 +228,18 @@ def _kill_old_instances(port: int) -> None:
                     capture_output=True, text=True, timeout=5
                 )
                 if result.stdout.strip():
+                    killed = False
                     for pid_str in result.stdout.strip().split("\n"):
                         try:
                             pid = int(pid_str.strip())
                             if pid != my_pid and pid != os.getppid():
                                 os.kill(pid, signal.SIGTERM)
+                                killed = True
                                 _safe_print(f"{_TAG} 已终止占用端口 {port} 的旧进程 (PID: {pid})")
                         except (ValueError, ProcessLookupError, PermissionError):
                             pass
-                    import time
-                    time.sleep(1)
+                    if killed:
+                        _wait_port_released(port)
             except FileNotFoundError:
                 pass  # lsof 不可用，跳过
     except Exception as e:
@@ -197,10 +259,20 @@ def preload_config() -> None:
         return
     _bootstrap_executed = True
 
+    # why：development 下 uvicorn reload 会以子进程再次导入 src.main，导致整套预检
+    # （端口清理 + 参数打印）重复执行一遍。父进程通过环境变量留标记，子进程继承后
+    # 跳过重复工作——尤其是重复的 kill 与等待，那时旧进程早已终止，纯属白等。
+    # 该判断放在所有实际工作之前，避免子进程白跑文件系统探测。
+    is_reload_child = os.environ.get(_RELOAD_MARK) == "1"
+    os.environ[_RELOAD_MARK] = "1"
+
+    if is_reload_child:
+        _safe_print(f"{_TAG} 热重载子进程，跳过重复预检")
+        return
+
     config_path = _get_config_path()
     docker = _is_docker_environment()
 
-    _TAG = "[启动预检]"
     _safe_print(f"{_TAG} 运行环境: {'Docker 容器' if docker else '本地开发'}")
     _safe_print(f"{_TAG} 配置文件: {config_path.resolve()}")
 
@@ -263,9 +335,24 @@ def preload_config() -> None:
 
     # 脱敏函数
     def _mask(val, key):
+        """按 key 名与值形态双重判定脱敏。
+
+        why：仅按 key 名匹配会漏掉把凭据内嵌在值里的情况——
+        cache.redis_url 的 key 不含 password/secret，但值形如
+        redis://:密码@host:6379/5，原实现会把密码整串明文打印。
+        """
         s = str(val)
-        if "password" in key.lower() or "secret" in key.lower():
+        lowered = key.lower()
+
+        # 1) 敏感 key：整体截断
+        if any(mark in lowered for mark in ("password", "secret", "token", "cookie", "apikey", "api_key")):
             return s[:3] + "***" if len(s) > 3 else "***"
+
+        # 2) 连接串：只replace掉 userinfo 段的密码，保留结构便于排查
+        #    形如 scheme://user:pass@host/path 或 scheme://:pass@host/path
+        if "://" in s and "@" in s:
+            return _mask_url_credentials(s)
+
         return s
 
     # 打印每个核心参数的值和来源

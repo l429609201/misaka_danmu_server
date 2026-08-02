@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Card, Button, Tag, Switch, Space, Form, Input, Select, Slider,
+  Card, Button, Tag, Switch, Space, Form, Input, Select, Slider, Segmented,
   Popconfirm, Spin, Empty, message, Tooltip, Row, Col,
 } from 'antd'
 import {
@@ -16,7 +16,7 @@ import {
   getNotificationChannelTypes, getNotificationChannels,
   createNotificationChannel, updateNotificationChannel,
   deleteNotificationChannel, testNotificationChannel,
-  getWebhookApikey,
+  getWebhookApikey, validateNotificationPublicDomain,
 } from '../../../apis'
 import { useTranslation } from 'react-i18next'
 import { getLocalizedField } from '../../../utils/i18nDynamic'
@@ -161,6 +161,20 @@ export const Notification = () => {
     return `${baseName} ${existing.length}`
   }
 
+  const validatePublicDomain = async ({ silent = false } = {}) => {
+    try {
+      const response = await validateNotificationPublicDomain()
+      if (!response.data?.ok) throw new Error(response.data?.detail || t('notification.publicDomainInvalid'))
+      if (!silent) message.success(t('notification.publicDomainValid'))
+      return true
+    } catch (error) {
+      const detail = error.response?.data?.detail || error.message || t('notification.publicDomainInvalid')
+      message.error(t('notification.publicDomainInvalidDetail', { detail }))
+      return false
+    }
+  }
+
+
   const handleAdd = () => {
     setEditingChannel(null)
     form.resetFields()
@@ -176,7 +190,7 @@ export const Notification = () => {
     setModalVisible(true)
   }
 
-  const handleEdit = (record) => {
+  const handleEdit = async (record) => {
     setEditingChannel(record)
     const eventsArr = Object.entries(record.eventsConfig || {})
       .filter(([, v]) => v).map(([k]) => k)
@@ -189,6 +203,11 @@ export const Notification = () => {
       eventsConfig: eventsArr,
     })
     setModalVisible(true)
+    // why：已有渠道可能保存了外链模式，但全局域名已被修改或反代失效；
+    // 打开编辑时立即复检并告警，避免用户误以为当前配置仍然可用。
+    if (record.config?.image_mode === 'public_url') {
+      await validatePublicDomain({ silent: true })
+    }
   }
 
   const handleDelete = async (id) => {
@@ -216,6 +235,11 @@ export const Notification = () => {
   const handleSave = async () => {
     try {
       const values = await form.validateFields()
+      // 保存时再次校验，防止初始化值、脚本赋值或切换请求竞态绕过 onChange 校验。
+      if (values.config?.image_mode === 'public_url') {
+        const valid = await validatePublicDomain({ silent: true })
+        if (!valid) return
+      }
       setSaving(true)
       const eventsObj = {}
       ALL_EVENT_VALUES.forEach(v => { eventsObj[v] = (values.eventsConfig || []).includes(v) })
@@ -266,6 +290,26 @@ export const Notification = () => {
               {field.switchLabels?.checked || t('notification.optionB')}
             </Select.Option>
           </Select>
+        </Form.Item>
+      )
+    }
+    if (field.type === 'segmented') {
+      // 三档拨动开关（如图片发送模式：纯文字 / 海报 / 图片模式）
+      return (
+        <Form.Item key={field.key} label={field.label} name={name}
+          tooltip={field.description} initialValue={field.default}>
+          <Segmented block options={(field.options || []).map(o => ({
+            label: getLocalizedField(o, 'label') || o.label || o.value,
+            value: o.value,
+          }))} onChange={async (value) => {
+            if (field.key !== 'image_mode' || value !== 'public_url') return
+            const valid = await validatePublicDomain()
+            if (!valid && form.getFieldValue(name) === 'public_url') {
+              // why：切换失败立即回退，避免表单显示外链模式但保存后只能静默降级；
+              // 请求返回前用户若已切到其他模式，则不覆盖用户的新选择。
+              form.setFieldValue(name, 'poster')
+            }
+          }} />
         </Form.Item>
       )
     }
@@ -457,7 +501,27 @@ export const Notification = () => {
             )}
           </Row>
 
-          {currentSchema.filter(f => f.key !== 'log_raw').map(field => renderConfigField(field))}
+          {/* 渲染 schema 字段：桌面端将相邻的两个开关字段合并成一行两列，避免每个开关独占一行造成大量右侧留白 */}
+          {(() => {
+            const visibleFields = currentSchema.filter(f => f.key !== 'log_raw' && isFieldVisible(f))
+            const nodes = []
+            for (let i = 0; i < visibleFields.length; i++) {
+              const field = visibleFields[i]
+              const nextField = visibleFields[i + 1]
+              if (!isMobile && field.type === 'boolean' && nextField?.type === 'boolean') {
+                nodes.push(
+                  <Row gutter={24} key={`pair-${field.key}`}>
+                    <Col span={12}>{renderConfigField(field)}</Col>
+                    <Col span={12}>{renderConfigField(nextField)}</Col>
+                  </Row>
+                )
+                i++ // 跳过已被配对渲染的下一个字段
+                continue
+              }
+              nodes.push(renderConfigField(field))
+            }
+            return nodes
+          })()}
 
           {/* 编辑已有渠道 + webhook 模式时，展示完整回调地址 */}
           {editingChannel?.id && (configValues?.mode === 'webhook' || selectedType === 'wechat') && (() => {
