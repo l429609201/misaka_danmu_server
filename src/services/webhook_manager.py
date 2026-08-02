@@ -17,6 +17,15 @@ from .metadata_manager import MetadataSourceManager
 
 logger = logging.getLogger(__name__)
 
+
+def _sanitize_name(value: str) -> str:
+    """清除名称中的控制字符（\\r、\\n、\\t 等）并去掉首尾空白。
+
+    why：这些名称会被拼进多行汇总日志。名字里只要混入 \\r，终端渲染时光标
+    会退回行首覆盖已输出内容，导致日志出现残缺的孤立字符与空行。
+    """
+    return "".join(ch for ch in value if ch.isprintable()).strip()
+
 class WebhookManager:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: TaskManager, scraper_manager: ScraperManager, rate_limiter: RateLimiter, metadata_manager: MetadataSourceManager, config_manager: ConfigManager, title_recognition_manager=None, ai_matcher_manager=None):
         self._session_factory = session_factory
@@ -59,11 +68,11 @@ class WebhookManager:
             except Exception as e:
                 logger.error(f"从模块 {name} 加载 Webhook 处理器失败: {e}")
 
-        # 汇总输出
+        # 汇总输出（名称过一遍控制字符清理，避免单个处理器名污染整段多行日志）
         _P = "  - "
         log_lines = [f"已加载 {len(self._handlers)} 个 Webhook 处理器"]
         for hk in sorted(self._handlers.keys()):
-            log_lines.append(f"{_P}{hk}")
+            log_lines.append(f"{_P}{_sanitize_name(hk)}")
         logger.info("\n".join(log_lines))
 
     def get_handler(self, webhook_type: str) -> BaseWebhook:

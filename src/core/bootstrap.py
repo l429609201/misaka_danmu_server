@@ -133,6 +133,40 @@ def _safe_print(msg: str) -> None:
         print(msg.encode("ascii", errors="replace").decode("ascii"))
 
 
+def _mask_url_credentials(url: str) -> str:
+    """遮蔽连接串 userinfo 段里的密码，保留其余结构。
+
+    redis://:pass@host:6379/5        → redis://:***@host:6379/5
+    mysql://user:pass@host:3306/db   → mysql://user:***@host:3306/db
+    redis://host:6379/0              → 原样返回（无凭据）
+
+    why：这类值需要留着 host/port/db 供排查，不能像密码字段那样整串截断，
+    但内嵌的密码必须遮住。手写解析而不用 urlsplit，是为了对畸形串也不抛异常。
+    """
+    try:
+        scheme_sep = url.index("://") + 3
+    except ValueError:
+        return url
+
+    scheme, rest = url[:scheme_sep], url[scheme_sep:]
+
+    # userinfo 只可能出现在第一个 @ 之前，且不能跨过路径分隔符
+    at_idx = rest.rfind("@")
+    if at_idx == -1:
+        return url
+    path_idx = rest.find("/")
+    if path_idx != -1 and path_idx < at_idx:
+        return url
+
+    userinfo, host_part = rest[:at_idx], rest[at_idx:]
+    if ":" not in userinfo:
+        # 形如 scheme://user@host —— 没有密码可遮
+        return url
+
+    user, _ = userinfo.split(":", 1)
+    return f"{scheme}{user}:***{host_part}"
+
+
 def _wait_port_released(port: int, timeout: float = 3.0) -> None:
     """轮询等待端口释放，最多等 timeout 秒。
 
@@ -301,9 +335,24 @@ def preload_config() -> None:
 
     # 脱敏函数
     def _mask(val, key):
+        """按 key 名与值形态双重判定脱敏。
+
+        why：仅按 key 名匹配会漏掉把凭据内嵌在值里的情况——
+        cache.redis_url 的 key 不含 password/secret，但值形如
+        redis://:密码@host:6379/5，原实现会把密码整串明文打印。
+        """
         s = str(val)
-        if "password" in key.lower() or "secret" in key.lower():
+        lowered = key.lower()
+
+        # 1) 敏感 key：整体截断
+        if any(mark in lowered for mark in ("password", "secret", "token", "cookie", "apikey", "api_key")):
             return s[:3] + "***" if len(s) > 3 else "***"
+
+        # 2) 连接串：只replace掉 userinfo 段的密码，保留结构便于排查
+        #    形如 scheme://user:pass@host/path 或 scheme://:pass@host/path
+        if "://" in s and "@" in s:
+            return _mask_url_credentials(s)
+
         return s
 
     # 打印每个核心参数的值和来源
