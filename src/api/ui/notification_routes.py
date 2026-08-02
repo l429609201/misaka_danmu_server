@@ -2,9 +2,13 @@
 通知渠道管理 API 路由
 """
 
+import base64
 import logging
 import secrets
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
+
+import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
@@ -14,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db import crud, get_db_session
 from src import security
 from src.services import apply_tunnel_from_notification_manager
+from src.utils.image_utils import IMAGE_DIR
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -73,6 +78,66 @@ async def _verify_webhook_api_key(api_key: str, session: AsyncSession):
         raise HTTPException(status_code=401, detail="无效的 API Key")
 
 
+_PUBLIC_URL_PROBE_NAME = "notification_public_url_probe.png"
+_PUBLIC_URL_PROBE_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
+
+
+def _validate_public_domain_format(raw_domain: str) -> str:
+    """规范并校验外链模式域名，仅接受无凭据的 HTTPS 站点根地址。"""
+    domain = str(raw_domain or "").strip().rstrip("/")
+    parsed = urlparse(domain)
+    if parsed.scheme.lower() != "https" or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="自定义域名必须是以 https:// 开头的完整公网地址")
+    if parsed.username or parsed.password:
+        raise HTTPException(status_code=400, detail="自定义域名不能包含用户名或密码")
+    return domain
+
+
+async def _probe_public_domain(session: AsyncSession) -> Dict[str, Any]:
+    """验证自定义域名能通过真实外网地址读取本服务的图片静态路由。"""
+    domain = _validate_public_domain_format(
+        await crud.get_config_value(session, "customApiDomain", "")
+    )
+    probe_path = IMAGE_DIR / _PUBLIC_URL_PROBE_NAME
+    try:
+        IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+        if not probe_path.is_file():
+            probe_path.write_bytes(_PUBLIC_URL_PROBE_BYTES)
+    except OSError as e:
+        logger.error(f"创建外链模式探测图片失败: {e}")
+        raise HTTPException(status_code=500, detail="无法创建图片探测文件，请检查 config/image 目录权限")
+
+    probe_url = f"{domain}/data/images/{_PUBLIC_URL_PROBE_NAME}"
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            response = await client.get(probe_url, headers={"Accept": "image/*"})
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=400, detail="自定义域名访问超时，请检查公网解析和反向代理")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=400, detail=f"自定义域名无法访问：{type(e).__name__}")
+
+    if response.url.scheme.lower() != "https":
+        raise HTTPException(status_code=400, detail="自定义域名最终跳转到了非 HTTPS 地址")
+    content_type = response.headers.get("content-type", "").lower()
+    if response.status_code != 200 or not content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"图片静态路由不可用（HTTP {response.status_code}，Content-Type={content_type or '未知'}）",
+        )
+    return {"ok": True, "domain": domain, "probeUrl": probe_url}
+
+
+@router.get("/notification/public-domain/validate", summary="校验外链模式自定义域名")
+async def validate_public_domain(
+    session: AsyncSession = Depends(get_db_session),
+    current_user=Depends(security.get_current_user),
+):
+    """验证 Token 管理的自定义域名能否公开访问本服务的图片静态路由。"""
+    return await _probe_public_domain(session)
+
+
 # ==================== Routes ====================
 
 @router.get("/notification/channel-types", summary="获取可用渠道类型及 Schema")
@@ -113,6 +178,9 @@ async def create_channel(
     session: AsyncSession = Depends(get_db_session),
     current_user=Depends(security.get_current_user),
 ):
+    # why：外链模式依赖全局域名和真实图片静态路由，校验失败时禁止落库。
+    if payload.config.get("image_mode") == "public_url":
+        await _probe_public_domain(session)
     channel_id = await crud.create_notification_channel(
         session,
         name=payload.name,
@@ -141,6 +209,9 @@ async def update_channel(
     session: AsyncSession = Depends(get_db_session),
     current_user=Depends(security.get_current_user),
 ):
+    # config 未提交时保持原值；只有明确保存外链模式才触发验证。
+    if payload.config and payload.config.get("image_mode") == "public_url":
+        await _probe_public_domain(session)
     success = await crud.update_notification_channel(
         session, channel_id,
         name=payload.name,

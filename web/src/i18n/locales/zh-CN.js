@@ -1489,6 +1489,9 @@ export default {
     updateSuccess: '已更新',
     createSuccess: '已创建',
     saveFailed: '保存失败',
+    publicDomainValid: '自定义域名与图片外链访问正常',
+    publicDomainInvalid: '外链模式自定义域名不可用',
+    publicDomainInvalidDetail: '无法启用外链模式：{{detail}}',
     groupImport: '导入',
     eventImportSuccess: '导入成功',
     eventImportFailed: '导入失败',
@@ -3547,8 +3550,8 @@ export default {
 
     // Domain.jsx - 自定义域名
     domainTitle: '自定义域名设置',
-    domainDesc: '设置后，复制按钮将自动拼接 "http(s)://域名(ip):端口(port)/api/v1/Token值" 格式的完整URL。',
-    domainPlaceholder: '请输入自定义域名',
+    domainDesc: '设置后，复制按钮将自动拼接 "http(s)://域名(ip):端口(port)/api/v1/Token值" 格式的完整URL。注意：通知渠道的「图片发送模式 - 外链模式」也依赖此处的域名，该模式要求这里填写的必须是公网可访问的 HTTPS 域名（http、内网地址、局域网 IP 均不生效，此时会自动降级为海报模式）。',
+    domainPlaceholder: '请输入自定义域名（外链模式需填 https:// 公网域名）',
     domainSave: '修改',
     saveSuccess: '保存成功',
     saveFailed: '保存失败',

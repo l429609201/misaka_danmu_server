@@ -1,7 +1,8 @@
+import hashlib
 import logging
 import uuid
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Union
 import asyncio
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +34,69 @@ def _ensure_image_dir():
         logger.warning(f"无法创建图片目录 {IMAGE_DIR}: {e}")
 
 # 延迟创建目录，避免在模块加载时就尝试创建
+
+# 对外分享用缩略图的目标宽度，与各元数据站常见的 w500 规格保持一致
+PUBLIC_THUMBNAIL_WIDTH = 500
+
+
+def _encode_thumbnail(raw: bytes, width: int) -> bytes:
+    """同步把图片等比缩放到指定宽度并编码为 JPEG。
+
+    why：这是 CPU 密集操作，由调用方放进线程执行，避免阻塞事件循环。
+    统一转 RGB 是因为 PNG 的透明通道与 P 模式无法直接存 JPEG。
+    """
+    import io
+    from PIL import Image
+
+    with Image.open(io.BytesIO(raw)) as im:
+        im = im.convert("RGB")
+        if im.width > width:
+            height = max(1, round(im.height * width / im.width))
+            im = im.resize((width, height), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=85, optimize=True)
+        return buf.getvalue()
+
+
+async def save_public_thumbnail(
+    image_source: Optional[Union[str, bytes]],
+    width: int = PUBLIC_THUMBNAIL_WIDTH,
+) -> Optional[str]:
+    """把图片处理成 W500 规格存入本地图片目录，返回可对外访问的相对路径。
+
+    :param image_source: 远程 URL、本地 /data/images/ 路径，或已在内存中的图片字节。
+    :param width: 目标宽度，图片窄于该值时保持原尺寸不放大。
+    :return: 形如 /data/images/w500_<hash>.jpg 的相对路径；失败返回 None。
+
+    why：文件名取图片内容的 sha256 前缀，同一张图重复通知时直接命中已生成的文件，
+    既省去重复编码，也避免 config/image 被相同海报的副本堆满。
+    """
+    raw = image_source if isinstance(image_source, bytes) else await load_image_bytes(image_source)
+    if not raw:
+        return None
+
+    filename = f"w{width}_{hashlib.sha256(raw).hexdigest()[:16]}.jpg"
+    save_path = IMAGE_DIR / filename
+    web_path = f"/data/images/{filename}"
+
+    if save_path.is_file():
+        return web_path
+
+    try:
+        data = await asyncio.to_thread(_encode_thumbnail, raw, width)
+    except Exception as e:
+        logger.warning(f"生成 W{width} 缩略图失败: {e}")
+        return None
+
+    try:
+        _ensure_image_dir()
+        save_path.write_bytes(data)
+    except (OSError, PermissionError) as e:
+        logger.warning(f"保存 W{width} 缩略图失败 ({save_path}): {e}")
+        return None
+
+    logger.info(f"已生成对外分享缩略图: {save_path} ({len(data)} 字节)")
+    return web_path
 
 async def load_image_bytes(image_source: Optional[str], max_bytes: int = 10 * 1024 * 1024) -> Optional[bytes]:
     """把远程 URL、本地图片 URL 或 file:// 地址统一读取为图片字节。

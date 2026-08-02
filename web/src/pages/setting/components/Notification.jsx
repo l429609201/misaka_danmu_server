@@ -16,7 +16,7 @@ import {
   getNotificationChannelTypes, getNotificationChannels,
   createNotificationChannel, updateNotificationChannel,
   deleteNotificationChannel, testNotificationChannel,
-  getWebhookApikey,
+  getWebhookApikey, validateNotificationPublicDomain,
 } from '../../../apis'
 import { useTranslation } from 'react-i18next'
 import { getLocalizedField } from '../../../utils/i18nDynamic'
@@ -161,6 +161,20 @@ export const Notification = () => {
     return `${baseName} ${existing.length}`
   }
 
+  const validatePublicDomain = async ({ silent = false } = {}) => {
+    try {
+      const response = await validateNotificationPublicDomain()
+      if (!response.data?.ok) throw new Error(response.data?.detail || t('notification.publicDomainInvalid'))
+      if (!silent) message.success(t('notification.publicDomainValid'))
+      return true
+    } catch (error) {
+      const detail = error.response?.data?.detail || error.message || t('notification.publicDomainInvalid')
+      message.error(t('notification.publicDomainInvalidDetail', { detail }))
+      return false
+    }
+  }
+
+
   const handleAdd = () => {
     setEditingChannel(null)
     form.resetFields()
@@ -176,7 +190,7 @@ export const Notification = () => {
     setModalVisible(true)
   }
 
-  const handleEdit = (record) => {
+  const handleEdit = async (record) => {
     setEditingChannel(record)
     const eventsArr = Object.entries(record.eventsConfig || {})
       .filter(([, v]) => v).map(([k]) => k)
@@ -189,6 +203,11 @@ export const Notification = () => {
       eventsConfig: eventsArr,
     })
     setModalVisible(true)
+    // why：已有渠道可能保存了外链模式，但全局域名已被修改或反代失效；
+    // 打开编辑时立即复检并告警，避免用户误以为当前配置仍然可用。
+    if (record.config?.image_mode === 'public_url') {
+      await validatePublicDomain({ silent: true })
+    }
   }
 
   const handleDelete = async (id) => {
@@ -216,6 +235,11 @@ export const Notification = () => {
   const handleSave = async () => {
     try {
       const values = await form.validateFields()
+      // 保存时再次校验，防止初始化值、脚本赋值或切换请求竞态绕过 onChange 校验。
+      if (values.config?.image_mode === 'public_url') {
+        const valid = await validatePublicDomain({ silent: true })
+        if (!valid) return
+      }
       setSaving(true)
       const eventsObj = {}
       ALL_EVENT_VALUES.forEach(v => { eventsObj[v] = (values.eventsConfig || []).includes(v) })
@@ -277,7 +301,15 @@ export const Notification = () => {
           <Segmented block options={(field.options || []).map(o => ({
             label: getLocalizedField(o, 'label') || o.label || o.value,
             value: o.value,
-          }))} />
+          }))} onChange={async (value) => {
+            if (field.key !== 'image_mode' || value !== 'public_url') return
+            const valid = await validatePublicDomain()
+            if (!valid && form.getFieldValue(name) === 'public_url') {
+              // why：切换失败立即回退，避免表单显示外链模式但保存后只能静默降级；
+              // 请求返回前用户若已切到其他模式，则不覆盖用户的新选择。
+              form.setFieldValue(name, 'poster')
+            }
+          }} />
         </Form.Item>
       )
     }

@@ -1489,6 +1489,9 @@ export default {
     updateSuccess: '已更新',
     createSuccess: '已建立',
     saveFailed: '儲存失敗',
+    publicDomainValid: '自訂網域與圖片外鏈存取正常',
+    publicDomainInvalid: '外鏈模式自訂網域不可用',
+    publicDomainInvalidDetail: '無法啟用外鏈模式：{{detail}}',
     groupImport: '匯入',
     eventImportSuccess: '匯入成功',
     eventImportFailed: '匯入失敗',
@@ -3009,8 +3012,8 @@ export default {
 
     // Domain.jsx - 自訂網域
     domainTitle: '自訂網域設定',
-    domainDesc: '設定後，複製按鈕將自動拼接 "http(s)://網域(ip):連接埠(port)/api/v1/Token值" 格式的完整URL。',
-    domainPlaceholder: '請輸入自訂網域',
+    domainDesc: '設定後，複製按鈕將自動拼接 "http(s)://網域(ip):連接埠(port)/api/v1/Token值" 格式的完整URL。注意：通知渠道的「圖片傳送模式 - 外鏈模式」也依賴此處的網域，該模式要求這裡填寫的必須是公網可存取的 HTTPS 網域（http、內網位址、區域網路 IP 均不生效，此時會自動降級為海報模式）。',
+    domainPlaceholder: '請輸入自訂網域（外鏈模式需填 https:// 公網網域）',
     domainSave: '修改',
     saveSuccess: '儲存成功',
     saveFailed: '儲存失敗',

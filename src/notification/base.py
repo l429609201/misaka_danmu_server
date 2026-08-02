@@ -34,27 +34,26 @@ class ChannelCapability(Enum):
 IMAGE_MODE_TEXT = "text"          # 纯文字：丢弃图片，只发文本
 IMAGE_MODE_POSTER = "poster"      # 海报：图文合一（图片带 caption）
 IMAGE_MODE_SEPARATE = "separate"  # 图片模式：图片与文字分两条消息发送
+IMAGE_MODE_PUBLIC_URL = "public_url"  # 外链模式：图片压缩为 W500 存本地，以外网 HTTPS URL 发送
 IMAGE_MODE_DEFAULT = IMAGE_MODE_POSTER
 
-# 各渠道 configFields 共享的「图片发送模式」三档开关定义。
+# 各渠道 configFields 共享的「图片发送模式」四档开关定义。
 # why: 四个渠道都需要该配置，集中定义避免重复；前端 renderConfigField 的
-# segmented 分支会渲染成左中右三档拨动开关。
+# segmented 分支会渲染成左中右拨动开关。
 IMAGE_MODE_FIELD = {
     "key": "image_mode",
     "label": "图片发送模式",
     "label_en": "Image Sending Mode",
     "label_tw": "圖片傳送模式",
     "type": "segmented",
-    "description": "纯文字=不发图片；海报=图文合一；图片模式=图片与文字分两条发送",
-    "description_en": "Text only = no image; Poster = image with caption; Separate = image and text as two messages",
-    "description_tw": "純文字=不傳圖片；海報=圖文合一；圖片模式=圖片與文字分兩條傳送",
+    "description": "纯文字=不发图片；海报=图文合一；图片模式=图片与文字分两条发送；外链模式=图片缩略为 W500 存本地后，把图片链接交给平台抓取。注意：外链模式必须先在「弹幕 → Token 管理 → 自定义域名」填写公网可访问的 HTTPS 域名，否则本次通知自动降级为海报模式。",
+    "description_en": "Text only=no image; Poster=image with caption; Separate=image and text as two messages; URL Link=resize to W500, store locally and let the platform fetch the image link. Note: URL Link requires a publicly reachable HTTPS domain configured under Danmaku → Token Management → Custom Domain, otherwise it falls back to Poster mode.",
+    "description_tw": "純文字=不傳圖片；海報=圖文合一；圖片模式=圖片與文字分兩條傳送；外鏈模式=圖片縮圖為 W500 存本機後，把圖片連結交給平台抓取。注意：外鏈模式必須先在「彈幕 → Token 管理 → 自訂網域」填寫公網可存取的 HTTPS 網域，否則本次通知自動降級為海報模式。",
     "options": [
-        {"value": IMAGE_MODE_TEXT, "label": "纯文字",
-         "label_en": "Text Only", "label_tw": "純文字"},
-        {"value": IMAGE_MODE_POSTER, "label": "海报",
-         "label_en": "Poster", "label_tw": "海報"},
-        {"value": IMAGE_MODE_SEPARATE, "label": "图片模式",
-         "label_en": "Separate", "label_tw": "圖片模式"},
+        {"value": IMAGE_MODE_TEXT,     "label": "纯文字",   "label_en": "Text Only", "label_tw": "純文字"},
+        {"value": IMAGE_MODE_POSTER,   "label": "海报",     "label_en": "Poster",    "label_tw": "海報"},
+        {"value": IMAGE_MODE_SEPARATE, "label": "图片模式", "label_en": "Separate",  "label_tw": "圖片模式"},
+        {"value": IMAGE_MODE_PUBLIC_URL, "label": "外链模式", "label_en": "URL Link", "label_tw": "外鏈模式"},
     ],
     "default": IMAGE_MODE_DEFAULT,
 }
@@ -198,11 +197,60 @@ class BaseNotificationChannel(ABC):
 
     @property
     def image_mode(self) -> str:
-        """当前渠道的图片发送模式（text / poster / separate）"""
+        """当前渠道的图片发送模式（text / poster / separate / public_url）"""
         mode = (self.config or {}).get("image_mode") or IMAGE_MODE_DEFAULT
-        if mode not in (IMAGE_MODE_TEXT, IMAGE_MODE_POSTER, IMAGE_MODE_SEPARATE):
+        if mode not in (
+            IMAGE_MODE_TEXT, IMAGE_MODE_POSTER,
+            IMAGE_MODE_SEPARATE, IMAGE_MODE_PUBLIC_URL,
+        ):
             return IMAGE_MODE_DEFAULT
         return mode
+
+    def public_base_url(self) -> str:
+        """取本渠道可对外访问的站点根地址（必须是 https，否则视为不可用）。
+
+        优先级（由高到低）：
+        1. Token 管理 → 自定义域名（__custom_api_domain，全局唯一，由 NotificationManager 注入）
+        2. 本渠道配置的外部访问地址（webhook_base_url / server_url）
+
+        why：外链模式要把本机图片地址交给第三方平台抓取，必须有可公网访问的域名。
+        Token 管理里的自定义域名是用户专门为此场景配置的全局地址，渠道自己的地址
+        作为备用兜底。仅接受 https：http 明文地址会被大多数平台拒绝加载。
+        外链模式不可用时请在「弹幕 → Token 管理 → 自定义域名」填写可访问的 HTTPS 域名。
+        """
+        cfg = self.config or {}
+        for key in ("__custom_api_domain", "webhook_base_url", "server_url"):
+            raw = str(cfg.get(key) or "").strip().rstrip("/")
+            if raw.startswith("https://"):
+                return raw
+        return ""
+
+    async def _build_public_image_url(self, rendered: RenderedMessage) -> str:
+        """把消息图片转存为 W500 缩略图，并拼成外网可访问的 https 地址。
+
+        取不到外网地址、或图片转存失败时返回空串，由调用方决定降级策略。
+        """
+        base = self.public_base_url()
+        if not base:
+            return ""
+
+        # 已经是本渠道外网地址下的图片时无需重复处理
+        if rendered.image.startswith(f"{base}/data/images/"):
+            return rendered.image
+
+        # 优先用已在内存里的字节（如聚合海报），避免再发一次网络请求
+        source = rendered.image_bytes or rendered.image
+        if not source:
+            return ""
+
+        try:
+            from src.utils.image_utils import save_public_thumbnail
+            web_path = await save_public_thumbnail(source)
+        except Exception as e:
+            self.logger.warning(f"生成对外分享缩略图失败: {e}")
+            return ""
+
+        return f"{base}{web_path}" if web_path else ""
 
     async def send_rendered(self, rendered: RenderedMessage):
         """发送标准渲染消息。
@@ -218,16 +266,35 @@ class BaseNotificationChannel(ABC):
         body = rendered.body
         kwargs = {}
         # 按渠道配置的图片发送模式决定图片如何附带：
-        # text     → 丢弃图片，只发文本
-        # poster   → 图文合一（交给渠道以 caption 形式发送）
-        # separate → 图片与文字分两条发送，由渠道读取 image_separate 标记
+        # text       → 丢弃图片，只发文本
+        # poster     → 图文合一（交给渠道以 caption 形式发送）
+        # separate   → 图片与文字分两条发送，由渠道读取 image_separate 标记
+        # public_url → 先转存为 W500 缩略图，再把外网 https 地址交给平台自行抓取
         mode = self.image_mode
         if mode != IMAGE_MODE_TEXT:
-            if rendered.image:
-                kwargs["image"] = rendered.image
-            if rendered.image_bytes:
-                kwargs["image_bytes"] = rendered.image_bytes
-            if mode == IMAGE_MODE_SEPARATE and (rendered.image or rendered.image_bytes):
+            image_ref = rendered.image
+            image_bytes = rendered.image_bytes
+
+            if mode == IMAGE_MODE_PUBLIC_URL:
+                public_url = await self._build_public_image_url(rendered)
+                if public_url:
+                    # 交给平台按 URL 抓取，不再上传字节，避免重复传输同一张图
+                    image_ref = public_url
+                    image_bytes = None
+                else:
+                    # 外网地址缺失/非 https/转存失败：退回海报模式，保证图片不丢
+                    self.logger.warning(
+                        "外链模式不可用，本次按海报模式发送。"
+                        "请在「弹幕 → Token 管理 → 自定义域名」填写公网可访问的 "
+                        "HTTPS 域名（必须以 https:// 开头，http 地址平台会拒绝加载）"
+                    )
+                    mode = IMAGE_MODE_POSTER
+
+            if image_ref:
+                kwargs["image"] = image_ref
+            if image_bytes:
+                kwargs["image_bytes"] = image_bytes
+            if mode == IMAGE_MODE_SEPARATE and (image_ref or image_bytes):
                 kwargs["image_separate"] = True
         if rendered.buttons:
             kwargs["reply_markup"] = rendered.buttons
