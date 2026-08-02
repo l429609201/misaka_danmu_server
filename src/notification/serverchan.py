@@ -17,7 +17,7 @@ import httpx
 
 from src.notification.base import (
     BaseNotificationChannel, CommandResult,
-    ChannelCapability, ChannelCapabilities,
+    ChannelCapability, ChannelCapabilities, IMAGE_MODE_FIELD,
 )
 from src._version import APP_VERSION
 
@@ -57,9 +57,6 @@ class ServerChanChannel(BaseNotificationChannel):
         # {user_id: ["callback_data_1", "callback_data_2", ...]}
         # 用户输入数字 N → mapping[N-1]
         self._button_mappings: Dict[str, List[str]] = {}
-
-    def get_capabilities(self) -> ChannelCapabilities:
-        return self._CAPABILITIES
 
     # ─── 内部辅助 ───────────────────────────────
 
@@ -575,4 +572,7 @@ class ServerChanChannel(BaseNotificationChannel):
                 "description_tw": "啟用後，Bot 的所有收發訊息將記錄到 config/logs/bot_raw.log 檔案中，用於除錯",
                 "default": False,
             },
+            # why：图片模式按渠道实例独立生效（base.image_mode 读各自 config），
+            # 此前 SC3 未暴露该字段，导致只能吃 poster 默认值无法单独调整。
+            IMAGE_MODE_FIELD,
         ]

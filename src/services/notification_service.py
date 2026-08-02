@@ -9,7 +9,9 @@ NotificationService — 通知系统的通用内部 API
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
-from src.notification.base import CommandResult, ConversationState, ChannelCapabilities
+from src.notification.base import (
+    CommandResult, ConversationState, ChannelCapabilities,
+)
 from src.notification.menus import (
     ImportBaseMixin,
     MessagesMixin,
@@ -445,8 +447,11 @@ class NotificationService(
                 events_cfg = channel_instance.config.get("__events_config", {})
                 if not events_cfg.get(check_event_key, False):
                     continue
-                # 仅 Telegram 支持 edit_message，其他渠道跳过进度推送（完成时才收通知）
-                if getattr(channel_instance, "channel_type", "") != "telegram":
+                # why：进度消息靠「编辑同一条消息」刷新百分比，只有声明了
+                # MESSAGE_EDITING 能力的渠道才支持。不具备该能力的渠道（企业微信/
+                # Server酱）若逐条推送进度，会变成刷屏的进度条垃圾消息，
+                # 因此这里按能力而非渠道类型判断，新增渠道无需再改这里。
+                if not channel_instance.get_capabilities().supports_editing:
                     continue
                 # 统一使用新 TaskProgressMessage 渲染（合法 MarkdownV2），避免 edit 解析失败刷屏
                 progress_payload = {

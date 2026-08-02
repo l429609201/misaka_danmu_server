@@ -156,11 +156,17 @@ class BaseNotificationChannel(ABC):
         # 从注入的特殊字段读取代理 URL（由 NotificationManager 在加载时注入）
         self.proxy_url: str = config.get("__proxy_url", "")
 
+    # 渠道能力声明：子类在类体里覆写此类属性即可，无需再覆写 get_capabilities。
+    # why：能力属于渠道类型而非实例（同类型多实例能力一致），放类属性可避免每个
+    # 实例复制一份相同数据，也支持不实例化就查询能力。
+    _CAPABILITIES: ChannelCapabilities = ChannelCapabilities()
+
     def get_capabilities(self) -> ChannelCapabilities:
-        """返回渠道能力配置。子类应覆写此方法声明自身能力。
-        默认返回空能力集（仅支持纯文本通知）。
+        """返回渠道能力配置，取子类声明的 _CAPABILITIES 类属性。
+
+        未声明的渠道拿到基类的空能力集（仅支持纯文本通知）。
         """
-        return ChannelCapabilities()
+        return self._CAPABILITIES
 
     def register_commands(self, commands: Dict[str, str]) -> None:
         """注册菜单命令。子类可覆写以实现平台特定的命令菜单。

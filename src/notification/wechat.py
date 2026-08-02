@@ -128,9 +128,6 @@ class WeChatChannel(BaseNotificationChannel):
         # 按钮编号→callback_data 映射（用于数字选择降级交互）
         self._button_mappings: Dict[str, list] = {}
 
-    def get_capabilities(self) -> ChannelCapabilities:
-        return self._CAPABILITIES
-
     def _api_base(self) -> str:
         """返回企业微信 API Base URL，智能识别代理格式：
         - 留空 → 直连官方 https://qyapi.weixin.qq.com/cgi-bin

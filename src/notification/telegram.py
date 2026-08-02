@@ -60,10 +60,6 @@ class TelegramChannel(BaseNotificationChannel):
         self._running = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None  # 主事件循环引用
 
-    def get_capabilities(self) -> ChannelCapabilities:
-        """返回 Telegram 渠道能力"""
-        return self._CAPABILITIES
-
     @staticmethod
     def _escape_markdown_v2(text: str) -> str:
         """转义 MarkdownV2 特殊字符（用于把纯文本 title 安全嵌入 MarkdownV2）"""

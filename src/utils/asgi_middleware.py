@@ -19,8 +19,10 @@ logger = logging.getLogger(__name__)
 _CAPTURE_PREFIXES = ("/api/control/", "/api/mcp/", "/api/v1/")
 
 # 404→403 保护不应拦截的路径（MCP 子应用路由机制不同；日历海报为公开懒加载图片，
-# 无海报时返回 404/204 属正常，不应转 403）
-_SKIP_404_PREFIXES = ("/api/mcp", "/api/ui/calendar/tmdb-poster")
+# 无海报时返回 404/204 属正常，不应转 403；
+# 通知渠道 webhook 是已知 channel_id 的合法回调，404 表示渠道未启用而非路径枚举，
+# 应直接透传真实错误消息便于 relay 侧诊断。）
+_SKIP_404_PREFIXES = ("/api/mcp", "/api/ui/calendar/tmdb-poster", "/api/notification/channels/")
 
 # 捕获响应体用于写日志时的最大保留字节数
 _MAX_BODY_LEN = 10000
