@@ -136,17 +136,31 @@ class SearchMenuMixin:
             display_keyword = keyword + suffix if suffix else keyword
             # 最终结果编辑掉进度消息；不支持编辑的渠道 message_id 为 None，直接发新消息
             return await self._build_search_page(
-                serialized, display_keyword, 0, edit_message_id=tracker.message_id
+                serialized, display_keyword, 0, channel=channel,
+                edit_message_id=tracker.message_id
             )
         except Exception as e:
             logger.error(f"搜索失败: {e}", exc_info=True)
             return CommandResult(success=False, text=f"搜索出错: {e}", edit_message_id=tracker.message_id)
 
+    @staticmethod
+    def _search_page_size(channel) -> int:
+        """根据渠道能力决定每页搜索结果条数。
+
+        why：内联按钮每行最多 7 个，支持内联按钮的渠道（TG）可以排两行共 10 条；
+        不支持按钮的渠道只能文字交互，7 条一页已经足够，超出反而难以阅读。
+        """
+        from src.notification.base import ChannelCapability
+        if channel.get_capabilities().supports(ChannelCapability.INLINE_BUTTONS):
+            return 10  # TG：2 行 × 5 个按钮
+        return 7       # 文字渠道：1 行 × 5 个按钮
+
     async def _build_search_page(self, results: list, keyword: str, page: int,
+                           channel=None,
                            edit_message_id: int = None,
                            parsed_season=None, parsed_episode=None) -> CommandResult:
         total = len(results)
-        page_size = 10  # 每页 10 条（2行×5个按钮）
+        page_size = self._search_page_size(channel) if channel is not None else 10
         start = page * page_size
         end = min(start + page_size, total)
         page_items = results[start:end]
@@ -246,6 +260,7 @@ class SearchMenuMixin:
             conv.data.get("results", []),
             conv.data.get("keyword", ""),
             page,
+            channel=channel,
             edit_message_id=kw.get("message_id"),
         )
 
@@ -331,6 +346,7 @@ class SearchMenuMixin:
             conv.data.get("results", []),
             conv.data.get("keyword", ""),
             page,
+            channel=channel,
             edit_message_id=kw.get("message_id"),
             parsed_season=conv.data.get("parsed_season"),
             parsed_episode=conv.data.get("parsed_episode"),
@@ -696,7 +712,7 @@ class SearchMenuMixin:
                               chat_id=kw.get("chat_id"))
         keyword = snapshot.get("keyword", "")
         return await self._build_search_page(
-            snapshot["results"], keyword, 0,
+            snapshot["results"], keyword, 0, channel=channel,
             edit_message_id=kw.get("message_id"),
         )
 
