@@ -11,7 +11,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from src.db import crud
-from src.notification.base import CommandResult
+from src.notification.base import CommandResult, _progress_bar_str
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +36,8 @@ class TaskManagerMenuMixin:
 
     @staticmethod
     def _tm_progress_bar(progress: Any) -> str:
-        """渲染 10 格进度条，样式与 messages/system.py、menus/search.py 保持一致"""
-        try:
-            pct = int(progress or 0)
-        except (TypeError, ValueError):
-            pct = 0
-        pct = max(0, min(100, pct))
-        filled = pct // 10
-        return "█" * filled + "░" * (10 - filled)
+        """渲染 10 格进度条，复用基类原语保证全局样式一致"""
+        return _progress_bar_str(progress)
 
     @staticmethod
     def _tm_status_icon(status: str) -> str:
@@ -196,6 +190,10 @@ class TaskManagerMenuMixin:
             self._tm_refresh_tasks = {}
         # 同一用户只保留一个刷新协程
         self._tm_stop_auto_refresh(user_id)
+        # why：轮询重绘依赖「编辑同一条消息」，不支持编辑的渠道会把 100 轮刷新
+        # 变成 100 条独立消息。这里显式按能力拦截，不依赖 message_id 恰好为空。
+        if not channel.get_capabilities().supports_editing:
+            return
         if not message_id or chat_id is None:
             return
 

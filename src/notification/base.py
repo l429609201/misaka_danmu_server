@@ -138,6 +138,87 @@ class ConversationState:
 
 
 # ═══════════════════════════════════════════
+# 进度条工具
+# ═══════════════════════════════════════════
+
+def _progress_bar_str(progress: int) -> str:
+    """将进度百分比转换为 10 格进度条字符串（纯 █░，无任何转义）。
+
+    why：进度条的条形计算在三处独立实现（base.py、system.py、task_manager_menu.py），
+    容易偏移（有的用 // 10、有的用 int(p/10)、有的用 int(p/10) 不 clamp）。
+    这里是唯一来源，所有渠道渲染、消息模板、菜单都从这里取。
+    平台专属的格式化（MarkdownV2 反引号、纯文本括号）由调用方附加。
+    """
+    pct = max(0, min(100, int(progress or 0)))
+    filled = pct // 10
+    return "█" * filled + "░" * (10 - filled)
+
+
+
+
+class ProgressTracker:
+    """长耗时操作的进度反馈句柄。
+
+    why：进度反馈依赖「发一条占位消息 → 反复编辑刷新百分比 → 编辑成最终结果」这套
+    生命周期，只有声明了 MESSAGE_EDITING 能力的渠道才成立。不具备该能力的渠道若
+    逐条推送，10%/20%/40% 会各占一条变成刷屏垃圾，占位消息也会永久停在「进行中」。
+
+    这里把「能力判断 + 占位消息 + message_id 生命周期 + 文本渲染」全部收口，
+    业务侧只调用 begin_progress/update，不再各自写 supports_editing 判断，
+    也不再手工传递 edit_message_id。不支持的渠道拿到的是静默降级的空实现。
+    """
+
+    def __init__(
+        self,
+        channel: "BaseNotificationChannel",
+        title: str,
+        chat_id=None,
+        message_id: Optional[int] = None,
+    ):
+        self._channel = channel
+        self._title = title
+        self._chat_id = chat_id
+        self._message_id: Optional[int] = message_id
+        # 渠道不支持编辑时全程静默，业务侧无需感知
+        self._enabled = channel.get_capabilities().supports_editing
+
+    @property
+    def message_id(self) -> Optional[int]:
+        """占位消息 ID，供最终结果复用以编辑同一条消息。不支持时为 None。"""
+        return self._message_id
+
+    async def start(self, text: str) -> "ProgressTracker":
+        """发出占位消息。不支持编辑的渠道直接跳过，不留僵尸消息。"""
+        if not self._enabled:
+            return self
+        self._message_id = await self._channel.send_quick(text, chat_id=self._chat_id)
+        return self
+
+    async def update(self, progress: int, description: str) -> None:
+        """刷新进度。文本渲染委托给渠道，各平台自行处理转义与格式。"""
+        if not self._enabled:
+            return
+        text = self._channel.render_progress_text(progress, description)
+        msg_id_out: list = []
+        try:
+            await self._channel.send_message(
+                title=self._title,
+                text=text,
+                chat_id=self._chat_id,
+                edit_message_id=self._message_id,
+                _msg_id_out=msg_id_out,
+            )
+        except Exception:
+            # 进度刷新失败不应中断主流程（搜索/导入本身仍要继续）
+            self._channel.logger.debug("进度消息刷新失败，已忽略", exc_info=True)
+            return
+        # 首次发送时记录 message_id，后续复用以编辑同一条消息
+        if msg_id_out and not self._message_id:
+            self._message_id = msg_id_out[0]
+
+
+
+# ═══════════════════════════════════════════
 # 渠道抽象基类
 # ═══════════════════════════════════════════
 
@@ -342,6 +423,37 @@ class BaseNotificationChannel(ABC):
         不支持的渠道返回 None。子类可覆写实现。
         """
         return None
+
+    async def begin_progress(
+        self,
+        title: str,
+        placeholder: str = "",
+        chat_id=None,
+        message_id: Optional[int] = None,
+    ) -> ProgressTracker:
+        """创建进度反馈句柄，供长耗时操作（搜索/导入/刷新）汇报进度。
+
+        业务侧统一走这里，不需要自己判断渠道能力或管理 message_id：
+        不支持消息编辑的渠道会拿到静默降级的句柄，全程不发任何进度消息。
+
+        :param title: 进度消息标题，如 "🔍 搜索中"
+        :param placeholder: 占位消息文本，留空则不发占位、等首次 update 时创建
+        :param chat_id: 目标会话，多会话渠道需传入
+        :param message_id: 已存在的消息 ID（如调用方先发了占位消息），复用它而非新发
+        """
+        tracker = ProgressTracker(self, title, chat_id=chat_id, message_id=message_id)
+        if placeholder and not message_id:
+            await tracker.start(placeholder)
+        return tracker
+
+    def render_progress_text(self, progress: int, description: str) -> str:
+        """渲染进度文本。默认纯文本，有富文本格式要求的渠道覆写此方法。
+
+        why：进度条的转义规则是平台专属的（Telegram 要转义 MarkdownV2 保留字符，
+        企业微信用纯文本）。业务侧只提供 progress/description 两个语义值，
+        具体呈现由各渠道自行决定，避免格式化逻辑泄漏到菜单代码里。
+        """
+        return f"[{_progress_bar_str(progress)}] {progress}%\n• {description}"
 
     @staticmethod
     @abstractmethod

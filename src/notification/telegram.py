@@ -866,6 +866,19 @@ class TelegramChannel(BaseNotificationChannel):
             except Exception:
                 pass
 
+    def render_progress_text(self, progress: int, description: str) -> str:
+        """渲染 MarkdownV2 进度条。
+
+        why：进度条本体用反引号 code 包裹（█░ 不含 MarkdownV2 保留字符），
+        但百分比和描述必须转义——description 里的 "..." 含保留字符 "."，
+        未转义会导致 edit 时解析失败 → 降级发新消息 → 进度刷屏。
+        """
+        filled = max(0, min(10, int(progress / 10)))
+        bar = "█" * filled + "░" * (10 - filled)
+        pct = self._escape_markdown_v2(f"{progress}%")
+        desc = self._escape_markdown_v2(description)
+        return f"`[{bar}]` {pct}\n• {desc}"
+
     async def send_quick(self, text: str, chat_id=None) -> Optional[int]:
         """发送一条快速消息，返回 message_id 供后续 edit 使用"""
         if not self._bot:
