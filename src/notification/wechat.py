@@ -400,6 +400,10 @@ class WeChatChannel(BaseNotificationChannel):
         if loop and loop.is_running():
             asyncio.run_coroutine_threadsafe(self._register_menu_async(commands), loop)
 
+    # 一级菜单分组名。按 MENU_COMMANDS 的顺序每 5 个命令归一组：
+    # 第 1 组是搜索/导入类，第 2 组是库与系统管理类。
+    _MENU_GROUP_NAMES = ["搜索导入", "管理设置", "更多功能"]
+
     async def _register_menu_async(self, commands: Dict[str, str]):
         agent_id = self.config.get("agent_id", "").strip()
         if not agent_id:
@@ -409,23 +413,44 @@ class WeChatChannel(BaseNotificationChannel):
         items = list(commands.items())
         for i in range(0, min(len(items), 15), 5):
             chunk = items[i:i + 5]
+            group_idx = i // 5
             if len(chunk) == 1:
                 cmd, desc = chunk[0]
-                buttons.append({"type": "click", "name": desc[:8], "key": cmd})
+                buttons.append({"type": "click", "name": desc[:8], "key": self._menu_key(cmd)})
             else:
+                group_name = (
+                    self._MENU_GROUP_NAMES[group_idx]
+                    if group_idx < len(self._MENU_GROUP_NAMES)
+                    else f"功能{group_idx + 1}"
+                )
                 buttons.append({
-                    "name": f"功能{i // 5 + 1}",
-                    "sub_button": [{"type": "click", "name": d[:8], "key": c} for c, d in chunk],
+                    "name": group_name,
+                    "sub_button": [
+                        {"type": "click", "name": d[:8], "key": self._menu_key(c)}
+                        for c, d in chunk
+                    ],
                 })
         if not buttons:
             return
-        d = await self._api_post("menu/create", {"button": buttons[:3]}, extra_params={"agentid": agent_id})
+        payload = {"button": buttons[:3]}
+        self._log_raw("⬆ menu/create 请求", payload)
+        d = await self._api_post("menu/create", payload, extra_params={"agentid": agent_id})
         if d is None:
             return
         if d.get("errcode", -1) == 0:
             self.logger.info("企业微信菜单注册成功")
         else:
-            self.logger.error(f"菜单注册失败: {d.get('errmsg')}")
+            self.logger.error(f"菜单注册失败: {d.get('errmsg')} (code={d.get('errcode')})")
+
+    @staticmethod
+    def _menu_key(command: str) -> str:
+        """把内部命令名转换为企业微信菜单按钮的 key。
+
+        why：MENU_COMMANDS 的键带 "/" 前缀（如 /help），但企业微信菜单 key 只接受
+        字母数字下划线。带 "/" 时菜单能建成、按钮也能显示，但点击回调的 EventKey
+        对不上命令表，表现为「点了没反应」。这里统一去掉前缀。
+        """
+        return command.lstrip("/")
 
     def process_webhook_update(self, update_data: dict) -> Any:
         """
