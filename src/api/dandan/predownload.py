@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 
 from src.db import crud, orm_models, ConfigManager
-from src.services import ScraperManager, TaskManager, TaskSuccess
+from src.services import ScraperManager, TaskManager, TaskSuccess, TaskFailed
 from src.rate_limiter import RateLimiter
 from src.utils.episode_filter import get_and_apply_single_episode_filter
 
@@ -186,7 +186,8 @@ async def try_predownload_next_episode(
 
                     if not episodes or len(episodes) == 0:
                         logger.warning(f"预下载失败: 无法获取分集列表 (provider={provider}, mediaId={media_id})")
-                        raise TaskSuccess("无法获取分集列表")
+                        # why：分集列表获取失败属于真实错误，应标记任务失败而非已完成
+                        raise TaskFailed("无法获取分集列表")
 
                     # 查找下一集
                     # 如果有 partial_offset 规则，需要反向偏移到源站实际集数再查找
@@ -231,7 +232,8 @@ async def try_predownload_next_episode(
 
                     if not comments or len(comments) == 0:
                         logger.warning(f"预下载: 第 {next_episode_index} 集没有弹幕")
-                        raise TaskSuccess("未找到弹幕")
+                        # why：弹幕获取失败（源存在但无弹幕），应标记任务失败而非已完成
+                        raise TaskFailed("未找到弹幕")
 
                     await rate_limiter.increment_fallback("search", provider)
 

@@ -569,8 +569,8 @@ export const ImportTask = () => {
           {/* 进度条 */}
           <div className="pt-2">
             <Progress
-              percent={item.progress}
-              status={item.status.includes('失败') && 'exception'}
+              percent={item.status.includes('失败') ? 100 : item.progress}
+              status={item.status.includes('失败') ? 'exception' : undefined}
               strokeColor={item.status.includes('失败') ? undefined : {
                 '0%': '#108ee9',
                 '100%': '#87d068',
@@ -969,8 +969,8 @@ export const ImportTask = () => {
 
                         {/* 第三行: 进度条 */}
                         <Progress
-                          percent={item.progress}
-                          status={item.status.includes('失败') && 'exception'}
+                          percent={item.status.includes('失败') ? 100 : item.progress}
+                          status={item.status.includes('失败') ? 'exception' : undefined}
                           strokeColor={item.status.includes('失败') ? undefined : {
                             '0%': '#108ee9',
                             '100%': '#87d068',
