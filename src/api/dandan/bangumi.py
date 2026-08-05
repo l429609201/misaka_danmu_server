@@ -51,6 +51,37 @@ logger = logging.getLogger(__name__)
 bangumi_router = APIRouter(route_class=DandanApiRoute)
 
 
+async def _get_or_predict_source_order(
+    session: AsyncSession, anime_id: int, provider: str, media_id: str
+) -> int:
+    """
+    查询已有源的 sourceOrder；若源尚未入库，预测并返回下一个可用序号。
+    why：后备搜索复用已存在番剧时，episodeId 里的 source_order 段必须与
+         实际入库的 AnimeSource.sourceOrder 完全一致。若硬编码为 1，多源番剧
+         的第 2+ 个源会拼出错误的 ID（如 01 而非 02），导致客户端拿到的 ID
+         与数据库存储的 ID 不匹配，弹幕查不到。
+    """
+    from sqlalchemy import func
+    from src.db.orm_models import AnimeSource as _AnimeSource
+
+    # 先查已有源的 sourceOrder
+    existing_stmt = select(_AnimeSource.sourceOrder).where(
+        _AnimeSource.animeId == anime_id,
+        _AnimeSource.providerName == provider,
+        _AnimeSource.mediaId == media_id,
+    )
+    existing_order = (await session.execute(existing_stmt)).scalar_one_or_none()
+    if existing_order is not None:
+        return existing_order
+
+    # 源尚未入库（入库在后续导入任务中完成），预测下一个可用序号
+    max_stmt = select(func.max(_AnimeSource.sourceOrder)).where(
+        _AnimeSource.animeId == anime_id
+    )
+    current_max = (await session.execute(max_stmt)).scalar_one_or_none() or 0
+    return current_max + 1
+
+
 def generate_episode_id(anime_id: int, source_order: int, episode_number: int) -> int:
     """
     生成episode ID，格式：25 + animeid（6位）+ 源顺序（2位）+ 集编号（4位）
@@ -168,9 +199,11 @@ async def get_bangumi_details(
                                             logger.info(f"检测到源切换: 剧集'{original_title}' 已存在 (anime_id={real_anime_id})，将更新映射到新源 {provider}")
 
                                             # 更新现有episodeId的映射关系
+                                            # why：查真实 sourceOrder，多源番剧中各源编号不同，硬编码1会拼出错误ID
+                                            switch_source_order = await _get_or_predict_source_order(session, real_anime_id, provider, media_id)
                                             for episode_data in actual_episodes:
                                                 ep_index = episode_data.episodeIndex
-                                                episode_id = generate_episode_id(real_anime_id, 1, ep_index)
+                                                episode_id = generate_episode_id(real_anime_id, switch_source_order, ep_index)
                                                 await update_episode_mapping(
                                                     session, episode_id, provider, media_id,
                                                     ep_index, original_title,
@@ -235,6 +268,9 @@ async def get_bangumi_details(
                                         await set_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key, search_info, FALLBACK_SEARCH_CACHE_TTL)
 
                                         # 构建 episodes 列表（源切换和新剧集共用）
+                                        # why：查真实 sourceOrder，多源番剧中此源的编号未必是 1，
+                                        #      硬编码会导致拼出的 episodeId 与入库后的不一致
+                                        real_source_order = await _get_or_predict_source_order(session, real_anime_id, provider, media_id)
                                         for episode_data in actual_episodes:
                                             episode_index = episode_data.episodeIndex
 
@@ -243,7 +279,7 @@ async def get_bangumi_details(
                                                 continue
 
                                             # 使用真实animeId生成标准的episodeId
-                                            episode_id = generate_episode_id(real_anime_id, 1, episode_index)
+                                            episode_id = generate_episode_id(real_anime_id, real_source_order, episode_index)
                                             episode_title = episode_data.title
 
                                             # 只有在新剧集时才存储映射关系（源切换时已经在上面更新了）
