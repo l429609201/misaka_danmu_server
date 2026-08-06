@@ -45,23 +45,7 @@ const PREVIEW_STYLES = {
     },
     badge: { emoji: '🌸', label: '壁纸' },
   },
-  neon: {
-    wrap: {
-      background: '#050a0e',
-      border: '1px solid rgba(0,255,150,0.5)',
-      backgroundImage:
-        'linear-gradient(rgba(0,255,150,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,150,0.04) 1px,transparent 1px)',
-      backgroundSize: '20px 20px',
-      boxShadow: '0 0 12px rgba(0,255,150,0.15)',
-    },
-    card: {
-      background: 'rgba(5,15,20,0.9)',
-      border: '1px solid rgba(0,255,150,0.4)',
-      boxShadow: '0 0 8px rgba(0,255,150,0.2)',
-      borderRadius: 2,
-    },
-    badge: { emoji: '⚡', label: 'NEON' },
-  },
+
   sakura: {
     wrap: {
       background: 'linear-gradient(135deg, #fff0f5 0%, #ffe4f0 50%, #fff0fa 100%)',
@@ -127,22 +111,6 @@ const PREVIEW_STYLES = {
     },
     badge: { emoji: '✨', label: 'M3' },
   },
-  terminal: {
-    wrap: {
-      background: '#000',
-      backgroundImage:
-        'repeating-linear-gradient(transparent 0px, transparent 2px, rgba(0,255,65,0.07) 2px, rgba(0,255,65,0.07) 4px)',
-      border: '1px solid rgba(0,255,65,0.5)',
-      boxShadow: '0 0 12px rgba(0,255,65,0.15)',
-    },
-    card: {
-      background: 'rgba(0,18,0,0.95)',
-      border: '1px solid rgba(0,255,65,0.45)',
-      borderRadius: 0,
-      boxShadow: '0 0 8px rgba(0,255,65,0.22)',
-    },
-    badge: { emoji: '💻', label: 'TERM' },
-  },
   'acg-glass': {
     wrap: {
       background:
@@ -157,101 +125,24 @@ const PREVIEW_STYLES = {
     },
     badge: { emoji: '💎', label: '玻璃' },
   },
-  'acg-starry': {
-    wrap: {
-      background:
-        'radial-gradient(1px 1px at 14% 22%, #fff 1px, transparent 0), radial-gradient(1px 1px at 52% 62%, rgba(200,220,255,0.9) 1px, transparent 0), radial-gradient(2px 2px at 80% 34%, #fff 1px, transparent 0), radial-gradient(1px 1px at 34% 82%, rgba(200,220,255,0.8) 1px, transparent 0), radial-gradient(1px 1px at 68% 14%, #fff 1px, transparent 0), linear-gradient(180deg, #030a1a 0%, #0a0520 100%)',
-      border: '1px solid rgba(120,160,255,0.35)',
-    },
-    card: {
-      background: 'rgba(6,15,36,0.9)',
-      border: '1px solid rgba(130,170,255,0.35)',
-      borderRadius: 8,
-      boxShadow: '0 0 10px rgba(110,150,255,0.2)',
-    },
-    badge: { emoji: '⭐', label: '星空' },
-  },
-  'acg-peach': {
-    wrap: {
-      background: 'linear-gradient(135deg, #ffb3c6 0%, #ffd6e0 50%, #ffe6ee 100%)',
-      border: '1px solid rgba(255,110,140,0.35)',
-    },
-    card: {
-      background: 'rgba(255,255,255,0.9)',
-      border: '1px solid rgba(255,140,170,0.35)',
-      borderRadius: 16,
-    },
-    badge: { emoji: '🍑', label: '蜜桃' },
-  },
-  'acg-cyber': {
-    wrap: {
-      background: '#080012',
-      border: '1px solid rgba(0,200,255,0.55)',
-      boxShadow: '0 0 14px rgba(0,200,255,0.25)',
-    },
-    card: {
-      background: 'rgba(10,0,22,0.9)',
-      border: '1px solid rgba(0,210,255,0.5)',
-      outline: '1px solid rgba(210,60,255,0.3)',
-      outlineOffset: 2,
-      borderRadius: 4,
-    },
-    badge: { emoji: '🤖', label: 'CYBER' },
-  },
-  'bing-mist': {
-    wrap: {
-      background: 'linear-gradient(135deg, #cfe3f2 0%, #dceaf7 50%, #c4dbec 100%)',
-      border: '1px solid rgba(100,150,200,0.35)',
-    },
-    card: {
-      background: 'rgba(255,255,255,0.8)',
-      border: '1px solid rgba(180,210,240,0.7)',
-      borderRadius: 6,
-    },
-    badge: { emoji: '🌅', label: '晨雾' },
-  },
-  'bing-night': {
-    wrap: {
-      background: 'linear-gradient(135deg, #0a1520 0%, #16273c 50%, #0a1020 100%)',
-      border: '1px solid rgba(90,130,190,0.35)',
-    },
-    card: {
-      background: 'rgba(10,21,32,0.88)',
-      border: '1px solid rgba(90,130,190,0.35)',
-      borderRadius: 6,
-    },
-    badge: { emoji: '🌙', label: '夜航' },
-  },
 }
 
-// 徽标配色：深色系主题各自用对应霓虹色，其余走粉色默认值
+// 徽标配色：统一走主题粉色（页面样式不再覆写配色，无需按风格分色）
 const BADGE_STYLES = {
-  _default:     { background: 'rgba(255,255,255,0.72)', color: '#ff6b9b', border: '1px solid #ffb8d4' },
-  neon:         { background: 'rgba(0,255,150,0.15)',   color: '#00ff96', border: '1px solid rgba(0,255,150,0.5)' },
-  terminal:     { background: 'rgba(0,255,65,0.14)',    color: '#00ff41', border: '1px solid rgba(0,255,65,0.5)' },
-  'acg-cyber':  { background: 'rgba(0,210,255,0.14)',   color: '#4ddbff', border: '1px solid rgba(0,210,255,0.5)' },
-  'acg-starry': { background: 'rgba(130,170,255,0.16)', color: '#a9c6ff', border: '1px solid rgba(130,170,255,0.45)' },
-  'bing-night': { background: 'rgba(140,180,230,0.16)', color: '#a8c8e8', border: '1px solid rgba(140,180,230,0.4)' },
+  _default: { background: 'rgba(255,255,255,0.72)', color: '#ff6b9b', border: '1px solid #ffb8d4' },
 }
 
 // 各风格对应的 tip i18n key
 const STYLE_TIP_KEYS = {
   'liquid-glass':  'liquidGlassTip',
   glass:           'glassTip',
+  'acg-glass':     'acgGlassTip',
+  'wallpaper-acg': 'wallpaperAcgTip',
+  sakura:          'sakuraTip',
   paper:           'paperTip',
   calendar:        'calendarTip',
   github:          'githubTip',
   material:        'materialTip',
-  terminal:        'terminalTip',
-  neon:            'neonTip',
-  sakura:          'sakuraTip',
-  'wallpaper-acg': 'wallpaperAcgTip',
-  'acg-glass':     'acgGlassTip',
-  'acg-starry':    'acgStarryTip',
-  'acg-peach':     'acgPeachTip',
-  'acg-cyber':     'acgCyberTip',
-  'bing-mist':     'bingMistTip',
-  'bing-night':    'bingNightTip',
 }
 
 const PageStylePicker = ({ open, onClose }) => {

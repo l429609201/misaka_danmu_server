@@ -111,29 +111,30 @@ export const PRESET_THEME_COLORS = [
 const DEFAULT_PRIMARY = '#FF6B9B'
 
 // 页面样式（纯 CSS 主题，通过 <html data-page-style="..."> 切换）
+// why：页面样式只负责「布局质感」——圆角、投影、毛玻璃、边框、背景纹理；
+// 配色由主题色（--color-primary）与明暗模式各自负责，样式不得覆写颜色变量，
+// 否则会与这两者打架、且无法跟随明暗切换。
 export const PAGE_STYLES = [
   { key: 'normal',        name: '常规' },
   { key: 'liquid-glass',  name: '液态玻璃' },
   { key: 'glass',         name: '云海玻璃' },
+  { key: 'acg-glass',     name: '二次元玻璃' },
+  { key: 'wallpaper-acg', name: '二次元壁纸' },
+  { key: 'sakura',        name: '樱花物语' },
   { key: 'paper',         name: '纸感极简' },
   { key: 'calendar',      name: '挂历' },
   { key: 'github',        name: '代码仓库' },
   { key: 'material',      name: '质感设计' },
-  { key: 'terminal',      name: '绿光终端' },
-  { key: 'neon',          name: '午夜霓虹' },
-  { key: 'sakura',        name: '樱花物语' },
-  { key: 'wallpaper-acg', name: '二次元壁纸' },
-  { key: 'acg-glass',     name: '二次元玻璃' },
-  { key: 'acg-starry',    name: '二次元星空' },
-  { key: 'acg-peach',     name: '二次元蜜桃' },
-  { key: 'acg-cyber',     name: '二次元电子' },
-  { key: 'bing-mist',     name: '摄影晨雾' },
-  { key: 'bing-night',    name: '摄影夜航' },
 ]
 const DEFAULT_PAGE_STYLE = 'normal'
 
+// 已移除的页面样式：读到这些历史值时回落到 normal，避免旧 localStorage 卡在无 CSS 的空样式
+const REMOVED_PAGE_STYLES = new Set([
+  'terminal', 'neon', 'acg-starry', 'acg-peach', 'acg-cyber', 'bing-mist', 'bing-night',
+])
+
 // 需要背景图的页面样式：未配置地址时仅显示渐变兜底
-export const WALLPAPER_STYLE_KEYS = ['wallpaper-acg', 'bing-mist', 'bing-night']
+export const WALLPAPER_STYLE_KEYS = ['wallpaper-acg']
 
 // 创建上下文
 const ThemeContext = createContext()
@@ -145,7 +146,10 @@ export function ThemeProvider({ children }) {
     return localStorage.getItem('themeColor') || DEFAULT_PRIMARY
   })
   const [pageStyle, setPageStyleState] = useState(() => {
-    return localStorage.getItem('pageStyle') || DEFAULT_PAGE_STYLE
+    const saved = localStorage.getItem('pageStyle')
+    // 历史已移除的样式回落为默认值
+    if (!saved || REMOVED_PAGE_STYLES.has(saved)) return DEFAULT_PAGE_STYLE
+    return saved
   })
   // 自定义壁纸地址：默认留空。
   // why：项目不内置任何第三方图源，留空时壁纸主题只显示本地渐变兜底，
