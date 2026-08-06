@@ -343,6 +343,7 @@ export default {
   pageStyle: {
     title: '页面样式',
     selectTip: '选择应用整体的视觉风格',
+    normalTip: '简洁稳妥的默认布局，完整跟随当前主题色与明暗模式。',
     liquidGlassTip: '💡 液态玻璃：卡片与弹窗呈现毛玻璃质感，亮色/暗色模式均适配。',
     glassTip: '☁️ 云海玻璃：动态极光渐变背景 + 全面板毛玻璃，明暗均适配。',
     paperTip: '📄 纸感极简：稿纸横纹背景 + 方角线框 + 宋体标题，朴素克制。',

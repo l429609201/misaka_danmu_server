@@ -343,6 +343,7 @@ export default {
   pageStyle: {
     title: 'Page Style',
     selectTip: 'Choose the overall visual style of the app',
+    normalTip: 'A clean default layout that fully follows the current color theme and light or dark mode.',
     liquidGlassTip: '💡 Liquid Glass: frosted-glass cards and modals. Works in both light and dark modes.',
     glassTip: '☁️ Cloud Glass: animated aurora gradient background with frosted panels. Light and dark ready.',
     paperTip: '📄 Paper Minimal: ruled-paper background, square borders, serif headings.',
