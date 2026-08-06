@@ -110,12 +110,30 @@ export const PRESET_THEME_COLORS = [
 
 const DEFAULT_PRIMARY = '#FF6B9B'
 
-// 页面样式（normal: 常规, liquid-glass: 液态玻璃）
+// 页面样式（纯 CSS 主题，通过 <html data-page-style="..."> 切换）
 export const PAGE_STYLES = [
-  { key: 'normal', name: '常规' },
-  { key: 'liquid-glass', name: '液态玻璃' },
+  { key: 'normal',        name: '常规' },
+  { key: 'liquid-glass',  name: '液态玻璃' },
+  { key: 'glass',         name: '云海玻璃' },
+  { key: 'paper',         name: '纸感极简' },
+  { key: 'calendar',      name: '挂历' },
+  { key: 'github',        name: '代码仓库' },
+  { key: 'material',      name: '质感设计' },
+  { key: 'terminal',      name: '绿光终端' },
+  { key: 'neon',          name: '午夜霓虹' },
+  { key: 'sakura',        name: '樱花物语' },
+  { key: 'wallpaper-acg', name: '二次元壁纸' },
+  { key: 'acg-glass',     name: '二次元玻璃' },
+  { key: 'acg-starry',    name: '二次元星空' },
+  { key: 'acg-peach',     name: '二次元蜜桃' },
+  { key: 'acg-cyber',     name: '二次元电子' },
+  { key: 'bing-mist',     name: '摄影晨雾' },
+  { key: 'bing-night',    name: '摄影夜航' },
 ]
 const DEFAULT_PAGE_STYLE = 'normal'
+
+// 需要背景图的页面样式：未配置地址时仅显示渐变兜底
+export const WALLPAPER_STYLE_KEYS = ['wallpaper-acg', 'bing-mist', 'bing-night']
 
 // 创建上下文
 const ThemeContext = createContext()
@@ -128,6 +146,12 @@ export function ThemeProvider({ children }) {
   })
   const [pageStyle, setPageStyleState] = useState(() => {
     return localStorage.getItem('pageStyle') || DEFAULT_PAGE_STYLE
+  })
+  // 自定义壁纸地址：默认留空。
+  // why：项目不内置任何第三方图源，留空时壁纸主题只显示本地渐变兜底，
+  // 不会向外部域名发起任何图片请求；需要壁纸由用户自行填写地址。
+  const [wallpaperUrl, setWallpaperUrlState] = useState(() => {
+    return localStorage.getItem('wallpaperUrl') || ''
   })
   const [language, setLanguageState] = useState(() => {
     return localStorage.getItem('lang') || i18n.language || DEFAULT_LANG
@@ -190,10 +214,37 @@ export function ThemeProvider({ children }) {
     localStorage.setItem('pageStyle', style)
   }
 
+  // 设置壁纸地址并持久化（传空字符串即清除，恢复无图状态）
+  const setWallpaperUrl = (url) => {
+    const next = (url || '').trim()
+    setWallpaperUrlState(next)
+    if (next) localStorage.setItem('wallpaperUrl', next)
+    else localStorage.removeItem('wallpaperUrl')
+  }
+
   // 把 pageStyle 写到 <html> 的 data-page-style 属性，全局 CSS 据此切换
   useEffect(() => {
     document.documentElement.setAttribute('data-page-style', pageStyle)
   }, [pageStyle])
+
+  // 壁纸地址 → CSS 变量 --ani-wallpaper
+  // why：壁纸主题的 background-image 直接用 var(--ani-wallpaper)，不带任何内置默认值。
+  // 未填写时移除该变量，background-image 求值失败即不加载图片，只剩渐变兜底，
+  // 因此项目默认不会向任何第三方域名发起请求。
+  useEffect(() => {
+    const root = document.documentElement
+    if (wallpaperUrl) {
+      // 仅允许 http/https，避免 javascript: 等协议注入
+      if (/^https?:\/\//i.test(wallpaperUrl)) {
+        // 转义反斜杠与引号，防止提前闭合 url("...") 注入额外 CSS
+        const escaped = wallpaperUrl.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+        root.style.setProperty('--ani-wallpaper', `url("${escaped}")`)
+        return
+      }
+      console.warn('[ThemeProvider] 壁纸地址必须以 http:// 或 https:// 开头，已忽略:', wallpaperUrl)
+    }
+    root.style.removeProperty('--ani-wallpaper')
+  }, [wallpaperUrl])
 
   // 初始化：检查系统偏好或本地存储
   useEffect(() => {
@@ -385,7 +436,7 @@ export function ThemeProvider({ children }) {
   }), [colors])
 
   return (
-    <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle, language, setLanguage }}>
+    <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle, wallpaperUrl, setWallpaperUrl, language, setLanguage }}>
       <ConfigProvider locale={ANTD_LOCALES[language] || zhCN} theme={isDark ? darkTheme : lightTheme}>
         {children}
       </ConfigProvider>
