@@ -248,8 +248,14 @@ async def unified_search(
         def normalize_for_filtering(title: str) -> str:
             if not title: return ""
             import re
-            title = re.sub(r'[\[【(（].*?[\]】)）]', '', title)
-            return title.lower().replace(" ", "").replace("：", ":").strip()
+            # why: 先尝试移除括号包裹的元数据内容（如 "[1080P]"）
+            # 但若整个标题就是括号包裹（如「【我推的孩子】」），移除后会得到空字符串，
+            # 导致该标题既无法作为别名命中结果、也无法被别名命中——直接不显示搜索结果。
+            # 此时回退方案：只剥掉括号符号本身，保留内容。
+            cleaned = re.sub(r'[\[【(（].*?[\]】)）]', '', title).strip()
+            if not cleaned:
+                cleaned = re.sub(r'[【】\[\]（）()]', '', title).strip()
+            return cleaned.lower().replace(" ", "").replace("：", ":").strip()
 
         normalized_filter_aliases = {normalize_for_filtering(alias) for alias in filter_aliases if alias}
         filtered_results = []
