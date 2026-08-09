@@ -3,6 +3,7 @@
 包含: /logs, /logs/files, /logs/files/{filename}
 """
 
+import asyncio
 import logging
 from typing import List
 
@@ -53,7 +54,8 @@ async def get_log_file_content(
     - **tail**: 读取最后多少行，默认500行
     """
     try:
-        return read_log_file(filename, tail=tail)
+        # why：同步磁盘读取移出事件循环，避免大日志拖慢全部接口。
+        return await asyncio.to_thread(read_log_file, filename, tail)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:

@@ -792,14 +792,15 @@ class BangumiMetadataSource(BaseMetadataSource):
             async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
                 resp = await client.get(f"{api_base}/calendar")
                 resp.raise_for_status()
-                raw_text = resp.text
+                bgm_calendar = resp.json()
 
                 if log_raw:
+                    # why：resp.text 里中文/日文原本就是 \uXXXX 转义；先反序列化再用
+                    # ensure_ascii=False 重新序列化，日志中显示可读的中文。
+                    import json as _json
                     metadata_logger.info(
-                        f"Bangumi Calendar Response: URL={resp.url} | Status={resp.status_code} | Body={raw_text}"
+                        f"Bangumi Calendar Response: URL={resp.url} | Status={resp.status_code} | Body={_json.dumps(bgm_calendar, ensure_ascii=False)}"
                     )
-
-                bgm_calendar = resp.json()
 
             for day_group in bgm_calendar:
                 weekday = day_group.get("weekday", {}).get("id")

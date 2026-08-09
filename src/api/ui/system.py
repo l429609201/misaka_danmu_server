@@ -365,7 +365,8 @@ async def get_log_file_content(
 ):
     """读取指定日志文件的最后N行内容。"""
     try:
-        lines = read_log_file(filename, tail=tail)
+        # why：历史日志是同步文件 I/O，放入线程池避免大文件读取阻塞事件循环。
+        lines = await asyncio.to_thread(read_log_file, filename, tail)
         return lines
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

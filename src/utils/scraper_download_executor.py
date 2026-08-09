@@ -396,6 +396,7 @@ class ScraperDownloadExecutor:
             _download_and_extract_release,
             backup_scrapers,
             restore_scrapers,
+            _build_base_url,
         )
 
         self._log("使用全量替换模式")
@@ -423,6 +424,34 @@ class ScraperDownloadExecutor:
             raise ValueError("未找到匹配的 Release 压缩包")
 
         self._log(f"找到压缩包: {asset_info['filename']} (版本: {asset_info['version']})")
+
+        # 前置版本校验：在备份/下载之前先取 {base_url}/package.json（几KB）核验 min_server_version。
+        # why：全量路径仅先拿到 asset_info（文件名/版本），版本约束在 package.json 里；
+        #      下载整包+备份耗时可达数分钟，若版本不满足应在任何磁盘写入之前快速报错。
+        #      与 _do_incremental_download 中第一步就校验 min_server_version 的做法对齐。
+        self._log("正在预检弹幕源包服务器版本要求...")
+        try:
+            pre_base_url = _build_base_url(repo_info, self.task.repo_url or "", gitee_info, self.task.branch)
+            pre_pkg = await self._fetch_package_json(
+                f"{pre_base_url}/package.json", headers, proxy_to_use,
+                httpx.Timeout(15.0, read=15.0),
+            )
+            if pre_pkg:
+                _pre_min = pre_pkg.get("min_server_version")
+                if _pre_min:
+                    from src._version import APP_VERSION
+                    from src.services.scraper_manager import _version_satisfies
+                    if not _version_satisfies(APP_VERSION, _pre_min):
+                        raise ValueError(
+                            f"弹幕源包要求服务器版本 >= {_pre_min}，"
+                            f"当前版本 {APP_VERSION}，请先升级服务器再下载"
+                        )
+                    self._log(f"✓ 版本预检通过（要求 >= {_pre_min}，当前 {APP_VERSION}）")
+        except ValueError:
+            raise  # 版本不满足直接上抛，不做备份/下载
+        except Exception as _pre_err:
+            # 预检网络失败不阻断：解压后的后置校验（_update_versions_json 段）仍会兜底
+            self._log(f"版本预检跳过（网络异常: {_pre_err}）", "debug")
 
         # 备份当前文件
         self._log("正在备份当前弹幕源...")

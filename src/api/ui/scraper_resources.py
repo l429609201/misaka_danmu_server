@@ -1036,6 +1036,36 @@ async def load_resources_stream(
                         asset_version = asset_info['version']
                         yield f"data: {json.dumps({'type': 'info', 'message': f'找到压缩包: {asset_filename} (版本: {asset_version})'}, ensure_ascii=False)}\n\n"
 
+                        # 前置版本校验：在备份/下载之前先取 package.json（几KB）核验 min_server_version。
+                        # why：_fetch_package_info_with_retry 只解析 version/changelog 两字段，丢掉了
+                        #      min_server_version；整包下载+备份耗时可达数分钟，版本不满足时应在任何
+                        #      磁盘写入之前快速失败。此处与 incremental 路径的前置校验对齐。
+                        try:
+                            _pre_timeout = httpx.Timeout(15.0, read=15.0)
+                            async with httpx.AsyncClient(
+                                timeout=_pre_timeout, headers=headers,
+                                follow_redirects=True, proxy=proxy_to_use
+                            ) as _pre_client:
+                                _pre_resp = await _pre_client.get(f"{base_url}/package.json")
+                                if _pre_resp.status_code == 200:
+                                    _pre_pkg = _pre_resp.json()
+                                    _min_req = _pre_pkg.get("min_server_version")
+                                    if _min_req:
+                                        from src._version import APP_VERSION
+                                        from src.services.scraper_manager import _version_satisfies
+                                        if not _version_satisfies(APP_VERSION, _min_req):
+                                            _vmsg = (
+                                                f"弹幕源包要求服务器版本 >= {_min_req}，"
+                                                f"当前版本 {APP_VERSION}，请先升级服务器再下载"
+                                            )
+                                            logger.warning(f"[全量替换版本预检失败] {_vmsg}")
+                                            yield f"data: {json.dumps({'type': 'error', 'message': _vmsg}, ensure_ascii=False)}\n\n"
+                                            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+                                            return
+                        except Exception as _pre_err:
+                            # 预检网络失败不阻断：解压后的后置校验仍会兜底
+                            logger.debug(f"全量替换版本预检跳过（网络异常: {_pre_err}）")
+
                         # 先备份当前文件
                         yield f"data: {json.dumps({'type': 'info', 'message': '正在备份当前弹幕源...'}, ensure_ascii=False)}\n\n"
                         try:

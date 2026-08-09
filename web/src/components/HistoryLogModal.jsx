@@ -41,6 +41,13 @@ function VirtualLogList({ lines, search, isMobile, onCopyLine, copyLabel }) {
 
   const rowH = isMobile ? ROW_H_MB : ROW_H_PC
 
+  // why：切换文件或过滤结果后旧 scrollTop 可能超过新列表总高度，表现为“有日志但内容空白”。
+  useEffect(() => {
+    const el = containerRef.current
+    if (el) el.scrollTop = 0
+    setScrollTop(0)
+  }, [lines])
+
   // 监听容器实际高度（窗口缩放 / Drawer 弹出时高度不同）
   useEffect(() => {
     const el = containerRef.current
@@ -75,11 +82,19 @@ function VirtualLogList({ lines, search, isMobile, onCopyLine, copyLabel }) {
         return (
           <div
             key={i}
-            className={`my-1 p-2 rounded group ${isMobile ? 'text-xs' : 'text-sm'} ${lc.border ? '' : 'bg-base-hover'} border-l-2 ${lc.border ? '' : 'border-primary'} hover:bg-base-hover-hover transition-colors`}
-            style={{ ...(lc.border ? { borderLeftColor: lc.border } : {}), ...(lc.bg ? { backgroundColor: lc.bg } : {}) }}
+            className={`my-1 overflow-hidden rounded border-l-2 group ${isMobile ? 'text-xs' : 'text-sm'} ${lc.border ? '' : 'bg-base-hover'} ${lc.border ? '' : 'border-primary'} hover:bg-base-hover-hover transition-colors`}
+            style={{
+              height: rowH - 8,
+              ...(lc.border ? { borderLeftColor: lc.border } : {}),
+              ...(lc.bg ? { backgroundColor: lc.bg } : {}),
+            }}
           >
-            <div className="flex items-start justify-between gap-2">
-              <pre className="whitespace-pre-wrap break-words m-0 font-mono flex-1 min-w-0">
+            <div className="flex h-full items-center justify-between gap-2 px-2">
+              {/* why：固定单行预览保证虚拟列表行高真实稳定；超长原始响应不再触发浏览器大段换行排版。 */}
+              <pre
+                className="m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono"
+                title={displayText.length <= 2000 ? displayText : undefined}
+              >
                 {search ? highlightText(displayText, search) : displayText}
               </pre>
               <Button
