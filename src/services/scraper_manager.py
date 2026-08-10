@@ -114,83 +114,71 @@ class ScraperManager:
         self.scraper_settings.clear()
 
         # 检查是否需要从备份恢复（热加载场景传 skip_backup_restore=True 跳过此步骤）
-        if skip_backup_restore:
-            logging.getLogger(__name__).debug("跳过备份恢复检查（热加载模式）")
-            # 热加载时 scrapers_dir 路径仍需设置，供后续 .so 发现逻辑使用
-            if is_docker_environment():
-                scrapers_dir = Path("/app/src/scrapers")
-            else:
-                scrapers_dir = Path("src/scrapers")
-        elif is_docker_environment():
+        if is_docker_environment():
             scrapers_dir = Path("/app/src/scrapers")
             backup_dir = Path("/app/config/scrapers_backup")
         else:
             scrapers_dir = Path("src/scrapers")
             backup_dir = Path("config/scrapers_backup")
 
-        # 检查 scrapers 目录是否为空(没有 .so/.pyd 文件)
-        has_scrapers = any(
-            f.suffix in ['.so', '.pyd']
-            for f in scrapers_dir.iterdir()
-            if f.is_file()
-        )
+        if not skip_backup_restore:
+            # 检查 scrapers 目录是否为空(没有 .so/.pyd 文件)
+            has_scrapers = any(
+                f.suffix in ['.so', '.pyd']
+                for f in scrapers_dir.iterdir()
+                if f.is_file()
+            )
 
-        # 检查是否需要从备份恢复
-        # 情况1: scrapers 目录为空但有备份
-        # 情况2: 备份目录有更新的文件（通过比较 versions.json 的 updated_at 时间戳）
-        should_restore = False
-        restore_reason = ""
+            # 情况1: scrapers 目录为空但有备份
+            # 情况2: 备份目录有更新的文件（通过比较 versions.json 的 updated_at 时间戳）
+            should_restore = False
+            restore_reason = ""
 
-        if not has_scrapers and backup_dir.exists():
-            backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
-            if backup_files:
-                should_restore = True
-                restore_reason = f"scrapers 目录为空但存在备份 ({len(backup_files)} 个文件)"
-        elif has_scrapers and backup_dir.exists():
-            # 检查备份是否比当前更新（通过 versions.json 的 updated_at 字段）
-            import json
-            scrapers_versions_file = scrapers_dir / "versions.json"
-            backup_versions_file = backup_dir / "versions.json"
-
-            if backup_versions_file.exists():
-                try:
-                    backup_data = json.loads(backup_versions_file.read_text())
-                    backup_updated_at = backup_data.get("updated_at", "")
-
-                    scrapers_updated_at = ""
-                    if scrapers_versions_file.exists():
-                        scrapers_data = json.loads(scrapers_versions_file.read_text())
-                        scrapers_updated_at = scrapers_data.get("updated_at", "")
-
-                    # 如果备份的更新时间比 scrapers 的更新时间新，则恢复
-                    if backup_updated_at and backup_updated_at > scrapers_updated_at:
-                        should_restore = True
-                        restore_reason = f"备份目录有更新 (backup: {backup_updated_at}, scrapers: {scrapers_updated_at or 'N/A'})"
-                except Exception as e:
-                    logging.getLogger(__name__).debug(f"比较版本信息失败: {e}")
-
-        if should_restore:
-            backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
-            if backup_files:
-                import shutil
-                logging.getLogger(__name__).info(f"检测到需要从备份恢复: {restore_reason}")
-                logging.getLogger(__name__).info(f"正在恢复 {len(backup_files)} 个弹幕源文件...")
-                for file in backup_files:
-                    shutil.copy2(file, scrapers_dir / file.name)
-
-                # 恢复 package.json
-                backup_package_file = backup_dir / "package.json"
-                if backup_package_file.exists():
-                    shutil.copy2(backup_package_file, scrapers_dir / "package.json")
-                    logging.getLogger(__name__).info("已恢复 package.json")
-
-                # 恢复 versions.json
+            if not has_scrapers and backup_dir.exists():
+                backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
+                if backup_files:
+                    should_restore = True
+                    restore_reason = f"scrapers 目录为空但存在备份 ({len(backup_files)} 个文件)"
+            elif has_scrapers and backup_dir.exists():
+                import json
+                scrapers_versions_file = scrapers_dir / "versions.json"
                 backup_versions_file = backup_dir / "versions.json"
                 if backup_versions_file.exists():
-                    shutil.copy2(backup_versions_file, scrapers_dir / "versions.json")
-                    logging.getLogger(__name__).info("已恢复 versions.json")
+                    try:
+                        backup_data = json.loads(backup_versions_file.read_text())
+                        backup_updated_at = backup_data.get("updated_at", "")
+                        scrapers_updated_at = ""
+                        if scrapers_versions_file.exists():
+                            scrapers_data = json.loads(scrapers_versions_file.read_text())
+                            scrapers_updated_at = scrapers_data.get("updated_at", "")
+                        if backup_updated_at and backup_updated_at > scrapers_updated_at:
+                            should_restore = True
+                            restore_reason = f"备份目录有更新 (backup: {backup_updated_at}, scrapers: {scrapers_updated_at or 'N/A'})"
+                    except Exception as e:
+                        logging.getLogger(__name__).debug(f"比较版本信息失败: {e}")
 
-                logging.getLogger(__name__).info("备份恢复完成")
+            if should_restore:
+                backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
+                if backup_files:
+                    import shutil
+                    logging.getLogger(__name__).info(f"检测到需要从备份恢复: {restore_reason}")
+                    logging.getLogger(__name__).info(f"正在恢复 {len(backup_files)} 个弹幕源文件...")
+                    for file in backup_files:
+                        shutil.copy2(file, scrapers_dir / file.name)
+                    backup_package_file = backup_dir / "package.json"
+                    if backup_package_file.exists():
+                        shutil.copy2(backup_package_file, scrapers_dir / "package.json")
+                        logging.getLogger(__name__).info("已恢复 package.json")
+                    backup_versions_file = backup_dir / "versions.json"
+                    if backup_versions_file.exists():
+                        shutil.copy2(backup_versions_file, scrapers_dir / "versions.json")
+                        logging.getLogger(__name__).info("已恢复 versions.json")
+                    logging.getLogger(__name__).info("备份恢复完成")
+        else:
+            # why：热加载时文件已由 apply_deferred_overlay 就位，无需备份还原；
+            #      跳过避免 versions.json 被 overlay 覆盖后 updated_at 为空，
+            #      误判"备份更新 > scrapers"而重复 import .so 触发 native crash。
+            logging.getLogger(__name__).debug("跳过备份恢复检查（热加载模式）")
 
         self._domain_map.clear()
         discovered_providers = []
