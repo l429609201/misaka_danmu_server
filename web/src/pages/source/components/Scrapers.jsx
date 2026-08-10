@@ -1,6 +1,7 @@
 import {
   Button,
   Card,
+  Alert,
   Checkbox,
   Dropdown,
   Form,
@@ -37,6 +38,7 @@ import {
   getRepoRefs,
   saveResourceRepo,
   getScraperVersions,
+  getScraperLoadCheck,
   backupScrapers,
   restoreScrapers,
   reloadScrapers,
@@ -77,6 +79,7 @@ import {
   LockOutlined,
   QuestionCircleOutlined,
   RobotOutlined,
+  ExclamationCircleFilled,
 } from '@ant-design/icons'
 
 import ReactMarkdown from 'react-markdown'
@@ -249,6 +252,14 @@ export const Scrapers = () => {
   const [fullReplaceEnabled, setFullReplaceEnabled] = useState(false)
   const [fullReplaceLoading, setFullReplaceLoading] = useState(false)
 
+  // 加载兼容性校验：运行时哪些源被跳过（来自 /load-check）
+  const [loadCheck, setLoadCheck] = useState({ ok: true, globalSkip: null, skipped: {} })
+  // 下载/上传时版本校验失败的消息（不影响 DB，用感叹号弹框展示）
+  const [checkFailureMsg, setCheckFailureMsg] = useState(null)
+  // 用户点击"已知晓"后隐藏感叹号，getInfo 重置
+  const [checkDismissed, setCheckDismissed] = useState(false)
+  const [checkModalOpen, setCheckModalOpen] = useState(false)
+
   // 分支选择相关
   const [selectedBranch, setSelectedBranch] = useState('main')
   const [repoRefs, setRepoRefs] = useState({ branches: [], tags: [], minServerVersion: null })
@@ -351,7 +362,6 @@ export const Scrapers = () => {
   const getInfo = async () => {
     let scraperList = []
     try {
-
       setLoading(true)
       const res1 = await getScrapers()
       scraperList = res1.data ?? []
@@ -361,6 +371,18 @@ export const Scrapers = () => {
     } finally {
       setLoading(false)
     }
+
+    // 加载兼容性校验：单独接口，不影响列表数据
+    try {
+      const checkRes = await getScraperLoadCheck()
+      const newCheck = checkRes.data ?? { ok: true, globalSkip: null, skipped: {} }
+      setLoadCheck(newCheck)
+      // getInfo 刷新后若仍有问题重置 dismissed，让图标重新出现
+      if (!newCheck.ok) setCheckDismissed(false)
+    } catch {
+      // 校验失败不阻断主流程，保持上次状态
+    }
+
     // bilibili 登录状态：仅当 bilibili 搜索源存在时才请求，避免无意义的报错
     const hasBilibili = scraperList.some(s => s.providerName === 'bilibili')
     if (hasBilibili) {
@@ -561,7 +583,10 @@ export const Scrapers = () => {
 
             if (data.status === 'failed') {
               taskCompleted = true
-              messageApi.error(data.error_message || t('scrapers.downloadFailed'))
+              const failMsg = data.error_message || t('scrapers.downloadFailed')
+              // why：下载校验失败（如版本不满足）改为写入感叹号弹框，不单独弹 toast
+              setCheckFailureMsg(failMsg)
+              setCheckDismissed(false)
               setDownloadProgress({
                 visible: false,
                 current: 0,
@@ -768,7 +793,9 @@ export const Scrapers = () => {
 
           if (data.type === 'error') {
             taskCompleted = true
-            messageApi.error(data.message || t('scrapers.downloadFailed'))
+            const failMsg = data.message || t('scrapers.downloadFailed')
+            setCheckFailureMsg(failMsg)
+            setCheckDismissed(false)
             setDownloadProgress({
               visible: false,
               current: 0,
@@ -848,7 +875,9 @@ export const Scrapers = () => {
                     setLoadingResources(false)
                   }, 2000)
                 } else if (data.status === 'failed') {
-                  messageApi.error(data.error_message || t('scrapers.downloadFailed'))
+                  const failMsg = data.error_message || t('scrapers.downloadFailed')
+                  setCheckFailureMsg(failMsg)
+                  setCheckDismissed(false)
                   setDownloadProgress({
                     visible: false,
                     current: 0,
@@ -994,7 +1023,6 @@ export const Scrapers = () => {
     setUploadingPackage(true)
 
     try {
-      // 传递配置对象,设置正确的 Content-Type
       const res = await uploadScraperPackage(formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
@@ -1140,7 +1168,10 @@ export const Scrapers = () => {
         }, 2500)
       }
     } catch (error) {
-      messageApi.error(error.response?.data?.detail || t('scrapers.uploadFailed'))
+      // why：离线包版本校验失败（400）改为写入感叹号弹框，不单独弹 toast
+      const failDetail = error.response?.data?.detail || t('scrapers.uploadFailed')
+      setCheckFailureMsg(failDetail)
+      setCheckDismissed(false)
     } finally {
       setUploadingPackage(false)
     }
@@ -2089,16 +2120,46 @@ export const Scrapers = () => {
                           </>
                         ) : t('scrapers.refresh')}
                       </Button>
-                      {/* PC端：更新提示显示在刷新按钮右边 */}
+                      {/* PC端：更新提示 + 兼容性感叹号图标 */}
                       {versionInfo.hasUpdate && (
                         <Typography.Text type="warning" style={{ marginLeft: 8 }}>{t('scrapers.hasUpdate')}</Typography.Text>
                       )}
+                      {/* why：感叹号图标——运行时版本不兼容或下载校验失败时显示，
+                             点击弹出详情 Modal，用户确认后消失，不影响任何 DB 数据。 */}
+                      {(!loadCheck.ok || checkFailureMsg) && !checkDismissed && (
+                        <Tooltip title={t('scrapers.checkIssueHint')}>
+                          <ExclamationCircleFilled
+                            onClick={() => setCheckModalOpen(true)}
+                            style={{
+                              color: loadCheck.globalSkip ? '#ff4d4f' : '#faad14',
+                              fontSize: 18,
+                              cursor: 'pointer',
+                              marginLeft: 8,
+                              flexShrink: 0,
+                            }}
+                          />
+                        </Tooltip>
+                      )}
                     </div>
                   )}
-                  {/* 移动端：更新提示显示在下一行 */}
-                  {isMobile && versionInfo.hasUpdate && (
-                    <div className="flex items-center gap-2">
-                      <Typography.Text type="warning">{t('scrapers.hasUpdate')}</Typography.Text>
+                  {/* 移动端：更新提示 + 感叹号图标显示在下一行 */}
+                  {isMobile && (versionInfo.hasUpdate || ((!loadCheck.ok || checkFailureMsg) && !checkDismissed)) && (
+                    <div className="flex items-center gap-3">
+                      {versionInfo.hasUpdate && (
+                        <Typography.Text type="warning">{t('scrapers.hasUpdate')}</Typography.Text>
+                      )}
+                      {(!loadCheck.ok || checkFailureMsg) && !checkDismissed && (
+                        <Tooltip title={t('scrapers.checkIssueHint')}>
+                          <ExclamationCircleFilled
+                            onClick={() => setCheckModalOpen(true)}
+                            style={{
+                              color: loadCheck.globalSkip ? '#ff4d4f' : '#faad14',
+                              fontSize: 18,
+                              cursor: 'pointer',
+                            }}
+                          />
+                        </Tooltip>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2899,6 +2960,67 @@ export const Scrapers = () => {
             </div>
           ) : (
             <Typography.Text type="secondary">{t('scrapers.noVersionLog')}</Typography.Text>
+          )}
+        </div>
+      </Modal>
+
+      {/* 兼容性问题详情弹窗 — 感叹号图标点击触发 */}
+      <Modal
+        title={
+          <span>
+            <ExclamationCircleFilled
+              style={{ color: loadCheck.globalSkip ? '#ff4d4f' : '#faad14', marginRight: 8 }}
+            />
+            {t('scrapers.checkIssueTitle')}
+          </span>
+        }
+        open={checkModalOpen}
+        onCancel={() => setCheckModalOpen(false)}
+        footer={[
+          <Button
+            key="dismiss"
+            type="primary"
+            onClick={() => { setCheckDismissed(true); setCheckModalOpen(false) }}
+          >
+            {t('scrapers.checkIssueDismiss')}
+          </Button>
+        ]}
+        width={isMobile ? '95%' : 480}
+        centered
+      >
+        <div className="space-y-3 py-2">
+          {/* 运行时加载被跳过的源 */}
+          {!loadCheck.ok && (
+            <div>
+              <Typography.Text strong className="block mb-1.5">
+                {t('scrapers.checkIssueLoadTitle')}
+              </Typography.Text>
+              {loadCheck.globalSkip ? (
+                <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--color-hover)' }}>
+                  {t('scrapers.loadCheckGlobal', { version: loadCheck.globalSkip })}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {Object.entries(loadCheck.skipped).map(([name, ver]) => (
+                    <div key={name} className="flex items-center gap-2 text-sm py-1 border-b last:border-b-0" style={{ borderColor: 'var(--color-border)' }}>
+                      <ExclamationCircleFilled style={{ color: '#faad14', flexShrink: 0 }} />
+                      <span>{t('scrapers.loadCheckItem', { name, version: ver })}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {/* 最近一次下载/上传校验失败的原因 */}
+          {checkFailureMsg && (
+            <div>
+              <Typography.Text strong className="block mb-1.5">
+                {t('scrapers.checkIssueDownloadTitle')}
+              </Typography.Text>
+              <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'var(--color-hover)', color: '#ff4d4f' }}>
+                {checkFailureMsg}
+              </div>
+            </div>
           )}
         </div>
       </Modal>

@@ -41,6 +41,11 @@ class ScraperManager:
         self.scrapers: Dict[str, BaseScraper] = {}
         self._scraper_classes: Dict[str, Type[BaseScraper]] = {}
         self._scraper_versions: Dict[str, str] = {}  # 存储每个源的版本号
+        # why：版本不兼容被跳过的源只打 WARNING 日志，前端完全不感知；
+        #      用独立的内存属性记录，通过专门的 /load-check 接口暴露给前端展示 Alert，
+        #      不污染现有 ScraperSettingWithConfig 响应模型，也不修改任何 DB 表结构。
+        self._version_skipped: Dict[str, str] = {}   # {provider_name: required_version}
+        self._global_version_skip: Optional[str] = None  # 全局版本不满足时记录要求版本
         self.scraper_settings: Dict[str, Dict[str, Any]] = {}
         self._session_factory = session_factory
         self._domain_map: Dict[str, str] = {}
@@ -98,7 +103,9 @@ class ScraperManager:
         await self.close_all()
         self.scrapers.clear()
         self._scraper_classes.clear()
-        self._scraper_versions.clear()  # 清理版本号缓存
+        self._scraper_versions.clear()
+        self._version_skipped.clear()
+        self._global_version_skip = None
         self.scraper_settings.clear()
 
         # 检查是否需要从备份恢复
@@ -201,6 +208,7 @@ class ScraperManager:
                     f"弹幕源包要求服务器版本 >= {global_min_version}，"
                     f"当前版本 {APP_VERSION}，跳过全部弹幕源加载"
                 )
+                self._global_version_skip = global_min_version  # 记录以供 /load-check 接口查询
                 return
 
         # 使用 pkgutil 发现模块，这对于 .py, .pyc, .so 文件都有效。
@@ -263,6 +271,7 @@ class ScraperManager:
                                 logging.getLogger(__name__).warning(
                                     f"✗ 跳过 {provider_name}: 要求服务器版本 >= {source_min_ver}，当前 {APP_VERSION}"
                                 )
+                                self._version_skipped[provider_name] = source_min_ver
                                 failed_providers.append(module_name_stem)
                                 continue
 

@@ -18,6 +18,29 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+@router.get("/scrapers/load-check", summary="弹幕源加载兼容性校验结果")
+async def get_scraper_load_check(
+    current_user: models.User = Depends(security.get_current_user),
+    manager: ScraperManager = Depends(get_scraper_manager),
+):
+    """
+    返回最近一次加载时的版本兼容性结果，不重新加载、不查询 DB。
+
+    - **globalSkip**: 全局版本不满足时所要求的版本，null 表示无此问题
+    - **skipped**: 单源版本不满足时的映射 {providerName: requiredVersion}
+    - **ok**: true 表示所有源均已正常加载
+    """
+    from src._version import APP_VERSION
+    global_skip = getattr(manager, '_global_version_skip', None)
+    version_skipped: Dict[str, str] = dict(getattr(manager, '_version_skipped', {}))
+    return {
+        "appVersion": APP_VERSION,
+        "globalSkip": global_skip,
+        "skipped": version_skipped,
+        "ok": global_skip is None and len(version_skipped) == 0,
+    }
+
+
 @router.get("/scrapers", response_model=List[models.ScraperSettingWithConfig], summary="获取所有搜索源的设置")
 async def get_scraper_settings(
     current_user: models.User = Depends(security.get_current_user),
