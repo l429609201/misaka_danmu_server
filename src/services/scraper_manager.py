@@ -94,10 +94,15 @@ class ScraperManager:
 
 
     
-    async def load_and_sync_scrapers(self):
+    async def load_and_sync_scrapers(self, skip_backup_restore: bool = False):
         """
         动态发现、同步到数据库并根据数据库设置加载搜索源。
         此方法可以被再次调用以重新加载搜索源。
+
+        Args:
+            skip_backup_restore: True = 跳过备份恢复检查。
+                用于 executor 热加载场景——文件已经由 apply_deferred_overlay 就位，
+                无需再走备份恢复，否则会因 versions.json 被 overlay 覆盖而误判。
         """
         # 清理现有爬虫以确保全新加载
         await self.close_all()
@@ -108,8 +113,15 @@ class ScraperManager:
         self._global_version_skip = None
         self.scraper_settings.clear()
 
-        # 检查是否需要从备份恢复
-        if is_docker_environment():
+        # 检查是否需要从备份恢复（热加载场景传 skip_backup_restore=True 跳过此步骤）
+        if skip_backup_restore:
+            logging.getLogger(__name__).debug("跳过备份恢复检查（热加载模式）")
+            # 热加载时 scrapers_dir 路径仍需设置，供后续 .so 发现逻辑使用
+            if is_docker_environment():
+                scrapers_dir = Path("/app/src/scrapers")
+            else:
+                scrapers_dir = Path("src/scrapers")
+        elif is_docker_environment():
             scrapers_dir = Path("/app/src/scrapers")
             backup_dir = Path("/app/config/scrapers_backup")
         else:

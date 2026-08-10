@@ -550,7 +550,11 @@ class ScraperDownloadExecutor:
             overlay_count = await asyncio.to_thread(apply_deferred_overlay, scrapers_dir)
             self._log(f"✓ 已应用 {overlay_count} 个文件")
             logger.info(f"用户 '{self.current_user.username}' 首次通过全量替换模式下载了弹幕源，正在热加载")
-            await self.scraper_manager.load_and_sync_scrapers()
+            # why：传 skip_backup_restore=True，避免 apply_deferred_overlay 将
+            #      临时目录中没有 updated_at 的 versions.json 覆盖运行目录后，
+            #      load_and_sync_scrapers 误判"备份更新 > scrapers"而触发不必要的备份还原，
+            #      进而在热加载过程中重复 import .so 导致 native crash / 容器重启。
+            await self.scraper_manager.load_and_sync_scrapers(skip_backup_restore=True)
             self._log("✓ 弹幕源加载完成")
         else:
             # 非首次下载：检查是否在 Docker 容器内且有 Docker socket，决定重启方式
