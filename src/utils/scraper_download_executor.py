@@ -525,7 +525,27 @@ class ScraperDownloadExecutor:
         is_first_download = len(existing_scrapers) == 0
 
         if is_first_download:
-            # 首次下载：进程内还没加载任何 .so，覆盖是安全的，直接热加载
+            # 首次下载：运行目录尚无 .so，覆盖前先从临时目录做版本兼容性校验。
+            # why：全量替换的 package.json 预检只校验全局字段，
+            #      .so 类属性里的 min_server_version 才是实际约束，
+            #      与增量路径的临时目录校验保持一致。
+            self._log("正在校验临时目录中弹幕源的服务器版本要求...")
+            compat_errors = await self._check_scraper_compat_in_dir(pending_dir)
+            if compat_errors:
+                from src._version import APP_VERSION
+                detail = "、".join(f"{n}(要求 >= {v})" for n, v in compat_errors.items())
+                msg = (
+                    f"弹幕源版本不兼容，当前服务器 {APP_VERSION} 不满足：{detail}，"
+                    "已取消部署，请先升级服务器"
+                )
+                self._log(f"⚠️ {msg}", "warning")
+                import shutil
+                await asyncio.to_thread(shutil.rmtree, pending_dir, True)
+                await restore_scrapers(self.current_user, self.scraper_manager)
+                self._log("已还原备份")
+                raise ValueError(msg)
+
+            # 版本兼容，正式应用覆盖并热加载
             self._log("检测到首次下载弹幕源，正在应用更新...")
             overlay_count = await asyncio.to_thread(apply_deferred_overlay, scrapers_dir)
             self._log(f"✓ 已应用 {overlay_count} 个文件")
@@ -800,6 +820,28 @@ class ScraperDownloadExecutor:
             # 检查是否在 Docker 容器内且有 Docker socket
             from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
             docker_available = is_docker_socket_available() and is_running_in_docker()
+
+            # why：预检 package.json 只能拦截全局 min_server_version，
+            # 但 .so 内部的类属性 min_server_version 才是实际生效的约束；
+            # 两者可能不一致，如果不在这里做后置校验，下载+部署后重启才报错，
+            # 导致所有弹幕源全部跳过、整次更新白费。
+            # 在部署前从已下载到临时目录的 .so 文件中读取实际版本约束，
+            # 不通过则立即还原备份并以 ValueError 结束任务。
+            self._log("正在校验临时目录中弹幕源的服务器版本要求...")
+            compat_errors = await self._check_scraper_compat_in_dir(temp_dir)
+            if compat_errors:
+                from src._version import APP_VERSION
+                detail = "、".join(
+                    f"{n}(要求 >= {v})" for n, v in compat_errors.items()
+                )
+                msg = (
+                    f"弹幕源版本不兼容，当前服务器 {APP_VERSION} 不满足：{detail}，"
+                    "已取消部署，请先升级服务器"
+                )
+                self._log(f"⚠️ {msg}", "warning")
+                await restore_scrapers(self.current_user, self.scraper_manager)
+                self._log("已还原备份")
+                raise ValueError(msg)
 
             if is_first_download:
                 # 首次下载（本地没有弹幕源）：部署到 scrapers 和 backup 目录，然后热加载
@@ -1167,6 +1209,47 @@ class ScraperDownloadExecutor:
         except Exception as e:
             logger.warning(f"校验文件哈希失败 {file_path}: {e}")
             return False
+
+    async def _check_scraper_compat_in_dir(self, check_dir: Path) -> dict:
+        """从目录中逐个 import .so/.pyd 文件，检查 min_server_version 类属性。
+        与 scraper_manager.load_and_sync_scrapers 使用相同机制，是部署前最可靠的校验点。
+        返回不兼容的 {provider_name: required_version} 字典。
+        """
+        import importlib.util, inspect
+        from src._version import APP_VERSION
+        from src.services.scraper_manager import _version_satisfies
+        from src.scrapers.base import BaseScraper
+
+        incompatible: dict = {}
+        for file_path in sorted(check_dir.iterdir()):
+            if not (file_path.name.endswith(".so") or file_path.name.endswith(".pyd")):
+                continue
+            module_stem = file_path.stem.split('.')[0]
+            if module_stem.startswith("_") or module_stem == "base":
+                continue
+            if file_path.stat().st_size == 0:
+                continue
+            try:
+                # why：用隔离的 module name 防止与已加载模块冲突
+                spec = importlib.util.spec_from_file_location(
+                    f"_compat_probe_{module_stem}", file_path
+                )
+                if not spec or not spec.loader:
+                    continue
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore[union-attr]
+                for _, obj in inspect.getmembers(mod, inspect.isclass):
+                    if not (issubclass(obj, BaseScraper) and obj is not BaseScraper):
+                        continue
+                    provider_name = getattr(obj, 'provider_name', None)
+                    source_min_ver = getattr(obj, 'min_server_version', None) or ''
+                    if source_min_ver and not _version_satisfies(APP_VERSION, source_min_ver):
+                        if provider_name:
+                            incompatible[provider_name] = source_min_ver
+            except Exception as e:
+                # 无法 import 的模块跳过，不阻断整体校验
+                logger.debug(f"_check_scraper_compat_in_dir 跳过 {file_path.name}: {e}")
+        return incompatible
 
     async def _copy_and_verify(self, src_path: Path, dst_path: Path, expected_hash: str, scraper_name: str) -> bool:
         """复制文件并校验哈希值"""
