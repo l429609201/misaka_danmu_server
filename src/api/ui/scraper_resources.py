@@ -1049,7 +1049,8 @@ async def load_resources_stream(
                                 _pre_resp = await _pre_client.get(f"{base_url}/package.json")
                                 if _pre_resp.status_code == 200:
                                     _pre_pkg = _pre_resp.json()
-                                    _min_req = _pre_pkg.get("min_server_version")
+                                    # 两个字段语义相同，取其一阻断下载
+                                    _min_req = _pre_pkg.get("min_server_version") or _pre_pkg.get("min_fetchable_version")
                                     if _min_req:
                                         from src._version import APP_VERSION
                                         from src.services.scraper_manager import _version_satisfies
@@ -1126,7 +1127,8 @@ async def load_resources_stream(
                                                 scrapers_versions[scraper_name] = version
                                             # 提取哈希值
                                             hashes = scraper_info.get('hashes', {})
-                                            platform_key = f"{platform_info['platform']}_{platform_info['arch']}"
+                                            # 使用连字符格式 platform_key（如 linux-x86），与包内哈希键格式一致
+                                            platform_key = get_platform_key()
                                             if platform_key in hashes:
                                                 scrapers_hashes[scraper_name] = hashes[platform_key]
                                     logger.info(f"从 package.json 读取到 {len(scrapers_versions)} 个源的版本信息")
@@ -1162,7 +1164,7 @@ async def load_resources_stream(
                                 "scrapers": scrapers_versions,
                                 "hashes": scrapers_hashes,
                                 "full_replace": True,
-                                "update_time": datetime.now().isoformat()
+                                "updated_at": datetime.now().isoformat()  # 统一用 updated_at，与 scraper_manager 备份恢复逻辑一致
                             }
                             if min_server_version:
                                 versions_data['min_server_version'] = min_server_version
@@ -1271,8 +1273,8 @@ async def load_resources_stream(
                         yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
                         return
 
-                    # 前置检查：远程弹幕源包是否要求更高的服务器版本
-                    pkg_min_server_ver = package_data.get('min_server_version')
+                    # 前置检查：远程弹幕源包是否要求更高的服务器版本（两字段语义相同）
+                    pkg_min_server_ver = package_data.get('min_server_version') or package_data.get('min_fetchable_version')
                     if pkg_min_server_ver:
                         from src._version import APP_VERSION
                         from src.services.scraper_manager import _version_satisfies
@@ -1655,8 +1657,8 @@ async def load_resources_stream(
                                 # 保存版本信息
                                 if versions_data:
                                     try:
-                                        # 从 package_data 读取全局版本限制字段
-                                        pkg_min_ver = package_data.get('min_server_version')
+                                        # 从 package_data 读取全局版本限制字段（两字段语义相同）
+                                        pkg_min_ver = package_data.get('min_server_version') or package_data.get('min_fetchable_version')
                                         full_versions_data = {
                                             "platform": platform_info['platform'],
                                             "type": platform_info['arch'],

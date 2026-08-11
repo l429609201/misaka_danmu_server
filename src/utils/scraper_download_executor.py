@@ -437,16 +437,21 @@ class ScraperDownloadExecutor:
                 httpx.Timeout(15.0, read=15.0),
             )
             if pre_pkg:
-                _pre_min = pre_pkg.get("min_server_version")
+                from src._version import APP_VERSION
+                from src.services.scraper_manager import _version_satisfies
+                # min_server_version 与 min_fetchable_version 语义相同：
+                # 都表示"服务器版本必须 >= 该值才能使用本弹幕源包"。
+                # 两者取其一即可阻断下载（优先 min_server_version，回退 min_fetchable_version）。
+                _pre_min = pre_pkg.get("min_server_version") or pre_pkg.get("min_fetchable_version")
                 if _pre_min:
-                    from src._version import APP_VERSION
-                    from src.services.scraper_manager import _version_satisfies
                     if not _version_satisfies(APP_VERSION, _pre_min):
                         raise ValueError(
                             f"弹幕源包要求服务器版本 >= {_pre_min}，"
                             f"当前版本 {APP_VERSION}，请先升级服务器再下载"
                         )
                     self._log(f"✓ 版本预检通过（要求 >= {_pre_min}，当前 {APP_VERSION}）")
+                else:
+                    self._log("✓ 版本预检通过（无最低版本要求）")
         except ValueError:
             raise  # 版本不满足直接上抛，不做备份/下载
         except Exception as _pre_err:
@@ -520,31 +525,32 @@ class ScraperDownloadExecutor:
         self._log("全量替换完成")
         # 注：新版本已由解压流程持久化到 backup 目录，无需再次 backup_scrapers
 
+        # .so 版本兼容性预检（首次/非首次均需校验）
+        # why：package.json 的 min_fetchable_version / min_server_version 是全局字段，
+        #      而每个 .so 的类属性 min_server_version 才是真正的细粒度约束，两者可以不一致。
+        #      必须在覆盖运行目录（或重启）之前做后置校验，否则部署后重启才报错，
+        #      整次更新白费且弹幕源全部跳过。
+        self._log("正在校验临时目录中弹幕源的服务器版本要求...")
+        compat_errors = await self._check_scraper_compat_in_dir(pending_dir)
+        if compat_errors:
+            from src._version import APP_VERSION
+            detail = "、".join(f"{n}(要求 >= {v})" for n, v in compat_errors.items())
+            msg = (
+                f"弹幕源版本不兼容，当前服务器 {APP_VERSION} 不满足：{detail}，"
+                "已取消部署，请先升级服务器"
+            )
+            self._log(f"⚠️ {msg}", "warning")
+            import shutil
+            await asyncio.to_thread(shutil.rmtree, pending_dir, True)
+            await restore_scrapers(self.current_user, self.scraper_manager)
+            self._log("已还原备份")
+            raise ValueError(msg)
+
         # 判断是否是首次下载（本地没有任何弹幕源）
         existing_scrapers = set(self.scraper_manager.scrapers.keys())
         is_first_download = len(existing_scrapers) == 0
 
         if is_first_download:
-            # 首次下载：运行目录尚无 .so，覆盖前先从临时目录做版本兼容性校验。
-            # why：全量替换的 package.json 预检只校验全局字段，
-            #      .so 类属性里的 min_server_version 才是实际约束，
-            #      与增量路径的临时目录校验保持一致。
-            self._log("正在校验临时目录中弹幕源的服务器版本要求...")
-            compat_errors = await self._check_scraper_compat_in_dir(pending_dir)
-            if compat_errors:
-                from src._version import APP_VERSION
-                detail = "、".join(f"{n}(要求 >= {v})" for n, v in compat_errors.items())
-                msg = (
-                    f"弹幕源版本不兼容，当前服务器 {APP_VERSION} 不满足：{detail}，"
-                    "已取消部署，请先升级服务器"
-                )
-                self._log(f"⚠️ {msg}", "warning")
-                import shutil
-                await asyncio.to_thread(shutil.rmtree, pending_dir, True)
-                await restore_scrapers(self.current_user, self.scraper_manager)
-                self._log("已还原备份")
-                raise ValueError(msg)
-
             # 版本兼容，正式应用覆盖并热加载
             self._log("检测到首次下载弹幕源，正在应用更新...")
             overlay_count = await asyncio.to_thread(apply_deferred_overlay, scrapers_dir)
@@ -694,7 +700,8 @@ class ScraperDownloadExecutor:
             raise ValueError("获取资源包信息失败")
 
         # 前置检查：远程弹幕源包是否要求更高的服务器版本
-        remote_min_server = package_data.get('min_server_version')
+        # min_server_version 与 min_fetchable_version 语义相同，两者取其一即可阻断下载
+        remote_min_server = package_data.get('min_server_version') or package_data.get('min_fetchable_version')
         if remote_min_server:
             from src._version import APP_VERSION
             from src.services.scraper_manager import _version_satisfies
