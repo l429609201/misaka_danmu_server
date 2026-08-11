@@ -2220,12 +2220,17 @@ def _persist_new_version_to_backup(extract_dir: Path, release_version: str) -> N
             shutil.copy2(f, BACKUP_DIR / f.name)
             backup_count += 1
 
-    # 2) 从临时目录的 package.json 提取各源版本号与当前平台哈希
-    platform_info = get_platform_info()
-    platform_key = f"{platform_info['platform']}_{platform_info['arch']}"
+    # 2) 从临时目录的 package.json / versions.json 提取各源版本号与哈希
+    # why：全量替换包（tar.gz）不含 package.json，版本和哈希信息在 versions.json 里；
+    #      多平台包（zip）可能包含 package.json，其哈希字段是 {platform_key: hash}；
+    #      单平台包（tar.gz，主流格式）versions.json 里 hashes 是 {scraper_name: hash}——
+    #      直接复用即可，无需按 platform_key 查找。
+    platform_key = get_platform_key()  # 统一用连字符格式：linux-x86
     scrapers_versions: Dict[str, str] = {}
     scrapers_hashes: Dict[str, str] = {}
     min_server_version = None
+
+    # 优先从 package.json 读（多平台包格式）
     tmp_package_file = extract_dir / "package.json"
     if tmp_package_file.exists():
         try:
@@ -2236,19 +2241,29 @@ def _persist_new_version_to_backup(extract_dir: Path, release_version: str) -> N
                     ver = scraper_info.get('version')
                     if ver:
                         scrapers_versions[scraper_name] = ver
+                    # package.json 里哈希键是连字符格式 platform_key（如 linux-x86）
                     hashes = scraper_info.get('hashes', {}) or {}
                     if platform_key in hashes:
                         scrapers_hashes[scraper_name] = hashes[platform_key]
         except Exception as e:
             logger.warning(f"读取临时 package.json 版本信息失败: {e}")
 
-    # 临时目录若自带 versions.json，也读取其 min_server_version 作为兜底
+    # 回退到 versions.json（单平台包格式，tar.gz 主流路径）
+    # why：单平台 tar.gz 包只含 versions.json，其 scrapers={name:ver}, hashes={name:hash}，
+    #      直接就是需要写入备份的结构，无需额外 platform_key 查找。
     tmp_versions_file = extract_dir / "versions.json"
-    if not min_server_version and tmp_versions_file.exists():
+    if tmp_versions_file.exists():
         try:
-            min_server_version = json.loads(tmp_versions_file.read_text(encoding="utf-8")).get('min_server_version')
-        except Exception:
-            pass
+            tmp_ver_data = json.loads(tmp_versions_file.read_text(encoding="utf-8"))
+            if not min_server_version:
+                min_server_version = tmp_ver_data.get('min_server_version')
+            # 若 package.json 未读到版本/哈希，从 versions.json 补充
+            if not scrapers_versions:
+                scrapers_versions = tmp_ver_data.get('scrapers', {}) or {}
+            if not scrapers_hashes:
+                scrapers_hashes = tmp_ver_data.get('hashes', {}) or {}
+        except Exception as e:
+            logger.warning(f"读取临时 versions.json 版本信息失败: {e}")
 
     # 3) 写备份目录的 versions.json（关键：updated_at=当前时间，version=新版）
     versions_data = {

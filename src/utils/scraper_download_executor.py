@@ -1571,42 +1571,53 @@ class ScraperDownloadExecutor:
             platform_info = get_platform_info()
             release_version = asset_info['version'].lstrip('v')
 
-            # 从新包的 package.json 读取各个源的版本信息
+            # 从新包读取各源版本号与哈希
+            # why：全量包（tar.gz 单平台格式）不含 package.json，版本/哈希在 versions.json；
+            #      多平台 zip 包含 package.json，哈希格式 {platform_key: hash}；
+            #      优先 package.json，缺失时从 versions.json 回退。
             read_dir = source_dir if source_dir is not None else scrapers_dir
             scrapers_versions = {}
             scrapers_hashes = {}
-            local_package_file = read_dir / "package.json"
-
-            # 从新包的 versions.json 读取全局版本限制字段
             min_server_version = None
-            existing_versions_file = read_dir / "versions.json"
-            if existing_versions_file.exists():
-                try:
-                    existing_ver_data = json.loads(await asyncio.to_thread(existing_versions_file.read_text))
-                    min_server_version = existing_ver_data.get('min_server_version')
-                except Exception:
-                    pass
 
+            # 步骤1：尝试从 package.json 读（多平台包格式）
+            local_package_file = read_dir / "package.json"
             if local_package_file.exists():
                 try:
                     package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
-                    # 从 resources 字段提取各个源的版本号和哈希值
                     resources = package_content.get('resources', {})
                     for scraper_name, scraper_info in resources.items():
                         if isinstance(scraper_info, dict):
                             version = scraper_info.get('version')
                             if version:
                                 scrapers_versions[scraper_name] = version
-                            # 提取哈希值 - 使用 platform_key (如 linux-x86) 而不是 platform_arch 组合
+                            # package.json 里哈希键是连字符格式 platform_key（如 linux-x86）
                             hashes = scraper_info.get('hashes', {})
                             if platform_key in hashes:
                                 scrapers_hashes[scraper_name] = hashes[platform_key]
                     logger.info(f"从 package.json 读取到 {len(scrapers_versions)} 个源的版本信息, {len(scrapers_hashes)} 个哈希值")
-                    # package.json 也可能携带版本限制字段
                     if not min_server_version:
                         min_server_version = package_content.get('min_server_version')
                 except Exception as e:
                     logger.warning(f"读取 package.json 中的源版本信息失败: {e}")
+
+            # 步骤2：从 versions.json 补充/回退（单平台包主流路径）
+            # why：单平台 tar.gz 里 versions.json 的 scrapers={name:ver}, hashes={name:hash}，
+            #      直接就是所需结构，不需要 platform_key 查找。
+            existing_versions_file = read_dir / "versions.json"
+            if existing_versions_file.exists():
+                try:
+                    existing_ver_data = json.loads(await asyncio.to_thread(existing_versions_file.read_text))
+                    if not min_server_version:
+                        min_server_version = existing_ver_data.get('min_server_version')
+                    # 若 package.json 未读到版本/哈希，从 versions.json 补充
+                    if not scrapers_versions:
+                        scrapers_versions = existing_ver_data.get('scrapers', {}) or {}
+                    if not scrapers_hashes:
+                        scrapers_hashes = existing_ver_data.get('hashes', {}) or {}
+                    logger.info(f"从 versions.json 补充读取: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
+                except Exception as e:
+                    logger.warning(f"读取 versions.json 版本信息失败: {e}")
 
             # 构建 versions.json 数据
             versions_data = {
