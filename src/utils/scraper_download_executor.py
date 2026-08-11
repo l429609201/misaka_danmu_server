@@ -1233,6 +1233,29 @@ class ScraperDownloadExecutor:
         from src.services.scraper_manager import _version_satisfies
         from src.scrapers.base import BaseScraper
 
+        def _probe_single(file_path: Path):
+            """在线程中同步加载单个 .so，返回 (provider_name, min_ver) 或 None。
+            why：exec_module 是同步阻塞调用，直接在事件循环中执行会阻塞所有 SSE 推送，
+            导致前端始终收到 status='运行中' 的旧消息，无法感知任务结束。
+            """
+            module_stem = file_path.stem.split('.')[0]
+            spec = importlib.util.spec_from_file_location(
+                f"_compat_probe_{module_stem}", file_path
+            )
+            if not spec or not spec.loader:
+                return None
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            for _, obj in inspect.getmembers(mod, inspect.isclass):
+                if not (issubclass(obj, BaseScraper) and obj is not BaseScraper):
+                    continue
+                provider_name = getattr(obj, 'provider_name', None)
+                source_min_ver = getattr(obj, 'min_server_version', None) or ''
+                if source_min_ver and not _version_satisfies(APP_VERSION, source_min_ver):
+                    if provider_name:
+                        return (provider_name, source_min_ver)
+            return None
+
         incompatible: dict = {}
         for file_path in sorted(check_dir.iterdir()):
             if not (file_path.name.endswith(".so") or file_path.name.endswith(".pyd")):
@@ -1243,22 +1266,10 @@ class ScraperDownloadExecutor:
             if file_path.stat().st_size == 0:
                 continue
             try:
-                # why：用隔离的 module name 防止与已加载模块冲突
-                spec = importlib.util.spec_from_file_location(
-                    f"_compat_probe_{module_stem}", file_path
-                )
-                if not spec or not spec.loader:
-                    continue
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)  # type: ignore[union-attr]
-                for _, obj in inspect.getmembers(mod, inspect.isclass):
-                    if not (issubclass(obj, BaseScraper) and obj is not BaseScraper):
-                        continue
-                    provider_name = getattr(obj, 'provider_name', None)
-                    source_min_ver = getattr(obj, 'min_server_version', None) or ''
-                    if source_min_ver and not _version_satisfies(APP_VERSION, source_min_ver):
-                        if provider_name:
-                            incompatible[provider_name] = source_min_ver
+                result = await asyncio.to_thread(_probe_single, file_path)
+                if result:
+                    provider_name, source_min_ver = result
+                    incompatible[provider_name] = source_min_ver
             except Exception as e:
                 # 无法 import 的模块跳过，不阻断整体校验
                 logger.debug(f"_check_scraper_compat_in_dir 跳过 {file_path.name}: {e}")
