@@ -2225,7 +2225,8 @@ def _persist_new_version_to_backup(extract_dir: Path, release_version: str) -> N
     #      多平台包（zip）可能包含 package.json，其哈希字段是 {platform_key: hash}；
     #      单平台包（tar.gz，主流格式）versions.json 里 hashes 是 {scraper_name: hash}——
     #      直接复用即可，无需按 platform_key 查找。
-    platform_key = get_platform_key()  # 统一用连字符格式：linux-x86
+    platform_info = get_platform_info()  # 写 versions.json 时需要 platform/arch 字段
+    platform_key = get_platform_key()   # 统一用连字符格式：linux-x86
     scrapers_versions: Dict[str, str] = {}
     scrapers_hashes: Dict[str, str] = {}
     min_server_version = None
