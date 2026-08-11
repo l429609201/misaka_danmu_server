@@ -81,6 +81,62 @@ def _build_base_url(repo_info, repo_url: str, gitee_info, branch: str = "main") 
     return build_url(repo_info, repo_url, gitee_info, branch)
 
 
+async def check_scraper_compat_in_dir(check_dir: Path) -> dict:
+    """从目录中逐个 import .so/.pyd，检查 min_server_version 类属性。
+    与 scraper_manager.load_and_sync_scrapers 使用相同机制，是部署前最可靠的校验点。
+    返回不兼容的 {provider_name: required_version} 字典。
+
+    why：提到模块级供手动下载与自动更新两条链路共用——此前只有手动路径做预检，
+    自动更新直接下载后重启，导致"重启后才发现全部源不满足版本"（源全废）。
+    """
+    import importlib.util, inspect
+    from src._version import APP_VERSION
+    from src.services.scraper_manager import _version_satisfies
+    from src.scrapers.base import BaseScraper
+
+    def _probe_single(file_path: Path):
+        """在线程中同步加载单个 .so，返回 (provider_name, min_ver) 或 None。
+        why：exec_module 是同步阻塞调用，直接在事件循环中执行会阻塞所有 SSE 推送，
+        导致前端始终收到 status='运行中' 的旧消息，无法感知任务结束。
+        """
+        module_stem = file_path.stem.split('.')[0]
+        spec = importlib.util.spec_from_file_location(
+            f"_compat_probe_{module_stem}", file_path
+        )
+        if not spec or not spec.loader:
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        for _, obj in inspect.getmembers(mod, inspect.isclass):
+            if not (issubclass(obj, BaseScraper) and obj is not BaseScraper):
+                continue
+            provider_name = getattr(obj, 'provider_name', None)
+            source_min_ver = getattr(obj, 'min_server_version', None) or ''
+            if source_min_ver and not _version_satisfies(APP_VERSION, source_min_ver):
+                if provider_name:
+                    return (provider_name, source_min_ver)
+        return None
+
+    incompatible: dict = {}
+    for file_path in sorted(check_dir.iterdir()):
+        if not (file_path.name.endswith(".so") or file_path.name.endswith(".pyd")):
+            continue
+        module_stem = file_path.stem.split('.')[0]
+        if module_stem.startswith("_") or module_stem == "base":
+            continue
+        if file_path.stat().st_size == 0:
+            continue
+        try:
+            result = await asyncio.to_thread(_probe_single, file_path)
+            if result:
+                provider_name, source_min_ver = result
+                incompatible[provider_name] = source_min_ver
+        except Exception as e:
+            # 无法 import 的模块跳过，不阻断整体校验
+            logger.debug(f"check_scraper_compat_in_dir 跳过 {file_path.name}: {e}")
+    return incompatible
+
+
 class ScraperDownloadExecutor:
     """弹幕源下载执行器"""
 
@@ -1229,56 +1285,8 @@ class ScraperDownloadExecutor:
             return False
 
     async def _check_scraper_compat_in_dir(self, check_dir: Path) -> dict:
-        """从目录中逐个 import .so/.pyd 文件，检查 min_server_version 类属性。
-        与 scraper_manager.load_and_sync_scrapers 使用相同机制，是部署前最可靠的校验点。
-        返回不兼容的 {provider_name: required_version} 字典。
-        """
-        import importlib.util, inspect
-        from src._version import APP_VERSION
-        from src.services.scraper_manager import _version_satisfies
-        from src.scrapers.base import BaseScraper
-
-        def _probe_single(file_path: Path):
-            """在线程中同步加载单个 .so，返回 (provider_name, min_ver) 或 None。
-            why：exec_module 是同步阻塞调用，直接在事件循环中执行会阻塞所有 SSE 推送，
-            导致前端始终收到 status='运行中' 的旧消息，无法感知任务结束。
-            """
-            module_stem = file_path.stem.split('.')[0]
-            spec = importlib.util.spec_from_file_location(
-                f"_compat_probe_{module_stem}", file_path
-            )
-            if not spec or not spec.loader:
-                return None
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)  # type: ignore[union-attr]
-            for _, obj in inspect.getmembers(mod, inspect.isclass):
-                if not (issubclass(obj, BaseScraper) and obj is not BaseScraper):
-                    continue
-                provider_name = getattr(obj, 'provider_name', None)
-                source_min_ver = getattr(obj, 'min_server_version', None) or ''
-                if source_min_ver and not _version_satisfies(APP_VERSION, source_min_ver):
-                    if provider_name:
-                        return (provider_name, source_min_ver)
-            return None
-
-        incompatible: dict = {}
-        for file_path in sorted(check_dir.iterdir()):
-            if not (file_path.name.endswith(".so") or file_path.name.endswith(".pyd")):
-                continue
-            module_stem = file_path.stem.split('.')[0]
-            if module_stem.startswith("_") or module_stem == "base":
-                continue
-            if file_path.stat().st_size == 0:
-                continue
-            try:
-                result = await asyncio.to_thread(_probe_single, file_path)
-                if result:
-                    provider_name, source_min_ver = result
-                    incompatible[provider_name] = source_min_ver
-            except Exception as e:
-                # 无法 import 的模块跳过，不阻断整体校验
-                logger.debug(f"_check_scraper_compat_in_dir 跳过 {file_path.name}: {e}")
-        return incompatible
+        """薄封装，实际实现见模块级 check_scraper_compat_in_dir（与自动更新链路共用）。"""
+        return await check_scraper_compat_in_dir(check_dir)
 
     async def _copy_and_verify(self, src_path: Path, dst_path: Path, expected_hash: str, scraper_name: str) -> bool:
         """复制文件并校验哈希值"""
