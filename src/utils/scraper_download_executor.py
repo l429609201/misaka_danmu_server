@@ -14,7 +14,12 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from src.services import DownloadTaskManager, DownloadTask, TaskStatus, get_download_task_manager
+from src.services import DownloadTaskManager, DownloadTask, get_download_task_manager
+# why：src.services 顶层的 TaskStatus 是主任务管理器的中文枚举（失败/已完成/运行中，且无 CANCELLED），
+#      下载任务用的是 download_task_manager 里的英文枚举（failed/completed/cancelled）。
+#      从顶层导入会写入中文状态，导致 SSE 终态判断（比对英文值）永不命中而无限推送 progress。
+#      必须直接从 download_task_manager 导入，禁止改回 from src.services import TaskStatus。
+from src.services.download_task_manager import TaskStatus
 
 logger = logging.getLogger(__name__)
 
