@@ -1887,7 +1887,11 @@ async def download_progress_stream(
                 break
 
             # 任务完成则退出（备用逻辑，正常情况下应该通过 restart_pending 退出）
-            if current_task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
+            # why：FAILED/CANCELLED 路径不设 restart_pending，必须靠此处退出；
+            #      同时兼容 status 为枚举成员或字符串值两种情况（避免 in 比较失效）。
+            _terminal_values = {TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value}
+            _status_val = current_task.status.value if hasattr(current_task.status, 'value') else str(current_task.status)
+            if _status_val in _terminal_values:
                 logger.info(f"[SSE] 任务 {task_id} 状态为 {current_task.status.value}，准备发送 done 消息")
                 # 等待一小段时间，确保前端有时间处理最后的 progress 消息
                 await asyncio.sleep(0.1)
