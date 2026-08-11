@@ -519,10 +519,6 @@ class ScraperDownloadExecutor:
         # 清除版本缓存，让前端能获取到最新版本号
         self._clear_version_cache()
 
-        self.task.progress.current = 1
-        self.task.progress.total = 1
-        self.task.progress.downloaded.append("full_replace")
-        self._log("全量替换完成")
         # 注：新版本已由解压流程持久化到 backup 目录，无需再次 backup_scrapers
 
         # .so 版本兼容性预检（首次/非首次均需校验）
@@ -545,6 +541,12 @@ class ScraperDownloadExecutor:
             await restore_scrapers(self.current_user, self.scraper_manager)
             self._log("已还原备份")
             raise ValueError(msg)
+
+        # 校验通过后才设进度为完成，避免校验失败时前端进度条误显示绿色满格
+        self.task.progress.current = 1
+        self.task.progress.total = 1
+        self.task.progress.downloaded.append("full_replace")
+        self._log("全量替换完成")
 
         # 判断是否是首次下载（本地没有任何弹幕源）
         existing_scrapers = set(self.scraper_manager.scrapers.keys())

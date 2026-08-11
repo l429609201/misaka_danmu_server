@@ -630,6 +630,28 @@ export const Scrapers = () => {
           if (data.type === 'done') {
             taskCompleted = true
 
+            // 失败/取消状态：关闭进度条，错误消息已由 error_message 字段或感叹号弹框处理
+            if (data.status === 'failed' || data.status === 'cancelled') {
+              if (data.status === 'failed') {
+                const failMsg = data.error_message || t('scrapers.downloadFailed')
+                setCheckFailureMsg(failMsg)
+                setCheckDismissed(false)
+              } else {
+                messageApi.info(t('scrapers.downloadCancelled'))
+              }
+              setDownloadProgress({
+                visible: false,
+                current: 0,
+                total: 0,
+                progress: 0,
+                message: '',
+                scraper: '',
+                isRestarting: false
+              })
+              setLoadingResources(false)
+              throw new Error('任务完成，停止 SSE')
+            }
+
             // 检查是否需要重启
             if (data.need_restart) {
               messageApi.info(t('scrapers.scraperUpdateDoneRestart'))
