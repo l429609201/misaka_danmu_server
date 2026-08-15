@@ -123,6 +123,44 @@ async def _restart_to_apply_backup(config_manager, target_version: str) -> None:
 
 
 
+def _write_full_replace_fail_flag(flag_path: Path, error: str, version: str) -> None:
+    """写入全量替换失败标志，冷却期内自动降级为增量更新。
+
+    why：所有失败退出点都必须刷新标志时间戳。此前仅异常分支写入，
+    备份校验失败等提前 return 的分支不写，导致旧标志的时间戳一直不更新，
+    冷却判断失准（可能提前失效，每轮轮询都重复下载）。
+    """
+    try:
+        from datetime import datetime
+        fail_info = {
+            "time": datetime.now().isoformat(),
+            "error": str(error)[:200],
+            "version": version or "unknown"
+        }
+        flag_path.parent.mkdir(parents=True, exist_ok=True)
+        flag_path.write_text(json.dumps(fail_info, ensure_ascii=False))
+        logger.info("已写入全量替换失败标志，冷却期内将自动降级为增量更新")
+    except Exception as e:
+        logger.debug(f"写入全量替换失败标志失败: {e}")
+
+
+async def _restore_from_backup(scrapers_dir: Path) -> None:
+    """从持久化备份目录恢复 .so/.pyd，用于全量替换失败后回滚被覆盖的运行目录。"""
+    try:
+        backup_dir = _get_backup_dir_path()
+        if not backup_dir.exists():
+            return
+        import shutil
+        backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
+        if not backup_files:
+            return
+        for f in backup_files:
+            await asyncio.to_thread(shutil.copy2, f, scrapers_dir / f.name)
+        logger.info(f"已从备份恢复 {len(backup_files)} 个弹幕源文件")
+    except Exception as restore_err:
+        logger.error(f"从备份恢复失败: {restore_err}")
+
+
 class ScraperAutoUpdateTask(BasePollingTask):
     """弹幕源自动更新轮询任务"""
     name = "scraper_auto_update"
@@ -177,7 +215,10 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
         return
 
     # 前置检查：远程弹幕源包是否要求更高的服务器版本
-    remote_min_server = package_data.get("min_server_version")
+    # why：两个字段语义相同，远端包可能只写其中之一。手动下载路径已做双字段兜底，
+    # 此处若只读 min_server_version，包只写 min_fetchable_version 时校验会误放行，
+    # 一路下载备份重启后才发现所有源都不满足版本 → 源全部加载失败。
+    remote_min_server = package_data.get("min_server_version") or package_data.get("min_fetchable_version")
     if remote_min_server:
         from src._version import APP_VERSION
         from src.services.scraper_manager import _version_satisfies
@@ -366,6 +407,34 @@ async def _perform_update(
                         from datetime import datetime
                         release_version = asset_info['version'].lstrip('v')
 
+                        # 部署前预检：逐个 import 解压出的 .so，确认各源 min_server_version 均满足
+                        # why：包级 min_server_version 只是声明值，可能缺失或与单源类属性不一致。
+                        # 此前自动更新完全没有这一步，下载解压后直接备份并重启，重启时
+                        # scraper_manager 才逐个加载失败 → 所有源全废（前端弹"需要服务器版本≥x"）。
+                        # 与手动下载路径共用同一探测实现，改为"预检不通过就不重启"。
+                        from src.utils.scraper_download_executor import check_scraper_compat_in_dir
+                        incompatible = await check_scraper_compat_in_dir(scrapers_dir)
+                        if incompatible:
+                            from src._version import APP_VERSION
+                            detail = ", ".join(f"{k} 需要 >= {v}" for k, v in sorted(incompatible.items()))
+                            logger.error(
+                                f"全量替换预检失败：当前服务器版本 {APP_VERSION}，"
+                                f"有 {len(incompatible)} 个弹幕源版本要求不满足（{detail}）。"
+                                "为避免重启后源全部加载失败，本次不写入版本信息、不备份、不重启。"
+                            )
+                            # 写入失败标志，冷却期内降级为增量更新，避免每轮轮询重复下载
+                            _write_full_replace_fail_flag(
+                                FULL_REPLACE_FAIL_FLAG,
+                                f"预检失败：{len(incompatible)} 个源要求更高服务器版本（{detail}）",
+                                release_version
+                            )
+                            # 从备份恢复被解压覆盖掉的旧版 .so，保证当前运行的源不被破坏
+                            await _restore_from_backup(scrapers_dir)
+                            import src.api.ui.scraper_resources as sr
+                            sr._version_cache = None
+                            sr._version_cache_time = None
+                            return
+
                         # 从解压后的 package.json 读取各个源的版本信息
                         scrapers_versions = {}
                         scrapers_hashes = {}
@@ -380,9 +449,12 @@ async def _perform_update(
                                         version = scraper_info.get('version')
                                         if version:
                                             scrapers_versions[scraper_name] = version
-                                        # 提取哈希值
+                                        # 提取哈希值：直接用外层 get_platform_key() 的连字符格式键
+                                        # why：包内 hashes 的键是连字符格式（如 linux-x86_64）。此前在循环内
+                                        # 用下划线格式重新赋值 platform_key，一是哈希取不到全部落空，
+                                        # 二是污染了外层变量——全量替换失败回退到逐文件下载时，
+                                        # files.get(platform_key) 同样取不到路径，导致所有源下载失败。
                                         hashes = scraper_info.get('hashes', {})
-                                        platform_key = f"{platform_info['platform']}_{platform_info['arch']}"
                                         if platform_key in hashes:
                                             scrapers_hashes[scraper_name] = hashes[platform_key]
                                 logger.info(f"从 package.json 读取到 {len(scrapers_versions)} 个源的版本信息")
@@ -390,19 +462,20 @@ async def _perform_update(
                             logger.warning(f"读取 package.json 中的源版本信息失败: {e}")
 
                         # 从解压后的 versions.json 读取全局版本限制字段（覆盖前读取）
+                        # 两处均做 min_server_version / min_fetchable_version 双字段兜底，与手动下载路径一致
                         min_server_version = None
                         existing_versions_file = scrapers_dir / "versions.json"
                         if existing_versions_file.exists():
                             try:
                                 existing_ver_data = json.loads(await asyncio.to_thread(existing_versions_file.read_text))
-                                min_server_version = existing_ver_data.get('min_server_version')
+                                min_server_version = existing_ver_data.get('min_server_version') or existing_ver_data.get('min_fetchable_version')
                             except Exception:
                                 pass
                         # package.json 也可能携带版本限制字段
                         if local_package_file.exists() and not min_server_version:
                             try:
                                 pkg = json.loads(await asyncio.to_thread(local_package_file.read_text))
-                                min_server_version = pkg.get('min_server_version')
+                                min_server_version = pkg.get('min_server_version') or pkg.get('min_fetchable_version')
                             except Exception:
                                 pass
 
@@ -458,6 +531,12 @@ async def _perform_update(
                             logger.error(
                                 f"全量替换备份校验失败：备份目录版本未更新为 {release_version}，"
                                 "为避免版本回退导致无限重启循环，本次不重启容器。请检查备份目录权限或磁盘空间。"
+                            )
+                            # 刷新失败标志，让冷却期从本次失败重新计时
+                            _write_full_replace_fail_flag(
+                                FULL_REPLACE_FAIL_FLAG,
+                                f"备份校验失败：备份目录版本未更新为 {release_version}",
+                                release_version
                             )
                             import src.api.ui.scraper_resources as sr
                             sr._version_cache = None
@@ -522,31 +601,13 @@ async def _perform_update(
                 # 全量替换过程中发生异常（包括可能的 native crash 前的 Python 异常）
                 logger.error(f"全量替换异常: {full_replace_error}", exc_info=True)
                 # 写入失败标志文件，防止重启后立即重试导致无限重启
-                try:
-                    from datetime import datetime
-                    fail_info = {
-                        "time": datetime.now().isoformat(),
-                        "error": str(full_replace_error)[:200],
-                        "version": asset_info.get('version', 'unknown') if isinstance(asset_info, dict) else 'unknown'
-                    }
-                    FULL_REPLACE_FAIL_FLAG.parent.mkdir(parents=True, exist_ok=True)
-                    FULL_REPLACE_FAIL_FLAG.write_text(json.dumps(fail_info, ensure_ascii=False))
-                    logger.info("已写入全量替换失败标志，冷却期内将自动降级为增量更新")
-                except Exception:
-                    pass
+                _write_full_replace_fail_flag(
+                    FULL_REPLACE_FAIL_FLAG,
+                    str(full_replace_error),
+                    asset_info.get('version', 'unknown') if isinstance(asset_info, dict) else 'unknown'
+                )
                 # 尝试从备份恢复
-                try:
-                    backup_dir = Path("/app/config/scrapers_backup") if is_docker_environment() else Path("config/scrapers_backup")
-                    if backup_dir.exists():
-                        import shutil
-                        backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
-                        if backup_files:
-                            scrapers_dir = _get_scrapers_dir()
-                            for f in backup_files:
-                                shutil.copy2(f, scrapers_dir / f.name)
-                            logger.info(f"已从备份恢复 {len(backup_files)} 个弹幕源文件")
-                except Exception as restore_err:
-                    logger.error(f"从备份恢复失败: {restore_err}")
+                await _restore_from_backup(_get_scrapers_dir())
                 logger.warning("全量替换异常，回退到逐文件下载模式")
 
         # ========== 逐文件下载模式（默认）==========

@@ -18,6 +18,29 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+@router.get("/scrapers/load-check", summary="弹幕源加载兼容性校验结果")
+async def get_scraper_load_check(
+    current_user: models.User = Depends(security.get_current_user),
+    manager: ScraperManager = Depends(get_scraper_manager),
+):
+    """
+    返回最近一次加载时的版本兼容性结果，不重新加载、不查询 DB。
+
+    - **globalSkip**: 全局版本不满足时所要求的版本，null 表示无此问题
+    - **skipped**: 单源版本不满足时的映射 {providerName: requiredVersion}
+    - **ok**: true 表示所有源均已正常加载
+    """
+    from src._version import APP_VERSION
+    global_skip = getattr(manager, '_global_version_skip', None)
+    version_skipped: Dict[str, str] = dict(getattr(manager, '_version_skipped', {}))
+    return {
+        "appVersion": APP_VERSION,
+        "globalSkip": global_skip,
+        "skipped": version_skipped,
+        "ok": global_skip is None and len(version_skipped) == 0,
+    }
+
+
 @router.get("/scrapers", response_model=List[models.ScraperSettingWithConfig], summary="获取所有搜索源的设置")
 async def get_scraper_settings(
     current_user: models.User = Depends(security.get_current_user),
@@ -169,6 +192,15 @@ async def get_scraper_config(
     else:
         response_data[log_responses_key_camel] = str(log_responses_value).lower() == 'true'
 
+    # 5. 添加"搜索超时"字段(动态添加,每个源都有)
+    # why：前端表单字段名与 DB key 同为下划线全名，无需驼峰转换；
+    #      缺了这段 GET 不返回值，前端会兜底成默认 15 秒，表现为"保存后读回默认值"
+    timeout_key = f"scraper_{providerName}_search_timeout"
+    try:
+        response_data[timeout_key] = int(await config_manager.get(timeout_key, "15"))
+    except (ValueError, TypeError):
+        response_data[timeout_key] = 15
+
     return response_data
 
 
@@ -263,7 +295,18 @@ async def update_scraper_config(
         else:
             logger.warning(f"[{providerName}] payload 中未找到 '{log_responses_key_camel}' 字段，记录原始响应设置未更新。payload keys: {list(payload.keys())}")
 
-        # 5. 重新加载该搜索源
+        # 5. 处理"搜索超时"字段(动态字段,每个源都有)
+        # why：前端发送的 key 与 DB key 一致；范围与 scraper_manager 注入时的 clamp 保持一致(5-100)
+        timeout_key = f"scraper_{providerName}_search_timeout"
+        if timeout_key in payload:
+            try:
+                timeout_val = max(5, min(100, int(payload[timeout_key])))
+            except (ValueError, TypeError):
+                timeout_val = 15
+            await config_manager.setValue(timeout_key, str(timeout_val))
+            logger.info(f"[{providerName}] 搜索超时设置已更新: {timeout_key} = {timeout_val}")
+
+        # 6. 重新加载该搜索源
         await manager.reload_scraper(providerName)
         logger.info(f"用户 '{current_user.username}' 更新了搜索源 '{providerName}' 的配置,已重新加载。")
         return

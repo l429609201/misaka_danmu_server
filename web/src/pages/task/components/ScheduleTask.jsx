@@ -390,7 +390,9 @@ export const ScheduleTask = () => {
 
   return (
     <div className="my-6">
+      {/* why：加 schedule-task-card 类名，让 CSS 能单独针对这张卡片做差异化视觉 */}
       <Card
+        className="schedule-task-card"
         loading={loading}
         title={t('scheduleTask.title')}
         extra={

@@ -373,20 +373,31 @@ export const GlobalFilter = () => {
 
 
   return (
-    <div className="my-6" id="feat-global-filter">
-      <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
-        {
-          key: 'global',
-          label: t('globalFilter.title'),
-          children: loading ? null : (
-            <>
-              <div className="mb-4">
-                <div className="text-sm mb-2 opacity-75">
-                  <div className="bg-blue-50 dark:bg-blue-900/30 p-3 rounded mb-3">
-                    <p className="font-semibold text-blue-800 dark:text-blue-300 mb-2">
+    <>
+    {/* 最外层卡片：包裹整个过滤配置模块，提供清晰的视觉边界与层次感 */}
+    <Card
+      className="my-6"
+      id="feat-global-filter"
+      styles={{ body: { padding: 0 } }}
+    >
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        className="[&_.ant-tabs-nav]:px-5 [&_.ant-tabs-nav]:pt-2 [&_.ant-tabs-nav]:mb-0"
+        items={[
+          {
+            key: 'global',
+            label: t('globalFilter.title'),
+            children: loading ? null : (
+              // 每个 Tab 内容区统一 padding，与卡片边框保持间距
+              <div className="px-5 py-5">
+                <div className="mb-5">
+                  {/* 过滤层级说明区块 */}
+                  <div className="bg-blue-50 dark:bg-blue-900/30 px-4 py-3 rounded-lg border border-blue-100 dark:border-blue-800/40">
+                    <p className="font-semibold text-blue-800 dark:text-blue-300 mb-2 text-sm">
                       {t('globalFilter.filterLevelTitle')}
                     </p>
-                    <pre className="text-blue-700 dark:text-blue-400 text-xs mb-3 whitespace-pre-wrap font-mono bg-white/50 dark:bg-gray-800/50 p-2 rounded">
+                    <pre className="text-blue-700 dark:text-blue-400 text-xs mb-2 whitespace-pre-wrap font-mono bg-white/60 dark:bg-gray-800/50 px-3 py-2 rounded">
                       {t('globalFilter.filterLevelTree')}
                     </pre>
                     <p className="text-blue-600 dark:text-blue-400 text-xs">
@@ -394,48 +405,47 @@ export const GlobalFilter = () => {
                     </p>
                   </div>
                 </div>
-              </div>
-              <Form form={form} layout="vertical" onFinish={handleSave} className="px-2 pb-4">
-                <Form.Item
-                  name="cn"
-                  label={
-                    <div className="flex items-center justify-between w-full">
-                      <span>
-                        {t('globalFilter.cnRules')}
-                        <Tooltip title={t('globalFilter.cnRulesTip')}>
-                          <QuestionCircleOutlined className="ml-2 cursor-pointer text-gray-400" />
-                        </Tooltip>
-                      </span>
-                      <Button type="link" size="small" loading={isLoadingDefaults.cn} onClick={() => handleFillDefault('cn')}>
-                        {t('globalFilter.fillDefaultRules')}
-                      </Button>
-                    </div>
-                  }
-                  className="mb-6"
-                >
-                  <Input.TextArea rows={4} placeholder={t('globalFilter.cnRulesPlaceholder')} />
-                </Form.Item>
-                <Form.Item
-                  name="eng"
-                  label={
-                    <div className="flex items-center justify-between w-full">
-                      <span>
-                        {t('globalFilter.enRules')}
-                        <Tooltip title={t('globalFilter.enRulesTip')}>
-                          <QuestionCircleOutlined className="ml-2 cursor-pointer text-gray-400" />
-                        </Tooltip>
-                      </span>
-                      <Button type="link" size="small" loading={isLoadingDefaults.eng} onClick={() => handleFillDefault('eng')}>
-                        {t('globalFilter.fillDefaultRules')}
-                      </Button>
-                    </div>
-                  }
-                  className="mb-6"
-                >
-                  <Input.TextArea rows={4} placeholder={t('globalFilter.enRulesPlaceholder')} />
-                </Form.Item>
-                <Form.Item>
-                  <div className="flex justify-between gap-2">
+                <Form form={form} layout="vertical" onFinish={handleSave}>
+                  <Form.Item
+                    name="cn"
+                    label={
+                      <div className="flex items-center justify-between w-full">
+                        <span>
+                          {t('globalFilter.cnRules')}
+                          <Tooltip title={t('globalFilter.cnRulesTip')}>
+                            <QuestionCircleOutlined className="ml-2 cursor-pointer text-gray-400" />
+                          </Tooltip>
+                        </span>
+                        <Button type="link" size="small" loading={isLoadingDefaults.cn} onClick={() => handleFillDefault('cn')}>
+                          {t('globalFilter.fillDefaultRules')}
+                        </Button>
+                      </div>
+                    }
+                    className="mb-5"
+                  >
+                    <Input.TextArea rows={4} placeholder={t('globalFilter.cnRulesPlaceholder')} />
+                  </Form.Item>
+                  <Form.Item
+                    name="eng"
+                    label={
+                      <div className="flex items-center justify-between w-full">
+                        <span>
+                          {t('globalFilter.enRules')}
+                          <Tooltip title={t('globalFilter.enRulesTip')}>
+                            <QuestionCircleOutlined className="ml-2 cursor-pointer text-gray-400" />
+                          </Tooltip>
+                        </span>
+                        <Button type="link" size="small" loading={isLoadingDefaults.eng} onClick={() => handleFillDefault('eng')}>
+                          {t('globalFilter.fillDefaultRules')}
+                        </Button>
+                      </div>
+                    }
+                    className="mb-5"
+                  >
+                    <Input.TextArea rows={4} placeholder={t('globalFilter.enRulesPlaceholder')} />
+                  </Form.Item>
+                  {/* 底部操作栏：用浅色分割线与上方内容区隔开 */}
+                  <div className="flex justify-between gap-2 pt-4 border-t border-gray-100 dark:border-white/8">
                     <Button
                       onClick={() => openRegexTestModal(t('globalFilter.title'), [
                         ...extractRegexParts(form.getFieldValue('cn'), t('globalFilter.cnRules')),
@@ -446,52 +456,50 @@ export const GlobalFilter = () => {
                     </Button>
                     <Button type="primary" htmlType="submit" loading={isSaveLoading}>{t('globalFilter.saveChanges')}</Button>
                   </div>
-                </Form.Item>
-              </Form>
-            </>
-          ),
-        },
+                </Form>
+              </div>
+            ),
+          },
 
-        {
-          key: 'episodeFilter',
-          label: t('globalEpisodeTitleFilter.title'),
-          children: loading ? null : (
-            <div className="px-2 pb-4 space-y-4" id="feat-episode-title-filter">
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                {t('globalEpisodeTitleFilter.desc')}
-              </div>
-              <div className="flex items-center gap-3">
-                <Switch checked={episodeFilterEnabled} onChange={setEpisodeFilterEnabled} />
-                <span className="text-sm">{t('globalEpisodeTitleFilter.enableLabel')}</span>
-              </div>
-              <div className="text-xs text-gray-400 dark:text-gray-500 space-y-0.5">
-                <p>{t('globalEpisodeTitleFilter.hint1')}</p>
-                <p>{t('globalEpisodeTitleFilter.hint2')}</p>
-                <p>{t('globalEpisodeTitleFilter.hint3')}</p>
-                <p>{t('globalEpisodeTitleFilter.hint4')}</p>
-              </div>
-              <Form layout="vertical" className="px-0">
-                <Form.Item
-                  label={
-                    <div className="flex items-center justify-between w-full">
-                      <span>{t('globalEpisodeTitleFilter.regexLabel')}</span>
-                      <Button type="link" size="small" loading={isLoadingEpisodeDefaults} onClick={handleFillEpisodeDefaults}>
-                        {t('globalEpisodeTitleFilter.fillDefault')}
-                      </Button>
-                    </div>
-                  }
-                  className="mb-6"
-                >
-                  <Input.TextArea
-                    rows={12}
-                    value={episodeFilterRegex}
-                    onChange={e => setEpisodeFilterRegex(e.target.value)}
-                    placeholder={t('globalEpisodeTitleFilter.regexPlaceholder')}
-                    disabled={!episodeFilterEnabled}
-                  />
-                </Form.Item>
-                <Form.Item>
-                  <div className="flex justify-between gap-2">
+          {
+            key: 'episodeFilter',
+            label: t('globalEpisodeTitleFilter.title'),
+            children: loading ? null : (
+              <div className="px-5 py-5 space-y-4" id="feat-episode-title-filter">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {t('globalEpisodeTitleFilter.desc')}
+                </p>
+                <div className="flex items-center gap-3">
+                  <Switch checked={episodeFilterEnabled} onChange={setEpisodeFilterEnabled} />
+                  <span className="text-sm">{t('globalEpisodeTitleFilter.enableLabel')}</span>
+                </div>
+                <div className="text-xs text-gray-400 dark:text-gray-500 space-y-0.5">
+                  <p>{t('globalEpisodeTitleFilter.hint1')}</p>
+                  <p>{t('globalEpisodeTitleFilter.hint2')}</p>
+                  <p>{t('globalEpisodeTitleFilter.hint3')}</p>
+                  <p>{t('globalEpisodeTitleFilter.hint4')}</p>
+                </div>
+                <Form layout="vertical">
+                  <Form.Item
+                    label={
+                      <div className="flex items-center justify-between w-full">
+                        <span>{t('globalEpisodeTitleFilter.regexLabel')}</span>
+                        <Button type="link" size="small" loading={isLoadingEpisodeDefaults} onClick={handleFillEpisodeDefaults}>
+                          {t('globalEpisodeTitleFilter.fillDefault')}
+                        </Button>
+                      </div>
+                    }
+                    className="mb-5"
+                  >
+                    <Input.TextArea
+                      rows={12}
+                      value={episodeFilterRegex}
+                      onChange={e => setEpisodeFilterRegex(e.target.value)}
+                      placeholder={t('globalEpisodeTitleFilter.regexPlaceholder')}
+                      disabled={!episodeFilterEnabled}
+                    />
+                  </Form.Item>
+                  <div className="flex justify-between gap-2 pt-4 border-t border-gray-100 dark:border-white/8">
                     <Button
                       disabled={!episodeFilterEnabled}
                       onClick={() => openRegexTestModal(
@@ -505,105 +513,105 @@ export const GlobalFilter = () => {
                       {t('globalEpisodeTitleFilter.saveChanges')}
                     </Button>
                   </div>
-                </Form.Item>
-              </Form>
-            </div>
-          ),
-        },
-        {
-          key: 'single',
-          label: t('singleEpisodeFilter.title'),
-          children: loading ? null : (
-            <div className="px-2 pb-4 space-y-4" id="feat-single-filter">
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                {t('singleEpisodeFilter.desc')}
+                </Form>
               </div>
+            ),
+          },
+          {
+            key: 'single',
+            label: t('singleEpisodeFilter.title'),
+            children: loading ? null : (
+              <div className="px-5 py-5 space-y-4" id="feat-single-filter">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {t('singleEpisodeFilter.desc')}
+                </p>
 
-          <div className="rounded-lg border border-gray-200 dark:border-white/10 px-3 py-2.5 bg-gray-50/70 dark:bg-white/[0.03]">
-            <div className="text-sm font-medium mb-2.5">{t('singleEpisodeFilter.quickTitle')}</div>
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-x-2 gap-y-3 md:gap-y-2 items-center">
-              <Select
-                className="md:col-span-4 w-full"
-                showSearch
-                allowClear
-                open={titleDropdownOpen}
-                onDropdownVisibleChange={setTitleDropdownOpen}
-                value={singleDraft.title || undefined}
-                filterOption={false}
-                onSearch={handleSearchLibrary}
-                onChange={value => {
-                  if (!value) setSingleDraft(prev => ({ ...prev, title: '', provider: '', mediaId: '' }))
-                }}
-                placeholder={t('singleEpisodeFilter.titleKeywordPlaceholder')}
-                dropdownRender={renderAnimeDropdown}
-              />
-              <div className="md:col-span-3 flex w-full items-center gap-2">
-                <Input
-                  className="flex-1 min-w-0"
-                  value={singleDraft.rules}
-                  onChange={e => setSingleDraft(prev => ({ ...prev, rules: e.target.value }))}
-                  placeholder={t('singleEpisodeFilter.rulesPlaceholder')}
-                />
-                <Button
-                  size="small"
-                  className="shrink-0 !h-8 px-2"
-                  onClick={() => setAiOpen(true)}
-                >
-                  {t('singleEpisodeFilter.aiRules')}
-                </Button>
-              </div>
-              <Select
-                className="md:col-span-2 w-full"
-                allowClear
-                value={sourceOptions.some(item => item.value === singleDraft.mediaId) ? singleDraft.mediaId : (singleDraft.provider || undefined)}
-                options={[{ label: t('singleEpisodeFilter.providerAll'), value: '' }, ...(sourceOptions.length ? sourceOptions : providerOptions)]}
-                onChange={(value, option) => handleSelectSource(value || '', option || {})}
-                placeholder={t('singleEpisodeFilter.providerPlaceholder')}
-              />
-              <Input
-                className="md:col-span-2 w-full"
-                value={singleDraft.mediaId}
-                onChange={e => setSingleDraft(prev => ({ ...prev, mediaId: e.target.value }))}
-                placeholder={t('singleEpisodeFilter.mediaIdPlaceholder')}
-              />
-              <Button type="primary" className="md:col-span-1 w-full !h-8" onClick={handleInsertSingleDraft}>{t('singleEpisodeFilter.insertRule')}</Button>
-            </div>
-          </div>
-
-          <Form layout="vertical" className="px-0">
-            <Form.Item
-              label={
-                <div className="flex items-center justify-between w-full">
-                  <span>{t('singleEpisodeFilter.rawConfig')}</span>
-                  <Button type="link" size="small" onClick={handleInsertDefaultFormat}>
-                    {t('singleEpisodeFilter.insertDefaultFormat')}
-                  </Button>
+                {/* 快速填写面板：内嵌子卡片，与外层卡片形成层次 */}
+                <div className="rounded-lg border border-gray-200 dark:border-white/10 px-4 py-3 bg-gray-50/60 dark:bg-white/[0.03]">
+                  <div className="text-sm font-medium mb-3">{t('singleEpisodeFilter.quickTitle')}</div>
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-x-2 gap-y-3 md:gap-y-2 items-center">
+                    <Select
+                      className="md:col-span-4 w-full"
+                      showSearch
+                      allowClear
+                      open={titleDropdownOpen}
+                      onDropdownVisibleChange={setTitleDropdownOpen}
+                      value={singleDraft.title || undefined}
+                      filterOption={false}
+                      onSearch={handleSearchLibrary}
+                      onChange={value => {
+                        if (!value) setSingleDraft(prev => ({ ...prev, title: '', provider: '', mediaId: '' }))
+                      }}
+                      placeholder={t('singleEpisodeFilter.titleKeywordPlaceholder')}
+                      dropdownRender={renderAnimeDropdown}
+                    />
+                    <div className="md:col-span-3 flex w-full items-center gap-2">
+                      <Input
+                        className="flex-1 min-w-0"
+                        value={singleDraft.rules}
+                        onChange={e => setSingleDraft(prev => ({ ...prev, rules: e.target.value }))}
+                        placeholder={t('singleEpisodeFilter.rulesPlaceholder')}
+                      />
+                      <Button
+                        size="small"
+                        className="shrink-0 !h-8 px-2"
+                        onClick={() => setAiOpen(true)}
+                      >
+                        {t('singleEpisodeFilter.aiRules')}
+                      </Button>
+                    </div>
+                    <Select
+                      className="md:col-span-2 w-full"
+                      allowClear
+                      value={sourceOptions.some(item => item.value === singleDraft.mediaId) ? singleDraft.mediaId : (singleDraft.provider || undefined)}
+                      options={[{ label: t('singleEpisodeFilter.providerAll'), value: '' }, ...(sourceOptions.length ? sourceOptions : providerOptions)]}
+                      onChange={(value, option) => handleSelectSource(value || '', option || {})}
+                      placeholder={t('singleEpisodeFilter.providerPlaceholder')}
+                    />
+                    <Input
+                      className="md:col-span-2 w-full"
+                      value={singleDraft.mediaId}
+                      onChange={e => setSingleDraft(prev => ({ ...prev, mediaId: e.target.value }))}
+                      placeholder={t('singleEpisodeFilter.mediaIdPlaceholder')}
+                    />
+                    <Button type="primary" className="md:col-span-1 w-full !h-8" onClick={handleInsertSingleDraft}>{t('singleEpisodeFilter.insertRule')}</Button>
+                  </div>
                 </div>
-              }
-              className="mb-6"
-            >
-              <Input.TextArea
-                rows={8}
-                value={singleFilterContent}
-                onChange={e => setSingleFilterContent(e.target.value)}
-                placeholder={t('singleEpisodeFilter.placeholder')}
-              />
-            </Form.Item>
-            <Form.Item>
-              <div className="flex justify-between gap-2">
-                <Button onClick={() => openRegexTestModal(t('singleEpisodeFilter.title'), extractSingleFilterPatterns())}>
-                  {t('regexTester.title')}
-                </Button>
-                <Button type="primary" loading={isSingleSaveLoading} onClick={handleSaveSingleFilter}>
-                  {t('singleEpisodeFilter.saveChanges')}
-                </Button>
+
+                <Form layout="vertical">
+                  <Form.Item
+                    label={
+                      <div className="flex items-center justify-between w-full">
+                        <span>{t('singleEpisodeFilter.rawConfig')}</span>
+                        <Button type="link" size="small" onClick={handleInsertDefaultFormat}>
+                          {t('singleEpisodeFilter.insertDefaultFormat')}
+                        </Button>
+                      </div>
+                    }
+                    className="mb-5"
+                  >
+                    <Input.TextArea
+                      rows={8}
+                      value={singleFilterContent}
+                      onChange={e => setSingleFilterContent(e.target.value)}
+                      placeholder={t('singleEpisodeFilter.placeholder')}
+                    />
+                  </Form.Item>
+                  <div className="flex justify-between gap-2 pt-4 border-t border-gray-100 dark:border-white/8">
+                    <Button onClick={() => openRegexTestModal(t('singleEpisodeFilter.title'), extractSingleFilterPatterns())}>
+                      {t('regexTester.title')}
+                    </Button>
+                    <Button type="primary" loading={isSingleSaveLoading} onClick={handleSaveSingleFilter}>
+                      {t('singleEpisodeFilter.saveChanges')}
+                    </Button>
+                  </div>
+                </Form>
               </div>
-            </Form.Item>
-          </Form>
-        </div>
-          ),
-        },
-      ]} />
+            ),
+          },
+        ]}
+      />
+    </Card>
 
       <Modal
         title={t('singleEpisodeFilter.aiTitle')}
@@ -674,6 +682,6 @@ export const GlobalFilter = () => {
         </div>
       </Modal>
 
-    </div>
+    </>
   )
 }

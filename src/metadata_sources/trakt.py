@@ -184,14 +184,15 @@ class TraktMetadataSource(BaseMetadataSource):
             async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
                 resp = await client.get(f"{TRAKT_API_BASE}/search/show", params={"query": keyword, "extended": "full"}, headers=public_headers)
                 resp.raise_for_status()
-                raw_text = resp.text
+                search_data = resp.json()
 
                 if log_raw:
+                    import json as _json
                     metadata_logger.info(
-                        f"Trakt Search Response for '{keyword}': URL={resp.url} | Status={resp.status_code} | Body={raw_text}"
+                        f"Trakt Search Response for '{keyword}': URL={resp.url} | Status={resp.status_code} | Body={_json.dumps(search_data, ensure_ascii=False)}"
                     )
 
-                for item in resp.json()[:20]:
+                for item in search_data[:20]:
                     show = item.get("show", {})
                     ids = show.get("ids", {})
                     results.append(models.MetadataDetailsResponse(
@@ -227,14 +228,14 @@ class TraktMetadataSource(BaseMetadataSource):
             async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
                 resp = await client.get(f"{TRAKT_API_BASE}/shows/{item_id}", params={"extended": "full"}, headers=headers)
                 resp.raise_for_status()
-                raw_text = resp.text
+                show = resp.json()
 
                 if log_raw:
+                    import json as _json
                     metadata_logger.info(
-                        f"Trakt Detail Response for '{item_id}': URL={resp.url} | Status={resp.status_code} | Body={raw_text}"
+                        f"Trakt Detail Response for '{item_id}': URL={resp.url} | Status={resp.status_code} | Body={_json.dumps(show, ensure_ascii=False)}"
                     )
 
-                show = resp.json()
                 ids = show.get("ids", {})
                 return models.MetadataDetailsResponse(
                     id=str(ids.get("trakt", "")),
@@ -293,14 +294,14 @@ class TraktMetadataSource(BaseMetadataSource):
             async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
                 resp = await client.get(url, headers=public_headers)
                 resp.raise_for_status()
-                raw_text = resp.text
+                trakt_calendar = resp.json()
 
                 if log_raw:
+                    # why：同 Bangumi，resp.text 的 \uXXXX 转义不可读，重序列化确保中文直接显示。
+                    import json as _json
                     metadata_logger.info(
-                        f"Trakt Calendar Response: URL={resp.url} | Status={resp.status_code} | Body={raw_text}"
+                        f"Trakt Calendar Response: URL={resp.url} | Status={resp.status_code} | Body={_json.dumps(trakt_calendar, ensure_ascii=False)}"
                     )
-
-                trakt_calendar = resp.json()
 
             seen_trakt_ids = set()
             for entry in trakt_calendar:

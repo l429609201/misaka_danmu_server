@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { List, Button, Tag, Space, Card, Checkbox, Empty, Tooltip, Input, Modal } from 'antd'
+import { List, Button, Tag, Space, Card, Empty, Tooltip, Input, Modal } from 'antd'
 import { DeleteOutlined, CheckOutlined, MinusOutlined, PlayCircleOutlined, SearchOutlined, ClearOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useTranslation } from 'react-i18next'
@@ -217,33 +217,42 @@ export const WebhookTasks = () => {
               renderItem={item => {
                 const isSelected = selectedTaskIds.has(item.id)
                 return (
-                  <List.Item
-                    key={item.id}
-                    onClick={() => handleSelectionChange(item, !isSelected)}
-                    className="!cursor-pointer hover:!bg-gray-100"
-                    extra={
-                      <Tag color={getStatusTagType(item.status)}>
+                  <List.Item key={item.id} className="!p-0 !border-0 !mb-2">
+                    {/* 圆角卡片条目，点击整体切换选中 */}
+                    <div
+                      onClick={() => handleSelectionChange(item, !isSelected)}
+                      className={[
+                        'relative w-full flex items-center justify-between px-4 py-3 rounded-xl cursor-pointer transition-all duration-150',
+                        'border backdrop-blur-sm',
+                        isSelected
+                          ? 'border-blue-400 bg-blue-500/10 shadow-sm'
+                          : 'border-white/40 bg-white/60 hover:border-blue-300/60 hover:bg-white/70',
+                      ].join(' ')}
+                    >
+                      {/* 选中状态右上角打钩徽章 */}
+                      {isSelected && (
+                        <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+                          <CheckOutlined style={{ fontSize: 9, color: '#fff' }} />
+                        </span>
+                      )}
+                      <div className="flex-1 min-w-0 pr-3">
+                        <div className="text-base mb-1 truncate">{item.taskTitle}</div>
+                        <div className="text-gray-500 text-sm flex flex-wrap gap-x-2">
+                          <span>{t('webhookTasks.source')}{item.webhookSource}</span>
+                          <span className="text-gray-300">|</span>
+                          <span>
+                            {t('webhookTasks.receivedAt')}{dayjs(item.receptionTime).format('YYYY-MM-DD HH:mm:ss')}
+                          </span>
+                          <span className="text-gray-300">|</span>
+                          <span>
+                            {t('webhookTasks.scheduledAt')}{dayjs(item.executeTime).format('YYYY-MM-DD HH:mm:ss')}
+                          </span>
+                        </div>
+                      </div>
+                      {/* 状态 tag 与右上角打钩不重叠，留出右侧空间 */}
+                      <Tag color={getStatusTagType(item.status)} className={['shrink-0', isSelected ? 'mr-5' : ''].join(' ')}>
                         {translateStatus(item.status, t)}
                       </Tag>
-                    }
-                  >
-                    <div className="relative pl-8">
-                      <Checkbox
-                        checked={isSelected}
-                        className="absolute top-1/2 left-0 transform -translate-y-1/2"
-                      />
-                      <div className="text-base mb-1">{item.taskTitle}</div>
-                      <div className="text-gray-500 text-sm">
-                        <span>{t('webhookTasks.source')}{item.webhookSource}</span>
-                        <span className="mx-2">|</span>
-                        <span>
-                          {t('webhookTasks.receivedAt')}{dayjs(item.receptionTime).format('YYYY-MM-DD HH:mm:ss')}
-                        </span>
-                        <span className="mx-2">|</span>
-                        <span>
-                          {t('webhookTasks.scheduledAt')}{dayjs(item.executeTime).format('YYYY-MM-DD HH:mm:ss')}
-                        </span>
-                      </div>
                     </div>
                   </List.Item>
                 )

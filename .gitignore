@@ -23,7 +23,7 @@ src/scrapers/*
 !src/scrapers/__init__.py
 !src/scrapers/base.py
 .augment/rules/rule-name.md
-
+tests/*
 .pids/
 
 # 嵌套git仓库

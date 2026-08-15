@@ -457,6 +457,7 @@ class ServerChanChannel(BaseNotificationChannel):
                 "key": "chat_id",
                 "label": "Chat ID (uid)",
                 "type": "string",
+                "rowGroup": "sc3_id_row1",
                 "description": "默认消息接收者的 uid（即 Server酱³ 用户ID），用于接收系统通知",
                 "description_en": "Default receiver uid (Server酱³ user ID) for system notifications",
                 "description_tw": "預設訊息接收者的 uid（即 Server醬³ 使用者ID），用於接收系統通知",
@@ -468,6 +469,7 @@ class ServerChanChannel(BaseNotificationChannel):
                 "label_en": "Admin User IDs",
                 "label_tw": "管理員使用者ID",
                 "type": "string",
+                "rowGroup": "sc3_id_row1",
                 "description": "拥有管理权限的用户 uid，多个用逗号分隔",
                 "description_en": "User UIDs with admin privileges, separated by commas",
                 "description_tw": "擁有管理權限的使用者 uid，多個用逗號分隔",
@@ -479,6 +481,7 @@ class ServerChanChannel(BaseNotificationChannel):
                 "label_en": "Allowed User IDs",
                 "label_tw": "允許的使用者ID",
                 "type": "string",
+                "rowGroup": "sc3_id_row2",
                 "description": "允许使用 Bot 交互的用户 uid，多个用逗号分隔。留空则仅管理员可用",
                 "description_en": "User UIDs allowed to interact with the Bot, separated by commas. Leave empty for admin-only",
                 "description_tw": "允許使用 Bot 互動的使用者 uid，多個用逗號分隔。留空則僅管理員可用",
@@ -556,6 +559,7 @@ class ServerChanChannel(BaseNotificationChannel):
                 "label_en": "API Outbound Proxy",
                 "label_tw": "API 出網代理位址",
                 "type": "string",
+                "rowGroup": "sc3_id_row2",
                 "description": "填入 VPS 地址（如 http://vps.example.com），Bot 的 API 请求将通过 VPS 出网。留空则直连 bot-go.apijia.cn",
                 "description_en": "Enter VPS address (e.g. http://vps.example.com). Bot API requests will go through VPS. Leave empty to connect directly to bot-go.apijia.cn.",
                 "description_tw": "填入 VPS 位址（如 http://vps.example.com），Bot 的 API 請求將透過 VPS 出網。留空則直連 bot-go.apijia.cn",
@@ -572,7 +576,5 @@ class ServerChanChannel(BaseNotificationChannel):
                 "description_tw": "啟用後，Bot 的所有收發訊息將記錄到 config/logs/bot_raw.log 檔案中，用於除錯",
                 "default": False,
             },
-            # why：图片模式按渠道实例独立生效（base.image_mode 读各自 config），
-            # 此前 SC3 未暴露该字段，导致只能吃 poster 默认值无法单独调整。
             IMAGE_MODE_FIELD,
         ]

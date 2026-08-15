@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal, Drawer, Button, Tooltip, message, Empty, Input, Spin, Select, Card } from 'antd'
 import { CopyOutlined, ExportOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
@@ -9,6 +9,111 @@ import { isMobileAtom } from '../../store'
 
 // 内存日志的特殊标识
 const MEMORY_LOG_KEY = '__memory__'
+
+// ─── 模块级工具函数（移出组件，避免每次 render 重建）────────────────────────
+
+// 按级别返回边框色和背景色
+const getLevelColors = (line) => {
+  const m = line.match(/\[(DEBUG|INFO|WARNING|ERROR)\]/)
+  if (!m) return {}
+  switch (m[1]) {
+    case 'ERROR':   return { border: '#ef4444', bg: 'rgba(239,68,68,0.06)' }
+    case 'WARNING': return { border: '#f59e0b', bg: 'rgba(245,158,11,0.06)' }
+    case 'DEBUG':   return { border: '#1d4ed8', bg: 'rgba(29,78,216,0.06)' }
+    default: return {}
+  }
+}
+
+// 隐去日志文本中的级别标签
+const stripLevelTag = (text) => text.replace(/\s*\[(DEBUG|INFO|WARNING|ERROR)\]\s*/, ' ')
+
+// ─── 虚拟滚动列表 ────────────────────────────────────────────────────────────
+// why：日志行数可达数千条，全量渲染会把所有行都创建成 DOM 节点，导致主线程卡死。
+// 虚拟滚动只渲染视口内 + 上下 OVERSCAN 行，其余用空白 div 占位保持正确的滚动条比例。
+const ROW_H_PC = 56   // 桌面端每行估算高度（px）
+const ROW_H_MB = 44   // 移动端每行估算高度（px）
+const OVERSCAN  = 8   // 视口外上下各多渲染的缓冲行数，防快速滚动闪白
+
+function VirtualLogList({ lines, search, isMobile, onCopyLine, copyLabel }) {
+  const containerRef = useRef(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [containerH, setContainerH] = useState(600)
+
+  const rowH = isMobile ? ROW_H_MB : ROW_H_PC
+
+  // why：切换文件或过滤结果后旧 scrollTop 可能超过新列表总高度，表现为“有日志但内容空白”。
+  useEffect(() => {
+    const el = containerRef.current
+    if (el) el.scrollTop = 0
+    setScrollTop(0)
+  }, [lines])
+
+  // 监听容器实际高度（窗口缩放 / Drawer 弹出时高度不同）
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    if (el.clientHeight > 0) setContainerH(el.clientHeight)
+    const ro = new ResizeObserver(() => {
+      if (el.clientHeight > 0) setContainerH(el.clientHeight)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const handleScroll = useCallback((e) => setScrollTop(e.currentTarget.scrollTop), [])
+
+  const startIdx = Math.max(0, Math.floor(scrollTop / rowH) - OVERSCAN)
+  const endIdx   = Math.min(lines.length, Math.ceil((scrollTop + containerH) / rowH) + OVERSCAN)
+
+  return (
+    <div
+      ref={containerRef}
+      className={isMobile
+        ? 'flex-1 min-h-0 overflow-y-auto overflow-x-hidden'
+        : 'max-h-[55vh] overflow-y-auto overflow-x-hidden'}
+      onScroll={handleScroll}
+    >
+      {/* 顶部占位：撑出滚动区域，使滚动条比例与总行数匹配 */}
+      <div aria-hidden="true" style={{ height: startIdx * rowH }} />
+      {lines.slice(startIdx, endIdx).map((line, rel) => {
+        const i = startIdx + rel
+        const lc = getLevelColors(line)
+        const displayText = stripLevelTag(line)
+        return (
+          <div
+            key={i}
+            className={`my-1 overflow-hidden rounded border-l-2 group ${isMobile ? 'text-xs' : 'text-sm'} ${lc.border ? '' : 'bg-base-hover'} ${lc.border ? '' : 'border-primary'} hover:bg-base-hover-hover transition-colors`}
+            style={{
+              height: rowH - 8,
+              ...(lc.border ? { borderLeftColor: lc.border } : {}),
+              ...(lc.bg ? { backgroundColor: lc.bg } : {}),
+            }}
+          >
+            <div className="flex h-full items-center justify-between gap-2 px-2">
+              {/* why：固定单行预览保证虚拟列表行高真实稳定；超长原始响应不再触发浏览器大段换行排版。 */}
+              <pre
+                className="m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono"
+                title={displayText.length <= 2000 ? displayText : undefined}
+              >
+                {search ? highlightText(displayText, search) : displayText}
+              </pre>
+              <Button
+                type="text"
+                size="small"
+                icon={<CopyOutlined />}
+                className={`shrink-0 opacity-0 group-hover:opacity-100 transition-opacity${isMobile ? ' opacity-60' : ''}`}
+                onClick={(e) => { e.stopPropagation(); onCopyLine(line) }}
+                title={copyLabel}
+              />
+            </div>
+          </div>
+        )
+      })}
+      {/* 底部占位 */}
+      <div aria-hidden="true" style={{ height: (lines.length - endIdx) * rowH }} />
+    </div>
+  )
+}
 
 export default function HistoryLogModal({ open, onClose }) {
   const { t } = useTranslation()
@@ -105,21 +210,6 @@ export default function HistoryLogModal({ open, onClose }) {
     } catch { messageApi.error(t('historyLog.copyFailed')) }
   }
 
-  // 按级别返回边框色和背景色
-  const getLevelColors = (line) => {
-    const m = line.match(/\[(DEBUG|INFO|WARNING|ERROR)\]/)
-    if (!m) return {}
-    switch (m[1]) {
-      case 'ERROR': return { border: '#ef4444', bg: 'rgba(239,68,68,0.06)' }
-      case 'WARNING': return { border: '#f59e0b', bg: 'rgba(245,158,11,0.06)' }
-      case 'DEBUG': return { border: '#1d4ed8', bg: 'rgba(29,78,216,0.06)' }
-      default: return {}
-    }
-  }
-
-  // 隐去日志文本中的级别标签
-  const stripLevelTag = (text) => text.replace(/\s*\[(DEBUG|INFO|WARNING|ERROR)\]\s*/, ' ')
-
   const fileOptions = [
     { label: t('historyLog.memoryLog'), value: MEMORY_LOG_KEY },
     ...logFiles.map(f => ({
@@ -175,47 +265,32 @@ export default function HistoryLogModal({ open, onClose }) {
           断开 Drawer 的 flex 高度链，导致内部滚动容器算不出高度。改为滚动容器直接挂在 Card.body 下，
           loading 时用绝对定位遮罩覆盖，桌面端逻辑（max-h-[55vh]）保持不变。 */}
       <Card className={isMobile ? 'flex-1 min-h-0 flex flex-col' : ''} styles={{ body: { padding: isMobile ? 8 : 12, ...(isMobile ? { flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' } : {}) } }}>
-          <div
-            className={`relative ${isMobile ? 'flex-1 min-h-0 overflow-y-auto overflow-x-hidden' : 'max-h-[55vh] overflow-y-auto overflow-x-hidden'}`}
-          >
+        {filtered.length === 0 ? (
+          <div className="relative flex items-center justify-center" style={{ height: '30vh' }}>
             {loading && (
               <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.04)' }}>
                 <Spin />
               </div>
             )}
-            {filtered.length === 0 ? (
-              <div className="flex items-center justify-center" style={{ height: '30vh' }}>
-                <Empty description={<span className="text-gray-400">{search ? t('historyLog.noMatchLog') : t('historyLog.noLog')}</span>} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              </div>
-            ) : (
-              filtered.map((line, i) => {
-                const lc = getLevelColors(line)
-                const displayText = stripLevelTag(line)
-                return (
-                <div
-                  key={i}
-                  className={`my-1 p-2 rounded group ${isMobile ? 'text-xs' : 'text-sm'} ${lc.border ? '' : 'bg-base-hover'} border-l-2 ${lc.border ? '' : 'border-primary'} hover:bg-base-hover-hover transition-colors`}
-                  style={{ ...(lc.border ? { borderLeftColor: lc.border } : {}), ...(lc.bg ? { backgroundColor: lc.bg } : {}) }}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <pre className="whitespace-pre-wrap break-words m-0 font-mono flex-1 min-w-0">
-                      {search ? highlightText(displayText, search) : displayText}
-                    </pre>
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<CopyOutlined />}
-                      className={`shrink-0 opacity-0 group-hover:opacity-100 transition-opacity ${isMobile ? 'opacity-60' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); copyLogLine(line) }}
-                      title={t('historyLog.copyLog')}
-                    />
-                  </div>
-                </div>
-                )
-              })
-            )}
+            <Empty description={<span className="text-gray-400">{search ? t('historyLog.noMatchLog') : t('historyLog.noLog')}</span>} image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
-        </Card>
+        ) : (
+          <div className="relative">
+            {loading && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.04)', minHeight: '4rem' }}>
+                <Spin />
+              </div>
+            )}
+            <VirtualLogList
+              lines={filtered}
+              search={search}
+              isMobile={isMobile}
+              onCopyLine={copyLogLine}
+              copyLabel={t('historyLog.copyLog')}
+            />
+          </div>
+        )}
+      </Card>
     </>
   )
 

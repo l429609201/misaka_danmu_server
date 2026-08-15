@@ -577,6 +577,8 @@ export const getRepoRefs = () => api.get('/api/ui/scrapers/repo-refs')
 export const saveResourceRepo = data => api.put('/api/ui/scrapers/resource-repo', data)
 /** 获取资源包版本信息 */
 export const getScraperVersions = () => api.get('/api/ui/scrapers/versions')
+/** 获取弹幕源加载校验结果（哪些源因版本不满足被跳过）*/
+export const getScraperLoadCheck = () => api.get('/api/ui/scrapers/load-check')
 /** 加载弹幕源资源 */
 export const loadScraperResources = data => api.post('/api/ui/scrapers/load-resources', data)
 /** 备份弹幕源 */

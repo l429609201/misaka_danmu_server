@@ -372,7 +372,8 @@ async def generic_import_task(
                 logger.error(f"任务失败: {msg} (provider='{provider}', media_id='{mediaId}')")
                 raise ValueError(msg)
         else:
-            raise TaskSuccess("未找到任何分集信息。")
+            # why：分集信息完全获取不到，弹幕也就无从下载，应标记失败而非已完成
+            raise TaskFailed("未找到任何分集信息。")
 
     # 如果是媒体库整季导入, 再按 selectedEpisodes 对分集做一次本地筛选
     # 关键：使用反向偏移后的 source_selected_episodes 与源站集号匹配
@@ -457,7 +458,8 @@ async def generic_import_task(
                     f"媒体库整季导入: 无法翻译集号，降级为按数量截取前 {limit} 集, 源共有 {original_count} 集, 保留 {len(episodes)} 集"
                 )
             if not episodes:
-                raise TaskSuccess("源中没有任何分集，未导入新的弹幕。")
+                # why：源站返回空分集列表，实际没有导入任何内容，应标记失败
+                raise TaskFailed("源中没有任何分集，未导入新的弹幕。")
         # 新增: 媒体库整季导入时, 在下载任何弹幕后先检查数据库中已有的分集
         indices_to_check = [ep.episodeIndex for ep in episodes if ep.episodeIndex is not None]
         existing_indices = []
@@ -714,7 +716,8 @@ async def generic_import_task(
         for ep_index, error_msg in sorted(failed_episodes_details.items()):
             failure_details.append(f"第{ep_index}集: {error_msg}")
         failure_msg = "导入完成，但所有分集弹幕获取失败。\n失败详情:\n" + "\n".join(failure_details)
-        raise TaskSuccess(failure_msg)
+        # why：所有分集均失败，没有任何弹幕写入，应标记任务失败
+        raise TaskFailed(failure_msg)
 
     # 生成最终消息
     final_message_parts = []
@@ -931,9 +934,11 @@ async def edited_import_task(
             for ep_index, error_msg in sorted(failed_details.items()):
                 failure_details.append(f"第{ep_index}集: {error_msg}")
             failure_msg = "编辑导入完成，但未找到任何新弹幕。\n失败详情:\n" + "\n".join(failure_details)
-            raise TaskSuccess(failure_msg)
+            # why：0条弹幕，不算成功导入
+            raise TaskFailed(failure_msg)
         else:
-            raise TaskSuccess("编辑导入完成，但未找到任何新弹幕。")
+            # why：0条弹幕，不算成功导入
+            raise TaskFailed("编辑导入完成，但未找到任何新弹幕。")
     else:
         episode_range_str = _generate_episode_range_string(successful_indices)
         final_message = f"编辑导入完成，导入集: < {episode_range_str} >，共获取 {total_comments_added} 条弹幕。" if total_comments_added > 0 else f"编辑导入完成，导入集: < {episode_range_str} >，暂无弹幕数据。"

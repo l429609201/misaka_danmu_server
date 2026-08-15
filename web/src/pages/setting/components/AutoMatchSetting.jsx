@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Form, Input, Select, Switch, Button, message, Spin, Card, Tabs, Space, Tooltip, Row, Col, Alert, Statistic, AutoComplete } from 'antd'
+import { Form, Input, Select, Switch, Button, message, Spin, Card, Tabs, Space, Tooltip, Row, Col, Alert, Statistic, AutoComplete, InputNumber } from 'antd'
 const { TextArea } = Input
 const { TabPane } = Tabs
 const { Option } = Select
@@ -74,6 +74,7 @@ const AutoMatchSetting = () => {
         nameConversionPromptRes,
         logRawResponseRes,
         thinkingEnabledRes,
+        callTimeoutRes,
         homeSearchSeasonMappingRes,
         fallbackSearchSeasonMappingRes,
         webhookSeasonMappingRes,
@@ -102,6 +103,7 @@ const AutoMatchSetting = () => {
         getConfig('aiNameConversionPrompt'),
         getConfig('aiLogRawResponse'),
         getConfig('aiThinkingEnabled'),
+        getConfig('aiCallTimeout'),
         getConfig('homeSearchEnableTmdbSeasonMapping'),
         getConfig('fallbackSearchEnableTmdbSeasonMapping'),
         getConfig('webhookEnableTmdbSeasonMapping'),
@@ -151,6 +153,7 @@ const AutoMatchSetting = () => {
         aiNameConversionPrompt: nameConversionPromptRes.data.value || '',
         aiLogRawResponse: logRawResponse,
         aiThinkingEnabled: thinkingEnabled,
+        aiCallTimeout: parseInt(callTimeoutRes.data.value || '60', 10),
         homeSearchEnableTmdbSeasonMapping: homeSearchSeasonMappingRes.data.value === 'true',
         fallbackSearchEnableTmdbSeasonMapping: fallbackSearchSeasonMappingRes.data.value === 'true',
         webhookEnableTmdbSeasonMapping: webhookSeasonMappingRes.data.value === 'true',
@@ -279,7 +282,8 @@ const AutoMatchSetting = () => {
         setConfig('aiBaseUrl', values.aiBaseUrl || ''),
         setConfig('aiModel', values.aiModel || ''),
         setConfig('aiLogRawResponse', values.aiLogRawResponse ? 'true' : 'false'),
-        setConfig('aiThinkingEnabled', values.aiThinkingEnabled ? 'true' : 'false')
+        setConfig('aiThinkingEnabled', values.aiThinkingEnabled ? 'true' : 'false'),
+        setConfig('aiCallTimeout', String(values.aiCallTimeout || 60))
       ])
 
       message.success(t('autoMatch.saveConnectionSuccess'))
@@ -772,6 +776,30 @@ const AutoMatchSetting = () => {
                     </div>
                   )}
                 </Form.Item>
+
+                {/* API 超时时间输入 */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: isMobile ? '0' : '0 16px',
+                  width: isMobile ? '100%' : 'auto',
+                  justifyContent: isMobile ? 'center' : 'flex-start'
+                }}>
+                  <span style={{ fontSize: '14px', whiteSpace: 'nowrap' }}>{t('autoMatch.labelCallTimeout')}</span>
+                  <Form.Item name="aiCallTimeout" noStyle>
+                    <InputNumber
+                      min={10}
+                      max={600}
+                      step={10}
+                      style={{ width: 90 }}
+                      addonAfter={t('common.seconds', '秒')}
+                    />
+                  </Form.Item>
+                  <Tooltip title={t('autoMatch.tooltipCallTimeout')}>
+                    <QuestionCircleOutlined style={{ color: '#999' }} />
+                  </Tooltip>
+                </div>
 
                 <Button
                   type="primary"

@@ -1216,7 +1216,9 @@ const DanmakuStorage = () => {
         {/* 迁移与重命名 Tab */}
         <TabPane tab={t('danmakuStorage.tabMigrate')} key="migrate">
           {/* 筛选条件 */}
-          <Card size="small" style={{ marginBottom: 16 }}>
+          {/* why：挂 storage-inner-card——内嵌小卡在玻璃/壁纸主题下会叠一层磨砂白膜，
+              CSS 按主题置透明，与全局卡片定论一致 */}
+          <Card size="small" className="storage-inner-card" style={{ marginBottom: 16 }}>
             <Space wrap>
               <span>{t('danmakuStorage.labelType')}</span>
               <Select
@@ -1298,7 +1300,7 @@ const DanmakuStorage = () => {
           />
 
           {/* 选择状态栏 */}
-          <Card size="small" style={{ marginTop: 16, marginBottom: 16 }}>
+          <Card size="small" className="storage-inner-card" style={{ marginTop: 16, marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
               <Space>
                 <Tag color={selectedRows.length > 0 ? 'blue' : 'default'}>
@@ -1324,7 +1326,7 @@ const DanmakuStorage = () => {
           </Card>
 
           {/* 批量操作按钮 */}
-          <Card size="small">
+          <Card size="small" className="storage-inner-card">
             <Space wrap>
               <Tooltip title={t('danmakuStorage.btnMigrateTo')}>
                 <Button

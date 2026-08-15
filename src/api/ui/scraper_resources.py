@@ -1036,6 +1036,37 @@ async def load_resources_stream(
                         asset_version = asset_info['version']
                         yield f"data: {json.dumps({'type': 'info', 'message': f'找到压缩包: {asset_filename} (版本: {asset_version})'}, ensure_ascii=False)}\n\n"
 
+                        # 前置版本校验：在备份/下载之前先取 package.json（几KB）核验 min_server_version。
+                        # why：_fetch_package_info_with_retry 只解析 version/changelog 两字段，丢掉了
+                        #      min_server_version；整包下载+备份耗时可达数分钟，版本不满足时应在任何
+                        #      磁盘写入之前快速失败。此处与 incremental 路径的前置校验对齐。
+                        try:
+                            _pre_timeout = httpx.Timeout(15.0, read=15.0)
+                            async with httpx.AsyncClient(
+                                timeout=_pre_timeout, headers=headers,
+                                follow_redirects=True, proxy=proxy_to_use
+                            ) as _pre_client:
+                                _pre_resp = await _pre_client.get(f"{base_url}/package.json")
+                                if _pre_resp.status_code == 200:
+                                    _pre_pkg = _pre_resp.json()
+                                    # 两个字段语义相同，取其一阻断下载
+                                    _min_req = _pre_pkg.get("min_server_version") or _pre_pkg.get("min_fetchable_version")
+                                    if _min_req:
+                                        from src._version import APP_VERSION
+                                        from src.services.scraper_manager import _version_satisfies
+                                        if not _version_satisfies(APP_VERSION, _min_req):
+                                            _vmsg = (
+                                                f"弹幕源包要求服务器版本 >= {_min_req}，"
+                                                f"当前版本 {APP_VERSION}，请先升级服务器再下载"
+                                            )
+                                            logger.warning(f"[全量替换版本预检失败] {_vmsg}")
+                                            yield f"data: {json.dumps({'type': 'error', 'message': _vmsg}, ensure_ascii=False)}\n\n"
+                                            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+                                            return
+                        except Exception as _pre_err:
+                            # 预检网络失败不阻断：解压后的后置校验仍会兜底
+                            logger.debug(f"全量替换版本预检跳过（网络异常: {_pre_err}）")
+
                         # 先备份当前文件
                         yield f"data: {json.dumps({'type': 'info', 'message': '正在备份当前弹幕源...'}, ensure_ascii=False)}\n\n"
                         try:
@@ -1096,7 +1127,8 @@ async def load_resources_stream(
                                                 scrapers_versions[scraper_name] = version
                                             # 提取哈希值
                                             hashes = scraper_info.get('hashes', {})
-                                            platform_key = f"{platform_info['platform']}_{platform_info['arch']}"
+                                            # 使用连字符格式 platform_key（如 linux-x86），与包内哈希键格式一致
+                                            platform_key = get_platform_key()
                                             if platform_key in hashes:
                                                 scrapers_hashes[scraper_name] = hashes[platform_key]
                                     logger.info(f"从 package.json 读取到 {len(scrapers_versions)} 个源的版本信息")
@@ -1132,7 +1164,7 @@ async def load_resources_stream(
                                 "scrapers": scrapers_versions,
                                 "hashes": scrapers_hashes,
                                 "full_replace": True,
-                                "update_time": datetime.now().isoformat()
+                                "updated_at": datetime.now().isoformat()  # 统一用 updated_at，与 scraper_manager 备份恢复逻辑一致
                             }
                             if min_server_version:
                                 versions_data['min_server_version'] = min_server_version
@@ -1241,8 +1273,8 @@ async def load_resources_stream(
                         yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
                         return
 
-                    # 前置检查：远程弹幕源包是否要求更高的服务器版本
-                    pkg_min_server_ver = package_data.get('min_server_version')
+                    # 前置检查：远程弹幕源包是否要求更高的服务器版本（两字段语义相同）
+                    pkg_min_server_ver = package_data.get('min_server_version') or package_data.get('min_fetchable_version')
                     if pkg_min_server_ver:
                         from src._version import APP_VERSION
                         from src.services.scraper_manager import _version_satisfies
@@ -1625,8 +1657,8 @@ async def load_resources_stream(
                                 # 保存版本信息
                                 if versions_data:
                                     try:
-                                        # 从 package_data 读取全局版本限制字段
-                                        pkg_min_ver = package_data.get('min_server_version')
+                                        # 从 package_data 读取全局版本限制字段（两字段语义相同）
+                                        pkg_min_ver = package_data.get('min_server_version') or package_data.get('min_fetchable_version')
                                         full_versions_data = {
                                             "platform": platform_info['platform'],
                                             "type": platform_info['arch'],
@@ -1855,7 +1887,11 @@ async def download_progress_stream(
                 break
 
             # 任务完成则退出（备用逻辑，正常情况下应该通过 restart_pending 退出）
-            if current_task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
+            # why：FAILED/CANCELLED 路径不设 restart_pending，必须靠此处退出；
+            #      同时兼容 status 为枚举成员或字符串值两种情况（避免 in 比较失效）。
+            _terminal_values = {TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value}
+            _status_val = current_task.status.value if hasattr(current_task.status, 'value') else str(current_task.status)
+            if _status_val in _terminal_values:
                 logger.info(f"[SSE] 任务 {task_id} 状态为 {current_task.status.value}，准备发送 done 消息")
                 # 等待一小段时间，确保前端有时间处理最后的 progress 消息
                 await asyncio.sleep(0.1)
@@ -2190,12 +2226,18 @@ def _persist_new_version_to_backup(extract_dir: Path, release_version: str) -> N
             shutil.copy2(f, BACKUP_DIR / f.name)
             backup_count += 1
 
-    # 2) 从临时目录的 package.json 提取各源版本号与当前平台哈希
-    platform_info = get_platform_info()
-    platform_key = f"{platform_info['platform']}_{platform_info['arch']}"
+    # 2) 从临时目录的 package.json / versions.json 提取各源版本号与哈希
+    # why：全量替换包（tar.gz）不含 package.json，版本和哈希信息在 versions.json 里；
+    #      多平台包（zip）可能包含 package.json，其哈希字段是 {platform_key: hash}；
+    #      单平台包（tar.gz，主流格式）versions.json 里 hashes 是 {scraper_name: hash}——
+    #      直接复用即可，无需按 platform_key 查找。
+    platform_info = get_platform_info()  # 写 versions.json 时需要 platform/arch 字段
+    platform_key = get_platform_key()   # 统一用连字符格式：linux-x86
     scrapers_versions: Dict[str, str] = {}
     scrapers_hashes: Dict[str, str] = {}
     min_server_version = None
+
+    # 优先从 package.json 读（多平台包格式）
     tmp_package_file = extract_dir / "package.json"
     if tmp_package_file.exists():
         try:
@@ -2206,19 +2248,29 @@ def _persist_new_version_to_backup(extract_dir: Path, release_version: str) -> N
                     ver = scraper_info.get('version')
                     if ver:
                         scrapers_versions[scraper_name] = ver
+                    # package.json 里哈希键是连字符格式 platform_key（如 linux-x86）
                     hashes = scraper_info.get('hashes', {}) or {}
                     if platform_key in hashes:
                         scrapers_hashes[scraper_name] = hashes[platform_key]
         except Exception as e:
             logger.warning(f"读取临时 package.json 版本信息失败: {e}")
 
-    # 临时目录若自带 versions.json，也读取其 min_server_version 作为兜底
+    # 回退到 versions.json（单平台包格式，tar.gz 主流路径）
+    # why：单平台 tar.gz 包只含 versions.json，其 scrapers={name:ver}, hashes={name:hash}，
+    #      直接就是需要写入备份的结构，无需额外 platform_key 查找。
     tmp_versions_file = extract_dir / "versions.json"
-    if not min_server_version and tmp_versions_file.exists():
+    if tmp_versions_file.exists():
         try:
-            min_server_version = json.loads(tmp_versions_file.read_text(encoding="utf-8")).get('min_server_version')
-        except Exception:
-            pass
+            tmp_ver_data = json.loads(tmp_versions_file.read_text(encoding="utf-8"))
+            if not min_server_version:
+                min_server_version = tmp_ver_data.get('min_server_version')
+            # 若 package.json 未读到版本/哈希，从 versions.json 补充
+            if not scrapers_versions:
+                scrapers_versions = tmp_ver_data.get('scrapers', {}) or {}
+            if not scrapers_hashes:
+                scrapers_hashes = tmp_ver_data.get('hashes', {}) or {}
+        except Exception as e:
+            logger.warning(f"读取临时 versions.json 版本信息失败: {e}")
 
     # 3) 写备份目录的 versions.json（关键：updated_at=当前时间，version=新版）
     versions_data = {

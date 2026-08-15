@@ -151,6 +151,11 @@ def get_default_configs(settings=None, ai_prompts=None):
         # Docker 容器管理配置
         'containerName': ('misaka_danmu_server', '当前运行的 Docker 容器名称，用于重启和更新操作。'),
         'dockerImageName': ('l429609201/misaka_danmu_server:latest', 'Docker 镜像名称（含标签），用于一键更新功能。'),
+
+        # 二次元壁纸配置
+        # why：初次使用时写入默认地址，用户可在设置页替换为其他随机图源；
+        # 留空时壁纸主题仅显示本地渐变兜底，不向外部发起请求。
+        'wallpaperAcgUrl': ('https://www.loliapi.com/acg/pc/', '二次元壁纸图源地址。「二次元壁纸」页面样式的背景图将从此地址获取。留空则仅显示渐变兜底。'),
     }
 
     # 添加需要settings的配置
@@ -182,6 +187,7 @@ def get_default_configs(settings=None, ai_prompts=None):
             'aiEpisodeGroupPrompt': (ai_prompts.get('DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT', ''), 'AI剧集组选择提示词。用于指导AI从TMDB剧集组列表中选择最佳匹配。'),
             'aiCacheEnabled': ('true', '是否启用AI响应缓存。启用后，相同查询将直接返回缓存结果，降低API调用成本。'),
             'aiCacheTtl': ('3600', 'AI缓存过期时间(秒)。默认3600秒(1小时)。'),
+            'aiCallTimeout': ('60', 'AI API单次请求超时时间（秒）。对于 o3/o4 等慢速推理模型，建议调高至 120~300。'),
             # 名称转换功能配置
             'nameConversionEnabled': ('false', '是否启用名称转换功能。启用后，搜索时自动将非中文名称转换为中文。'),
             'nameConversionT2SEnabled': ('false', '是否启用繁体自动转简体。启用后，搜索时自动将繁体中文标题转换为简体。'),

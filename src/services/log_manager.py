@@ -329,28 +329,70 @@ def list_log_files() -> List[dict]:
     return files
 
 
+# 历史日志读取上限：避免超长原始响应占满接口内存并拖死浏览器排版。
+_LOG_TAIL_MAX_BYTES = 2 * 1024 * 1024
+_LOG_LINE_MAX_CHARS = 32 * 1024
+_LOG_READ_CHUNK_BYTES = 64 * 1024
+_LOG_TRUNCATED_MARKER = "……[内容过长，已截断]……"
+
+
+def _truncate_log_line(line: str) -> str:
+    """限制单条日志长度，同时保留头尾便于定位请求与错误。"""
+    if len(line) <= _LOG_LINE_MAX_CHARS:
+        return line
+    keep = (_LOG_LINE_MAX_CHARS - len(_LOG_TRUNCATED_MARKER)) // 2
+    return f"{line[:keep]}{_LOG_TRUNCATED_MARKER}{line[-keep:]}"
+
+
 def read_log_file(filename: str, tail: int = 500) -> List[str]:
-    """读取指定日志文件的最后 N 行。"""
-    log_dir = get_log_dir()
+    """从文件末尾反向读取最后 N 行，避免大文件从头扫描。"""
+    log_dir = get_log_dir().resolve()
     file_path = (log_dir / filename).resolve()
 
-    # 安全检查：防止路径穿越
-    if not str(file_path).startswith(str(log_dir.resolve())):
+    # why：只允许日志目录下的直接文件，阻止路径穿越到同前缀目录。
+    if file_path.parent != log_dir:
         raise ValueError("非法的文件路径")
-
     if not file_path.exists() or not file_path.is_file():
         raise FileNotFoundError(f"日志文件不存在: {filename}")
 
-    # 读取最后 tail 行
-    lines = []
     try:
-        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
-            from collections import deque
-            lines = list(deque(f, maxlen=tail))
-    except Exception as e:
-        raise IOError(f"读取日志文件失败: {e}")
+        with open(file_path, 'rb') as f:
+            file_size = f.seek(0, 2)
+            position = file_size
+            bytes_read = 0
+            newline_count = 0
+            chunks = []
 
-    return [line.rstrip('\n').rstrip('\r') for line in lines]
+            while position > 0 and newline_count <= tail and bytes_read < _LOG_TAIL_MAX_BYTES:
+                read_size = min(
+                    _LOG_READ_CHUNK_BYTES,
+                    position,
+                    _LOG_TAIL_MAX_BYTES - bytes_read,
+                )
+                position -= read_size
+                f.seek(position)
+                chunk = f.read(read_size)
+                chunks.append(chunk)
+                bytes_read += len(chunk)
+                newline_count += chunk.count(b'\n')
+
+        raw = b''.join(reversed(chunks))
+        byte_limited = position > 0 and bytes_read >= _LOG_TAIL_MAX_BYTES and newline_count <= tail
+
+        # 从文件中段开始时，通常丢弃开头的不完整行；若整个读取窗口只有一条
+        # 超长日志的尾部，则保留该尾部，后续再做单行截断，避免页面只剩限制提示。
+        if position > 0 and b'\n' in raw:
+            remainder = raw.split(b'\n', 1)[1]
+            if remainder:
+                raw = remainder
+
+        lines = raw.decode('utf-8', errors='replace').splitlines()[-tail:]
+        result = [_truncate_log_line(line) for line in lines]
+        if byte_limited:
+            result.insert(0, f"[日志过大，仅显示文件末尾 {_LOG_TAIL_MAX_BYTES // (1024 * 1024)} MB 内容]")
+        return result
+    except Exception as e:
+        raise IOError(f"读取日志文件失败: {e}") from e
 
 
 def subscribe_to_logs(queue: asyncio.Queue) -> None:

@@ -64,7 +64,8 @@ class AIMatcherManager:
             "ai_log_raw_response": (await self.config_manager.get("aiLogRawResponse", "false")).lower() == "true",
             "ai_thinking_enabled": (await self.config_manager.get("aiThinkingEnabled", "false")).lower() == "true",
             "ai_cache_enabled": (await self.config_manager.get("aiCacheEnabled", "true")).lower() == "true",
-            "ai_cache_ttl": int(await self.config_manager.get("aiCacheTtl", "3600"))
+            "ai_cache_ttl": int(await self.config_manager.get("aiCacheTtl", "3600")),
+            "ai_call_timeout": int(await self.config_manager.get("aiCallTimeout", "60")),
         }
 
     def _get_core_config(self, config: Dict[str, Any]) -> Dict[str, Any]:

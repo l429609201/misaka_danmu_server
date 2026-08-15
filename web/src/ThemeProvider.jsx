@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useState, useMemo } from 'react'
+﻿import { createContext, useContext, useEffect, useState, useMemo } from 'react'
 import { ConfigProvider } from 'antd'
 import { theme } from 'antd'
 import { useTranslation } from 'react-i18next'
+import { getConfig, setConfig } from './apis/index.js'
 
 import zhCN from 'antd/locale/zh_CN'
 import zhTW from 'antd/locale/zh_TW'
@@ -110,12 +111,40 @@ export const PRESET_THEME_COLORS = [
 
 const DEFAULT_PRIMARY = '#FF6B9B'
 
-// 页面样式（normal: 常规, liquid-glass: 液态玻璃）
+const GLASS_STYLES = new Set(['liquid-glass', 'glass', 'acg-glass', 'wallpaper-acg'])
+
+// why：antd v5 Card 的 headerBg 经 CSS-in-JS 注入，会给标题栏一层独立底色，
+//      与卡片主体不同透明度就形成硬边。玻璃/壁纸主题统一置为 transparent，
+//      让标题栏直接透出卡片主体的磨砂层，从而与内容区完全一致。
+function getCardHeaderBg(pageStyle) {
+  return GLASS_STYLES.has(pageStyle) ? 'transparent' : undefined
+}
+
+// 页面样式（纯 CSS 主题，通过 <html data-page-style="..."> 切换）
+// why：页面样式只负责「布局质感」——圆角、投影、毛玻璃、边框、背景纹理；
+// 配色由主题色（--color-primary）与明暗模式各自负责，样式不得覆写颜色变量，
+// 否则会与这两者打架、且无法跟随明暗切换。
 export const PAGE_STYLES = [
-  { key: 'normal', name: '常规' },
-  { key: 'liquid-glass', name: '液态玻璃' },
+  { key: 'normal',        name: '常规' },
+  { key: 'liquid-glass',  name: '液态玻璃' },
+  { key: 'glass',         name: '云海玻璃' },
+  { key: 'acg-glass',     name: '二次元玻璃' },
+  { key: 'wallpaper-acg', name: '二次元壁纸' },
+  { key: 'sakura',        name: '樱花物语' },
+  { key: 'paper',         name: '纸感极简' },
+  { key: 'calendar',      name: '挂历' },
+  { key: 'github',        name: '代码仓库' },
+  { key: 'material',      name: '质感设计' },
 ]
 const DEFAULT_PAGE_STYLE = 'normal'
+
+// 已移除的页面样式：读到这些历史值时回落到 normal，避免旧 localStorage 卡在无 CSS 的空样式
+const REMOVED_PAGE_STYLES = new Set([
+  'terminal', 'neon', 'acg-starry', 'acg-peach', 'acg-cyber', 'bing-mist', 'bing-night',
+])
+
+// 需要背景图的页面样式：未配置地址时仅显示渐变兜底
+export const WALLPAPER_STYLE_KEYS = ['wallpaper-acg']
 
 // 创建上下文
 const ThemeContext = createContext()
@@ -127,8 +156,31 @@ export function ThemeProvider({ children }) {
     return localStorage.getItem('themeColor') || DEFAULT_PRIMARY
   })
   const [pageStyle, setPageStyleState] = useState(() => {
-    return localStorage.getItem('pageStyle') || DEFAULT_PAGE_STYLE
+    const saved = localStorage.getItem('pageStyle')
+    // 历史已移除的样式回落为默认值
+    if (!saved || REMOVED_PAGE_STYLES.has(saved)) return DEFAULT_PAGE_STYLE
+    return saved
   })
+  // 自定义壁纸地址：优先用 localStorage 缓存（用户手动改过的值），
+  // 若本地没有缓存则从后端读取 wallpaperAcgUrl 配置作为默认值。
+  // why：默认值存在数据库，首次使用自动写入 https://www.loliapi.com/acg/pc/，
+  // 管理员可在设置页替换为其他随机图源，无需重启生效。
+  const [wallpaperUrl, setWallpaperUrlState] = useState(() => {
+    return localStorage.getItem('wallpaperUrl') || ''
+  })
+
+  // 初始化：若 localStorage 没有壁纸地址，从后端获取默认值
+  useEffect(() => {
+    if (localStorage.getItem('wallpaperUrl')) return
+    getConfig('wallpaperAcgUrl').then(res => {
+      const url = res?.data?.value || ''
+      if (url) {
+        setWallpaperUrlState(url)
+        // why：不写入 localStorage，保持"db 是默认源"的语义；
+        // 用户在设置页手动修改后才写入 localStorage，优先级高于 db 默认值。
+      }
+    }).catch(() => {/* 获取失败静默降级，保持渐变兜底 */})
+  }, [])
   const [language, setLanguageState] = useState(() => {
     return localStorage.getItem('lang') || i18n.language || DEFAULT_LANG
   })
@@ -190,10 +242,37 @@ export function ThemeProvider({ children }) {
     localStorage.setItem('pageStyle', style)
   }
 
+  // 设置壁纸地址并持久化（传空字符串即清除，恢复无图状态）
+  const setWallpaperUrl = (url) => {
+    const next = (url || '').trim()
+    setWallpaperUrlState(next)
+    if (next) localStorage.setItem('wallpaperUrl', next)
+    else localStorage.removeItem('wallpaperUrl')
+  }
+
   // 把 pageStyle 写到 <html> 的 data-page-style 属性，全局 CSS 据此切换
   useEffect(() => {
     document.documentElement.setAttribute('data-page-style', pageStyle)
   }, [pageStyle])
+
+  // 壁纸地址 → CSS 变量 --ani-wallpaper
+  // why：壁纸主题的 background-image 直接用 var(--ani-wallpaper)，不带任何内置默认值。
+  // 未填写时移除该变量，background-image 求值失败即不加载图片，只剩渐变兜底，
+  // 因此项目默认不会向任何第三方域名发起请求。
+  useEffect(() => {
+    const root = document.documentElement
+    if (wallpaperUrl) {
+      // 仅允许 http/https，避免 javascript: 等协议注入
+      if (/^https?:\/\//i.test(wallpaperUrl)) {
+        // 转义反斜杠与引号，防止提前闭合 url("...") 注入额外 CSS
+        const escaped = wallpaperUrl.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+        root.style.setProperty('--ani-wallpaper', `url("${escaped}")`)
+        return
+      }
+      console.warn('[ThemeProvider] 壁纸地址必须以 http:// 或 https:// 开头，已忽略:', wallpaperUrl)
+    }
+    root.style.removeProperty('--ani-wallpaper')
+  }, [wallpaperUrl])
 
   // 初始化：检查系统偏好或本地存储
   useEffect(() => {
@@ -266,6 +345,8 @@ export function ThemeProvider({ children }) {
         borderRadius: 12,
         boxShadow: `0 4px 16px ${colors.shadowLight}`,
         colorBorder: colors.light.border,
+        // why：直接传入对应主题的 RGBA 值，绕开 CSS-in-JS 插入顺序问题
+        ...(getCardHeaderBg(pageStyle) !== undefined && { headerBg: getCardHeaderBg(pageStyle) }),
       },
       Tabs: {
         colorPrimary: colors.primary,
@@ -292,7 +373,7 @@ export function ThemeProvider({ children }) {
         hoverBorderColor: colors.primary,
       },
     },
-  }), [colors])
+  }), [colors, pageStyle])
 
   const darkTheme = useMemo(() => ({
     algorithm: darkAlgorithm,
@@ -330,6 +411,8 @@ export function ThemeProvider({ children }) {
         boxShadow: `0 4px 16px ${colors.shadow}`,
         colorBorder: '#334155',
         colorBgContainer: '#1E293B',
+        // why：直接传入对应主题的 RGBA 值，绕开 CSS-in-JS 插入顺序问题
+        ...(getCardHeaderBg(pageStyle) !== undefined && { headerBg: getCardHeaderBg(pageStyle) }),
       },
       Tabs: {
         colorPrimary: colors.primary,
@@ -382,10 +465,10 @@ export function ThemeProvider({ children }) {
       Switch: { colorPrimaryHover: colors.hover },
       Segmented: { colorBgLayout: '#273449', itemSelectedBg: '#1E293B' },
     },
-  }), [colors])
+  }), [colors, pageStyle])
 
   return (
-    <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle, language, setLanguage }}>
+    <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle, wallpaperUrl, setWallpaperUrl, language, setLanguage }}>
       <ConfigProvider locale={ANTD_LOCALES[language] || zhCN} theme={isDark ? darkTheme : lightTheme}>
         {children}
       </ConfigProvider>

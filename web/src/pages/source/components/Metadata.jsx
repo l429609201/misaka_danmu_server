@@ -101,7 +101,8 @@ const SortableItem = ({ item, index, handleChangeStatus, onConfig }) => {
       <div
         {...attributes}
         {...listeners}
-        className="w-full rounded-xl border px-4 py-3 flex items-center justify-between transition-all hover:shadow-md"
+        // why: 加 metadata-sortable-item 类名，让壁纸/毛玻璃主题可用 !important 覆盖 inline style 实色背景
+        className="metadata-sortable-item w-full rounded-xl border px-4 py-3 flex items-center justify-between transition-all hover:shadow-md"
         style={{ background: 'var(--color-card)', borderColor: 'var(--color-border)', cursor: isDragging ? 'grabbing' : 'grab' }}
       >
         <div className="flex items-center gap-2">
@@ -353,7 +354,9 @@ export const Metadata = () => {
 
   return (
     <div className="my-6">
-      <Card loading={loading} title={t('metadata.metadataSearchSource')}>
+      {/* why：加 scraper-panel-card 类名，与弹幕搜索源卡片（Scrapers.jsx）使用同一套
+          壁纸/玻璃主题强磨砂透明规则，保证两个标签页观感一致 */}
+      <Card loading={loading} title={t('metadata.metadataSearchSource')} className="scraper-panel-card">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}

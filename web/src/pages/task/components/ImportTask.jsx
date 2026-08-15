@@ -1,4 +1,4 @@
-import { useNavigate, useSearchParams } from 'react-router-dom'
+﻿import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   deleteTask,
   getTaskList,
@@ -105,6 +105,7 @@ export const ImportTask = () => {
 
   const [searchParams] = useSearchParams()
   const [queueFilter, setQueueFilter] = useState('all') // 队列类型过滤: all, download, management
+  const [expandedDesc, setExpandedDesc] = useState(new Set()) // 展开描述的 taskId 集合
   const [searchInputValue, setSearchInputValue] = useState('')
 
   const [search, status] = useMemo(() => {
@@ -478,10 +479,10 @@ export const ImportTask = () => {
 
     return (
       <div
-        className={`p-4 rounded-lg transition-all relative cursor-pointer ${isActive
-            ? 'shadow-lg ring-2 ring-pink-400/50 bg-pink-50/30 dark:bg-pink-900/10'
-            : 'hover:shadow-md hover:bg-gray-50 dark:hover:bg-gray-800/30'
-          }`}
+        className="p-4 rounded-lg transition-all relative cursor-pointer border" 
+        style={{ background: isActive ? 'rgba(219,234,254,0.5)' : 'rgba(243,244,246,0.45)', border: isActive ? '1px solid #60a5fa' : '1px solid rgba(209,213,219,0.5)' }}
+
+
         onClick={() => {
           setSelectList(list => {
             return list.map(it => it.taskId).includes(item.taskId)
@@ -491,93 +492,62 @@ export const ImportTask = () => {
         }}
       >
         <div className="space-y-3 relative">
+          {/* 右上角圆形打钉角标，仅选中时显示 */}
           {isActive && (
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-pink-400 rounded-full border-2 border-white dark:border-gray-800 z-10"></div>
+            <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs z-10">✓</div>
           )}
 
-          {/* 标题区域 */}
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-3 flex-1 min-w-0">
-              <div className="flex-shrink-0 mt-0.5">
-                {getQueueIcon(item.queueType)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-base break-words mb-2">
-                  {item.title}
-                </div>
-                <div className="flex flex-wrap gap-1 mb-2">
-                  <Tag
-                    color={
-                      item.status.includes('失败')
-                        ? 'red'
-                        : item.status.includes('运行中')
-                          ? 'green'
-                          : item.status.includes('已暂停')
-                            ? 'orange'
-                            : item.status.includes('已完成')
-                              ? 'blue'
-                              : 'default'
-                    }
-                    className="text-xs"
-                  >
-                    {item.status}
-                  </Tag>
-                  <Tag
-                    color={
-                      item.queueType === 'management'
-                        ? 'cyan'
-                        : item.queueType === 'fallback'
-                          ? 'orange'
-                          : 'geekblue'
-                    }
-                    className="text-xs"
-                  >
-                    {item.queueType === 'management'
-                      ? t('importTask.typeManagement')
-                      : item.queueType === 'fallback'
-                        ? t('importTask.typeFallback')
-                        : t('importTask.typeDownload')}
-                  </Tag>
-                </div>
-              </div>
+          {/* 第一行：标题 */}
+          <div className="flex items-center gap-2">
+            <div className="flex-shrink-0">{getQueueIcon(item.queueType)}</div>
+            <div className="font-semibold text-base break-words flex-1 min-w-0">{item.title}</div>
+          </div>
+
+          {/* 第二行：描述，超长可展开 */}
+          {item.description && (
+            <div>
+              <div
+                className={"text-sm text-gray-600 dark:text-gray-400 " + (expandedDesc.has(item.taskId) ? '' : 'line-clamp-2')}
+                style={{ wordBreak: 'break-all' }}
+              >{item.description}</div>
+              {item.description.length > 60 && (
+                <span
+                  className="text-xs text-blue-500 cursor-pointer select-none"
+                  onClick={e => {
+                    e.stopPropagation()
+                    setExpandedDesc(prev => {
+                      const next = new Set(prev)
+                      next.has(item.taskId) ? next.delete(item.taskId) : next.add(item.taskId)
+                      return next
+                    })
+                  }}
+                >{expandedDesc.has(item.taskId) ? '收起' : '展开'}</span>
+              )}
+            </div>
+          )}
+
+          {/* 第三行：时间在左，状态Tag+队列Tag在右 */}
+          <div className="flex items-center justify-between gap-2">
+            {item.createdAt ? (
+              <Tag style={{ fontSize: 11, margin: 0 }}>
+                {(()=>{ const d=new Date(item.createdAt),p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); })()}
+              </Tag>
+            ) : <div />}
+            <div className="flex gap-1 flex-shrink-0">
+              <Tag color={item.status.includes('失败')?'red':item.status.includes('运行中')?'green':item.status.includes('已暂停')?'orange':item.status.includes('已完成')?'blue':'default'} style={{ fontSize: 11, margin: 0 }}>{item.status}</Tag>
+              <Tag color={item.queueType==='management'?'cyan':item.queueType==='fallback'?'orange':'geekblue'} style={{ fontSize: 11, margin: 0 }}>
+                {item.queueType==='management'?t('importTask.typeManagement'):item.queueType==='fallback'?t('importTask.typeFallback'):t('importTask.typeDownload')}
+              </Tag>
             </div>
           </div>
 
-          {/* 描述 */}
-          {item.description && (
-            <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
-              {item.description}
-            </div>
-          )}
-
-          {/* 时间 */}
-          {item.createdAt && (
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              {(() => {
-                const date = new Date(item.createdAt)
-                const year = date.getFullYear()
-                const month = String(date.getMonth() + 1).padStart(2, '0')
-                const day = String(date.getDate()).padStart(2, '0')
-                const hour = String(date.getHours()).padStart(2, '0')
-                const minute = String(date.getMinutes()).padStart(2, '0')
-                const second = String(date.getSeconds()).padStart(2, '0')
-                return `${year}-${month}-${day} ${hour}:${minute}:${second}`
-              })()}
-            </div>
-          )}
-
-          {/* 进度条 */}
-          <div className="pt-2">
+          {/* 第四行：进度条 */}
+          <div>
             <Progress
-              percent={item.progress}
-              status={item.status.includes('失败') && 'exception'}
-              strokeColor={item.status.includes('失败') ? undefined : {
-                '0%': '#108ee9',
-                '100%': '#87d068',
-              }}
-              strokeWidth={8}
-              showInfo={true}
-              size="small"
+              percent={item.status.includes('失败') ? 100 : item.progress}
+              status={item.status.includes('失败') ? 'exception' : undefined}
+              strokeColor={item.status.includes('失败') ? undefined : {'0%':'#108ee9','100%':'#87d068'}}
+              strokeWidth={8} showInfo={true} size="small"
             />
           </div>
         </div>
@@ -876,21 +846,9 @@ export const ImportTask = () => {
                             : [...list, item]
                         })
                       }}
-                      style={{ padding: '16px 24px' }}
-                    >
-                      <div
-                        className={classNames('relative w-full', {
-                          'pl-9': isActive,
-                        })}
-                      >
-                        {isActive && (
-                          <Checkbox
-                            checked={isActive}
-                            className="absolute top-1/2 left-0 transform -translate-y-1/2"
-                          />
-                        )}
-
-                        {/* 第一行: 标题 + 状态标签 + 队列标签 */}
+                      className={`!px-4 !py-4 !rounded-xl !border !mb-2 transition-all cursor-pointer relative ${isActive ? '!border-blue-500 !bg-blue-50/60 dark:!bg-blue-900/20' : '!border-gray-200 dark:!border-white/10 hover:!border-blue-300'}`}>
+                      {isActive && (<div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs z-10">✓</div>)}
+                      <div className="relative w-full">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                           <div className="text-base font-semibold" style={{ flex: 1 }}>
                             <span style={{ marginRight: '8px', fontSize: '18px' }}>
@@ -969,8 +927,8 @@ export const ImportTask = () => {
 
                         {/* 第三行: 进度条 */}
                         <Progress
-                          percent={item.progress}
-                          status={item.status.includes('失败') && 'exception'}
+                          percent={item.status.includes('失败') ? 100 : item.progress}
+                          status={item.status.includes('失败') ? 'exception' : undefined}
                           strokeColor={item.status.includes('失败') ? undefined : {
                             '0%': '#108ee9',
                             '100%': '#87d068',

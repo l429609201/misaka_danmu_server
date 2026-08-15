@@ -76,11 +76,16 @@ class TelegramChannel(BaseNotificationChannel):
 
     @staticmethod
     def _strip_markdown_v2(text: str) -> str:
-        """将 MarkdownV2 文本清洗为纯文本（去转义反斜杠、引用块 > 前缀、加粗/代码符号）"""
+        """将 MarkdownV2 文本清洗为纯文本（去转义反斜杠、引用块 > 前缀、加粗/代码符号、Markdown 链接）"""
         if not text:
             return ""
+        import re as _re
+        # 先把 [显示文字](URL) 替换为"显示文字"，避免 send_photo 图片 URL 非 HTTPS 失败时
+        # 降级发纯文本却把 Markdown 链接语法原样打印给用户（TG 不渲染无 parse_mode 的链接）。
+        # why：_strip 只处理反斜杠转义和 */` 符号，[text](url) 完全不处理，是泄漏根源。
+        text = _re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', str(text))
         lines = []
-        for line in str(text).split("\n"):
+        for line in text.split("\n"):
             if line.startswith(">"):
                 line = line[1:]
             out = []
@@ -115,6 +120,7 @@ class TelegramChannel(BaseNotificationChannel):
                 "key": "chat_id",
                 "label": "Chat ID",
                 "type": "string",
+                "rowGroup": "tg_id_row1",
                 "description": "默认消息接收者的 Chat ID，用于接收系统通知",
                 "description_en": "Default Chat ID for receiving system notifications",
                 "description_tw": "預設訊息接收者的 Chat ID，用於接收系統通知",
@@ -126,6 +132,7 @@ class TelegramChannel(BaseNotificationChannel):
                 "label_en": "Admin User IDs",
                 "label_tw": "管理員使用者ID",
                 "type": "string",
+                "rowGroup": "tg_id_row1",
                 "description": "拥有管理权限的用户ID，多个用逗号分隔",
                 "description_en": "User IDs with admin privileges, separated by commas",
                 "description_tw": "擁有管理權限的使用者ID，多個用逗號分隔",
@@ -137,6 +144,7 @@ class TelegramChannel(BaseNotificationChannel):
                 "label_en": "Allowed User IDs",
                 "label_tw": "允許的使用者ID",
                 "type": "string",
+                "rowGroup": "tg_id_row2",
                 "description": "允许使用 Bot 交互的用户ID，多个用逗号分隔。留空则仅管理员可用",
                 "description_en": "User IDs allowed to interact with the Bot, separated by commas. Leave empty for admin-only",
                 "description_tw": "允許使用 Bot 互動的使用者ID，多個用逗號分隔。留空則僅管理員可用",
@@ -185,6 +193,7 @@ class TelegramChannel(BaseNotificationChannel):
                 "label_en": "API Outbound Proxy",
                 "label_tw": "API 出網代理位址",
                 "type": "string",
+                "rowGroup": "tg_id_row2",
                 "description": "填入 VPS 地址（如 http://vps.example.com），Bot 的 API 请求将通过 VPS 出网，解决国内 IP 被封锁的问题。留空则直连 api.telegram.org",
                 "description_en": "Enter VPS address (e.g. http://vps.example.com). Bot API requests will go through VPS to bypass IP blocks. Leave empty to connect directly to api.telegram.org.",
                 "description_tw": "填入 VPS 位址（如 http://vps.example.com），Bot 的 API 請求將透過 VPS 出網，解決國內 IP 被封鎖的問題。留空則直連 api.telegram.org",
@@ -837,10 +846,17 @@ class TelegramChannel(BaseNotificationChannel):
                 except Exception as photo_err:
                     photo_err_str = str(photo_err).lower()
                     if "can't parse entities" in photo_err_str:
-                        self.logger.warning(f"send_photo MarkdownV2 解析失败，降级为纯文本: {photo_err}")
+                        # MarkdownV2 语法错误：图片能发，只是 caption 解析失败，降级纯文本 caption
+                        self.logger.warning(f"send_photo MarkdownV2 解析失败，降级为纯文本 caption: {photo_err}")
                         sent = await asyncio.to_thread(self._bot.send_photo, chat_id, image, caption=plain_caption, reply_markup=markup)
                     else:
-                        raise
+                        # 图片 URL 不可访问（如 HTTP 地址被 TG 拒绝）或其他网络错误：
+                        # 图片发不出去，降级为发纯文字消息，不再 raise 让外层兜底。
+                        # why：外层 except 的 _strip_markdown_v2 不处理 [text](url) 链接语法，
+                        # 会把 [海报](URL) 原样打印到消息里（TG 纯文本不渲染 Markdown 链接）。
+                        # 改为就地降级，plain_caption 已经过 _strip_markdown_v2 完整清洗。
+                        self.logger.warning(f"send_photo 图片发送失败，降级为纯文字消息（图片 URL 可能不可访问）: {photo_err}")
+                        sent = await asyncio.to_thread(self._bot.send_message, chat_id, plain_caption, reply_markup=markup)
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)
             else:

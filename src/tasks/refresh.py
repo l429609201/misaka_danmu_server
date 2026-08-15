@@ -312,7 +312,8 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
 
         if not all_comments_from_source:
             # 不更新 fetched_at，保留旧时间戳，让下次请求仍能触发自动刷新
-            raise TaskSuccess("未找到任何弹幕。")
+            # why：刷新时源站返回0条弹幕属于真实失败，标记任务失败而非已完成
+            raise TaskFailed("未找到任何弹幕。")
 
 
         await progress_callback(96, f"正在写入 {len(all_comments_from_source)} 条新弹幕...")

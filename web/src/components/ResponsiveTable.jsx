@@ -1,4 +1,4 @@
-import React from 'react'
+﻿import React from 'react'
 import { Table, Card, Space, Empty } from 'antd'
 import { useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
@@ -48,15 +48,10 @@ export const ResponsiveTable = ({
             {dataSource.map((item, index) => {
               const onRowProps = onRow ? onRow(item, index) : {}
               return (
-                <Card
-                  key={item[rowKey] || index}
-                  size="small"
-                  className={classNames("shadow-sm hover:shadow-md transition-shadow", onRowProps.style)}
-                  onClick={onRowProps.onClick}
-                  {...cardProps}
-                >
+                // 移动端不加外层 Card，由 renderCard 自行控制卡片样式，避免双层卡片
+                <div key={item[rowKey] || index}>
                   {renderCard ? renderCard(item, index) : <DefaultCardContent item={item} columns={columns} />}
-                </Card>
+                </div>
               )
             })}
             {pagination && dataSource.length > 0 && (

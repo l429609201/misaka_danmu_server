@@ -711,7 +711,9 @@ async def get_comments_for_dandan(
                                 logger.warning(f"写入整季缓存失败: {e}")
 
                         await progress_callback(100, "完成")
-                        return comments
+                        # why：普通后备下载通过返回业务消息，把本次源站实际获取数量
+                        # 传给 TaskManager，供任务历史与完成通知展示。
+                        return f"后备下载完成，共获取 {len(comments)} 条弹幕"
 
                     except TaskSuccess:
                         raise  # TaskSuccess 直接穿透到 task_manager
@@ -1263,7 +1265,9 @@ async def get_comments_for_dandan(
                                     # 不再写入缓存,弹幕已经保存到数据库和XML文件
                                     # 外部会话会从数据库读取episode记录和弹幕文件
                                     logger.info(f"弹幕已保存到数据库和文件,任务完成")
-                                    return raw_comments_data
+                                    # why：后备搜索落到普通下载通知时，也必须携带源站实际获取数，
+                                    # 避免成功通知只显示笼统的“任务成功完成”。
+                                    return f"后备下载完成，共获取 {len(raw_comments_data)} 条弹幕"
                             else:
                                 logger.warning(f"获取弹幕失败")
                                 raise TaskSuccess("获取弹幕失败，源站未返回数据")

@@ -511,13 +511,19 @@ class TaskManager:
 
                 running_task = asyncio.create_task(actual_coroutine)
                 task.running_coro_task = running_task
-                await running_task
+                task_result = await running_task
 
+                # why：允许任务以非空字符串返回业务完成消息，避免正常返回路径把
+                # “新增 N 条弹幕”等结果覆盖成笼统的“任务成功完成”。
+                final_message = task_result if isinstance(task_result, str) and task_result.strip() else "任务成功完成"
                 await crud.finalize_task_in_history(
-                    session, task.task_id, TaskStatus.COMPLETED, "任务成功完成"
+                    session, task.task_id, TaskStatus.COMPLETED, final_message
                 )
-                self.logger.info(f"任务 '{task.title}' (ID: {task.task_id}) 已成功完成 [队列: {queue_type}]。")
-                await self._emit_task_event(task, True, "任务成功完成")
+                self.logger.info(
+                    f"任务 '{task.title}' (ID: {task.task_id}) 已成功完成，消息: {final_message} "
+                    f"[队列: {queue_type}]。"
+                )
+                await self._emit_task_event(task, True, final_message)
         except TaskPauseForRateLimit as e:
             # 任务因速率限制需要暂停
             self.logger.info(f"任务 '{task.title}' (ID: {task.task_id}) 因速率限制暂停 {e.retry_after_seconds:.0f} 秒")

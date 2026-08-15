@@ -248,8 +248,16 @@ async def unified_search(
         def normalize_for_filtering(title: str) -> str:
             if not title: return ""
             import re
-            title = re.sub(r'[\[【(（].*?[\]】)）]', '', title)
-            return title.lower().replace(" ", "").replace("：", ":").strip()
+            # why: 只剥掉括号符号，保留括号内的内容。
+            # 原先的 re.sub(r'[\[【(（].*?[\]】)）]', ...) 会把 "【我推的孩子】 第二季"
+            # 处理成 "第二季"——这是无意义的通用词，fuzz.partial_ratio 会让所有含"第二季"
+            # 的搜索结果（如"蜡笔小新 第二季"）都通过过滤，产生大量误包含。
+            # 正确做法是只移除括号符号本身，保留内容：
+            #   "【我推的孩子】 第二季" → "我推的孩子 第二季"
+            #   "【我推的孩子】"       → "我推的孩子"
+            #   "[1080P][剧名]"       → "1080P剧名"（含质量标识也不影响匹配精度）
+            cleaned = re.sub(r'[【】\[\]（）()]', '', title).strip()
+            return cleaned.lower().replace(" ", "").replace("：", ":").strip()
 
         normalized_filter_aliases = {normalize_for_filtering(alias) for alias in filter_aliases if alias}
         filtered_results = []
