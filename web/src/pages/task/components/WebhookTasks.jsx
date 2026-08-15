@@ -222,13 +222,19 @@ export const WebhookTasks = () => {
                     <div
                       onClick={() => handleSelectionChange(item, !isSelected)}
                       className={[
-                        'w-full flex items-center justify-between px-4 py-3 rounded-xl cursor-pointer transition-all duration-150',
-                        'border',
+                        'relative w-full flex items-center justify-between px-4 py-3 rounded-xl cursor-pointer transition-all duration-150',
+                        'border backdrop-blur-sm',
                         isSelected
-                          ? 'border-blue-500 bg-blue-50 shadow-sm'
-                          : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-gray-50',
+                          ? 'border-blue-400 bg-blue-500/10 shadow-sm'
+                          : 'border-white/40 bg-white/60 hover:border-blue-300/60 hover:bg-white/70',
                       ].join(' ')}
                     >
+                      {/* 选中状态右上角打钩徽章 */}
+                      {isSelected && (
+                        <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+                          <CheckOutlined style={{ fontSize: 9, color: '#fff' }} />
+                        </span>
+                      )}
                       <div className="flex-1 min-w-0 pr-3">
                         <div className="text-base mb-1 truncate">{item.taskTitle}</div>
                         <div className="text-gray-500 text-sm flex flex-wrap gap-x-2">
@@ -243,7 +249,8 @@ export const WebhookTasks = () => {
                           </span>
                         </div>
                       </div>
-                      <Tag color={getStatusTagType(item.status)} className="shrink-0">
+                      {/* 状态 tag 与右上角打钩不重叠，留出右侧空间 */}
+                      <Tag color={getStatusTagType(item.status)} className={['shrink-0', isSelected ? 'mr-5' : ''].join(' ')}>
                         {translateStatus(item.status, t)}
                       </Tag>
                     </div>
