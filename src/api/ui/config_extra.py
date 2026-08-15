@@ -829,11 +829,10 @@ async def test_ai_connection(
             "Content-Type": "application/json"
         }
 
-        # 新版 OpenAI 模型（o1/o3/o4/gpt-4.1 系列）使用 max_completion_tokens
-        _new_series = ("o1", "o3", "o4", "gpt-4.1", "gpt-4o-2024")
-        _token_key = "max_completion_tokens" if any(
-            request.model.startswith(p) for p in _new_series
-        ) else "max_tokens"
+        # 新版 OpenAI 模型统一使用 max_completion_tokens；
+        # deepseek/siliconflow 等第三方兼容接口保留旧版 max_tokens
+        _third_party = ("deepseek", "siliconflow")
+        _token_key = "max_tokens" if request.provider.lower() in _third_party else "max_completion_tokens"
         payload = {
             "model": request.model,
             "messages": [

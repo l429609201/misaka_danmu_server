@@ -463,20 +463,27 @@ export const Notification = () => {
         }
       >
         <Form form={form} layout="vertical">
-          <Form.Item label={t('notification.fieldName')} name="name" rules={[{ required: true, message: t('notification.fieldNameRequired') }]}>
-            <Input placeholder={t('notification.fieldNamePlaceholder')} />
-          </Form.Item>
-          <Form.Item label={t('notification.fieldChannelType')} name="channelType" rules={[{ required: true }]}>
-            <Select disabled={!!editingChannel} onChange={(val) => {
-              if (!editingChannel) {
-                form.setFieldsValue({ name: generateChannelName(val), config: {} })
-              }
-            }}>
-              {channelTypes.map(ct => (
-                <Select.Option key={ct.channelType} value={ct.channelType}>{getLocalizedField(ct, 'displayName')}</Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
+          {/* 渠道名称 + 渠道类型并排在同一行（移动端退化为单列） */}
+          <Row gutter={16}>
+            <Col span={isMobile ? 24 : 12}>
+              <Form.Item label={t('notification.fieldName')} name="name" rules={[{ required: true, message: t('notification.fieldNameRequired') }]}>
+                <Input placeholder={t('notification.fieldNamePlaceholder')} />
+              </Form.Item>
+            </Col>
+            <Col span={isMobile ? 24 : 12}>
+              <Form.Item label={t('notification.fieldChannelType')} name="channelType" rules={[{ required: true }]}>
+                <Select disabled={!!editingChannel} onChange={(val) => {
+                  if (!editingChannel) {
+                    form.setFieldsValue({ name: generateChannelName(val), config: {} })
+                  }
+                }}>
+                  {channelTypes.map(ct => (
+                    <Select.Option key={ct.channelType} value={ct.channelType}>{getLocalizedField(ct, 'displayName')}</Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
           <Row gutter={24}>
             <Col span={currentSchema.some(f => f.key === 'log_raw') ? 8 : (currentHideProxy ? 24 : 12)}>
               <Form.Item label={t('notification.fieldEnabled')} name="isEnabled" valuePropName="checked">
@@ -501,23 +508,74 @@ export const Notification = () => {
             )}
           </Row>
 
-          {/* 渲染 schema 字段：桌面端将相邻的两个开关字段合并成一行两列，避免每个开关独占一行造成大量右侧留白 */}
+          {/* 渲染 schema 字段，布局规则（优先级从高到低）：
+              1. schema 声明 rowGroup 的字段 → 同组字段收集后并排渲染（无论在 schema 中是否相邻）
+              2. 相邻两个 boolean 开关 → 两列并排
+              3. 其余字段（switch/segmented/slider 及普通输入框）→ 独占整行
+              why：halfWidth 依赖相邻顺序，当两个需要并排的字段中间夹着 switch/slider 等
+              其他字段时（如 allowed_ids 和 telegram_api_proxy 之间有 mode 字段）会配对失败；
+              rowGroup 按分组名称收集，不受字段顺序影响，可精确指定任意字段并排。 */}
           {(() => {
             const visibleFields = currentSchema.filter(f => f.key !== 'log_raw' && isFieldVisible(f))
+
+            // 第一步：按 schema 顺序收集 rowGroup，记录每组第一次出现的位置
+            // 结构：{ groupName: { firstIndex: number, fields: field[] } }
+            const rowGroupMap = {}
+            visibleFields.forEach((f, idx) => {
+              if (!f.rowGroup) return
+              if (!rowGroupMap[f.rowGroup]) {
+                rowGroupMap[f.rowGroup] = { firstIndex: idx, fields: [] }
+              }
+              rowGroupMap[f.rowGroup].fields.push(f)
+            })
+            // 已被分组消费的字段 key 集合，渲染时跳过
+            const consumedKeys = new Set(
+              Object.values(rowGroupMap).flatMap(g => g.fields.map(f => f.key))
+            )
+
+            // 第二步：按 schema 顺序遍历，在分组第一个字段的位置整体渲染该组，其余跳过
             const nodes = []
             for (let i = 0; i < visibleFields.length; i++) {
               const field = visibleFields[i]
               const nextField = visibleFields[i + 1]
-              if (!isMobile && field.type === 'boolean' && nextField?.type === 'boolean') {
+
+              // 优先级 1：rowGroup 分组 — 在组内第一个字段的位置渲染整组
+              if (field.rowGroup && rowGroupMap[field.rowGroup]?.firstIndex === i) {
+                const groupFields = rowGroupMap[field.rowGroup].fields
+                if (!isMobile && groupFields.length > 1) {
+                  // 桌面端：并排渲染，列宽按组内字段数均分
+                  const colSpan = Math.floor(24 / groupFields.length)
+                  nodes.push(
+                    <Row gutter={16} key={`rowgroup-${field.rowGroup}`}>
+                      {groupFields.map(gf => (
+                        <Col span={colSpan} key={gf.key}>{renderConfigField(gf)}</Col>
+                      ))}
+                    </Row>
+                  )
+                } else {
+                  // 移动端：组内所有字段逐一垂直渲染，不能只渲染首字段
+                  groupFields.forEach(gf => nodes.push(renderConfigField(gf)))
+                }
+                continue
+              }
+
+              // 已被分组消费的非首字段：跳过（已在首字段位置整组渲染）
+              if (consumedKeys.has(field.key)) continue
+
+              // 优先级 2：相邻两个 boolean 开关自动配对
+              if (!isMobile && field.type === 'boolean' && nextField?.type === 'boolean'
+                  && !nextField.rowGroup && !field.rowGroup) {
                 nodes.push(
-                  <Row gutter={24} key={`pair-${field.key}`}>
+                  <Row gutter={16} key={`pair-bool-${field.key}`}>
                     <Col span={12}>{renderConfigField(field)}</Col>
                     <Col span={12}>{renderConfigField(nextField)}</Col>
                   </Row>
                 )
-                i++ // 跳过已被配对渲染的下一个字段
+                i++
                 continue
               }
+
+              // 其余字段独占整行
               nodes.push(renderConfigField(field))
             }
             return nodes

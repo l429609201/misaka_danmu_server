@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Card, Select, Button, message, Space, Checkbox, Row, Col, Tag, Divider, Typography, Alert, Popconfirm, Grid, Segmented, InputNumber, Popover, Modal } from 'antd';
 import { CalendarOutlined } from '@ant-design/icons';
 import { ReloadOutlined, PlusOutlined, ScanOutlined, SettingOutlined, SaveOutlined, DatabaseOutlined, DeleteOutlined, ImportOutlined, EyeOutlined, EyeInvisibleOutlined, VideoCameraOutlined, PlaySquareOutlined, EditOutlined, CloudDownloadOutlined } from '@ant-design/icons';
@@ -24,13 +24,13 @@ const LibraryScan = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [selectedMediaItems, setSelectedMediaItems] = useState([]);
   const [showServerUrl, setShowServerUrl] = useState(false);
-  const [mediaTypeFilter, setMediaTypeFilter] = useState('all'); // 添加类型过滤状态
+  const [mediaTypeFilter, setMediaTypeFilter] = useState('all'); // 娣诲姞绫诲瀷杩囨护鐘舵€?
   const [yearFrom, setYearFrom] = useState();
   const [yearTo, setYearTo] = useState();
 
   const screens = Grid.useBreakpoint();
 
-  // 加载服务器列表
+  // 鍔犺浇鏈嶅姟鍣ㄥ垪琛?
   const loadServers = async () => {
     setLoading(true);
     try {
@@ -38,7 +38,7 @@ const LibraryScan = () => {
       const data = res.data;
       setServers(data);
 
-      // 如果有启用的服务器且没有选中,自动选中第一个
+      // 濡傛灉鏈夊惎鐢ㄧ殑鏈嶅姟鍣ㄤ笖娌℃湁閫変腑,鑷姩閫変腑绗竴涓?
       if (!selectedServerId && data.length > 0) {
         const enabledServer = data.find(s => s.isEnabled);
         if (enabledServer) {
@@ -57,10 +57,10 @@ const LibraryScan = () => {
     loadServers();
   }, []);
 
-  // 当选中的服务器变化时,加载媒体库列表
+  // 褰撻€変腑鐨勬湇鍔″櫒鍙樺寲鏃?鍔犺浇濯掍綋搴撳垪琛?
   useEffect(() => {
     if (selectedServerId) {
-      // 检查服务器是否启用
+      // 妫€鏌ユ湇鍔″櫒鏄惁鍚敤
       const currentServer = servers.find(s => s.id === selectedServerId);
       if (currentServer && currentServer.isEnabled) {
         loadLibraries();
@@ -74,15 +74,15 @@ const LibraryScan = () => {
     }
   }, [selectedServerId, servers]);
 
-  // 确保至少选择一个媒体库
+  // 纭繚鑷冲皯閫夋嫨涓€涓獟浣撳簱
   useEffect(() => {
     if (libraries.length > 0 && selectedLibraryIds.length === 0 && !loadingLibraries) {
-      // 如果没有选择任何媒体库，默认选中第一个
+      // 濡傛灉娌℃湁閫夋嫨浠讳綍濯掍綋搴擄紝榛樿閫変腑绗竴涓?
       setSelectedLibraryIds([libraries[0].id]);
     }
   }, [libraries, selectedLibraryIds, loadingLibraries]);
 
-  // 加载媒体库列表
+  // 鍔犺浇濯掍綋搴撳垪琛?
   const loadLibraries = async () => {
     if (!selectedServerId) return;
 
@@ -92,16 +92,16 @@ const LibraryScan = () => {
       const data = res.data;
       setLibraries(data);
 
-      // 从服务器配置中读取已选择的媒体库
+      // 浠庢湇鍔″櫒閰嶇疆涓鍙栧凡閫夋嫨鐨勫獟浣撳簱
       const currentServer = servers.find(s => s.id === selectedServerId);
       if (currentServer && currentServer.selectedLibraries && currentServer.selectedLibraries.length > 0) {
-        // 过滤掉不存在的媒体库ID
+        // 杩囨护鎺変笉瀛樺湪鐨勫獟浣撳簱ID
         const validSelectedLibraries = currentServer.selectedLibraries.filter(id =>
           data.some(lib => lib.id === id)
         );
         setSelectedLibraryIds(validSelectedLibraries.length > 0 ? validSelectedLibraries : [data[0]?.id].filter(Boolean));
       } else {
-        // 如果没有配置,默认选中第一个媒体库
+        // 濡傛灉娌℃湁閰嶇疆,榛樿閫変腑绗竴涓獟浣撳簱
         setSelectedLibraryIds(data.length > 0 ? [data[0].id] : []);
       }
     } catch (error) {
@@ -114,7 +114,7 @@ const LibraryScan = () => {
     }
   };
 
-  // 保存媒体库选择
+  // 淇濆瓨濯掍綋搴撻€夋嫨
   const handleSaveLibraries = async () => {
     if (!selectedServerId) {
       message.warning(t('mediaFetch.libraryScan.scanTipNoServer'));
@@ -127,7 +127,7 @@ const LibraryScan = () => {
         selectedLibraries: selectedLibraryIds
       });
       message.success(t('mediaFetch.libraryScan.saveLibrariesSuccess'));
-      // 重新加载服务器列表以更新配置
+      // 閲嶆柊鍔犺浇鏈嶅姟鍣ㄥ垪琛ㄤ互鏇存柊閰嶇疆
       await loadServers();
     } catch (error) {
       message.error(t('mediaFetch.libraryScan.saveFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
@@ -137,18 +137,18 @@ const LibraryScan = () => {
     }
   };
 
-  // 扫描媒体库
+  // 鎵弿濯掍綋搴?
   const handleScan = async () => {
     if (!selectedServerId) {
       message.warning(t('mediaFetch.libraryScan.scanTipNoServer'));
       return;
     }
 
-    // 检查是否有有效的媒体库选择
+    // 妫€鏌ユ槸鍚︽湁鏈夋晥鐨勫獟浣撳簱閫夋嫨
     const validSelections = selectedLibraryIds.filter(id => libraries.some(lib => lib.id === id));
     if (validSelections.length === 0) {
       message.warning(t('mediaFetch.libraryScan.scanTipNoLibraryShort'));
-      // 自动选择第一个有效的媒体库
+      // 鑷姩閫夋嫨绗竴涓湁鏁堢殑濯掍綋搴?
       if (libraries.length > 0) {
         setSelectedLibraryIds([libraries[0].id]);
       }
@@ -160,10 +160,10 @@ const LibraryScan = () => {
       const res = await scanMediaServer(selectedServerId, validSelections);
       const result = res.data;
       message.success(result.message || t('mediaFetch.libraryScan.scanSubmitted'));
-      // 触发列表刷新
+      // 瑙﹀彂鍒楄〃鍒锋柊
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
-      // axios拦截器已统一转换为message字段
+      // axios鎷︽埅鍣ㄥ凡缁熶竴杞崲涓簃essage瀛楁
       message.error(t('mediaFetch.libraryScan.scanFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
       console.error(error);
     } finally {
@@ -171,7 +171,7 @@ const LibraryScan = () => {
     }
   };
 
-  // 打开配置面板
+  // 鎵撳紑閰嶇疆闈㈡澘
   const handleAddServer = () => {
     setEditingServer(null);
     setConfigModalVisible(true);
@@ -192,7 +192,7 @@ const LibraryScan = () => {
     loadServers();
   };
 
-  // 删除服务器
+  // 鍒犻櫎鏈嶅姟鍣?
   const handleDeleteServer = async () => {
     if (!selectedServerId) {
       message.warning(t('mediaFetch.libraryScan.scanTipNoServer'));
@@ -203,7 +203,7 @@ const LibraryScan = () => {
       await deleteMediaServer(selectedServerId);
       message.success(t('mediaFetch.libraryScan.serverDeleted'));
       setSelectedServerId(null);
-      // 重新加载服务器列表
+      // 閲嶆柊鍔犺浇鏈嶅姟鍣ㄥ垪琛?
       await loadServers();
     } catch (error) {
       message.error(t('mediaFetch.libraryScan.deleteServerFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
@@ -211,42 +211,42 @@ const LibraryScan = () => {
     }
   };
 
-  // 批量删除媒体项目
+  // 鎵归噺鍒犻櫎濯掍綋椤圭洰
   const handleBatchDelete = async () => {
     if (selectedMediaItems.length === 0) {
       message.warning(t('mediaFetch.libraryScan.selectDeleteWarning'));
       return;
     }
 
-    // 分类收集要删除的项目
+    // 鍒嗙被鏀堕泦瑕佸垹闄ょ殑椤圭洰
     const itemIds = [];
     const shows = [];
     const seasons = [];
 
-    // 解析选中的项目key
+    // 瑙ｆ瀽閫変腑鐨勯」鐩甼ey
     selectedMediaItems.forEach(key => {
-      // 如果key是数字,说明是电影的id
+      // 濡傛灉key鏄暟瀛?璇存槑鏄數褰辩殑id
       if (typeof key === 'number') {
         itemIds.push(key);
         return;
       }
 
-      // 如果key是字符串
+      // 濡傛灉key鏄瓧绗︿覆
       if (typeof key === 'string') {
         if (key.startsWith('movie-') || key.startsWith('episode-')) {
-          // 直接删除的电影或剧集
+          // 鐩存帴鍒犻櫎鐨勭數褰辨垨鍓ч泦
           itemIds.push(parseInt(key.split('-')[1]));
         } else if (key.startsWith('show-')) {
-          // 整个剧集组
-          const title = key.substring(5); // 移除 'show-' 前缀
+          // 鏁翠釜鍓ч泦缁?
+          const title = key.substring(5); // 绉婚櫎 'show-' 鍓嶇紑
           shows.push({
             serverId: selectedServerId,
             title: title
           });
         } else if (key.startsWith('season-')) {
-          // 某一季
-          // key格式: season-{title}-S{season}
-          const parts = key.substring(7); // 移除 'season-' 前缀
+          // 鏌愪竴瀛?
+          // key鏍煎紡: season-{title}-S{season}
+          const parts = key.substring(7); // 绉婚櫎 'season-' 鍓嶇紑
           const lastDashIndex = parts.lastIndexOf('-S');
           if (lastDashIndex > 0) {
             const title = parts.substring(0, lastDashIndex);
@@ -275,7 +275,7 @@ const LibraryScan = () => {
       await batchDeleteMediaItems(payload);
       message.success(t('mediaFetch.libraryScan.batchDeleteSuccess', { count: selectedMediaItems.length }));
       setSelectedMediaItems([]);
-      // 触发列表刷新
+      // 瑙﹀彂鍒楄〃鍒锋柊
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
       message.error(t('mediaFetch.libraryScan.batchDeleteFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
@@ -283,42 +283,42 @@ const LibraryScan = () => {
     }
   };
 
-  // 批量导入媒体项目
+  // 鎵归噺瀵煎叆濯掍綋椤圭洰
   const handleImport = async () => {
     if (selectedMediaItems.length === 0) {
       message.warning(t('mediaFetch.libraryScan.selectImportWarning'));
       return;
     }
 
-    // 分类收集要导入的项目
+    // 鍒嗙被鏀堕泦瑕佸鍏ョ殑椤圭洰
     const itemIds = [];
     const shows = [];
     const seasons = [];
 
-    // 解析选中的项目key
+    // 瑙ｆ瀽閫変腑鐨勯」鐩甼ey
     selectedMediaItems.forEach(key => {
-      // 如果key是数字,说明是电影的id
+      // 濡傛灉key鏄暟瀛?璇存槑鏄數褰辩殑id
       if (typeof key === 'number') {
         itemIds.push(key);
         return;
       }
 
-      // 如果key是字符串
+      // 濡傛灉key鏄瓧绗︿覆
       if (typeof key === 'string') {
         if (key.startsWith('movie-') || key.startsWith('episode-')) {
-          // 直接导入的电影或剧集
+          // 鐩存帴瀵煎叆鐨勭數褰辨垨鍓ч泦
           itemIds.push(parseInt(key.split('-')[1]));
         } else if (key.startsWith('show-')) {
-          // 整个剧集组
-          const title = key.substring(5); // 移除 'show-' 前缀
+          // 鏁翠釜鍓ч泦缁?
+          const title = key.substring(5); // 绉婚櫎 'show-' 鍓嶇紑
           shows.push({
             serverId: selectedServerId,
             title: title
           });
         } else if (key.startsWith('season-')) {
-          // 某一季
-          // key格式: season-{title}-S{season}
-          const parts = key.substring(7); // 移除 'season-' 前缀
+          // 鏌愪竴瀛?
+          // key鏍煎紡: season-{title}-S{season}
+          const parts = key.substring(7); // 绉婚櫎 'season-' 鍓嶇紑
           const lastDashIndex = parts.lastIndexOf('-S');
           if (lastDashIndex > 0) {
             const title = parts.substring(0, lastDashIndex);
@@ -348,7 +348,7 @@ const LibraryScan = () => {
       const result = res.data;
       message.success(result.message || t('mediaFetch.libraryScan.importSubmitted'));
       setSelectedMediaItems([]);
-      // 触发列表刷新
+      // 瑙﹀彂鍒楄〃鍒锋柊
       setRefreshTrigger(prev => prev + 1);
     } catch (error) {
       message.error(t('mediaFetch.libraryScan.batchImportFailed') + (error.message || t('mediaFetch.libraryScan.unknownError')));
@@ -356,10 +356,10 @@ const LibraryScan = () => {
     }
   };
 
-  // 一键导入全部未导入
-  // why：原实现先调 getUnimportedCount 拿数量再弹确认框，该统计接口含无法命中索引的
-  // 关联子查询，媒体库大时要等数十秒才弹窗，用户误判为按钮无效（issue #441）。
-  // 现改为点击即弹确认框，统计与导入都下沉到后端任务，接口立即返回 taskId。
+  // 涓€閿鍏ュ叏閮ㄦ湭瀵煎叆
+  // why锛氬師瀹炵幇鍏堣皟 getUnimportedCount 鎷挎暟閲忓啀寮圭‘璁ゆ锛岃缁熻鎺ュ彛鍚棤娉曞懡涓储寮曠殑
+  // 鍏宠仈瀛愭煡璇紝濯掍綋搴撳ぇ鏃惰绛夋暟鍗佺鎵嶅脊绐楋紝鐢ㄦ埛璇垽涓烘寜閽棤鏁堬紙issue #441锛夈€?
+  // 鐜版敼涓虹偣鍑诲嵆寮圭‘璁ゆ锛岀粺璁′笌瀵煎叆閮戒笅娌夊埌鍚庣浠诲姟锛屾帴鍙ｇ珛鍗宠繑鍥?taskId銆?
   const handleImportAllUnimported = () => {
     if (!selectedServerId) {
       message.warning(t('mediaFetch.libraryScan.scanTipNoServer'));
@@ -396,16 +396,7 @@ const LibraryScan = () => {
       }}
       className="mobile-reduced-padding"
     >
-      {/* 页面标题 */}
-      <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-        <Title level={2} style={{ marginBottom: '8px' }}>
-          <DatabaseOutlined style={{ marginRight: '12px' }} />
-          {t('mediaFetch.libraryScan.pageTitle')}
-        </Title>
-        <Text type="secondary">{t('mediaFetch.libraryScan.pageSubtitle')}</Text>
-      </div>
-
-      {/* 服务器配置卡片 */}
+      {/* 鏈嶅姟鍣ㄩ厤缃崱鐗?*/}
       <Card
         title={
           <Space>
@@ -495,7 +486,7 @@ const LibraryScan = () => {
                   overflow: 'hidden'
                 }}
               >
-                {/* 装饰性背景 */}
+                {/* 瑁呴グ鎬ц儗鏅?*/}
                 <div
                   style={{
                     position: 'absolute',
@@ -511,7 +502,7 @@ const LibraryScan = () => {
                 />
 
                 <div style={{ position: 'relative', zIndex: 1 }}>
-                  {/* 服务器头部信息 */}
+                  {/* 鏈嶅姟鍣ㄥご閮ㄤ俊鎭?*/}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '2px' }}>
                       <div
@@ -540,7 +531,7 @@ const LibraryScan = () => {
                       </div>
                     </div>
 
-                    {/* 操作按钮 */}
+                    {/* 鎿嶄綔鎸夐挳 */}
                     <Space size="small">
                       <Button
                         type="text"
@@ -568,7 +559,7 @@ const LibraryScan = () => {
                     </Space>
                   </div>
 
-                  {/* 服务器地址 */}
+                  {/* 鏈嶅姟鍣ㄥ湴鍧€ */}
                   {currentServer.url && (
                     <div style={{ marginBottom: '16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -587,7 +578,7 @@ const LibraryScan = () => {
                               textOverflow: 'clip'
                             }}
                           >
-                            {showServerUrl ? currentServer.url : '•'.repeat(currentServer.url.length)}
+                            {showServerUrl ? currentServer.url : '\u2014'.repeat(currentServer.url.length)}
                           </Text>
                           <Button
                             type="text"
@@ -602,7 +593,7 @@ const LibraryScan = () => {
                     </div>
                   )}
 
-                  {/* 服务器未启用提示 */}
+                  {/* 鏈嶅姟鍣ㄦ湭鍚敤鎻愮ず */}
                   {!currentServer.isEnabled && (
                     <Alert
                       message={t('mediaFetch.libraryScan.serverDisabledTitle')}
@@ -636,7 +627,7 @@ const LibraryScan = () => {
         </Row>
       </Card>
 
-      {/* 媒体库配置卡片 */}
+      {/* 濯掍綋搴撻厤缃崱鐗?*/}
       {selectedServerId && (
         <Card
           title={
@@ -761,7 +752,7 @@ const LibraryScan = () => {
                           justifyContent: 'space-between'
                         }}
                         onClick={(e) => {
-                          // 避免触发复选框的onChange
+                          // 閬垮厤瑙﹀彂澶嶉€夋鐨刼nChange
                           if (e.target.type !== 'checkbox') {
                             const newSelected = selectedLibraryIds.includes(library.id)
                               ? selectedLibraryIds.filter(id => id !== library.id)
@@ -815,7 +806,7 @@ const LibraryScan = () => {
                     type="default"
                     size={screens.xs ? "middle" : "large"}
                     onClick={() => {
-                      // 清空所有选择，但保持至少一个选中
+                      // 娓呯┖鎵€鏈夐€夋嫨锛屼絾淇濇寔鑷冲皯涓€涓€変腑
                       if (libraries.length > 0) {
                         setSelectedLibraryIds([libraries[0].id]);
                       } else {
@@ -841,7 +832,7 @@ const LibraryScan = () => {
         </Card>
       )}
 
-      {/* 扫描结果 */}
+      {/* 鎵弿缁撴灉 */}
       {selectedServerId && (
         <Card
           title={
@@ -1064,3 +1055,4 @@ const LibraryScan = () => {
 };
 
 export default LibraryScan;
+

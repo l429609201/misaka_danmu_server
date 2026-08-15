@@ -1,4 +1,4 @@
-// English
+﻿// English
 export default {
   // Common
   common: {
@@ -1149,6 +1149,7 @@ export default {
     recordRawResponse: 'Record Raw Response',
     rawResponseDesc: 'When enabled, raw responses of all API requests for this source will be logged to config/logs/scraper_responses.log for debugging.',
     annualVip: 'Annual VIP',
+    vipDue: 'Expires',
     vip: 'VIP',
     logout: 'Log Out',
     scanLogin: 'Scan to Log In',
@@ -2033,6 +2034,8 @@ export default {
     switchThinkingOn: 'On',
     switchThinkingOff: 'Off',
     tooltipThinking: 'When enabled, DeepSeek models will perform chain-of-thought reasoning before outputting the final answer. This improves accuracy but increases latency and token usage. Thinking content is logged to ai_responses.log.',
+    labelCallTimeout: 'API Timeout',
+    tooltipCallTimeout: 'Maximum time (in seconds) to wait for a single AI API request. Default is 60s. For slow reasoning models (e.g. o3/o4), increase to 120–300.',
     btnSaveConnection: 'Save AI Connection Config',
     labelMatchMode: 'Match Mode',
     tooltipMatchMode: 'AI Match: Uses LLM to understand context, considering title, type, season, year, episode, and precision tags to select the best match. Traditional: Algorithm based on title similarity and type matching, fast but less precise.',
@@ -3193,6 +3196,8 @@ Singer 2024 => {[rules=extra|pure version|preview|behind the scenes]}`,
     fallbackRefreshThresholdPlaceholder: '5000',
     fallbackTokenAuth: 'Fallback Feature Token Authorization',
     fallbackTokenAuthTip: 'Select tokens allowed to trigger the match fallback feature. If no token is selected, all tokens can trigger the fallback feature. Only selected tokens can automatically trigger fallback search tasks when matching fails.',
+    fallbackTokenSelectPlaceholder: 'Click to select tokens to authorize',
+    fallbackTokenClearAll: 'Clear All',
     fallbackNoToken: 'No available Token',
     fallbackCreateToken: 'Please create an API Token first',
     fallbackTokenEnabled: 'Enabled',

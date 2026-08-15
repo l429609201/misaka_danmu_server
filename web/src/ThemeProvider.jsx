@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useState, useMemo } from 'react'
+﻿import { createContext, useContext, useEffect, useState, useMemo } from 'react'
 import { ConfigProvider } from 'antd'
 import { theme } from 'antd'
 import { useTranslation } from 'react-i18next'
+import { getConfig, setConfig } from './apis/index.js'
 
 import zhCN from 'antd/locale/zh_CN'
 import zhTW from 'antd/locale/zh_TW'
@@ -110,6 +111,15 @@ export const PRESET_THEME_COLORS = [
 
 const DEFAULT_PRIMARY = '#FF6B9B'
 
+const GLASS_STYLES = new Set(['liquid-glass', 'glass', 'acg-glass', 'wallpaper-acg'])
+
+// why：antd v5 Card 的 headerBg 经 CSS-in-JS 注入，会给标题栏一层独立底色，
+//      与卡片主体不同透明度就形成硬边。玻璃/壁纸主题统一置为 transparent，
+//      让标题栏直接透出卡片主体的磨砂层，从而与内容区完全一致。
+function getCardHeaderBg(pageStyle) {
+  return GLASS_STYLES.has(pageStyle) ? 'transparent' : undefined
+}
+
 // 页面样式（纯 CSS 主题，通过 <html data-page-style="..."> 切换）
 // why：页面样式只负责「布局质感」——圆角、投影、毛玻璃、边框、背景纹理；
 // 配色由主题色（--color-primary）与明暗模式各自负责，样式不得覆写颜色变量，
@@ -151,12 +161,26 @@ export function ThemeProvider({ children }) {
     if (!saved || REMOVED_PAGE_STYLES.has(saved)) return DEFAULT_PAGE_STYLE
     return saved
   })
-  // 自定义壁纸地址：默认留空。
-  // why：项目不内置任何第三方图源，留空时壁纸主题只显示本地渐变兜底，
-  // 不会向外部域名发起任何图片请求；需要壁纸由用户自行填写地址。
+  // 自定义壁纸地址：优先用 localStorage 缓存（用户手动改过的值），
+  // 若本地没有缓存则从后端读取 wallpaperAcgUrl 配置作为默认值。
+  // why：默认值存在数据库，首次使用自动写入 https://www.loliapi.com/acg/pc/，
+  // 管理员可在设置页替换为其他随机图源，无需重启生效。
   const [wallpaperUrl, setWallpaperUrlState] = useState(() => {
     return localStorage.getItem('wallpaperUrl') || ''
   })
+
+  // 初始化：若 localStorage 没有壁纸地址，从后端获取默认值
+  useEffect(() => {
+    if (localStorage.getItem('wallpaperUrl')) return
+    getConfig('wallpaperAcgUrl').then(res => {
+      const url = res?.data?.value || ''
+      if (url) {
+        setWallpaperUrlState(url)
+        // why：不写入 localStorage，保持"db 是默认源"的语义；
+        // 用户在设置页手动修改后才写入 localStorage，优先级高于 db 默认值。
+      }
+    }).catch(() => {/* 获取失败静默降级，保持渐变兜底 */})
+  }, [])
   const [language, setLanguageState] = useState(() => {
     return localStorage.getItem('lang') || i18n.language || DEFAULT_LANG
   })
@@ -321,6 +345,8 @@ export function ThemeProvider({ children }) {
         borderRadius: 12,
         boxShadow: `0 4px 16px ${colors.shadowLight}`,
         colorBorder: colors.light.border,
+        // why：直接传入对应主题的 RGBA 值，绕开 CSS-in-JS 插入顺序问题
+        ...(getCardHeaderBg(pageStyle) !== undefined && { headerBg: getCardHeaderBg(pageStyle) }),
       },
       Tabs: {
         colorPrimary: colors.primary,
@@ -347,7 +373,7 @@ export function ThemeProvider({ children }) {
         hoverBorderColor: colors.primary,
       },
     },
-  }), [colors])
+  }), [colors, pageStyle])
 
   const darkTheme = useMemo(() => ({
     algorithm: darkAlgorithm,
@@ -385,6 +411,8 @@ export function ThemeProvider({ children }) {
         boxShadow: `0 4px 16px ${colors.shadow}`,
         colorBorder: '#334155',
         colorBgContainer: '#1E293B',
+        // why：直接传入对应主题的 RGBA 值，绕开 CSS-in-JS 插入顺序问题
+        ...(getCardHeaderBg(pageStyle) !== undefined && { headerBg: getCardHeaderBg(pageStyle) }),
       },
       Tabs: {
         colorPrimary: colors.primary,
@@ -437,7 +465,7 @@ export function ThemeProvider({ children }) {
       Switch: { colorPrimaryHover: colors.hover },
       Segmented: { colorBgLayout: '#273449', itemSelectedBg: '#1E293B' },
     },
-  }), [colors])
+  }), [colors, pageStyle])
 
   return (
     <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle, wallpaperUrl, setWallpaperUrl, language, setLanguage }}>

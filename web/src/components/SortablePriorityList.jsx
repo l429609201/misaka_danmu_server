@@ -49,7 +49,8 @@ const SortableItem = ({ item, onToggle, showSwitch = true }) => {
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center justify-between p-3 mb-2 rounded-lg"
+      // why: 加 sortable-priority-item 类名，让毛玻璃/壁纸主题能用 !important 覆盖 inline style 的实色背景
+      className="sortable-priority-item flex items-center justify-between p-3 mb-2 rounded-lg"
     >
       <div className="flex items-center gap-3">
         <span
@@ -234,7 +235,8 @@ export const SortablePriorityList = ({
         <DragOverlay>
           {activeItem && (
             <div
-              className="flex items-center justify-between p-3 rounded-lg shadow-lg"
+              // why: DragOverlay 浮层加 sortable-priority-overlay 类名，壁纸主题可用 !important 覆盖实色背景
+              className="sortable-priority-overlay flex items-center justify-between p-3 rounded-lg shadow-lg"
               style={{
                 backgroundColor: 'var(--color-card)',
                 border: '2px solid var(--color-primary)',

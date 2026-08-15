@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 弹幕库卡片视图组件
  */
 import React from 'react'

@@ -21,6 +21,25 @@
 
 CONFIG_SCHEMA = [
     {
+        "key": "appearance",
+        "label": "外观设置",
+        "label_en": "Appearance",
+        "label_tw": "外觀設定",
+        "items": [
+            {
+                "key": "wallpaperAcgUrl",
+                "label": "二次元壁纸图源",
+                "label_en": "ACG Wallpaper URL",
+                "label_tw": "二次元壁紙圖源",
+                "type": "string",
+                "description": "「二次元壁纸」页面样式的背景图地址。留空时仅显示本地渐变兜底，不向外部发起任何请求。可替换为其他随机图源，如 https://www.dmoe.cc/random.php 等。",
+                "description_en": "Background image URL for the 'ACG Wallpaper' page style. Leave empty to show only a local gradient fallback. You can replace it with other random image sources.",
+                "description_tw": "「二次元壁紙」頁面樣式的背景圖地址。留空時僅顯示本地漸層兜底，不向外部發起任何請求。可替換為其他隨機圖源。",
+                "placeholder": "https://www.loliapi.com/acg/pc/",
+            },
+        ],
+    },
+    {
         "key": "security",
         "label": "安全设置",
         "label_en": "Security",

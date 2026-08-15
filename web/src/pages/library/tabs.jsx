@@ -49,8 +49,9 @@ export const LibraryTabsPage = () => {
   }
 
 
+  // why：加 library-tabs-root 钩子，方便在壁纸主题下精准覆盖 ant-tabs-nav 白底
   return (
-    <div className="my-6">
+    <div className="library-tabs-root my-6">
       {isMobile ? (
         <MobileTabs
           items={tabItems}

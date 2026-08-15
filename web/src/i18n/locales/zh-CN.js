@@ -1,4 +1,4 @@
-// 简体中文（默认语言，作为所有翻译 key 的真值来源）
+﻿// 简体中文（默认语言，作为所有翻译 key 的真值来源）
 export default {
   // 通用文案
   common: {
@@ -1151,6 +1151,7 @@ export default {
     recordRawResponse: '记录原始响应',
     rawResponseDesc: '启用后，此源的所有API请求的原始响应将被记录到 config/logs/scraper_responses.log 文件中，用于调试。',
     annualVip: '年度大会员',
+    vipDue: '到期时间',
     vip: '大会员',
     logout: '注销登录',
     scanLogin: '扫码登录',
@@ -2571,6 +2572,8 @@ export default {
     switchThinkingOn: '开启',
     switchThinkingOff: '关闭',
     tooltipThinking: '启用后，DeepSeek 模型在输出最终答案前会先进行思维链推理，可提升准确性但会增加耗时和 token 消耗。思考内容会记录到 ai_responses.log 中。',
+    labelCallTimeout: 'API 超时时间',
+    tooltipCallTimeout: '单次 AI API 请求的最长等待时间（秒）。默认 60 秒。使用 o3/o4 等慢速推理模型时建议调高至 120~300。',
     btnSaveConnection: '保存 AI 连接配置',
     labelMatchMode: '匹配模式',
     tooltipMatchMode: 'AI智能匹配: 使用大语言模型理解上下文,综合考虑标题、类型、季度、年份、集数和精确标记等因素,选择最佳匹配结果。传统匹配: 基于标题相似度和类型匹配的算法,快速但可能不够精准。',
@@ -3733,6 +3736,8 @@ export default {
     fallbackRefreshThresholdPlaceholder: '5000',
     fallbackTokenAuth: '后备功能 Token 授权',
     fallbackTokenAuthTip: '选择允许触发匹配后备功能的Token。如果不选择任何Token，则所有Token都可以触发后备功能。只有被选中的Token才能在匹配失败时自动触发后备搜索任务。',
+    fallbackTokenSelectPlaceholder: '点击选择要授权的 Token',
+    fallbackTokenClearAll: '取消全部',
     fallbackNoToken: '暂无可用Token',
     fallbackCreateToken: '请先创建API Token',
     fallbackTokenEnabled: '启用',

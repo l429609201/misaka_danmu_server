@@ -1,10 +1,11 @@
-/**
+﻿/**
  * 弹幕库分组 + 拖拽容器
  * - 列表模式：单个 antd Table，dataSource 包含"分组头行"和"普通条目行"，保持列宽一致
  * - 卡片模式：平铺 grid，分组头是宽行，组内是卡片
  * - 拖拽：整行/整卡可拖，条目拖到条目上弹窗创建分组
  */
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Input, Modal, Tag, Tooltip, Space, Table, Dropdown, theme, Button } from 'antd'
 import { FolderOutlined, RightOutlined, DownOutlined, MenuOutlined } from '@ant-design/icons'
 import {
@@ -71,9 +72,11 @@ const DraggableTableRow = (props) => {
       {...props}
       {...listeners}
       {...attributes}
+      // why：拖拽中给 <tr> 加 is-dragging 类名，配合 CSS 让 <td> 也压缩到 height:0，
+      // 彻底消除占位空行。单靠 inline style 只能控制 <tr>，<td> 的 padding/border 会撑开行高。
+      className={[props.className, isDragging ? 'is-dragging' : ''].filter(Boolean).join(' ')}
       style={{
         ...props.style,
-        opacity: isDragging ? 0.45 : 1,
         cursor: 'grab',
         outline: isOver ? '2px solid #1677ff' : undefined,
         outlineOffset: isOver ? '-2px' : undefined,
@@ -844,6 +847,9 @@ const LibraryGroupView = ({
                 pagination={false}
                 size="middle"
                 showHeader={false}
+                // why：消除 antd Table 默认的 margin-bottom，避免相邻 chunk 之间出现大缝，
+                // 行间距统一由 CSS 的 td border-top/bottom 控制
+                style={{ marginBottom: 0 }}
                 components={{ body: { row: DraggableTableRow } }}
                 onRow={(r) => ({
                   'data-row-key': r.animeId,
@@ -990,13 +996,16 @@ const LibraryGroupView = ({
       {/* 移动端：拖拽分组内条目时，固定悬浮在顶部控制区域上方的拆分投放区 */}
       {isMobile && <MobileUngroupOverlay visible={isDraggingFromGroup} />}
 
-      {activeItem && dragCursor && (
+      {/* why：用 createPortal 将浮层挂到 document.body，脱离 DndContext 内任何有
+           transform/filter/will-change 的祖先元素。否则 position:fixed 的坐标基准会
+           被含 transform 的父级劫持，导致浮层相对于父级定位而非 viewport，产生偏移。 */}
+      {activeItem && dragCursor && createPortal(
         <div
           className="pointer-events-none library-drag-overlay"
           style={{
             position: 'fixed',
-            left: dragCursor.x - activeDragOffset.x * DRAG_OVERLAY_SCALE - (isMobile ? 70 : 70),
-            top: dragCursor.y - activeDragOffset.y * DRAG_OVERLAY_SCALE - (isMobile ? 170 : 170),
+            left: dragCursor.x - activeDragOffset.x * DRAG_OVERLAY_SCALE,
+            top: dragCursor.y - activeDragOffset.y * DRAG_OVERLAY_SCALE,
             width: activeDragRect?.width || 360,
             height: activeDragRect?.height || 88,
             zIndex: 9999,
@@ -1013,7 +1022,8 @@ const LibraryGroupView = ({
               {activeItem.title}
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
 
       <Modal title={t('libraryGroup.nameGroupTitle')} open={nameModalOpen}

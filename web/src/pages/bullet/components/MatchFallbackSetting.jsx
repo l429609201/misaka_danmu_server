@@ -1,4 +1,4 @@
-import { Card, Form, Switch, Input, Button, Space, Tooltip, Checkbox, InputNumber } from 'antd'
+﻿import { Card, Form, Switch, Input, Button, Space, Tooltip, Select, Tag, InputNumber } from 'antd'
 import { useEffect, useState } from 'react'
 import { getMatchFallback, setMatchFallback, getMatchFallbackBlacklist, setMatchFallbackBlacklist, getMatchFallbackTokens, setMatchFallbackTokens, getTokenList, getSearchFallback, setSearchFallback, getConfig, setConfig } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
@@ -469,84 +469,85 @@ export const MatchFallbackSetting = () => {
                   </Space>
                 }
               >
-                <Card
-                  size="small"
-                  className={`transition-all duration-200 ${
-                    isTokenSelectionDisabled
-                      ? 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 opacity-60'
-                      : 'bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-200 dark:border-blue-800 shadow-sm hover:shadow-md'
-                  }`}
-                  bodyStyle={{ padding: '16px' }}
-                >
-                  {tokenList.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <div className="text-lg mb-2">📝</div>
-                      <div>{t('bullet.fallbackNoToken')}</div>
-                      <div className="text-sm mt-1">{t('bullet.fallbackCreateToken')}</div>
-                    </div>
-                  ) : (
-                    <>
-                      <Form.Item
-                        name="matchFallbackTokens"
-                        style={{ marginBottom: 0 }}
-                      >
-                        <Checkbox.Group
-                          style={{ width: '100%' }}
-                          disabled={isTokenSelectionDisabled}
-                        >
-                          <div className={`grid gap-3 ${
-                            isMobile ? 'grid-cols-1' : 'grid-cols-2 md:grid-cols-3'
-                          }`}>
-                            {tokenList.map(token => (
-                              <div
-                                key={token.id}
-                                className={`
-                                  relative p-3 rounded-lg border transition-all duration-200 cursor-pointer
-                                  ${isTokenSelectionDisabled
-                                    ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 cursor-not-allowed'
-                                    : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-sm'
-                                  }
-                                `}
+                {/* why：方案G —— 用 antd Select 多选替代原复选框卡片墙：
+                    与页面其他配置项形态统一、占用高度最小；
+                    已授权 Token 显示为胶囊，点 × 单个移除，「取消全部」一键清空 */}
+                <div className={isMobile ? 'space-y-3' : 'flex gap-3'}>
+                  <Form.Item
+                    name="matchFallbackTokens"
+                    className={isMobile ? 'mb-0' : 'flex-1 mb-0'}
+                  >
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      disabled={isTokenSelectionDisabled}
+                      placeholder={t("bullet.fallbackTokenSelectPlaceholder")}
+                      notFoundContent={t("bullet.fallbackCreateToken")}
+                      optionFilterProp="name"
+                      options={tokenList.map(token => ({
+                        value: token.id,
+                        name: token.name,
+                        label: (
+                          <Space size={6}>
+                            <span>{token.name}</span>
+                            <Tag color={token.isEnabled ? "success" : "default"} style={{ marginInlineEnd: 0 }}>
+                              {token.isEnabled ? t("bullet.fallbackTokenEnabled") : t("bullet.fallbackTokenDisabled")}
+                            </Tag>
+                          </Space>
+                        ),
+                      }))}
+                      tagRender={({ label, value, closable, onClose }) => {
+                        const token = tokenList.find(t => t.id === value)
+                        return (
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                              padding: "2px 8px",
+                              marginInlineEnd: 4,
+                              borderRadius: 999,
+                              fontSize: 12,
+                              lineHeight: "20px",
+                              background: token?.isEnabled ? "rgba(0,128,0,0.12)" : "rgba(0,0,0,0.06)",
+                              border: token?.isEnabled ? "1px solid rgba(0,128,0,0.3)" : "1px solid rgba(0,0,0,0.15)",
+                              color: "inherit",
+                            }}
+                          >
+                            {token?.name || value}
+                            {closable && (
+                              <span
+                                style={{ cursor: "pointer", opacity: 0.5, fontSize: 11, lineHeight: 1 }}
+                                onClick={e => { e.stopPropagation(); onClose() }}
                               >
-                                <Checkbox
-                                  value={token.id}
-                                  disabled={isTokenSelectionDisabled}
-                                  className="absolute top-2 right-2"
-                                />
-                                <div className="pr-6">
-                                  <div className="font-medium text-gray-900 dark:text-gray-100 mb-1">
-                                    {token.name}
-                                  </div>
-                                  <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                    token.isEnabled
-                                      ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
-                                      : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
-                                  }`}>
-                                    <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
-                                      token.isEnabled ? 'bg-green-500' : 'bg-red-500'
-                                    }`}></span>
-                                    {token.isEnabled ? t('bullet.fallbackTokenEnabled') : t('bullet.fallbackTokenDisabled')}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </Checkbox.Group>
-                      </Form.Item>
-                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
-                        <Button
-                          type="primary"
-                          loading={tokensSaving}
-                          onClick={handleTokensSave}
-                          disabled={isTokenSelectionDisabled}
-                          className="min-w-[100px]"
-                        >
-                          {t('bullet.fallbackSaveConfig')}
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                </Card>
+                                ×
+                              </span>
+                            )}
+                          </span>
+                        )
+                      }}
+                    />
+                  </Form.Item>
+                  <div className="flex gap-2 flex-shrink-0">
+                    {/* why：一键清空所有已授权 Token，清空后需点「保存配置」才落库 */}
+                    <Button
+                      onClick={() => form.setFieldsValue({ matchFallbackTokens: [] })}
+                      disabled={isTokenSelectionDisabled}
+                      className={isMobile ? 'flex-1' : ''}
+                    >
+                      {t('bullet.fallbackTokenClearAll')}
+                    </Button>
+                    <Button
+                      type="primary"
+                      loading={tokensSaving}
+                      onClick={handleTokensSave}
+                      disabled={isTokenSelectionDisabled}
+                      className={isMobile ? 'flex-1' : ''}
+                    >
+                      {t('bullet.fallbackSaveConfig')}
+                    </Button>
+                  </div>
+                </div>
               </Form.Item>
             )
           }}

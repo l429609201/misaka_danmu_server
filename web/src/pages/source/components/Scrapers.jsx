@@ -1,4 +1,4 @@
-import {
+﻿import {
   Button,
   Card,
   Alert,
@@ -9,6 +9,7 @@ import {
   InputNumber,
   List,
   Modal,
+  Popover,
   Select,
   Slider,
   Spin,
@@ -127,7 +128,8 @@ const SortableItem = ({
       <div
         {...attributes}
         {...listeners}
-        className={`w-full rounded-xl border transition-all hover:shadow-md ${isMobile ? 'p-3' : 'px-4 py-3'} flex ${isMobile ? 'gap-2' : 'items-center justify-between'}`}
+        // why: 加 scraper-sortable-item 类名，让壁纸/毛玻璃主题可用 !important 覆盖 inline style 实色背景（与 Metadata 页 metadata-sortable-item 同一方案）
+        className={`scraper-sortable-item w-full rounded-xl border transition-all hover:shadow-md ${isMobile ? 'p-3' : 'px-4 py-3'} flex ${isMobile ? 'gap-2' : 'items-center justify-between'}`}
         style={{ background: 'var(--color-card)', borderColor: 'var(--color-border)', cursor: isDragging ? 'grabbing' : 'grab' }}
       >
         {/* 左侧添加拖拽手柄 */}
@@ -146,14 +148,62 @@ const SortableItem = ({
         >
           {item.providerName === 'bilibili' && (
             <div className={`flex ${isMobile ? 'items-center gap-2' : ''} ${isMobile ? 'text-center' : ''}`}>
+              {/* why：登录态行内只保留头像，账号详情改为点击头像后的 Popover 气泡展示，
+                  避免长用户名挤占源条目行的操作区 */}
               {biliUserinfo.isLogin ? (
-                <div className={`flex ${isMobile ? 'flex-row items-center justify-center gap-2' : 'items-center justify-start gap-2'}`}>
+                <Popover
+                  trigger="click"
+                  placement="bottom"
+                  content={
+                    <div className="flex flex-col items-center gap-3 p-1" style={{ minWidth: 180 }}>
+                      {/* why：大头像居中展示，bilibili 粉色光环增加品牌感 */}
+                      <img
+                        className="w-16 h-16 rounded-full"
+                        style={{ boxShadow: "0 0 0 3px rgba(251,114,153,0.4)" }}
+                        src={biliUserinfo.face}
+                      />
+                      {/* 昵称 */}
+                      <span className="font-semibold text-sm">{biliUserinfo.uname}</span>
+                      {/* why：大会员标识，年度用粉色区分月度蓝色 */}
+                      {biliUserinfo.vipStatus === 1 && (
+                        <Tag
+                          color={biliUserinfo.vipType === 2 ? "#fb7299" : "#2db7f5"}
+                          style={{ margin: 0, fontSize: 11 }}
+                        >
+                          {biliUserinfo.vipType === 2 ? t("scrapers.annualVip") : t("scrapers.vip")}
+                        </Tag>
+                      )}
+                      {/* why：等级用 bilibili 惯例色：6红/4黄/2蓝/其他灰 */}
+                      {biliUserinfo.level != null && (
+                        <span
+                          className="px-2 py-0.5 rounded-full text-white font-bold text-xs"
+                          style={{
+                            background:
+                              biliUserinfo.level >= 6 ? "#f85959"
+                              : biliUserinfo.level >= 4 ? "#ffc034"
+                              : biliUserinfo.level >= 2 ? "#7ec0d9"
+                              : "#aaa",
+                          }}
+                        >
+                          LV {biliUserinfo.level}
+                        </span>
+                      )}
+                      {/* 大会员到期日，后端返回毫秒时间戳 */}
+                      {biliUserinfo.vipStatus === 1 && biliUserinfo.vipDueDate > 0 && (
+                        <span className="text-xs opacity-50">
+                          {t("scrapers.vipDue")} {new Date(biliUserinfo.vipDueDate).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                  }
+                >
+                  {/* why：stopPropagation 防止点击头像时触发行容器的拖拽/点击事件 */}
                   <img
-                    className="w-6 h-6 rounded-full"
+                    className="w-6 h-6 rounded-full cursor-pointer"
                     src={biliUserinfo.face}
+                    onClick={e => e.stopPropagation()}
                   />
-                  <span className={isMobile ? 'text-sm' : ''}>{biliUserinfo.uname}</span>
-                </div>
+                </Popover>
               ) : (
                 <span className="opacity-50 text-sm">{t('scrapers.notLoggedIn')}</span>
               )}
@@ -1754,8 +1804,10 @@ export const Scrapers = () => {
 
   return (
     <div className="my-6">
-      {/* 资源仓库配置卡片 */}
-      <Card title={t('scrapers.resourceRepo')} className="mb-6">
+      {/* 资源仓库配置卡片。
+          why：加 scraper-panel-card 类名，壁纸/玻璃主题下套用与批量管理面板一致的强磨砂透明效果，
+          避免默认 .ant-card 0.75 白底在壁纸上盖成实白块（规则在 index.css 末尾） */}
+      <Card title={t('scrapers.resourceRepo')} className="scraper-panel-card mb-6">
         <div className="space-y-4">
           <div>
             <div className="mb-2 text-sm text-gray-600">
@@ -1960,7 +2012,9 @@ export const Scrapers = () => {
 
           {/* 版本信息 + 操作按钮（合并为一行，始终展示） */}
           <div className={`flex ${isMobile ? 'flex-col gap-4' : 'items-center justify-between'} mb-4`}>
-              <Card size="small" className={isMobile ? 'w-full' : ''}>
+              {/* why：内层嵌套 Card 在壁纸/玻璃主题下与外层 Card 的 0.75 白底叠加后接近实白，
+                  加 scraper-version-card 类名让各主题单独透明化（规则在 index.css 末尾） */}
+              <Card size="small" className={`scraper-version-card ${isMobile ? 'w-full' : ''}`}>
                 <div className="flex flex-col gap-2">
                   {isMobile ? (
                     <div className="flex flex-col gap-2">
@@ -2478,8 +2532,8 @@ export const Scrapers = () => {
         </div >
       </Card >
 
-      {/* 弹幕搜索源卡片 */}
-      < Card loading={loading} title={t('scrapers.danmakuSearchSource')} >
+      {/* 弹幕搜索源卡片。why：同上，加 scraper-panel-card 磨砂透明化 */}
+      < Card loading={loading} title={t('scrapers.danmakuSearchSource')} className="scraper-panel-card" >
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}

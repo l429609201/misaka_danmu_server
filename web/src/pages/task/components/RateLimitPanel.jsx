@@ -3,7 +3,7 @@ import { MyIcon } from '@/components/MyIcon'
 import { useTranslation } from 'react-i18next'
 import {
   Card,
-  Table,
+  Tooltip,
   Typography,
   Progress,
   Row,
@@ -14,13 +14,24 @@ import {
 
 const { Title, Paragraph } = Typography
 
+// why：根据用量百分比返回热力等级类名，无配额单独处理
+function getHeatLevel(count, quota) {
+  if (!isFinite(quota)) return 'heat-inf'
+  const p = count / quota * 100
+  if (p >= 100) return 'heat-lv3'
+  if (p >= 80)  return 'heat-lv2'
+  if (p >= 50)  return 'heat-lv1'
+  return 'heat-lv0'
+}
+
 export const RateLimitPanel = () => {
   const { t } = useTranslation()
   const { data: status, loading } = useRateLimitSSE()
 
   return (
     <div className="my-6">
-      <Card loading={loading}>
+      {/* why：加 rate-limit-card 类名，让壁纸模式 CSS 能单独针对流控面板做毛玻璃处理 */}
+      <Card loading={loading} className="rate-limit-card">
         <Typography>
           <Title level={4}>{t('rateLimitPanel.title')}</Title>
           <Paragraph>
@@ -143,103 +154,38 @@ export const RateLimitPanel = () => {
               </Col>
             </Row>
 
-            {/* 底部表格区 - 各源流控详情 */}
+            {/* why：各源流控详情改为热力瓦片网格（方案F）
+                每源一块瓦片，颜色深浅直接映射压力等级，无需逐行读表格
+                0-49%=淡紫 50-79%=中紫 80-99%=橙 100%+=红 无限额=细描边紫 */}
             <Card type="inner" title={t('rateLimitPanel.sourceRateLimit')} className={status.verificationFailed ? 'opacity-50' : ''}>
-              <Table
-                columns={[
-                  {
-                    title: t('rateLimitPanel.colSourceName'),
-                    dataIndex: 'providerName',
-                    key: 'providerName',
-                    width: 100,
-                    render: (_, record) => record.displayName || record.providerName,
-                  },
-                  {
-                    title: t('rateLimitPanel.colUsage'),
-                    key: 'progress',
-                    render: (_, record) => {
-                      const isUnlimited = record.quota === '∞' || record.quota === Infinity
-                      const label = isUnlimited
-                        ? `${record.requestCount} / ∞`
-                        : `${record.requestCount} / ${record.quota}`
-                      // 无限额：以全局配额为参考基准显示实际用量进度
-                      // 有配额：正常比例
-                      let percent
-                      if (isUnlimited) {
-                        const refLimit = status.globalLimit || 100
-                        percent = record.requestCount > 0
-                          ? Math.max(3, Math.min(95, Math.round((record.requestCount / refLimit) * 100)))
-                          : 0
-                      } else {
-                        percent = Math.min(100, Math.round((record.requestCount / record.quota) * 100))
-                      }
-                      // 颜色：有配额且接近/超限用警告色，其余用主题色
-                      const isWarning = !isUnlimited && percent >= 80
-                      const isDanger = !isUnlimited && percent >= 100
-                      const barBg = isUnlimited
-                        ? 'color-mix(in srgb, var(--color-primary) 18%, var(--ant-color-bg-container, #fff))'
-                        : isDanger
-                          ? 'rgba(255, 77, 79, 0.15)'
-                          : isWarning
-                            ? 'rgba(250, 173, 20, 0.15)'
-                            : 'color-mix(in srgb, var(--color-primary) 18%, var(--ant-color-bg-container, #fff))'
-                      const barFill = isUnlimited
-                        ? 'color-mix(in srgb, var(--color-primary) 45%, var(--ant-color-bg-container, #fff))'
-                        : isDanger ? '#ff4d4f' : isWarning ? '#faad14' : 'var(--color-primary)'
-                      const textColor = isUnlimited
-                        ? 'color-mix(in srgb, var(--color-primary) 70%, transparent)'
-                        : isDanger ? '#ff4d4f' : isWarning ? '#faad14' : 'var(--color-primary)'
-                      return (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ flex: 1, height: 8, borderRadius: 4, overflow: 'hidden', background: barBg }}>
-                            <div style={{
-                              width: `${percent}%`, height: '100%', background: barFill,
-                              borderRadius: 4, transition: 'width 0.5s ease',
-                            }} />
-                          </div>
-                          <span style={{ fontSize: 12, color: textColor, fontWeight: 500, whiteSpace: 'nowrap', minWidth: 50, textAlign: 'right' }}>
-                            {label}
-                          </span>
-                        </div>
-                      )
-                    },
-                  },
-                  {
-                    title: t('rateLimitPanel.colStatus'),
-                    key: 'status',
-                    width: 80,
-                    align: 'center',
-                    render: (_, record) => {
-                      const isUnlimited = record.quota === '∞' || record.quota === Infinity
-                      if (isUnlimited) {
-                        return (
-                          <span style={{ color: 'var(--color-primary)', fontSize: 12, opacity: 0.7 }}>
-                            ● {t('rateLimitPanel.statusNormal')}
-                          </span>
-                        )
-                      }
-                      const percent = (record.requestCount / record.quota) * 100
-                      const isDanger = percent >= 100
-                      const isWarning = percent >= 80
-                      const color = isDanger ? '#ff4d4f' : isWarning ? '#faad14' : 'var(--color-primary)'
-                      const label = isDanger
-                        ? t('rateLimitPanel.statusFull')
-                        : isWarning
-                          ? t('rateLimitPanel.statusNear')
-                          : t('rateLimitPanel.statusOk')
-                      return (
-                        <span style={{ color, fontSize: 12 }}>
-                          ● {label}
-                        </span>
-                      )
-                    },
-                  },
-                ]}
-                dataSource={status.providers}
-                rowKey="providerName"
-                pagination={false}
-                size="small"
-              />
+              <div className="rate-limit-heatmap">
+                {(status.providers || []).map(record => {
+                  const isUnlimited = record.quota === '∞' || record.quota === Infinity
+                  const quotaLabel = isUnlimited ? '∞' : record.quota
+                  let pct = 0
+                  if (!isUnlimited && record.quota > 0) {
+                    pct = Math.min(100, Math.round((record.requestCount / record.quota) * 100))
+                  }
+                  const heatLevel = getHeatLevel(record.requestCount, record.quota)
+                  const statusLabel = isUnlimited
+                    ? t('rateLimitPanel.statusNormal')
+                    : pct >= 100 ? t('rateLimitPanel.statusFull')
+                    : pct >= 80  ? t('rateLimitPanel.statusNear')
+                    : t('rateLimitPanel.statusOk')
+                  return (
+                    <Tooltip
+                      key={record.providerName}
+                      title={`${record.displayName || record.providerName}: ${record.requestCount} / ${quotaLabel} · ${statusLabel}`}
+                    >
+                      <div className={`rl-tile ${heatLevel}`}>
+                        <span className="rl-tile-name">{record.displayName || record.providerName}</span>
+                        <span className="rl-tile-pct">{isUnlimited ? '∞' : `${pct}%`}</span>
+                        <span className="rl-tile-sub">{record.requestCount} / {quotaLabel}</span>
+                      </div>
+                    </Tooltip>
+                  )
+                })}
+              </div>
             </Card>
           </>
         )}

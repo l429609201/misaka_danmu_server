@@ -1,4 +1,4 @@
-// 繁體中文
+﻿// 繁體中文
 export default {
   // 通用文案
   common: {
@@ -1151,6 +1151,7 @@ export default {
     recordRawResponse: '記錄原始回應',
     rawResponseDesc: '啟用後，此源的所有API請求的原始回應將被記錄到 config/logs/scraper_responses.log 檔案中，用於除錯。',
     annualVip: '年度大會員',
+    vipDue: '到期時間',
     vip: '大會員',
     logout: '登出',
     scanLogin: '掃碼登入',
@@ -2035,6 +2036,8 @@ export default {
     switchThinkingOn: '開啟',
     switchThinkingOff: '關閉',
     tooltipThinking: '啟用後，DeepSeek 模型在輸出最終答案前會先進行思維鏈推理，可提升準確性但會增加耗時和 token 消耗。思考內容會記錄到 ai_responses.log 中。',
+    labelCallTimeout: 'API 逾時時間',
+    tooltipCallTimeout: '單次 AI API 請求的最長等待時間（秒）。預設 60 秒。使用 o3/o4 等慢速推理模型時建議調高至 120~300。',
     btnSaveConnection: '儲存 AI 連接配置',
     labelMatchMode: '匹配模式',
     tooltipMatchMode: 'AI智慧匹配: 使用大語言模型理解上下文,綜合考慮標題、類型、季度、年份、集數和精確標記等因素,選擇最佳匹配結果。傳統匹配: 基於標題相似度和類型匹配的演算法,快速但可能不夠精準。',
@@ -3195,6 +3198,8 @@ export default {
     fallbackRefreshThresholdPlaceholder: '5000',
     fallbackTokenAuth: '後備功能 Token 授權',
     fallbackTokenAuthTip: '選擇允許觸發比對後備功能的Token。如果不選擇任何Token，則所有Token都可以觸發後備功能。只有被選中的Token才能在比對失敗時自動觸發後備搜尋任務。',
+    fallbackTokenSelectPlaceholder: '點擊選擇要授權的 Token',
+    fallbackTokenClearAll: '取消全部',
     fallbackNoToken: '暫無可用Token',
     fallbackCreateToken: '請先建立API Token',
     fallbackTokenEnabled: '啟用',

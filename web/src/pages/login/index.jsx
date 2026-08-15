@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Form, Input, Button, Card, Divider, Dropdown } from 'antd'
+import { Form, Input, Button, Divider, Dropdown } from 'antd'
 import {
   UserOutlined,
   LockOutlined,
@@ -225,14 +225,17 @@ export const Login = () => {
     <div className="my-6 flex items-center justify-center relative">
       {/* 白名单检查中显示加载状态 */}
       {checkingWhitelist ? (
-        <Card className="w-full max-w-md rounded-xl shadow-lg overflow-hidden mx-auto">
+        /* why：原来是 antd Card，壁纸/玻璃主题对 .ant-card 施加了 0.75 白底 !important，
+            登录卡片无法跟随主题透明磨砂。换成 div.login-panel，背景由 index.css 按主题控制；
+            p-6 等效于原 Card body 的 24px 内边距 */
+        <div className="login-panel w-full max-w-md rounded-xl border border-gray-200 dark:border-white/10 shadow-lg overflow-hidden mx-auto p-6">
           <div className="text-center py-12">
             <p className="text-base-text text-lg">{t('login.checkingWhitelist')}</p>
           </div>
-        </Card>
+        </div>
       ) : (
-        /* 登录卡片容器 */
-        <Card className="w-full max-w-md rounded-xl shadow-lg overflow-hidden mx-auto relative px-2 sm:px-0">
+        /* 登录卡片容器：py-6 + px-8/sm:px-6 还原原 Card body 24px 及移动端 px-2 的叠加效果 */
+        <div className="login-panel w-full max-w-md rounded-xl border border-gray-200 dark:border-white/10 shadow-lg overflow-hidden mx-auto relative py-6 px-8 sm:px-6">
           {/* 卡片左上角：清理浏览器缓存 */}
           <Button
             type="link"
@@ -244,7 +247,9 @@ export const Login = () => {
             {t('login.clearBrowserCache')}
           </Button>
 
-          {/* 卡片右上角：语言切换 */}
+          {/* 卡片右上角：语言切换。
+              why：按钮原 bg-white/90 接近实白，壁纸/玻璃主题下与磨砂登录卡片反差强烈；
+              降到 60% 并加 backdrop-blur，普通主题观感基本不变，壁纸主题下呈磨砂胶囊 */}
           <Dropdown
             trigger={['click']}
             placement="bottomRight"
@@ -256,7 +261,7 @@ export const Login = () => {
           >
             <button
               type="button"
-              className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white/90 px-2.5 py-1.5 text-xs font-medium text-gray-600 shadow-sm transition hover:border-primary/40 hover:text-primary dark:border-white/10 dark:bg-white/8 dark:text-gray-300 dark:hover:border-primary/50 sm:top-4 sm:right-4"
+              className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white/60 backdrop-blur-md px-2.5 py-1.5 text-xs font-medium text-gray-600 shadow-sm transition hover:border-primary/40 hover:text-primary dark:border-white/10 dark:bg-white/8 dark:text-gray-300 dark:hover:border-primary/50 sm:top-4 sm:right-4"
             >
               <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-primary/10 px-1 text-[10px] font-bold text-primary">
                 {getLanguageSymbol(currentLanguage.key)}
@@ -342,7 +347,7 @@ export const Login = () => {
               </div>
             </>
           )}
-        </Card>      )}
+        </div>      )}
 
       {/* MFA 验证弹窗 */}
       <MfaVerifyModal

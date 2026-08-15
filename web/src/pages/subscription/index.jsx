@@ -66,7 +66,9 @@ export const SubscriptionPage = () => {
         </div>
 
         {/* 顶部常驻统一搜索区（创建 UP主/合集/番剧订阅） */}
-        <div className="mb-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/40">
+        {/* why：去掉硬编码灰底（bg-gray-50）——玻璃/壁纸主题下会形成一条亮色横带，
+            与批量管理页的定论一致：完全透明透出卡片磨砂，轮廓只靠描边 */}
+        <div className="mb-4 p-3 rounded-lg border border-gray-200 dark:border-white/6">
           <SubscriptionSearchBar t={t} onSubscribed={() => fetchCalendar()} />
         </div>
 

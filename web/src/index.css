@@ -1,4 +1,4 @@
-/* 导入Tailwind核心（v4.0必需） */
+﻿/* 导入Tailwind核心（v4.0必需） */
 @import 'tailwindcss';
 
 /* 深色模式使用 class 策略（.dark 类），而非媒体查询 */
@@ -671,6 +671,65 @@ html[data-page-style="liquid-glass"] .ant-notification-notice {
     0 8px 32px rgba(0, 0, 0, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
 }
+/* why：标题栏置为透明，直接透出卡片主体的磨砂层，与内容区完全一致。 */
+html[data-page-style="liquid-glass"] .ant-card-head {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.28) !important;
+  border-radius: 20px 20px 0 0 !important;
+}
+html[data-page-style="liquid-glass"].dark .ant-card-head {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 20px 20px 0 0 !important;
+}
+
+/* why：liquid-glass 主题下 antd ant-card-type-inner（流控面板等内嵌子卡）
+   有独立背景 token，不被通用 .ant-card 规则覆盖，会露出实色白底；
+   单独覆盖为半透明毛玻璃，并透明化表格背景消除硬白行。 */
+html[data-page-style="liquid-glass"] .ant-card-type-inner {
+  background: rgba(255, 255, 255, 0.30) !important;
+  border: 1px solid rgba(255, 255, 255, 0.40) !important;
+}
+html[data-page-style="liquid-glass"] .ant-card-type-inner .ant-card-head {
+  background: rgba(255, 255, 255, 0.18) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.32) !important;
+}
+html[data-page-style="liquid-glass"] .ant-card-type-inner .ant-table {
+  background: transparent !important;
+}
+html[data-page-style="liquid-glass"] .ant-card-type-inner .ant-table-thead > tr > th {
+  background: rgba(255, 255, 255, 0.22) !important;
+}
+html[data-page-style="liquid-glass"] .ant-card-type-inner .ant-table-tbody > tr > td {
+  background: transparent !important;
+}
+html[data-page-style="liquid-glass"] .ant-card-type-inner .ant-table-tbody > tr:nth-child(even) > td {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+html[data-page-style="liquid-glass"].dark .ant-card-type-inner {
+  background: rgba(30, 41, 59, 0.35) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+}
+html[data-page-style="liquid-glass"].dark .ant-card-type-inner .ant-card-head {
+  background: rgba(30, 41, 59, 0.25) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10) !important;
+}
+html[data-page-style="liquid-glass"].dark .ant-card-type-inner .ant-table {
+  background: transparent !important;
+}
+html[data-page-style="liquid-glass"].dark .ant-card-type-inner .ant-table-thead > tr > th {
+  background: rgba(30, 41, 59, 0.40) !important;
+}
+html[data-page-style="liquid-glass"].dark .ant-card-type-inner .ant-table-tbody > tr > td {
+  background: transparent !important;
+}
+html[data-page-style="liquid-glass"].dark .ant-card-type-inner .ant-table-tbody > tr:nth-child(even) > td {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
 
 /* Modal / Drawer 磨砂玻璃专属覆写（why：弹窗叠在内容上，0.55 透明度会穿底看到背景文字，
    故单独提高不透明度 + 加大模糊，比普通卡片更"实"，但仍保留磨砂质感） */
@@ -963,6 +1022,14 @@ html[data-page-style="liquid-glass"].dark .task-manager-list .ant-list-item:hove
   background: transparent !important;
 }
 
+/* why：antd Table 默认 border-collapse:collapse，相邻 tr 的 border 会合并，
+   透明 border 间距方案完全失效。改成 separate 模式，用 border-spacing 设置行间距，
+   水平方向 0 不影响列宽，垂直方向 8px 产生透着背景的行间缝 */
+:where(.library-table, .ant-table-wrapper) .ant-table table {
+  border-collapse: separate !important;
+  border-spacing: 0 8px !important;
+}
+
 :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th,
 :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th.ant-table-cell-fix-left,
 :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th.ant-table-cell-fix-right,
@@ -981,14 +1048,40 @@ html[data-page-style="liquid-glass"].dark .task-manager-list .ant-list-item:hove
   border-end-end-radius: 12px !important;
 }
 
+/* why：消除 antd Table 外层 wrapper 的默认 margin，防止多个 chunk Table 之间出现大缝；
+   行间距统一由下方 td border-top/bottom 控制 */
+.library-table.ant-table-wrapper,
+.library-table {
+  margin: 0 !important;
+}
+
 :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td,
 :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td.ant-table-cell-fix-left,
 :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td.ant-table-cell-fix-right,
 :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td[class*="ant-table-cell-fix-"] {
   background: var(--color-card) !important;
   background-clip: padding-box;
-  border-top: 4px solid transparent !important;
-  border-bottom: 4px solid transparent !important;
+  /* why：border-spacing 方案已负责行间距，这里只保留 border:none 避免 td 边框干扰圆角 */
+  border-top: none !important;
+  border-bottom: none !important;
+}
+
+/* why：dataSource=[] 的表头 Table 会渲染一个空占位行，card 背景样式让它显示成空白卡片；
+   直接隐藏 placeholder 行，彻底去掉顶部多出来的那一行空行 */
+:where(.library-table, .ant-table-wrapper) .ant-table-placeholder {
+  display: none !important;
+}
+
+/* why：拖拽中原始行加上 .is-dragging 类，让 <td> 也压缩高度，
+   仅靠 <tr> 的 height:0 会被 <td> 内容撑开，所以必须作用到 td */
+:where(.library-table, .ant-table-wrapper) tr.is-dragging > td {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  line-height: 0 !important;
 }
 
 :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td:first-child {
@@ -1049,6 +1142,60 @@ html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrap
 html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td[class*="ant-table-cell-fix-"] {
   background: rgba(30, 41, 59, 0.72) !important;
 }
+
+/* why：上方通用规则把所有表格行底色写死为 var(--color-card)，而 glass / acg-glass
+   两个主题没有覆盖该变量（仍是实色 #ffffff / #1e293b），导致弹幕存储-迁移等页的
+   表格呈整块实底。参照 liquid-glass 的做法补上半透明覆盖。 */
+html[data-page-style="glass"] :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th,
+html[data-page-style="acg-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th {
+  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, 0.56)) !important;
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+}
+
+html[data-page-style="glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td,
+html[data-page-style="glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td[class*="ant-table-cell-fix-"],
+html[data-page-style="acg-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td,
+html[data-page-style="acg-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td[class*="ant-table-cell-fix-"] {
+  background: color-mix(in srgb, var(--color-primary) 4%, rgba(255, 255, 255, 0.48)) !important;
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+}
+
+html[data-page-style="glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td,
+html[data-page-style="glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr.ant-table-row:hover > td,
+html[data-page-style="glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td[class*="ant-table-cell-fix-"],
+html[data-page-style="acg-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td,
+html[data-page-style="acg-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr.ant-table-row:hover > td,
+html[data-page-style="acg-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td[class*="ant-table-cell-fix-"] {
+  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, 0.6)) !important;
+}
+
+/* 暗色：glass 用深蓝底、acg-glass 用深紫底，与各自主题色调一致 */
+html[data-page-style="glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th,
+html[data-page-style="glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td,
+html[data-page-style="glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td[class*="ant-table-cell-fix-"] {
+  background: rgba(8, 18, 40, 0.52) !important;
+}
+
+html[data-page-style="glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td,
+html[data-page-style="glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr.ant-table-row:hover > td,
+html[data-page-style="glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td[class*="ant-table-cell-fix-"] {
+  background: rgba(8, 18, 40, 0.72) !important;
+}
+
+html[data-page-style="acg-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th,
+html[data-page-style="acg-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td,
+html[data-page-style="acg-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td[class*="ant-table-cell-fix-"] {
+  background: rgba(14, 8, 36, 0.52) !important;
+}
+
+html[data-page-style="acg-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td,
+html[data-page-style="acg-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr.ant-table-row:hover > td,
+html[data-page-style="acg-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td[class*="ant-table-cell-fix-"] {
+  background: rgba(14, 8, 36, 0.72) !important;
+}
+
 
 :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td {
   vertical-align: middle !important;
@@ -1193,6 +1340,320 @@ html[data-page-style="wallpaper-acg"].dark .ant-modal-content,
 html[data-page-style="wallpaper-acg"].dark .ant-drawer-content {
   background: rgba(15, 23, 42, 0.90) !important;
 }
+/* why：antd Modal 标题栏有自己的 background，会覆盖 modal-content 的毛玻璃效果，
+   导致标题区域显示为实色白块。设为 transparent 让标题栏继承 modal-content 的背景。
+   底部加分割线与内容区区分。 */
+html[data-page-style="wallpaper-acg"] .ant-modal-header {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .ant-modal-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+/* why：标题栏置为透明，直接透出卡片主体的磨砂层，与内容区完全一致。 */
+html[data-page-style="wallpaper-acg"] .ant-card-head {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 16px 16px 0 0 !important;
+}
+html[data-page-style="wallpaper-acg"].dark .ant-card-head {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10) !important;
+}
+
+/* why：媒体库 Tabs 导航栏（library-tabs-root 下的 ant-tabs-nav）
+   壁纸主题下呈现白色实色背景，需覆盖为透明让壁纸透出。 */
+html[data-page-style="wallpaper-acg"] .library-tabs-root .ant-tabs-nav {
+  background: transparent !important;
+}
+html[data-page-style="wallpaper-acg"] .library-tabs-root .ant-tabs-nav::before {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* why：批量管理各区域去掉了 JSX 里的 bg-white，
+   这里补上普通主题的兜底背景，再用壁纸主题选择器覆盖为半透明磨砂。 */
+
+/* ── 普通主题兜底（非壁纸） ── */
+.batch-manage-panel {
+  background-color: white;
+}
+.dark .batch-manage-panel {
+  background-color: #1a1e2e;
+}
+
+.batch-stat-badge {
+  background-color: white;
+}
+.dark .batch-stat-badge {
+  background-color: #1a1e2e;
+}
+
+/* why：用户要求与弹幕库抬头一致——完全透明，直接透出面板底色，
+   长条轮廓只靠描边；所有主题统一透明，不再分主题给底色 */
+.batch-manage-header {
+  background-color: transparent;
+}
+.dark .batch-manage-header {
+  background-color: transparent;
+}
+
+/* why：移动端卡片去掉了 JSX 里的 bg-white，补上普通主题兜底 */
+.batch-mobile-card {
+  background-color: white;
+}
+.dark .batch-mobile-card {
+  background-color: #1a1e2e;
+}
+
+/* ── 壁纸主题覆盖（半透明磨砂） ── */
+
+/* 外层面板
+   why：用户要求批量管理面板与弹幕库分页的 antd 卡片观感一致，
+   取值逐项复制壁纸主题 .ant-card 规则（背景/模糊/描边/圆角/投影）。 */
+html[data-page-style="wallpaper-acg"] .batch-manage-panel {
+  background: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(18px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.65) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .batch-manage-panel {
+  background: rgba(15, 23, 42, 0.78) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+/* why：与弹幕库抬头一致——完全透明，不叠任何白膜与 blur */
+html[data-page-style="wallpaper-acg"] .batch-manage-header,
+html[data-page-style="wallpaper-acg"].dark .batch-manage-header {
+  background: transparent !important;
+}
+
+/* why：统计徽章也在面板内部，同理要接近透明，靠 border 区分层次。
+   背景几乎透明 + 稍微亮一点点的 border，刚好和面板同级但有区别。 */
+html[data-page-style="wallpaper-acg"] .batch-stat-badge {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: none;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .batch-stat-badge {
+  background: rgba(255, 255, 255, 0.04) !important;
+  backdrop-filter: none;
+  border-color: rgba(255, 255, 255, 0.10) !important;
+}
+
+/* why：数据行奇偶交替色（bg-gray-50/60）在壁纸下形成明显白色间隔块。
+   消掉间隔背景，改为 hover 时才显示半透明高亮，让行间完全透明。 */
+html[data-page-style="wallpaper-acg"] .batch-rows-container > * {
+  background: transparent !important;
+}
+html[data-page-style="wallpaper-acg"] .batch-rows-container > *:hover {
+  background: rgba(255, 255, 255, 0.10) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .batch-rows-container > *:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* 移动端卡片行（未选中状态） */
+html[data-page-style="wallpaper-acg"] .batch-mobile-card:not([class*="ring-2"]) {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .batch-mobile-card:not([class*="ring-2"]) {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* MultiToggle 弹出层 */
+html[data-page-style="wallpaper-acg"] .batch-multitoggle-dropdown {
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+html[data-page-style="wallpaper-acg"].dark .batch-multitoggle-dropdown {
+  background: rgba(20, 24, 42, 0.70) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* ── liquid-glass / glass / acg-glass 主题批量管理面板 ──
+   why：用户要求批量管理面板与弹幕库分页的 antd 卡片观感一致，
+   三个主题的 .ant-card 取值各不相同，故拆为按主题独立规则逐项复制
+   （背景/模糊/描边/圆角/投影；暗色规则只覆盖 .ant-card 暗色同款属性）。 */
+html[data-page-style="liquid-glass"] .batch-manage-panel {
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+}
+html[data-page-style="liquid-glass"].dark .batch-manage-panel {
+  background: rgba(30, 41, 59, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+}
+html[data-page-style="glass"] .batch-manage-panel {
+  background: rgba(255, 255, 255, 0.58) !important;
+  backdrop-filter: blur(22px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.66) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 6px 28px rgba(60, 100, 160, 0.12) !important;
+}
+html[data-page-style="glass"].dark .batch-manage-panel {
+  background: rgba(8, 18, 40, 0.66) !important;
+  border: 1px solid rgba(120, 180, 255, 0.2) !important;
+}
+html[data-page-style="acg-glass"] .batch-manage-panel {
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(20px) saturate(185%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(185%) !important;
+  border: 1px solid rgba(185, 155, 255, 0.5) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 6px 26px rgba(110, 70, 200, 0.14) !important;
+}
+html[data-page-style="acg-glass"].dark .batch-manage-panel {
+  background: rgba(14, 8, 36, 0.66) !important;
+  border: 1px solid rgba(160, 130, 255, 0.24) !important;
+}
+
+/* why：与弹幕库抬头一致——完全透明，直接透出面板磨砂，不叠任何白膜与 blur */
+html[data-page-style="liquid-glass"] .batch-manage-header,
+html[data-page-style="glass"] .batch-manage-header,
+html[data-page-style="acg-glass"] .batch-manage-header,
+html[data-page-style="liquid-glass"].dark .batch-manage-header,
+html[data-page-style="glass"].dark .batch-manage-header,
+html[data-page-style="acg-glass"].dark .batch-manage-header {
+  background: transparent !important;
+}
+
+html[data-page-style="liquid-glass"] .batch-stat-badge,
+html[data-page-style="glass"] .batch-stat-badge,
+html[data-page-style="acg-glass"] .batch-stat-badge {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.30) !important;
+}
+html[data-page-style="liquid-glass"].dark .batch-stat-badge,
+html[data-page-style="glass"].dark .batch-stat-badge,
+html[data-page-style="acg-glass"].dark .batch-stat-badge {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.10) !important;
+}
+
+html[data-page-style="liquid-glass"] .batch-rows-container > *,
+html[data-page-style="glass"] .batch-rows-container > *,
+html[data-page-style="acg-glass"] .batch-rows-container > * {
+  background: transparent !important;
+}
+html[data-page-style="liquid-glass"] .batch-rows-container > *:hover,
+html[data-page-style="glass"] .batch-rows-container > *:hover,
+html[data-page-style="acg-glass"] .batch-rows-container > *:hover {
+  background: rgba(255, 255, 255, 0.18) !important;
+}
+html[data-page-style="liquid-glass"].dark .batch-rows-container > *:hover,
+html[data-page-style="glass"].dark .batch-rows-container > *:hover,
+html[data-page-style="acg-glass"].dark .batch-rows-container > *:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+html[data-page-style="liquid-glass"] .batch-mobile-card:not([class*="ring-2"]),
+html[data-page-style="glass"] .batch-mobile-card:not([class*="ring-2"]),
+html[data-page-style="acg-glass"] .batch-mobile-card:not([class*="ring-2"]) {
+  background: rgba(255, 255, 255, 0.38) !important;
+}
+html[data-page-style="liquid-glass"].dark .batch-mobile-card:not([class*="ring-2"]),
+html[data-page-style="glass"].dark .batch-mobile-card:not([class*="ring-2"]),
+html[data-page-style="acg-glass"].dark .batch-mobile-card:not([class*="ring-2"]) {
+  background: rgba(30, 41, 59, 0.42) !important;
+}
+
+html[data-page-style="liquid-glass"] .batch-multitoggle-dropdown,
+html[data-page-style="glass"] .batch-multitoggle-dropdown,
+html[data-page-style="acg-glass"] .batch-multitoggle-dropdown {
+  background: rgba(255, 255, 255, 0.80) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+html[data-page-style="liquid-glass"].dark .batch-multitoggle-dropdown,
+html[data-page-style="glass"].dark .batch-multitoggle-dropdown,
+html[data-page-style="acg-glass"].dark .batch-multitoggle-dropdown {
+  background: rgba(30, 41, 59, 0.85) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* why：表头透明后与数据行完全融为一体，缺乏层次感。
+   用极淡的白膜（亮色）/ 白色半透明（暗色）给表头加一丝背景区分，
+   再用底部细线强调表头与数据区的边界，既保留毛玻璃穿透感又有视觉层次。 */
+html[data-page-style="wallpaper-acg"] .ant-table-thead > tr > th,
+html[data-page-style="wallpaper-acg"] .ant-table-thead > tr > td,
+html[data-page-style="wallpaper-acg"] .ant-table-thead > tr > .ant-table-cell {
+  background: rgba(255, 255, 255, 0.18) !important;
+  background-color: rgba(255, 255, 255, 0.18) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.35) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .ant-table-thead > tr > th,
+html[data-page-style="wallpaper-acg"].dark .ant-table-thead > tr > td,
+html[data-page-style="wallpaper-acg"].dark .ant-table-thead > tr > .ant-table-cell {
+  background: rgba(255, 255, 255, 0.08) !important;
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+/* why：表格数据行的实色白背景会遮住卡片的毛玻璃效果，
+   设为透明让壁纸和卡片背景穿透进来；
+   hover 行给一层淡白高亮保持交互反馈。 */
+html[data-page-style="wallpaper-acg"] .ant-table-tbody > tr > td,
+html[data-page-style="wallpaper-acg"] .ant-table-wrapper .ant-table {
+  background: transparent !important;
+}
+html[data-page-style="wallpaper-acg"] .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: rgba(255, 255, 255, 0.35) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .ant-table-tbody > tr > td,
+html[data-page-style="wallpaper-acg"].dark .ant-table-wrapper .ant-table {
+  background: transparent !important;
+}
+html[data-page-style="wallpaper-acg"].dark .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* why：antd Input / InputNumber / Select 默认白色背景会在毛玻璃卡片上
+   形成"白块"，透明化后输入框本身轻度半透明，与壁纸形成层次。
+   保留 border 以维持可识别的边界。 */
+html[data-page-style="wallpaper-acg"] .ant-input,
+html[data-page-style="wallpaper-acg"] .ant-input-number,
+html[data-page-style="wallpaper-acg"] .ant-input-number-input,
+html[data-page-style="wallpaper-acg"] .ant-input-affix-wrapper,
+html[data-page-style="wallpaper-acg"] .ant-select:not(.ant-select-disabled) .ant-select-selector {
+  background: rgba(255, 255, 255, 0.55) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .ant-input,
+html[data-page-style="wallpaper-acg"].dark .ant-input-number,
+html[data-page-style="wallpaper-acg"].dark .ant-input-number-input,
+html[data-page-style="wallpaper-acg"].dark .ant-input-affix-wrapper,
+html[data-page-style="wallpaper-acg"].dark .ant-select:not(.ant-select-disabled) .ant-select-selector {
+  background: rgba(15, 23, 42, 0.45) !important;
+}
+/* why：affix-wrapper（带前/后缀图标的 Input、Input.Password）内部的裸 input
+   也带 .ant-input 类，会被上面的规则再叠一层半透明白底，形成“框中框”白块
+   （登录页用户名/密码框内的文字输入区域颜色不一致即此问题）。
+   参照 liquid-glass / sakura 的同类规则，内部 input 透明化、去边框。 */
+html[data-page-style="wallpaper-acg"] .ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+  border: none !important;
+}
+
+
+/* why：定时任务状态栏用 var(--color-hover) 实色，在壁纸主题下需要
+   替换为半透明白膜，与卡片内容区风格统一。 */
+html[data-page-style="wallpaper-acg"] [style*="var(--color-hover)"] {
+  background: rgba(255, 255, 255, 0.30) !important;
+}
+html[data-page-style="wallpaper-acg"].dark [style*="var(--color-hover)"] {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
 
 /* 顶部导航栏 */
 html[data-page-style="wallpaper-acg"] .bg-base-bg.fixed.top-0 {
@@ -1218,9 +1679,11 @@ html[data-page-style="wallpaper-acg"].dark .mobile-nav-floating {
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
 
-/* 下拉菜单 */
+/* 下拉菜单
+   why：原 0.90 透明度视觉上接近实白（登录页语言切换菜单尤其明显），
+   降到 0.75 让壁纸透出磨砂感，blur 保证菜单项文字可读 */
 html[data-page-style="wallpaper-acg"] .ant-dropdown .ant-dropdown-menu {
-  background: rgba(255, 255, 255, 0.90) !important;
+  background: rgba(255, 255, 255, 0.75) !important;
   backdrop-filter: blur(20px) saturate(160%) !important;
   -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
   border: 1px solid rgba(255, 255, 255, 0.75) !important;
@@ -1236,7 +1699,390 @@ html[data-page-style="wallpaper-acg"] .ant-btn {
   border-radius: 20px !important;
 }
 
+/* why：输入框/InputNumber/Select 统一大圆角，与按钮风格一致。
+   affix-wrapper 是 Input 的外层容器，内部的裸 input 不需要再单独设圆角。 */
+html[data-page-style="wallpaper-acg"] .ant-input,
+html[data-page-style="wallpaper-acg"] .ant-input-affix-wrapper,
+html[data-page-style="wallpaper-acg"] .ant-input-number,
+html[data-page-style="wallpaper-acg"] .ant-select-selector,
+html[data-page-style="wallpaper-acg"] .ant-picker {
+  border-radius: 20px !important;
+}
+/* affix-wrapper 内部裸 input 不单独圆角，避免与外层双重叠加 */
+html[data-page-style="wallpaper-acg"] .ant-input-affix-wrapper > input.ant-input {
+  border-radius: 0 !important;
+}
 
+/* why：带右侧 addon（按钮/图标）时 antd 会把输入框变成 group，
+   导致右侧圆角被砍掉。需要手动把 addon 容器和内部按钮的右侧圆角补回来，
+   同时把 input / affix-wrapper 的右侧圆角清零以避免错位缝隙。 */
+html[data-page-style="wallpaper-acg"] .ant-input-group > .ant-input,
+html[data-page-style="wallpaper-acg"] .ant-input-group > .ant-input-affix-wrapper {
+  border-radius: 20px 0 0 20px !important;
+}
+html[data-page-style="wallpaper-acg"] .ant-input-group > .ant-input-group-addon:last-child,
+html[data-page-style="wallpaper-acg"] .ant-input-group > .ant-input-group-addon:last-child .ant-btn {
+  border-radius: 0 20px 20px 0 !important;
+}
+/* InputNumber 带 addon 同理 */
+html[data-page-style="wallpaper-acg"] .ant-input-number-group > .ant-input-number {
+  border-radius: 20px 0 0 20px !important;
+}
+html[data-page-style="wallpaper-acg"] .ant-input-number-group > .ant-input-number-group-addon:last-child,
+html[data-page-style="wallpaper-acg"] .ant-input-number-group > .ant-input-number-group-addon:last-child .ant-btn {
+  border-radius: 0 20px 20px 0 !important;
+}
+/* Input.Search 搜索框：左圆右圆，搜索按钮接右侧 */
+html[data-page-style="wallpaper-acg"] .ant-input-search .ant-input,
+html[data-page-style="wallpaper-acg"] .ant-input-search .ant-input-affix-wrapper {
+  border-radius: 20px 0 0 20px !important;
+}
+html[data-page-style="wallpaper-acg"] .ant-input-search .ant-input-search-button {
+  border-radius: 0 20px 20px 0 !important;
+}
+
+/* why：定时任务卡片是"系统控制台"性质，与普通内容卡做视觉区分：
+   - 边框换成带主色调的半透明描边（其他卡片是纯白边框）
+   - 标题栏带轻微主色渐变，视觉重量更强
+   - 整体透明度更低（0.62 vs 0.75），壁纸穿透感更强
+   - 阴影带主色调光晕，让卡片轻微"发光" */
+html[data-page-style="wallpaper-acg"] .schedule-task-card.ant-card {
+  background: rgba(255, 255, 255, 0.62) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, rgba(255, 255, 255, 0.5)) !important;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.08),
+    0 0 0 1px color-mix(in srgb, var(--color-primary) 12%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75) !important;
+}
+/* why：与全局卡片抬头定论一致——标题栏完全透明直接透出卡片磨砂，
+   不叠渐变与 blur，只保留主色分隔线作为层次区分。 */
+html[data-page-style="wallpaper-acg"] .schedule-task-card .ant-card-head {
+  background: transparent !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 18%, rgba(255, 255, 255, 0.30)) !important;
+}
+
+/* 暗色模式：同样用主色描边 + 更强阴影 */
+html[data-page-style="wallpaper-acg"].dark .schedule-task-card.ant-card {
+  background: rgba(15, 23, 42, 0.68) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, rgba(255, 255, 255, 0.08)) !important;
+  box-shadow:
+    0 4px 28px rgba(0, 0, 0, 0.35),
+    0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+/* why：暗色模式同样完全透明，只保留主色分隔线。 */
+html[data-page-style="wallpaper-acg"].dark .schedule-task-card .ant-card-head {
+  background: transparent !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 25%, rgba(255, 255, 255, 0.08)) !important;
+}
+
+
+/* ==========================================
+   流控面板 - 壁纸主题适配
+   why：流控面板所有子卡片默认白色实色，在壁纸背景下视觉割裂；
+        统一换成半透明毛玻璃风格，与壁纸融合，同时保留足够对比度保证可读性。
+   ========================================== */
+
+/* 外层大卡片：降低不透明度至 0.40，加强模糊，让壁纸真正穿透 */
+html[data-page-style="wallpaper-acg"] .rate-limit-card.ant-card {
+  background: rgba(255, 255, 255, 0.40) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, rgba(255, 255, 255, 0.35)) !important;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.07),
+    0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.60) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+/* why：内层子卡背景从 0.45 降至 0.22，同步加 backdrop-filter，
+   让顶部状态卡、弹幕/后备流控卡都变成真正的毛玻璃而非半透明白块 */
+html[data-page-style="wallpaper-acg"] .rate-limit-card .ant-card-type-inner {
+  background: color-mix(in srgb, var(--color-primary) 5%, rgba(255, 255, 255, 0.22)) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 15%, rgba(255, 255, 255, 0.35)) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* why：inner card 标题栏设为 transparent，避免在外层卡片白底上再叠白膜；
+   只用极轻的主色描边区分标题与内容区，backdrop-filter 保持穿透感统一 */
+html[data-page-style="wallpaper-acg"] .rate-limit-card .ant-card-type-inner .ant-card-head {
+  background: transparent !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 14%, rgba(255, 255, 255, 0.30)) !important;
+}
+
+/* why：表格背景透明，消除硬白底；表头用极淡主色做区分 */
+html[data-page-style="wallpaper-acg"] .rate-limit-card .ant-table {
+  background: transparent !important;
+}
+html[data-page-style="wallpaper-acg"] .rate-limit-card .ant-table-thead > tr > th {
+  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, 0.30)) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 15%, rgba(255, 255, 255, 0.40)) !important;
+}
+/* why：表格行透明，奇偶行用极淡主色区分层次，避免纯白横条 */
+html[data-page-style="wallpaper-acg"] .rate-limit-card .ant-table-tbody > tr > td {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.20) !important;
+}
+html[data-page-style="wallpaper-acg"] .rate-limit-card .ant-table-tbody > tr:nth-child(even) > td {
+  background: color-mix(in srgb, var(--color-primary) 4%, rgba(255, 255, 255, 0.18)) !important;
+}
+html[data-page-style="wallpaper-acg"] .rate-limit-card .ant-table-tbody > tr:hover > td {
+  background: color-mix(in srgb, var(--color-primary) 10%, rgba(255, 255, 255, 0.35)) !important;
+}
+
+/* ---- 暗色模式 ---- */
+html[data-page-style="wallpaper-acg"].dark .rate-limit-card.ant-card {
+  background: rgba(15, 23, 42, 0.48) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, rgba(255, 255, 255, 0.07)) !important;
+  box-shadow:
+    0 4px 28px rgba(0, 0, 0, 0.35),
+    0 0 0 1px color-mix(in srgb, var(--color-primary) 15%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+html[data-page-style="wallpaper-acg"].dark .rate-limit-card .ant-card-type-inner {
+  background: color-mix(in srgb, var(--color-primary) 8%, rgba(15, 23, 42, 0.32)) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 20%, rgba(255, 255, 255, 0.07)) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+html[data-page-style="wallpaper-acg"].dark .rate-limit-card .ant-card-type-inner .ant-card-head {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-primary) 15%, rgba(15, 23, 42, 0.50)) 0%,
+    rgba(255, 255, 255, 0.03) 100%
+  ) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 20%, rgba(255, 255, 255, 0.07)) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .rate-limit-card .ant-table {
+  background: transparent !important;
+}
+html[data-page-style="wallpaper-acg"].dark .rate-limit-card .ant-table-thead > tr > th {
+  background: color-mix(in srgb, var(--color-primary) 12%, rgba(15, 23, 42, 0.60)) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 20%, rgba(255, 255, 255, 0.08)) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .rate-limit-card .ant-table-tbody > tr > td {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .rate-limit-card .ant-table-tbody > tr:nth-child(even) > td {
+  background: color-mix(in srgb, var(--color-primary) 6%, rgba(15, 23, 42, 0.30)) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .rate-limit-card .ant-table-tbody > tr:hover > td {
+  background: color-mix(in srgb, var(--color-primary) 14%, rgba(15, 23, 42, 0.50)) !important;
+}
+
+/* ==========================================
+   热力瓦片 rate-limit-heatmap
+   why：各源流控详情从表格改为热力瓦片网格，颜色深浅即压力等级，
+        0-49%=淡紫 50-79%=中紫 80-99%=橙红 100%+=红 无限额=细描边紫
+   ========================================== */
+.rate-limit-heatmap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+/* 瓦片基础 */
+.rl-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 76px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  cursor: default;
+  transition: transform 0.15s, box-shadow 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+.rl-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+/* 高光膜 */
+.rl-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, rgba(255,255,255,0.18) 0%, transparent 55%);
+  pointer-events: none;
+}
+/* 瓦片内文字层 */
+.rl-tile-name {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 3px;
+  z-index: 1;
+  text-align: center;
+  line-height: 1.2;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rl-tile-pct {
+  font-size: 20px;
+  font-weight: 800;
+  z-index: 1;
+  line-height: 1;
+}
+.rl-tile-sub {
+  font-size: 9px;
+  opacity: 0.6;
+  z-index: 1;
+  margin-top: 2px;
+}
+
+/* 热力等级 — 亮色模式 */
+.rl-tile.heat-lv0 {
+  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, 0.60));
+  border-color: color-mix(in srgb, var(--color-primary) 20%, rgba(255, 255, 255, 0.40));
+  color: color-mix(in srgb, var(--color-primary) 80%, #000);
+}
+.rl-tile.heat-lv1 {
+  background: color-mix(in srgb, var(--color-primary) 18%, rgba(255, 255, 255, 0.55));
+  border-color: color-mix(in srgb, var(--color-primary) 35%, rgba(255, 255, 255, 0.30));
+  color: color-mix(in srgb, var(--color-primary) 90%, #000);
+}
+.rl-tile.heat-lv2 {
+  background: rgba(251, 191, 36, 0.22);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #92400e;
+}
+.rl-tile.heat-lv3 {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #7f1d1d;
+}
+.rl-tile.heat-inf {
+  background: color-mix(in srgb, var(--color-primary) 6%, rgba(255, 255, 255, 0.45));
+  border-color: color-mix(in srgb, var(--color-primary) 18%, rgba(255, 255, 255, 0.30));
+  border-style: dashed;
+  color: color-mix(in srgb, var(--color-primary) 65%, #555);
+}
+
+/* 热力等级 — 暗色模式 */
+.dark .rl-tile.heat-lv0 {
+  background: color-mix(in srgb, var(--color-primary) 10%, rgba(15, 23, 42, 0.55));
+  border-color: color-mix(in srgb, var(--color-primary) 22%, rgba(255, 255, 255, 0.10));
+  color: color-mix(in srgb, var(--color-primary) 60%, #fff);
+}
+.dark .rl-tile.heat-lv1 {
+  background: color-mix(in srgb, var(--color-primary) 22%, rgba(15, 23, 42, 0.50));
+  border-color: color-mix(in srgb, var(--color-primary) 40%, rgba(255, 255, 255, 0.12));
+  color: color-mix(in srgb, var(--color-primary) 75%, #fff);
+}
+.dark .rl-tile.heat-lv2 {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.40);
+  color: #fcd34d;
+}
+.dark .rl-tile.heat-lv3 {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+}
+.dark .rl-tile.heat-inf {
+  background: color-mix(in srgb, var(--color-primary) 8%, rgba(15, 23, 42, 0.45));
+  border-color: color-mix(in srgb, var(--color-primary) 20%, rgba(255, 255, 255, 0.08));
+  border-style: dashed;
+  color: color-mix(in srgb, var(--color-primary) 55%, #aaa);
+}
+
+/* why：SortablePriorityList（元数据源/弹幕源优先级排序列表）和 Metadata 页的元数据源
+   可拖拽条目，均用 inline style 写 background/backgroundColor: var(--color-card)。
+   Inline style 优先级高于任何 CSS 类，毛玻璃/壁纸主题无法通过类覆盖。
+   通过给条目加 sortable-priority-item / metadata-sortable-item / scraper-sortable-item 类名，
+   再在各主题下用 !important 精确覆盖，实现与卡片一致的半透明毛玻璃效果。 */
+
+/* ---- wallpaper-acg ---- */
+html[data-page-style="wallpaper-acg"] .sortable-priority-item,
+html[data-page-style="wallpaper-acg"] .sortable-priority-overlay,
+html[data-page-style="wallpaper-acg"] .metadata-sortable-item,
+html[data-page-style="wallpaper-acg"] .scraper-sortable-item {
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border-color: rgba(255, 255, 255, 0.55) !important;
+}
+html[data-page-style="wallpaper-acg"].dark .sortable-priority-item,
+html[data-page-style="wallpaper-acg"].dark .sortable-priority-overlay,
+html[data-page-style="wallpaper-acg"].dark .metadata-sortable-item,
+html[data-page-style="wallpaper-acg"].dark .scraper-sortable-item {
+  background: rgba(15, 23, 42, 0.55) !important;
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+/* ---- liquid-glass ---- */
+html[data-page-style="liquid-glass"] .sortable-priority-item,
+html[data-page-style="liquid-glass"] .sortable-priority-overlay,
+html[data-page-style="liquid-glass"] .metadata-sortable-item,
+html[data-page-style="liquid-glass"] .scraper-sortable-item {
+  background: rgba(255, 255, 255, 0.50) !important;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border-color: rgba(255, 255, 255, 0.55) !important;
+}
+html[data-page-style="liquid-glass"].dark .sortable-priority-item,
+html[data-page-style="liquid-glass"].dark .sortable-priority-overlay,
+html[data-page-style="liquid-glass"].dark .metadata-sortable-item,
+html[data-page-style="liquid-glass"].dark .scraper-sortable-item {
+  background: rgba(30, 41, 59, 0.55) !important;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* ---- glass（云海玻璃）---- */
+html[data-page-style="glass"] .sortable-priority-item,
+html[data-page-style="glass"] .sortable-priority-overlay,
+html[data-page-style="glass"] .metadata-sortable-item,
+html[data-page-style="glass"] .scraper-sortable-item {
+  background: rgba(255, 255, 255, 0.52) !important;
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  border-color: rgba(255, 255, 255, 0.60) !important;
+}
+html[data-page-style="glass"].dark .sortable-priority-item,
+html[data-page-style="glass"].dark .sortable-priority-overlay,
+html[data-page-style="glass"].dark .metadata-sortable-item,
+html[data-page-style="glass"].dark .scraper-sortable-item {
+  background: rgba(8, 18, 40, 0.60) !important;
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  border-color: rgba(120, 180, 255, 0.20) !important;
+}
+
+/* ---- acg-glass（二次元玻璃）---- */
+html[data-page-style="acg-glass"] .sortable-priority-item,
+html[data-page-style="acg-glass"] .sortable-priority-overlay,
+html[data-page-style="acg-glass"] .metadata-sortable-item,
+html[data-page-style="acg-glass"] .scraper-sortable-item {
+  background: rgba(255, 255, 255, 0.50) !important;
+  backdrop-filter: blur(14px) saturate(185%);
+  -webkit-backdrop-filter: blur(14px) saturate(185%);
+  border-color: rgba(185, 155, 255, 0.45) !important;
+}
+html[data-page-style="acg-glass"].dark .sortable-priority-item,
+html[data-page-style="acg-glass"].dark .sortable-priority-overlay,
+html[data-page-style="acg-glass"].dark .metadata-sortable-item,
+html[data-page-style="acg-glass"].dark .scraper-sortable-item {
+  background: rgba(14, 8, 36, 0.60) !important;
+  backdrop-filter: blur(14px) saturate(185%);
+  -webkit-backdrop-filter: blur(14px) saturate(185%);
+  border-color: rgba(160, 130, 255, 0.24) !important;
+}
 
 /* ==========================================
    樱花物语 (Sakura Story)
@@ -1398,6 +2244,65 @@ html[data-page-style="glass"] .ant-popover-inner {
   border-radius: 16px !important;
   box-shadow: 0 6px 28px rgba(60, 100, 160, 0.12) !important;
 }
+/* why：标题栏置为透明，直接透出卡片主体的磨砂层，与内容区完全一致。 */
+html[data-page-style="glass"] .ant-card-head {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.28) !important;
+  border-radius: 16px 16px 0 0 !important;
+}
+html[data-page-style="glass"].dark .ant-card-head {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(120, 180, 255, 0.12) !important;
+  border-radius: 16px 16px 0 0 !important;
+}
+
+/* why：glass 主题下 ant-card-type-inner 有独立背景 token，
+   不被通用 .ant-card 规则覆盖，需单独透明化避免实色白底横条。 */
+html[data-page-style="glass"] .ant-card-type-inner {
+  background: rgba(255, 255, 255, 0.28) !important;
+  border: 1px solid rgba(255, 255, 255, 0.45) !important;
+}
+html[data-page-style="glass"] .ant-card-type-inner .ant-card-head {
+  background: rgba(255, 255, 255, 0.16) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.38) !important;
+}
+html[data-page-style="glass"] .ant-card-type-inner .ant-table {
+  background: transparent !important;
+}
+html[data-page-style="glass"] .ant-card-type-inner .ant-table-thead > tr > th {
+  background: rgba(255, 255, 255, 0.20) !important;
+}
+html[data-page-style="glass"] .ant-card-type-inner .ant-table-tbody > tr > td {
+  background: transparent !important;
+}
+html[data-page-style="glass"] .ant-card-type-inner .ant-table-tbody > tr:nth-child(even) > td {
+  background: rgba(255, 255, 255, 0.10) !important;
+}
+html[data-page-style="glass"].dark .ant-card-type-inner {
+  background: rgba(8, 18, 40, 0.38) !important;
+  border: 1px solid rgba(120, 180, 255, 0.14) !important;
+}
+html[data-page-style="glass"].dark .ant-card-type-inner .ant-card-head {
+  background: rgba(8, 18, 40, 0.22) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(120, 180, 255, 0.14) !important;
+}
+html[data-page-style="glass"].dark .ant-card-type-inner .ant-table {
+  background: transparent !important;
+}
+html[data-page-style="glass"].dark .ant-card-type-inner .ant-table-thead > tr > th {
+  background: rgba(8, 18, 40, 0.40) !important;
+}
+html[data-page-style="glass"].dark .ant-card-type-inner .ant-table-tbody > tr > td {
+  background: transparent !important;
+}
+html[data-page-style="glass"].dark .ant-card-type-inner .ant-table-tbody > tr:nth-child(even) > td {
+  background: rgba(120, 180, 255, 0.04) !important;
+}
+
 html[data-page-style="glass"] .ant-modal-content,
 html[data-page-style="glass"] .ant-drawer-content {
   background: rgba(255, 255, 255, 0.86) !important;
@@ -1457,6 +2362,12 @@ html[data-page-style="glass"].dark .ant-picker {
   background: rgba(8, 18, 40, 0.55) !important;
   border: 1px solid rgba(120, 180, 255, 0.18) !important;
 }
+/* why：同 wallpaper-acg，affix-wrapper 内部裸 input 透明化，避免双层背景白块 */
+html[data-page-style="glass"] .ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+  border: none !important;
+}
+
 html[data-page-style="glass"] .ant-table { background: transparent !important; }
 
 
@@ -1761,6 +2672,17 @@ html[data-page-style="acg-glass"] .ant-popover-inner {
   border-radius: 16px !important;
   box-shadow: 0 6px 26px rgba(110, 70, 200, 0.14) !important;
 }
+/* why：标题栏置为透明，直接透出卡片主体的磨砂层，与内容区完全一致。 */
+html[data-page-style="acg-glass"] .ant-card-head {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(185, 155, 255, 0.18) !important;
+  border-radius: 16px 16px 0 0 !important;
+}
+html[data-page-style="acg-glass"].dark .ant-card-head {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(160, 130, 255, 0.12) !important;
+  border-radius: 16px 16px 0 0 !important;
+}
 html[data-page-style="acg-glass"] .ant-modal-content,
 html[data-page-style="acg-glass"] .ant-drawer-content {
   background: rgba(255, 255, 255, 0.87) !important;
@@ -1808,10 +2730,224 @@ html[data-page-style="acg-glass"] .ant-input,
 html[data-page-style="acg-glass"] .ant-input-affix-wrapper,
 html[data-page-style="acg-glass"] .ant-select-selector,
 html[data-page-style="acg-glass"] .ant-picker { border-radius: 14px !important; }
+/* why：同 wallpaper-acg，affix-wrapper 内部裸 input 透明化，避免双层背景白块 */
+html[data-page-style="acg-glass"] .ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+  border: none !important;
+}
+
 html[data-page-style="acg-glass"] .ant-table { background: transparent !important; }
 
+/* why：acg-glass 主题下 ant-card-type-inner 有独立背景 token，
+   不被通用 .ant-card 规则覆盖，需单独透明化避免实色白底横条（与流控面板内层子卡同理）。 */
+html[data-page-style="acg-glass"] .ant-card-type-inner {
+  background: rgba(255, 255, 255, 0.28) !important;
+  border: 1px solid rgba(185, 155, 255, 0.32) !important;
+}
+html[data-page-style="acg-glass"] .ant-card-type-inner .ant-card-head {
+  background: rgba(255, 255, 255, 0.14) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(185, 155, 255, 0.25) !important;
+}
+html[data-page-style="acg-glass"] .ant-card-type-inner .ant-table {
+  background: transparent !important;
+}
+html[data-page-style="acg-glass"] .ant-card-type-inner .ant-table-thead > tr > th {
+  background: rgba(185, 155, 255, 0.12) !important;
+}
+html[data-page-style="acg-glass"] .ant-card-type-inner .ant-table-tbody > tr > td {
+  background: transparent !important;
+}
+html[data-page-style="acg-glass"] .ant-card-type-inner .ant-table-tbody > tr:nth-child(even) > td {
+  background: rgba(185, 155, 255, 0.06) !important;
+}
+html[data-page-style="acg-glass"].dark .ant-card-type-inner {
+  background: rgba(14, 8, 36, 0.38) !important;
+  border: 1px solid rgba(160, 130, 255, 0.18) !important;
+}
+html[data-page-style="acg-glass"].dark .ant-card-type-inner .ant-card-head {
+  background: rgba(14, 8, 36, 0.22) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(160, 130, 255, 0.16) !important;
+}
+html[data-page-style="acg-glass"].dark .ant-card-type-inner .ant-table {
+  background: transparent !important;
+}
+html[data-page-style="acg-glass"].dark .ant-card-type-inner .ant-table-thead > tr > th {
+  background: rgba(160, 130, 255, 0.10) !important;
+}
+html[data-page-style="acg-glass"].dark .ant-card-type-inner .ant-table-tbody > tr > td {
+  background: transparent !important;
+}
+html[data-page-style="acg-glass"].dark .ant-card-type-inner .ant-table-tbody > tr:nth-child(even) > td {
+  background: rgba(160, 130, 255, 0.05) !important;
+}
 
 
 
 
 
+
+
+
+/* ==================== 登录页卡片 login-panel ====================
+   why：登录页原来用 antd Card，壁纸/玻璃主题对 .ant-card 施加 0.75 白底 !important，
+   登录卡片无法跟随主题呈现透明磨砂。改为 div.login-panel 后，
+   背景在这里按主题控制，透明度与批量管理大卡片(batch-manage-panel)保持一致。 */
+
+/* ── 普通主题兜底（非壁纸/玻璃） ── */
+.login-panel {
+  background-color: white;
+}
+.dark .login-panel {
+  background-color: #1a1e2e;
+}
+
+/* ── 二次元壁纸主题：半透明磨砂 ── */
+html[data-page-style="wallpaper-acg"] .login-panel {
+  background: rgba(255, 255, 255, 0.10) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+html[data-page-style="wallpaper-acg"].dark .login-panel {
+  background: rgba(255, 255, 255, 0.04) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* ── 液态玻璃 / 玻璃 / ACG玻璃主题 ── */
+html[data-page-style="liquid-glass"] .login-panel,
+html[data-page-style="glass"] .login-panel,
+html[data-page-style="acg-glass"] .login-panel {
+  background: rgba(255, 255, 255, 0.42) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+html[data-page-style="liquid-glass"].dark .login-panel,
+html[data-page-style="glass"].dark .login-panel,
+html[data-page-style="acg-glass"].dark .login-panel {
+  background: rgba(30, 41, 59, 0.50) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* ==================== 弹幕搜索源页版本信息小卡片 scraper-version-card ====================
+   why：它是嵌套在「资源仓库配置」Card 内部的第二层 ant-card，
+   壁纸/玻璃主题对 .ant-card 的 0.75 白底会两层叠加（≈ 0.94 不透明），
+   视觉上就是一块实白。规则放文件末尾 + 叠加 .ant-card 类提高特异性，
+   保证压过前面各主题的 .ant-card 通用规则。 */
+html[data-page-style="wallpaper-acg"] .ant-card.scraper-version-card,
+html[data-page-style="liquid-glass"] .ant-card.scraper-version-card,
+html[data-page-style="glass"] .ant-card.scraper-version-card,
+html[data-page-style="acg-glass"] .ant-card.scraper-version-card {
+  background: rgba(255, 255, 255, 0.35) !important;
+  border: 1px solid rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+}
+html[data-page-style="wallpaper-acg"].dark .ant-card.scraper-version-card,
+html[data-page-style="liquid-glass"].dark .ant-card.scraper-version-card,
+html[data-page-style="glass"].dark .ant-card.scraper-version-card,
+html[data-page-style="acg-glass"].dark .ant-card.scraper-version-card {
+  background: rgba(15, 23, 42, 0.35) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+}
+
+/* ==================== 弹幕搜索源页两张大卡片 scraper-panel-card ====================
+   why：用户反馈该页「资源仓库配置」与「弹幕搜索源」两张大卡片在壁纸/玻璃主题下
+   仍是 .ant-card 默认的 0.75 白底，视觉接近实白。改为与批量管理面板
+   （batch-manage-panel）一致的强磨砂透明：壁纸 0.10、其他玻璃主题 0.42。
+   规则放文件末尾 + 叠加 .ant-card 类提高特异性，压过各主题通用规则。 */
+html[data-page-style="wallpaper-acg"] .ant-card.scraper-panel-card {
+  background: rgba(255, 255, 255, 0.10) !important;
+  border: 1px solid rgba(255, 255, 255, 0.30) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+html[data-page-style="wallpaper-acg"].dark .ant-card.scraper-panel-card {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+html[data-page-style="liquid-glass"] .ant-card.scraper-panel-card,
+html[data-page-style="glass"] .ant-card.scraper-panel-card,
+html[data-page-style="acg-glass"] .ant-card.scraper-panel-card {
+  background: rgba(255, 255, 255, 0.42) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+html[data-page-style="liquid-glass"].dark .ant-card.scraper-panel-card,
+html[data-page-style="glass"].dark .ant-card.scraper-panel-card,
+html[data-page-style="acg-glass"].dark .ant-card.scraper-panel-card {
+  background: rgba(30, 41, 59, 0.50) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* ==================== 批量管理列表滚动条 batch-scroll ====================
+   why：用户要求滚动条默认隐藏、滚动时才显示。JSX 里 onScroll 会给容器
+   临时挂 scrolling 类（停止 800ms 后移除），这里只控制滑块颜色的显隐，
+   轨道宽度固定 6px，避免出现/消失时内容抖动。 */
+.batch-scroll {
+  scrollbar-width: thin;               /* Firefox */
+  scrollbar-color: transparent transparent;
+}
+.batch-scroll.scrolling {
+  scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
+}
+.batch-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.batch-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.batch-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+  transition: background 0.3s;
+}
+.batch-scroll.scrolling::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.45);
+}
+.dark .batch-scroll.scrolling::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+}
+.dark .batch-scroll.scrolling {
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+}
+
+/* ==================== 弹幕存储-迁移与重命名 内嵌小卡 storage-inner-card ====================
+   why：筛选条件/选择状态栏/批量操作三张内嵌小卡在玻璃/壁纸主题下
+   会被 .ant-card 主题规则再叠一层磨砂白膜，形成三条亮块。
+   与全局卡片定论一致：完全透明透出外层卡片磨砂，轮廓只靠描边。 */
+html[data-page-style="wallpaper-acg"] .ant-card.storage-inner-card,
+html[data-page-style="liquid-glass"] .ant-card.storage-inner-card,
+html[data-page-style="glass"] .ant-card.storage-inner-card,
+html[data-page-style="acg-glass"] .ant-card.storage-inner-card,
+html[data-page-style="wallpaper-acg"].dark .ant-card.storage-inner-card,
+html[data-page-style="liquid-glass"].dark .ant-card.storage-inner-card,
+html[data-page-style="glass"].dark .ant-card.storage-inner-card,
+html[data-page-style="acg-glass"].dark .ant-card.storage-inner-card {
+  background: transparent !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none !important;
+}
+
+/* why：Card body 也需要透明，否则会显示为白色实底 */
+html[data-page-style="wallpaper-acg"] .ant-card.storage-inner-card .ant-card-body,
+html[data-page-style="liquid-glass"] .ant-card.storage-inner-card .ant-card-body,
+html[data-page-style="glass"] .ant-card.storage-inner-card .ant-card-body,
+html[data-page-style="acg-glass"] .ant-card.storage-inner-card .ant-card-body,
+html[data-page-style="wallpaper-acg"].dark .ant-card.storage-inner-card .ant-card-body,
+html[data-page-style="liquid-glass"].dark .ant-card.storage-inner-card .ant-card-body,
+html[data-page-style="glass"].dark .ant-card.storage-inner-card .ant-card-body,
+html[data-page-style="acg-glass"].dark .ant-card.storage-inner-card .ant-card-body {
+  background: transparent !important;
+}

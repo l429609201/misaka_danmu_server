@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Input, Button, Card, Checkbox, Spin, Empty, message, Dropdown, Pagination, Popover, Modal, Tooltip } from 'antd'
+import { Input, Button, Checkbox, Spin, Empty, message, Dropdown, Pagination, Popover, Modal, Tooltip } from 'antd'
 import { DownOutlined } from '@ant-design/icons'
 import { MyIcon } from '../../components/MyIcon'
 import { useAtomValue } from 'jotai'
@@ -30,6 +30,14 @@ export const BatchManagePage = () => {
 
   // ---- State ----
   const [loading, setLoading] = useState(false)
+  // why：滚动条默认隐藏、滚动时才显示——onScroll 给容器挂 scrolling 类，停止 800ms 后移除
+  const scrollHideTimer = useRef(null)
+  const handleListScroll = (e) => {
+    const el = e.currentTarget
+    el.classList.add('scrolling')
+    clearTimeout(scrollHideTimer.current)
+    scrollHideTimer.current = setTimeout(() => el.classList.remove('scrolling'), 800)
+  }
   const [taskStatus, setTaskStatus] = useState(null)
   const [animeGroups, setAnimeGroups] = useState([])
   const [searchKeyword, setSearchKeyword] = useState('')
@@ -212,19 +220,23 @@ export const BatchManagePage = () => {
 
   return (
     <div className="my-6">
-      <Card>
+      {/* why：原来是 <Card>，但 wallpaper-acg / liquid-glass 等主题对 .ant-card 施加了强制白色背景，
+          把整个批量管理区域盖成实色白，壁纸/玻璃效果完全透不出来。
+          换成 div.batch-manage-panel，背景完全由 CSS 主题规则控制；
+          圆角和边框也在这里定义，内层表格容器不再重复。*/}
+      <div className="batch-manage-panel rounded-2xl border border-gray-200 dark:border-white/6 p-6">
 
 
       {/* 页头 */}
-      <div className="mb-6">
-
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 flex-wrap min-w-0">
-            <h1 className="text-2xl font-extrabold tracking-tight truncate">{t('batchManage.title')}</h1>
-            {taskChip()}
-          </div>
+      {/* why：改成与弹幕库卡片抬头（ant-card-head）一致——通栏标题栏 + 底部分隔线，
+          标题 16px 半粗居左，状态徽章紧随，描述文字靠右；用负外边距抵消 panel 的 p-6，
+          让分隔线贴到面板边缘，观感与 antd Card 头部完全对齐 */}
+      <div className="-mx-6 -mt-6 mb-6 px-6 py-4 border-b border-gray-200 dark:border-white/6 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
+          <h1 className="text-base font-semibold truncate">{t('batchManage.title')}</h1>
+          {taskChip()}
         </div>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">{t('batchManage.pageDesc')}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 truncate hidden sm:block m-0">{t('batchManage.pageDesc')}</p>
       </div>
 
 
@@ -236,7 +248,8 @@ export const BatchManagePage = () => {
           { iconName: 'favorites-fill', iconColor: '#facc15', label: t('batchManage.statFavorited'), value: stats.favorited },
           { iconName: 'wanjie1', iconColor: '#60a5fa', label: t('batchManage.statFinished'), value: finishedCount },
         ].map((s, i) => (
-          <div key={i} className="flex-1 flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/6 bg-white dark:bg-[#1a1e2e] text-xs cursor-default min-w-0">
+          // why：不写 bg-*，背景完全交给 CSS 控制，壁纸主题下才不会被 Tailwind utilities 层压过
+          <div key={i} className="batch-stat-badge flex-1 flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/6 text-xs cursor-default min-w-0">
             <div className="flex items-center gap-1 min-w-0">
               <MyIcon icon={s.iconName} size={13} color={s.iconColor} />
               <span className="text-gray-500 dark:text-gray-400 truncate">{s.label}</span>
@@ -249,9 +262,12 @@ export const BatchManagePage = () => {
       {/* 主内容区 */}
       <div>
         {/* 表格面板 */}
-        <div className={`rounded-2xl border border-gray-200 dark:border-white/6 bg-white dark:bg-[#1a1e2e] overflow-hidden ${isMobile ? 'flex flex-col max-h-[calc(100vh-300px)]' : ''}`}>
+        {/* why：外层已是 batch-manage-panel，这里只需 overflow-hidden + 移动端高度限制 */}
+        <div className={`overflow-hidden ${isMobile ? 'flex flex-col max-h-[calc(100vh-300px)]' : ''}`}>
           {/* 工具栏 */}
-          <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-gray-200 dark:border-white/6 flex items-center gap-2 flex-wrap">
+          {/* why：与下方表头一致——去掉通栏 border-b，改用圆角长条包裹，
+              背景复用 batch-manage-header 的各主题磨砂规则 */}
+          <div className="px-4 sm:px-5 py-2.5 mx-2 mt-2 rounded-full border border-gray-200 dark:border-white/6 flex items-center gap-2 flex-wrap batch-manage-header">
             {(() => {
               const allIds = animeGroups.flatMap(g => g.sources.map(s => s.sourceId))
               const allSelected = allIds.length > 0 && allIds.every(id => selectedSourceIds.includes(id))
@@ -337,8 +353,35 @@ export const BatchManagePage = () => {
             </div>
           </div>
 
+          {/* why：表头移出滚动容器，固定在列表上方不随内容滚动，不再需要 sticky */}
+          {!isMobile && (
+            <div className="flex items-center px-5 py-2.5 mx-2 mt-2 text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 rounded-full border border-gray-200 dark:border-white/6 batch-manage-header">
+              <div className="w-[38%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition flex items-center gap-1" onClick={() => handleSortChange('title')}>
+                {t('batchManage.colTitle')} <span className={`text-[10px] ${sortBy === 'title' ? 'text-indigo-400' : 'opacity-30'}`}>{sortBy === 'title' ? (sortOrder === 'asc' ? '↑' : '↓') : '⇅'}</span>
+              </div>
+              <div className="w-[10%]">{t('batchManage.colProgress')}</div>
+              <div className="w-[10%]">{t('batchManage.colMissing')}</div>
+              <div className="w-[10%]">{t('batchManage.colRefresh')}</div>
+              <div className="w-[10%]">{t('batchManage.colFavorite')}</div>
+              <div className="w-[10%]">{t('batchManage.colFinished')}</div>
+              <div className="w-[12%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition" onClick={() => handleSortChange('created')}>
+                <div className="flex items-center gap-1">
+                  <div className="flex flex-col leading-tight">
+                    <span>{t('batchManage.colUpdatedLine1')}</span>
+                    <span>{t('batchManage.colUpdatedLine2')}</span>
+                  </div>
+                  <div className="flex flex-col items-center text-[10px] leading-none gap-0.5">
+                    <span className={sortBy === 'created' && sortOrder === 'asc' ? 'text-indigo-400' : 'opacity-30'}>▲</span>
+                    <span className={sortBy === 'created' && sortOrder === 'desc' ? 'text-indigo-400' : 'opacity-30'}>▼</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 表格 / 移动端卡片 */}
-          <div className={isMobile ? 'p-3 space-y-3 flex-1 overflow-y-auto' : 'overflow-y-auto overflow-x-hidden'} style={isMobile ? undefined : { maxHeight: 'calc(100vh - 380px)', minHeight: 300 }}>
+          {/* why：加 batch-scroll——滚动条默认隐藏，滚动时由 scrolling 类短暂显示 */}
+          <div className={isMobile ? 'p-3 space-y-3 flex-1 overflow-y-auto batch-scroll' : 'overflow-y-auto overflow-x-hidden batch-scroll'} onScroll={handleListScroll} style={isMobile ? undefined : { maxHeight: 'calc(100vh - 380px)', minHeight: 300 }}>
             {loading ? (
               <div className="flex justify-center py-12"><Spin /></div>
             ) : animeGroups.length === 0 ? (
@@ -355,10 +398,11 @@ export const BatchManagePage = () => {
                   ? (() => { const l = group.sources.filter(x => x.lastRefreshLatestEpisodeAt).sort((a, b) => new Date(b.lastRefreshLatestEpisodeAt) - new Date(a.lastRefreshLatestEpisodeAt))[0]; return l ? dayjs(l.lastRefreshLatestEpisodeAt).format('MM-DD HH:mm') : '—' })()
                   : s.lastRefreshLatestEpisodeAt ? dayjs(s.lastRefreshLatestEpisodeAt).format('MM-DD HH:mm') : '—'
                 return (
+                  // why：去掉内联 bg-white/dark:bg-[#1a1e2e]，交给 CSS batch-mobile-card 按主题控制
                   <div
                     key={isMulti ? group.animeId : s.sourceId}
                     onClick={() => toggleGroupSelection(group)}
-                    className={`relative rounded-xl border p-3 transition cursor-pointer ${groupSelected ? 'ring-2 ring-inset shadow-sm' : 'border-gray-200 dark:border-white/6 bg-white dark:bg-[#1a1e2e] hover:border-indigo-300/60 dark:hover:border-indigo-500/40'}`}
+                    className={`batch-mobile-card relative rounded-xl border p-3 transition cursor-pointer ${groupSelected ? 'ring-2 ring-inset shadow-sm' : 'border-gray-200 dark:border-white/6 hover:border-indigo-300/60 dark:hover:border-indigo-500/40'}`}
                     style={groupSelected ? {
                       backgroundColor: 'color-mix(in srgb, var(--color-primary) 15%, transparent)',
                       borderColor: 'color-mix(in srgb, var(--color-primary) 40%, transparent)',
@@ -410,31 +454,9 @@ export const BatchManagePage = () => {
             ) : (
               /* ===== 桌面端卡片列表视图 ===== */
               <>
-                {/* 列表头 */}
-                <div className="flex items-center px-5 py-2.5 text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-white/6 sticky top-0 bg-white dark:bg-[#1a1e2e] z-10">
-                  <div className="w-[38%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition flex items-center gap-1" onClick={() => handleSortChange('title')}>
-                    {t('batchManage.colTitle')} <span className={`text-[10px] ${sortBy === 'title' ? 'text-indigo-400' : 'opacity-30'}`}>{sortBy === 'title' ? (sortOrder === 'asc' ? '↑' : '↓') : '⇅'}</span>
-                  </div>
-                  <div className="w-[10%]">{t('batchManage.colProgress')}</div>
-                  <div className="w-[10%]">{t('batchManage.colMissing')}</div>
-                  <div className="w-[10%]">{t('batchManage.colRefresh')}</div>
-                  <div className="w-[10%]">{t('batchManage.colFavorite')}</div>
-                  <div className="w-[10%]">{t('batchManage.colFinished')}</div>
-                  <div className="w-[12%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition" onClick={() => handleSortChange('created')}>
-                    <div className="flex items-center gap-1">
-                      <div className="flex flex-col leading-tight">
-                        <span>{t('batchManage.colUpdatedLine1')}</span>
-                        <span>{t('batchManage.colUpdatedLine2')}</span>
-                      </div>
-                      <div className="flex flex-col items-center text-[10px] leading-none gap-0.5">
-                        <span className={sortBy === 'created' && sortOrder === 'asc' ? 'text-indigo-400' : 'opacity-30'}>▲</span>
-                        <span className={sortBy === 'created' && sortOrder === 'desc' ? 'text-indigo-400' : 'opacity-30'}>▼</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {/* 卡片行列表 */}
-                <div className="p-2 space-y-1">
+                {/* 卡片行列表（表头已移出滚动容器，见上方 !isMobile 块） */}
+                {/* why：加 batch-rows-container 钩子，壁纸主题下通过 CSS 消掉间隔行白底 */}
+                <div className="batch-rows-container p-2 space-y-1">
                   {animeGroups.map((group, idx) => {
                     const isMulti = group.sources.length > 1
                     const s = group.sources[0]
@@ -540,7 +562,7 @@ export const BatchManagePage = () => {
           )}
         </div>
       </div>
-      </Card>
+      </div>
 
       {/* 删除确认弹窗 */}
       <Modal title={t('incrementalRefresh.deleteConfirmTitle')} open={deleteModalOpen}
@@ -604,7 +626,7 @@ const MultiToggle = ({ sources, field, iconName, color, onToggle }) => {
         onClick={() => setOpen(!open)}
       ><MyIcon icon={iconName} size={13} color={anyOn ? color : undefined} /> <span className="text-[9px] opacity-50">▾</span></button>
       {open && (
-        <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-white dark:bg-[#1a1e2e] border border-gray-200 dark:border-white/6 rounded-xl p-1.5 shadow-xl z-20 min-w-[140px]">
+        <div className="batch-multitoggle-dropdown absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-white dark:bg-[#1a1e2e] border border-gray-200 dark:border-white/6 rounded-xl p-1.5 shadow-xl z-20 min-w-[140px]">
           {sources.map(s => (
             <div key={s.sourceId} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/3 text-xs">
               <span className="font-medium text-gray-600 dark:text-gray-300">{s.providerName}</span>
