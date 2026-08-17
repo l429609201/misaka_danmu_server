@@ -680,8 +680,13 @@ class ScraperManager:
         # 按源分组输出缓冲的日志（消除交叉）- 使用 create_task 异步执行，不阻塞事件循环
         mgr_logger = logging.getLogger(__name__)
 
-        async def _async_flush_logs():
-            """异步日志 flush，不阻塞 search_all 的返回"""
+        def _do_flush_logs():
+            """在线程池中执行日志 flush，避免占用事件循环。
+            why：flush_buffered_logs 只是纯 Python 日志写入（无 I/O 等待），
+            用 run_in_executor 推给线程池，主协程可以并行继续处理补充源、过滤等逻辑，
+            最后在 return 前 await 确保日志块在计时报告之前全部输出完毕，
+            同时不阻塞事件循环。
+            """
             for pn, buffers in provider_buffers.items():
                 total_count = provider_timing.get(pn, (0, 0))[1]
                 total_dur = provider_timing.get(pn, (0, 0))[0]
@@ -691,9 +696,9 @@ class ScraperManager:
                     merged_handler._records.extend(bh.records)
                     bh.clear()
                 flush_buffered_logs(mgr_logger, pn, merged_handler, total_count, total_dur, first_error)
-                await asyncio.sleep(0)  # 让出事件循环，避免长时间阻塞
 
-        asyncio.create_task(_async_flush_logs())
+        # 提交到线程池并行执行，主协程继续处理补充源/过滤等逻辑
+        flush_task = asyncio.get_event_loop().run_in_executor(None, _do_flush_logs)
 
         # 保存耗时信息供计时报告使用
         self.last_search_timing = [
@@ -796,6 +801,11 @@ class ScraperManager:
                 filtered_results.append(item)
         
         logging.getLogger(__name__).info(f"全局标题过滤: 从 {len(all_results)} 个结果中保留了 {len(filtered_results)} 个。")
+
+        # 确保各源日志块在返回结果（进而触发计时报告）之前全部输出完毕
+        # why：flush_task 在线程池里并行执行，此处 await 不阻塞事件循环，
+        # 仅等待线程写完日志，保证日志顺序：各源日志块 → 补充源日志 → 计时报告
+        await flush_task
 
         # 异步更新弹幕源健康度统计
         asyncio.create_task(self._update_health_stats(timed_results))
