@@ -535,6 +535,35 @@ async def set_match_fallback_tokens(
     logger.info(f"匹配后备Token配置已保存: {request.value}")
     return
 
+# --- 外联海报模式 Token 授权配置 ---
+
+
+
+@router.get("/config/posterProxyTokens", response_model=MatchFallbackTokensResponse, summary="获取外联海报模式允许的Token列表")
+async def get_poster_proxy_tokens(
+    current_user: models.User = Depends(security.get_current_user),
+    session: AsyncSession = Depends(get_db_session)
+):
+    """获取允许使用外联海报模式的Token列表（JSON格式的token ID数组）。
+    列表为空时表示所有Token均可使用外联海报模式（若后备搜索已启用）。"""
+    value = await crud.get_config_value(session, "posterProxyTokens", "[]")
+    return MatchFallbackTokensResponse(value=value)
+
+
+
+@router.put("/config/posterProxyTokens", status_code=status.HTTP_204_NO_CONTENT, summary="设置外联海报模式允许的Token列表")
+async def set_poster_proxy_tokens(
+    request: MatchFallbackTokensResponse,
+    current_user: models.User = Depends(security.get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+    config_manager: ConfigManager = Depends(get_config_manager)
+):
+    """设置允许使用外联海报模式的Token列表（JSON格式的token ID数组）。"""
+    await crud.update_config_value(session, "posterProxyTokens", request.value)
+    config_manager.invalidate("posterProxyTokens")
+    logger.info(f"外联海报模式Token配置已保存: {request.value}")
+    return
+
 # --- 后备搜索配置 ---
 
 

@@ -64,8 +64,6 @@ ALLOWED_CONFIG_KEYS = {
     "aiMatchPrompt": {"type": "text", "description": "AI智能匹配提示词"},
     "aiRecognitionPrompt": {"type": "text", "description": "AI辅助识别提示词"},
     "aiAliasValidationPrompt": {"type": "text", "description": "AI别名验证提示词"},
-    # 后备搜索海报外联代理
-    "fallbackPosterProxyEnabled": {"type": "boolean", "description": "后备搜索海报外联模式：开启后下载海报至本地，通过自定义域名返回外联地址；关闭时直接透传源站海报URL"},
 }
 
 

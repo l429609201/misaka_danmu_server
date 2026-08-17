@@ -3189,6 +3189,9 @@ export default {
     fallbackEnableParallelTip: '啟用後，搜尋彈幕時會同時檢索本地庫和線上來源站，將庫內已有的分集和來源站補充的分集合併為完整清單回傳。例如庫內只有1-5集，來源站有25集，搜尋結果將展示完整的1-25集。需要啟用後備搜尋。',
     fallbackPosterProxy: '外聯海報模式',
     fallbackPosterProxyTip: '啟用後，後備搜尋回傳的海報將被下載並快取至本地，透過「自訂網域」對外提供外聯存取位址，用戶端可直接載入。關閉時直接回傳來源站原始海報 URL。需要啟用後備比對或後備搜尋，並在「Token管理 → 自訂網域」填寫可公網存取的網域。',
+    posterProxyTokenAuth: '外聯海報模式 Token 授權',
+    posterProxyTokenAuthTip: '選擇允許使用外聯海報模式的 Token。被授權的 Token 在後備搜尋時，海報會被下載到本地並透過自訂網域回傳外聯位址。如果不選擇任何 Token，則所有 Token 均不啟用外聯海報（需顯式授權）。',
+    posterProxyTokenSelectPlaceholder: '點擊選擇要授權外聯海報的 Token',
     fallbackAutoRefresh: '彈幕自動重新整理間隔（天）',
     fallbackAutoRefreshShort: '刷新間隔(天)',
     fallbackRefreshSettingLabel: '彈幕重新整理設定',
@@ -3225,6 +3228,8 @@ export default {
     fallbackBlacklistSaveFailed: '儲存黑名單失敗',
     fallbackTokenSaved: 'Token配置已儲存',
     fallbackTokenSaveFailed: '儲存Token配置失敗',
+    posterProxyTokenSaved: '外聯海報Token授權已儲存',
+    posterProxyTokenSaveFailed: '儲存外聯海報Token授權失敗',
 
     // Token.jsx - Token 管理表格與彈窗
     tokenGetLogFailed: '取得日誌失敗',

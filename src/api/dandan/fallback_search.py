@@ -458,11 +458,21 @@ async def execute_fallback_search_task(
         # 获取自定义域名
         custom_domain = await config_manager.get("customApiDomain", "")
 
-        # 读取外联海报模式开关
-        # why：开启时将源站海报下载到本地 /data/images/，再拼 customApiDomain 返回外联地址；
-        # 关闭时直接透传源站 imageUrl，保持原有行为。
-        poster_proxy_enabled_str = await config_manager.get("fallbackPosterProxyEnabled", "false")
-        poster_proxy_enabled = poster_proxy_enabled_str.lower() == "true"
+        # 判断当前 token 是否在外联海报模式授权列表中
+        # why：posterProxyTokens 为空列表时所有 token 均不启用外联海报（需显式授权）；
+        # 列表中有当前 token 时才下载海报到本地并返回外联地址，否则透传源站原始 imageUrl。
+        import json as _json
+        poster_proxy_enabled = False
+        try:
+            poster_proxy_tokens_str = await config_manager.get("posterProxyTokens", "[]")
+            poster_proxy_token_ids = _json.loads(poster_proxy_tokens_str)
+            if poster_proxy_token_ids and token:
+                # token 是字符串（Token 值），需要查 DB 获取对应 token id 再比对
+                token_obj = await crud.get_api_token_by_token_str(session, token)
+                if token_obj and token_obj["id"] in poster_proxy_token_ids:
+                    poster_proxy_enabled = True
+        except Exception as e:
+            logger.debug(f"外联海报Token授权检查失败（忽略）: {e}")
 
         # 【性能优化①】循环前一次性读取缓存，循环中只修改内存，循环后一次性写回
         search_info_mapping = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key)

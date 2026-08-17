@@ -3727,6 +3727,9 @@ export default {
     fallbackEnableParallelTip: '启用后，搜索弹幕时会同时检索本地库和在线源站，将库内已有的分集和源站补充的分集合并为完整列表返回。例如库内只有1-5集，源站有25集，搜索结果将展示完整的1-25集。需要启用后备搜索。',
     fallbackPosterProxy: '外联海报模式',
     fallbackPosterProxyTip: '启用后，后备搜索返回的海报将被下载并缓存至本地，通过「自定义域名」对外提供外联访问地址，客户端可直接加载。关闭时直接返回源站原始海报 URL。需要启用后备匹配或后备搜索，并在「Token管理 → 自定义域名」填写可公网访问的域名。',
+    posterProxyTokenAuth: '外联海报模式 Token 授权',
+    posterProxyTokenAuthTip: '选择允许使用外联海报模式的 Token。被授权的 Token 在后备搜索时，海报会被下载到本地并通过自定义域名返回外联地址。如果不选择任何 Token，则所有 Token 均不启用外联海报（需显式授权）。',
+    posterProxyTokenSelectPlaceholder: '点击选择要授权外联海报的 Token',
     fallbackAutoRefresh: '弹幕自动刷新间隔（天）',
     fallbackAutoRefreshShort: '刷新间隔(天)',
     fallbackRefreshSettingLabel: '弹幕刷新设置',
@@ -3763,6 +3766,8 @@ export default {
     fallbackBlacklistSaveFailed: '保存黑名单失败',
     fallbackTokenSaved: 'Token配置已保存',
     fallbackTokenSaveFailed: '保存Token配置失败',
+    posterProxyTokenSaved: '外联海报Token授权已保存',
+    posterProxyTokenSaveFailed: '保存外联海报Token授权失败',
 
     // Token.jsx - Token 管理表格与弹窗
     tokenGetLogFailed: '获取日志失败',

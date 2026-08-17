@@ -449,6 +449,13 @@ export const getMatchFallbackTokens = () =>
 export const setMatchFallbackTokens = data =>
   api.put('/api/ui/config/matchFallbackTokens', data)
 
+/** 获取外联海报模式Token授权配置 */
+export const getPosterProxyTokens = () =>
+  api.get('/api/ui/config/posterProxyTokens')
+/** 设置外联海报模式Token授权配置 */
+export const setPosterProxyTokens = data =>
+  api.put('/api/ui/config/posterProxyTokens', data)
+
 /** 获取后备搜索状态 */
 export const getSearchFallback = () =>
   api.get('/api/ui/config/searchFallbackEnabled')
