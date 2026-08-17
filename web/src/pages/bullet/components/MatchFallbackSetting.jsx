@@ -20,7 +20,7 @@ export const MatchFallbackSetting = () => {
   const fetchSettings = async () => {
     try {
       setLoading(true)
-      const [fallbackRes, blacklistRes, tokensRes, tokenListRes, searchFallbackRes, externalApiFallbackRes, preDownloadRes, parallelSearchRes, autoRefreshRes, refreshThresholdRes] = await Promise.all([
+      const [fallbackRes, blacklistRes, tokensRes, tokenListRes, searchFallbackRes, externalApiFallbackRes, preDownloadRes, parallelSearchRes, autoRefreshRes, refreshThresholdRes, posterProxyRes] = await Promise.all([
         getMatchFallback(),
         getMatchFallbackBlacklist(),
         getMatchFallbackTokens(),
@@ -30,7 +30,8 @@ export const MatchFallbackSetting = () => {
         getConfig('preDownloadNextEpisodeEnabled'),
         getConfig('parallelSearchEnabled'),
         getConfig('danmakuAutoRefreshDays'),
-        getConfig('danmakuRefreshThreshold')
+        getConfig('danmakuRefreshThreshold'),
+        getConfig('fallbackPosterProxyEnabled'),
       ])
       setTokenList(tokenListRes.data || [])
 
@@ -51,7 +52,8 @@ export const MatchFallbackSetting = () => {
         preDownloadNextEpisodeEnabled: preDownloadRes.data?.value === 'true',
         parallelSearchEnabled: parallelSearchRes.data?.value === 'true',
         danmakuAutoRefreshDays: parseInt(autoRefreshRes.data?.value || '0', 10) || 0,
-        danmakuRefreshThreshold: parseInt(refreshThresholdRes.data?.value || '5000', 10) || 0
+        danmakuRefreshThreshold: parseInt(refreshThresholdRes.data?.value || '5000', 10) || 0,
+        fallbackPosterProxyEnabled: posterProxyRes.data?.value === 'true',
       })
     } catch (error) {
       messageApi.error(t('bullet.fallbackGetFailed'))
@@ -106,6 +108,10 @@ export const MatchFallbackSetting = () => {
         await setConfig('danmakuRefreshThreshold', String(changedValues.danmakuRefreshThreshold ?? 5000))
         messageApi.success(t('bullet.fallbackRefreshThresholdSaved'))
       }
+      if ('fallbackPosterProxyEnabled' in changedValues) {
+        await setConfig('fallbackPosterProxyEnabled', String(changedValues.fallbackPosterProxyEnabled))
+        messageApi.success(t('bullet.fallbackPosterProxySaved'))
+      }
       // 黑名单不自动保存，需要点击保存按钮
     } catch (error) {
       messageApi.error(t('bullet.fallbackSaveFailed'))
@@ -154,6 +160,7 @@ export const MatchFallbackSetting = () => {
           parallelSearchEnabled: false,
           danmakuAutoRefreshDays: 0,
           danmakuRefreshThreshold: 5000,
+          fallbackPosterProxyEnabled: false,
           matchFallbackBlacklist: '',
           matchFallbackTokens: []
         }}
@@ -238,6 +245,24 @@ export const MatchFallbackSetting = () => {
                             <div className="flex items-center gap-2">
                               <span>{t('bullet.fallbackEnableParallel')}</span>
                               <Tooltip title={t('bullet.fallbackEnableParallelTip')}>
+                                <QuestionCircleOutlined />
+                              </Tooltip>
+                            </div>
+                          }
+                          valuePropName="checked"
+                          style={{ flex: 1 }}
+                        >
+                          <Switch disabled={isFallbackDisabled} />
+                        </Form.Item>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                        <Form.Item
+                          name="fallbackPosterProxyEnabled"
+                          label={
+                            <div className="flex items-center gap-2">
+                              <span>{t('bullet.fallbackPosterProxy')}</span>
+                              <Tooltip title={t('bullet.fallbackPosterProxyTip')}>
                                 <QuestionCircleOutlined />
                               </Tooltip>
                             </div>
@@ -392,6 +417,38 @@ export const MatchFallbackSetting = () => {
                         <div className="flex items-center gap-2">
                           <span>{t('bullet.fallbackEnableParallel')}</span>
                           <Tooltip title={t('bullet.fallbackEnableParallelTip')}>
+                            <QuestionCircleOutlined />
+                          </Tooltip>
+                        </div>
+                      }
+                      valuePropName="checked"
+                      style={isMobile ? {} : { flex: 1 }}
+                    >
+                      <Switch disabled={isFallbackDisabled} />
+                    </Form.Item>
+                  )
+                }}
+              </Form.Item>
+
+              <Form.Item
+                noStyle
+                shouldUpdate={(prevValues, currentValues) =>
+                  prevValues.matchFallbackEnabled !== currentValues.matchFallbackEnabled ||
+                  prevValues.searchFallbackEnabled !== currentValues.searchFallbackEnabled
+                }
+              >
+                {({ getFieldValue }) => {
+                  const matchFallbackEnabled = getFieldValue('matchFallbackEnabled')
+                  const searchFallbackEnabled = getFieldValue('searchFallbackEnabled')
+                  const isFallbackDisabled = !matchFallbackEnabled && !searchFallbackEnabled
+
+                  return (
+                    <Form.Item
+                      name="fallbackPosterProxyEnabled"
+                      label={
+                        <div className="flex items-center gap-2">
+                          <span>{t('bullet.fallbackPosterProxy')}</span>
+                          <Tooltip title={t('bullet.fallbackPosterProxyTip')}>
                             <QuestionCircleOutlined />
                           </Tooltip>
                         </div>

@@ -20,6 +20,7 @@ from src.utils import (
     SearchTimer, SEARCH_TYPE_FALLBACK_SEARCH,
     is_movie_by_title
 )
+from src.utils.image_utils import save_public_thumbnail
 from src.rate_limiter import RateLimiter
 from src.ai import AIMatcherManager
 
@@ -457,6 +458,12 @@ async def execute_fallback_search_task(
         # 获取自定义域名
         custom_domain = await config_manager.get("customApiDomain", "")
 
+        # 读取外联海报模式开关
+        # why：开启时将源站海报下载到本地 /data/images/，再拼 customApiDomain 返回外联地址；
+        # 关闭时直接透传源站 imageUrl，保持原有行为。
+        poster_proxy_enabled_str = await config_manager.get("fallbackPosterProxyEnabled", "false")
+        poster_proxy_enabled = poster_proxy_enabled_str.lower() == "true"
+
         # 【性能优化①】循环前一次性读取缓存，循环中只修改内存，循环后一次性写回
         search_info_mapping = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key)
         if search_info_mapping and "bangumi_mapping" not in search_info_mapping:
@@ -475,7 +482,25 @@ async def execute_fallback_search_task(
             year_info = f" 年份：{result.year}" if result.year else ""
             title_with_source = f"{result.title} （来源：{result.provider}{year_info}）"
 
+            # 外联海报模式：把源站海报下载到本地并拼接外联地址。
+            # why：dandanplay 等客户端可能无法直接访问源站图片（防盗链/地区限制），
+            # 本地缓存后通过 customApiDomain 返回公网可访问的外联地址。
+            # 使用 save_public_thumbnail：内容 sha256 去重，不重复下载同一张海报。
+            effective_image_url = result.imageUrl or ""
+            if poster_proxy_enabled and effective_image_url:
+                try:
+                    local_path = await save_public_thumbnail(effective_image_url)
+                    if local_path:
+                        # 拼成完整外联地址；custom_domain 未配置时降级为相对路径
+                        effective_image_url = f"{custom_domain}{local_path}" if custom_domain else local_path
+                        logger.debug(f"后备搜索海报外联: {result.imageUrl} → {effective_image_url}")
+                except Exception as e:
+                    # 下载失败不影响搜索结果，降级为原 URL
+                    logger.debug(f"后备搜索海报外联下载失败（忽略）: {e}")
+
             # 存储bangumiId到原始信息的映射（仅修改内存中的dict）
+            # why：同时把处理后的 imageUrl 存入映射，供 /bangumi/{animeId} 详情接口使用；
+            # 若是外联地址则详情接口可直接使用无需再次下载。
             if search_info_mapping:
                 search_info_mapping["bangumi_mapping"][unique_bangumi_id] = {
                     "provider": result.provider,
@@ -484,6 +509,7 @@ async def execute_fallback_search_task(
                     "type": result.type,
                     "season": result.season,
                     "anime_id": current_virtual_anime_id,
+                    "image_url": effective_image_url,
                 }
 
             # 检查库内是否已有该精确源(provider+mediaId)的分集，写入 typeDescription
@@ -515,7 +541,7 @@ async def execute_fallback_search_task(
                     animeTitle=title_with_source,
                     type=DANDAN_TYPE_MAPPING.get(result.type, "other"),
                     typeDescription=type_description,
-                    imageUrl=result.imageUrl,
+                    imageUrl=effective_image_url,  # 外联模式时为本地缓存地址，否则为源站原始URL
                     startDate=f"{result.year}-01-01T00:00:00+08:00" if result.year else None,
                     year=result.year,
                     episodeCount=result.episodeCount or 0,

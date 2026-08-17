@@ -305,9 +305,12 @@ async def get_bangumi_details(
                                 logger.error(f"获取分集列表失败: {e}")
                                 episodes = []
 
-                            # 获取自定义域名
-                            custom_domain = await config_manager.get("customApiDomain", "")
-                            image_url = f"{custom_domain}/static/logo.png" if custom_domain else "/static/logo.png"
+                            # 优先使用搜索结果缓存中存储的海报 URL（fallback_search.py 写入）；
+                            # 没有再降级为 logo，避免始终显示系统 logo 而非源的真实海报。
+                            image_url = mapping_info.get("image_url") or ""
+                            if not image_url:
+                                custom_domain = await config_manager.get("customApiDomain", "")
+                                image_url = f"{custom_domain}/static/logo.png" if custom_domain else "/static/logo.png"
 
                             bangumi_details = BangumiDetails(
                                 animeId=anime_id,  # 使用分配的animeId
