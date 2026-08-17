@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal, Drawer, Button, Tooltip, message, Empty, Input, Spin, Select, Card } from 'antd'
 import { CopyOutlined, ExportOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
@@ -30,90 +30,51 @@ const stripLevelTag = (text) => text.replace(/\s*\[(DEBUG|INFO|WARNING|ERROR)\]\
 // ─── 虚拟滚动列表 ────────────────────────────────────────────────────────────
 // why：日志行数可达数千条，全量渲染会把所有行都创建成 DOM 节点，导致主线程卡死。
 // 虚拟滚动只渲染视口内 + 上下 OVERSCAN 行，其余用空白 div 占位保持正确的滚动条比例。
-const ROW_H_PC = 56   // 桌面端每行估算高度（px）
-const ROW_H_MB = 44   // 移动端每行估算高度（px）
-const OVERSCAN  = 8   // 视口外上下各多渲染的缓冲行数，防快速滚动闪白
+ // why: 全展开模式，无需虚拟滚动的行高常量，保留注释供日后恢复参考
+ // const ROW_H_PC = 56
+ // const ROW_H_MB = 44
+ // const OVERSCAN  = 8
 
-function VirtualLogList({ lines, search, isMobile, onCopyLine, copyLabel }) {
-  const containerRef = useRef(null)
-  const [scrollTop, setScrollTop] = useState(0)
-  const [containerH, setContainerH] = useState(600)
-
-  const rowH = isMobile ? ROW_H_MB : ROW_H_PC
-
-  // why：切换文件或过滤结果后旧 scrollTop 可能超过新列表总高度，表现为“有日志但内容空白”。
-  useEffect(() => {
-    const el = containerRef.current
-    if (el) el.scrollTop = 0
-    setScrollTop(0)
-  }, [lines])
-
-  // 监听容器实际高度（窗口缩放 / Drawer 弹出时高度不同）
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    if (el.clientHeight > 0) setContainerH(el.clientHeight)
-    const ro = new ResizeObserver(() => {
-      if (el.clientHeight > 0) setContainerH(el.clientHeight)
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  const handleScroll = useCallback((e) => setScrollTop(e.currentTarget.scrollTop), [])
-
-  const startIdx = Math.max(0, Math.floor(scrollTop / rowH) - OVERSCAN)
-  const endIdx   = Math.min(lines.length, Math.ceil((scrollTop + containerH) / rowH) + OVERSCAN)
-
-  return (
-    <div
-      ref={containerRef}
-      className={isMobile
-        ? 'flex-1 min-h-0 overflow-y-auto overflow-x-hidden'
-        : 'max-h-[55vh] overflow-y-auto overflow-x-hidden'}
-      onScroll={handleScroll}
-    >
-      {/* 顶部占位：撑出滚动区域，使滚动条比例与总行数匹配 */}
-      <div aria-hidden="true" style={{ height: startIdx * rowH }} />
-      {lines.slice(startIdx, endIdx).map((line, rel) => {
-        const i = startIdx + rel
-        const lc = getLevelColors(line)
-        const displayText = stripLevelTag(line)
-        return (
-          <div
-            key={i}
-            className={`my-1 overflow-hidden rounded border-l-2 group ${isMobile ? 'text-xs' : 'text-sm'} ${lc.border ? '' : 'bg-base-hover'} ${lc.border ? '' : 'border-primary'} hover:bg-base-hover-hover transition-colors`}
-            style={{
-              height: rowH - 8,
-              ...(lc.border ? { borderLeftColor: lc.border } : {}),
-              ...(lc.bg ? { backgroundColor: lc.bg } : {}),
-            }}
-          >
-            <div className="flex h-full items-center justify-between gap-2 px-2">
-              {/* why：固定单行预览保证虚拟列表行高真实稳定；超长原始响应不再触发浏览器大段换行排版。 */}
-              <pre
-                className="m-0 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono"
-                title={displayText.length <= 2000 ? displayText : undefined}
-              >
-                {search ? highlightText(displayText, search) : displayText}
-              </pre>
-              <Button
-                type="text"
-                size="small"
-                icon={<CopyOutlined />}
-                className={`shrink-0 opacity-0 group-hover:opacity-100 transition-opacity${isMobile ? ' opacity-60' : ''}`}
-                onClick={(e) => { e.stopPropagation(); onCopyLine(line) }}
-                title={copyLabel}
-              />
-            </div>
-          </div>
-        )
-      })}
-      {/* 底部占位 */}
-      <div aria-hidden="true" style={{ height: (lines.length - endIdx) * rowH }} />
-    </div>
-  )
-}
+ // why: 全量展开渲染——每行内容完整显示，无需虚拟滚动。
+ // 日志行数通常不超过数百条，全量渲染性能可接受。
+ function VirtualLogList({ lines, search, isMobile, onCopyLine, copyLabel }) {
+   return (
+     <div
+       className={isMobile
+         ? 'flex-1 min-h-0 overflow-y-auto overflow-x-hidden'
+         : 'max-h-[55vh] overflow-y-auto overflow-x-hidden'}
+     >
+       {lines.map((line, i) => {
+         const lc = getLevelColors(line)
+         const displayText = stripLevelTag(line)
+         return (
+           <div
+             key={i}
+             className={`my-1 rounded border-l-2 group ${isMobile ? 'text-xs' : 'text-sm'} ${lc.border ? '' : 'bg-base-hover'} ${lc.border ? '' : 'border-primary'} hover:bg-base-hover-hover transition-colors`}
+             style={{
+               ...(lc.border ? { borderLeftColor: lc.border } : {}),
+               ...(lc.bg ? { backgroundColor: lc.bg } : {}),
+             }}
+           >
+             <div className="flex items-start gap-2 px-2 py-2 justify-between">
+               <pre className="m-0 min-w-0 flex-1 font-mono whitespace-pre-wrap break-all overflow-x-auto">
+                 {search ? highlightText(displayText, search) : displayText}
+               </pre>
+               <Button
+                 type="text"
+                 size="small"
+                 icon={<CopyOutlined />}
+                 className={`shrink-0 opacity-0 group-hover:opacity-100 transition-opacity${isMobile ? ' opacity-60' : ''}`}
+                 onClick={(e) => { e.stopPropagation(); onCopyLine(line) }}
+                 title={copyLabel}
+               />
+             </div>
+           </div>
+         )
+       })}
+     </div>
+   )
+ }
 
 export default function HistoryLogModal({ open, onClose }) {
   const { t } = useTranslation()
