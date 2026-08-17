@@ -259,21 +259,38 @@ class ScraperManager:
                             )
                             continue
 
-                        # 单源最低服务器版本检查：类属性 min_server_version（空字符串或未定义则不限制）
+                        # 双向版本检查
+                        from src._version import APP_VERSION, MIN_SCRAPER_VERSION
+
+                        # 1. 单源要求最低服务器版本（弹幕源 → 服务器）
                         source_min_ver = getattr(obj, 'min_server_version', None) or ''
                         if source_min_ver:
-                            from src._version import APP_VERSION
                             if _version_satisfies(APP_VERSION, source_min_ver):
                                 logging.getLogger(__name__).info(
-                                    f"✓ {provider_name} 版本检查通过 (要求 >= {source_min_ver}, 当前 {APP_VERSION})"
+                                    f"✓ {provider_name} 服务器版本检查通过 (要求 >= {source_min_ver}, 当前 {APP_VERSION})"
                                 )
                             else:
                                 logging.getLogger(__name__).warning(
                                     f"✗ 跳过 {provider_name}: 要求服务器版本 >= {source_min_ver}，当前 {APP_VERSION}"
                                 )
-                                self._version_skipped[provider_name] = source_min_ver
+                                self._version_skipped[provider_name] = f"要求服务器 >= {source_min_ver}"
                                 failed_providers.append(module_name_stem)
                                 continue
+
+                        # 2. 服务器要求最低弹幕源版本（服务器 → 弹幕源）
+                        if module_version:
+                            if not _version_satisfies(module_version, MIN_SCRAPER_VERSION):
+                                logging.getLogger(__name__).warning(
+                                    f"✗ 跳过 {provider_name}: 弹幕源版本过旧 (当前 {module_version}, 要求 >= {MIN_SCRAPER_VERSION})"
+                                )
+                                self._version_skipped[provider_name] = f"弹幕源版本过旧 (当前 {module_version}, 要求 >= {MIN_SCRAPER_VERSION})"
+                                failed_providers.append(module_name_stem)
+                                continue
+                        else:
+                            # 弹幕源未声明版本号，允许加载但记录警告
+                            logging.getLogger(__name__).warning(
+                                f"⚠ {provider_name}: 未声明 __version__，跳过弹幕源版本检查"
+                            )
 
                         discovered_providers.append(provider_name)
                         # [C] handled_domains 必须是可迭代的字符串序列，不能是裸字符串
