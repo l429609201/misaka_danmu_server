@@ -456,7 +456,9 @@ async def execute_fallback_search_task(
         next_virtual_anime_id = await get_next_virtual_anime_id(session)
 
         # 获取自定义域名
-        custom_domain = await config_manager.get("customApiDomain", "")
+        # why：域名保存时用的 key 是 custom_api_domain（下划线，与前端 API /config/custom_api_domain 一致），
+        # 此处必须使用相同 key 读取，否则始终得到空字符串导致外联地址拼接失败。
+        custom_domain = await config_manager.get("custom_api_domain", "")
 
         # 判断当前 token 是否在外联海报模式授权列表中
         # why：posterProxyTokens 为空列表时所有 token 均不启用外联海报（需显式授权）；
