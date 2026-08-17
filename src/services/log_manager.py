@@ -329,23 +329,25 @@ def list_log_files() -> List[dict]:
     return files
 
 
-# 历史日志读取上限：避免超长原始响应占满接口内存并拖死浏览器排版。
-_LOG_TAIL_MAX_BYTES = 2 * 1024 * 1024
-_LOG_LINE_MAX_CHARS = 32 * 1024
+# 每行不做长度限制，日志内容完整返回。
 _LOG_READ_CHUNK_BYTES = 64 * 1024
-_LOG_TRUNCATED_MARKER = "……[内容过长，已截断]……"
 
 
-def _truncate_log_line(line: str) -> str:
-    """限制单条日志长度，同时保留头尾便于定位请求与错误。"""
-    if len(line) <= _LOG_LINE_MAX_CHARS:
-        return line
-    keep = (_LOG_LINE_MAX_CHARS - len(_LOG_TRUNCATED_MARKER)) // 2
-    return f"{line[:keep]}{_LOG_TRUNCATED_MARKER}{line[-keep:]}"
+def read_log_file(
+    filename: str,
+    tail: int = 200,
+    keyword: str = "",
+    offset: int = 0,
+) -> dict:
+    """从文件末尾反向读取日志，支持关键词过滤和分页偏移。
 
-
-def read_log_file(filename: str, tail: int = 500) -> List[str]:
-    """从文件末尾反向读取最后 N 行，避免大文件从头扫描。"""
+    :param filename: 日志文件名
+    :param tail:     每次返回的行数（单批大小），默认 200
+    :param keyword:  关键词过滤（大小写不敏感），空字符串表示不过滤
+    :param offset:   已加载的条数（从匹配结果尾部再往前跳过的行数），用于"加载更多"
+    :return: {"lines": [...], "hasMore": bool, "total": int}
+             total 为本次匹配总行数（含已加载部分），方便前端显示进度
+    """
     log_dir = get_log_dir().resolve()
     file_path = (log_dir / filename).resolve()
 
@@ -356,41 +358,27 @@ def read_log_file(filename: str, tail: int = 500) -> List[str]:
         raise FileNotFoundError(f"日志文件不存在: {filename}")
 
     try:
+        # 全量读取文件（避免反向读取时需要多次IO往返，文件本身已有轮转大小限制）
         with open(file_path, 'rb') as f:
-            file_size = f.seek(0, 2)
-            position = file_size
-            bytes_read = 0
-            newline_count = 0
-            chunks = []
+            raw = f.read()
 
-            while position > 0 and newline_count <= tail and bytes_read < _LOG_TAIL_MAX_BYTES:
-                read_size = min(
-                    _LOG_READ_CHUNK_BYTES,
-                    position,
-                    _LOG_TAIL_MAX_BYTES - bytes_read,
-                )
-                position -= read_size
-                f.seek(position)
-                chunk = f.read(read_size)
-                chunks.append(chunk)
-                bytes_read += len(chunk)
-                newline_count += chunk.count(b'\n')
+        all_lines = raw.decode('utf-8', errors='replace').splitlines()
+        all_lines = [line for line in all_lines if line.strip()]
 
-        raw = b''.join(reversed(chunks))
-        byte_limited = position > 0 and bytes_read >= _LOG_TAIL_MAX_BYTES and newline_count <= tail
+        # 关键词过滤（后端处理，不依赖前端 filter）
+        if keyword:
+            kw = keyword.lower()
+            all_lines = [line for line in all_lines if kw in line.lower()]
 
-        # 从文件中段开始时，通常丢弃开头的不完整行；若整个读取窗口只有一条
-        # 超长日志的尾部，则保留该尾部，后续再做单行截断，避免页面只剩限制提示。
-        if position > 0 and b'\n' in raw:
-            remainder = raw.split(b'\n', 1)[1]
-            if remainder:
-                raw = remainder
+        total = len(all_lines)
+        # 分页：从尾部往前，跳过 offset 行后再取 tail 行
+        # all_lines 按文件顺序（最旧→最新），返回也保持此顺序
+        end = total - offset
+        start = max(0, end - tail)
+        page_lines = all_lines[start:end]
+        has_more = start > 0
 
-        lines = raw.decode('utf-8', errors='replace').splitlines()[-tail:]
-        result = [_truncate_log_line(line) for line in lines]
-        if byte_limited:
-            result.insert(0, f"[日志过大，仅显示文件末尾 {_LOG_TAIL_MAX_BYTES // (1024 * 1024)} MB 内容]")
-        return result
+        return {"lines": page_lines, "hasMore": has_more, "total": total}
     except Exception as e:
         raise IOError(f"读取日志文件失败: {e}") from e
 

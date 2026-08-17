@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from src.db import crud, orm_models, get_db_session, ConfigManager
 from src.services import ScraperManager
 from src.utils import parse_search_keyword
+from src.utils.image_utils import get_custom_domain
 
 # 从 orm_models 导入需要的模型
 Anime = orm_models.Anime
@@ -309,7 +310,7 @@ async def get_bangumi_details(
                             # 没有再降级为 logo，避免始终显示系统 logo 而非源的真实海报。
                             image_url = mapping_info.get("image_url") or ""
                             if not image_url:
-                                custom_domain = await config_manager.get("customApiDomain", "")
+                                custom_domain = await get_custom_domain(config_manager)
                                 image_url = f"{custom_domain}/static/logo.png" if custom_domain else "/static/logo.png"
 
                             bangumi_details = BangumiDetails(

@@ -4,6 +4,9 @@ System相关的API端点
 import asyncio
 import json
 import logging
+import queue
+import threading
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import Optional, List, Any, Dict, Union
 
@@ -16,8 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src import security
 from src.db import crud, models, get_db_session, ConfigManager
 from src.core import get_now
+from src.core.config import settings
+from src.core.cache import get_cache_backend, RedisBackend
 from src.services import ScraperManager, get_logs, subscribe_to_logs, unsubscribe_from_logs, list_log_files, read_log_file
 from src.rate_limiter import RateLimiter, RateLimitExceededError
+from src.utils.docker_utils import (
+    is_docker_socket_available, get_current_container_id, get_docker_client,
+)
+from src.utils.filename_parser import parse_filename
 from src._version import APP_VERSION, DOCS_URL, GITHUB_OWNER, GITHUB_REPO
 
 from src.api.dependencies import (
@@ -99,9 +108,6 @@ async def get_database_info(
     current_user: models.User = Depends(security.get_current_user),
 ):
     """获取当前数据库类型、连接信息、连接池状态以及 Redis 详细指标。"""
-    from src.core.config import settings
-    from src.core.cache import get_cache_backend, RedisBackend
-
     db_cfg = settings.database
     cache_cfg = settings.cache
 
@@ -357,17 +363,21 @@ async def get_log_files(current_user: models.User = Depends(security.get_current
     return list_log_files()
 
 
-@router.get("/logs/files/{filename}", summary="读取指定日志文件内容")
+@router.get("/logs/files/{filename}", summary="读取指定历史日志文件")
 async def get_log_file_content(
     filename: str,
-    tail: int = Query(500, ge=1, le=5000, description="读取最后N行"),
+    tail: int = Query(200, ge=1, description="每批返回行数，默认200"),
+    keyword: str = Query("", description="关键词过滤（大小写不敏感），空字符串不过滤"),
+    offset: int = Query(0, ge=0, description="已加载条数，用于加载更多"),
     current_user: models.User = Depends(security.get_current_user),
 ):
-    """读取指定日志文件的最后N行内容。"""
+    """读取指定日志文件，支持后端关键词过滤和分页加载。
+
+    返回 {"lines": [...], "hasMore": bool, "total": int}
+    """
     try:
-        # why：历史日志是同步文件 I/O，放入线程池避免大文件读取阻塞事件循环。
-        lines = await asyncio.to_thread(read_log_file, filename, tail)
-        return lines
+        result = await asyncio.to_thread(read_log_file, filename, tail, keyword, offset)
+        return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -387,9 +397,6 @@ async def parse_filename_test(
     current_user: models.User = Depends(security.get_current_user),
 ):
     """调用文件名解析模块，返回识别结果。"""
-    from src.utils.filename_parser import parse_filename
-    from dataclasses import asdict
-
     result = parse_filename(request.fileName)
     if result is None:
         return {"success": False, "message": "无法识别该文件名", "result": None}
@@ -467,7 +474,6 @@ async def clear_all_caches(
     backend_count = 0
     backend_type = "none"
     try:
-        from src.core.cache import get_cache_backend
         backend = get_cache_backend()
         if backend is not None:
             backend_type = type(backend).__name__
@@ -733,10 +739,6 @@ async def get_docker_stats_endpoint(
 
     使用线程 + asyncio.Queue 实现真正的流式推送，不阻塞事件循环。
     """
-    from src.utils.docker_utils import is_docker_socket_available, get_current_container_id, get_docker_client
-    import threading
-    import queue
-
     async def stats_generator():
         """生成 SSE 统计数据流"""
         loop = asyncio.get_event_loop()
@@ -1054,20 +1056,20 @@ async def stream_update(
     async def generate_progress():
         try:
             # 阶段 1: 拉取镜像（在线程池中执行同步生成器，避免阻塞事件循环）
-            import asyncio
-            queue: asyncio.Queue = asyncio.Queue()
+            # why：变量名用 progress_queue 而非 queue，避免遮蔽顶部导入的标准库 queue 模块
+            progress_queue: asyncio.Queue = asyncio.Queue()
             sentinel = object()  # 标记生成器结束
 
             def _run_pull():
                 for progress in pull_image_stream(image_name, effective_proxy):
-                    queue.put_nowait(progress)
-                queue.put_nowait(sentinel)
+                    progress_queue.put_nowait(progress)
+                progress_queue.put_nowait(sentinel)
 
             pull_task = asyncio.get_event_loop().run_in_executor(None, _run_pull)
 
             while True:
                 try:
-                    item = await asyncio.wait_for(queue.get(), timeout=120)
+                    item = await asyncio.wait_for(progress_queue.get(), timeout=120)
                 except asyncio.TimeoutError:
                     yield f"data: {json.dumps({'status': '拉取超时，请稍后重试', 'event': 'ERROR'})}\n\n"
                     return
@@ -1080,7 +1082,6 @@ async def stream_update(
 
                     def _check_container_image():
                         try:
-                            from src.utils.docker_utils import get_current_container_id, get_docker_client
                             current_id = get_current_container_id()
                             if not current_id:
                                 logger.warning("无法获取当前容器ID，跳过镜像比较")

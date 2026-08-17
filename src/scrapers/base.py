@@ -358,6 +358,38 @@ class BaseScraper(ABC):
             return is_enabled_str
         return str(is_enabled_str).lower() == 'true'
 
+    async def _log_raw_response(self, response_or_text, operation: str, **context):
+        """
+        统一的原始响应日志记录方法
+
+        Args:
+            response_or_text: httpx.Response 对象或原始响应文本
+            operation: 操作描述，如 "Search"、"Episodes"、"Danmaku"
+            **context: 额外的上下文信息，如 keyword、media_id、episode_id 等
+        """
+        if not await self._should_log_responses():
+            return
+
+        # 提取响应文本
+        if isinstance(response_or_text, str):
+            response_text = response_or_text
+        elif isinstance(response_or_text, bytes):
+            response_text = response_or_text.decode('utf-8', errors='ignore')
+        else:
+            # httpx.Response 对象
+            response_text = response_or_text.text
+
+        # 构建上下文信息字符串
+        context_parts = [f"{k}={v}" for k, v in context.items() if v is not None]
+        context_str = ", ".join(context_parts) if context_parts else ""
+
+        # 记录完整日志，不截断
+        logger = logging.getLogger("scraper_responses")
+        logger.debug(
+            f"{self.provider_name.upper()} {operation} Response "
+            f"({context_str}): {response_text}"
+        )
+
     async def get_episode_blacklist_pattern(self) -> Optional[re.Pattern]:
         """
         获取用于过滤分集标题的正则表达式对象。

@@ -5,22 +5,27 @@
 """
 
 import asyncio
+import json
 import logging
 import time
 from typing import Dict, Optional
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
 from src.db import crud, models, ConfigManager
+from src.db.crud.cache import get_cache as get_raw_cache
+from src.db.orm_models import AnimeSource, Episode, Anime
 from src.services import ScraperManager, TaskManager, MetadataSourceManager, unified_search, convert_to_chinese_title
 from src.utils import (
     parse_search_keyword,
     ai_type_and_season_mapping_and_correction,
     SearchTimer, SEARCH_TYPE_FALLBACK_SEARCH,
-    is_movie_by_title
+    is_movie_by_title,
 )
-from src.utils.image_utils import save_public_thumbnail
+from src.utils.image_utils import get_custom_domain, save_public_thumbnail
+from src.utils.search_timer import SubStepTiming
 from src.rate_limiter import RateLimiter
 from src.ai import AIMatcherManager
 
@@ -56,8 +61,8 @@ async def handle_fallback_search(
 ) -> DandanSearchAnimeResponse:
     """处理后备搜索逻辑"""
     search_key = f"search_{hash(search_term + token)}"
-    custom_domain = await config_manager.get("customApiDomain", "")
-    image_url = f"{custom_domain}/static/logo.png" if custom_domain else "/static/logo.png"
+    _logo_domain = await get_custom_domain(config_manager)
+    image_url = f"{_logo_domain}/static/logo.png" if _logo_domain else "/static/logo.png"
 
     # 读取可配置的最大等待时间（默认30秒）。-1 表示无限等待直到出结果
     timeout_str = await config_manager.get("searchFallbackTimeout", "30")
@@ -333,7 +338,6 @@ async def execute_fallback_search_task(
         await progress_callback(10, "开始搜索...")
 
         # 检查是否有同标题的搜索结果缓存（不含集数，10分钟内复用）
-        from src.db.crud.cache import get_cache as get_raw_cache
         fallback_result_cache_key = f"fallback_result_{search_title}"
         cached_fallback_result = await get_raw_cache(session, fallback_result_cache_key)
         if cached_fallback_result and isinstance(cached_fallback_result, dict):
@@ -371,7 +375,6 @@ async def execute_fallback_search_task(
                 alias_similarity_threshold=70,
             )
             # 收集单源搜索耗时信息（分组显示，与主页搜索一致）
-            from src.utils.search_timer import SubStepTiming
             source_timing_sub_steps = []
 
             # 弹幕源 + 补充源分组
@@ -455,19 +458,16 @@ async def execute_fallback_search_task(
         # 获取下一个虚拟animeId
         next_virtual_anime_id = await get_next_virtual_anime_id(session)
 
-        # 获取自定义域名
-        # why：域名保存时用的 key 是 custom_api_domain（下划线，与前端 API /config/custom_api_domain 一致），
-        # 此处必须使用相同 key 读取，否则始终得到空字符串导致外联地址拼接失败。
-        custom_domain = await config_manager.get("custom_api_domain", "")
+        # 获取自定义域名（统一通过 get_custom_domain 读取，http/https 均支持）
+        custom_domain = await get_custom_domain(config_manager) or ""
 
         # 判断当前 token 是否在外联海报模式授权列表中
         # why：posterProxyTokens 为空列表时所有 token 均不启用外联海报（需显式授权）；
         # 列表中有当前 token 时才下载海报到本地并返回外联地址，否则透传源站原始 imageUrl。
-        import json as _json
         poster_proxy_enabled = False
         try:
             poster_proxy_tokens_str = await config_manager.get("posterProxyTokens", "[]")
-            poster_proxy_token_ids = _json.loads(poster_proxy_tokens_str)
+            poster_proxy_token_ids = json.loads(poster_proxy_tokens_str)
             if poster_proxy_token_ids and token:
                 # token 是字符串（Token 值），需要查 DB 获取对应 token id 再比对
                 token_obj = await crud.get_api_token_by_token_str(session, token)
@@ -744,8 +744,6 @@ async def _merge_source_episodes(
     3. 缺失的分集用虚拟 episodeId 补充
     4. 创建映射缓存，让 /comment/{虚拟id} 能找到正确的源
     """
-    from sqlalchemy import select
-    from src.db.orm_models import AnimeSource, Episode, Anime
 
     for anime_id, anime_info in list(grouped_animes.items()):
         try:

@@ -57,7 +57,7 @@ from .path_template import (
 )
 
 # 图片工具
-from .image_utils import download_image
+from .image_utils import download_image, get_custom_domain, validate_custom_domain_format, probe_public_domain
 
 # 播放历史
 from .play_history import record_play_history

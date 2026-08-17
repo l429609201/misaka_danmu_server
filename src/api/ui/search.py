@@ -4,6 +4,7 @@ Search相关的API端点
 import asyncio
 import logging
 import re
+import time
 from typing import Any, Dict, Optional, List
 from src.utils.episode_filter import parse_single_episode_filter_rules, apply_single_episode_filter
 
@@ -14,12 +15,15 @@ from thefuzz import fuzz
 
 from src import security
 from src.db import crud, models, get_db_session, ConfigManager
+from src.db import models as _models
 from src.core.cache import get_cache_backend
 from src.services import ScraperManager, MetadataSourceManager, TitleRecognitionManager, convert_to_chinese_title
 from src.utils import (
     parse_search_keyword, ai_type_and_season_mapping_and_correction,
     SearchTimer, SEARCH_TYPE_HOME, is_movie_by_title,
 )
+from src.utils.search_timer import SubStepTiming
+from src.utils.season_mapper import _get_cached_metadata_search
 from src.ai.ai_matcher_manager import AIMatcherManager
 
 from src.api.dependencies import (
@@ -411,16 +415,13 @@ async def search_anime_provider(
         if ai_matcher and metadata_manager:
             async def prefetch_metadata_full():
                 """完整预热：搜TMDB + AI选匹配 + 获取季度信息"""
-                import time as _pf_time
-                _pf_start = _pf_time.perf_counter()
+                _pf_start = time.perf_counter()
                 try:
-                    from src.utils.season_mapper import _get_cached_metadata_search
-                    from src.db import models as _models
                     _prefetch_logger = logging.getLogger(__name__)
 
                     # 步骤1: 搜TMDB
                     metadata_results = await _get_cached_metadata_search(search_title, metadata_manager, _prefetch_logger)
-                    _step1_ms = (_pf_time.perf_counter() - _pf_start) * 1000
+                    _step1_ms = (time.perf_counter() - _pf_start) * 1000
                     _prefetch_logger.info(f"🔥 预热步骤1 搜TMDB: {len(metadata_results) if metadata_results else 0}个结果 ({_step1_ms:.0f}ms)")
                     if not metadata_results:
                         return {"metadata_results": [], "seasons_info": None, "best_match": None}
@@ -448,7 +449,7 @@ async def search_anime_provider(
                                     best_match = metadata_results[selected_index]
                             except Exception:
                                 pass
-                    _step2_ms = (_pf_time.perf_counter() - _pf_start) * 1000
+                    _step2_ms = (time.perf_counter() - _pf_start) * 1000
                     _prefetch_logger.info(f"🔥 预热步骤2 AI选匹配: best='{best_match.title}' ({_step2_ms:.0f}ms)")
 
                     # 步骤3: 获取季度信息（只对TV类型）
@@ -464,7 +465,7 @@ async def search_anime_provider(
                             seasons_info = await metadata_manager.get_seasons("tmdb", tv_match.id)
                         except Exception:
                             pass
-                    _step3_ms = (_pf_time.perf_counter() - _pf_start) * 1000
+                    _step3_ms = (time.perf_counter() - _pf_start) * 1000
                     _prefetch_logger.info(f"🔥 预热步骤3 获取季度: {len(seasons_info) if seasons_info else 0}季 ({_step3_ms:.0f}ms)")
 
                     return {
@@ -491,7 +492,6 @@ async def search_anime_provider(
             timer.step_start("弹幕源搜索")
             all_results = await manager.search_all(search_titles, episode_info=episode_info)
             # 收集单源搜索耗时信息（分组显示）
-            from src.utils.search_timer import SubStepTiming
             source_timing_sub_steps = []
             for name, dur, cnt in manager.last_search_timing:
                 if name.startswith("补充:"):
@@ -523,13 +523,11 @@ async def search_anime_provider(
 
             timer.step_start("并行搜索(弹幕源+辅助源)")
             # 1. 先启动辅助源搜索（让它先发出HTTP请求，避免被弹幕源占满事件循环）
-            import time as _search_time
-
             async def _timed_supp_search():
                 """包装辅助源搜索，记录耗时"""
-                _start = _search_time.monotonic()
+                _start = time.monotonic()
                 result = await metadata_manager.search_supplemental_sources(search_title, current_user)
-                _dur = (_search_time.monotonic() - _start) * 1000
+                _dur = (time.monotonic() - _start) * 1000
                 return result, _dur
 
             supp_task = asyncio.create_task(_timed_supp_search())
@@ -547,7 +545,6 @@ async def search_anime_provider(
             )
 
             # 收集单源搜索耗时信息（分组显示）
-            from src.utils.search_timer import SubStepTiming
             source_timing_sub_steps = []
 
             # 弹幕源 + 补充源分组

@@ -11,19 +11,22 @@ import re
 import time
 from typing import Dict, List, Optional, Any
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, HTTPException, status
 from thefuzz import fuzz
 
 from src.db import crud, orm_models, models, get_db_session, sync_postgres_sequence, ConfigManager
 from src.core import get_now
+from src.core.cache import get_cache_backend
 from src.services import ScraperManager, TaskManager, MetadataSourceManager, unified_search, TaskSuccess
 from src.utils import (
     parse_search_keyword,
     ai_type_and_season_mapping_and_correction, title_contains_season_name,
     SearchTimer, SEARCH_TYPE_FALLBACK_MATCH, SubStepTiming
 )
+from src.utils.filename_parser import parse_filename
+from src.utils.search_timer import SubStepTiming  # noqa: F811
 from src.rate_limiter import RateLimiter
 from src.ai import AIMatcherManager
 from src.api.control.dependencies import get_title_recognition_manager
@@ -91,8 +94,6 @@ def parse_filename_for_match(filename: str) -> Optional[Dict[str, Any]]:
     从文件名中解析出番剧标题和集数。
     委托给统一模块 parse_filename()，并转换为 dict 格式以保持向后兼容。
     """
-    from src.utils.filename_parser import parse_filename
-
     result = parse_filename(filename)
     if result is None:
         return None
@@ -528,7 +529,6 @@ async def get_match_for_item(
 
                     # 写入别名缓存
                     if pre_fetched_aliases:
-                        from src.core.cache import get_cache_backend
                         alias_cache_key = f"search_aliases_{base_title}"
                         alias_data = json.dumps(list(pre_fetched_aliases))
                         _backend = get_cache_backend()
@@ -541,7 +541,6 @@ async def get_match_for_item(
                             pass
 
                 # 收集单源搜索耗时信息（分组显示）
-                from src.utils.search_timer import SubStepTiming
                 source_timing_sub_steps = []
                 for name, dur, cnt in scraper_manager.last_search_timing:
                     if name.startswith("补充:"):
@@ -618,10 +617,8 @@ async def get_match_for_item(
 
                 # 步骤2：智能排序 (类型匹配优先)
                 match_timer.step_start("智能排序与匹配")
-                from src.utils.search_timer import SubStepTiming
-                import time as _perf_time
                 _match_sub_steps = []
-                _sub_start = _perf_time.perf_counter()
+                _sub_start = time.perf_counter()
 
                 # 确定目标类型
                 target_type = "movie" if is_movie else "tv_series"
@@ -675,8 +672,8 @@ async def get_match_for_item(
                     lines.append(f"  {idx}. [{type_match}] {result.provider} - {result.title} (ID: {result.mediaId}, 类型: {result.type}, 年份: {result.year or 'N/A'}, 分数: {score:.0f})")
                 logger.info("\n".join(lines))
 
-                _match_sub_steps.append(SubStepTiming(name="排序打分", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
-                _sub_start = _perf_time.perf_counter()
+                _match_sub_steps.append(SubStepTiming(name="排序打分", duration_ms=(time.perf_counter() - _sub_start) * 1000))
+                _sub_start = time.perf_counter()
 
                 # 步骤3：自动选择最佳源
                 logger.info(f"步骤3：自动选择最佳源")
@@ -685,7 +682,6 @@ async def get_match_for_item(
                 favorited_info = {}
                 provider_media_pairs = [(r.provider, r.mediaId) for r in sorted_results]
                 if provider_media_pairs:
-                    from sqlalchemy import tuple_
                     favorited_stmt = (
                         select(AnimeSource.providerName, AnimeSource.mediaId)
                         .where(
@@ -785,8 +781,8 @@ async def get_match_for_item(
                 # 使用预获取的配置值
                 # fallback_enabled 已在初始化阶段获取
 
-                _match_sub_steps.append(SubStepTiming(name="AI匹配" if ai_match_enabled else "传统匹配", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
-                _sub_start = _perf_time.perf_counter()
+                _match_sub_steps.append(SubStepTiming(name="AI匹配" if ai_match_enabled else "传统匹配", duration_ms=(time.perf_counter() - _sub_start) * 1000))
+                _sub_start = time.perf_counter()
 
                 best_match = None
 
@@ -991,7 +987,7 @@ async def get_match_for_item(
 
                 if not best_match:
                     logger.warning(f"匹配后备失败：所有候选源都无法提供有效分集")
-                    _match_sub_steps.append(SubStepTiming(name="顺延验证", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
+                    _match_sub_steps.append(SubStepTiming(name="顺延验证", duration_ms=(time.perf_counter() - _sub_start) * 1000))
                     match_timer.step_end(details="无有效分集", sub_steps=_match_sub_steps)
                     match_timer.finish()
                     response = DandanMatchResponse(isMatched=False, matches=[])
@@ -1183,7 +1179,7 @@ async def get_match_for_item(
                     await set_db_cache(session_inner, FALLBACK_SEARCH_CACHE_PREFIX, season_cache_key, season_cache_data, 3600)
                     logger.info(f"整季缓存已存储: {season_cache_key}")
 
-                _match_sub_steps.append(SubStepTiming(name="验证+获取分集", duration_ms=(_perf_time.perf_counter() - _sub_start) * 1000))
+                _match_sub_steps.append(SubStepTiming(name="验证+获取分集", duration_ms=(time.perf_counter() - _sub_start) * 1000))
                 match_timer.step_end(details="匹配成功", sub_steps=_match_sub_steps)
                 match_timer.finish()  # 打印计时报告
                 match_fallback_result["response"] = response

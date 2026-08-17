@@ -15,10 +15,10 @@ from pydantic import BaseModel
 from src.db import models, get_db_session, ConfigManager
 from src import security
 from src.services import TaskManager, MetadataSourceManager
-from src.db.crud import local_danmaku as crud, anime as anime_crud, episode as episode_crud
+from src.db.crud import local_danmaku as crud, anime as anime_crud, episode as episode_crud, source as source_crud
 from src.utils import download_image
 from src.utils.local_danmaku_scanner import LocalDanmakuScanner, copy_local_poster
-from src.api.dandan.danmaku_parser import parse_dandan_xml_to_comments
+from src.utils.danmaku_parser import parse_dandan_xml_to_comments
 from src.services.task_manager import TaskSuccess
 from src.db.crud.danmaku import update_metadata_if_empty
 from src.api.dependencies import get_config_manager, get_task_manager
@@ -245,7 +245,6 @@ async def delete_folder(
             raise HTTPException(status_code=400, detail="无效的文件夹路径")
 
         # 检查是否是绝对路径（Windows或Unix风格）
-        import os
         if os.name == 'nt':  # Windows
             # Windows: 允许驱动器字母路径，如 C:\ 或 E:\test
             if not (len(folderPath) >= 3 and folderPath[1:3] == ':\\' and folderPath[0].isalpha()):
@@ -739,7 +738,6 @@ async def import_local_items(
                         logger.info(f"未识别到来源标签,使用唯一mediaId: {media_id}")
 
                 # 创建或获取指定的源
-                from src.db.crud import source as source_crud
                 source_id = await source_crud.link_source_to_anime(task_session, anime_id, provider, media_id)
                 await task_session.flush()
 

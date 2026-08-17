@@ -6,10 +6,13 @@ import logging
 from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from src.db import crud, models, get_db_session, ConfigManager
+from src.db.crud.media_server import get_episode_ids_by_show, get_episode_ids_by_season
+from src.db.orm_models import MediaItem
 from src import security, tasks
 from src.services import TaskManager, ScraperManager, MetadataSourceManager, get_media_server_manager
 from src.ai.ai_matcher_manager import AIMatcherManager
@@ -491,8 +494,6 @@ async def batch_delete_media_items(
     2. shows: [{"serverId": int, "title": str}]
     3. seasons: [{"serverId": int, "title": str, "season": int}]
     """
-    from src.db.crud.media_server import get_episode_ids_by_show, get_episode_ids_by_season
-
     all_item_ids: set[int] = set()
 
     # 收集直接指定的item IDs
@@ -568,8 +569,6 @@ async def import_media_items(
     title_recognition_manager = Depends(get_title_recognition_manager)
 ):
     """导入选中的媒体项(触发webhook式搜索和弹幕下载)"""
-    from src.db.crud.media_server import get_episode_ids_by_show, get_episode_ids_by_season
-
     all_item_ids = set()
 
     # 收集直接指定的item IDs
@@ -607,8 +606,6 @@ async def import_media_items(
     unique_key = f"media-import-{hash(tuple(sorted_ids))}"
 
     # 查询媒体项标题，用于生成可读的任务标题（分批查询，避免 asyncpg 的 32767 参数限制）
-    from src.db.orm_models import MediaItem
-    from sqlalchemy import select, func
     PG_BATCH = 30000
     title_groups = []
     for i in range(0, len(item_ids_list), PG_BATCH):

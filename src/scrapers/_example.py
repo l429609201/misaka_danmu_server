@@ -36,10 +36,6 @@ from src.utils import parse_search_keyword
 # 模块级 logger（一般不直接使用，基类已提供 self.logger）
 logger = logging.getLogger(__name__)
 
-# 专门用于记录 HTTP 原始响应的 logger（配合 self._should_log_responses() 使用）
-# 仅在数据库中 is_loggable=True 时才输出，方便调试
-scraper_responses_logger = logging.getLogger("scraper_responses")
-
 
 class ExampleScraper(BaseScraper):
     """
@@ -151,7 +147,7 @@ class ExampleScraper(BaseScraper):
             # ── 日志：记录原始 HTTP 响应（调试用） ──
             # _should_log_responses() 由数据库配置控制，生产环境一般关闭
             if await self._should_log_responses():
-                scraper_responses_logger.debug(f"Example Search Response: {resp.text}")
+                await self._log_raw_response(resp.text, "Search Response")
 
             for item in data.get("results", []):
                 # get_season_from_title() 可以从标题中提取季度信息
@@ -162,7 +158,7 @@ class ExampleScraper(BaseScraper):
                     continue
 
                 results.append(ProviderSearchInfo(
-                    provider=self.provider_name,       # 源标识符
+                    provider=self.provider_name,        # 源标识符
                     mediaId=str(item["id"]),            # 媒体ID（字符串）
                     title=item["title"],                # 标题
                     type="tvseries",                    # 类型: tvseries / movie / ova / web
@@ -226,7 +222,7 @@ class ExampleScraper(BaseScraper):
 
             # ── 日志：记录原始 HTTP 响应 ──
             if await self._should_log_responses():
-                scraper_responses_logger.debug(f"Example Episodes Response (media_id={media_id}): {resp.text}")
+                await self._log_raw_response(resp.text, "Episodes Response", media_id=media_id)
 
             for ep in data.get("episodes", []):
                 episodes.append(ProviderEpisodeInfo(
@@ -284,7 +280,7 @@ class ExampleScraper(BaseScraper):
 
             # ── 日志：记录原始 HTTP 响应 ──
             if await self._should_log_responses():
-                scraper_responses_logger.debug(f"Example Comments Response (episode_id={episode_id}): {resp.text}")
+                await self._log_raw_response(resp.text, "Comments Response", episode_id=episode_id)
 
             for c in data.get("comments", []):
                 comments.append({

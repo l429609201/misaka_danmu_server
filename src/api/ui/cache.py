@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src import security
+from src.core.cache import get_cache_backend
 from src.db import models
 from src.utils.cache_listing import count_region_keys, list_cache_page
 
@@ -41,7 +42,6 @@ async def get_cache_stats(
     current_user: models.User = Depends(security.get_current_user),
 ):
     """获取缓存的统计信息，包括各 region 的条目数量。"""
-    from src.core.cache import get_cache_backend
     backend = get_cache_backend()
 
     regions = ["default", "search", "metadata", "episodes", "comments"]
@@ -79,7 +79,6 @@ async def get_cache_list(
     current_user: models.User = Depends(security.get_current_user),
 ):
     """获取指定 region 下的缓存条目列表，包含键值预览。"""
-    from src.core.cache import get_cache_backend
     backend = get_cache_backend()
 
     pattern = f"*{search}*" if search else "*"
@@ -117,7 +116,6 @@ async def clear_cache(
     current_user: models.User = Depends(security.get_current_user),
 ):
     """清除指定区域或全部缓存。"""
-    from src.core.cache import get_cache_backend
     backend = get_cache_backend()
 
     count = await backend.clear(region=region)
@@ -133,7 +131,6 @@ async def delete_cache_key(
     current_user: models.User = Depends(security.get_current_user),
 ):
     """删除指定的单条缓存。"""
-    from src.core.cache import get_cache_backend
     backend = get_cache_backend()
 
     deleted = await backend.delete(key, region=region)
@@ -149,7 +146,6 @@ async def get_cache_detail(
     current_user: models.User = Depends(security.get_current_user),
 ):
     """获取指定缓存条目的完整值，用于调试和查看详情。"""
-    from src.core.cache import get_cache_backend
     backend = get_cache_backend()
 
     raw_value = await backend.get(key, region=region)

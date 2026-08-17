@@ -16,12 +16,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import CommandHandler, _get_db_cache, _set_db_cache
 from src.db import crud
+from src.db.orm_models import Anime, AnimeSource, Episode
+from src.services.task_manager import TaskManager
+from src.services.scraper_manager import ScraperManager
+from src.rate_limiter import RateLimiter
+from src import tasks
+from src.utils.image_utils import get_custom_domain
 
 if TYPE_CHECKING:
     from src.api.dandan import DandanSearchAnimeResponse, DandanSearchAnimeItem
-    from src.services.task_manager import TaskManager
-    from src.services.scraper_manager import ScraperManager
-    from src.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -59,15 +62,10 @@ class RefreshDanmakuCommand(CommandHandler):
     async def execute(self, token: str, args: List[str], session: AsyncSession,
                      config_manager, **kwargs) -> "DandanSearchAnimeResponse":
         """执行刷新指令"""
-        from src.db.orm_models import Anime, AnimeSource, Episode
-        from src.services.task_manager import TaskManager
-        from src.services.scraper_manager import ScraperManager
-        from src.rate_limiter import RateLimiter
-        from src import tasks
 
         # 获取图片URL
         image_url = await self.get_image_url(config_manager)
-        custom_domain = await config_manager.get("customApiDomain", "")
+        custom_domain = await get_custom_domain(config_manager)
 
         # 获取会话状态（用于缓存番剧和分集信息）
         session_key = f"cmd_session_{token}"
@@ -137,8 +135,6 @@ class RefreshDanmakuCommand(CommandHandler):
         image_url: str
     ) -> "DandanSearchAnimeResponse":
         """显示最近播放的番剧列表"""
-        from src.api.dandan import DandanSearchAnimeItem
-        from src.db.orm_models import Anime, AnimeSource, Episode
 
         # 读取播放历史
         cache_key = f"play_history_{token}"
@@ -252,7 +248,6 @@ class RefreshDanmakuCommand(CommandHandler):
         image_url: str
     ) -> "DandanSearchAnimeResponse":
         """显示选中番剧的分集列表"""
-        from src.db.orm_models import Episode, AnimeSource, Anime
 
         anime_list = session_state.get("data", {}).get("animeList", [])
 
@@ -377,8 +372,6 @@ class RefreshDanmakuCommand(CommandHandler):
         image_url: str
     ) -> "DandanSearchAnimeResponse":
         """根据标签和集数触发刷新任务（格式: #A5）"""
-        from src.db.orm_models import Episode, AnimeSource
-        from src import tasks
 
         # 解析集数编号
         try:

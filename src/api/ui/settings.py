@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src import security
 from src.db import models, orm_models, get_db_session, ConfigManager
+from src.core.default_configs import get_default_configs
 
 from src.api.dependencies import get_config_manager, get_title_recognition_manager
 from .models import (
@@ -237,7 +238,6 @@ async def get_global_filter_defaults(
     获取全局搜索结果标题过滤的默认规则。
     这些值来自 default_configs.py 中的硬编码默认值，用于用户想要重置或填充默认规则时使用。
     """
-    from src.core.default_configs import get_default_configs
     defaults = get_default_configs()
 
     cn_default = defaults.get('search_result_global_blacklist_cn', ('', ''))[0]
@@ -285,7 +285,6 @@ async def get_danmaku_blacklist_defaults(
     获取弹幕输出黑名单的默认正则规则。
     来自 default_configs.py 中的默认值，用于用户想要填充默认配置时使用。
     """
-    from src.core.default_configs import get_default_configs
     defaults = get_default_configs()
     patterns_default = defaults.get('danmakuBlacklistPatterns', ('', ''))[0]
     return {"patterns": patterns_default}

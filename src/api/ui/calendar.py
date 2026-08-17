@@ -1,18 +1,23 @@
 """
 日历视图 API
 """
+import json
 import logging
 import re
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
-from sqlalchemy import select, update as sql_update, or_
+import httpx
+from sqlalchemy import select, update as sql_update, or_, delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, get_db_session, orm_models
+from src.db.orm_models import ExternalCalendarItem, AnimeMetadata
+from src.db.crud import external_calendar as ext_cal_crud
 from src import security
 from src.db import models
 from src import tasks
+from src.core.cache import get_cache_backend
 from src.api.dependencies import (
     get_metadata_manager, get_task_manager, get_scraper_manager,
     get_config_manager, get_rate_limiter, get_ai_matcher_manager,
@@ -25,6 +30,7 @@ from src.ai import AIMatcherManager
 from src.api.control.models import (
     ControlAutoImportRequest, AutoImportSearchType, AutoImportMediaType,
 )
+from src.jobs.subscription_scan import scan_and_import_target_task
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/calendar", tags=["Calendar"])
@@ -100,8 +106,6 @@ async def _sync_scraper_calendars(
 
     供 weekly 首屏（表数据过期时）与「同步日程」按钮调用。返回写入条目数。
     """
-    from src.db.crud import external_calendar as ext_cal_crud
-
     total = 0
     for provider in providers:
         scraper = scraper_manager.scrapers.get(provider)
@@ -181,7 +185,6 @@ async def get_weekly_calendar(
             local_tmdb_ids.add(str(s["tmdbId"]))
 
     # 1.5. 已订阅意向集合（external_calendar_item.is_subscribed=TRUE 的记录）
-    from src.db.crud import external_calendar as ext_cal_crud
     subscribed_ids = await ext_cal_crud.get_subscribed_external_ids(session)
     subscribed_bgm_ids = subscribed_ids.get("bangumi", set())
     subscribed_trakt_ids = subscribed_ids.get("trakt", set())
@@ -546,7 +549,6 @@ async def clear_calendar_cache(
        - 保留 isSubscribed=True 的订阅意向（用户的订阅不会被清掉）
        - 保留带 parentExternalId 的订阅子候选项（避免下次扫描复活已忽略/已下载的项）
     """
-    from src.core.cache import get_cache_backend
     cache = get_cache_backend()
     deleted = 0
     try:
@@ -566,10 +568,7 @@ async def clear_calendar_cache(
         # 3) 持久化表数据 —— 仅删「纯日历缓存」(isSubscribed=False 且无 parentExternalId)
         # parentExternalId 存在 extraData JSON 内，SQL 难以过滤，故 Python 层筛 ID 后批量删
         try:
-            import json as _json
-            from sqlalchemy import select as sa_select, delete as sa_delete
-            from src.db.orm_models import ExternalCalendarItem
-            stmt = sa_select(ExternalCalendarItem.id, ExternalCalendarItem.extraData).where(
+            stmt = select(ExternalCalendarItem.id, ExternalCalendarItem.extraData).where(
                 ExternalCalendarItem.isSubscribed == False  # noqa: E712
             )
             rows = (await session.execute(stmt)).all()
@@ -578,7 +577,7 @@ async def clear_calendar_cache(
                 # 跳过订阅扫描产生的子候选项（视频候选/分集候选）
                 if extra_raw:
                     try:
-                        extra = _json.loads(extra_raw)
+                        extra = json.loads(extra_raw)
                         if isinstance(extra, dict) and extra.get("parentExternalId"):
                             continue
                     except (ValueError, TypeError):
@@ -748,16 +747,12 @@ async def discover_current_season(
     当季新番发现 — 从 Bangumi /calendar 获取本季所有在播番剧。
     返回按 weekday 分组的当季番剧列表，标注哪些已在本地弹幕库中。
     """
-    import httpx
-
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get("https://api.bgm.tv/calendar")
         resp.raise_for_status()
         bgm_calendar = resp.json()
 
     # 获取本地已有的 bangumiId 集合
-    from sqlalchemy import select
-    from src.db.orm_models import AnimeMetadata
     stmt = select(AnimeMetadata.bangumiId).where(AnimeMetadata.bangumiId.isnot(None))
     result = await session.execute(stmt)
     local_bgm_ids = {str(r) for r in result.scalars().all()}
@@ -923,8 +918,6 @@ async def subscribe_calendar_item(
     - runNow=True 时同时立即触发 auto_search_and_import_task 把作品加入弹幕库并开启追更
     - 后续无论 runNow 与否，定时追更任务都会扫描 pending 订阅并自动建库
     """
-    from src.db.crud import external_calendar as ext_cal_crud
-
     # 标记订阅意向
     provider, external_id = _resolve_provider_external_id(body)
     if not provider or not external_id:
@@ -976,8 +969,6 @@ async def subscribe_calendar_item(
     try:
         if is_scraper_subscription:
             # 强标识订阅（合集/UP主）：直接扫描拉取视频 → 建库
-            from src.jobs.subscription_scan import scan_and_import_target_task
-
             task_coro = lambda s, cb: scan_and_import_target_task(
                 cb, s, scraper_manager, config_manager, provider, external_id,
                 title_recognition_manager, body.selectedEpisodes or None
@@ -1029,7 +1020,6 @@ async def subscribe_calendar_items_batch(
     title_recognition_manager = Depends(get_title_recognition_manager),
 ):
     """批量订阅。runNow 与单条订阅含义一致，作用于本批次所有项。"""
-    from src.db.crud import external_calendar as ext_cal_crud
     if not body.items:
         return {"successCount": 0, "failureCount": 0, "results": []}
 
@@ -1112,7 +1102,6 @@ async def unsubscribe_calendar_item(
 
     # 2) 外部条目：取消订阅记录
     if body.provider and body.externalId:
-        from src.db.crud import external_calendar as ext_cal_crud
         ok = await ext_cal_crud.unsubscribe(session, body.provider, body.externalId)
         if ok:
             did_something = True

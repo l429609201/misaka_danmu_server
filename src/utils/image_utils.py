@@ -3,6 +3,7 @@ import logging
 import uuid
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING, Union
+from urllib.parse import urlparse
 import asyncio
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,84 @@ if TYPE_CHECKING:
     from src.services import ScraperManager
 
 logger = logging.getLogger(__name__)
+
+# ─── 自定义域名工具 ───────────────────────────────────────────────────────────
+
+# 数据库配置键（统一使用下划线，与前端 /api/ui/config/custom_api_domain 保持一致）
+_CUSTOM_DOMAIN_KEY = "custom_api_domain"
+
+
+def validate_custom_domain_format(raw_domain: str) -> Optional[str]:
+    """对自定义域名做格式校验：必须是 http(s):// 开头的无凭据地址。
+
+    :param raw_domain: 原始域名字符串（可能含尾部斜杠、空白）
+    :return: 规范化后的域名（去掉尾部斜杠），格式不合规时返回 None。
+
+    why：自定义域名允许 http 和 https；公网可达性另由 probe_public_domain 负责检测。
+    带认证信息的地址在对外分享场景下会出现安全问题，直接拒绝。
+    """
+    domain = str(raw_domain or "").strip().rstrip("/")
+    if not domain:
+        return None
+    parsed = urlparse(domain)
+    if parsed.scheme.lower() not in ("http", "https"):
+        return None
+    if not parsed.hostname:
+        return None
+    if parsed.username or parsed.password:
+        return None
+    return domain
+
+
+async def get_custom_domain(config_manager) -> Optional[str]:
+    """从配置中读取自定义域名并做格式校验（http/https 均接受）。
+
+    :param config_manager: ConfigManager 实例
+    :return: 合规的域名字符串（已去尾部斜杠），读取失败或格式不合规返回 None。
+
+    why：所有需要拼接外联地址的业务（海报外联、通知外链、命令指令等）统一调此函数，
+    避免在各处硬编码不同的 key 名称或重复做格式判断。
+    配置 key 统一用 custom_api_domain（下划线，与前端保存路径一致）。
+    """
+    try:
+        raw = await config_manager.get(_CUSTOM_DOMAIN_KEY, "")
+    except Exception:
+        return None
+    return validate_custom_domain_format(raw)
+
+
+async def probe_public_domain(domain: str) -> dict:
+    """向已知存在的探针图片发起真实 HTTP 请求，验证自定义域名是否公网可达。
+
+    探针文件路径为 /data/images/{_PUBLIC_URL_PROBE_NAME}，由调用方确保文件已存在。
+
+    :param domain: 已经过 validate_custom_domain_format 校验的域名（无尾部斜杠）
+    :return: {"ok": True, "probeUrl": ...} 或 {"ok": False, "detail": ...}
+
+    why：与 notification_routes._probe_public_domain 共享同一逻辑，
+    避免两处重复维护不同的超时/错误判断策略。
+    外链模式要求外部能真实访问到本服务的图片，此处做实际网络探测。
+    """
+    probe_url = f"{domain}/data/images/{_PUBLIC_URL_PROBE_NAME}"
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            response = await client.get(probe_url, headers={"Accept": "image/*"})
+    except httpx.TimeoutException:
+        return {"ok": False, "detail": "自定义域名访问超时，请检查公网解析和反向代理"}
+    except httpx.HTTPError as e:
+        return {"ok": False, "detail": f"自定义域名无法访问：{type(e).__name__}"}
+
+    content_type = response.headers.get("content-type", "").lower()
+    if response.status_code != 200 or not content_type.startswith("image/"):
+        return {
+            "ok": False,
+            "detail": f"图片静态路由不可用（HTTP {response.status_code}，Content-Type={content_type or '未知'}）",
+        }
+    return {"ok": True, "domain": domain, "probeUrl": probe_url}
+
+
+# 探针图片常量（供 probe_public_domain 和 notification_routes 共用）
+_PUBLIC_URL_PROBE_NAME = "notification_public_url_probe.png"
 
 # 图片存储在 config/image/ 目录下
 def _get_image_dir():

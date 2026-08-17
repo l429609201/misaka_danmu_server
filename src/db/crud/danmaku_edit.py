@@ -14,8 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from src.utils.danmaku_parser import parse_dandan_xml_to_comments
+
 from ..orm_models import Episode, AnimeSource
-from .danmaku import _get_fs_path_from_web_path, _generate_xml_from_comments
+from .danmaku import _get_fs_path_from_web_path, _generate_xml_from_comments, _generate_danmaku_path
 from .episode import update_episode_danmaku_info
 
 logger = logging.getLogger(__name__)
@@ -25,8 +27,6 @@ async def get_danmaku_detail(session: AsyncSession, episode_id: int) -> Optional
     """
     获取指定分集的弹幕详情，包括统计信息、时间分布和弹幕预览
     """
-    from src.api.dandan.danmaku_parser import parse_dandan_xml_to_comments
-    
     # 获取分集信息
     stmt = select(Episode).where(Episode.id == episode_id).options(
         selectinload(Episode.source)
@@ -121,8 +121,6 @@ async def get_danmaku_comments_page(
     """
     分页获取弹幕列表，支持时间范围筛选
     """
-    from src.api.dandan.danmaku_parser import parse_dandan_xml_to_comments
-    
     # 获取分集信息
     stmt = select(Episode).where(Episode.id == episode_id)
     result = await session.execute(stmt)
@@ -188,8 +186,6 @@ async def apply_time_offset(
     """
     对指定分集的弹幕应用时间偏移
     """
-    from src.api.dandan.danmaku_parser import parse_dandan_xml_to_comments
-
     modified_count = 0
     total_comments = 0
 
@@ -263,7 +259,6 @@ async def split_episode_danmaku(
         {"episodeIndex": 2, "startTime": 750, "endTime": 1500, "title": "第二部分"}
     ]
     """
-    from src.api.dandan.danmaku_parser import parse_dandan_xml_to_comments
     from .danmaku import _generate_danmaku_path
 
     # 获取源分集信息
@@ -395,7 +390,6 @@ async def merge_episodes_danmaku(
         {"episodeId": 3, "offsetSeconds": 3000}
     ]
     """
-    from src.api.dandan.danmaku_parser import parse_dandan_xml_to_comments
     from .danmaku import _generate_danmaku_path
 
     if not source_episodes:

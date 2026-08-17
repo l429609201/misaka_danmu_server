@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import CommandHandler
 from src.db import crud
+from src.rate_limiter import RateLimiter
+from src.core.timezone import get_now
 
 if TYPE_CHECKING:
     from src.api.dandan import DandanSearchAnimeResponse
@@ -30,9 +32,6 @@ class RateLimitStatusCommand(CommandHandler):
     async def execute(self, token: str, args: List[str], session: AsyncSession,
                      config_manager, **kwargs) -> "DandanSearchAnimeResponse":
         """执行流控查询"""
-        from src.rate_limiter import RateLimiter
-        from src.core.timezone import get_now
-        
         # 获取图片URL
         image_url = await self.get_image_url(config_manager)
         

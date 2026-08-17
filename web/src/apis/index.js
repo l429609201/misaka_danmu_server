@@ -121,9 +121,9 @@ export const getLogs = (options = {}) =>
 /** 获取日志文件列表 */
 export const getLogFiles = () => api.get('/api/ui/logs/files')
 
-/** 获取指定日志文件内容 */
-export const getLogFileContent = (filename, tail = 500) =>
-  api.get(`/api/ui/logs/files/${encodeURIComponent(filename)}`, { tail })
+/** 获取指定日志文件内容（支持后端关键词过滤 + 分页偏移） */
+export const getLogFileContent = (filename, { tail = 200, keyword = '', offset = 0 } = {}) =>
+  api.get(`/api/ui/logs/files/${encodeURIComponent(filename)}`, { tail, keyword, offset })
 
 /** 匹配测试 */
 export const getMatchTest = data =>
