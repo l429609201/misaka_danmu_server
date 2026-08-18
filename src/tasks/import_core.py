@@ -167,6 +167,8 @@ async def generic_import_task(
     _generate_episode_range_string = _get_generate_episode_range_string()
 
     scraper = manager.get_scraper(provider)
+    # why：后续识别词偏移、单剧过滤和条目创建统一使用可调整标题变量。
+    title_to_use = animeTitle
     season_to_use = season
 
     await progress_callback(10, "正在获取分集列表...")
