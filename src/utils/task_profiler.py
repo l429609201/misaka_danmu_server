@@ -95,16 +95,36 @@ class TaskProfiler:
         """从 profiler 创建到现在的总耗时（毫秒）"""
         return (time.perf_counter() - self._total_start) * 1000
 
-    async def flush(self, session) -> None:
+    async def flush(self, session, session_factory=None) -> None:
         """批量写入 task_perf_events 表。
 
         - 若无步骤记录则跳过
         - 写入失败只打 warning，不抛异常
-        - why：使用独立 commit，避免调用方 session 未 commit 时数据随 close 回滚
-          （搜索/请求型路由的 FastAPI session 依赖项只 close 不 commit）
+        - why：优先使用 session_factory 开独立 session 完成 commit，
+          避免调用方 session（FastAPI Depends 注入的请求级 session 只 close 不 commit）
+          在请求结束时把 flush 的写入一并回滚。
+          若无 session_factory，退回到传入的 session 直接 commit（适用于任务型 session）。
         """
         if not self._steps:
             return
+
+        # 请求型路由传入 session_factory，用独立 session 写入，与外层请求 session 生命周期解耦
+        if session_factory is not None:
+            try:
+                async with session_factory() as independent_session:
+                    await save_perf_events(
+                        session=independent_session,
+                        flow_type=self.flow_type,
+                        correlation_id=self.correlation_id,
+                        steps=self._steps,
+                        total_duration_ms=self.total_duration_ms,
+                    )
+                    await independent_session.commit()
+            except Exception as exc:
+                logger.warning(f"[性能统计] 写入 task_perf_events 失败（不影响主流程）: {exc}", exc_info=True)
+            return
+
+        # 任务型 session（BaseJob.run 注入的 session 会 commit）：直接复用
         try:
             await save_perf_events(
                 session=session,

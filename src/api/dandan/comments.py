@@ -864,9 +864,11 @@ async def get_comments_for_dandan(
 
         # 任务完成后,弹幕已经保存到数据库,不再从缓存读取
         # 在后备匹配路径结束时写入性能统计
+        # why：传入 session_factory 而非请求级 session，确保在独立 session 中 commit，
+        # 避免 get_db_session 的 finally 只 close() 导致写入被回滚。
         if _fallback_profiler is not None:
             _fallback_profiler.record_step("全流程", _fallback_profiler.total_duration_ms)
-            await _fallback_profiler.flush(session)
+            await _fallback_profiler.flush(session, session_factory=request.app.state.db_session_factory)
             _fallback_profiler = None
 
         # 2. 检查是否是后备搜索的特殊episodeId（以25开头的新格式）
@@ -1058,12 +1060,11 @@ async def get_comments_for_dandan(
                                             pass  # 普通流控超限交给内部处理
 
                                         # 使用并发下载获取弹幕（三线程模式）
-                                        async def dummy_progress_callback(_, _unused):
-                                            pass  # 空的异步进度回调，忽略所有参数
-
+                                        # why：直接传入外层 progress_callback，让子进度（30~90）
+                                        # 能实时上报到任务管理器，避免任务进度卡死在某个值不动。
                                         download_results = await tasks._download_episode_comments_concurrent(
                                             scraper, [virtual_episode], current_rate_limiter,
-                                            dummy_progress_callback,
+                                            progress_callback,
                                             is_fallback=True,
                                             fallback_type="search"
                                         )
@@ -1417,9 +1418,11 @@ async def get_comments_for_dandan(
                         logger.error(f"提交弹幕下载任务失败: {e}", exc_info=True)
 
         # 后备搜索路径结束：写入性能统计
+        # why：传入 session_factory 而非请求级 session，确保在独立 session 中 commit，
+        # 避免 get_db_session 的 finally 只 close() 导致写入被回滚。
         if _fallback_profiler is not None:
             _fallback_profiler.record_step("全流程", _fallback_profiler.total_duration_ms)
-            await _fallback_profiler.flush(session)
+            await _fallback_profiler.flush(session, session_factory=request.app.state.db_session_factory)
             _fallback_profiler = None
 
         # 如果仍然没有弹幕数据，返回空结果
