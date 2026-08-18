@@ -29,6 +29,7 @@ from uuid import uuid4
 # 答：不会，save_perf_events 不依赖 task_profiler，只有 task_profiler.flush 单向调用 crud.task，
 # 因此顶部直接导入 save_perf_events 是安全的。
 from src.db.crud.task import save_perf_events  # noqa: E402 — 模块初始化时 crud 包已就绪
+from src.services.task_manager import TaskSuccess, TaskFailed  # why: 修饰器需要正确区分业务成功与失败
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,7 @@ class TaskProfiler:
             )
             await session.commit()
         except Exception as exc:
-            logger.warning(f"[性能统计] 写入 task_perf_events 失败（不影响主流程）: {exc}")
+            logger.warning(f"[性能统计] 写入 task_perf_events 失败（不影响主流程）: {exc}", exc_info=True)
             try:
                 await session.rollback()
             except Exception:
@@ -144,7 +145,16 @@ def profile_flow(flow_type: str):
             try:
                 result = await func(*args, **kwargs)
                 return result
+            except TaskSuccess:
+                # why：TaskSuccess 是业务正常完成，不应标记 success=False
+                raise
+            except TaskFailed as exc:
+                # why：TaskFailed 是可预期业务失败，success=False 但不算崩溃
+                success = False
+                details = str(exc)[:500]
+                raise
             except Exception as exc:
+                # 未预期异常
                 success = False
                 details = str(exc)[:500]
                 raise
