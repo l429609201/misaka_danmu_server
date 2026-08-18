@@ -394,9 +394,21 @@ class HybridBackend(AsyncCacheBackend):
         return value
 
     async def set(self, key: str, value: Any, ttl: int = 0, region: str = "default") -> None:
-        # 同时写入两层
+        # L1 内存：同步写入，调用方 await 后立即完成
         await self._memory.set(key, value, ttl=ttl, region=region)
-        await self._database.set(key, value, ttl=ttl, region=region)
+
+        # L2 数据库：改为后台 Task 异步写入，不阻塞调用方响应路径。
+        # 语义：DB 是持久化层，写入延迟或失败不影响本次内存命中；
+        # 重启后内存丢失时，DB 仍可回填（get 的 L2 回填逻辑保持不变）。
+        # 注意：asyncio.create_task 要求当前线程有正在运行的事件循环（always true in async context）。
+        async def _write_db():
+            try:
+                await self._database.set(key, value, ttl=ttl, region=region)
+            except Exception as e:
+                # 后台写失败只记录警告，不向上传播——L1 已命中，本次请求不受影响
+                logger.warning(f"[HybridBackend] 后台写数据库缓存失败 key={key!r}: {e}")
+
+        asyncio.create_task(_write_db())
 
     async def delete(self, key: str, region: str = "default") -> bool:
         mem_ok = await self._memory.delete(key, region)

@@ -782,17 +782,20 @@ async def search_anime_provider(
                 await crud.set_cache(session, f"search:{cache_key}", results_to_cache, ttl_seconds=10800)
         else:
             await crud.set_cache(session, f"search:{cache_key}", results_to_cache, ttl_seconds=10800)
-    # 缓存补充结果（即使为空也缓存，避免翻页时因缓存缺失而重新执行完整搜索）
+    # 缓存补充结果
+    # P2-A：辅助源超时/限流可能返回空列表，空列表用短 TTL（300s）缓存，
+    # 避免瞬时故障把"无辅助源结果"锁定 3 小时；真实有结果才用完整 TTL（10800s）。
     supplemental_data = [item.model_dump() for item in supplemental_results] if supplemental_results else []
+    _supplemental_ttl = 10800 if supplemental_data else 300
     _backend = get_cache_backend()
     if _backend is not None:
         try:
-            await _backend.set(supplemental_cache_key, supplemental_data, ttl=10800, region="search")
+            await _backend.set(supplemental_cache_key, supplemental_data, ttl=_supplemental_ttl, region="search")
         except Exception as e:
             logger.warning(f"缓存后端写入失败，回退到数据库: {e}")
-            await crud.set_cache(session, f"search:{supplemental_cache_key}", supplemental_data, ttl_seconds=10800)
+            await crud.set_cache(session, f"search:{supplemental_cache_key}", supplemental_data, ttl_seconds=_supplemental_ttl)
     else:
-        await crud.set_cache(session, f"search:{supplemental_cache_key}", supplemental_data, ttl_seconds=10800)
+        await crud.set_cache(session, f"search:{supplemental_cache_key}", supplemental_data, ttl_seconds=_supplemental_ttl)
     _dur = timer.step_end()
     _home_profiler.record_step("结果缓存", _dur)
     # --- 缓存逻辑结束 ---
@@ -896,16 +899,19 @@ async def search_anime_provider(
         cache_key, episode_to_filter, page, pageSize,
         typeFilter, yearFilter, providerFilter, titleFilter,
     )
-    _backend = get_cache_backend()
-    if _backend is not None:
-        try:
-            await _backend.set(page_cache_key, response_payload, ttl=10800, region="search")
-        except Exception as e:
-            logger.warning(f"分页缓存写入失败，回退到数据库: {e}")
+    # P2-A：只有分页结果非空才写入缓存（与全量缓存命中路径 L374 保持一致）。
+    # 过滤条件（typeFilter/yearFilter 等）可能导致 paginated_results 为空，
+    # 空结果若缓存 3 小时，同条件再搜索会持续命中空缓存。
+    if result_dicts:
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                await _backend.set(page_cache_key, response_payload, ttl=10800, region="search")
+            except Exception as e:
+                logger.warning(f"分页缓存写入失败，回退到数据库: {e}")
+                await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
+        else:
             await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
-    else:
-        await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
-    return UIProviderSearchResponse(**response_payload)
 
 
 

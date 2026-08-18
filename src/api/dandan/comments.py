@@ -39,7 +39,6 @@ from .constants import (
     FALLBACK_SEARCH_CACHE_TTL,
     COMMENTS_FETCH_CACHE_TTL,
     SAMPLED_COMMENTS_CACHE_TTL_DB,
-    SAMPLED_CACHE_TTL,
 )
 from .helpers import (
     get_db_cache, set_db_cache, delete_db_cache,
@@ -675,13 +674,13 @@ async def get_comments_for_dandan(
                             task_session, current_episodeId, comments, config_manager,
                             fire_threshold=current_scraper.likes_fire_threshold
                         )
+                        # 将弹幕数据写入短期缓存表，供外部会话读取（TTL 5分钟）
+                        # 优化B：与上方 save_danmaku_for_episode 的落库操作合并为一次 commit，
+                        # 短期缓存属于派生物，不需要独立事务边界
+                        cache_key = f"comments_{current_episodeId}"
+                        await set_db_cache(task_session, COMMENTS_FETCH_CACHE_PREFIX, cache_key, comments, 300)
                         await task_session.commit()
                         logger.info(f"保存成功，共 {added_count} 条弹幕")
-
-                        # 将弹幕数据写入缓存表,供外部会话读取
-                        cache_key = f"comments_{current_episodeId}"
-                        await set_db_cache(task_session, COMMENTS_FETCH_CACHE_PREFIX, cache_key, comments, 300)  # 5分钟过期
-                        await task_session.commit()
                         logger.debug(f"弹幕数据已写入缓存: {cache_key}")
 
                         # 清理数据库缓存
@@ -1457,25 +1456,14 @@ async def get_comments_for_dandan(
         cache_key = f"sampled_{episodeId}_{limit}{merge_suffix}"
         current_time = time.time()
 
-        # 尝试从数据库缓存获取
+        # 尝试从缓存获取
         cached_data = await get_db_cache(session, SAMPLED_COMMENTS_CACHE_PREFIX, cache_key)
         if cached_data:
-            # 缓存格式: {"comments": [...], "timestamp": 123456.789}
+            # 缓存命中（DB 层已按 TTL 管理过期，无需在 Python 层重复判断时间戳）
+            # 问题3修复：删除原有 Python 层 time.time() 手工过期判断，信任 DB 缓存 TTL 语义
             cached_comments = cached_data.get("comments", [])
-            cached_time = cached_data.get("timestamp", 0)
-            if current_time - cached_time <= SAMPLED_CACHE_TTL:
-                logger.info(f"使用缓存的采样结果: episodeId={episodeId}, limit={limit}, 缓存时间={int(current_time - cached_time)}秒前")
-                comments_data = cached_comments
-            else:
-                # 缓存过期,重新采样
-                logger.info(f"弹幕数量 {len(comments_data)} 超过限制 {limit}，开始均匀采样 (缓存已过期)")
-                original_count = len(comments_data)
-                comments_data = sample_comments_evenly(comments_data, limit)
-                logger.info(f"弹幕采样完成: {original_count} -> {len(comments_data)} 条")
-
-                # 更新缓存
-                cache_value = {"comments": comments_data, "timestamp": current_time}
-                await set_db_cache(session, SAMPLED_COMMENTS_CACHE_PREFIX, cache_key, cache_value, SAMPLED_COMMENTS_CACHE_TTL_DB)
+            logger.info(f"使用缓存的采样结果: episodeId={episodeId}, limit={limit}")
+            comments_data = cached_comments
         else:
             # 无缓存,执行采样
             logger.info(f"弹幕数量 {len(comments_data)} 超过限制 {limit}，开始均匀采样")

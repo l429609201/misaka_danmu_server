@@ -815,6 +815,22 @@ async def save_perf_events(
     await session.flush()  # 不单独 commit，跟随调用方事务
 
 
+def _percentile(sorted_vals: list, p: float) -> float:
+    """计算已排序列表的第 p 百分位数（线性插值），p 取 0~100。"""
+    if not sorted_vals:
+        return 0.0
+    n = len(sorted_vals)
+    if n == 1:
+        return float(sorted_vals[0])
+    idx = (p / 100.0) * (n - 1)
+    lo = int(idx)
+    hi = lo + 1
+    if hi >= n:
+        return float(sorted_vals[-1])
+    frac = idx - lo
+    return round(float(sorted_vals[lo]) * (1 - frac) + float(sorted_vals[hi]) * frac, 1)
+
+
 async def get_perf_stats(
     session: AsyncSession,
     days: int = 7,
@@ -823,13 +839,15 @@ async def get_perf_stats(
 
     返回每个 flow_type 的：
     - 总运行次数（按 correlation_id 去重）
-    - 平均总耗时
-    - 各步骤的平均/最大耗时和成功率
+    - 平均/P50/P95/P99 总耗时
+    - 各步骤的平均/最大/P50/P95/P99 耗时和成功率
+
+    百分位在 Python 层计算（避免跨 MySQL/PostgreSQL/SQLite 的方言差异）。
     """
 
     cutoff = get_now() - timedelta(days=days)
 
-    # ── 步骤级聚合 ──
+    # ── 步骤级聚合：avg/max + success 计数 ──
     step_stmt = (
         select(
             TaskPerfEvent.flowType,
@@ -847,6 +865,25 @@ async def get_perf_stats(
     step_result = await session.execute(step_stmt)
     step_rows = step_result.mappings().all()
 
+    # ── 步骤级原始耗时：用于计算 P50/P95/P99 ──
+    # 只拉 (flowType, stepName, durationMs) 三列，尽量减少传输量
+    raw_step_stmt = (
+        select(
+            TaskPerfEvent.flowType,
+            TaskPerfEvent.stepName,
+            cast(TaskPerfEvent.durationMs, Float).label("duration_ms"),
+        )
+        .where(TaskPerfEvent.createdAt >= cutoff)
+    )
+    raw_step_result = await session.execute(raw_step_stmt)
+    # 按 (flowType, stepName) 聚合所有原始耗时值
+    raw_step_vals: dict = defaultdict(list)
+    for row in raw_step_result:
+        raw_step_vals[(row.flowType, row.stepName)].append(float(row.duration_ms or 0))
+    # 排序一次，后续多次调用 _percentile 无需重排
+    for key in raw_step_vals:
+        raw_step_vals[key].sort()
+
     # ── 流程级聚合（按 correlation_id 去重计次） ──
     flow_stmt = (
         select(
@@ -860,27 +897,55 @@ async def get_perf_stats(
     flow_result = await session.execute(flow_stmt)
     flow_rows = {r["flowType"]: dict(r) for r in flow_result.mappings().all()}
 
-    # ── 组装结果 ──
+    # ── 流程级原始总耗时：用于流程 P50/P95/P99 ──
+    raw_flow_stmt = (
+        select(
+            TaskPerfEvent.flowType,
+            cast(TaskPerfEvent.totalDurationMs, Float).label("total_ms"),
+        )
+        .where(
+            TaskPerfEvent.createdAt >= cutoff,
+            TaskPerfEvent.totalDurationMs.isnot(None),
+        )
+    )
+    raw_flow_result = await session.execute(raw_flow_stmt)
+    raw_flow_vals: dict = defaultdict(list)
+    for row in raw_flow_result:
+        raw_flow_vals[row.flowType].append(float(row.total_ms or 0))
+    for key in raw_flow_vals:
+        raw_flow_vals[key].sort()
+
+    # ── 组装步骤结果（含百分位）──
     steps_by_flow: dict = defaultdict(list)
     for r in step_rows:
         flow = r["flowType"]
+        step = r["stepName"]
         call_count = int(r["call_count"] or 0)
         success_count = int(r["success_count"] or 0)
+        vals = raw_step_vals.get((flow, step), [])
         steps_by_flow[flow].append({
-            "stepName": r["stepName"],
+            "stepName": step,
             "avgMs": round(float(r["avg_ms"] or 0), 1),
             "maxMs": round(float(r["max_ms"] or 0), 1),
+            "p50Ms": _percentile(vals, 50),
+            "p95Ms": _percentile(vals, 95),
+            "p99Ms": _percentile(vals, 99),
             "callCount": call_count,
             "successRate": round(success_count / call_count * 100, 1) if call_count else 100.0,
         })
 
+    # ── 组装流程结果（含百分位）──
     stats = []
     for flow_type_key, flow_data in flow_rows.items():
         total_runs = int(flow_data.get("total_runs") or 0)
+        flow_vals = raw_flow_vals.get(flow_type_key, [])
         stats.append({
             "flowType": flow_type_key,
             "totalRuns": total_runs,
             "avgTotalMs": round(float(flow_data.get("avg_total_ms") or 0), 1),
+            "p50TotalMs": _percentile(flow_vals, 50),
+            "p95TotalMs": _percentile(flow_vals, 95),
+            "p99TotalMs": _percentile(flow_vals, 99),
             "steps": steps_by_flow.get(flow_type_key, []),
         })
 
