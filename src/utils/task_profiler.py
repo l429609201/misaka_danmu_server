@@ -14,12 +14,30 @@
        await profiler.flush(session)
 
 设计原则：flush 失败只打 warning，绝不影响主流程。
+
+Session 隔离策略
+----------------
+任务型流程（task_manager 调度）：session 生命周期由
+``async with session_factory() as session:`` 管理。SQLAlchemy 的
+AsyncSession.__aexit__ 遇到任何异常（包括 TaskSuccess）时会先
+rollback 再 close，即使 flush 已经 commit，context var 方式能
+绕开这个问题——flush 用独立 session 写入并立即 commit，与外层
+task session 的生命周期完全解耦。
+
+task_manager 在启动每个任务前调用
+``set_task_session_factory(factory)``，flush 自动读取并开独立
+session，任务函数签名无需任何改动。
+
+请求型流程（FastAPI Depends）：session 只 close 不 rollback，
+flush(session, session_factory=...) 显式传入 factory 的做法
+（comments.py 后备路径）同样正确，两者并存。
 """
 
 import time
 import logging
 import functools
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import List, Optional
 from uuid import uuid4
@@ -33,6 +51,18 @@ from src.db.crud.task import save_perf_events  # noqa: E402 — 模块初始化�
 from src.utils.task_exceptions import TaskSuccess, TaskFailed
 
 logger = logging.getLogger(__name__)
+
+# ContextVar：task_manager 在启动每个任务前注入 session_factory。
+# why：用 ContextVar 而非全局变量，保证多任务并发时各自使用各自的 factory，互不干扰。
+# flush 优先读取此变量开独立 session，与外层 task session 生命周期完全解耦，
+# 避免 SQLAlchemy AsyncSession.__aexit__ 遇异常(TaskSuccess等)自动 rollback 把
+# 已 commit 的 perf 数据也一起回滚。
+_task_session_factory_var: ContextVar = ContextVar("_task_session_factory", default=None)
+
+
+def set_task_session_factory(factory) -> None:
+    """在启动任务前由 task_manager 调用，将 session_factory 注入当前 asyncio Task 上下文。"""
+    _task_session_factory_var.set(factory)
 
 
 @dataclass
@@ -100,18 +130,30 @@ class TaskProfiler:
 
         - 若无步骤记录则跳过
         - 写入失败只打 warning，不抛异常
-        - why：优先使用 session_factory 开独立 session 完成 commit，
-          避免调用方 session（FastAPI Depends 注入的请求级 session 只 close 不 commit）
-          在请求结束时把 flush 的写入一并回滚。
-          若无 session_factory，退回到传入的 session 直接 commit（适用于任务型 session）。
+
+        独立 session 优先级（高→低）：
+          1. 参数 session_factory（显式传入，用于请求型路由后备路径）
+          2. ContextVar _task_session_factory_var（task_manager 启动任务前注入，
+             覆盖所有任务型流程，无需修改任务函数签名）
+          3. 直接复用传入的 session（兜底，用于无上述注入的极少数场景）
+
+        why：任务型流程的 session 生命周期由
+        ``async with session_factory() as session:`` 管理，SQLAlchemy
+        AsyncSession.__aexit__ 遇到任何异常（包括 TaskSuccess）时会先
+        rollback 再 close——即便 flush 内已 commit，rollback 仍可能
+        把同一连接上后续操作的 pending 状态清空（驱动层行为因数据库而异）。
+        用独立 session 写入并立即 commit，彻底与外层 task session 解耦。
         """
         if not self._steps:
             return
 
-        # 请求型路由传入 session_factory，用独立 session 写入，与外层请求 session 生命周期解耦
-        if session_factory is not None:
+        # 确定实际使用的 factory：显式参数 > ContextVar > 无
+        effective_factory = session_factory or _task_session_factory_var.get()
+
+        if effective_factory is not None:
+            # 独立 session：与外层 task/request session 生命周期完全隔离
             try:
-                async with session_factory() as independent_session:
+                async with effective_factory() as independent_session:
                     await save_perf_events(
                         session=independent_session,
                         flow_type=self.flow_type,
@@ -124,7 +166,7 @@ class TaskProfiler:
                 logger.warning(f"[性能统计] 写入 task_perf_events 失败（不影响主流程）: {exc}", exc_info=True)
             return
 
-        # 任务型 session（BaseJob.run 注入的 session 会 commit）：直接复用
+        # 兜底：直接复用传入 session（适用于无 factory 注入的场景）
         try:
             await save_perf_events(
                 session=session,

@@ -47,6 +47,7 @@ from .search_timer import (
 from .task_profiler import (
     TaskProfiler,
     profile_flow,
+    set_task_session_factory,
     FLOW_GENERIC_IMPORT,
     FLOW_FULL_REFRESH,
     FLOW_SINGLE_REFRESH,
@@ -133,6 +134,7 @@ __all__ = [
     # 任务性能计时器
     'TaskProfiler',
     'profile_flow',
+    'set_task_session_factory',
     'FLOW_GENERIC_IMPORT',
     'FLOW_FULL_REFRESH',
     'FLOW_SINGLE_REFRESH',

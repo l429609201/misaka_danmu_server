@@ -11,6 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from fastapi import HTTPException, status
 
 from src.db import models, crud, ConfigManager
+# why：在每个任务启动前注入 session_factory，让 TaskProfiler.flush 能开独立 session
+# 写入 task_perf_events，避免外层 async with session 异常退出时 rollback 覆盖 perf 数据。
+from src.utils.task_profiler import set_task_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -491,6 +494,11 @@ class TaskManager:
                     )
 
                 progress_callback = self._get_progress_callback(task)
+                # why：在协程启动前注入 session_factory 到 ContextVar，让任务内所有
+                # TaskProfiler.flush 调用自动使用独立 session 写入 task_perf_events，
+                # 避免外层 async with session 遇异常（TaskSuccess 等）退出时的 rollback
+                # 把已 commit 的 perf 数据一并清掉。
+                set_task_session_factory(self._session_factory)
                 actual_coroutine = task.coro_factory(session, progress_callback)
 
                 running_task = asyncio.create_task(actual_coroutine)
