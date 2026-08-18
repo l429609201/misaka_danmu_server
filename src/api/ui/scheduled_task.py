@@ -25,7 +25,6 @@ async def get_available_jobs(request: Request):
     """获取所有已加载的可用任务类型及其名称。"""
     scheduler_manager = request.app.state.scheduler_manager
     jobs = scheduler_manager.get_available_jobs()
-    logger.info(f"可用的任务类型: {jobs}")
     return jobs
 
 

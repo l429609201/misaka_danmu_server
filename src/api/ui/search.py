@@ -344,13 +344,16 @@ async def search_anime_provider(
             cached_page_data = await crud.get_cache(session, f"search:{page_cache_key}")
         if cached_page_data is not None:
             logger.info(f"搜索分页缓存命中: '{page_cache_key}'")
-            timer.step_end(details="分页缓存命中")
+            _dur = timer.step_end(details="分页缓存命中")
+            _home_profiler.record_step("缓存检查（分页命中）", _dur)
             timer.finish()
+            await _home_profiler.flush(session)
             return UIProviderSearchResponse(**_inject_recognition(cached_page_data))
 
         if cached_results_data is not None and cached_supplemental_results is not None:
             logger.info(f"搜索全量缓存命中: '{cache_key}'")
-            timer.step_end(details="全量缓存命中")
+            _dur = timer.step_end(details="全量缓存命中")
+            _home_profiler.record_step("缓存检查（全量命中）", _dur)
             base_results = list(cached_results_data or [])
             filtered_results = _apply_filters_to_dicts(
                 base_results, typeFilter, yearFilter, providerFilter, titleFilter, episode_to_filter,
@@ -379,6 +382,7 @@ async def search_anime_provider(
                 else:
                     await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
             timer.finish()
+            await _home_profiler.flush(session)
             return UIProviderSearchResponse(**_inject_recognition(response_payload))
 
         timer.step_end(details="缓存未命中")

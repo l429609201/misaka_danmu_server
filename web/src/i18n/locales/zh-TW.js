@@ -96,7 +96,7 @@ export default {
     taskWebhook: 'Webhook 任務',
     taskSchedule: '定時任務',
     taskRatelimit: '流控面板',
-    taskProfile: '任務畫像',
+    taskProfile: '效能統計',
     bulletToken: 'Token管理',
     bulletOutput: '彈幕輸出設定',
     bulletStorage: '彈幕儲存設定',
@@ -2799,7 +2799,7 @@ export default {
     tabWebhook: 'Webhook 任務',
     tabSchedule: '定時任務',
     tabRateLimit: '流控面板',
-    tabProfile: '任務畫像',
+    tabProfile: '效能統計',
   },
 
   // Webhook 任務 WebhookTasks
@@ -3641,7 +3641,7 @@ export default {
     confirmClear: '確定清除所有變更歷史？',
   },
   taskProfile: {
-    title: '任務畫像',
+    title: '效能統計',
     jobType: '任務類型',
     runs: '運行次數',
     successRate: '成功率',
@@ -3693,7 +3693,7 @@ export default {
     taskWebhook: { title: 'Webhook 任務', desc: '檢視待處理的 Webhook 任務，支援清空' },
     taskSchedule: { title: '定時任務', desc: '設定 Cron 定時任務，如自動更新、追更' },
     taskRatelimit: { title: '流控面板', desc: '檢視各源的請求限速與流控狀態' },
-    taskProfile: { title: '任務畫像', desc: '任務執行統計與分析' },
+    taskProfile: { title: '效能統計', desc: '任務各階段耗時統計與分析' },
     bulletToken: { title: 'Token 管理', desc: '管理 dandanplay API Token 與存取權限' },
     bulletTokenList: { title: 'Token 列表', desc: '新建、編輯、停用 dandanplay API Token，檢視呼叫日誌' },
     bulletCustomDomain: { title: '自訂網域', desc: '設定對外可存取的 HTTPS 網域，用於海報圖片外鏈' },

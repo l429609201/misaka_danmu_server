@@ -283,6 +283,8 @@ async def auto_search_and_import_task(
                 if all_exist:
                     final_message = f"作品 '{main_title}' 的所有请求集数 {requested_episodes} 已在媒体库中，无需重复导入。"
                     logger.info(f"自动导入任务检测到所有分集已存在，任务成功结束: {final_message}")
+                    profiler.record_step("媒体库检查", profiler.total_duration_ms)
+                    await profiler.flush(session)
                     raise TaskSuccess(final_message)
                 else:
                     logger.info(f"作品 '{main_title}' 已存在，但部分集数不存在: {missing_episodes}。将继续执行导入流程。")
@@ -292,6 +294,8 @@ async def auto_search_and_import_task(
         if payload.episode is None and existing_anime:
             final_message = f"作品 '{main_title}' 已在媒体库中，无需重复导入整季。"
             logger.info(f"自动导入任务检测到作品已存在（整季导入），任务成功结束: {final_message}")
+            profiler.record_step("媒体库检查", profiler.total_duration_ms)
+            await profiler.flush(session)
             raise TaskSuccess(final_message)
 
 
@@ -324,6 +328,8 @@ async def auto_search_and_import_task(
                 if payload.episode is None:
                     final_message = f"作品 '{main_title}' 已在媒体库中，无需重复导入。"
                     logger.info(f"自动导入任务检测到作品已存在（整季导入），任务成功结束: {final_message}")
+                    profiler.record_step("媒体库检查", profiler.total_duration_ms)
+                    await profiler.flush(session)
                     raise TaskSuccess(final_message)
                 else:
                     # 对于单集/多集导入，使用库内已有的源创建导入任务
@@ -398,6 +404,8 @@ async def auto_search_and_import_task(
                         task_parameters=task_parameters
                     )
                     final_message = f"已使用库内源创建导入任务。执行任务ID: {execution_task_id}"
+                    profiler.record_step("触发导入任务（库内源）", profiler.total_duration_ms)
+                    await profiler.flush(session)
                     raise TaskSuccess(final_message)
 
         # 3. 如果库中不存在，则进行全网搜索
@@ -1012,6 +1020,12 @@ async def auto_search_and_import_task(
         await profiler.flush(session)
         final_message = f"已为最佳匹配源创建导入任务。执行任务ID: {execution_task_id}"
         raise TaskSuccess(final_message)
+    except TaskSuccess:
+        raise
+    except Exception as e:
+        # why：任何中途 raise ValueError/TaskFailed 也要确保 flush，避免数据丢失
+        await profiler.flush(session)
+        raise
     finally:
         if api_key:
             await scraper_manager.release_search_lock(api_key)

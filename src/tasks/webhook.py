@@ -982,8 +982,10 @@ async def webhook_search_and_dispatch_task(
             success_message = f"Webhook: 已为源 '{best_match.provider}' 创建导入任务。"
         raise TaskSuccess(success_message)
     except TaskSuccess:
+        await profiler.flush(session)
         raise
     except Exception as e:
+        await profiler.flush(session)
         timer.finish()  # 打印计时报告（即使失败也打印）
         logger.error(f"Webhook 搜索与分发任务发生严重错误: {e}", exc_info=True)
         raise
