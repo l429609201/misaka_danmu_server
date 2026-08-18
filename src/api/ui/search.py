@@ -913,6 +913,8 @@ async def search_anime_provider(
         else:
             await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
 
+    # why：此处必须 return，否则函数隐式返回 None，FastAPI 校验 response_model 时抛 500
+    return UIProviderSearchResponse(**_inject_recognition(response_payload))
 
 
 @router.get("/search/episodes", response_model=Dict[str, Any], summary="获取搜索结果的分集列表")
