@@ -29,7 +29,8 @@ from uuid import uuid4
 # 答：不会，save_perf_events 不依赖 task_profiler，只有 task_profiler.flush 单向调用 crud.task，
 # 因此顶部直接导入 save_perf_events 是安全的。
 from src.db.crud.task import save_perf_events  # noqa: E402 — 模块初始化时 crud 包已就绪
-from src.services.task_manager import TaskSuccess, TaskFailed  # why: 修饰器需要正确区分业务成功与失败
+# why: 从零依赖的 task_exceptions 导入，避免 task_manager → src.db → utils → task_manager 循环
+from src.utils.task_exceptions import TaskSuccess, TaskFailed
 
 logger = logging.getLogger(__name__)
 

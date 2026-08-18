@@ -78,26 +78,10 @@ class TaskStatus(str, Enum):
     FAILED = "失败"
     PAUSED = "已暂停"
 
-class TaskSuccess(Exception):
-    """自定义异常，用于表示任务成功完成并附带一条最终消息。"""
-    pass
+# why: 异常类已移至 src.utils.task_exceptions（零依赖），此处 re-export 保持对外接口不变。
+# 所有调用方（tasks/jobs/api 等）从 src.services 或 src.services.task_manager 导入均可正常工作。
+from src.utils.task_exceptions import TaskSuccess, TaskFailed, TaskPauseForRateLimit
 
-class TaskFailed(Exception):
-    """自定义异常，用于表示任务【业务失败】并附带一条失败消息。
-
-    why：区别于 TaskSuccess（会标记 COMPLETED 并发"成功"通知）和未捕获的普通异常
-    （会被当作程序崩溃、打印完整 traceback）。TaskFailed 表示"可预期的业务失败"
-    （如数据源验证失败、未获取到弹幕、未创建条目），任务框架会标记 FAILED 并发
-    "失败"通知，但不打印 traceback（失败原因已在消息中说明，避免日志噪音）。
-    """
-    pass
-
-class TaskPauseForRateLimit(Exception):
-    """自定义异常，用于表示任务因速率限制需要暂停"""
-    def __init__(self, retry_after_seconds: float, message: str = ""):
-        self.retry_after_seconds = retry_after_seconds
-        self.message = message
-        super().__init__(message)
 
 class Task:
     def __init__(self, task_id: str, title: str, coro_factory: Callable[[Callable], Coroutine], scheduled_task_id: Optional[str] = None, unique_key: Optional[str] = None, task_type: Optional[str] = None, task_parameters: Optional[Dict] = None, queue_type: str = "download"):
