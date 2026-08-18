@@ -24,7 +24,10 @@ def get_default_configs(settings=None, ai_prompts=None):
         'metadataSearchTtlSeconds': (10800, '元数据（如TMDB, Bangumi）搜索结果的缓存时间（秒），最低3小时。'),
 
         # API 和 Webhook
-        'customApiDomain': ('', '用于拼接弹幕API地址的自定义域名。'),
+        # why: 前端通过 PUT /api/ui/config/custom_api_domain（下划线）保存；
+        # 后端所有读取统一使用 get_validated_public_domain(config_manager) 工具函数，
+        # 不再直接读此 key，保持全链路一致。
+        'custom_api_domain': ('', '用于拼接弹幕API地址的自定义域名（必须是 https:// 开头的公网地址）。'),
         'webhookApiKey': ('', '用于Webhook调用的安全密钥。'),
         'trustedProxies': ('', '受信任的反向代理IP列表，用逗号分隔。当请求来自这些IP时，将从 X-Forwarded-For 或 X-Real-IP 头中解析真实客户端IP。'),
         'webhookEnabled': ('true', '是否全局启用 Webhook 功能。'),

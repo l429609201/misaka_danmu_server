@@ -22,6 +22,7 @@ from src.db.crud import subscription_candidate as cand_crud
 from .base import BaseJob
 from src.services import TaskSuccess
 from src.services.subscription_manager import SubscriptionManager
+from src.utils.task_profiler import profile_flow, FLOW_SUBSCRIPTION_SCAN
 
 
 async def import_subscription_item(
@@ -259,6 +260,7 @@ class SubscriptionScanJob(BaseJob):
             session, scraper, item, self.config_manager, self.title_recognition_manager
         )
 
+    @profile_flow(FLOW_SUBSCRIPTION_SCAN)
     async def run(self, session: AsyncSession, progress_callback: Callable):
         """任务核心：阶段1 扫描目标 → 阶段2 导入候选项。"""
         await progress_callback(0, "阶段1：扫描到期订阅目标...")

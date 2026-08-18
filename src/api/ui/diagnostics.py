@@ -9,6 +9,7 @@ import os
 import platform
 import re
 import sys
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -120,7 +121,6 @@ async def get_environment_info(
         cache_backend = _BACKEND_LABELS.get(type(backend).__name__, type(backend).__name__)
     except Exception:
         cache_backend = "unknown"
-    import time
     tz_name = time.tzname[0] if time.tzname else "Unknown"
     # 计算当前 UTC 偏移，格式如 UTC+8 或 UTC-5
     utc_offset_seconds = -time.timezone if not time.daylight else -time.altzone

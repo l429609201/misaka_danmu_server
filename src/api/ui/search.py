@@ -4,6 +4,7 @@ Search相关的API端点
 import asyncio
 import logging
 import re
+import time
 from typing import Any, Dict, Optional, List
 from src.utils.episode_filter import parse_single_episode_filter_rules, apply_single_episode_filter
 
@@ -14,12 +15,16 @@ from thefuzz import fuzz
 
 from src import security
 from src.db import crud, models, get_db_session, ConfigManager
+from src.db import models as _models
 from src.core.cache import get_cache_backend
 from src.services import ScraperManager, MetadataSourceManager, TitleRecognitionManager, convert_to_chinese_title
 from src.utils import (
     parse_search_keyword, ai_type_and_season_mapping_and_correction,
     SearchTimer, SEARCH_TYPE_HOME, is_movie_by_title,
 )
+from src.utils.search_timer import SubStepTiming
+from src.utils.season_mapper import _get_cached_metadata_search
+from src.utils.task_profiler import TaskProfiler, FLOW_HOME_SEARCH
 from src.ai.ai_matcher_manager import AIMatcherManager
 
 from src.api.dependencies import (
@@ -157,6 +162,8 @@ async def search_anime_provider(
     # 🚀 V2.1.6: 创建搜索计时器
     timer = SearchTimer(SEARCH_TYPE_HOME, keyword, logger)
     timer.start()
+    # 性能统计 profiler（写 DB）
+    _home_profiler = TaskProfiler(FLOW_HOME_SEARCH)
 
     try:
         timer.step_start("关键词解析")
@@ -166,7 +173,8 @@ async def search_anime_provider(
         episode_to_filter = parsed_keyword["episode"]
         # 原始完整关键词（未经拆解），供识别词反向映射使用
         original_keyword = parsed_keyword.get("original_keyword") or keyword.strip()
-        timer.step_end()
+        _dur = timer.step_end()
+        _home_profiler.record_step("关键词解析", _dur)
 
         # 🚀 识别词反向映射（最高优先级）：用户用"入库名"搜索时，自动改用源站真实名去搜
         # 例：规则 "说唱巅峰对决2026 => {[...title=中国新说唱 第九季...]}"，
@@ -336,13 +344,16 @@ async def search_anime_provider(
             cached_page_data = await crud.get_cache(session, f"search:{page_cache_key}")
         if cached_page_data is not None:
             logger.info(f"搜索分页缓存命中: '{page_cache_key}'")
-            timer.step_end(details="分页缓存命中")
+            _dur = timer.step_end(details="分页缓存命中")
+            _home_profiler.record_step("缓存检查（分页命中）", _dur)
             timer.finish()
+            await _home_profiler.flush(session)
             return UIProviderSearchResponse(**_inject_recognition(cached_page_data))
 
         if cached_results_data is not None and cached_supplemental_results is not None:
             logger.info(f"搜索全量缓存命中: '{cache_key}'")
-            timer.step_end(details="全量缓存命中")
+            _dur = timer.step_end(details="全量缓存命中")
+            _home_profiler.record_step("缓存检查（全量命中）", _dur)
             base_results = list(cached_results_data or [])
             filtered_results = _apply_filters_to_dicts(
                 base_results, typeFilter, yearFilter, providerFilter, titleFilter, episode_to_filter,
@@ -371,6 +382,7 @@ async def search_anime_provider(
                 else:
                     await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
             timer.finish()
+            await _home_profiler.flush(session)
             return UIProviderSearchResponse(**_inject_recognition(response_payload))
 
         timer.step_end(details="缓存未命中")
@@ -411,16 +423,13 @@ async def search_anime_provider(
         if ai_matcher and metadata_manager:
             async def prefetch_metadata_full():
                 """完整预热：搜TMDB + AI选匹配 + 获取季度信息"""
-                import time as _pf_time
-                _pf_start = _pf_time.perf_counter()
+                _pf_start = time.perf_counter()
                 try:
-                    from src.utils.season_mapper import _get_cached_metadata_search
-                    from src.db import models as _models
                     _prefetch_logger = logging.getLogger(__name__)
 
                     # 步骤1: 搜TMDB
                     metadata_results = await _get_cached_metadata_search(search_title, metadata_manager, _prefetch_logger)
-                    _step1_ms = (_pf_time.perf_counter() - _pf_start) * 1000
+                    _step1_ms = (time.perf_counter() - _pf_start) * 1000
                     _prefetch_logger.info(f"🔥 预热步骤1 搜TMDB: {len(metadata_results) if metadata_results else 0}个结果 ({_step1_ms:.0f}ms)")
                     if not metadata_results:
                         return {"metadata_results": [], "seasons_info": None, "best_match": None}
@@ -448,7 +457,7 @@ async def search_anime_provider(
                                     best_match = metadata_results[selected_index]
                             except Exception:
                                 pass
-                    _step2_ms = (_pf_time.perf_counter() - _pf_start) * 1000
+                    _step2_ms = (time.perf_counter() - _pf_start) * 1000
                     _prefetch_logger.info(f"🔥 预热步骤2 AI选匹配: best='{best_match.title}' ({_step2_ms:.0f}ms)")
 
                     # 步骤3: 获取季度信息（只对TV类型）
@@ -464,7 +473,7 @@ async def search_anime_provider(
                             seasons_info = await metadata_manager.get_seasons("tmdb", tv_match.id)
                         except Exception:
                             pass
-                    _step3_ms = (_pf_time.perf_counter() - _pf_start) * 1000
+                    _step3_ms = (time.perf_counter() - _pf_start) * 1000
                     _prefetch_logger.info(f"🔥 预热步骤3 获取季度: {len(seasons_info) if seasons_info else 0}季 ({_step3_ms:.0f}ms)")
 
                     return {
@@ -491,7 +500,6 @@ async def search_anime_provider(
             timer.step_start("弹幕源搜索")
             all_results = await manager.search_all(search_titles, episode_info=episode_info)
             # 收集单源搜索耗时信息（分组显示）
-            from src.utils.search_timer import SubStepTiming
             source_timing_sub_steps = []
             for name, dur, cnt in manager.last_search_timing:
                 if name.startswith("补充:"):
@@ -502,7 +510,8 @@ async def search_anime_provider(
                     source_timing_sub_steps.append(
                         SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="弹幕源")
                     )
-            timer.step_end(details=f"{len(all_results)}个结果", sub_steps=source_timing_sub_steps)
+            _dur = timer.step_end(details=f"{len(all_results)}个结果", sub_steps=source_timing_sub_steps)
+            _home_profiler.record_step("弹幕源搜索（直接）", _dur)
             logger.info(f"直接搜索完成，找到 {len(all_results)} 个原始结果。")
             results = all_results
             filter_aliases = set(search_titles)  # 使用所有搜索标题作为过滤别名
@@ -523,13 +532,11 @@ async def search_anime_provider(
 
             timer.step_start("并行搜索(弹幕源+辅助源)")
             # 1. 先启动辅助源搜索（让它先发出HTTP请求，避免被弹幕源占满事件循环）
-            import time as _search_time
-
             async def _timed_supp_search():
                 """包装辅助源搜索，记录耗时"""
-                _start = _search_time.monotonic()
+                _start = time.monotonic()
                 result = await metadata_manager.search_supplemental_sources(search_title, current_user)
-                _dur = (_search_time.monotonic() - _start) * 1000
+                _dur = (time.monotonic() - _start) * 1000
                 return result, _dur
 
             supp_task = asyncio.create_task(_timed_supp_search())
@@ -547,7 +554,6 @@ async def search_anime_provider(
             )
 
             # 收集单源搜索耗时信息（分组显示）
-            from src.utils.search_timer import SubStepTiming
             source_timing_sub_steps = []
 
             # 弹幕源 + 补充源分组
@@ -567,10 +573,11 @@ async def search_anime_provider(
                     SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="辅助源(别名)")
                 )
 
-            timer.step_end(
+            _dur = timer.step_end(
                 details=f"弹幕{len(all_results)}个+辅助{len(supplemental_results)}个",
                 sub_steps=source_timing_sub_steps
             )
+            _home_profiler.record_step("弹幕源搜索（含辅助源）", _dur)
 
             timer.step_start("别名验证与过滤")
             # 3. 信任元数据源返回的别名，不再用相似度过滤
@@ -640,7 +647,8 @@ async def search_anime_provider(
             for item in filtered_results:
                 filter_log_lines.append(f"  - {item.title}")
             logger.info("\n".join(filter_log_lines))
-            timer.step_end(details=f"保留{len(filtered_results)}个")
+            _dur = timer.step_end(details=f"保留{len(filtered_results)}个")
+            _home_profiler.record_step("别名验证与过滤", _dur)
             results = filtered_results
 
     except httpx.RequestError as e:
@@ -752,7 +760,8 @@ async def search_anime_provider(
 
     timer.step_start("结果排序")
     sorted_results = sorted(results, key=sort_key)
-    timer.step_end(details=f"{len(sorted_results)}个结果")
+    _dur = timer.step_end(details=f"{len(sorted_results)}个结果")
+    _home_profiler.record_step("结果排序", _dur)
 
     # --- 新增：在返回前缓存最终结果 ---
     timer.step_start("结果缓存")
@@ -773,18 +782,22 @@ async def search_anime_provider(
                 await crud.set_cache(session, f"search:{cache_key}", results_to_cache, ttl_seconds=10800)
         else:
             await crud.set_cache(session, f"search:{cache_key}", results_to_cache, ttl_seconds=10800)
-    # 缓存补充结果（即使为空也缓存，避免翻页时因缓存缺失而重新执行完整搜索）
+    # 缓存补充结果
+    # P2-A：辅助源超时/限流可能返回空列表，空列表用短 TTL（300s）缓存，
+    # 避免瞬时故障把"无辅助源结果"锁定 3 小时；真实有结果才用完整 TTL（10800s）。
     supplemental_data = [item.model_dump() for item in supplemental_results] if supplemental_results else []
+    _supplemental_ttl = 10800 if supplemental_data else 300
     _backend = get_cache_backend()
     if _backend is not None:
         try:
-            await _backend.set(supplemental_cache_key, supplemental_data, ttl=10800, region="search")
+            await _backend.set(supplemental_cache_key, supplemental_data, ttl=_supplemental_ttl, region="search")
         except Exception as e:
             logger.warning(f"缓存后端写入失败，回退到数据库: {e}")
-            await crud.set_cache(session, f"search:{supplemental_cache_key}", supplemental_data, ttl_seconds=10800)
+            await crud.set_cache(session, f"search:{supplemental_cache_key}", supplemental_data, ttl_seconds=_supplemental_ttl)
     else:
-        await crud.set_cache(session, f"search:{supplemental_cache_key}", supplemental_data, ttl_seconds=10800)
-    timer.step_end()
+        await crud.set_cache(session, f"search:{supplemental_cache_key}", supplemental_data, ttl_seconds=_supplemental_ttl)
+    _dur = timer.step_end()
+    _home_profiler.record_step("结果缓存", _dur)
     # --- 缓存逻辑结束 ---
 
 
@@ -833,14 +846,16 @@ async def search_anime_provider(
 
                 # 更新搜索结果（已经直接修改了sorted_results）
                 sorted_results = mapping_result['corrected_results']
-                timer.step_end(details=f"修正{mapping_result['total_corrections']}个")
+                _dur = timer.step_end(details=f"修正{mapping_result['total_corrections']}个")
             else:
                 logger.info(f"○ 主页搜索 统一AI映射: 未找到需要修正的信息")
-                timer.step_end(details="无修正")
+                _dur = timer.step_end(details="无修正")
+            _home_profiler.record_step("AI映射修正", _dur)
 
         except Exception as e:
             logger.warning(f"主页搜索 统一AI映射任务执行失败: {e}")
-            timer.step_end(details=f"失败: {e}")
+            _dur = timer.step_end(details=f"失败: {e}")
+            _home_profiler.record_step("AI映射修正", _dur, success=False)
 
     # 过滤处理
     filtered_results = sorted_results
@@ -860,6 +875,8 @@ async def search_anime_provider(
     paginated_results = filtered_results[start_idx:end_idx]
 
     timer.finish()  # 打印搜索计时报告
+    # 写入性能统计（无整体步骤，已在各步骤分别记录）
+    await _home_profiler.flush(session)
     filter_metadata = _extract_filter_metadata(sorted_results)
     # 识别词反向映射命中时，给每条结果打 recognitionTitle 标记（请求级派生，不进搜索缓存）
     # why：规则带 source=xxx 时仅标记该源结果，且标题需精确匹配规则 source，避免同源无关结果被误标。
@@ -882,17 +899,22 @@ async def search_anime_provider(
         cache_key, episode_to_filter, page, pageSize,
         typeFilter, yearFilter, providerFilter, titleFilter,
     )
-    _backend = get_cache_backend()
-    if _backend is not None:
-        try:
-            await _backend.set(page_cache_key, response_payload, ttl=10800, region="search")
-        except Exception as e:
-            logger.warning(f"分页缓存写入失败，回退到数据库: {e}")
+    # P2-A：只有分页结果非空才写入缓存（与全量缓存命中路径 L374 保持一致）。
+    # 过滤条件（typeFilter/yearFilter 等）可能导致 paginated_results 为空，
+    # 空结果若缓存 3 小时，同条件再搜索会持续命中空缓存。
+    if result_dicts:
+        _backend = get_cache_backend()
+        if _backend is not None:
+            try:
+                await _backend.set(page_cache_key, response_payload, ttl=10800, region="search")
+            except Exception as e:
+                logger.warning(f"分页缓存写入失败，回退到数据库: {e}")
+                await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
+        else:
             await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
-    else:
-        await crud.set_cache(session, f"search:{page_cache_key}", response_payload, ttl_seconds=10800)
-    return UIProviderSearchResponse(**response_payload)
 
+    # why：此处必须 return，否则函数隐式返回 None，FastAPI 校验 response_model 时抛 500
+    return UIProviderSearchResponse(**_inject_recognition(response_payload))
 
 
 @router.get("/search/episodes", response_model=Dict[str, Any], summary="获取搜索结果的分集列表")

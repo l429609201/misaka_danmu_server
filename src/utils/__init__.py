@@ -43,6 +43,33 @@ from .search_timer import (
     SEARCH_TYPE_HOME,
 )
 
+# 任务性能计时器
+from .task_profiler import (
+    TaskProfiler,
+    profile_flow,
+    set_task_session_factory,
+    FLOW_GENERIC_IMPORT,
+    FLOW_FULL_REFRESH,
+    FLOW_SINGLE_REFRESH,
+    FLOW_BULK_REFRESH,
+    FLOW_AUTO_IMPORT,
+    FLOW_WEBHOOK_IMPORT,
+    FLOW_INCREMENTAL_REFRESH,
+    FLOW_BANGUMI_DATA_SYNC,
+    FLOW_SUBSCRIPTION_SCAN,
+    FLOW_WATCHLIST_SYNC,
+    FLOW_FILL_MISSING_EPISODES,
+    FLOW_TMDB_AUTO_SCRAPE,
+    FLOW_DANMAKU_CLEANUP,
+    FLOW_DATABASE_BACKUP,
+    FLOW_REFRESH_LATEST_EPISODE,
+    FLOW_DATABASE_MAINTENANCE,
+    FLOW_WEBHOOK_PROCESSOR,
+    FLOW_FALLBACK_MATCH,
+    FLOW_FALLBACK_SEARCH,
+    FLOW_HOME_SEARCH,
+)
+
 # 季度映射
 from .season_mapper import (
     ai_type_and_season_mapping_and_correction,
@@ -57,7 +84,7 @@ from .path_template import (
 )
 
 # 图片工具
-from .image_utils import download_image
+from .image_utils import download_image, get_custom_domain, validate_custom_domain_format, probe_public_domain
 
 # 播放历史
 from .play_history import record_play_history
@@ -104,6 +131,31 @@ __all__ = [
     'SEARCH_TYPE_CONTROL_AUTO_IMPORT',
     'SEARCH_TYPE_CONTROL_SEARCH',
     'SEARCH_TYPE_HOME',
+    # 任务性能计时器
+    'TaskProfiler',
+    'profile_flow',
+    'set_task_session_factory',
+    'FLOW_GENERIC_IMPORT',
+    'FLOW_FULL_REFRESH',
+    'FLOW_SINGLE_REFRESH',
+    'FLOW_BULK_REFRESH',
+    'FLOW_AUTO_IMPORT',
+    'FLOW_WEBHOOK_IMPORT',
+    'FLOW_INCREMENTAL_REFRESH',
+    'FLOW_BANGUMI_DATA_SYNC',
+    'FLOW_SUBSCRIPTION_SCAN',
+    'FLOW_WATCHLIST_SYNC',
+    'FLOW_FILL_MISSING_EPISODES',
+    'FLOW_TMDB_AUTO_SCRAPE',
+    'FLOW_DANMAKU_CLEANUP',
+    'FLOW_DATABASE_BACKUP',
+    'FLOW_REFRESH_LATEST_EPISODE',
+    'FLOW_DATABASE_MAINTENANCE',
+    'FLOW_WEBHOOK_PROCESSOR',
+    'FLOW_FALLBACK_MATCH',
+    'FLOW_FALLBACK_SEARCH',
+    'FLOW_HOME_SEARCH',
+    'profile_flow',
     # 季度映射
     'ai_type_and_season_mapping_and_correction',
     'title_contains_season_name',

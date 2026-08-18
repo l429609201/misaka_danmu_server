@@ -15,6 +15,8 @@ from src.utils import (
     SearchTimer, SEARCH_TYPE_CONTROL_AUTO_IMPORT,
     is_movie_by_title,
 )
+from src.utils.search_timer import SubStepTiming
+from src.utils.task_profiler import TaskProfiler, FLOW_AUTO_IMPORT
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +78,11 @@ async def auto_search_and_import_task(
     _is_tmdb_reverse_lookup_enabled = _get_is_tmdb_reverse_lookup_enabled()
     _reverse_lookup_tmdb_chinese_title = _get_reverse_lookup_tmdb_chinese_title()
     generic_import_task = _get_generic_import_task()
-    
-    # 初始化计时器并开始计时
+
+    # 初始化搜索计时器（打日志）+ 性能统计 profiler（写 DB）
     timer = SearchTimer(SEARCH_TYPE_CONTROL_AUTO_IMPORT, payload.searchTerm, logger)
     timer.start()
+    profiler = TaskProfiler(FLOW_AUTO_IMPORT)
 
     # 【性能优化】AI初始化预热：提前检查是否需要AI，如果需要则启动预热（不阻塞）
     ai_matcher_warmup_task = None
@@ -124,7 +127,7 @@ async def auto_search_and_import_task(
             effective_search_type = "tmdb"
 
         if effective_search_type != "keyword":
-            provider_media_type = None
+            timer.step_start("元数据查询")
             if media_type:
                 if effective_search_type == 'tmdb':
                     provider_media_type = 'tv' if media_type == 'tv_series' else 'movie'
@@ -164,6 +167,8 @@ async def auto_search_and_import_task(
                     logger.warning(f"尝试将关键词作为TMDB ID处理时出错，将按原样作为关键词处理。")
 
         if details:
+            _dur = timer.step_end(details=f"找到: {details.title}")
+            profiler.record_step("元数据查询", _dur)
             main_title = details.title or main_title
             image_url = details.imageUrl
             aliases.add(main_title)
@@ -216,6 +221,7 @@ async def auto_search_and_import_task(
         # 2. 检查媒体库中是否已存在
         existing_anime: Optional[Dict[str, Any]] = None
         await progress_callback(20, "正在检查媒体库...")
+        timer.step_start("媒体库检查")
 
         # 步骤 2a: 优先通过元数据ID和季度号进行精确查找
         if search_type != "keyword" and season is not None:
@@ -277,6 +283,8 @@ async def auto_search_and_import_task(
                 if all_exist:
                     final_message = f"作品 '{main_title}' 的所有请求集数 {requested_episodes} 已在媒体库中，无需重复导入。"
                     logger.info(f"自动导入任务检测到所有分集已存在，任务成功结束: {final_message}")
+                    profiler.record_step("媒体库检查", profiler.total_duration_ms)
+                    await profiler.flush(session)
                     raise TaskSuccess(final_message)
                 else:
                     logger.info(f"作品 '{main_title}' 已存在，但部分集数不存在: {missing_episodes}。将继续执行导入流程。")
@@ -286,6 +294,8 @@ async def auto_search_and_import_task(
         if payload.episode is None and existing_anime:
             final_message = f"作品 '{main_title}' 已在媒体库中，无需重复导入整季。"
             logger.info(f"自动导入任务检测到作品已存在（整季导入），任务成功结束: {final_message}")
+            profiler.record_step("媒体库检查", profiler.total_duration_ms)
+            await profiler.flush(session)
             raise TaskSuccess(final_message)
 
 
@@ -318,6 +328,8 @@ async def auto_search_and_import_task(
                 if payload.episode is None:
                     final_message = f"作品 '{main_title}' 已在媒体库中，无需重复导入。"
                     logger.info(f"自动导入任务检测到作品已存在（整季导入），任务成功结束: {final_message}")
+                    profiler.record_step("媒体库检查", profiler.total_duration_ms)
+                    await profiler.flush(session)
                     raise TaskSuccess(final_message)
                 else:
                     # 对于单集/多集导入，使用库内已有的源创建导入任务
@@ -392,9 +404,13 @@ async def auto_search_and_import_task(
                         task_parameters=task_parameters
                     )
                     final_message = f"已使用库内源创建导入任务。执行任务ID: {execution_task_id}"
+                    profiler.record_step("触发导入任务（库内源）", profiler.total_duration_ms)
+                    await profiler.flush(session)
                     raise TaskSuccess(final_message)
 
         # 3. 如果库中不存在，则进行全网搜索
+        _dur = timer.step_end(details=f"{'找到' if existing_anime else '未找到'}")
+        profiler.record_step("媒体库检查", _dur)
         await progress_callback(40, "媒体库未找到，开始全网搜索...")
         # 注意：搜索阶段不传递episode信息，因为scraper的search方法不需要具体集数
         # 集数信息只在导入阶段使用
@@ -518,12 +534,12 @@ async def auto_search_and_import_task(
             alias_similarity_threshold=70,  # 使用 70% 别名相似度阈值（与 WebUI 一致）
         )
         # 收集单源搜索耗时信息
-        from src.utils.search_timer import SubStepTiming
         source_timing_sub_steps = [
             SubStepTiming(name=name, duration_ms=dur, result_count=cnt)
             for name, dur, cnt in scraper_manager.last_search_timing
         ]
-        timer.step_end(details=f"{len(all_results)}个结果", sub_steps=source_timing_sub_steps)
+        _dur = timer.step_end(details=f"{len(all_results)}个结果", sub_steps=source_timing_sub_steps)
+        profiler.record_step("弹幕源搜索", _dur)
 
         logger.info(f"搜索完成，共 {len(all_results)} 个结果")
 
@@ -559,17 +575,19 @@ async def auto_search_and_import_task(
 
                         # 更新搜索结果（已经直接修改了all_results）
                         all_results = mapping_result['corrected_results']
-                        timer.step_end(details=f"修正{mapping_result['total_corrections']}个")
+                        _dur = timer.step_end(details=f"修正{mapping_result['total_corrections']}个")
                     else:
                         logger.info(f"○ 全自动导入 统一AI映射: 未找到需要修正的信息")
-                        timer.step_end(details="无修正")
+                        _dur = timer.step_end(details="无修正")
                 else:
                     logger.warning("○ 全自动导入 AI映射: AI匹配器未启用或初始化失败")
-                    timer.step_end(details="匹配器未启用")
+                    _dur = timer.step_end(details="匹配器未启用")
+                profiler.record_step("AI映射修正", _dur)
 
             except Exception as e:
                 logger.warning(f"全自动导入 统一AI映射任务执行失败: {e}")
-                timer.step_end(details=f"失败: {e}")
+                _dur = timer.step_end(details=f"失败: {e}")
+                profiler.record_step("AI映射修正", _dur, success=False)
         else:
             if auto_import_tmdb_enabled.lower() != "true":
                 logger.info("○ 全自动导入 统一AI映射: 功能未启用")
@@ -997,8 +1015,17 @@ async def auto_search_and_import_task(
             task_parameters=task_parameters
         )
         timer.finish()  # 打印计时报告
+        # 写入性能统计（触发导入步骤）
+        profiler.record_step("触发导入任务", profiler.total_duration_ms)
+        await profiler.flush(session)
         final_message = f"已为最佳匹配源创建导入任务。执行任务ID: {execution_task_id}"
         raise TaskSuccess(final_message)
+    except TaskSuccess:
+        raise
+    except Exception as e:
+        # why：任何中途 raise ValueError/TaskFailed 也要确保 flush，避免数据丢失
+        await profiler.flush(session)
+        raise
     finally:
         if api_key:
             await scraper_manager.release_search_lock(api_key)

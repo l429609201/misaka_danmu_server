@@ -121,9 +121,9 @@ export const getLogs = (options = {}) =>
 /** 获取日志文件列表 */
 export const getLogFiles = () => api.get('/api/ui/logs/files')
 
-/** 获取指定日志文件内容 */
-export const getLogFileContent = (filename, tail = 500) =>
-  api.get(`/api/ui/logs/files/${encodeURIComponent(filename)}`, { tail })
+/** 获取指定日志文件内容（支持后端关键词过滤 + 分页偏移） */
+export const getLogFileContent = (filename, { tail = 200, keyword = '', offset = 0 } = {}) =>
+  api.get(`/api/ui/logs/files/${encodeURIComponent(filename)}`, { tail, keyword, offset })
 
 /** 匹配测试 */
 export const getMatchTest = data =>
@@ -448,6 +448,13 @@ export const getMatchFallbackTokens = () =>
 /** 设置匹配后备Token配置 */
 export const setMatchFallbackTokens = data =>
   api.put('/api/ui/config/matchFallbackTokens', data)
+
+/** 获取外联海报模式Token授权配置 */
+export const getPosterProxyTokens = () =>
+  api.get('/api/ui/config/posterProxyTokens')
+/** 设置外联海报模式Token授权配置 */
+export const setPosterProxyTokens = data =>
+  api.put('/api/ui/config/posterProxyTokens', data)
 
 /** 获取后备搜索状态 */
 export const getSearchFallback = () =>
@@ -1334,6 +1341,9 @@ export const getTaskProfiles = (days = 7) => api.get(`/api/ui/task-profile/summa
 export const getTaskTimeline = (taskId) => api.get('/api/ui/task-profile/timeline', { task_id: taskId })
 export const getCapacityTrends = () => api.get('/api/ui/trends/capacity')
 export const getCurrentCapacity = () => api.get('/api/ui/trends/current')
+
+// ==================== 性能统计 ====================
+export const getPerfStats = (days = 7) => api.get(`/api/ui/perf/stats?days=${days}`)
 
 // ==================== 安全审计 ====================
 export const getAuditLogs = (params) => api.get('/api/ui/audit/logs', params)

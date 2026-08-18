@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db import crud
 from src.tasks import webhook_search_and_dispatch_task
 from .base import BaseJob
+from src.utils.task_profiler import profile_flow, FLOW_WEBHOOK_PROCESSOR
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +19,13 @@ class WebhookProcessorJob(BaseJob):
     description_en = "Periodically check and process delayed Webhook requests from media servers (Emby/Jellyfin), auto-importing new episode danmaku."
     description_tw = "定期檢查並處理來自Emby/Jellyfin等媒體伺服器的延時Webhook請求，自動匯入新增的劇集彈幕。"
 
+    @profile_flow(FLOW_WEBHOOK_PROCESSOR)
     async def run(self, session: AsyncSession, progress_callback: Callable):
         """
         执行 Webhook 延时任务处理。
         """
         await progress_callback(0, "开始检查待处理的 Webhook 任务...")
-        
+
         due_tasks = await crud.get_due_webhook_tasks(session)
         if not due_tasks:
             await progress_callback(100, "没有需要处理的 Webhook 任务。")

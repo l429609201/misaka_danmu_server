@@ -23,6 +23,7 @@ from src.db import crud, orm_models
 from src.core import settings, get_now
 from .base import BaseJob
 from src.services import TaskSuccess
+from src.utils.task_profiler import profile_flow, FLOW_DATABASE_BACKUP
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,7 @@ async def create_backup(session: AsyncSession, progress_callback: Optional[Calla
 
     # 记录备份信息
     logger.info(f"开始创建备份: 路径={backup_path}, 保留数量={retention_count}")
-    
+
     # 构建备份数据
     backup_data = {
         "metadata": {
@@ -634,6 +635,7 @@ class DatabaseBackupJob(BaseJob):
     description_en = "Periodically backup database data in JSON format, supporting cross-database (MySQL/PostgreSQL) restoration."
     description_tw = "定期備份資料庫資料為 JSON 格式，支援跨資料庫（MySQL/PostgreSQL）還原。"
 
+    @profile_flow(FLOW_DATABASE_BACKUP)
     async def run(self, session: AsyncSession, progress_callback: Callable):
         """
         执行数据库备份任务

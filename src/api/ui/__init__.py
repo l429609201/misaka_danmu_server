@@ -24,6 +24,7 @@ from . import (
     cache, debug,
     health, diagnostics, data_check, recognition_check, config_history,
     trends, audit, calendar_extra, ai_explain, scan_index,
+    perf,
 )
 
 # 模型模块 - 支持 from src.api.ui import models 风格
@@ -39,6 +40,7 @@ __all__ = [
     'cache', 'debug',
     'health', 'diagnostics', 'data_check', 'recognition_check', 'config_history',
     'trends', 'audit', 'calendar_extra', 'ai_explain', 'scan_index',
+    'perf',
     # 模型
     'models',
 ]

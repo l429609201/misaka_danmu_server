@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import CommandHandler
 from src.db import crud
+from src.core.cache import get_cache_backend
 
 if TYPE_CHECKING:
     from src.api.dandan import DandanSearchAnimeResponse
@@ -43,7 +44,6 @@ class ClearCacheCommand(CommandHandler):
             # 清理缓存后端（Redis / Memory / Hybrid）
             backend_msg = ""
             try:
-                from src.core.cache import get_cache_backend
                 backend = get_cache_backend()
                 if backend is not None:
                     backend_count = await backend.clear() or 0

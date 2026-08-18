@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud
 from src.core.cache import get_cache_backend
+from src.utils.image_utils import get_custom_domain
 
 if TYPE_CHECKING:
     from src.api.dandan import DandanSearchAnimeResponse, DandanSearchAnimeItem
@@ -173,7 +174,7 @@ class CommandHandler:
 
     async def get_image_url(self, config_manager) -> str:
         """
-        获取图片URL
+        获取图片URL（logo 地址，域名允许 http/https，格式不合规时降级为相对路径）
 
         Args:
             config_manager: 配置管理器
@@ -181,7 +182,7 @@ class CommandHandler:
         Returns:
             图片URL
         """
-        custom_domain = await config_manager.get("customApiDomain", "")
+        custom_domain = await get_custom_domain(config_manager)
         return f"{custom_domain}/static/logo.png" if custom_domain else "/static/logo.png"
 
     def build_response_item(self, anime_id: int, title: str, description: str,

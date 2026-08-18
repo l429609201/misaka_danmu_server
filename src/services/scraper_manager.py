@@ -245,8 +245,11 @@ class ScraperManager:
                 module_name = f"src.scrapers.{module_name_stem}"
                 module = importlib.import_module(module_name)
 
-                # 提取模块级别的 __version__ 属性
+                # 提取模块级别的 __version__ 属性（源自身代码版本，仅供展示/存储）
                 module_version = getattr(module, '__version__', None)
+                # PACKAGE_VERSION 是弹幕源总版本号，由发布流程统一注入，用于弹幕库兼容性校验
+                # 与 __version__（各源自身迭代版本）完全独立
+                package_version = getattr(module, 'PACKAGE_VERSION', None)
 
                 for name, obj in inspect.getmembers(module, inspect.isclass):
                     if issubclass(obj, BaseScraper) and obj is not BaseScraper:
@@ -259,21 +262,42 @@ class ScraperManager:
                             )
                             continue
 
-                        # 单源最低服务器版本检查：类属性 min_server_version（空字符串或未定义则不限制）
+                        # 双向版本检查
+                        from src._version import APP_VERSION, MIN_SCRAPER_VERSION
+
+                        # 1. 单源要求最低服务器版本（弹幕源 → 服务器）
                         source_min_ver = getattr(obj, 'min_server_version', None) or ''
                         if source_min_ver:
-                            from src._version import APP_VERSION
                             if _version_satisfies(APP_VERSION, source_min_ver):
                                 logging.getLogger(__name__).info(
-                                    f"✓ {provider_name} 版本检查通过 (要求 >= {source_min_ver}, 当前 {APP_VERSION})"
+                                    f"✓ {provider_name} 服务器版本检查通过 (要求 >= {source_min_ver}, 当前 {APP_VERSION})"
                                 )
                             else:
                                 logging.getLogger(__name__).warning(
                                     f"✗ 跳过 {provider_name}: 要求服务器版本 >= {source_min_ver}，当前 {APP_VERSION}"
                                 )
-                                self._version_skipped[provider_name] = source_min_ver
+                                self._version_skipped[provider_name] = f"要求服务器 >= {source_min_ver}"
                                 failed_providers.append(module_name_stem)
                                 continue
+
+                        # 2. 服务器要求最低弹幕源总版本号（服务器 → 弹幕源）
+                        # 使用 PACKAGE_VERSION（弹幕源总版本号，由发布流程统一注入），而非源自身 __version__
+                        if package_version:
+                            if not _version_satisfies(package_version, MIN_SCRAPER_VERSION):
+                                logging.getLogger(__name__).warning(
+                                    f"✗ 跳过 {provider_name}: 弹幕源版本过旧"
+                                    f" (弹幕源总版本号 {package_version}, 要求 >= {MIN_SCRAPER_VERSION})"
+                                )
+                                self._version_skipped[provider_name] = (
+                                    f"弹幕源总版本号过旧 (当前 {package_version}, 要求 >= {MIN_SCRAPER_VERSION})"
+                                )
+                                failed_providers.append(module_name_stem)
+                                continue
+                        else:
+                            # 未注入 PACKAGE_VERSION，说明是旧格式或本地开发源，允许加载但记录警告
+                            logging.getLogger(__name__).warning(
+                                f"⚠ {provider_name}: 未声明 PACKAGE_VERSION，跳过弹幕源总版本号检查"
+                            )
 
                         discovered_providers.append(provider_name)
                         # [C] handled_domains 必须是可迭代的字符串序列，不能是裸字符串
@@ -656,8 +680,13 @@ class ScraperManager:
         # 按源分组输出缓冲的日志（消除交叉）- 使用 create_task 异步执行，不阻塞事件循环
         mgr_logger = logging.getLogger(__name__)
 
-        async def _async_flush_logs():
-            """异步日志 flush，不阻塞 search_all 的返回"""
+        def _do_flush_logs():
+            """在线程池中执行日志 flush，避免占用事件循环。
+            why：flush_buffered_logs 只是纯 Python 日志写入（无 I/O 等待），
+            用 run_in_executor 推给线程池，主协程可以并行继续处理补充源、过滤等逻辑，
+            最后在 return 前 await 确保日志块在计时报告之前全部输出完毕，
+            同时不阻塞事件循环。
+            """
             for pn, buffers in provider_buffers.items():
                 total_count = provider_timing.get(pn, (0, 0))[1]
                 total_dur = provider_timing.get(pn, (0, 0))[0]
@@ -667,9 +696,9 @@ class ScraperManager:
                     merged_handler._records.extend(bh.records)
                     bh.clear()
                 flush_buffered_logs(mgr_logger, pn, merged_handler, total_count, total_dur, first_error)
-                await asyncio.sleep(0)  # 让出事件循环，避免长时间阻塞
 
-        asyncio.create_task(_async_flush_logs())
+        # 提交到线程池并行执行，主协程继续处理补充源/过滤等逻辑
+        flush_task = asyncio.get_event_loop().run_in_executor(None, _do_flush_logs)
 
         # 保存耗时信息供计时报告使用
         self.last_search_timing = [
@@ -772,6 +801,11 @@ class ScraperManager:
                 filtered_results.append(item)
         
         logging.getLogger(__name__).info(f"全局标题过滤: 从 {len(all_results)} 个结果中保留了 {len(filtered_results)} 个。")
+
+        # 确保各源日志块在返回结果（进而触发计时报告）之前全部输出完毕
+        # why：flush_task 在线程池里并行执行，此处 await 不阻塞事件循环，
+        # 仅等待线程写完日志，保证日志顺序：各源日志块 → 补充源日志 → 计时报告
+        await flush_task
 
         # 异步更新弹幕源健康度统计
         asyncio.create_task(self._update_health_stats(timed_results))

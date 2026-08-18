@@ -4,8 +4,10 @@
 - 首页系统健康总览
 - 配置完整性评分
 """
+import glob
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -186,7 +188,6 @@ async def get_system_health_summary(
     # 最近备份
     backup_status = {}
     try:
-        import os, glob
         backup_dir = os.path.join("config", "backups")
         if os.path.exists(backup_dir):
             files = sorted(glob.glob(os.path.join(backup_dir, "*.gz")), key=os.path.getmtime, reverse=True)

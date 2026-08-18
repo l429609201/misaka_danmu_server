@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from src.db import models
 from src import security
-from src.services import MetadataSourceManager
+from src.services import MetadataSourceManager, get_bangumi_data_manager, TaskSuccess
 from src.api.dependencies import get_metadata_manager
 
 router = APIRouter()
@@ -137,7 +137,6 @@ async def get_bangumi_data_platforms(
     注意：URL 由随 data.json 动态下发的 siteMeta.urlTemplate 拼成（不再硬编码），各平台 id 形态不一
     （如 tmdb 为 'tv/123'），是否能直接用于自动导入需逐平台适配，本端点只做映射展示。
     """
-    from src.services import get_bangumi_data_manager
     manager = get_bangumi_data_manager()
     if manager is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 离线索引未就绪")
@@ -152,7 +151,6 @@ async def get_bangumi_data_status(
     current_user: models.User = Depends(security.get_current_user),
 ):
     """返回当前 bangumi-data 离线索引的条目数，用于判断是否已同步。"""
-    from src.services import get_bangumi_data_manager
     manager = get_bangumi_data_manager()
     if manager is None:
         return {"ready": False, "count": 0}
@@ -170,8 +168,6 @@ async def trigger_bangumi_data_sync(
     why：原实现直接 await manager.sync() 会阻塞 HTTP 请求数秒~数十秒且无任务记录，
     改为走任务管理器，与定时同步(BangumiDataSyncJob)保持一致：有进度、有历史、不阻塞接口。
     """
-    from src.services import get_bangumi_data_manager, TaskSuccess
-
     manager = get_bangumi_data_manager()
     if manager is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 管理器未就绪")
@@ -205,8 +201,6 @@ async def trigger_bangumi_data_clear(
 
     why：与立即同步保持一致走任务管理器，有任务记录、不阻塞接口（清表本身虽快，但统一入口便于审计）。
     """
-    from src.services import get_bangumi_data_manager, TaskSuccess
-
     manager = get_bangumi_data_manager()
     if manager is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 管理器未就绪")
@@ -240,7 +234,6 @@ async def get_bangumi_data_danmaku_sources(
             → scraper_manager.get_scraper_by_domain(url) 判定能否抓弹幕。
     available=true 的平台可走 /extcomment 直接获取弹幕。
     """
-    from src.services import get_bangumi_data_manager
     manager = get_bangumi_data_manager()
     if manager is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 离线索引未就绪")

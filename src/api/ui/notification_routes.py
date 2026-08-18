@@ -17,8 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, get_db_session
 from src import security
+from src.core import settings as _settings
 from src.services import apply_tunnel_from_notification_manager
-from src.utils.image_utils import IMAGE_DIR
+from src.utils.image_utils import IMAGE_DIR, validate_custom_domain_format, probe_public_domain
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,7 +58,6 @@ def _get_notification_manager(request: Request):
 
 async def _reevaluate_tunnel(request: Request):
     """渠道配置变更后重新评估 VPS 隧道是否需要启停"""
-    from src.core import settings as _settings
     tunnel_service = getattr(request.app.state, "tunnel_service", None)
     notification_manager = getattr(request.app.state, "notification_manager", None)
     config_manager = getattr(request.app.state, "config_manager", None)
@@ -85,21 +85,20 @@ _PUBLIC_URL_PROBE_BYTES = base64.b64decode(
 
 
 def _validate_public_domain_format(raw_domain: str) -> str:
-    """规范并校验外链模式域名，仅接受无凭据的 HTTPS 站点根地址。"""
-    domain = str(raw_domain or "").strip().rstrip("/")
-    parsed = urlparse(domain)
-    if parsed.scheme.lower() != "https" or not parsed.hostname:
-        raise HTTPException(status_code=400, detail="自定义域名必须是以 https:// 开头的完整公网地址")
-    if parsed.username or parsed.password:
-        raise HTTPException(status_code=400, detail="自定义域名不能包含用户名或密码")
+    """规范并校验外链模式域名（http/https 均接受，不含凭据），用于公网探测前的格式预检。
+    格式不合规时抛 HTTPException(400)。
+    """
+    domain = validate_custom_domain_format(raw_domain)
+    if not domain:
+        raise HTTPException(status_code=400, detail="自定义域名格式不正确，需为 http(s)://hostname 格式且不含凭据")
     return domain
 
 
 async def _probe_public_domain(session: AsyncSession) -> Dict[str, Any]:
     """验证自定义域名能通过真实外网地址读取本服务的图片静态路由。"""
-    domain = _validate_public_domain_format(
-        await crud.get_config_value(session, "custom_api_domain", "")
-    )
+    raw = await crud.get_config_value(session, "custom_api_domain", "")
+    domain = _validate_public_domain_format(raw)
+
     probe_path = IMAGE_DIR / _PUBLIC_URL_PROBE_NAME
     try:
         IMAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -109,24 +108,10 @@ async def _probe_public_domain(session: AsyncSession) -> Dict[str, Any]:
         logger.error(f"创建外链模式探测图片失败: {e}")
         raise HTTPException(status_code=500, detail="无法创建图片探测文件，请检查 config/image 目录权限")
 
-    probe_url = f"{domain}/data/images/{_PUBLIC_URL_PROBE_NAME}"
-    try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
-            response = await client.get(probe_url, headers={"Accept": "image/*"})
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=400, detail="自定义域名访问超时，请检查公网解析和反向代理")
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=400, detail=f"自定义域名无法访问：{type(e).__name__}")
-
-    if response.url.scheme.lower() != "https":
-        raise HTTPException(status_code=400, detail="自定义域名最终跳转到了非 HTTPS 地址")
-    content_type = response.headers.get("content-type", "").lower()
-    if response.status_code != 200 or not content_type.startswith("image/"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"图片静态路由不可用（HTTP {response.status_code}，Content-Type={content_type or '未知'}）",
-        )
-    return {"ok": True, "domain": domain, "probeUrl": probe_url}
+    result = await probe_public_domain(domain)
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result["detail"])
+    return result
 
 
 @router.get("/notification/public-domain/validate", summary="校验外链模式自定义域名")

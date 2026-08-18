@@ -1,22 +1,29 @@
 """
 数据库备份管理 API
 """
+import gzip
+import hashlib
+import json
 import logging
+import re
 from typing import List, Optional
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Request
 from fastapi.responses import FileResponse
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 import shutil
 
 from src.db import crud, models, get_db_session
 from src import security
+from src.core.timezone import get_now
 from src.services import SchedulerManager
 from src.jobs.database_backup import (
     create_backup, list_backups, delete_backup, restore_backup,
-    get_backup_path, get_retention_count, resolve_backup_file
+    get_backup_path, get_retention_count, resolve_backup_file,
+    BACKUP_TABLES,
 )
 from src.api.dependencies import get_scheduler_manager
 
@@ -276,9 +283,6 @@ async def upload_backup_file(
 
     # 验证文件名格式（可选，允许用户上传任意名称的备份）
     # 为了安全，重命名为标准格式
-    import re
-    from src.core.timezone import get_now
-
     backup_path = await get_backup_path(session)
     backup_path.mkdir(parents=True, exist_ok=True)
 
@@ -324,10 +328,6 @@ async def get_backup_detail(
     session: AsyncSession = Depends(get_db_session),
 ):
     """获取备份文件的详细信息，包括各表记录数和元数据。"""
-    import gzip
-    import json
-    import hashlib
-
     backup_path = await get_backup_path(session)
     filepath = _resolve_backup_file_or_400(backup_path, filename)
 
@@ -383,10 +383,6 @@ async def backup_dry_run(
     恢复预检：对比备份文件与当前数据库的差异，不实际执行恢复。
     返回每张表的当前记录数、备份记录数和差异。
     """
-    import gzip
-    import json
-    from sqlalchemy import select, func
-
     backup_path = await get_backup_path(session)
     filepath = _resolve_backup_file_or_400(backup_path, request.filename)
 
@@ -399,7 +395,7 @@ async def backup_dry_run(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"读取备份文件失败: {e}")
 
-    from src.jobs.database_backup import BACKUP_TABLES
+    from src.jobs.database_backup import BACKUP_TABLES  # noqa: F811
     data = backup_data.get("data", {})
     metadata = backup_data.get("metadata", {})
 

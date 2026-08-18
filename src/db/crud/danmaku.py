@@ -2,6 +2,7 @@
 Danmaku相关的CRUD操作
 """
 
+import asyncio
 import logging
 from typing import Optional, Dict, Any, List
 from pathlib import Path
@@ -16,6 +17,7 @@ from .. import models
 from src.core.timezone import get_now
 from src.core.env import is_docker_environment as _is_docker_environment
 from src.utils.common import handle_danmaku_likes
+from src.core.cache import get_cache_backend
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +82,10 @@ async def save_danmaku_for_episode(
     chat_server_map = {
         "bilibili": "comment.bilibili.com"
     }
-    xml_content = _generate_xml_from_comments(comments, episode_id, provider_name, chat_server_map.get(provider_name, "danmaku.misaka.org"))
+    xml_content = await asyncio.to_thread(
+        _generate_xml_from_comments,
+        comments, episode_id, provider_name, chat_server_map.get(provider_name, "danmaku.misaka.org")
+    )
 
     # 判断路径：刷新使用原有路径，首次下载生成新路径
     if episode.danmakuFilePath:
@@ -98,8 +103,12 @@ async def save_danmaku_for_episode(
         logger.info(f"首次下载：生成新路径 {absolute_path}")
 
     try:
-        absolute_path.parent.mkdir(parents=True, exist_ok=True)
-        absolute_path.write_text(xml_content, encoding='utf-8')
+        def _write_file():
+            absolute_path.parent.mkdir(parents=True, exist_ok=True)
+            absolute_path.write_text(xml_content, encoding='utf-8')
+
+        # 优化A：将同步磁盘写入放入线程池，避免阻塞事件循环
+        await asyncio.to_thread(_write_file)
         logger.info(f"弹幕已成功写入文件: {absolute_path} (共 {new_comment_count} 条)")
     except OSError as e:
         logger.error(f"写入弹幕文件失败: {absolute_path}。错误: {e}")
@@ -108,6 +117,30 @@ async def save_danmaku_for_episode(
     # 更新Episode的弹幕信息
     from .episode import update_episode_danmaku_info
     await update_episode_danmaku_info(session, episode_id, web_path, new_comment_count)
+
+    # 优化C2：写入新弹幕后使内存缓存失效，确保下次 fetch_comments 读取最新数据
+    try:
+        cache = get_cache_backend()
+        await cache.delete(f"fetch_comments_{episode_id}", region="default")
+    except Exception:
+        pass  # 缓存失效非核心逻辑，失败不影响主流程
+
+    # 问题2修复：弹幕刷新后同步失效输出层的采样缓存，避免旧采样结果在 24h TTL 内持续返回。
+    # 采样缓存键格式：sampled_{episode_id}_{limit} / sampled_{episode_id}_{limit}_merged
+    # 采样缓存通过 set_db_cache（全局缓存后端）写入，通过 backend.keys() 列出并逐条删除。
+    # why: 采样是 fetch_comments 结果的衍生物，弹幕更新后必须同步失效，否则新弹幕不可见。
+    try:
+        cache = get_cache_backend()
+        # 列出 default region 下所有 sampled_{episode_id}_ 前缀的键，逐条删除
+        sampled_prefix = f"sampled_{episode_id}_"
+        keys_to_delete = await cache.keys(f"{sampled_prefix}*", region="default")
+        for k in keys_to_delete:
+            await cache.delete(k, region="default")
+        if keys_to_delete:
+            logger.debug(f"弹幕写入后已失效采样缓存 {len(keys_to_delete)} 条: {sampled_prefix}*")
+    except Exception:
+        pass  # 缓存失效非核心逻辑，失败不影响主流程
+
     return new_comment_count
 
 

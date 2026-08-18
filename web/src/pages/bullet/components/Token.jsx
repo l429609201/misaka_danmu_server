@@ -664,7 +664,7 @@ export const Token = ({ domain }) => {
         okText={t('bullet.tokenConfirm')}
         onCancel={() => setLogsOpen(false)}
         onOk={() => setLogsOpen(false)}
-        styles={isMobile ? { body: { height: 'calc(100vh - 200px)' } } : { body: { maxHeight: '70vh', overflow: 'auto' } }}
+        styles={isMobile ? { body: { height: 'calc(100vh - 200px)' } } : { body: { maxHeight: '105vh', overflow: 'auto' } }}
         className="modern-modal"
       >
         {isMobile ? (
@@ -744,7 +744,7 @@ export const Token = ({ domain }) => {
             }}
             scroll={{
               x: '100%',
-              y: 400,
+              y: 600,
             }}
             className="modern-table"
           />

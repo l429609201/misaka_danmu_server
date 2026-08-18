@@ -3,6 +3,7 @@ AI 匹配可解释性增强 (10)
 """
 import json
 import logging
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -11,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import get_db_session, orm_models, ConfigManager
+from src.core import get_now
 from src.api.dependencies import get_config_manager
 
 logger = logging.getLogger(__name__)
@@ -45,8 +47,6 @@ async def get_ai_match_stats(
     hours: int = Query(24, ge=1, le=720),
     session: AsyncSession = Depends(get_db_session),
 ):
-    from datetime import timedelta
-    from src.core import get_now
     since = get_now() - timedelta(hours=hours)
 
     total_q = select(func.count(orm_models.AIMetricsLog.id)).where(

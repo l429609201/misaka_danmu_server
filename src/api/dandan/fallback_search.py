@@ -5,21 +5,27 @@
 """
 
 import asyncio
+import json
 import logging
 import time
 from typing import Dict, Optional
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
 from src.db import crud, models, ConfigManager
+from src.db.crud.cache import get_cache as get_raw_cache
+from src.db.orm_models import AnimeSource, Episode, Anime
 from src.services import ScraperManager, TaskManager, MetadataSourceManager, unified_search, convert_to_chinese_title
 from src.utils import (
     parse_search_keyword,
     ai_type_and_season_mapping_and_correction,
     SearchTimer, SEARCH_TYPE_FALLBACK_SEARCH,
-    is_movie_by_title
+    is_movie_by_title,
 )
+from src.utils.image_utils import get_custom_domain, save_public_thumbnail
+from src.utils.search_timer import SubStepTiming
 from src.rate_limiter import RateLimiter
 from src.ai import AIMatcherManager
 
@@ -55,8 +61,8 @@ async def handle_fallback_search(
 ) -> DandanSearchAnimeResponse:
     """处理后备搜索逻辑"""
     search_key = f"search_{hash(search_term + token)}"
-    custom_domain = await config_manager.get("customApiDomain", "")
-    image_url = f"{custom_domain}/static/logo.png" if custom_domain else "/static/logo.png"
+    _logo_domain = await get_custom_domain(config_manager)
+    image_url = f"{_logo_domain}/static/logo.png" if _logo_domain else "/static/logo.png"
 
     # 读取可配置的最大等待时间（默认30秒）。-1 表示无限等待直到出结果
     timeout_str = await config_manager.get("searchFallbackTimeout", "30")
@@ -332,7 +338,6 @@ async def execute_fallback_search_task(
         await progress_callback(10, "开始搜索...")
 
         # 检查是否有同标题的搜索结果缓存（不含集数，10分钟内复用）
-        from src.db.crud.cache import get_cache as get_raw_cache
         fallback_result_cache_key = f"fallback_result_{search_title}"
         cached_fallback_result = await get_raw_cache(session, fallback_result_cache_key)
         if cached_fallback_result and isinstance(cached_fallback_result, dict):
@@ -370,7 +375,6 @@ async def execute_fallback_search_task(
                 alias_similarity_threshold=70,
             )
             # 收集单源搜索耗时信息（分组显示，与主页搜索一致）
-            from src.utils.search_timer import SubStepTiming
             source_timing_sub_steps = []
 
             # 弹幕源 + 补充源分组
@@ -454,8 +458,23 @@ async def execute_fallback_search_task(
         # 获取下一个虚拟animeId
         next_virtual_anime_id = await get_next_virtual_anime_id(session)
 
-        # 获取自定义域名
-        custom_domain = await config_manager.get("customApiDomain", "")
+        # 获取自定义域名（统一通过 get_custom_domain 读取，http/https 均支持）
+        custom_domain = await get_custom_domain(config_manager) or ""
+
+        # 判断当前 token 是否在外联海报模式授权列表中
+        # why：posterProxyTokens 为空列表时所有 token 均不启用外联海报（需显式授权）；
+        # 列表中有当前 token 时才下载海报到本地并返回外联地址，否则透传源站原始 imageUrl。
+        poster_proxy_enabled = False
+        try:
+            poster_proxy_tokens_str = await config_manager.get("posterProxyTokens", "[]")
+            poster_proxy_token_ids = json.loads(poster_proxy_tokens_str)
+            if poster_proxy_token_ids and token:
+                # token 是字符串（Token 值），需要查 DB 获取对应 token id 再比对
+                token_obj = await crud.get_api_token_by_token_str(session, token)
+                if token_obj and token_obj["id"] in poster_proxy_token_ids:
+                    poster_proxy_enabled = True
+        except Exception as e:
+            logger.debug(f"外联海报Token授权检查失败（忽略）: {e}")
 
         # 【性能优化①】循环前一次性读取缓存，循环中只修改内存，循环后一次性写回
         search_info_mapping = await get_db_cache(session, FALLBACK_SEARCH_CACHE_PREFIX, search_key)
@@ -475,7 +494,25 @@ async def execute_fallback_search_task(
             year_info = f" 年份：{result.year}" if result.year else ""
             title_with_source = f"{result.title} （来源：{result.provider}{year_info}）"
 
+            # 外联海报模式：把源站海报下载到本地并拼接外联地址。
+            # why：dandanplay 等客户端可能无法直接访问源站图片（防盗链/地区限制），
+            # 本地缓存后通过 customApiDomain 返回公网可访问的外联地址。
+            # 使用 save_public_thumbnail：内容 sha256 去重，不重复下载同一张海报。
+            effective_image_url = result.imageUrl or ""
+            if poster_proxy_enabled and effective_image_url:
+                try:
+                    local_path = await save_public_thumbnail(effective_image_url)
+                    if local_path:
+                        # 拼成完整外联地址；custom_domain 未配置时降级为相对路径
+                        effective_image_url = f"{custom_domain}{local_path}" if custom_domain else local_path
+                        logger.debug(f"后备搜索海报外联: {result.imageUrl} → {effective_image_url}")
+                except Exception as e:
+                    # 下载失败不影响搜索结果，降级为原 URL
+                    logger.debug(f"后备搜索海报外联下载失败（忽略）: {e}")
+
             # 存储bangumiId到原始信息的映射（仅修改内存中的dict）
+            # why：同时把处理后的 imageUrl 存入映射，供 /bangumi/{animeId} 详情接口使用；
+            # 若是外联地址则详情接口可直接使用无需再次下载。
             if search_info_mapping:
                 search_info_mapping["bangumi_mapping"][unique_bangumi_id] = {
                     "provider": result.provider,
@@ -484,6 +521,7 @@ async def execute_fallback_search_task(
                     "type": result.type,
                     "season": result.season,
                     "anime_id": current_virtual_anime_id,
+                    "image_url": effective_image_url,
                 }
 
             # 检查库内是否已有该精确源(provider+mediaId)的分集，写入 typeDescription
@@ -515,7 +553,7 @@ async def execute_fallback_search_task(
                     animeTitle=title_with_source,
                     type=DANDAN_TYPE_MAPPING.get(result.type, "other"),
                     typeDescription=type_description,
-                    imageUrl=result.imageUrl,
+                    imageUrl=effective_image_url,  # 外联模式时为本地缓存地址，否则为源站原始URL
                     startDate=f"{result.year}-01-01T00:00:00+08:00" if result.year else None,
                     year=result.year,
                     episodeCount=result.episodeCount or 0,
@@ -706,8 +744,6 @@ async def _merge_source_episodes(
     3. 缺失的分集用虚拟 episodeId 补充
     4. 创建映射缓存，让 /comment/{虚拟id} 能找到正确的源
     """
-    from sqlalchemy import select
-    from src.db.orm_models import AnimeSource, Episode, Anime
 
     for anime_id, anime_info in list(grouped_animes.items()):
         try:

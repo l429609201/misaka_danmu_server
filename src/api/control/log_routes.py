@@ -41,21 +41,19 @@ async def get_log_file_list():
     return list_log_files()
 
 
-@router.get("/logs/files/{filename}", response_model=List[str], summary="读取指定历史日志文件")
+@router.get("/logs/files/{filename}", summary="读取指定历史日志文件")
 async def get_log_file_content(
     filename: str,
-    tail: int = Query(500, ge=1, le=5000, description="读取最后N行，默认500，最大5000"),
+    tail: int = Query(200, ge=1, description="每批返回行数，默认200"),
+    keyword: str = Query("", description="关键词过滤（大小写不敏感），空字符串不过滤"),
+    offset: int = Query(0, ge=0, description="已加载条数，用于加载更多"),
 ):
-    """
-    读取指定日志文件的最后 N 行内容。
+    """读取指定日志文件，支持后端关键词过滤和分页加载。
 
-    ### 参数
-    - **filename**: 日志文件名（从 `/logs/files` 接口获取）
-    - **tail**: 读取最后多少行，默认500行
+    返回 {"lines": [...], "hasMore": bool, "total": int}
     """
     try:
-        # why：同步磁盘读取移出事件循环，避免大日志拖慢全部接口。
-        return await asyncio.to_thread(read_log_file, filename, tail)
+        return await asyncio.to_thread(read_log_file, filename, tail, keyword, offset)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:

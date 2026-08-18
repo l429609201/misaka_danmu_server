@@ -14,6 +14,7 @@ from src.rate_limiter import RateLimiter
 from src.services import TaskManager, TaskSuccess, ScraperManager, MetadataSourceManager
 from src.ai import AIMatcherManager
 from src.ai.ai_prompts import DEFAULT_AI_MATCH_PROMPT, DEFAULT_AI_RECOGNITION_PROMPT, DEFAULT_AI_ALIAS_VALIDATION_PROMPT
+from src.utils.task_profiler import profile_flow, FLOW_TMDB_AUTO_SCRAPE
 
 class TmdbAutoMapJob(BaseJob):
     job_type = "tmdbAutoScrape"
@@ -60,6 +61,7 @@ class TmdbAutoMapJob(BaseJob):
         self.logger = logging.getLogger(self.__class__.__name__)
 
 
+    @profile_flow(FLOW_TMDB_AUTO_SCRAPE)
     async def run(self, session: AsyncSession, progress_callback: Callable, task_config: dict = None):
         """
         定时任务的核心逻辑。
@@ -521,7 +523,7 @@ class TmdbAutoMapJob(BaseJob):
                     await session.commit()
                     processed_count += 1
                     continue
-                
+
                 self.logger.info(f"为 '{title}' 选择了 {len(groups_to_process)} 个剧集组进行映射更新。")
 
                 # 步骤 5: 为每个选定的剧集组，更新映射表

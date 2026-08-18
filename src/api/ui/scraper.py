@@ -12,6 +12,8 @@ from pydantic import BaseModel
 from src.db import crud, models, get_db_session, ConfigManager
 from src import security
 from src.services import ScraperManager
+from src.scrapers.base import COMMON_EPISODE_BLACKLIST_REGEX
+from src._version import APP_VERSION
 from src.api.dependencies import get_scraper_manager, get_config_manager
 
 router = APIRouter()
@@ -30,7 +32,6 @@ async def get_scraper_load_check(
     - **skipped**: 单源版本不满足时的映射 {providerName: requiredVersion}
     - **ok**: true 表示所有源均已正常加载
     """
-    from src._version import APP_VERSION
     global_skip = getattr(manager, '_global_version_skip', None)
     version_skipped: Dict[str, str] = dict(getattr(manager, '_version_skipped', {}))
     return {
@@ -380,5 +381,4 @@ async def get_common_blacklist(
     获取通用的分集标题黑名单正则表达式。
     这个值是一个通用的过滤规则，适用于大多数场景，用于用户想要快速填充规则时使用。
     """
-    from src.scrapers.base import COMMON_EPISODE_BLACKLIST_REGEX
     return {"commonBlacklist": COMMON_EPISODE_BLACKLIST_REGEX}

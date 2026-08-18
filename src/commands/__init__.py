@@ -121,8 +121,8 @@ async def handle_command(search_term: str, token: str, session: AsyncSession,
     handlers = get_all_handlers()
     handler = handlers.get(command_name)
     
-    # 获取自定义域名和图片URL
-    custom_domain = await config_manager.get("customApiDomain", "")
+    # 获取自定义域名和图片URL（http/https 均支持，格式不合规时降级）
+    custom_domain = await get_custom_domain(config_manager)
     image_url = f"{custom_domain}/static/logo.png" if custom_domain else "/static/logo.png"
     
     if not handler:

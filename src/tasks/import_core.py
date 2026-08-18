@@ -11,6 +11,7 @@ from src.services.import_existence_checker import check_anime_existence
 from src.rate_limiter import RateLimiter, RateLimitExceededError
 from src.utils import download_image
 from src.utils.episode_filter import get_and_apply_single_episode_filter
+from src.utils.task_profiler import TaskProfiler, FLOW_GENERIC_IMPORT
 
 logger = logging.getLogger(__name__)
 
@@ -161,11 +162,13 @@ async def generic_import_task(
         is_fallback: 是否为后备任务（默认False）
         fallback_type: 后备类型 ("match" 或 "search"，仅当is_fallback=True时需要）
     """
+    profiler = TaskProfiler(FLOW_GENERIC_IMPORT)
     _import_episodes_iteratively = _get_import_iteratively()
     _generate_episode_range_string = _get_generate_episode_range_string()
 
     scraper = manager.get_scraper(provider)
-    title_to_use = animeTitle.strip()
+    # why：后续识别词偏移、单剧过滤和条目创建统一使用可调整标题变量。
+    title_to_use = animeTitle
     season_to_use = season
 
     await progress_callback(10, "正在获取分集列表...")
@@ -216,12 +219,12 @@ async def generic_import_task(
     if selectedEpisodes is not None:
         target_episode_index = None
 
-    episodes = await manager.get_episodes_routed(
-        provider, mediaId,
-        target_episode_index=target_episode_index,
-        db_media_type=mediaType
-    )
-
+    async with profiler.step("获取分集列表"):
+        episodes = await manager.get_episodes_routed(
+            provider, mediaId,
+            target_episode_index=target_episode_index,
+            db_media_type=mediaType
+        )
     # 应用单剧过滤规则
     if episodes:
         # 适配识别词：过滤规则可能按识别词转换后的"入库名"配置，而 title_to_use 常为源站原名。
@@ -366,13 +369,16 @@ async def generic_import_task(
                 )
 
                 final_message = (f"通过故障转移导入完成，共获取 {added_count} 条弹幕。" if added_count > 0 else "通过故障转移导入完成，暂无弹幕数据。") + (" (警告：海报图片下载失败)" if image_download_failed else "")
+                await profiler.flush(session)
                 raise TaskSuccess(final_message)
             else:
                 msg = f"未能找到第 {currentEpisodeIndex} 集。" if currentEpisodeIndex else "未能获取到任何分集。"
                 logger.error(f"任务失败: {msg} (provider='{provider}', media_id='{mediaId}')")
+                await profiler.flush(session)
                 raise ValueError(msg)
         else:
             # why：分集信息完全获取不到，弹幕也就无从下载，应标记失败而非已完成
+            await profiler.flush(session)
             raise TaskFailed("未找到任何分集信息。")
 
     # 如果是媒体库整季导入, 再按 selectedEpisodes 对分集做一次本地筛选
@@ -459,6 +465,7 @@ async def generic_import_task(
                 )
             if not episodes:
                 # why：源站返回空分集列表，实际没有导入任何内容，应标记失败
+                await profiler.flush(session)
                 raise TaskFailed("源中没有任何分集，未导入新的弹幕。")
         # 新增: 媒体库整季导入时, 在下载任何弹幕后先检查数据库中已有的分集
         indices_to_check = [ep.episodeIndex for ep in episodes if ep.episodeIndex is not None]
@@ -487,6 +494,7 @@ async def generic_import_task(
         if indices_to_check and set(indices_to_check).issubset(set(existing_indices)):
             skipped_range_str = _generate_episode_range_string(sorted(existing_indices))
             final_message = f"导入完成，跳过集: < {skipped_range_str} > (已有弹幕)，未新增弹幕。"
+            await profiler.flush(session)
             raise TaskSuccess(final_message)
 
         # 为了后续验证/下载优先处理"尚未导入"的分集, 将 episodes 重新排序:
@@ -512,20 +520,21 @@ async def generic_import_task(
 
     try:
         # 根据是否为后备任务选择不同的速率限制方法
-        if is_fallback:
-            if not fallback_type:
-                raise ValueError("后备任务必须指定fallback_type参数")
-            await rate_limiter.check_fallback(fallback_type, scraper.provider_name)
-        else:
-            await rate_limiter.check(scraper.provider_name)
-        first_comments = await scraper.get_comments(first_episode.episodeId, progress_callback=lambda p, msg: progress_callback(20 + p * 0.1, msg))
-
-        # 只有在实际获取到弹幕时才增加计数
-        if first_comments is not None:
+        async with profiler.step("验证第一集弹幕"):
             if is_fallback:
-                await rate_limiter.increment_fallback(fallback_type, scraper.provider_name)
+                if not fallback_type:
+                    raise ValueError("后备任务必须指定fallback_type参数")
+                await rate_limiter.check_fallback(fallback_type, scraper.provider_name)
             else:
-                await rate_limiter.increment(scraper.provider_name)
+                await rate_limiter.check(scraper.provider_name)
+            first_comments = await scraper.get_comments(first_episode.episodeId, progress_callback=lambda p, msg: progress_callback(20 + p * 0.1, msg))
+
+            # 只有在实际获取到弹幕时才增加计数
+            if first_comments is not None:
+                if is_fallback:
+                    await rate_limiter.increment_fallback(fallback_type, scraper.provider_name)
+                else:
+                    await rate_limiter.increment(scraper.provider_name)
 
         if first_comments:
             first_episode_success = True
@@ -642,26 +651,28 @@ async def generic_import_task(
     # 如果第一集验证失败，不创建条目
     if not first_episode_success:
         # 业务失败：未创建条目，应发"失败"通知而非"成功"
+        await profiler.flush(session)
         raise TaskFailed("数据源验证失败，未能获取到任何弹幕，未创建数据库条目。")
 
     # 处理所有分集（包括第一集）
     try:
-        total_comments_added, successful_episodes_indices, skipped_episodes_indices, failed_episodes_count, failed_episodes_details = await _import_episodes_iteratively(
-            session=session,
-            scraper=scraper,
-            rate_limiter=rate_limiter,
-            progress_callback=progress_callback,
-            episodes=episodes,
-            anime_id=anime_id,
-            source_id=source_id,
-            first_episode_comments=first_comments,  # 传递第一集已获取的弹幕
-            config_manager=config_manager,
-            is_single_episode=currentEpisodeIndex is not None,  # 传递是否为单集下载模式
-            is_fallback=is_fallback,  # 传递后备任务标识
-            fallback_type=fallback_type,  # 传递后备类型
-            title_recognition_manager=title_recognition_manager,  # 传递识别词管理器（用于 partial_offset）
-            anime_title=title_to_use,  # 传递番剧标题（用于 partial_offset 规则匹配）
-        )
+        async with profiler.step("批量下载并写入弹幕"):
+            total_comments_added, successful_episodes_indices, skipped_episodes_indices, failed_episodes_count, failed_episodes_details = await _import_episodes_iteratively(
+                session=session,
+                scraper=scraper,
+                rate_limiter=rate_limiter,
+                progress_callback=progress_callback,
+                episodes=episodes,
+                anime_id=anime_id,
+                source_id=source_id,
+                first_episode_comments=first_comments,  # 传递第一集已获取的弹幕
+                config_manager=config_manager,
+                is_single_episode=currentEpisodeIndex is not None,  # 传递是否为单集下载模式
+                is_fallback=is_fallback,  # 传递后备任务标识
+                fallback_type=fallback_type,  # 传递后备类型
+                title_recognition_manager=title_recognition_manager,  # 传递识别词管理器（用于 partial_offset）
+                anime_title=title_to_use,  # 传递番剧标题（用于 partial_offset 规则匹配）
+            )
     except RateLimitExceededError as e:
         # 单源配额已满，转为任务暂停，释放 worker 给其他源
         logger.warning(f"下载分集时触发单源流控，暂停任务等待重试: {e}")
@@ -717,6 +728,7 @@ async def generic_import_task(
             failure_details.append(f"第{ep_index}集: {error_msg}")
         failure_msg = "导入完成，但所有分集弹幕获取失败。\n失败详情:\n" + "\n".join(failure_details)
         # why：所有分集均失败，没有任何弹幕写入，应标记任务失败
+        await profiler.flush(session)
         raise TaskFailed(failure_msg)
 
     # 生成最终消息
@@ -756,6 +768,8 @@ async def generic_import_task(
         final_message += f" {failed_episodes_count} 个分集因网络或解析错误获取失败。"
     if image_download_failed:
         final_message += " (警告：海报图片下载失败)"
+    # 写入性能统计（flush 失败不影响主流程）
+    await profiler.flush(session)
     raise TaskSuccess(final_message)
 
 
@@ -774,11 +788,13 @@ async def edited_import_task(
     _extract_short_error_message = extract_short_error_message
     _import_episodes_iteratively = _get_import_iteratively()
     _generate_episode_range_string = _get_generate_episode_range_string()
+    profiler = TaskProfiler(FLOW_GENERIC_IMPORT)
 
     scraper = manager.get_scraper(request_data.provider)
 
     episodes = request_data.episodes
     if not episodes:
+        await profiler.flush(session)
         raise TaskSuccess("没有提供任何分集，任务结束。")
 
     # 首先检查是否已存在数据源（按 provider + mediaId + season 精确匹配）
@@ -882,6 +898,7 @@ async def edited_import_task(
             error_msg = f"数据源验证失败：'{first_episode.title}' 未获取到任何弹幕数据。请到 {request_data.provider} 源验证该视频是否有弹幕。未创建数据库条目。"
             logger.warning(error_msg)
             # 业务失败：未创建条目，应发"失败"通知而非"成功"（原用 TaskSuccess 会误报导入成功）
+            await profiler.flush(session)
             raise TaskFailed(error_msg)
     except RateLimitExceededError as e:
         # 抛出暂停异常，让任务管理器处理
@@ -894,7 +911,7 @@ async def edited_import_task(
         # 重新抛出 TaskSuccess 异常
         raise
     except TaskFailed:
-        # 重新抛出 TaskFailed（业务失败），避免被下方 except Exception 吞掉重新包装
+        # 重新抛出 TaskFailed，确保 flush 已在 raise 前调用
         raise
     except Exception as e:
         # 其他异常（网络错误、解析错误等）
@@ -935,9 +952,11 @@ async def edited_import_task(
                 failure_details.append(f"第{ep_index}集: {error_msg}")
             failure_msg = "编辑导入完成，但未找到任何新弹幕。\n失败详情:\n" + "\n".join(failure_details)
             # why：0条弹幕，不算成功导入
+            await profiler.flush(session)
             raise TaskFailed(failure_msg)
         else:
             # why：0条弹幕，不算成功导入
+            await profiler.flush(session)
             raise TaskFailed("编辑导入完成，但未找到任何新弹幕。")
     else:
         episode_range_str = _generate_episode_range_string(successful_indices)
@@ -948,5 +967,6 @@ async def edited_import_task(
             for ep_index, error_msg in sorted(failed_details.items()):
                 failure_details.append(f"第{ep_index}集: {error_msg}")
             final_message += f"\n失败 {failed_count} 集:\n" + "\n".join(failure_details)
+        await profiler.flush(session)
         raise TaskSuccess(final_message)
 

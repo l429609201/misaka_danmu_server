@@ -2,15 +2,15 @@
 import logging
 import asyncio
 from typing import Callable, List
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import crud, orm_models, models, ConfigManager
 from src.rate_limiter import RateLimiter, RateLimitExceededError
 from src.services import ScraperManager, MetadataSourceManager, TaskManager, TaskSuccess, TaskFailed, TitleRecognitionManager
+from src.utils.task_profiler import TaskProfiler, FLOW_FULL_REFRESH, FLOW_SINGLE_REFRESH, FLOW_BULK_REFRESH
 from .delete import delete_danmaku_file
 from .utils import generate_episode_range_string
-
 # 从 models 导入需要的类
 ProviderEpisodeInfo = models.ProviderEpisodeInfo
 
@@ -37,6 +37,7 @@ async def full_refresh_task(sourceId: int, session: AsyncSession, scraper_manage
     优化：直接使用数据库中已存储的分集 ID 获取弹幕，不依赖源站的"获取分集列表"接口。
     这样可以避免因源站接口不稳定（如限流）导致的刷新失败。
     """
+    profiler = TaskProfiler(FLOW_FULL_REFRESH)
     logger.info(f"开始刷新源 ID: {sourceId}")
     try:
         source_info = await crud.get_anime_source_info(session, sourceId)
@@ -187,8 +188,10 @@ async def full_refresh_task(sourceId: int, session: AsyncSession, scraper_manage
         raise TaskSuccess(final_message)
 
     except TaskSuccess:
+        await profiler.flush(session)
         raise
     except Exception as e:
+        await profiler.flush(session)
         await session.rollback()
         logger.error(f"全量刷新任务 (源ID: {sourceId}) 失败: {e}", exc_info=True)
         raise
@@ -196,6 +199,7 @@ async def full_refresh_task(sourceId: int, session: AsyncSession, scraper_manage
 
 async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: ScraperManager, rate_limiter: RateLimiter, progress_callback: Callable, config_manager = None):
     """后台任务：刷新单个分集的弹幕"""
+    profiler = TaskProfiler(FLOW_SINGLE_REFRESH)
     logger.info(f"开始刷新分集 ID: {episodeId}")
     try:
         await progress_callback(0, "正在获取分集信息...")
@@ -252,7 +256,6 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
                         logger.info(f"已从分集列表解析到真实 vid: {provider_episode_id}")
 
                         # 更新数据库中的 providerEpisodeId 为真实值，避免下次再解析
-                        from sqlalchemy import update
                         await session.execute(
                             update(orm_models.Episode)
                             .where(orm_models.Episode.id == episodeId)
@@ -300,9 +303,10 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
 
         # 使用并发下载获取弹幕（三线程模式）
         _download_episode_comments_concurrent = _get_download_concurrent()
-        download_results = await _download_episode_comments_concurrent(
-            scraper, [virtual_episode], rate_limiter, sub_progress_callback
-        )
+        async with profiler.step("下载弹幕"):
+            download_results = await _download_episode_comments_concurrent(
+                scraper, [virtual_episode], rate_limiter, sub_progress_callback
+            )
 
         # 提取弹幕数据
         all_comments_from_source = None
@@ -320,10 +324,11 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
 
         # 获取 animeId 用于文件路径
         anime_id = info["animeId"]
-        added_count = await crud.save_danmaku_for_episode(
-            session, episodeId, all_comments_from_source, config_manager,
-            fire_threshold=scraper.likes_fire_threshold
-        )
+        async with profiler.step("写入XML文件"):
+            added_count = await crud.save_danmaku_for_episode(
+                session, episodeId, all_comments_from_source, config_manager,
+                fire_threshold=scraper.likes_fire_threshold
+            )
 
         await session.commit()
         if added_count > 0:
@@ -338,15 +343,17 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
             await session.commit()
             raise TaskSuccess("刷新完成，该分集暂无新弹幕。")
     except TaskSuccess:
-        # 任务成功完成，直接重新抛出，由 TaskManager 处理
+        await profiler.flush(session)
         raise
     except Exception as e:
+        await profiler.flush(session)
         logger.error(f"刷新分集 ID: {episodeId} 时发生严重错误: {e}", exc_info=True)
-        raise # Re-raise so the task manager catches it and marks as FAILED
+        raise
 
 
 async def refresh_bulk_episodes_task(episodeIds: List[int], session: AsyncSession, manager: ScraperManager, rate_limiter: RateLimiter, progress_callback: Callable, config_manager = None):
     """后台任务：批量刷新多个分集的弹幕"""
+    profiler = TaskProfiler(FLOW_BULK_REFRESH)
     total = len(episodeIds)
     logger.info(f"开始批量刷新 {total} 个分集")
     await progress_callback(5, f"准备刷新 {total} 个分集...")
@@ -519,8 +526,10 @@ async def refresh_bulk_episodes_task(episodeIds: List[int], session: AsyncSessio
         message = f"批量刷新完成，共处理 {total} 个，成功 {success_count} 个 {success_ranges}，失败 {failed_count} 个 {failed_ranges}，{comment_part}。"
         raise TaskSuccess(message)
     except TaskSuccess:
+        await profiler.flush(session)
         raise
     except Exception as e:
+        await profiler.flush(session)
         await session.rollback()
         logger.error(f"批量刷新分集任务失败: {e}", exc_info=True)
         raise

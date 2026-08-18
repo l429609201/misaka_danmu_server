@@ -82,7 +82,7 @@ from .danmaku_color import (
 from .danmaku_filter import apply_blacklist_filter
 
 # 弹幕解析
-from .danmaku_parser import parse_dandan_xml_to_comments
+from src.utils.danmaku_parser import parse_dandan_xml_to_comments
 
 # 后备搜索
 from .fallback_search import (

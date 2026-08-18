@@ -1,11 +1,24 @@
+"""
+弹幕 XML 解析工具
+
+why：本模块原位于 src/api/dandan/ 下，但它是零业务依赖的纯解析工具
+（仅依赖 src.utils.clean_xml_string）。放在 api 层会导致 src.db.crud
+需要它时触发 src.api 包初始化，进而形成
+    db.crud.episode -> src.api -> api.control -> src.db(未初始化完)
+的循环导入，迫使调用方全部改用函数内延迟导入。
+
+迁到 src/utils/ 后，db/crud、api/ui、api/dandan 均可直接在文件顶部导入，
+符合 PEP 8「导入置于文件顶部」的要求。
+"""
 import logging
 import re
 from typing import Dict, List
 from xml.etree import ElementTree
 
-from src.utils import clean_xml_string
+from src.utils.common import clean_xml_string
 
 logger = logging.getLogger(__name__)
+
 
 def _normalize_p_attr_to_internal_format(p_attr: str, source_tag: str = "[xml]") -> str:
     """

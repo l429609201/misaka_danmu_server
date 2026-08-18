@@ -19,6 +19,7 @@ from src.core import get_now
 from src.services import ScraperManager, TaskManager, TaskSuccess
 from src.utils import parse_search_keyword, sample_comments_evenly, record_play_history, handle_danmaku_likes, strip_danmaku_likes, is_movie_by_title
 from src.utils import restyle_danmaku_likes
+from src.utils.task_profiler import TaskProfiler, FLOW_FALLBACK_MATCH, FLOW_FALLBACK_SEARCH
 from src.rate_limiter import RateLimiter
 from src import tasks
 
@@ -38,7 +39,6 @@ from .constants import (
     FALLBACK_SEARCH_CACHE_TTL,
     COMMENTS_FETCH_CACHE_TTL,
     SAMPLED_COMMENTS_CACHE_TTL_DB,
-    SAMPLED_CACHE_TTL,
 )
 from .helpers import (
     get_db_cache, set_db_cache, delete_db_cache,
@@ -348,6 +348,9 @@ async def get_comments_for_dandan(
         match_fallback_handled = False
         episode_number = None
 
+        # 后备路径性能统计
+        _fallback_profiler: Optional[TaskProfiler] = None
+
         # 尝试解析虚拟episodeId
         if episodeId >= 25000000000000:
             # 提取anime_id, source_order, episode_number
@@ -419,6 +422,7 @@ async def get_comments_for_dandan(
         if fallback_info:
             # why：本请求已由匹配后备链路接管，后续不得再次落入 fallback_comments 第二套下载链路。
             match_fallback_handled = True
+            _fallback_profiler = TaskProfiler(FLOW_FALLBACK_MATCH)
             logger.info(f"检测到后备搜索/匹配后备的episodeId: {episodeId}, 集数: {episode_number}")
 
             # 从缓存中获取信息
@@ -670,13 +674,13 @@ async def get_comments_for_dandan(
                             task_session, current_episodeId, comments, config_manager,
                             fire_threshold=current_scraper.likes_fire_threshold
                         )
+                        # 将弹幕数据写入短期缓存表，供外部会话读取（TTL 5分钟）
+                        # 优化B：与上方 save_danmaku_for_episode 的落库操作合并为一次 commit，
+                        # 短期缓存属于派生物，不需要独立事务边界
+                        cache_key = f"comments_{current_episodeId}"
+                        await set_db_cache(task_session, COMMENTS_FETCH_CACHE_PREFIX, cache_key, comments, 300)
                         await task_session.commit()
                         logger.info(f"保存成功，共 {added_count} 条弹幕")
-
-                        # 将弹幕数据写入缓存表,供外部会话读取
-                        cache_key = f"comments_{current_episodeId}"
-                        await set_db_cache(task_session, COMMENTS_FETCH_CACHE_PREFIX, cache_key, comments, 300)  # 5分钟过期
-                        await task_session.commit()
                         logger.debug(f"弹幕数据已写入缓存: {cache_key}")
 
                         # 清理数据库缓存
@@ -858,9 +862,18 @@ async def get_comments_for_dandan(
                     return models.CommentResponse(count=0, comments=[])
 
         # 任务完成后,弹幕已经保存到数据库,不再从缓存读取
+        # 在后备匹配路径结束时写入性能统计
+        # why：传入 session_factory 而非请求级 session，确保在独立 session 中 commit，
+        # 避免 get_db_session 的 finally 只 close() 导致写入被回滚。
+        if _fallback_profiler is not None:
+            _fallback_profiler.record_step("全流程", _fallback_profiler.total_duration_ms)
+            await _fallback_profiler.flush(session, session_factory=request.app.state.db_session_factory)
+            _fallback_profiler = None
+
         # 2. 检查是否是后备搜索的特殊episodeId（以25开头的新格式）
         if not match_fallback_handled and str(episodeId).startswith("25") and len(str(episodeId)) >= 13:  # 新的ID格式
             # 解析episodeId：25 + animeId(6位) + 源顺序(2位) + 集编号(4位)
+            _fallback_profiler = TaskProfiler(FLOW_FALLBACK_SEARCH)
             episode_id_str = str(episodeId)
             real_anime_id = int(episode_id_str[2:8])  # 提取真实animeId
             _ = int(episode_id_str[8:10])  # 提取源顺序（暂时不使用）
@@ -1046,12 +1059,11 @@ async def get_comments_for_dandan(
                                             pass  # 普通流控超限交给内部处理
 
                                         # 使用并发下载获取弹幕（三线程模式）
-                                        async def dummy_progress_callback(_, _unused):
-                                            pass  # 空的异步进度回调，忽略所有参数
-
+                                        # why：直接传入外层 progress_callback，让子进度（30~90）
+                                        # 能实时上报到任务管理器，避免任务进度卡死在某个值不动。
                                         download_results = await tasks._download_episode_comments_concurrent(
                                             scraper, [virtual_episode], current_rate_limiter,
-                                            dummy_progress_callback,
+                                            progress_callback,
                                             is_fallback=True,
                                             fallback_type="search"
                                         )
@@ -1404,6 +1416,14 @@ async def get_comments_for_dandan(
                     except Exception as e:
                         logger.error(f"提交弹幕下载任务失败: {e}", exc_info=True)
 
+        # 后备搜索路径结束：写入性能统计
+        # why：传入 session_factory 而非请求级 session，确保在独立 session 中 commit，
+        # 避免 get_db_session 的 finally 只 close() 导致写入被回滚。
+        if _fallback_profiler is not None:
+            _fallback_profiler.record_step("全流程", _fallback_profiler.total_duration_ms)
+            await _fallback_profiler.flush(session, session_factory=request.app.state.db_session_factory)
+            _fallback_profiler = None
+
         # 如果仍然没有弹幕数据，返回空结果
         if not comments_data:
             logger.warning(f"无法获取 episodeId={episodeId} 的弹幕数据")
@@ -1436,25 +1456,14 @@ async def get_comments_for_dandan(
         cache_key = f"sampled_{episodeId}_{limit}{merge_suffix}"
         current_time = time.time()
 
-        # 尝试从数据库缓存获取
+        # 尝试从缓存获取
         cached_data = await get_db_cache(session, SAMPLED_COMMENTS_CACHE_PREFIX, cache_key)
         if cached_data:
-            # 缓存格式: {"comments": [...], "timestamp": 123456.789}
+            # 缓存命中（DB 层已按 TTL 管理过期，无需在 Python 层重复判断时间戳）
+            # 问题3修复：删除原有 Python 层 time.time() 手工过期判断，信任 DB 缓存 TTL 语义
             cached_comments = cached_data.get("comments", [])
-            cached_time = cached_data.get("timestamp", 0)
-            if current_time - cached_time <= SAMPLED_CACHE_TTL:
-                logger.info(f"使用缓存的采样结果: episodeId={episodeId}, limit={limit}, 缓存时间={int(current_time - cached_time)}秒前")
-                comments_data = cached_comments
-            else:
-                # 缓存过期,重新采样
-                logger.info(f"弹幕数量 {len(comments_data)} 超过限制 {limit}，开始均匀采样 (缓存已过期)")
-                original_count = len(comments_data)
-                comments_data = sample_comments_evenly(comments_data, limit)
-                logger.info(f"弹幕采样完成: {original_count} -> {len(comments_data)} 条")
-
-                # 更新缓存
-                cache_value = {"comments": comments_data, "timestamp": current_time}
-                await set_db_cache(session, SAMPLED_COMMENTS_CACHE_PREFIX, cache_key, cache_value, SAMPLED_COMMENTS_CACHE_TTL_DB)
+            logger.info(f"使用缓存的采样结果: episodeId={episodeId}, limit={limit}")
+            comments_data = cached_comments
         else:
             # 无缓存,执行采样
             logger.info(f"弹幕数量 {len(comments_data)} 超过限制 {limit}，开始均匀采样")

@@ -79,12 +79,13 @@ export const ScheduleTask = () => {
   }
 
   // 根据 configSchema 中的配置项定义，渲染对应的表单控件
+  // why：显式传入 i18n.language 确保语言切换时 React 能感知到变化并重渲染
   const renderConfigFormItem = (item) => {
     const { key, type, min, max, rows, options } = item
-    const label = getLocalizedField(item, 'label')
-    const description = getLocalizedField(item, 'description')
-    const placeholder = getLocalizedField(item, 'placeholder')
-    const suffix = getLocalizedField(item, 'suffix')
+    const label = getLocalizedField(item, 'label', i18n.language)
+    const description = getLocalizedField(item, 'description', i18n.language)
+    const placeholder = getLocalizedField(item, 'placeholder', i18n.language)
+    const suffix = getLocalizedField(item, 'suffix', i18n.language)
 
     switch (type) {
       case 'boolean':

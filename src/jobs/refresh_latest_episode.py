@@ -13,11 +13,12 @@ from .base import BaseJob
 from src.services import TaskSuccess
 from src.tasks import refresh_episode_task
 from src.core import get_now
+from src.utils.task_profiler import profile_flow, FLOW_REFRESH_LATEST_EPISODE
 
 
 class RefreshLatestEpisodeJob(BaseJob):
     """刷新最新集弹幕定时任务"""
-    
+
     job_type = "refreshLatestEpisode"
     job_name = "刷新最新集弹幕"
     job_name_en = "Refresh Latest Episode Danmaku"
@@ -44,6 +45,7 @@ class RefreshLatestEpisodeJob(BaseJob):
         },
     ]
 
+    @profile_flow(FLOW_REFRESH_LATEST_EPISODE)
     async def run(self, session: AsyncSession, progress_callback: Callable, task_config: dict = None):
         """定时任务的核心逻辑: 刷新最新一集的弹幕"""
         if task_config is None:
@@ -60,11 +62,11 @@ class RefreshLatestEpisodeJob(BaseJob):
                 self.logger.warning(f"无法解析任务级弹幕阈值配置: {configured_threshold!r}，将回退到全局配置")
 
         await progress_callback(0, "正在获取所有启用追更的源...")
-        
+
         # 获取所有启用追更的源
         source_ids = await crud.get_sources_with_incremental_refresh_enabled(session)
         total_sources = len(source_ids)
-        
+
         if not total_sources:
             raise TaskSuccess("没有找到任何启用追更的源，任务结束。")
 
@@ -73,7 +75,7 @@ class RefreshLatestEpisodeJob(BaseJob):
 
         refreshed_count = 0
         skipped_count = 0
-        
+
         for i, source_id in enumerate(source_ids):
             try:
                 # 获取源信息
@@ -92,7 +94,7 @@ class RefreshLatestEpisodeJob(BaseJob):
                 )
                 result = await session.execute(stmt)
                 latest_episode = result.scalar_one_or_none()
-                
+
                 if not latest_episode:
                     self.logger.info(f"源 '{source_info['title']}' (ID: {source_id}) 没有任何分集，跳过。")
                     skipped_count += 1
@@ -131,7 +133,7 @@ class RefreshLatestEpisodeJob(BaseJob):
                         progress_callback=cb,
                         config_manager=self.config_manager
                     )
-                
+
                 try:
                     await self.task_manager.submit_task(
                         create_refresh_task(latest_episode.id, source_info),
@@ -139,7 +141,7 @@ class RefreshLatestEpisodeJob(BaseJob):
                         unique_key=unique_key
                     )
                     refreshed_count += 1
-                    
+
                     # 更新最后刷新时间
                     await session.execute(
                         update(orm_models.AnimeSource)
@@ -147,7 +149,7 @@ class RefreshLatestEpisodeJob(BaseJob):
                         .values(lastRefreshLatestEpisodeAt=get_now())
                     )
                     await session.commit()
-                    
+
                     self.logger.info(
                         f"已为源 '{source_info['title']}' 第{latest_episode.episodeIndex}集 "
                         f"创建刷新任务 (当前弹幕数: {latest_episode.commentCount}/{threshold})"

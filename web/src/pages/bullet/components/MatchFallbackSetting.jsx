@@ -1,6 +1,6 @@
 ﻿import { Card, Form, Switch, Input, Button, Space, Tooltip, Select, Tag, InputNumber } from 'antd'
 import { useEffect, useState } from 'react'
-import { getMatchFallback, setMatchFallback, getMatchFallbackBlacklist, setMatchFallbackBlacklist, getMatchFallbackTokens, setMatchFallbackTokens, getTokenList, getSearchFallback, setSearchFallback, getConfig, setConfig } from '../../../apis'
+import { getMatchFallback, setMatchFallback, getMatchFallbackBlacklist, setMatchFallbackBlacklist, getMatchFallbackTokens, setMatchFallbackTokens, getPosterProxyTokens, setPosterProxyTokens, getTokenList, getSearchFallback, setSearchFallback, getConfig, setConfig } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
 import { QuestionCircleOutlined } from '@ant-design/icons'
 import { useAtomValue } from 'jotai'
@@ -13,6 +13,7 @@ export const MatchFallbackSetting = () => {
   const [loading, setLoading] = useState(true)
   const [blacklistSaving, setBlacklistSaving] = useState(false)
   const [tokensSaving, setTokensSaving] = useState(false)
+  const [posterProxyTokensSaving, setPosterProxyTokensSaving] = useState(false)
   const [tokenList, setTokenList] = useState([])
   const messageApi = useMessage()
   const isMobile = useAtomValue(isMobileAtom)
@@ -20,7 +21,7 @@ export const MatchFallbackSetting = () => {
   const fetchSettings = async () => {
     try {
       setLoading(true)
-      const [fallbackRes, blacklistRes, tokensRes, tokenListRes, searchFallbackRes, externalApiFallbackRes, preDownloadRes, parallelSearchRes, autoRefreshRes, refreshThresholdRes] = await Promise.all([
+      const [fallbackRes, blacklistRes, tokensRes, tokenListRes, searchFallbackRes, externalApiFallbackRes, preDownloadRes, parallelSearchRes, autoRefreshRes, refreshThresholdRes, posterProxyTokensRes] = await Promise.all([
         getMatchFallback(),
         getMatchFallbackBlacklist(),
         getMatchFallbackTokens(),
@@ -30,16 +31,25 @@ export const MatchFallbackSetting = () => {
         getConfig('preDownloadNextEpisodeEnabled'),
         getConfig('parallelSearchEnabled'),
         getConfig('danmakuAutoRefreshDays'),
-        getConfig('danmakuRefreshThreshold')
+        getConfig('danmakuRefreshThreshold'),
+        getPosterProxyTokens(),
       ])
       setTokenList(tokenListRes.data || [])
 
-      // 解析token配置
+      // 解析 matchFallbackTokens 配置
       let selectedTokens = []
       try {
         selectedTokens = JSON.parse(tokensRes.data.value || '[]')
       } catch (e) {
         console.warn('解析匹配后备Token配置失败:', e)
+      }
+
+      // 解析 posterProxyTokens 配置
+      let selectedPosterProxyTokens = []
+      try {
+        selectedPosterProxyTokens = JSON.parse(posterProxyTokensRes.data?.value || '[]')
+      } catch (e) {
+        console.warn('解析外联海报Token配置失败:', e)
       }
 
       form.setFieldsValue({
@@ -51,7 +61,8 @@ export const MatchFallbackSetting = () => {
         preDownloadNextEpisodeEnabled: preDownloadRes.data?.value === 'true',
         parallelSearchEnabled: parallelSearchRes.data?.value === 'true',
         danmakuAutoRefreshDays: parseInt(autoRefreshRes.data?.value || '0', 10) || 0,
-        danmakuRefreshThreshold: parseInt(refreshThresholdRes.data?.value || '5000', 10) || 0
+        danmakuRefreshThreshold: parseInt(refreshThresholdRes.data?.value || '5000', 10) || 0,
+        posterProxyTokens: selectedPosterProxyTokens,
       })
     } catch (error) {
       messageApi.error(t('bullet.fallbackGetFailed'))
@@ -140,6 +151,20 @@ export const MatchFallbackSetting = () => {
     }
   }
 
+  const handlePosterProxyTokensSave = async () => {
+    try {
+      setPosterProxyTokensSaving(true)
+      const values = form.getFieldsValue()
+      const tokensValue = JSON.stringify(values.posterProxyTokens || [])
+      await setPosterProxyTokens({ value: tokensValue })
+      messageApi.success(t('bullet.posterProxyTokenSaved'))
+    } catch (error) {
+      messageApi.error(t('bullet.posterProxyTokenSaveFailed'))
+    } finally {
+      setPosterProxyTokensSaving(false)
+    }
+  }
+
   return (
     <Card title={t('bullet.fallbackTitle')} loading={loading}>
       <Form
@@ -155,7 +180,8 @@ export const MatchFallbackSetting = () => {
           danmakuAutoRefreshDays: 0,
           danmakuRefreshThreshold: 5000,
           matchFallbackBlacklist: '',
-          matchFallbackTokens: []
+          matchFallbackTokens: [],
+          posterProxyTokens: [],
         }}
       >
         <div className={isMobile ? "space-y-4" : ""} style={isMobile ? {} : { display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
@@ -551,6 +577,91 @@ export const MatchFallbackSetting = () => {
               </Form.Item>
             )
           }}
+        </Form.Item>
+
+        {/* 外联海报模式 Token 授权 —— 与后备功能 Token 授权完全相同的 Select 多选设计 */}
+        <Form.Item
+          label={
+            <Space>
+              {t('bullet.posterProxyTokenAuth')}
+              <Tooltip title={t('bullet.posterProxyTokenAuthTip')}>
+                <QuestionCircleOutlined />
+              </Tooltip>
+            </Space>
+          }
+        >
+          <div className={isMobile ? 'space-y-3' : 'flex gap-3'}>
+            <Form.Item
+              name="posterProxyTokens"
+              className={isMobile ? 'mb-0' : 'flex-1 mb-0'}
+            >
+              <Select
+                mode="multiple"
+                allowClear
+                placeholder={t("bullet.posterProxyTokenSelectPlaceholder")}
+                notFoundContent={t("bullet.fallbackCreateToken")}
+                optionFilterProp="name"
+                options={tokenList.map(token => ({
+                  value: token.id,
+                  name: token.name,
+                  label: (
+                    <Space size={6}>
+                      <span>{token.name}</span>
+                      <Tag color={token.isEnabled ? "success" : "default"} style={{ marginInlineEnd: 0 }}>
+                        {token.isEnabled ? t("bullet.fallbackTokenEnabled") : t("bullet.fallbackTokenDisabled")}
+                      </Tag>
+                    </Space>
+                  ),
+                }))}
+                tagRender={({ label, value, closable, onClose }) => {
+                  const token = tokenList.find(t => t.id === value)
+                  return (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "2px 8px",
+                        marginInlineEnd: 4,
+                        borderRadius: 999,
+                        fontSize: 12,
+                        lineHeight: "20px",
+                        background: token?.isEnabled ? "rgba(0,128,0,0.12)" : "rgba(0,0,0,0.06)",
+                        border: token?.isEnabled ? "1px solid rgba(0,128,0,0.3)" : "1px solid rgba(0,0,0,0.15)",
+                        color: "inherit",
+                      }}
+                    >
+                      {token?.name || value}
+                      {closable && (
+                        <span
+                          style={{ cursor: "pointer", opacity: 0.5, fontSize: 11, lineHeight: 1 }}
+                          onClick={e => { e.stopPropagation(); onClose() }}
+                        >
+                          ×
+                        </span>
+                      )}
+                    </span>
+                  )
+                }}
+              />
+            </Form.Item>
+            <div className="flex gap-2 flex-shrink-0">
+              <Button
+                onClick={() => form.setFieldsValue({ posterProxyTokens: [] })}
+                className={isMobile ? 'flex-1' : ''}
+              >
+                {t('bullet.fallbackTokenClearAll')}
+              </Button>
+              <Button
+                type="primary"
+                loading={posterProxyTokensSaving}
+                onClick={handlePosterProxyTokensSave}
+                className={isMobile ? 'flex-1' : ''}
+              >
+                {t('bullet.fallbackSaveConfig')}
+              </Button>
+            </div>
+          </div>
         </Form.Item>
 
         <Form.Item

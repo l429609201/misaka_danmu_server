@@ -2,6 +2,7 @@
 Episode相关的CRUD操作
 """
 
+import asyncio
 import logging
 from typing import Optional, Dict, Any, List
 from pathlib import Path
@@ -17,7 +18,9 @@ from ..orm_models import (
 from .. import models, orm_models
 from src.core.timezone import get_now
 from src.core.env import is_docker_environment as _is_docker_environment
+from src.utils.danmaku_parser import parse_dandan_xml_to_comments
 from .source import check_source_exists_by_media_id, get_anime_id_by_source_media_id, _assign_source_order_if_missing
+from src.core.cache import get_cache_backend
 
 logger = logging.getLogger(__name__)
 
@@ -545,7 +548,24 @@ async def get_existing_episodes_for_source(
 
 
 async def fetch_comments(session: AsyncSession, episode_id: int) -> List[Dict[str, Any]]:
-    """从XML文件获取弹幕。"""
+    """从XML文件获取弹幕。
+
+    优化C2：先尝试内存缓存（TTL 5分钟），命中则跳过文件读取和XML解析。
+    优化A ：read_text + parse 通过 asyncio.to_thread 在线程池执行，不阻塞事件循环。
+    缓存失效由 save_danmaku_for_episode 在写入新 XML 后主动 delete 完成。
+    """
+    _cache_key = f"fetch_comments_{episode_id}"
+
+    # 优化C2：先查内存缓存（L1），命中则直接返回，跳过 DB 查询和文件 I/O
+    try:
+        cache = get_cache_backend()
+        cached = await cache.get(_cache_key, region="default")
+        if cached is not None:
+            logger.debug(f"[缓存命中] fetch_comments episodeId={episode_id}")
+            return cached
+    except Exception:
+        pass  # 缓存不可用时降级为直接读文件，不影响主流程
+
     episode_stmt = select(Episode).where(Episode.id == episode_id)
     episode_result = await session.execute(episode_stmt)
     from .danmaku import _get_fs_path_from_web_path
@@ -557,16 +577,26 @@ async def fetch_comments(session: AsyncSession, episode_id: int) -> List[Dict[st
     try:
         absolute_path = _get_fs_path_from_web_path(episode.danmakuFilePath)
         if not absolute_path:
-            return [] # 辅助函数会记录警告
+            return []  # 辅助函数会记录警告
 
         if not absolute_path.exists():
             logger.warning(f"数据库记录了弹幕文件路径，但文件不存在: {absolute_path}")
             return []
 
-        xml_content = absolute_path.read_text(encoding='utf-8')
-        # 延迟导入避免循环依赖
-        from src.api.dandan.danmaku_parser import parse_dandan_xml_to_comments
-        return parse_dandan_xml_to_comments(xml_content)
+        # 优化A：将同步文件读取和XML解析放入线程池，避免阻塞事件循环
+        def _read_and_parse():
+            xml_content = absolute_path.read_text(encoding='utf-8')
+            return parse_dandan_xml_to_comments(xml_content)
+
+        result = await asyncio.to_thread(_read_and_parse)
+
+        # 优化C2：解析成功后写入内存缓存（TTL 5分钟），下次请求直接命中
+        try:
+            await cache.set(_cache_key, result, ttl=300, region="default")
+        except Exception:
+            pass  # 写缓存失败不影响本次响应
+
+        return result
     except Exception as e:
         logger.error(f"读取或解析弹幕文件失败: {episode.danmakuFilePath}。错误: {e}", exc_info=True)
         return []
@@ -609,30 +639,33 @@ async def fetch_merged_comments(session: AsyncSession, episode_id: int) -> List[
         return []
 
     # 3. 合并所有源的弹幕
-    all_comments = []
-    seen_cids = set()  # 用于去重（基于弹幕内容和时间）
-
-    for ep in related_episodes:
+    # 优化：所有源文件并行读取（asyncio.to_thread），消除逐个串行读取的阻塞
+    async def _read_one(ep) -> list:
         try:
             absolute_path = _get_fs_path_from_web_path(ep.danmakuFilePath)
             if not absolute_path or not absolute_path.exists():
-                continue
-
-            xml_content = absolute_path.read_text(encoding='utf-8')
-            # 延迟导入避免循环依赖
-            from src.api.dandan.danmaku_parser import parse_dandan_xml_to_comments
-            comments = parse_dandan_xml_to_comments(xml_content)
-
-            for comment in comments:
-                # 使用 p 属性（时间+类型+颜色）和 m（内容）作为去重键
-                dedup_key = f"{comment.get('p', '')}_{comment.get('m', '')}"
-                if dedup_key not in seen_cids:
-                    seen_cids.add(dedup_key)
-                    all_comments.append(comment)
-
+                return []
+            # 将同步文件读取和 XML 解析放入线程池
+            def _read_and_parse():
+                xml_content = absolute_path.read_text(encoding='utf-8')
+                return parse_dandan_xml_to_comments(xml_content)
+            return await asyncio.to_thread(_read_and_parse)
         except Exception as e:
             logger.error(f"读取弹幕文件失败: {ep.danmakuFilePath}。错误: {e}")
-            continue
+            return []
+
+    # 并行读取所有源文件
+    all_per_source = await asyncio.gather(*[_read_one(ep) for ep in related_episodes])
+
+    all_comments = []
+    seen_cids = set()  # 用于去重（基于弹幕内容和时间）
+    for comments in all_per_source:
+        for comment in comments:
+            # 使用 p 属性（时间+类型+颜色）和 m（内容）作为去重键
+            dedup_key = f"{comment.get('p', '')}_{comment.get('m', '')}"
+            if dedup_key not in seen_cids:
+                seen_cids.add(dedup_key)
+                all_comments.append(comment)
 
     logger.info(f"合并输出: episodeId={episode_id}, 集数={episode_index}, "
                 f"源数量={len(related_episodes)}, 合并后弹幕数={len(all_comments)}")
@@ -646,7 +679,6 @@ async def add_comments_from_xml(session: AsyncSession, episode_id: int, xml_cont
     Returns the number of comments added.
     """
     # 延迟导入避免循环依赖
-    from src.api.dandan.danmaku_parser import parse_dandan_xml_to_comments
     comments = parse_dandan_xml_to_comments(xml_content)
     if not comments:
         return 0
