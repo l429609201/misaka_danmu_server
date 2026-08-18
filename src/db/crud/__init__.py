@@ -71,6 +71,9 @@ from .task import (
     clear_task_state_cache,
     get_all_running_task_states,
     get_pending_recoverable_tasks,
+    save_perf_events,
+    get_perf_stats,
+    delete_old_perf_events,
 )
 
 # MediaServer模块

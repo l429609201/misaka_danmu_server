@@ -24,6 +24,7 @@ from src.utils import (
 )
 from src.utils.search_timer import SubStepTiming
 from src.utils.season_mapper import _get_cached_metadata_search
+from src.utils.task_profiler import TaskProfiler, FLOW_HOME_SEARCH
 from src.ai.ai_matcher_manager import AIMatcherManager
 
 from src.api.dependencies import (
@@ -161,6 +162,8 @@ async def search_anime_provider(
     # 🚀 V2.1.6: 创建搜索计时器
     timer = SearchTimer(SEARCH_TYPE_HOME, keyword, logger)
     timer.start()
+    # 性能统计 profiler（写 DB）
+    _home_profiler = TaskProfiler(FLOW_HOME_SEARCH)
 
     try:
         timer.step_start("关键词解析")
@@ -170,7 +173,8 @@ async def search_anime_provider(
         episode_to_filter = parsed_keyword["episode"]
         # 原始完整关键词（未经拆解），供识别词反向映射使用
         original_keyword = parsed_keyword.get("original_keyword") or keyword.strip()
-        timer.step_end()
+        _dur = timer.step_end()
+        _home_profiler.record_step("关键词解析", _dur)
 
         # 🚀 识别词反向映射（最高优先级）：用户用"入库名"搜索时，自动改用源站真实名去搜
         # 例：规则 "说唱巅峰对决2026 => {[...title=中国新说唱 第九季...]}"，
@@ -502,7 +506,8 @@ async def search_anime_provider(
                     source_timing_sub_steps.append(
                         SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="弹幕源")
                     )
-            timer.step_end(details=f"{len(all_results)}个结果", sub_steps=source_timing_sub_steps)
+            _dur = timer.step_end(details=f"{len(all_results)}个结果", sub_steps=source_timing_sub_steps)
+            _home_profiler.record_step("弹幕源搜索（直接）", _dur)
             logger.info(f"直接搜索完成，找到 {len(all_results)} 个原始结果。")
             results = all_results
             filter_aliases = set(search_titles)  # 使用所有搜索标题作为过滤别名
@@ -564,10 +569,11 @@ async def search_anime_provider(
                     SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="辅助源(别名)")
                 )
 
-            timer.step_end(
+            _dur = timer.step_end(
                 details=f"弹幕{len(all_results)}个+辅助{len(supplemental_results)}个",
                 sub_steps=source_timing_sub_steps
             )
+            _home_profiler.record_step("弹幕源搜索（含辅助源）", _dur)
 
             timer.step_start("别名验证与过滤")
             # 3. 信任元数据源返回的别名，不再用相似度过滤
@@ -637,7 +643,8 @@ async def search_anime_provider(
             for item in filtered_results:
                 filter_log_lines.append(f"  - {item.title}")
             logger.info("\n".join(filter_log_lines))
-            timer.step_end(details=f"保留{len(filtered_results)}个")
+            _dur = timer.step_end(details=f"保留{len(filtered_results)}个")
+            _home_profiler.record_step("别名验证与过滤", _dur)
             results = filtered_results
 
     except httpx.RequestError as e:
@@ -749,7 +756,8 @@ async def search_anime_provider(
 
     timer.step_start("结果排序")
     sorted_results = sorted(results, key=sort_key)
-    timer.step_end(details=f"{len(sorted_results)}个结果")
+    _dur = timer.step_end(details=f"{len(sorted_results)}个结果")
+    _home_profiler.record_step("结果排序", _dur)
 
     # --- 新增：在返回前缓存最终结果 ---
     timer.step_start("结果缓存")
@@ -781,7 +789,8 @@ async def search_anime_provider(
             await crud.set_cache(session, f"search:{supplemental_cache_key}", supplemental_data, ttl_seconds=10800)
     else:
         await crud.set_cache(session, f"search:{supplemental_cache_key}", supplemental_data, ttl_seconds=10800)
-    timer.step_end()
+    _dur = timer.step_end()
+    _home_profiler.record_step("结果缓存", _dur)
     # --- 缓存逻辑结束 ---
 
 
@@ -830,14 +839,16 @@ async def search_anime_provider(
 
                 # 更新搜索结果（已经直接修改了sorted_results）
                 sorted_results = mapping_result['corrected_results']
-                timer.step_end(details=f"修正{mapping_result['total_corrections']}个")
+                _dur = timer.step_end(details=f"修正{mapping_result['total_corrections']}个")
             else:
                 logger.info(f"○ 主页搜索 统一AI映射: 未找到需要修正的信息")
-                timer.step_end(details="无修正")
+                _dur = timer.step_end(details="无修正")
+            _home_profiler.record_step("AI映射修正", _dur)
 
         except Exception as e:
             logger.warning(f"主页搜索 统一AI映射任务执行失败: {e}")
-            timer.step_end(details=f"失败: {e}")
+            _dur = timer.step_end(details=f"失败: {e}")
+            _home_profiler.record_step("AI映射修正", _dur, success=False)
 
     # 过滤处理
     filtered_results = sorted_results
@@ -857,6 +868,8 @@ async def search_anime_provider(
     paginated_results = filtered_results[start_idx:end_idx]
 
     timer.finish()  # 打印搜索计时报告
+    # 写入性能统计（无整体步骤，已在各步骤分别记录）
+    await _home_profiler.flush(session)
     filter_metadata = _extract_filter_metadata(sorted_results)
     # 识别词反向映射命中时，给每条结果打 recognitionTitle 标记（请求级派生，不进搜索缓存）
     # why：规则带 source=xxx 时仅标记该源结果，且标题需精确匹配规则 source，避免同源无关结果被误标。

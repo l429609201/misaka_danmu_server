@@ -643,6 +643,37 @@ class ExternalCalendarItem(Base):
     )
 
 
+class TaskPerfEvent(Base):
+    """任务性能事件表 — 记录每次任务流程的步骤级计时数据。
+
+    why: 现有 task_history 只有总耗时，无法定位慢在哪个阶段。
+    本表每行代表一个任务中的一个步骤，前端可按 flow_type 聚合展示各阶段平均/最大耗时。
+    数据只保留 90 天，由 DatabaseMaintenanceJob 定期清理。
+    """
+    __tablename__ = "task_perf_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # 流程类型，如「弹幕通用导入」「全量刷新」，用于前端分组聚合
+    flowType: Mapped[str] = mapped_column("flow_type", String(100), nullable=False, index=True)
+    # 关联 ID：任务型填 task_id，请求型填 UUID
+    correlationId: Mapped[str] = mapped_column("correlation_id", String(200), nullable=False, index=True)
+    # 步骤名称
+    stepName: Mapped[str] = mapped_column("step_name", String(200), nullable=False)
+    # 该步骤耗时（毫秒）
+    durationMs: Mapped[float] = mapped_column("duration_ms", DECIMAL(12, 2), nullable=False)
+    # 该步骤是否成功（失败不中断记录，success=False + details 记录错误）
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # 失败时的错误信息（截断至 500 字符）
+    details: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # 整条流程从开始到该步骤结束时的累计总耗时
+    totalDurationMs: Mapped[Optional[float]] = mapped_column("total_duration_ms", DECIMAL(12, 2), nullable=True)
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False, index=True)
+
+    __table_args__ = (
+        Index('idx_perf_flow_created', 'flow_type', 'created_at'),
+    )
+
+
 class SubscriptionCandidateItem(Base):
     """订阅候选项表（纯候选池）- 存储合集/UP主/番剧扫描出的分集列表。
 

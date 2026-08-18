@@ -131,4 +131,4 @@
 
 ### Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=l429609201/misaka_danmu_server&type=Date)](https://www.star-history.com/#l429609201/misaka_danmu_server&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=l429609201/misaka_danmu_server&type=Date)](https://star-history.dera.page/#l429609201/misaka_danmu_server&Date)

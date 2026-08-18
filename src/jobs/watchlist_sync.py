@@ -16,6 +16,7 @@ from sqlalchemy import select
 from src.db import crud, orm_models
 from src.jobs.base import BaseJob
 from src.services import TaskSuccess
+from src.utils.task_profiler import profile_flow, FLOW_WATCHLIST_SYNC
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class WatchlistSyncJob(BaseJob):
         },
     ]
 
+    @profile_flow(FLOW_WATCHLIST_SYNC)
     async def run(self, session: AsyncSession, progress_callback: Callable):
         """主同步逻辑"""
         config = self.task_config or {}
@@ -76,7 +78,7 @@ class WatchlistSyncJob(BaseJob):
 
     async def _sync_bangumi(self, session: AsyncSession) -> int:
         """从 Bangumi 的「在看」收藏列表同步
-        
+
         TODO: 实现以下逻辑
         1. 获取第一个用户的 Bangumi OAuth token
         2. 调用 GET /v0/users/{username}/collections?subject_type=2&type=3 (type=3 是「在看」)
@@ -90,7 +92,7 @@ class WatchlistSyncJob(BaseJob):
 
     async def _sync_trakt(self, session: AsyncSession) -> int:
         """从 Trakt Watchlist 同步
-        
+
         TODO: 实现以下逻辑
         1. 获取用户的 Trakt OAuth token (从 oauth_credentials 表)
         2. 调用 GET /calendars/my/shows 或 GET /users/me/watchlist/shows

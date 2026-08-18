@@ -12,6 +12,7 @@ from src.db import crud, orm_models, _get_db_url
 from src.core import settings, get_now
 from .base import BaseJob
 from src.services import TaskSuccess
+from src.utils.task_profiler import profile_flow, FLOW_DATABASE_MAINTENANCE
 
 logger = logging.getLogger(__name__)
 
@@ -111,32 +112,33 @@ class DatabaseMaintenanceJob(BaseJob):
     description_en = "Periodically clean expired logs, optimize database tables, and clean invalid image caches. Helps maintain performance and save storage."
     description_tw = "定期清理過期的應用日誌、最佳化資料庫表、清理無效的圖片快取檔案。幫助保持系統效能和節省儲存空間。"
 
+    @profile_flow(FLOW_DATABASE_MAINTENANCE)
     async def run(self, session: AsyncSession, progress_callback: Callable):
         """
         执行缓存日志清理任务：清理旧日志、优化表和清理无效图片缓存。
         """
         self.logger.info(f"开始执行 [{self.job_name}] 定时任务...")
-        
+
         # --- 1. 应用日志清理 ---
         await progress_callback(10, "正在清理旧日志...")
-        
+
         try:
             # 日志保留天数，默认为30天。
             retention_days_str = await crud.get_config_value(session, "logRetentionDays", "30")
             retention_days = int(retention_days_str)
         except (ValueError, TypeError):
             retention_days = 30
-        
+
         if retention_days > 0:
             self.logger.info(f"将清理 {retention_days} 天前的日志记录。")
             cutoff_date = get_now() - timedelta(days=retention_days)
-            
+
             tables_to_prune = {
                 "任务历史": (orm_models.TaskHistory, orm_models.TaskHistory.createdAt),
                 "Token访问日志": (orm_models.TokenAccessLog, orm_models.TokenAccessLog.accessTime),
                 "外部API访问日志": (orm_models.ExternalApiLog, orm_models.ExternalApiLog.accessTime),
             }
-            
+
             total_deleted = 0
             for name, (model, date_column) in tables_to_prune.items():
                 deleted_count: Optional[int] = await crud.prune_logs(session, model, date_column, cutoff_date)
@@ -195,7 +197,7 @@ class DatabaseMaintenanceJob(BaseJob):
 
         # --- 3. 数据库表优化 ---
         await progress_callback(70, "正在执行数据库表优化...")
-        
+
         try:
             optimization_message = await asyncio.wait_for(
                 _optimize_database(session, db_type), timeout=300  # 5 分钟超时

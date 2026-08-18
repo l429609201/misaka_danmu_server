@@ -12,6 +12,7 @@ from .base import BaseJob
 from .subscription_scan import SubscriptionScanJob
 from src.services import TaskSuccess
 from src.tasks import generic_import_task, auto_search_and_import_task
+from src.utils.task_profiler import profile_flow, FLOW_INCREMENTAL_REFRESH
 
 
 class IncrementalRefreshJob(BaseJob):
@@ -193,6 +194,7 @@ class IncrementalRefreshJob(BaseJob):
             self.logger.info(f"阶段0.5：收敛 {reconciled} 条订阅为 imported。")
         return reconciled
 
+    @profile_flow(FLOW_INCREMENTAL_REFRESH)
     async def run(self, session: AsyncSession, progress_callback: Callable):
         """定时任务核心：阶段A 强标识订阅扫描+导入 → 阶段0 处理订阅 → 阶段1 抓下一集"""
         # 阶段A：扫描强标识订阅目标（如 Bilibili 合集/UP主），生成候选项并导入弹幕

@@ -19,6 +19,7 @@ from src.core import get_now
 from src.services import ScraperManager, TaskManager, TaskSuccess
 from src.utils import parse_search_keyword, sample_comments_evenly, record_play_history, handle_danmaku_likes, strip_danmaku_likes, is_movie_by_title
 from src.utils import restyle_danmaku_likes
+from src.utils.task_profiler import TaskProfiler, FLOW_FALLBACK_MATCH, FLOW_FALLBACK_SEARCH
 from src.rate_limiter import RateLimiter
 from src import tasks
 
@@ -348,6 +349,9 @@ async def get_comments_for_dandan(
         match_fallback_handled = False
         episode_number = None
 
+        # 后备路径性能统计
+        _fallback_profiler: Optional[TaskProfiler] = None
+
         # 尝试解析虚拟episodeId
         if episodeId >= 25000000000000:
             # 提取anime_id, source_order, episode_number
@@ -419,6 +423,7 @@ async def get_comments_for_dandan(
         if fallback_info:
             # why：本请求已由匹配后备链路接管，后续不得再次落入 fallback_comments 第二套下载链路。
             match_fallback_handled = True
+            _fallback_profiler = TaskProfiler(FLOW_FALLBACK_MATCH)
             logger.info(f"检测到后备搜索/匹配后备的episodeId: {episodeId}, 集数: {episode_number}")
 
             # 从缓存中获取信息
@@ -858,9 +863,16 @@ async def get_comments_for_dandan(
                     return models.CommentResponse(count=0, comments=[])
 
         # 任务完成后,弹幕已经保存到数据库,不再从缓存读取
+        # 在后备匹配路径结束时写入性能统计
+        if _fallback_profiler is not None:
+            _fallback_profiler.record_step("全流程", _fallback_profiler.total_duration_ms)
+            await _fallback_profiler.flush(session)
+            _fallback_profiler = None
+
         # 2. 检查是否是后备搜索的特殊episodeId（以25开头的新格式）
         if not match_fallback_handled and str(episodeId).startswith("25") and len(str(episodeId)) >= 13:  # 新的ID格式
             # 解析episodeId：25 + animeId(6位) + 源顺序(2位) + 集编号(4位)
+            _fallback_profiler = TaskProfiler(FLOW_FALLBACK_SEARCH)
             episode_id_str = str(episodeId)
             real_anime_id = int(episode_id_str[2:8])  # 提取真实animeId
             _ = int(episode_id_str[8:10])  # 提取源顺序（暂时不使用）
@@ -1403,6 +1415,12 @@ async def get_comments_for_dandan(
                             logger.error(f"提交弹幕下载任务失败: {e}", exc_info=True)
                     except Exception as e:
                         logger.error(f"提交弹幕下载任务失败: {e}", exc_info=True)
+
+        # 后备搜索路径结束：写入性能统计
+        if _fallback_profiler is not None:
+            _fallback_profiler.record_step("全流程", _fallback_profiler.total_duration_ms)
+            await _fallback_profiler.flush(session)
+            _fallback_profiler = None
 
         # 如果仍然没有弹幕数据，返回空结果
         if not comments_data:

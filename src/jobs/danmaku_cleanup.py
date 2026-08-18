@@ -16,6 +16,7 @@ from src.core import get_now
 from src.tasks.delete import delete_danmaku_files_batch
 from src.services import TaskSuccess
 from .base import BaseJob
+from src.utils.task_profiler import profile_flow, FLOW_DANMAKU_CLEANUP
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ class DanmakuCleanupJob(BaseJob):
         }
     ]
 
+    @profile_flow(FLOW_DANMAKU_CLEANUP)
     async def run(self, session: AsyncSession, progress_callback: Callable, task_config: dict = None):
         if task_config is None:
             task_config = {}

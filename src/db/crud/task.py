@@ -6,12 +6,13 @@
 import logging
 import re
 import json
+from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, func, or_, String
+from sqlalchemy import select, update, delete, func, or_, String, cast, Float, Integer
 
-from ..orm_models import ScheduledTask, TaskHistory, WebhookTask, TaskStateCache
+from ..orm_models import ScheduledTask, TaskHistory, WebhookTask, TaskStateCache, TaskPerfEvent
 from src.core.timezone import get_now
 from .. import orm_models
 
@@ -772,4 +773,126 @@ async def get_pending_recoverable_tasks(session: AsyncSession) -> List[Dict[str,
         })
 
     return pending_tasks
+
+
+# ─────────────────────────── 性能事件 CRUD ───────────────────────────
+
+async def save_perf_events(
+    session: AsyncSession,
+    flow_type: str,
+    correlation_id: str,
+    steps: list,
+    total_duration_ms: float,
+) -> None:
+    """批量写入任务性能事件记录。
+
+    Args:
+        session: 数据库会话
+        flow_type: 流程类型，如「弹幕通用导入」
+        correlation_id: 关联 ID（task_id 或 UUID）
+        steps: _PerfStep 实例列表（来自 TaskProfiler）
+        total_duration_ms: 整条流程总耗时（毫秒）
+    """
+    if not steps:
+        return
+
+    now = get_now()
+
+    event_rows = [
+        TaskPerfEvent(
+            flowType=flow_type,
+            correlationId=str(correlation_id),
+            stepName=step.step_name,
+            durationMs=round(step.duration_ms, 2),
+            success=step.success,
+            details=step.details,
+            totalDurationMs=round(total_duration_ms, 2),
+            createdAt=now,
+        )
+        for step in steps
+    ]
+    session.add_all(event_rows)
+    await session.flush()  # 不单独 commit，跟随调用方事务
+
+
+async def get_perf_stats(
+    session: AsyncSession,
+    days: int = 7,
+) -> list:
+    """查询各流程的性能汇总统计。
+
+    返回每个 flow_type 的：
+    - 总运行次数（按 correlation_id 去重）
+    - 平均总耗时
+    - 各步骤的平均/最大耗时和成功率
+    """
+
+    cutoff = get_now() - timedelta(days=days)
+
+    # ── 步骤级聚合 ──
+    step_stmt = (
+        select(
+            TaskPerfEvent.flowType,
+            TaskPerfEvent.stepName,
+            func.count().label("call_count"),
+            func.avg(cast(TaskPerfEvent.durationMs, Float)).label("avg_ms"),
+            func.max(cast(TaskPerfEvent.durationMs, Float)).label("max_ms"),
+            func.sum(
+                func.cast(TaskPerfEvent.success, Integer)
+            ).label("success_count"),
+        )
+        .where(TaskPerfEvent.createdAt >= cutoff)
+        .group_by(TaskPerfEvent.flowType, TaskPerfEvent.stepName)
+    )
+    step_result = await session.execute(step_stmt)
+    step_rows = step_result.mappings().all()
+
+    # ── 流程级聚合（按 correlation_id 去重计次） ──
+    flow_stmt = (
+        select(
+            TaskPerfEvent.flowType,
+            func.count(func.distinct(TaskPerfEvent.correlationId)).label("total_runs"),
+            func.avg(cast(TaskPerfEvent.totalDurationMs, Float)).label("avg_total_ms"),
+        )
+        .where(TaskPerfEvent.createdAt >= cutoff)
+        .group_by(TaskPerfEvent.flowType)
+    )
+    flow_result = await session.execute(flow_stmt)
+    flow_rows = {r["flowType"]: dict(r) for r in flow_result.mappings().all()}
+
+    # ── 组装结果 ──
+    steps_by_flow: dict = defaultdict(list)
+    for r in step_rows:
+        flow = r["flowType"]
+        call_count = int(r["call_count"] or 0)
+        success_count = int(r["success_count"] or 0)
+        steps_by_flow[flow].append({
+            "stepName": r["stepName"],
+            "avgMs": round(float(r["avg_ms"] or 0), 1),
+            "maxMs": round(float(r["max_ms"] or 0), 1),
+            "callCount": call_count,
+            "successRate": round(success_count / call_count * 100, 1) if call_count else 100.0,
+        })
+
+    stats = []
+    for flow_type_key, flow_data in flow_rows.items():
+        total_runs = int(flow_data.get("total_runs") or 0)
+        stats.append({
+            "flowType": flow_type_key,
+            "totalRuns": total_runs,
+            "avgTotalMs": round(float(flow_data.get("avg_total_ms") or 0), 1),
+            "steps": steps_by_flow.get(flow_type_key, []),
+        })
+
+    stats.sort(key=lambda x: x["totalRuns"], reverse=True)
+    return stats
+
+
+async def delete_old_perf_events(session: AsyncSession, retain_days: int = 90) -> int:
+    """清理超过保留天数的性能事件，由 DatabaseMaintenanceJob 调用。"""
+    cutoff = get_now() - timedelta(days=retain_days)
+    stmt = delete(TaskPerfEvent).where(TaskPerfEvent.createdAt < cutoff)
+    result = await session.execute(stmt)
+    await session.commit()
+    return result.rowcount
 

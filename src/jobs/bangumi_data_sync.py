@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.jobs.base import BaseJob
 from src.services import TaskSuccess
+from src.utils.task_profiler import profile_flow, FLOW_BANGUMI_DATA_SYNC
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class BangumiDataSyncJob(BaseJob):
     is_system_task = False
     config_schema = []  # 配置集中在 Bangumi 源特殊配置，这里不暴露额外项
 
+    @profile_flow(FLOW_BANGUMI_DATA_SYNC)
     async def run(self, session: AsyncSession, progress_callback: Callable):
         from src.services import get_bangumi_data_manager
 

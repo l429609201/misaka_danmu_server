@@ -122,13 +122,15 @@ class SearchTimer:
         self._step_start = time.perf_counter()
         self._current_step = step_name
     
-    def step_end(self, success: bool = True, details: str = None, sub_steps: List['SubStepTiming'] = None):
-        """结束当前步骤的计时"""
+    def step_end(self, success: bool = True, details: str = None, sub_steps: List['SubStepTiming'] = None) -> float:
+        """结束当前步骤的计时，返回步骤耗时（毫秒），未开始则返回 0.0"""
         if self._step_start and self._current_step:
             duration = (time.perf_counter() - self._step_start) * 1000
             self.report.add_step(self._current_step, duration, success, details, sub_steps=sub_steps)
             self._step_start = None
             self._current_step = None
+            return duration
+        return 0.0
     
     @asynccontextmanager
     async def time_step(self, step_name: str):

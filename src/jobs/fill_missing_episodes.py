@@ -5,9 +5,10 @@ from typing import Callable, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from src.db import crud, orm_models, models
+from src.db import crud, orm_models
 from .base import BaseJob
 from src.services import TaskManager, TaskSuccess
+from src.utils.task_profiler import profile_flow, FLOW_FILL_MISSING_EPISODES
 
 
 class FillMissingEpisodesJob(BaseJob):
@@ -64,6 +65,7 @@ class FillMissingEpisodesJob(BaseJob):
         },
     ]
 
+    @profile_flow(FLOW_FILL_MISSING_EPISODES)
     async def run(self, session: AsyncSession, progress_callback: Callable, task_config: dict = None):
         if task_config is None:
             task_config = {}

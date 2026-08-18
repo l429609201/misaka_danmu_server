@@ -1342,6 +1342,9 @@ export const getTaskTimeline = (taskId) => api.get('/api/ui/task-profile/timelin
 export const getCapacityTrends = () => api.get('/api/ui/trends/capacity')
 export const getCurrentCapacity = () => api.get('/api/ui/trends/current')
 
+// ==================== 性能统计 ====================
+export const getPerfStats = (days = 7) => api.get(`/api/ui/perf/stats?days=${days}`)
+
 // ==================== 安全审计 ====================
 export const getAuditLogs = (params) => api.get('/api/ui/audit/logs', params)
 export const getSessionStats = () => api.get('/api/ui/audit/session-stats')
