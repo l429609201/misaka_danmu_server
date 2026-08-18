@@ -98,6 +98,8 @@ class TaskProfiler:
 
         - 若无步骤记录则跳过
         - 写入失败只打 warning，不抛异常
+        - why：使用独立 commit，避免调用方 session 未 commit 时数据随 close 回滚
+          （搜索/请求型路由的 FastAPI session 依赖项只 close 不 commit）
         """
         if not self._steps:
             return
@@ -109,8 +111,13 @@ class TaskProfiler:
                 steps=self._steps,
                 total_duration_ms=self.total_duration_ms,
             )
+            await session.commit()
         except Exception as exc:
             logger.warning(f"[性能统计] 写入 task_perf_events 失败（不影响主流程）: {exc}")
+            try:
+                await session.rollback()
+            except Exception:
+                pass
 
 
 def profile_flow(flow_type: str):
