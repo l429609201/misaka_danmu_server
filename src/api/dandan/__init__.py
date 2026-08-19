@@ -140,6 +140,9 @@ from .predownload import (
     try_predownload_next_episode,
 )
 
+# 版本信息
+from .version import version_router
+
 __all__ = [
     # 路由处理器
     'DandanApiRoute',
@@ -245,6 +248,7 @@ dandan_router.include_router(taskcomment_router, prefix="/{token}/api/v2")
 dandan_router.include_router(bangumi_router, prefix="/{token}/api/v2")
 dandan_router.include_router(search_router, prefix="/{token}/api/v2")
 dandan_router.include_router(match_router, prefix="/{token}/api/v2")
+dandan_router.include_router(version_router, prefix="/{token}/api/v2")
 
 # 挂载以支持直接路径: /{token}/...
 dandan_router.include_router(comments_router, prefix="/{token}")
@@ -252,4 +256,5 @@ dandan_router.include_router(taskcomment_router, prefix="/{token}")
 dandan_router.include_router(bangumi_router, prefix="/{token}")
 dandan_router.include_router(search_router, prefix="/{token}")
 dandan_router.include_router(match_router, prefix="/{token}")
+dandan_router.include_router(version_router, prefix="/{token}")
 
