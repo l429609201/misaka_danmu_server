@@ -129,9 +129,11 @@ async def full_refresh_task(sourceId: int, session: AsyncSession, scraper_manage
 
                     if new_count > existing_count:
                         # 新弹幕更多，保存
+                        _scraper_domains = getattr(scraper, 'handled_domains', [])
                         added_count = await crud.save_danmaku_for_episode(
                             session, episode_id, comments, config_manager,
-                            fire_threshold=scraper.likes_fire_threshold
+                            fire_threshold=scraper.likes_fire_threshold,
+                            chat_server=_scraper_domains[0] if _scraper_domains else None
                         )
                         total_comments_added += added_count
                         successful_indices.append(episode_index)
@@ -325,9 +327,11 @@ async def refresh_episode_task(episodeId: int, session: AsyncSession, manager: S
         # 获取 animeId 用于文件路径
         anime_id = info["animeId"]
         async with profiler.step("写入XML文件"):
+            _scraper_domains = getattr(scraper, 'handled_domains', [])
             added_count = await crud.save_danmaku_for_episode(
                 session, episodeId, all_comments_from_source, config_manager,
-                fire_threshold=scraper.likes_fire_threshold
+                fire_threshold=scraper.likes_fire_threshold,
+                chat_server=_scraper_domains[0] if _scraper_domains else None
             )
 
         await session.commit()
@@ -488,9 +492,11 @@ async def refresh_bulk_episodes_task(episodeIds: List[int], session: AsyncSessio
                 await rate_limiter.increment(provider_name)
 
                 # 4. 保存弹幕
+                _scraper_domains = getattr(scraper, 'handled_domains', [])
                 added_count = await crud.save_danmaku_for_episode(
                     session, episode_id, all_comments_from_source, config_manager,
-                    fire_threshold=scraper.likes_fire_threshold
+                    fire_threshold=scraper.likes_fire_threshold,
+                    chat_server=_scraper_domains[0] if _scraper_domains else None
                 )
                 # 若抓到弹幕但数量未增加（save 返回 0 且内部不更新时间戳），
                 # 仍需更新 fetchedAt，避免该集下次被自动刷新逻辑误判为“超期”反复触发。

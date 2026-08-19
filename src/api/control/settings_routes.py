@@ -64,6 +64,9 @@ ALLOWED_CONFIG_KEYS = {
     "aiMatchPrompt": {"type": "text", "description": "AI智能匹配提示词"},
     "aiRecognitionPrompt": {"type": "text", "description": "AI辅助识别提示词"},
     "aiAliasValidationPrompt": {"type": "text", "description": "AI别名验证提示词"},
+    # 弹幕XML来源标签配置
+    "danmakuSourceTagEnabled": {"type": "boolean", "description": "来源标签压缩开关。关闭（默认）：写原始 provider 名如 [bilibili]；开启：写别名（默认 [0]），可减少约10%文件体积"},
+    "danmakuSourceTagAlias": {"type": "string", "description": "开关开启时使用的来源标签别名，默认为 0（即写 [0]）"},
 }
 
 
