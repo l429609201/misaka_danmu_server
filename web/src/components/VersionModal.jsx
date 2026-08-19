@@ -174,7 +174,16 @@ export const VersionModal = ({ open, onClose, currentVersion }) => {
         onmessage(event) {
           try {
             const data = JSON.parse(event.data)
-            setUpdateLogs(prev => [...prev, data.status])
+            // 下载进度消息（"下载中: X / Y"）原地替换最后一条同类消息，避免刷屏。
+            // 其他消息（阶段提示、错误等）正常追加新行。
+            const isProgressMsg = typeof data.status === 'string' && data.status.startsWith('下载中:')
+            setUpdateLogs(prev => {
+              if (isProgressMsg && prev.length > 0 && typeof prev[prev.length - 1] === 'string' && prev[prev.length - 1].startsWith('下载中:')) {
+                // 替换最后一条下载进度行
+                return [...prev.slice(0, -1), data.status]
+              }
+              return [...prev, data.status]
+            })
 
             // 更新进度条
             if (data.progress != null) {
