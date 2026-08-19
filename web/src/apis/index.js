@@ -396,6 +396,18 @@ export const getDanmakuLikesFetchEnabled = () =>
 /** 弹幕存储配置 获取点赞开关 */
 export const setDanmakuLikesFetchEnabled = data =>
   api.put('/api/ui/config/danmakuLikesFetchEnabled', data)
+/** 弹幕存储配置 来源标签压缩开关 */
+export const getDanmakuSourceTagEnabled = () =>
+  api.get('/api/ui/config/danmakuSourceTagEnabled')
+/** 弹幕存储配置 来源标签压缩开关 */
+export const setDanmakuSourceTagEnabled = data =>
+  api.put('/api/ui/config/danmakuSourceTagEnabled', data)
+/** 弹幕存储配置 来源标签别名 */
+export const getDanmakuSourceTagAlias = () =>
+  api.get('/api/ui/config/danmakuSourceTagAlias')
+/** 弹幕存储配置 来源标签别名 */
+export const setDanmakuSourceTagAlias = data =>
+  api.put('/api/ui/config/danmakuSourceTagAlias', data)
 /** 弹幕输出配置 随机颜色模式 */
 export const getDanmakuRandomColorMode = () =>
   api.get('/api/ui/config/danmakuRandomColorMode')

@@ -1793,6 +1793,14 @@ export default {
     // 设置 Tab
     labelFetchLikes: '获取点赞',
     descFetchLikes: '启用后，下载弹幕时会获取并存储点赞信息到弹幕文件中。关闭后新下载的弹幕将不包含点赞数据。',
+    labelSourceTagCompress: '来源标签压缩',
+    descSourceTagCompress: '开启后，弹幕 XML 中的来源标签由完整 provider 名称（如 [bilibili]）改写为短别名，可减少约 10% 文件体积。关闭时保持原始名称。',
+    labelSourceTagAlias: '压缩后别名',
+    descSourceTagAlias: '开启压缩时写入弹幕文件的别名，留空则使用默认值 0（即写入 [0]）。',
+    sourceTagEnabled: '已启用来源标签压缩',
+    sourceTagDisabled: '已关闭来源标签压缩',
+    sourceTagAliasSaved: '别名已保存',
+    sourceTagSaveFailed: '保存失败',
     // 快速模板弹窗
     titleQuickTemplate: '📋 选择模板',
     descQuickTemplateMovie: '选择一个预设模板，将自动填充到电影命名模板中',
