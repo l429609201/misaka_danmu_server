@@ -42,7 +42,7 @@ async def get_version(
         "success": True,
         "errorCode": 0,
         "errorMessage": "",
-        "serverName": "Misaka_Danmaku_Server",
+        "serverName": "Misaka_Danmu_Server",
         "version": APP_VERSION,
         "serverTime": now.isoformat(),
     }
