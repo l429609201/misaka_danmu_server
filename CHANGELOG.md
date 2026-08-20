@@ -5,7 +5,7 @@
 ### 新功能
 
 - **弹幕来源标签压缩**：新增 `danmakuSourceTagEnabled` 和 `danmakuSourceTagAlias` 配置项。开启后，弹幕 XML 的来源标签可由完整 provider 名称（如 `[bilibili]`）压缩为别名（默认 `[0]`），减少 XML 文件体积；关闭时保持原始 provider 标签兼容行为。
-- **新增类弹弹Play版本号接口**：新增兼容 dandanplay API v2 的 `GET /{token}/api/v2/version` 接口，返回服务端名称、当前应用版本号及 ISO 8601 格式服务器时间。
+- **新增类弹弹Play版本号接口**：新增兼容 dandanplay API v2 的 `GET /{token}/api/v2/version` 接口，用于弹幕服务器可用性校验、版本号信息查询等
 
 ### 修复
 
