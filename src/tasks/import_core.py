@@ -359,7 +359,12 @@ async def generic_import_task(
                 if mediaServerEpisodeId:
                     await crud.update_episode_media_server_id(session, episode_db_id, mediaServerEpisodeId)
 
-                added_count = await crud.save_danmaku_for_episode(session, episode_db_id, comments, config_manager)
+                # 从 scraper handled_domains[0] 取源官网域名作为 chatserver
+                _scraper_domains = getattr(manager.get_scraper(provider) if hasattr(manager, 'get_scraper') else None, 'handled_domains', None) or []
+                added_count = await crud.save_danmaku_for_episode(
+                    session, episode_db_id, comments, config_manager,
+                    chat_server=_scraper_domains[0] if _scraper_domains else None
+                )
                 await session.commit()
 
                 # 自动获取别名

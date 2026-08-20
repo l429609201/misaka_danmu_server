@@ -915,25 +915,31 @@ def _recreate_via_compose(
                 compose_file_args += f' -f {shlex.quote(cf)}'
 
     # 构建 shell 脚本
+    # why: 不再把 new_image tag 成 container_image。
+    # 原逻辑会把 :latest tag 成 :test，导致容器标签永远不变，切换分支失效。
+    # 正确做法：直接把 new_image tag 成 compose 文件中定义的镜像名（container_image），
+    # 让 compose up 使用新内容的镜像，同时保持 compose 文件中的镜像引用不变。
+    # 若两者镜像名相同（均为 :latest）则无需 tag，直接重建即可。
     tag_cmd = ''
     if new_image != container_image and container_image:
-        # 拉取的镜像与 Compose 中定义的不一致，先 tag 对齐
+        # 将新镜像 tag 成 compose 文件里定义的名称，确保 compose up 能用上新内容
         tag_cmd = (
             f'echo "=== 标记镜像: {new_image} -> {container_image} ==="; '
             f'docker tag {shlex.quote(new_image)} {shlex.quote(container_image)}; '
         )
-        logger.info(f"镜像名不一致，将 tag: {new_image} -> {container_image}")
+        logger.info(f"将新镜像 tag 对齐 compose 定义: {new_image} -> {container_image}")
 
     script = (
         f'set -e; '
         f'echo "=== 等待主进程完成响应 ==="; sleep 3; '
         f'echo "=== Docker Compose 模式: 更新服务 {compose_service} ==="; '
+        # 先显式拉取目标镜像（new_image），确保本地有最新内容
+        # why: compose pull 只拉 compose 文件里定义的镜像名，若用户切换了标签
+        #      （如从 :test 切到 :latest），compose pull 拉的仍是旧标签，起不到更新作用。
+        f'echo "=== 步骤 1/4: 拉取目标镜像 {new_image} ==="; '
+        f'docker pull {shlex.quote(new_image)} || true; '
         f'{tag_cmd}'
         f'cd {shlex.quote(compose_working_dir)}; '
-        # 关键修复：在 compose up 之前显式拉取最新镜像
-        # 即使主进程已经 docker pull 过，compose 内部仍可能使用旧的镜像引用
-        f'echo "=== 步骤 1/4: 拉取最新镜像 ==="; '
-        f'docker compose{compose_file_args} pull {shlex.quote(compose_service)} || true; '
         # 显式销毁旧容器，确保彻底替换（避免 compose up 跳过重建）
         f'echo "=== 步骤 2/4: 停止旧容器 ==="; '
         f'docker compose{compose_file_args} stop {shlex.quote(compose_service)} || true; '

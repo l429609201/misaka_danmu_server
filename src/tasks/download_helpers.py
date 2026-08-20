@@ -152,6 +152,10 @@ async def _import_episodes_iteratively(
 
     _extract_short_error_message = extract_short_error_message
 
+    # 从 scraper 的 handled_domains[0] 取源官网域名，作为 XML <chatserver> 字段
+    _scraper_domains = getattr(scraper, 'handled_domains', [])
+    _chat_server = _scraper_domains[0] if _scraper_domains else None
+
     total_comments_added = 0
     successful_episodes_indices = []
     skipped_episodes_indices = []  # 记录已跳过的分集(已有弹幕)
@@ -218,7 +222,7 @@ async def _import_episodes_iteratively(
                         actual_new = len(comments) - ep_check["existing_count"]
                         logger.info(f"[并发模式] 分集 '{episode.title}' 弹幕更新: 新{len(comments)}条 > 旧{ep_check['existing_count']}条，实际新增 {actual_new} 条")
 
-                    added_count = await crud.save_danmaku_for_episode(session, episode_db_id, comments, config_manager)
+                    added_count = await crud.save_danmaku_for_episode(session, episode_db_id, comments, config_manager, chat_server=_chat_server)
                     await session.commit()
 
                     total_comments_added += added_count
@@ -333,7 +337,7 @@ async def _import_episodes_iteratively(
                             actual_new = len(comments) - ep_check["existing_count"]
                             logger.info(f"分集 '{episode.title}' 弹幕更新: 新{len(comments)}条 > 旧{ep_check['existing_count']}条，实际新增 {actual_new} 条")
 
-                        added_count = await crud.save_danmaku_for_episode(session, episode_db_id, comments, config_manager)
+                        added_count = await crud.save_danmaku_for_episode(session, episode_db_id, comments, config_manager, chat_server=_chat_server)
                         await session.commit()
 
                         total_comments_added += added_count

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Form, Input, InputNumber, Switch, Button, Space, message, Card, Divider, Typography, Select, Row, Col, Tabs, Table, Modal, Tag, Checkbox, Tooltip, Collapse, Popover } from 'antd';
 import { FolderOpenOutlined, CheckCircleOutlined, FileOutlined, SwapOutlined, EditOutlined, SyncOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
-import { getConfig, setConfig, getAnimeLibrary, previewMigrateDanmaku, batchMigrateDanmaku, previewRenameDanmaku, batchRenameDanmaku, previewDanmakuTemplate, applyDanmakuTemplate, getTemplateVariables, getDanmakuLikesFetchEnabled, setDanmakuLikesFetchEnabled } from '@/apis';
+import { getConfig, setConfig, getAnimeLibrary, previewMigrateDanmaku, batchMigrateDanmaku, previewRenameDanmaku, batchRenameDanmaku, previewDanmakuTemplate, applyDanmakuTemplate, getTemplateVariables, getDanmakuLikesFetchEnabled, setDanmakuLikesFetchEnabled, getDanmakuSourceTagEnabled, setDanmakuSourceTagEnabled, getDanmakuSourceTagAlias, setDanmakuSourceTagAlias } from '@/apis';
 import DirectoryBrowser from '../../media-fetch/components/DirectoryBrowser';
 import { useTranslation } from 'react-i18next';
 
@@ -35,6 +35,8 @@ const DanmakuStorage = () => {
 
   // 设置分页状态
   const [likesFetchEnabled, setLikesFetchEnabled] = useState(true);
+  const [sourceTagEnabled, setSourceTagEnabled] = useState(false);
+  const [sourceTagAlias, setSourceTagAlias] = useState('0');
 
   // 迁移与重命名状态
   const [libraryItems, setLibraryItems] = useState([]);
@@ -420,6 +422,16 @@ const DanmakuStorage = () => {
         setLikesFetchEnabled(likesFetchRes?.data?.value !== 'false');
       } catch (e) {
         console.warn('获取点赞开关失败', e);
+      }
+
+      // 获取来源标签压缩配置
+      try {
+        const sourceTagRes = await getDanmakuSourceTagEnabled();
+        setSourceTagEnabled(sourceTagRes?.data?.value === 'true');
+        const sourceTagAliasRes = await getDanmakuSourceTagAlias();
+        setSourceTagAlias(sourceTagAliasRes?.data?.value || '0');
+      } catch (e) {
+        console.warn('获取来源标签配置失败', e);
       }
     } catch (error) {
       message.error(t('danmakuStorage.loadConfigFailed'));
@@ -1883,9 +1895,52 @@ const DanmakuStorage = () => {
                 }}
               />
             </div>
-            <div style={{ color: '#999', fontSize: 12 }}>
+            <div style={{ color: '#999', fontSize: 12, marginBottom: 20 }}>
               {t('danmakuStorage.descFetchLikes')}
             </div>
+
+            <Divider style={{ margin: '0 0 16px 0' }} />
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <span>{t('danmakuStorage.labelSourceTagCompress')}</span>
+              <Switch
+                checked={sourceTagEnabled}
+                onChange={async (checked) => {
+                  setSourceTagEnabled(checked);
+                  try {
+                    await setDanmakuSourceTagEnabled({ value: checked ? 'true' : 'false' });
+                    message.success(checked ? t('danmakuStorage.sourceTagEnabled') : t('danmakuStorage.sourceTagDisabled'));
+                  } catch (error) {
+                    message.error(t('danmakuStorage.sourceTagSaveFailed'));
+                    setSourceTagEnabled(!checked);
+                  }
+                }}
+              />
+            </div>
+            <div style={{ color: '#999', fontSize: 12, marginBottom: 12 }}>
+              {t('danmakuStorage.descSourceTagCompress')}
+            </div>
+            {sourceTagEnabled && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13 }}>{t('danmakuStorage.labelSourceTagAlias')}</span>
+                <Input
+                  size="small"
+                  style={{ width: 120 }}
+                  value={sourceTagAlias}
+                  placeholder="0"
+                  onChange={e => setSourceTagAlias(e.target.value)}
+                  onBlur={async () => {
+                    try {
+                      await setDanmakuSourceTagAlias({ value: sourceTagAlias || '0' });
+                      message.success(t('danmakuStorage.sourceTagAliasSaved'));
+                    } catch (error) {
+                      message.error(t('danmakuStorage.sourceTagSaveFailed'));
+                    }
+                  }}
+                />
+                <span style={{ color: '#999', fontSize: 12 }}>{t('danmakuStorage.descSourceTagAlias')}</span>
+              </div>
+            )}
           </div>
         </TabPane>
       </Tabs>

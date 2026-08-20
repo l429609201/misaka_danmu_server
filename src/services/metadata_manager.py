@@ -213,16 +213,18 @@ class MetadataSourceManager:
     async def search_aliases_from_enabled_sources(self, keyword: str, user: models.User) -> Set[str]:
         """从所有已启用的辅助元数据源并发获取别名。"""
         # 修正：调用新的、更通用的方法，并只返回别名部分
-        aliases, _, _ = await self.search_supplemental_sources(keyword, user)
+        aliases, _, _, _ = await self.search_supplemental_sources(keyword, user)
         return aliases
 
-    async def search_supplemental_sources(self, keyword: str, user: models.User) -> Tuple[Set[str], List[models.ProviderSearchInfo], Dict[str, str]]:
+    async def search_supplemental_sources(self, keyword: str, user: models.User) -> Tuple[Set[str], List[models.ProviderSearchInfo], Dict[str, str], Dict[str, List[str]]]:
         """
         从所有启用的辅助源（包括强制启用的）进行搜索。
-        返回一个元组：(别名集合, 补充搜索结果列表, 标题→类型映射)
+        返回一个元组：(别名集合, 补充搜索结果列表, 标题→类型映射, 别名来源映射)
 
         优化：对于 TMDB/Bangumi 等源，搜索结果不包含完整别名，
         需要对前几个结果调用 get_details 获取完整别名（包括中文别名）。
+
+        别名来源映射格式：{"TMDB": ["别名1", "别名2"], "Bangumi": ["别名3"], ...}
         """
         import time as _time
 
@@ -323,6 +325,8 @@ class MetadataSourceManager:
         supplemental_results: List[models.ProviderSearchInfo] = []
         # 标题→类型映射：同一标题出现类型冲突时标记为 ambiguous，禁止自动覆盖。
         title_type_map: Dict[str, str] = {}
+        # 别名来源映射：记录每个别名来自哪个元数据源
+        alias_sources: Dict[str, List[str]] = {}
 
         def _record_title_type(title: Optional[str], media_type: Optional[str]) -> None:
             if not title or not media_type:
@@ -362,7 +366,7 @@ class MetadataSourceManager:
             self.last_aux_search_timing.append((provider_name, total_provider_dur, len(res)))
             self.logger.info(f"辅助源 '{provider_name}' 为关键词 '{keyword}' 找到了 {len(res)} 个结果, {detail_alias_count} 个别名。({total_provider_dur:.0f}ms)")
 
-            # 收集别名 + 构建标题→类型映射
+            # 收集别名 + 构建标题→类型映射 + 记录别名来源
             for item in res:
                 # 标准化 type：TMDB 返回 "tv"，统一为 "tv_series"
                 item_type = item.type if hasattr(item, 'type') and item.type else None
@@ -371,18 +375,26 @@ class MetadataSourceManager:
 
                 all_aliases.add(item.title)
                 _record_title_type(item.title, item_type)
+                alias_sources.setdefault(provider_name, []).append(item.title)
+
                 if item.aliasesCn:
                     all_aliases.update(item.aliasesCn)
                     for alias in item.aliasesCn:
                         _record_title_type(alias, item_type)
+                        alias_sources.setdefault(provider_name, []).append(alias)
                 if item.aliasesJp:
                     all_aliases.update(item.aliasesJp)
+                    for alias in item.aliasesJp:
+                        alias_sources.setdefault(provider_name, []).append(alias)
                 if item.nameJp:
                     all_aliases.add(item.nameJp)
+                    alias_sources.setdefault(provider_name, []).append(item.nameJp)
                 if item.nameEn:
                     all_aliases.add(item.nameEn)
+                    alias_sources.setdefault(provider_name, []).append(item.nameEn)
                 if item.nameRomaji:
                     all_aliases.add(item.nameRomaji)
+                    alias_sources.setdefault(provider_name, []).append(item.nameRomaji)
 
                 # 补充列表
                 if provider_name in ['douban', '360']:
@@ -412,16 +424,22 @@ class MetadataSourceManager:
                 if bgm_data is not None:
                     local = await bgm_data.get_aliases_by_title(keyword)
                     if local:
+                        bgm_aliases = []
                         if local.get("name_jp"):
                             all_aliases.add(local["name_jp"])
+                            bgm_aliases.append(local["name_jp"])
                         if local.get("name_en"):
                             all_aliases.add(local["name_en"])
+                            bgm_aliases.append(local["name_en"])
                         for cn in (local.get("aliases_cn") or []):
                             all_aliases.add(cn)
+                            bgm_aliases.append(cn)
+                        if bgm_aliases:
+                            alias_sources.setdefault("bangumi-data", []).extend(bgm_aliases)
         except Exception as e:
             self.logger.debug(f"bangumi-data 本地别名补充失败: {e}")
 
-        return {alias for alias in all_aliases if alias}, supplemental_results, title_type_map
+        return {alias for alias in all_aliases if alias}, supplemental_results, title_type_map, alias_sources
 
     async def supplement_empty_search_results(
         self,

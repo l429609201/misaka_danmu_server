@@ -430,7 +430,7 @@ async def auto_search_and_import_task(
                     logger.info("一个或多个元数据源已启用辅助搜索，开始执行...")
 
                     # 调用正确的方法
-                    supplemental_aliases, _ = await metadata_manager.search_supplemental_sources(main_title, user_model)
+                    supplemental_aliases, _, _, _ = await metadata_manager.search_supplemental_sources(main_title, user_model)
                     aliases.update(supplemental_aliases)
 
                     logger.info(f"所有辅助搜索完成，最终别名集大小: {len(aliases)}")

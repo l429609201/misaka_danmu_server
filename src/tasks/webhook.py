@@ -17,6 +17,7 @@ from src.utils import (
     parse_search_keyword, ai_type_and_season_mapping_and_correction,
     SearchTimer, SEARCH_TYPE_WEBHOOK
 )
+from src.utils.filename_parser import is_movie_by_title
 from src.utils.search_timer import SubStepTiming
 from src.utils.task_profiler import TaskProfiler, FLOW_WEBHOOK_IMPORT
 

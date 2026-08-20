@@ -40,7 +40,8 @@ async def save_danmaku_for_episode(
     episode_id: int,
     comments: List[Dict[str, Any]],
     config_manager = None,
-    fire_threshold: int = 1000
+    fire_threshold: int = 1000,
+    chat_server: Optional[str] = None,
 ) -> int:
     """
     将弹幕写入XML文件，并更新数据库记录，返回新增数量。
@@ -79,12 +80,33 @@ async def save_danmaku_for_episode(
 
     # 获取原始弹幕服务器信息
     provider_name = episode.source.providerName
-    chat_server_map = {
-        "bilibili": "comment.bilibili.com"
-    }
+
+    # 读取来源标签配置（开关 + 别名）
+    # 开关关闭（默认）：写原始 provider 名，如 [bilibili]、[tencent]
+    # 开关开启：写别名（默认 0，即 [0]），别名为空时也用 0
+    source_tag_enabled = False
+    source_tag_alias = "0"
+    if config_manager is not None:
+        try:
+            source_tag_enabled = (await config_manager.get('danmakuSourceTagEnabled', 'false')).lower() == 'true'
+            source_tag_alias = await config_manager.get('danmakuSourceTagAlias', '0') or '0'
+        except Exception:
+            pass
+
+    # 决定写入 p 属性的来源标签
+    if source_tag_enabled:
+        # 开关开启：使用别名（默认 0）
+        effective_source_tag = source_tag_alias
+    else:
+        # 开关关闭：使用原始 provider 名
+        effective_source_tag = provider_name
+
+    # chatserver：调用方可传入源官网域名；未传则使用默认值
+    effective_chat_server = chat_server if chat_server else "danmaku.misaka.org"
+
     xml_content = await asyncio.to_thread(
         _generate_xml_from_comments,
-        comments, episode_id, provider_name, chat_server_map.get(provider_name, "danmaku.misaka.org")
+        comments, episode_id, provider_name, effective_chat_server, effective_source_tag
     )
 
     # 判断路径：刷新使用原有路径，首次下载生成新路径
@@ -243,22 +265,33 @@ def _generate_xml_from_comments(
     comments: List[Dict[str, Any]],
     episode_id: int,
     provider_name: Optional[str] = "misaka",
-    chat_server: Optional[str] = "danmaku.misaka.org"
+    chat_server: Optional[str] = "danmaku.misaka.org",
+    source_tag: Optional[str] = None,
 ) -> str:
-    """根据弹幕字典列表生成符合dandanplay标准的XML字符串。"""
+    """根据弹幕字典列表生成符合dandanplay标准的XML字符串。
+
+    Args:
+        source_tag: p 属性末尾写入的来源标签名（不含方括号）。
+                    为 None 时不写来源标签；为空字符串时 fallback 到 provider_name。
+    """
+    # 决定实际写入的来源标签：None=不写，否则用传入值，空串 fallback 到 provider_name
+    effective_tag = source_tag if source_tag is not None else None
+    if effective_tag == "":
+        effective_tag = provider_name
+
     root = ET.Element('i')
     ET.SubElement(root, 'chatserver').text = chat_server
     ET.SubElement(root, 'chatid').text = str(episode_id)
     ET.SubElement(root, 'mission').text = '0'
     ET.SubElement(root, 'maxlimit').text = '2000'
-    ET.SubElement(root, 'source').text = 'k-v' # 保持与官方格式一致
+    ET.SubElement(root, 'source').text = 'k-v'  # 保持与官方格式一致
     # 新增字段
     ET.SubElement(root, 'sourceprovider').text = provider_name
     ET.SubElement(root, 'datasize').text = str(len(comments))
 
     for comment in comments:
-        # 规范化 p 属性，确保是标准的 4 位格式，并补全来源标签
-        p_attr = _normalize_p_attr(str(comment.get('p', '')), provider_name)
+        # 规范化 p 属性；effective_tag 为 None 时不附加来源标签
+        p_attr = _normalize_p_attr(str(comment.get('p', '')), effective_tag)
         d = ET.SubElement(root, 'd', p=p_attr)
         d.text = comment.get('m', '')
     return ET.tostring(root, encoding='unicode', xml_declaration=True)

@@ -2205,7 +2205,11 @@ def _find_matching_asset(
     return None
 
 
-def _persist_new_version_to_backup(extract_dir: Path, release_version: str) -> None:
+def _persist_new_version_to_backup(
+    extract_dir: Path,
+    release_version: str,
+    remote_package_json: Optional[Dict] = None,
+) -> None:
     """将临时目录中解压好的新版弹幕源持久化到备份目录（覆盖运行 .so 之前调用）。
 
     why(断无限重启循环)：备份目录是唯一持久化的位置，且重启恢复逻辑依据
@@ -2216,6 +2220,13 @@ def _persist_new_version_to_backup(extract_dir: Path, release_version: str) -> N
 
     versions.json 的 updated_at 必须写为当前时间且版本号为新版，确保重启后
     backup.updated_at > scrapers.updated_at 时恢复到的是新版本。
+
+    Args:
+        remote_package_json: 下载前从远端仓库预拉取的 package.json 内容（dict）。
+            why：全量包（tar.gz）通常不内置 package.json 和 versions.json，
+            此时 scrapers_versions/scrapers_hashes 全为空，_verify_backup_version
+            校验失败 → 循环重启。用远端数据兜底可确保写出完整的 backup/package.json
+            和 backup/versions.json。
     """
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -2271,6 +2282,37 @@ def _persist_new_version_to_backup(extract_dir: Path, release_version: str) -> N
                 scrapers_hashes = tmp_ver_data.get('hashes', {}) or {}
         except Exception as e:
             logger.warning(f"读取临时 versions.json 版本信息失败: {e}")
+
+    # 远端 package.json 兜底
+    # why：全量包（tar.gz）通常不内置 package.json 且可能也没有 versions.json，
+    #      此时 scrapers_versions/scrapers_hashes 全为空，_verify_backup_version
+    #      校验失败 → 循环重启。用调用方传入的远端数据补全，确保 backup/versions.json
+    #      和 backup/package.json 总能携带正确的版本信息。
+    if remote_package_json and (not scrapers_versions or not min_server_version):
+        try:
+            if not min_server_version:
+                min_server_version = (
+                    remote_package_json.get('min_server_version')
+                    or remote_package_json.get('min_fetchable_version')
+                )
+            if not scrapers_versions:
+                for scraper_name, scraper_info in (remote_package_json.get('resources', {}) or {}).items():
+                    if isinstance(scraper_info, dict):
+                        ver = scraper_info.get('version')
+                        if ver:
+                            scrapers_versions[scraper_name] = ver
+                        hashes = scraper_info.get('hashes', {}) or {}
+                        if platform_key in hashes:
+                            scrapers_hashes[scraper_name] = hashes[platform_key]
+            # 把远端 package.json（含正确版本号）也写入备份目录，供前端显示版本
+            backup_pkg_content = dict(remote_package_json)
+            backup_pkg_content['version'] = release_version
+            (BACKUP_DIR / "package.json").write_text(
+                json.dumps(backup_pkg_content, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            logger.info(f"全量包内无版本文件，已用远端 package.json 兜底写入备份目录（{len(scrapers_versions)} 个源版本）")
+        except Exception as e:
+            logger.warning(f"远端 package.json 兜底失败: {e}")
 
     # 3) 写备份目录的 versions.json（关键：updated_at=当前时间，version=新版）
     versions_data = {
