@@ -5,7 +5,7 @@
 ### 新功能
 
 - **弹幕来源标签压缩**：新增 `danmakuSourceTagEnabled` 和 `danmakuSourceTagAlias` 配置项。开启后，弹幕 XML 的来源标签可由完整 provider 名称（如 `[bilibili]`）压缩为别名（默认 `[0]`），减少 XML 文件体积；关闭时保持原始 provider 标签兼容行为。
-- **新增类弹弹Play版本号接口**：新增兼容 dandanplay API v2 的 `GET /{token}/api/v2/version` 接口，返回服务端名称、当前应用版本号及 ISO 8601 格式服务器时间；服务端名称修正为 `Misaka_Danmu_Server`。
+- **新增类弹弹Play版本号接口**：新增兼容 dandanplay API v2 的 `GET /{token}/api/v2/version` 接口，返回服务端名称、当前应用版本号及 ISO 8601 格式服务器时间。
 
 ### 修复
 
@@ -18,6 +18,7 @@
 - **一键更新进度显示**：前端将连续的“下载中”消息原地更新为单条进度记录，避免下载过程中日志区域持续刷屏；其他阶段提示和错误消息仍按行追加。
 - **弹幕 XML 来源信息**：保存弹幕时支持从弹幕源 `handled_domains` 自动获取来源官网作为 `<chatserver>`，并将来源标签压缩配置统一应用于首次导入、增量导入、单集刷新、批量刷新和全量刷新。
 - **异步文件写入**：弹幕 XML 生成及文件写入相关的 CPU/IO 密集操作放入线程池执行，减少对事件循环的同步阻塞。
+- **调整docker套接字授权**：改为对容器运行用户附加docker权限组。
 
 ### 兼容性说明
 
