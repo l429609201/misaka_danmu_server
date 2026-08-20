@@ -190,7 +190,7 @@ async def match_trace(
 
         if has_aux:
             user_obj = models.User(id=0, username="debug")
-            aliases, supp_results, aux_map = await metadata_manager.search_supplemental_sources(
+            aliases, supp_results, aux_map, alias_sources = await metadata_manager.search_supplemental_sources(
                 search_title, user_obj
             )
             steps.append(TraceStep(
