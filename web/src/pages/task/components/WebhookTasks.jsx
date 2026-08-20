@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { List, Button, Tag, Space, Card, Empty, Tooltip, Input, Modal } from 'antd'
-import { DeleteOutlined, CheckOutlined, MinusOutlined, PlayCircleOutlined, SearchOutlined, ClearOutlined } from '@ant-design/icons'
+import { DeleteOutlined, CheckOutlined, MinusOutlined, PlayCircleOutlined, SearchOutlined, ClearOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useTranslation } from 'react-i18next'
 import { getWebhookTasks, deleteWebhookTasks, runWebhookTasksNow, clearAllWebhookTasks } from '../../../apis'
@@ -37,8 +37,11 @@ export const WebhookTasks = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [searchModalVisible, setSearchModalVisible] = useState(false)
   const [tempSearchTerm, setTempSearchTerm] = useState('')
+  const [pollingInterval, setPollingInterval] = useState(30) // 默认30秒
+  const [lastRefreshTime, setLastRefreshTime] = useState(null)
   const messageApi = useMessage()
   const modalApi = useModal()
+  const pollingTimerRef = useRef(null)
 
   const fetchTasks = useCallback(async () => {
     setLoading(true)
@@ -50,6 +53,7 @@ export const WebhookTasks = () => {
       })
       setTaskList(data.list || [])
       setPagination(prev => ({ ...prev, total: data.total || 0 }))
+      setLastRefreshTime(new Date())
     } catch (error) {
       messageApi.error(t('webhookTasks.fetchFailed'))
     } finally {
@@ -59,7 +63,43 @@ export const WebhookTasks = () => {
 
   useEffect(() => {
     fetchTasks()
-  }, [fetchTasks])
+
+    // 启动轮询
+    const startPolling = () => {
+      if (pollingTimerRef.current) {
+        clearInterval(pollingTimerRef.current)
+      }
+      pollingTimerRef.current = setInterval(() => {
+        fetchTasks()
+      }, pollingInterval * 1000)
+    }
+
+    startPolling()
+
+    // 页面可见性变化处理
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // 页面隐藏时停止轮询
+        if (pollingTimerRef.current) {
+          clearInterval(pollingTimerRef.current)
+          pollingTimerRef.current = null
+        }
+      } else {
+        // 页面恢复时重新启动轮询
+        startPolling()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    // 清理函数
+    return () => {
+      if (pollingTimerRef.current) {
+        clearInterval(pollingTimerRef.current)
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [fetchTasks, pollingInterval])
 
   const handleSelectionChange = (task, checked) => {
     setSelectedTasks(prev =>
@@ -196,7 +236,26 @@ export const WebhookTasks = () => {
                 }}
               />
             </Tooltip>
+            <Tooltip title={t('webhookTasks.refreshTip')}>
+              <Button
+                type="default"
+                shape="circle"
+                icon={<ReloadOutlined />}
+                loading={loading}
+                onClick={() => fetchTasks()}
+              />
+            </Tooltip>
           </Space>
+        }
+        title={
+          <div className="flex items-center justify-between">
+            <span>{t('webhookTasks.title')}</span>
+            {lastRefreshTime && (
+              <span className="text-xs text-gray-400 font-normal ml-4">
+                {t('webhookTasks.lastRefresh')}{dayjs(lastRefreshTime).format('HH:mm:ss')}
+              </span>
+            )}
+          </div>
         }
       >
         <div>

@@ -3373,6 +3373,7 @@ export default {
     bulkDeleteTip: '批量删除',
     clearAllTip: '清空所有任务',
     searchTip: '搜索任务',
+    refreshTip: '刷新列表',
     source: '来源: ',
     receivedAt: '接收于: ',
     scheduledAt: '计划于: ',
@@ -3382,6 +3383,8 @@ export default {
     cancel: '取消',
     searchPlaceholder: '请输入任务标题关键词',
     currentSearch: '当前搜索: ',
+    title: 'Webhook 任务列表',
+    lastRefresh: '最后刷新: ',
   },
 
   // 流控面板 RateLimitPanel

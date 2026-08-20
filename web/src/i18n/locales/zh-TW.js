@@ -2835,6 +2835,7 @@ export default {
     bulkDeleteTip: '批次刪除',
     clearAllTip: '清空所有任務',
     searchTip: '搜尋任務',
+    refreshTip: '刷新列表',
     source: '來源: ',
     receivedAt: '接收於: ',
     scheduledAt: '計劃於: ',
@@ -2844,6 +2845,8 @@ export default {
     cancel: '取消',
     searchPlaceholder: '請輸入任務標題關鍵詞',
     currentSearch: '目前搜尋: ',
+    title: 'Webhook 任務列表',
+    lastRefresh: '最後刷新: ',
   },
 
   // 流控面板 RateLimitPanel
