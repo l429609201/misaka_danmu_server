@@ -2385,6 +2385,19 @@ def _overlay_extract_dir_to_scrapers(
             except Exception as e:
                 logger.warning(f"清理旧文件 {stale_name} 失败: {e}")
 
+    # 【修复】把 backup 目录的 versions.json 和 package.json 也同步到运行目录
+    # why: 全量包可能不含这两个文件，_persist_new_version_to_backup 会用远端兜底生成
+    #      并写入 backup/，但临时目录里没有 → _overlay 不会复制 → scrapers/ 的版本文件不更新。
+    #      必须把 backup 里生成的版本文件也复制到运行目录，确保 scraper_manager 能读到正确版本。
+    try:
+        for meta_file in ["versions.json", "package.json"]:
+            backup_meta = BACKUP_DIR / meta_file
+            if backup_meta.exists():
+                _shutil.copy2(backup_meta, scrapers_dir / meta_file)
+                logger.info(f"已同步 backup/{meta_file} 到运行目录")
+    except Exception as e:
+        logger.warning(f"同步备份目录版本文件到运行目录失败: {e}")
+
     # 清理临时目录
     _shutil.rmtree(extract_dir, ignore_errors=True)
     return overlay_count
