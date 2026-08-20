@@ -25,6 +25,7 @@ from src.services.download_task_manager import TaskStatus
 from src.api.dependencies import get_scraper_manager, get_config_manager
 from src._version import APP_VERSION
 from src.core.env import is_docker_environment as _is_docker_environment
+from src.utils.scraper_version_manager import ScraperVersionManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -696,8 +697,6 @@ async def backup_scrapers(
                 backup_versions_file.write_text(
                     json.dumps(built_versions, indent=2, ensure_ascii=False)
                 )
-                # 用新构建的数据覆盖本地 versions 变量，供后续备份元数据版本号提取使用
-                versions = built_versions
                 logger.info(
                     f"已用新版本数据写入备份目录 versions.json："
                     f"{len(merged_scrapers)} 个源版本, {len(merged_hashes)} 个哈希值"
@@ -707,6 +706,43 @@ async def backup_scrapers(
         elif SCRAPERS_VERSIONS_FILE.exists():
             shutil.copy2(SCRAPERS_VERSIONS_FILE, BACKUP_DIR / "versions.json")
             logger.info("已备份 versions.json")
+
+        # 使用 ScraperVersionManager 生成并保存 manifest
+        try:
+            manifest = ScraperVersionManager.extract_manifest_from_legacy(
+                SCRAPERS_PACKAGE_FILE,
+                SCRAPERS_VERSIONS_FILE,
+                scrapers_dir
+            )
+
+            # 如果有新的 package_data，更新 manifest 中的全局版本号
+            if package_data is not None:
+                manifest["version"] = package_data.get("version", manifest["version"])
+                if package_data.get("min_server_version"):
+                    manifest["min_server_version"] = package_data["min_server_version"]
+
+            # 如果有新的版本数据，更新 manifest 中的各源版本
+            if new_versions_data is not None:
+                manifest["updated_at"] = datetime.now().isoformat()
+                for scraper_name, version in new_versions_data.items():
+                    if scraper_name not in manifest["sources"]:
+                        manifest["sources"][scraper_name] = {}
+                    manifest["sources"][scraper_name]["version"] = version
+
+            # 如果有新的哈希数据，更新 manifest
+            if new_hashes_data is not None:
+                for scraper_name, hash_value in new_hashes_data.items():
+                    if scraper_name not in manifest["sources"]:
+                        manifest["sources"][scraper_name] = {}
+                    manifest["sources"][scraper_name]["hash"] = hash_value
+
+            # 保存 manifest 到 scrapers 和 backup 目录
+            ScraperVersionManager.save_manifest(manifest, scrapers_dir)
+            ScraperVersionManager.save_manifest(manifest, BACKUP_DIR)
+            logger.info("已生成并备份 scraper_manifest.json")
+
+        except Exception as e:
+            logger.warning(f"生成 manifest 失败: {e}")
 
         # 读取 package.json 的版本号（用于元数据）
         package_version = None
@@ -2314,11 +2350,12 @@ def _persist_new_version_to_backup(
         except Exception as e:
             logger.warning(f"远端 package.json 兜底失败: {e}")
 
-    # 3) 写备份目录的 versions.json（关键：updated_at=当前时间，version=新版）
+    # 3) 写备份目录的 versions.json（关键：updated_at=当前时间）
+    # P1-1: 统一版本号权威源 - versions.json 不再存储全局 version 字段
     versions_data = {
         "platform": platform_info['platform'],
         "type": platform_info['arch'],
-        "version": release_version,
+        # "version": release_version,  # ❌ 已移除：统一使用 package.json
         "scrapers": scrapers_versions,
         "hashes": scrapers_hashes,
         "full_replace": True,

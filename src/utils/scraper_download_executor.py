@@ -1564,10 +1564,11 @@ class ScraperDownloadExecutor:
             # 从 package_data 读取全局版本限制字段
             min_server_version = package_data.get('min_server_version')
 
+            # P1-1: 统一版本号权威源 - versions.json 不再存储全局 version 字段
             full_versions_data = {
                 "platform": platform_info['platform'],
                 "type": platform_info['arch'],
-                "version": package_data.get("version", "unknown"),
+                # "version": package_data.get("version", "unknown"),  # ❌ 已移除：统一使用 package.json
                 "scrapers": merged_scrapers,
                 "updated_at": datetime.now().isoformat()
             }
@@ -1699,11 +1700,12 @@ class ScraperDownloadExecutor:
                 except Exception as e:
                     logger.warning(f"远端 package.json 兜底失败: {e}")
 
-            # 构建 versions.json 数据
+            # P1-1: 统一版本号权威源 - versions.json 不再存储全局 version 字段
+            # package.json 是唯一权威版本源，versions.json 只保留 updated_at 和各源详情
             versions_data = {
                 "platform": platform_info['platform'],
                 "type": platform_info['arch'],
-                "version": release_version,
+                # "version": release_version,  # ❌ 已移除：统一使用 package.json
                 "scrapers": scrapers_versions,
                 "hashes": scrapers_hashes,
                 "full_replace": True,
