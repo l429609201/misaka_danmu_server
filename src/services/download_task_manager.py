@@ -51,6 +51,7 @@ class DownloadTask:
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
+    success_message: Optional[str] = None  # 成功完成时的友好消息
     repo_url: str = ""
     use_full_replace: bool = False
     branch: str = "main"  # 添加分支字段
@@ -79,6 +80,7 @@ class DownloadTask:
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "error_message": self.error_message,
+            "success_message": self.success_message,  # 成功完成时的友好消息
             "repo_url": self.repo_url,
             "use_full_replace": self.use_full_replace,
             "need_restart": self.need_restart,

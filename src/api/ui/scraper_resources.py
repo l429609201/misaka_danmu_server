@@ -1636,6 +1636,7 @@ async def download_progress_stream(
                 "skipped_count": len(current_task.progress.skipped),
                 "failed_count": len(current_task.progress.failed),
                 "error_message": current_task.error_message,
+                "success_message": current_task.success_message,  # 成功完成时的友好消息
                 "need_restart": current_task.need_restart or current_task.restart_pending,  # 添加重启标记
             }
 
@@ -1657,7 +1658,10 @@ async def download_progress_stream(
                 else:
                     # 热加载完成，不需要重启容器
                     logger.info(f"[SSE] 任务 {task_id} 热加载完成，发送 done 消息 (need_restart=False)")
-                    yield f"data: {json.dumps({'type': 'done', 'status': 'completed', 'need_restart': False}, ensure_ascii=False)}\n\n"
+                    done_data = {'type': 'done', 'status': 'completed', 'need_restart': False}
+                    if current_task.success_message:
+                        done_data['success_message'] = current_task.success_message
+                    yield f"data: {json.dumps(done_data, ensure_ascii=False)}\n\n"
                 logger.info(f"[SSE] 任务 {task_id} done 消息已发送，退出 SSE 流")
                 break
 
@@ -1671,7 +1675,10 @@ async def download_progress_stream(
                 # 等待一小段时间，确保前端有时间处理最后的 progress 消息
                 await asyncio.sleep(0.1)
                 logger.info(f"[SSE] 任务 {task_id} 发送 done 消息")
-                yield f"data: {json.dumps({'type': 'done', 'status': current_task.status.value, 'need_restart': current_task.need_restart}, ensure_ascii=False)}\n\n"
+                done_data = {'type': 'done', 'status': current_task.status.value, 'need_restart': current_task.need_restart}
+                if current_task.success_message:
+                    done_data['success_message'] = current_task.success_message
+                yield f"data: {json.dumps(done_data, ensure_ascii=False)}\n\n"
                 logger.info(f"[SSE] 任务 {task_id} done 消息已发送，退出 SSE 流")
                 break
 
