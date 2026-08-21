@@ -396,11 +396,24 @@ async def _perform_update(
                 )
 
                 if asset_info:
+                    # 使用部署检测工具判断是否需要延迟覆盖
+                    from src.utils.scraper_deployment_checker import should_restart_for_deployment
+                    deployment_strategy = should_restart_for_deployment(
+                        scrapers_dir=scrapers_dir,
+                        backup_dir=Path(config_manager.get_sync("scraperBackupDir", "config/backup")),
+                        scraper_manager=scraper_manager,
+                        logger_instance=logger
+                    )
+
+                    # 如果有已加载的弹幕源，必须使用 defer_overlay 避免覆盖运行中的 .so
+                    need_defer = deployment_strategy["need_restart"]
+
                     success = await _download_and_extract_release(
                         asset_info=asset_info,
                         scrapers_dir=scrapers_dir,
                         headers=headers,
-                        proxy=proxy_to_use
+                        proxy=proxy_to_use,
+                        defer_overlay=need_defer  # 关键：有已加载的 .so 时延迟覆盖
                     )
 
                     if success:
@@ -558,41 +571,47 @@ async def _perform_update(
                         import sys
                         docker_available = is_docker_socket_available() and is_running_in_docker()
 
-                        # 判断是否是首次下载（本地没有任何弹幕源）
-                        existing_scrapers = set(scraper_manager.scrapers.keys())
-                        is_first_download = len(existing_scrapers) == 0
+                        # 根据部署策略决定后续操作
+                        # need_defer=True: 有已加载的 .so，文件已部署到 backup，需要重启
+                        # need_defer=False: 没有已加载的 .so，文件已部署到 scrapers，可以热加载
 
-                        if is_first_download:
-                            # 首次下载：执行热加载
-                            try:
-                                await scraper_manager.load_and_sync_scrapers()
-                                logger.info(f"弹幕源首次下载完成（热加载）: {release_version}")
-                            except Exception as e:
-                                logger.error(f"热加载失败: {e}")
-                        elif docker_available:
-                            # 非首次下载且有 Docker socket：重启容器
-                            logger.info("全量替换完成，准备重启容器...")
+                        if need_defer:
+                            # 有已加载的弹幕源，必须重启容器
+                            logger.info(f"部署策略: {deployment_strategy['reason']}")
 
-                            # 刷新日志缓冲，确保日志输出
-                            for handler in logging.getLogger().handlers:
-                                handler.flush()
-                            sys.stdout.flush()
-                            sys.stderr.flush()
+                            if docker_available:
+                                # 有 Docker socket：重启容器
+                                logger.info("全量替换完成，准备重启容器...")
 
-                            # 等待日志写入完成
-                            await asyncio.sleep(1.0)
+                                # 刷新日志缓冲，确保日志输出
+                                for handler in logging.getLogger().handlers:
+                                    handler.flush()
+                                sys.stdout.flush()
+                                sys.stderr.flush()
 
-                            container_name = await config_manager.get("containerName", "misaka-danmu-server")
-                            result = await restart_container(container_name)
-                            if result.get("success"):
-                                logger.info(f"弹幕源全量替换完成: {local_version} -> {release_version}，已向容器 '{container_name}' 发送重启指令")
+                                # 等待日志写入完成
+                                await asyncio.sleep(1.0)
+
+                                container_name = await config_manager.get("containerName", "misaka-danmu-server")
+                                result = await restart_container(container_name)
+                                if result.get("success"):
+                                    logger.info(f"弹幕源全量替换完成: {local_version} -> {release_version}，已向容器 '{container_name}' 发送重启指令")
+                                else:
+                                    logger.warning(f"重启容器失败: {result.get('message')}")
+                                    logger.warning("⚠️ 请手动重启容器以加载新的弹幕源")
                             else:
-                                logger.warning(f"重启容器失败: {result.get('message')}")
+                                # 没有 Docker socket：提示手动重启
+                                logger.warning("未检测到 Docker socket")
+                                logger.warning(f"弹幕源全量替换完成: {local_version} -> {release_version}，新版本已部署到备份目录")
                                 logger.warning("⚠️ 请手动重启容器以加载新的弹幕源")
                         else:
-                            # 非首次下载且没有 Docker socket：仅提示手动重启，不执行热加载
-                            logger.info(f"弹幕源全量替换下载完成: {local_version} -> {release_version}")
-                            logger.warning("⚠️ 未检测到 Docker 套接字，请手动重启容器以加载新的弹幕源（.so 文件需要重启才能生效）")
+                            # 没有已加载的弹幕源，可以直接热加载
+                            logger.info(f"部署策略: {deployment_strategy['reason']}")
+                            try:
+                                await scraper_manager.load_and_sync_scrapers()
+                                logger.info(f"弹幕源全量替换完成（热加载）: {local_version} -> {release_version}")
+                            except Exception as e:
+                                logger.error(f"热加载失败: {e}")
 
                         # 清除版本缓存
                         import src.api.ui.scraper_resources as sr
