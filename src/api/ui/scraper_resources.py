@@ -881,6 +881,10 @@ async def load_resources_stream(
                         yield f"data: {json.dumps({'type': 'error', 'message': '未配置资源仓库链接'}, ensure_ascii=False)}\n\n"
                         return
 
+                    # 获取分支/标签参数（前端传递的版本选择）
+                    branch = payload.get("branch", "main")
+                    logger.info(f"用户选择的版本/分支: {branch}")
+
                     # 获取平台信息
                     platform_key = get_platform_key()
                     platform_info = get_platform_info()
@@ -907,7 +911,7 @@ async def load_resources_stream(
                         if github_token:
                             headers["Authorization"] = f"Bearer {github_token}"
 
-                    base_url = _build_base_url(repo_info, repo_url, gitee_info)
+                    base_url = _build_base_url(repo_info, repo_url, gitee_info, branch)  # 传递 branch 参数
 
                     # 获取代理配置
                     proxy_url = await config_manager.get("proxyUrl", "")
@@ -936,7 +940,8 @@ async def load_resources_stream(
                             gitee_info=gitee_info,
                             platform_key=platform_key,
                             headers=headers,
-                            proxy=proxy_to_use
+                            proxy=proxy_to_use,
+                            tag_or_branch=branch  # 传递用户选择的版本/分支
                         )
 
                         if not asset_info:
@@ -953,7 +958,8 @@ async def load_resources_stream(
                             repo_info=repo_info,
                             platform_key=platform_key,
                             headers=headers,
-                            proxy=proxy_to_use
+                            proxy=proxy_to_use,
+                            tag_or_branch=branch  # 传递用户选择的版本/分支
                         )
 
                         if not asset_info:
@@ -1883,16 +1889,18 @@ async def _fetch_github_release_asset(
     repo_info: Dict[str, str],
     platform_key: str,
     headers: Dict[str, str],
-    proxy: Optional[str] = None
+    proxy: Optional[str] = None,
+    tag_or_branch: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """
-    从 GitHub Releases 获取最新版本的压缩包资产信息
+    从 GitHub Releases 获取压缩包资产信息
 
     Args:
         repo_info: 仓库信息 (owner, repo, proxy, proxy_type)
         platform_key: 平台标识 (如 linux-x86, windows-amd64)
         headers: HTTP 请求头
         proxy: 代理URL
+        tag_or_branch: 标签或分支名（如 "v2.2.8" 或 "main"）。为 None 或 "main"/"master" 时使用 latest
 
     Returns:
         包含 download_url, filename, version 的字典，失败返回 None
@@ -1902,8 +1910,22 @@ async def _fetch_github_release_asset(
     github_proxy = repo_info.get('proxy')  # 用户配置的 GitHub 加速链接
     proxy_type = repo_info.get('proxy_type')
 
+    # 判断是使用特定标签还是最新版本
+    # 如果 tag_or_branch 是 None、空字符串、"main" 或 "master"，使用 latest
+    # 否则使用指定的标签
+    use_latest = not tag_or_branch or tag_or_branch.strip() in ("", "main", "master")
+
     # GitHub Releases API - 原始 URL
-    original_api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+    if use_latest:
+        original_api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+        logger.info(f"使用 GitHub Releases latest API")
+    else:
+        # 确保标签名带 v 前缀（如果用户输入的是纯数字版本）
+        tag = tag_or_branch.strip()
+        if not tag.startswith('v') and tag[0].isdigit():
+            tag = f"v{tag}"
+        original_api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+        logger.info(f"使用 GitHub Releases 指定标签: {tag}")
 
     # 构建要尝试的 API URL 列表
     api_urls_to_try = []
@@ -1972,16 +1994,18 @@ async def _fetch_gitee_release_asset(
     gitee_info: Dict[str, str],
     platform_key: str,
     headers: Dict[str, str],
-    proxy: Optional[str] = None
+    proxy: Optional[str] = None,
+    tag_or_branch: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """
-    从 Gitee Releases 获取最新版本的压缩包资产信息
+    从 Gitee Releases 获取压缩包资产信息
 
     Args:
         gitee_info: Gitee 仓库信息 (owner, repo)
         platform_key: 平台标识 (如 linux-x86, windows-amd64)
         headers: HTTP 请求头
         proxy: 代理URL
+        tag_or_branch: 标签或分支名（如 "v2.2.8" 或 "main"）。为 None 或 "main"/"master" 时使用 latest
 
     Returns:
         包含 download_url, filename, version 的字典，失败返回 None
@@ -1989,9 +2013,20 @@ async def _fetch_gitee_release_asset(
     owner = gitee_info['owner']
     repo = gitee_info['repo']
 
-    # Gitee Releases API - 获取最新发行版
-    # Gitee API: https://gitee.com/api/v5/repos/{owner}/{repo}/releases/latest
-    api_url = f"https://gitee.com/api/v5/repos/{owner}/{repo}/releases/latest"
+    # 判断是使用特定标签还是最新版本
+    use_latest = not tag_or_branch or tag_or_branch.strip() in ("", "main", "master")
+
+    # Gitee Releases API
+    if use_latest:
+        api_url = f"https://gitee.com/api/v5/repos/{owner}/{repo}/releases/latest"
+        logger.info(f"使用 Gitee Releases latest API")
+    else:
+        # 确保标签名带 v 前缀（如果用户输入的是纯数字版本）
+        tag = tag_or_branch.strip()
+        if not tag.startswith('v') and tag[0].isdigit():
+            tag = f"v{tag}"
+        api_url = f"https://gitee.com/api/v5/repos/{owner}/{repo}/releases/tags/{tag}"
+        logger.info(f"使用 Gitee Releases 指定标签: {tag}")
 
     timeout = httpx.Timeout(60.0, read=60.0)
     try:

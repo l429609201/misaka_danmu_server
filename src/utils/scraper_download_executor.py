@@ -470,7 +470,8 @@ class ScraperDownloadExecutor:
                 gitee_info=gitee_info,
                 platform_key=platform_key,
                 headers=headers,
-                proxy=proxy_to_use
+                proxy=proxy_to_use,
+                tag_or_branch=self.task.branch  # 传递用户选择的版本/分支
             )
         elif repo_info:
             self._log("正在从 GitHub Releases 获取压缩包...")
@@ -478,7 +479,8 @@ class ScraperDownloadExecutor:
                 repo_info=repo_info,
                 platform_key=platform_key,
                 headers=headers,
-                proxy=proxy_to_use
+                proxy=proxy_to_use,
+                tag_or_branch=self.task.branch  # 传递用户选择的版本/分支
             )
 
         if not asset_info:
