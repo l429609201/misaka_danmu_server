@@ -1162,6 +1162,9 @@ class ScraperDownloadExecutor:
         backup_versions_file = BACKUP_DIR / "versions.json"
         scrapers_versions_file = scrapers_dir / "versions.json"
 
+        # 获取当前任务的分支信息
+        current_branch = self.task.branch if hasattr(self.task, 'branch') else 'main'
+
         # 选择更新的 versions.json 文件
         versions_file = None
         if backup_versions_file.exists() and scrapers_versions_file.exists():
@@ -1185,14 +1188,23 @@ class ScraperDownloadExecutor:
         elif scrapers_versions_file.exists():
             versions_file = scrapers_versions_file
 
+        # 检查分支是否匹配
+        branch_mismatch = False
         if versions_file and versions_file.exists():
             try:
                 local_versions = json.loads(await asyncio.to_thread(versions_file.read_text))
-                local_hashes = local_versions.get('hashes', {})
-                self._log(f"已读取本地版本信息，包含 {len(local_hashes)} 个哈希值")
-                # 调试：显示本地哈希值的 key
-                if local_hashes:
-                    self._log(f"本地哈希值 keys: {list(local_hashes.keys())[:5]}...", "debug")
+                local_branch = local_versions.get('branch', 'main')
+
+                # 检查分支是否一致
+                if local_branch != current_branch:
+                    branch_mismatch = True
+                    self._log(f"⚠ 分支不匹配: 本地版本来自分支 '{local_branch}'，当前下载分支 '{current_branch}'，将忽略本地哈希值", "warning")
+                else:
+                    local_hashes = local_versions.get('hashes', {})
+                    self._log(f"已读取本地版本信息，包含 {len(local_hashes)} 个哈希值（分支: {local_branch}）")
+                    # 调试：显示本地哈希值的 key
+                    if local_hashes:
+                        self._log(f"本地哈希值 keys: {list(local_hashes.keys())[:5]}...", "debug")
             except Exception as e:
                 self._log(f"读取本地版本文件失败: {e}", "warning")
 
@@ -1530,6 +1542,7 @@ class ScraperDownloadExecutor:
             "type": platform_info.get('arch', 'unknown'),
             "scrapers": existing_scrapers,
             "hashes": existing_hashes,
+            "branch": self.task.branch if hasattr(self.task, 'branch') else 'main',  # 记录分支信息
             "updated_at": datetime.now().isoformat()
         }
         if min_server_version:
@@ -1572,6 +1585,7 @@ class ScraperDownloadExecutor:
                 "type": platform_info['arch'],
                 # "version": package_data.get("version", "unknown"),  # ❌ 已移除：统一使用 package.json
                 "scrapers": merged_scrapers,
+                "branch": self.task.branch if hasattr(self.task, 'branch') else 'main',  # 记录分支信息
                 "updated_at": datetime.now().isoformat()
             }
 
@@ -1711,6 +1725,7 @@ class ScraperDownloadExecutor:
                 "scrapers": scrapers_versions,
                 "hashes": scrapers_hashes,
                 "full_replace": True,
+                "branch": self.task.branch if hasattr(self.task, 'branch') else 'main',  # 记录分支信息
                 "updated_at": datetime.now().isoformat()  # 使用 updated_at 与其他地方保持一致
             }
             if min_server_version:
