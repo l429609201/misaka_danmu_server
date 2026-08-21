@@ -57,7 +57,6 @@ def _get_backup_dir() -> Path:
 
 # 备份目录配置
 BACKUP_DIR = _get_backup_dir()
-BACKUP_METADATA_FILE = BACKUP_DIR / "backup_metadata.json"
 
 # 弹幕源版本信息文件
 SCRAPERS_VERSIONS_FILE = _get_scrapers_dir() / "versions.json"
@@ -643,71 +642,8 @@ async def backup_scrapers(
                 backed_files.append(file_info)
                 backup_count += 1
 
-        # 备份 package.json
-        # 若调用方传入了 package_data（自动更新场景），优先用它构建备份目录的 package.json，
-        # 确保备份目录的整体版本号（前端读取用）与新版本一致。
-        if package_data is not None:
-            try:
-                (BACKUP_DIR / "package.json").write_text(
-                    json.dumps(package_data, indent=2, ensure_ascii=False)
-                )
-                logger.info("已用新版本数据写入备份目录 package.json")
-            except Exception as e:
-                logger.warning(f"写入备份 package.json 失败: {e}")
-        elif SCRAPERS_PACKAGE_FILE.exists():
-            shutil.copy2(SCRAPERS_PACKAGE_FILE, BACKUP_DIR / "package.json")
-            logger.info("已备份 package.json")
-
-        # 备份 versions.json
-        # why：自动更新逐文件模式不会更新 scrapers/versions.json，若直接复制旧文件，
-        # 备份目录 updated_at 不会变新，重启后不会从备份恢复新版本 → 无限重启循环。
-        # 因此当调用方传入新版本数据时，直接用新版本构建备份目录的 versions.json（含新 updated_at）。
-        if new_versions_data is not None:
-            try:
-                backup_versions_file = BACKUP_DIR / "versions.json"
-                merged_scrapers: Dict[str, Any] = {}
-                merged_hashes: Dict[str, Any] = {}
-                min_server_version = None
-                # 以备份目录现有 versions.json 为基础做合并（保留未变动源的版本/哈希）
-                if backup_versions_file.exists():
-                    try:
-                        existing = json.loads(backup_versions_file.read_text())
-                        merged_scrapers = dict(existing.get("scrapers", {}))
-                        merged_hashes = dict(existing.get("hashes", {}))
-                        min_server_version = existing.get("min_server_version")
-                    except Exception:
-                        pass
-                merged_scrapers.update(new_versions_data)
-                if new_hashes_data:
-                    merged_hashes.update(new_hashes_data)
-                # package_data 可能携带更高的最低服务器版本要求，以它为准
-                if package_data and package_data.get("min_server_version"):
-                    min_server_version = package_data.get("min_server_version")
-
-                platform_key_str = get_platform_key()
-                built_versions = {
-                    "platform": platform_key_str.split("_")[0] if "_" in platform_key_str else platform_key_str,
-                    "type": platform_key_str.split("_")[1] if "_" in platform_key_str else "",
-                    "scrapers": merged_scrapers,
-                    "hashes": merged_hashes,
-                    "updated_at": datetime.now().isoformat(),
-                }
-                if min_server_version:
-                    built_versions["min_server_version"] = min_server_version
-                backup_versions_file.write_text(
-                    json.dumps(built_versions, indent=2, ensure_ascii=False)
-                )
-                logger.info(
-                    f"已用新版本数据写入备份目录 versions.json："
-                    f"{len(merged_scrapers)} 个源版本, {len(merged_hashes)} 个哈希值"
-                )
-            except Exception as e:
-                logger.warning(f"用新版本数据写入备份 versions.json 失败: {e}")
-        elif SCRAPERS_VERSIONS_FILE.exists():
-            shutil.copy2(SCRAPERS_VERSIONS_FILE, BACKUP_DIR / "versions.json")
-            logger.info("已备份 versions.json")
-
         # 使用 ScraperVersionManager 生成并保存 manifest
+        # why: 新架构只保留 scraper_manifest.json 作为唯一权威文件
         try:
             manifest = ScraperVersionManager.extract_manifest_from_legacy(
                 SCRAPERS_PACKAGE_FILE,
@@ -741,31 +677,30 @@ async def backup_scrapers(
             ScraperVersionManager.save_manifest(manifest, BACKUP_DIR)
             logger.info("已生成并备份 scraper_manifest.json")
 
+            # 删除 scrapers 目录中的 legacy 文件
+            # why: 新架构只保留 scraper_manifest.json
+            legacy_files_to_remove = ["package.json", "versions.json"]
+            for legacy_file in legacy_files_to_remove:
+                legacy_path = scrapers_dir / legacy_file
+                if legacy_path.exists():
+                    legacy_path.unlink()
+                    logger.info(f"已删除 scrapers 目录的 legacy 文件: {legacy_file}")
+
         except Exception as e:
             logger.warning(f"生成 manifest 失败: {e}")
 
-        # 读取 package.json 的版本号（用于元数据）
-        package_version = None
-        if package_data is not None:
-            package_version = package_data.get("version")
-        elif SCRAPERS_PACKAGE_FILE.exists():
-            try:
-                local_package_data = json.loads(SCRAPERS_PACKAGE_FILE.read_text())
-                package_version = local_package_data.get("version")
-            except Exception as e:
-                logger.warning(f"读取 package.json 失败: {e}")
-
-        # 保存备份元数据
-        metadata = {
-            "backup_time": datetime.now().isoformat(),
-            "backup_user": current_user.username,
-            "file_count": backup_count,
-            "files": backed_files,
-            "platform": get_platform_key(),
-            "package_version": package_version  # 添加资源包版本号
-        }
-
-        BACKUP_METADATA_FILE.write_text(json.dumps(metadata, indent=2, ensure_ascii=False))
+        # 读取 manifest 的版本号（用于元数据）
+        package_version = manifest.get("version", "unknown") if 'manifest' in locals() else None
+        if not package_version:
+            # 回退：尝试从 package_data 读取
+            if package_data is not None:
+                package_version = package_data.get("version")
+            elif SCRAPERS_PACKAGE_FILE.exists():
+                try:
+                    local_package_data = json.loads(SCRAPERS_PACKAGE_FILE.read_text())
+                    package_version = local_package_data.get("version")
+                except Exception as e:
+                    logger.warning(f"读取 package.json 失败: {e}")
 
         logger.info(f"用户 '{current_user.username}' 备份了 {backup_count} 个弹幕源文件到 {BACKUP_DIR}")
         return {"message": f"成功备份 {backup_count} 个文件", "count": backup_count}
@@ -781,21 +716,27 @@ async def get_backup_info(
 ):
     """获取当前备份的详细信息"""
     try:
-        if not BACKUP_DIR.exists() or not BACKUP_METADATA_FILE.exists():
+        # 检查备份目录和 manifest 文件
+        manifest_file = BACKUP_DIR / "scraper_manifest.json"
+        if not BACKUP_DIR.exists() or not manifest_file.exists():
             return {
                 "hasBackup": False,
                 "message": "暂无备份"
             }
 
-        metadata = json.loads(BACKUP_METADATA_FILE.read_text())
+        # 从 manifest 读取版本信息
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+
+        # 统计备份文件数量
+        backup_files = list(BACKUP_DIR.glob("*.so")) + list(BACKUP_DIR.glob("*.pyd"))
 
         return {
             "hasBackup": True,
-            "backupTime": metadata.get("backup_time"),
-            "backupUser": metadata.get("backup_user"),
-            "fileCount": metadata.get("file_count"),
-            "platform": metadata.get("platform"),
-            "files": metadata.get("files", [])
+            "backupTime": manifest.get("updated_at"),
+            "fileCount": len(backup_files),
+            "platform": manifest.get("platform"),
+            "packageVersion": manifest.get("version"),
+            "sourceCount": len(manifest.get("sources", {}))
         }
 
     except Exception as e:
@@ -818,84 +759,37 @@ async def restore_scrapers(
         if not BACKUP_DIR.exists():
             raise HTTPException(status_code=404, detail="未找到备份目录")
 
-        # 读取备份元数据
-        backup_info = None
-        if BACKUP_METADATA_FILE.exists():
-            try:
-                backup_info = json.loads(BACKUP_METADATA_FILE.read_text())
-                logger.info(f"备份信息: {backup_info.get('backup_time')} by {backup_info.get('backup_user')}")
-            except Exception as e:
-                logger.warning(f"读取备份元数据失败: {e}")
+        # 检查备份的 manifest 文件
+        backup_manifest_file = BACKUP_DIR / "scraper_manifest.json"
+        if not backup_manifest_file.exists():
+            raise HTTPException(status_code=404, detail="备份目录中未找到 scraper_manifest.json")
+
+        # 读取备份的 manifest
+        manifest = json.loads(backup_manifest_file.read_text(encoding="utf-8"))
+        logger.info(f"备份信息: 版本 {manifest.get('version')}, 平台 {manifest.get('platform')}, {len(manifest.get('sources', {}))} 个源")
 
         # 还原文件
         restore_count = 0
         for file in BACKUP_DIR.glob("*"):
-            if file.is_file() and file.suffix in ['.so', '.pyd']:
+            if file.is_file() and file.suffix in ['.so', '.pyd', '.json']:
                 shutil.copy2(file, scrapers_dir / file.name)
                 restore_count += 1
 
         if restore_count == 0:
             raise HTTPException(status_code=404, detail="备份目录为空")
 
-        # 还原 package.json
-        backup_package_file = BACKUP_DIR / "package.json"
-        if backup_package_file.exists():
-            try:
-                shutil.copy2(backup_package_file, SCRAPERS_PACKAGE_FILE)
-                logger.info("已还原 package.json")
-            except Exception as e:
-                logger.warning(f"还原 package.json 失败: {e}")
-
-        # 还原 versions.json
-        backup_versions_file = BACKUP_DIR / "versions.json"
-        if backup_versions_file.exists():
-            try:
-                shutil.copy2(backup_versions_file, SCRAPERS_VERSIONS_FILE)
-                logger.info("已还原 versions.json")
-            except Exception as e:
-                logger.warning(f"还原 versions.json 失败: {e}")
-        else:
-            # 如果备份中没有 versions.json,尝试从备份元数据恢复
-            if backup_info and "files" in backup_info:
-                versions = {}
-                for file_info in backup_info["files"]:
-                    if "version" in file_info and "scraper" in file_info:
-                        versions[file_info["scraper"]] = file_info["version"]
-
-                # 写入 versions.json
-                if versions:
-                    try:
-                        SCRAPERS_VERSIONS_FILE.write_text(json.dumps(versions, indent=2, ensure_ascii=False))
-                        logger.info(f"从元数据恢复了 {len(versions)} 个弹幕源的版本信息")
-                    except Exception as e:
-                        logger.warning(f"写入版本信息失败: {e}")
-
-        # 从备份元数据恢复 package.json
-        if backup_info and "package_version" in backup_info:
-            try:
-                package_data = {
-                    "version": backup_info["package_version"],
-                    "restored_from_backup": True,
-                    "restore_time": datetime.now().isoformat()
-                }
-                SCRAPERS_PACKAGE_FILE.write_text(json.dumps(package_data, indent=2, ensure_ascii=False))
-                logger.info(f"恢复了资源包版本信息: {backup_info['package_version']}")
-            except Exception as e:
-                logger.warning(f"写入 package.json 失败: {e}")
-
-        logger.info(f"用户 '{current_user.username}' 从备份还原了 {restore_count} 个弹幕源文件")
+        logger.info(f"用户 '{current_user.username}' 从备份还原了 {restore_count} 个文件")
 
         result = {
             "message": f"成功还原 {restore_count} 个文件，正在后台重载...",
-            "count": restore_count
-        }
-
-        if backup_info:
-            result["backupInfo"] = {
-                "backupTime": backup_info.get("backup_time"),
-                "backupUser": backup_info.get("backup_user"),
-                "fileCount": backup_info.get("file_count")
+            "count": restore_count,
+            "manifestInfo": {
+                "version": manifest.get("version"),
+                "platform": manifest.get("platform"),
+                "sourceCount": len(manifest.get("sources", {})),
+                "updatedAt": manifest.get("updated_at")
             }
+        }
 
         # 创建后台任务重新加载 scrapers
         async def reload_scrapers_background():
@@ -1134,92 +1028,14 @@ async def load_resources_stream(
                         )
 
                         if success:
-                            # 更新 versions.json
-                            platform_info = get_platform_info()
-                            release_version = asset_info['version'].lstrip('v')
-
-                            # 从解压后的 package.json 读取各个源的版本信息
-                            scrapers_versions = {}
-                            scrapers_hashes = {}
-                            local_package_file = scrapers_dir / "package.json"
-                            # 从解压后的 versions.json 读取全局版本限制字段（覆盖前读取）
-                            min_server_version = None
-                            existing_versions_file = scrapers_dir / "versions.json"
-                            if existing_versions_file.exists():
-                                try:
-                                    existing_ver_data = json.loads(await asyncio.to_thread(existing_versions_file.read_text))
-                                    min_server_version = existing_ver_data.get('min_server_version')
-                                except Exception:
-                                    pass
-                            try:
-                                if local_package_file.exists():
-                                    package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
-                                    # 从 resources 字段提取各个源的版本号和哈希值
-                                    resources = package_content.get('resources', {})
-                                    for scraper_name, scraper_info in resources.items():
-                                        if isinstance(scraper_info, dict):
-                                            version = scraper_info.get('version')
-                                            if version:
-                                                scrapers_versions[scraper_name] = version
-                                            # 提取哈希值
-                                            hashes = scraper_info.get('hashes', {})
-                                            # 使用连字符格式 platform_key（如 linux-x86），与包内哈希键格式一致
-                                            platform_key = get_platform_key()
-                                            if platform_key in hashes:
-                                                scrapers_hashes[scraper_name] = hashes[platform_key]
-                                    logger.info(f"从 package.json 读取到 {len(scrapers_versions)} 个源的版本信息")
-                                    # package.json 也可能携带版本限制字段
-                                    if not min_server_version:
-                                        min_server_version = package_content.get('min_server_version')
-                            except Exception as e:
-                                logger.warning(f"读取 package.json 中的源版本信息失败: {e}")
-
-                            # 全量替换后检查：解压出的弹幕源包是否要求更高的服务器版本
-                            if min_server_version:
-                                from src._version import APP_VERSION
-                                from src.services.scraper_manager import _version_satisfies
-                                if not _version_satisfies(APP_VERSION, min_server_version):
-                                    msg = f"远程弹幕源包要求服务器版本 >= {min_server_version}，当前版本 {APP_VERSION}，正在还原备份..."
-                                    logger.warning(msg)
-                                    yield f"data: {json.dumps({'type': 'error', 'message': msg}, ensure_ascii=False)}\n\n"
-                                    # 还原备份
-                                    try:
-                                        from src.api.ui.scraper_resources import restore_scrapers
-                                        await restore_scrapers(current_user, manager)
-                                        yield f"data: {json.dumps({'type': 'info', 'message': '已还原备份，请先升级服务器版本'}, ensure_ascii=False)}\n\n"
-                                    except Exception as restore_err:
-                                        logger.error(f"还原备份失败: {restore_err}")
-                                        yield f"data: {json.dumps({'type': 'error', 'message': f'还原备份失败: {restore_err}'}, ensure_ascii=False)}\n\n"
-                                    yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
-                                    return
-
-                            versions_data = {
-                                "platform": platform_info['platform'],
-                                "type": platform_info['arch'],
-                                "version": release_version,
-                                "scrapers": scrapers_versions,
-                                "hashes": scrapers_hashes,
-                                "full_replace": True,
-                                "updated_at": datetime.now().isoformat()  # 统一用 updated_at，与 scraper_manager 备份恢复逻辑一致
-                            }
-                            if min_server_version:
-                                versions_data['min_server_version'] = min_server_version
-                            versions_json_str = json.dumps(versions_data, indent=2, ensure_ascii=False)
-                            await asyncio.to_thread(SCRAPERS_VERSIONS_FILE.write_text, versions_json_str)
-                            logger.info(f"已更新 versions.json: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
-
-                            # 同时更新 package.json 的版本号（前端从这里读取整体版本）
-                            try:
-                                if local_package_file.exists():
-                                    package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
-                                    package_content['version'] = release_version
-                                else:
-                                    package_content = {"version": release_version}
-                                package_json_str = json.dumps(package_content, indent=2, ensure_ascii=False)
-                                await asyncio.to_thread(local_package_file.write_text, package_json_str)
-                                logger.info(f"已更新 package.json 版本号为: {release_version}")
-                            except Exception as pkg_err:
-                                logger.warning(f"更新 package.json 失败: {pkg_err}")
+                            # _download_and_extract_release 已经完成了：
+                            # 1. 解压到临时目录
+                            # 2. 从 package.json + versions.json 生成 scraper_manifest.json
+                            # 3. 删除临时目录的 package.json 和 versions.json
+                            # 4. 持久化 scraper_manifest.json + .so 到 backup 目录
+                            # 5. 覆盖到运行目录
+                            # 6. 删除运行目录的 package.json 和 versions.json
+                            # 此时运行目录和备份目录都只有 scraper_manifest.json + .so 文件
 
                             yield f"data: {json.dumps({'type': 'complete', 'downloaded': 1, 'skipped': 0, 'failed': 0, 'failed_list': [], 'full_replace': True}, ensure_ascii=False)}\n\n"
                             yield f"data: {json.dumps({'type': 'info', 'message': '⚠️ 全量替换完成，由于 .so 文件已被替换，建议重启服务以确保更新生效'}, ensure_ascii=False)}\n\n"
@@ -1342,17 +1158,32 @@ async def load_resources_stream(
                     versions_data = {}  # 用于保存版本信息
                     hashes_data = {}  # 用于保存哈希值
 
-                    # 读取本地 versions.json 的哈希值（只读一次）
+                    # 读取本地 manifest 的哈希值（只读一次）
+                    # why: 新架构下，只保留 scraper_manifest.json 作为唯一权威文件
                     local_hashes = {}
-                    if SCRAPERS_VERSIONS_FILE.exists():
+                    local_manifest_file = scrapers_dir / "scraper_manifest.json"
+                    if local_manifest_file.exists():
+                        try:
+                            local_manifest = json.loads(await asyncio.to_thread(local_manifest_file.read_text))
+                            # 从 manifest 的 sources 字段提取哈希值
+                            for scraper_name, source_info in local_manifest.get("sources", {}).items():
+                                if isinstance(source_info, dict) and "hash" in source_info:
+                                    local_hashes[scraper_name] = source_info["hash"]
+                            logger.info(f"已读取本地 manifest，包含 {len(local_hashes)} 个哈希值")
+                        except Exception as e:
+                            logger.warning(f"读取本地 manifest 失败: {e}")
+
+                    # 兼容旧版本：如果 manifest 不存在，尝试读取 versions.json
+                    if not local_hashes and SCRAPERS_VERSIONS_FILE.exists():
                         try:
                             local_versions = json.loads(await asyncio.to_thread(SCRAPERS_VERSIONS_FILE.read_text))
                             local_hashes = local_versions.get('hashes', {})
-                            logger.info(f"已读取本地 versions.json，包含 {len(local_hashes)} 个哈希值")
+                            logger.info(f"已读取本地 versions.json (兼容模式)，包含 {len(local_hashes)} 个哈希值")
                         except Exception as e:
                             logger.warning(f"读取本地版本文件失败: {e}")
-                    else:
-                        logger.info("本地 versions.json 不存在，所有源都需要下载")
+
+                    if not local_hashes:
+                        logger.info("本地无版本信息，所有源都需要下载")
 
                     # 遍历所有源，比对哈希值
                     for scraper_name, scraper_info in resources.items():
@@ -1426,11 +1257,6 @@ async def load_resources_stream(
 
                     has_updates = len(update_scrapers) > 0  # 是否有更新已有源
                     logger.info(f"下载分类: 新增 {len(new_scrapers)} 个, 更新 {len(update_scrapers)} 个")
-
-                    # 保存 package.json 到本地 - 使用异步IO
-                    local_package_file = scrapers_dir / "package.json"
-                    package_json_str = json.dumps(package_data, indent=2, ensure_ascii=False)
-                    await asyncio.to_thread(local_package_file.write_text, package_json_str)
 
                     # 先备份当前文件
                     yield f"data: {json.dumps({'type': 'info', 'message': '正在备份当前弹幕源...'}, ensure_ascii=False)}\n\n"
@@ -1689,27 +1515,40 @@ async def load_resources_stream(
                         await asyncio.sleep(1.0)
                         try:
                             if is_first_download:
-                                # 首次下载：保存版本信息并执行热加载
-                                # 保存版本信息
+                                # 首次下载：生成 scraper_manifest.json 并执行热加载
+                                # why: 新架构只保留 scraper_manifest.json 作为唯一权威文件
                                 if versions_data:
                                     try:
                                         # 从 package_data 读取全局版本限制字段（两字段语义相同）
                                         pkg_min_ver = package_data.get('min_server_version') or package_data.get('min_fetchable_version')
-                                        full_versions_data = {
-                                            "platform": platform_info['platform'],
-                                            "type": platform_info['arch'],
+
+                                        # 构建 manifest 数据
+                                        manifest = {
                                             "version": package_data.get("version", "unknown"),
-                                            "scrapers": versions_data
+                                            "min_server_version": pkg_min_ver,
+                                            "updated_at": datetime.now().isoformat(),
+                                            "sources": {}
                                         }
-                                        if hashes_data:
-                                            full_versions_data["hashes"] = hashes_data
-                                        if pkg_min_ver:
-                                            full_versions_data['min_server_version'] = pkg_min_ver
-                                        versions_json_str = json.dumps(full_versions_data, indent=2, ensure_ascii=False)
-                                        await asyncio.to_thread(SCRAPERS_VERSIONS_FILE.write_text, versions_json_str)
-                                        logger.info(f"已保存 {len(versions_data)} 个弹幕源的版本信息")
+
+                                        # 填充各源的版本和哈希信息
+                                        for scraper_name, version in versions_data.items():
+                                            manifest["sources"][scraper_name] = {
+                                                "version": version,
+                                                "hash": hashes_data.get(scraper_name)
+                                            }
+
+                                        # 保存 manifest 到运行目录
+                                        ScraperVersionManager.save_manifest(manifest, scrapers_dir)
+                                        logger.info(f"已生成 scraper_manifest.json: {len(versions_data)} 个源")
+
+                                        # 删除运行目录中的 legacy 文件（如果存在）
+                                        for legacy_file in ["package.json", "versions.json"]:
+                                            legacy_path = scrapers_dir / legacy_file
+                                            if legacy_path.exists():
+                                                await asyncio.to_thread(legacy_path.unlink)
+                                                logger.info(f"已删除运行目录的 legacy 文件: {legacy_file}")
                                     except Exception as e:
-                                        logger.warning(f"保存版本信息失败: {e}")
+                                        logger.warning(f"生成 manifest 失败: {e}")
 
                                 logger.info("首次下载，开始热加载弹幕源...")
                                 await manager.load_and_sync_scrapers()
@@ -2249,138 +2088,84 @@ def _persist_new_version_to_backup(
     """将临时目录中解压好的新版弹幕源持久化到备份目录（覆盖运行 .so 之前调用）。
 
     why(断无限重启循环)：备份目录是唯一持久化的位置，且重启恢复逻辑依据
-    backup/versions.json 的 updated_at 判定是否需要恢复。必须在覆盖运行中的 .so
-    （可能 native crash）之前，就把新版 .so + package.json + 带新 updated_at 的
-    versions.json 落盘到备份目录；否则一旦覆盖时崩溃，backup 仍是旧版 → 重启后回退
-    → 轮询又发现新版 → 无限循环。
+    backup/scraper_manifest.json 的 updated_at 判定是否需要恢复。必须在覆盖运行中的 .so
+    （可能 native crash）之前，就把新版 .so + scraper_manifest.json 落盘到备份目录；
+    否则一旦覆盖时崩溃，backup 仍是旧版 → 重启后回退 → 轮询又发现新版 → 无限循环。
 
-    versions.json 的 updated_at 必须写为当前时间且版本号为新版，确保重启后
+    scraper_manifest.json 的 updated_at 必须写为当前时间且版本号为新版，确保重启后
     backup.updated_at > scrapers.updated_at 时恢复到的是新版本。
 
     Args:
         remote_package_json: 下载前从远端仓库预拉取的 package.json 内容（dict）。
             why：全量包（tar.gz）通常不内置 package.json 和 versions.json，
             此时 scrapers_versions/scrapers_hashes 全为空，_verify_backup_version
-            校验失败 → 循环重启。用远端数据兜底可确保写出完整的 backup/package.json
-            和 backup/versions.json。
+            校验失败 → 循环重启。用远端数据兜底可确保写出完整的 backup/scraper_manifest.json。
     """
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1) 复制临时目录的所有新版文件（.so/.pyd/.json）到备份目录
+    # 1) 从临时目录的 package.json/versions.json 生成 scraper_manifest.json
+    # why: 新架构下，只保留 scraper_manifest.json 作为唯一权威文件
+    tmp_package_file = extract_dir / "package.json"
+    tmp_versions_file = extract_dir / "versions.json"
+
+    # 生成 manifest（优先使用临时目录的文件，远端 package.json 作为兜底）
+    try:
+        manifest = ScraperVersionManager.extract_manifest_from_legacy(
+            tmp_package_file,
+            tmp_versions_file,
+            extract_dir
+        )
+
+        # 更新全局版本号
+        manifest["version"] = release_version
+        manifest["updated_at"] = datetime.now().isoformat()
+
+        # 如果临时目录没有版本信息，使用远端 package.json 兜底
+        if remote_package_json and (not manifest.get("sources") or not manifest.get("min_server_version")):
+            if not manifest.get("min_server_version"):
+                manifest["min_server_version"] = remote_package_json.get("min_server_version")
+
+            # 从远端 package.json 提取各源版本信息
+            platform_key = get_platform_key()
+            for scraper_name, scraper_info in (remote_package_json.get("resources", {}) or {}).items():
+                if isinstance(scraper_info, dict):
+                    if scraper_name not in manifest["sources"]:
+                        manifest["sources"][scraper_name] = {}
+
+                    manifest["sources"][scraper_name]["version"] = scraper_info.get("version")
+
+                    # 提取哈希
+                    hashes = scraper_info.get("hashes", {})
+                    if platform_key in hashes:
+                        manifest["sources"][scraper_name]["hash"] = hashes[platform_key]
+
+            logger.info(f"全量包内无版本文件，已用远端 package.json 兜底生成 manifest（{len(manifest['sources'])} 个源）")
+
+        # 保存 manifest 到临时目录（后续会被复制）
+        ScraperVersionManager.save_manifest(manifest, extract_dir)
+
+        # 删除临时目录中的 legacy 文件
+        # why: 新架构只保留 scraper_manifest.json，package.json 和 versions.json 仅用于生成 manifest
+        if tmp_package_file.exists():
+            tmp_package_file.unlink()
+            logger.info("已删除临时目录的 package.json")
+        if tmp_versions_file.exists():
+            tmp_versions_file.unlink()
+            logger.info("已删除临时目录的 versions.json")
+
+    except Exception as e:
+        logger.error(f"生成 manifest 失败: {e}", exc_info=True)
+        raise
+
+    # 2) 复制临时目录的所有文件（.so/.pyd + scraper_manifest.json）到备份目录
+    # 注意：此时 package.json 和 versions.json 已被删除
     backup_count = 0
     for f in extract_dir.iterdir():
         if f.is_file():
             shutil.copy2(f, BACKUP_DIR / f.name)
             backup_count += 1
 
-    # 2) 从临时目录的 package.json / versions.json 提取各源版本号与哈希
-    # why：全量替换包（tar.gz）不含 package.json，版本和哈希信息在 versions.json 里；
-    #      多平台包（zip）可能包含 package.json，其哈希字段是 {platform_key: hash}；
-    #      单平台包（tar.gz，主流格式）versions.json 里 hashes 是 {scraper_name: hash}——
-    #      直接复用即可，无需按 platform_key 查找。
-    platform_info = get_platform_info()  # 写 versions.json 时需要 platform/arch 字段
-    platform_key = get_platform_key()   # 统一用连字符格式：linux-x86
-    scrapers_versions: Dict[str, str] = {}
-    scrapers_hashes: Dict[str, str] = {}
-    min_server_version = None
-
-    # 优先从 package.json 读（多平台包格式）
-    tmp_package_file = extract_dir / "package.json"
-    if tmp_package_file.exists():
-        try:
-            package_content = json.loads(tmp_package_file.read_text(encoding="utf-8"))
-            min_server_version = package_content.get('min_server_version')
-            for scraper_name, scraper_info in (package_content.get('resources', {}) or {}).items():
-                if isinstance(scraper_info, dict):
-                    ver = scraper_info.get('version')
-                    if ver:
-                        scrapers_versions[scraper_name] = ver
-                    # package.json 里哈希键是连字符格式 platform_key（如 linux-x86）
-                    hashes = scraper_info.get('hashes', {}) or {}
-                    if platform_key in hashes:
-                        scrapers_hashes[scraper_name] = hashes[platform_key]
-        except Exception as e:
-            logger.warning(f"读取临时 package.json 版本信息失败: {e}")
-
-    # 回退到 versions.json（单平台包格式，tar.gz 主流路径）
-    # why：单平台 tar.gz 包只含 versions.json，其 scrapers={name:ver}, hashes={name:hash}，
-    #      直接就是需要写入备份的结构，无需额外 platform_key 查找。
-    tmp_versions_file = extract_dir / "versions.json"
-    if tmp_versions_file.exists():
-        try:
-            tmp_ver_data = json.loads(tmp_versions_file.read_text(encoding="utf-8"))
-            if not min_server_version:
-                min_server_version = tmp_ver_data.get('min_server_version')
-            # 若 package.json 未读到版本/哈希，从 versions.json 补充
-            if not scrapers_versions:
-                scrapers_versions = tmp_ver_data.get('scrapers', {}) or {}
-            if not scrapers_hashes:
-                scrapers_hashes = tmp_ver_data.get('hashes', {}) or {}
-        except Exception as e:
-            logger.warning(f"读取临时 versions.json 版本信息失败: {e}")
-
-    # 远端 package.json 兜底
-    # why：全量包（tar.gz）通常不内置 package.json 且可能也没有 versions.json，
-    #      此时 scrapers_versions/scrapers_hashes 全为空，_verify_backup_version
-    #      校验失败 → 循环重启。用调用方传入的远端数据补全，确保 backup/versions.json
-    #      和 backup/package.json 总能携带正确的版本信息。
-    if remote_package_json and (not scrapers_versions or not min_server_version):
-        try:
-            if not min_server_version:
-                min_server_version = (
-                    remote_package_json.get('min_server_version')
-                    or remote_package_json.get('min_fetchable_version')
-                )
-            if not scrapers_versions:
-                for scraper_name, scraper_info in (remote_package_json.get('resources', {}) or {}).items():
-                    if isinstance(scraper_info, dict):
-                        ver = scraper_info.get('version')
-                        if ver:
-                            scrapers_versions[scraper_name] = ver
-                        hashes = scraper_info.get('hashes', {}) or {}
-                        if platform_key in hashes:
-                            scrapers_hashes[scraper_name] = hashes[platform_key]
-            # 把远端 package.json（含正确版本号）也写入备份目录，供前端显示版本
-            backup_pkg_content = dict(remote_package_json)
-            backup_pkg_content['version'] = release_version
-            (BACKUP_DIR / "package.json").write_text(
-                json.dumps(backup_pkg_content, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-            logger.info(f"全量包内无版本文件，已用远端 package.json 兜底写入备份目录（{len(scrapers_versions)} 个源版本）")
-        except Exception as e:
-            logger.warning(f"远端 package.json 兜底失败: {e}")
-
-    # 3) 写备份目录的 versions.json（关键：updated_at=当前时间）
-    # P1-1: 统一版本号权威源 - versions.json 不再存储全局 version 字段
-    versions_data = {
-        "platform": platform_info['platform'],
-        "type": platform_info['arch'],
-        # "version": release_version,  # ❌ 已移除：统一使用 package.json
-        "scrapers": scrapers_versions,
-        "hashes": scrapers_hashes,
-        "full_replace": True,
-        "updated_at": datetime.now().isoformat(),
-    }
-    if min_server_version:
-        versions_data['min_server_version'] = min_server_version
-    (BACKUP_DIR / "versions.json").write_text(
-        json.dumps(versions_data, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-
-    # 4) 备份元数据
-    try:
-        metadata = {
-            "backup_time": datetime.now().isoformat(),
-            "backup_user": "system_full_replace",
-            "file_count": backup_count,
-            "platform": get_platform_key(),
-            "package_version": release_version,
-        }
-        BACKUP_METADATA_FILE.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
-    except Exception as e:
-        logger.warning(f"写备份元数据失败: {e}")
-
-    logger.info(f"已将新版 {release_version} 持久化到备份目录: {backup_count} 个文件, {len(scrapers_versions)} 个源版本")
+    logger.info(f"已将新版 {release_version} 持久化到备份目录: {backup_count} 个文件, {len(manifest.get('sources', {}))} 个源")
 
 
 def _get_deferred_overlay_dir(scrapers_dir: Optional[Path] = None) -> Path:
@@ -2399,6 +2184,9 @@ def _overlay_extract_dir_to_scrapers(
 
     危险操作：覆盖后进程内存中的旧模块与磁盘新二进制不一致，调用方必须紧接着重启，
     中间不要再执行业务代码。
+
+    注意：临时目录中应该只包含 scraper_manifest.json 和 .so/.pyd 文件，
+    package.json 和 versions.json 已在生成 manifest 后被删除。
     """
     import shutil as _shutil
 
@@ -2422,18 +2210,17 @@ def _overlay_extract_dir_to_scrapers(
             except Exception as e:
                 logger.warning(f"清理旧文件 {stale_name} 失败: {e}")
 
-    # 【修复】把 backup 目录的 versions.json 和 package.json 也同步到运行目录
-    # why: 全量包可能不含这两个文件，_persist_new_version_to_backup 会用远端兜底生成
-    #      并写入 backup/，但临时目录里没有 → _overlay 不会复制 → scrapers/ 的版本文件不更新。
-    #      必须把 backup 里生成的版本文件也复制到运行目录，确保 scraper_manager 能读到正确版本。
+    # 清理运行目录中的 legacy 文件（如果存在）
+    # why: 新架构只保留 scraper_manifest.json 作为唯一权威文件
     try:
-        for meta_file in ["versions.json", "package.json"]:
-            backup_meta = BACKUP_DIR / meta_file
-            if backup_meta.exists():
-                _shutil.copy2(backup_meta, scrapers_dir / meta_file)
-                logger.info(f"已同步 backup/{meta_file} 到运行目录")
+        legacy_files = ["package.json", "versions.json"]
+        for legacy_file in legacy_files:
+            legacy_path = scrapers_dir / legacy_file
+            if legacy_path.exists():
+                legacy_path.unlink()
+                logger.info(f"已删除运行目录的 legacy 文件: {legacy_file}")
     except Exception as e:
-        logger.warning(f"同步备份目录版本文件到运行目录失败: {e}")
+        logger.warning(f"清理运行目录 legacy 文件失败: {e}")
 
     # 清理临时目录
     _shutil.rmtree(extract_dir, ignore_errors=True)
@@ -2820,14 +2607,13 @@ async def delete_current_scrapers(
                 file.unlink()
                 deleted_count += 1
 
-        # 删除 package.json 和 versions.json
-        if SCRAPERS_PACKAGE_FILE.exists():
-            SCRAPERS_PACKAGE_FILE.unlink()
-            logger.info("已删除 package.json")
-
-        if SCRAPERS_VERSIONS_FILE.exists():
-            SCRAPERS_VERSIONS_FILE.unlink()
-            logger.info("已删除 versions.json")
+        # 删除所有版本相关文件（legacy + 新架构）
+        version_files = ["package.json", "versions.json", "scraper_manifest.json"]
+        for version_file in version_files:
+            version_path = scrapers_dir / version_file
+            if version_path.exists():
+                version_path.unlink()
+                logger.info(f"已删除 {version_file}")
 
         # 清除版本缓存
         global _version_cache, _version_cache_time
@@ -2874,14 +2660,13 @@ async def delete_all_scrapers(
                     file.unlink()
                     deleted_current += 1
 
-            # 删除 package.json 和 versions.json
-            if SCRAPERS_PACKAGE_FILE.exists():
-                SCRAPERS_PACKAGE_FILE.unlink()
-                logger.info("已删除 package.json")
-
-            if SCRAPERS_VERSIONS_FILE.exists():
-                SCRAPERS_VERSIONS_FILE.unlink()
-                logger.info("已删除 versions.json")
+            # 删除所有版本相关文件（legacy + 新架构）
+            version_files = ["package.json", "versions.json", "scraper_manifest.json"]
+            for version_file in version_files:
+                version_path = scrapers_dir / version_file
+                if version_path.exists():
+                    version_path.unlink()
+                    logger.info(f"已删除 {version_file}")
 
         # 删除备份
         if BACKUP_DIR.exists():
