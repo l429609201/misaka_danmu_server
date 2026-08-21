@@ -527,12 +527,7 @@ class ScraperDownloadExecutor:
             # 预检网络失败不阻断：解压后的后置校验（_update_versions_json 段）仍会兜底
             self._log(f"版本预检跳过（网络异常: {_pre_err}）", "debug")
 
-        # 备份当前文件
-        self._log("正在备份当前弹幕源...")
-        await backup_scrapers(self.current_user)
-        self._log("备份完成")
-
-        # 下载并解压
+        # 下载并解压（先不备份，等版本校验通过后再备份）
         scrapers_dir = _get_scrapers_dir()
         self._log("正在下载压缩包...")
 
@@ -549,10 +544,8 @@ class ScraperDownloadExecutor:
         )
 
         if not success:
-            # 下载失败，还原备份
-            self._log("全量替换失败，正在还原备份...", "error")
-            await restore_scrapers(self.current_user, self.scraper_manager)
-            self._log("已还原备份")
+            # 下载失败，直接返回（此时还未备份，无需还原）
+            self._log("全量替换失败", "error")
             raise ValueError("全量替换失败")
 
         # 下载成功（新版已解压到临时目录并持久化到 backup，运行目录尚未被覆盖）
@@ -629,18 +622,19 @@ class ScraperDownloadExecutor:
                 await asyncio.to_thread(shutil.rmtree, pending_dir, True)
                 self._log("✓ 已清理临时目录")
 
-                # 还原备份（因为已经备份了）
-                await restore_scrapers(self.current_user, self.scraper_manager)
-                self._log("已还原备份")
+                # 清除版本缓存
+                self._clear_version_cache()
 
+                # why: 版本相同不需要还原备份（备份的就是当前版本），直接标记完成即可
+                # 避免触发无意义的文件复制和容器重启
                 self.task.status = TaskStatus.COMPLETED
                 self.task.need_restart = False
-
-                # 等待 SSE 消息
-                await asyncio.sleep(1.0)
-                self.task.restart_pending = True
-                await asyncio.sleep(2.0)
                 return
+
+        # 版本不同，需要部署，先备份当前版本
+        self._log("正在备份当前弹幕源...")
+        await backup_scrapers(self.current_user)
+        self._log("备份完成")
 
         # 判断是否是首次下载（本地没有任何弹幕源）
         existing_scrapers = set(self.scraper_manager.scrapers.keys())
@@ -847,11 +841,7 @@ class ScraperDownloadExecutor:
         self._log(f"创建临时下载目录: {temp_dir}")
 
         try:
-            # 先备份当前文件（在修改任何文件之前备份，以便失败时恢复）
-            self._log("正在备份当前弹幕源...")
-            await backup_scrapers(self.current_user)
-            self._log("备份完成")
-
+            # 先下载到临时目录（不备份，等版本校验通过后再备份）
             self._log(f"开始下载 {need_download_count} 个文件到临时目录...")
 
             # 下载文件到临时目录
@@ -887,12 +877,9 @@ class ScraperDownloadExecutor:
             download_count = len(self.task.progress.downloaded)
             self._log(f"下载完成: 成功 {download_count}/{need_download_count} 个，跳过 {skip_count} 个，失败 {len(failed_downloads)} 个")
 
-            # 检查下载结果：有失败时还原备份
+            # 检查下载结果：有失败时直接返回（此时还未备份，无需还原）
             if failed_downloads:
                 self._log(f"有 {len(failed_downloads)} 个弹幕源下载失败: {', '.join(failed_downloads)}", "error")
-                self._log("正在还原备份...")
-                await restore_scrapers(self.current_user, self.scraper_manager)
-                self._log("已还原备份")
                 self.task.status = TaskStatus.FAILED
                 self.task.error_message = f"下载失败: {', '.join(failed_downloads)}"
                 return
@@ -931,16 +918,21 @@ class ScraperDownloadExecutor:
                 # 清理临时目录
                 if temp_dir.exists():
                     shutil.rmtree(temp_dir)
-                    self._log("✓ 已清理临时下载目录")
+                    self._log("✓ 已清理临时目录")
 
+                # 清除版本缓存
+                self._clear_version_cache()
+
+                # why: 版本相同不需要还原备份（备份的就是当前版本），直接标记完成即可
+                # 避免触发无意义的文件复制和容器重启
                 self.task.status = TaskStatus.COMPLETED
                 self.task.need_restart = False
-
-                # 等待 SSE 消息
-                await asyncio.sleep(1.0)
-                self.task.restart_pending = True
-                await asyncio.sleep(2.0)
                 return
+
+            # 版本不同，需要部署，先备份当前版本
+            self._log("正在备份当前弹幕源...")
+            await backup_scrapers(self.current_user)
+            self._log("备份完成")
 
             # 判断是否是首次下载（本地没有任何弹幕源）
             existing_scrapers = set(self.scraper_manager.scrapers.keys())
