@@ -629,6 +629,7 @@ class ScraperDownloadExecutor:
                 # 避免触发无意义的文件复制和容器重启
                 self.task.status = TaskStatus.COMPLETED
                 self.task.need_restart = False
+                self.task.success_message = f"当前弹幕源版本与所选加载版本（{remote_version}）相同，无需重载"
                 return
 
         # 版本不同，需要部署，先备份当前版本
@@ -823,6 +824,7 @@ class ScraperDownloadExecutor:
             self._log("所有弹幕源都是最新的，无需下载")
             self.task.need_restart = False
             self.task.status = TaskStatus.COMPLETED
+            self.task.success_message = f"所有弹幕源文件哈希值与远程版本（{package_data.get('version', 'unknown')}）一致，无需下载"
             # why: 所有文件都是最新，不需要重启
             # 直接返回即可，SSE会因为status=COMPLETED自动发送done消息
             return
@@ -919,6 +921,7 @@ class ScraperDownloadExecutor:
                 # 避免触发无意义的文件复制和容器重启
                 self.task.status = TaskStatus.COMPLETED
                 self.task.need_restart = False
+                self.task.success_message = f"当前弹幕源版本与所选加载版本（{remote_version}）相同，无需重载"
                 return
 
             # 版本不同，需要部署，先备份当前版本
