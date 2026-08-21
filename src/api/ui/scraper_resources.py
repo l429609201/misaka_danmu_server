@@ -381,12 +381,14 @@ async def get_repo_refs(
 
 async def _fetch_manifest_info_with_retry(manifest_url: str, headers: Dict[str, str], max_retries: int = 3, proxy: Optional[str] = None) -> Optional[Dict[str, Optional[str]]]:
     """
-    带重试机制的版本信息获取函数
+    带重试机制的版本信息获取函数，支持多个备用文件名
+
+    优先尝试 scraper_manifest.json，如果失败则尝试 package.json
 
     Args:
-        manifest_url: scraper_manifest.json 的 URL
+        manifest_url: 包含文件名的完整 URL（会被替换为不同的文件名）
         headers: HTTP 请求头
-        max_retries: 最大重试次数（默认3次）
+        max_retries: 每个文件的最大重试次数（默认3次）
         proxy: 代理URL（可选）
 
     Returns:
@@ -394,30 +396,43 @@ async def _fetch_manifest_info_with_retry(manifest_url: str, headers: Dict[str, 
     """
     timeout_config = httpx.Timeout(15.0, read=8.0)  # 版本检查是非关键操作，超时快速失败
 
-    for attempt in range(max_retries):
-        try:
-            async with httpx.AsyncClient(timeout=timeout_config, headers=headers, follow_redirects=True, proxy=proxy) as client:
-                response = await client.get(manifest_url)
-                if response.status_code == 200:
-                    manifest_data = response.json()
-                    version = manifest_data.get("version", "unknown")
-                    min_server_version = manifest_data.get("min_server_version", None)
-                    logger.info(f"成功获取版本信息: {version} (尝试 {attempt + 1}/{max_retries})")
-                    return {"version": version, "minServerVersion": min_server_version}
-                else:
-                    logger.warning(f"获取版本失败 HTTP {response.status_code} (尝试 {attempt + 1}/{max_retries})")
-        except httpx.TimeoutException:
-            logger.warning(f"连接超时 (尝试 {attempt + 1}/{max_retries})")
-        except httpx.ConnectError as e:
-            logger.warning(f"连接失败: {e} (尝试 {attempt + 1}/{max_retries})")
-        except Exception as e:
-            logger.warning(f"获取版本异常: {e} (尝试 {attempt + 1}/{max_retries})")
+    # 定义要尝试的文件名，按优先级排序
+    filenames_to_try = ["scraper_manifest.json", "package.json"]
 
-        # 如果不是最后一次尝试，等待一小段时间再重试
-        if attempt < max_retries - 1:
-            await asyncio.sleep(0.5)
+    # 依次尝试每个文件名
+    for file_index, filename in enumerate(filenames_to_try):
+        # 替换URL中的文件名
+        current_url = manifest_url.rsplit('/', 1)[0] + f"/{filename}"
+        logger.info(f"[版本检查] 尝试文件 {file_index + 1}/{len(filenames_to_try)}: {filename}")
 
-    logger.error(f"获取版本失败，已重试 {max_retries} 次: {manifest_url}")
+        # 对当前文件进行重试
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=timeout_config, headers=headers, follow_redirects=True, proxy=proxy) as client:
+                    response = await client.get(current_url)
+                    if response.status_code == 200:
+                        manifest_data = response.json()
+                        version = manifest_data.get("version", "unknown")
+                        min_server_version = manifest_data.get("min_server_version", None)
+                        logger.info(f"✓ 成功获取版本信息: {version} (文件: {filename}, 尝试 {attempt + 1}/{max_retries})")
+                        return {"version": version, "minServerVersion": min_server_version}
+                    else:
+                        logger.warning(f"获取版本失败 HTTP {response.status_code} (文件: {filename}, 尝试 {attempt + 1}/{max_retries})")
+            except httpx.TimeoutException:
+                logger.warning(f"连接超时 (文件: {filename}, 尝试 {attempt + 1}/{max_retries})")
+            except httpx.ConnectError as e:
+                logger.warning(f"连接失败: {e} (文件: {filename}, 尝试 {attempt + 1}/{max_retries})")
+            except Exception as e:
+                logger.warning(f"获取版本异常: {e} (文件: {filename}, 尝试 {attempt + 1}/{max_retries})")
+
+            # 如果不是最后一次尝试，等待一小段时间再重试
+            if attempt < max_retries - 1:
+                await asyncio.sleep(0.5)
+
+        # 当前文件的所有重试都失败了，记录并尝试下一个文件
+        logger.warning(f"✗ 文件 {filename} 失败，已重试 {max_retries} 次")
+
+    logger.error(f"获取版本失败，已尝试 {len(filenames_to_try)} 个文件，每个文件重试 {max_retries} 次")
     return None
 
 
