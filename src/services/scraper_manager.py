@@ -1,22 +1,25 @@
 import asyncio
 import importlib
-import json
-import re
-import pkgutil
 import inspect
+import json
 import logging
-import httpx
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+import pkgutil
+import re
+import shutil
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Type, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, Type, TYPE_CHECKING
 from urllib.parse import urlparse
 
+import httpx
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.core.env import is_docker_environment
+from src.db import ConfigManager, crud, models, orm_models
 from src.scrapers.base import BaseScraper
 from src.utils import TransportManager
 from src.utils.buffered_logging import BufferedLogHandler, create_buffered_logger, flush_buffered_logs
-from src.db import models, crud, ConfigManager, orm_models
-from src.core.env import is_docker_environment
+from src.utils.scraper_version_manager import ScraperVersionManager
 
 # 从 models 导入需要的类
 ProviderSearchInfo = models.ProviderSearchInfo
@@ -24,6 +27,34 @@ ScraperSetting = models.ScraperSetting
 
 if TYPE_CHECKING:
     from .metadata_manager import MetadataSourceManager
+
+
+@dataclass
+class ScraperPaths:
+    """爬虫目录路径配置"""
+    scrapers_dir: Path
+    backup_dir: Path
+
+    @classmethod
+    def from_environment(cls) -> 'ScraperPaths':
+        """根据运行环境返回相应的路径配置"""
+        if is_docker_environment():
+            return cls(
+                scrapers_dir=Path("/app/src/scrapers"),
+                backup_dir=Path("/app/config/scrapers_backup")
+            )
+        return cls(
+            scrapers_dir=Path("src/scrapers"),
+            backup_dir=Path("config/scrapers_backup")
+        )
+
+
+@dataclass
+class ModuleDiscoveryResult:
+    """模块发现结果"""
+    discovered_providers: List[str]
+    failed_providers: List[str]
+    default_configs: Dict[str, Tuple[Any, str]]
 
 
 def _version_satisfies(current: str, minimum: str) -> bool:
@@ -86,26 +117,50 @@ class ScraperManager:
             logging.getLogger(__name__).info(f"Webhook 搜索锁已获取: '{lock_key}'。")
             return True
 
+    def _check_version_file_integrity(self, scrapers_dir: Path):
+        """检查 manifest 文件完整性
+
+        使用统一的 scraper_manifest.json 进行版本检查。
+
+        Args:
+            scrapers_dir: scrapers 目录路径
+        """
+        logger = logging.getLogger(__name__)
+
+        # 检查 manifest 是否存在
+        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        if manifest is None:
+            logger.warning(
+                "启动检查: scraper_manifest.json 不存在。"
+                "将在后续步骤中自动生成。"
+            )
+            return
+
+        # 验证 manifest 格式
+        if not ScraperVersionManager.validate_manifest(manifest):
+            logger.warning("启动检查: scraper_manifest.json 格式不完整或不正确")
+            return
+
+        # 完整性检查通过
+        version = manifest.get("version", "unknown")
+        updated_at = manifest.get("updated_at", "N/A")
+        source_count = len(manifest.get("sources", {}))
+
+        logger.info(
+            f"启动检查: 版本文件完整性正常\n"
+            f"  全局版本: {version}\n"
+            f"  更新时间: {updated_at}\n"
+            f"  弹幕源数量: {source_count}"
+        )
+
     async def release_webhook_search_lock(self, lock_key: str):
         """释放 Webhook 搜索锁。"""
         async with self._lock:
             self._webhook_search_locks.discard(lock_key)
             logging.getLogger(__name__).info(f"Webhook 搜索锁已释放: '{lock_key}'。")
 
-
-    
-    async def load_and_sync_scrapers(self, skip_backup_restore: bool = False):
-        """
-        动态发现、同步到数据库并根据数据库设置加载搜索源。
-        此方法可以被再次调用以重新加载搜索源。
-
-        Args:
-            skip_backup_restore: True = 跳过备份恢复检查。
-                用于 executor 热加载场景——文件已经由 apply_deferred_overlay 就位，
-                无需再走备份恢复，否则会因 versions.json 被 overlay 覆盖而误判。
-        """
-        # 清理现有爬虫以确保全新加载
-        await self.close_all()
+    def _cleanup_existing_state(self):
+        """清理现有爬虫状态，为重新加载做准备"""
         self.scrapers.clear()
         self._scraper_classes.clear()
         self._scraper_versions.clear()
@@ -113,320 +168,289 @@ class ScraperManager:
         self._global_version_skip = None
         self.scraper_settings.clear()
 
-        # 检查是否需要从备份恢复（热加载场景传 skip_backup_restore=True 跳过此步骤）
-        if is_docker_environment():
-            scrapers_dir = Path("/app/src/scrapers")
-            backup_dir = Path("/app/config/scrapers_backup")
-        else:
-            scrapers_dir = Path("src/scrapers")
-            backup_dir = Path("config/scrapers_backup")
+    def _get_scraper_paths(self) -> ScraperPaths:
+        """获取爬虫目录路径配置"""
+        return ScraperPaths.from_environment()
 
-        if not skip_backup_restore:
-            # 检查 scrapers 目录是否为空(没有 .so/.pyd 文件)
-            has_scrapers = any(
-                f.suffix in ['.so', '.pyd']
-                for f in scrapers_dir.iterdir()
-                if f.is_file()
-            )
+    async def _restore_from_backup_if_needed(self, paths: ScraperPaths):
+        """检查并从备份恢复爬虫文件（如果需要）"""
+        scrapers_dir = paths.scrapers_dir
+        backup_dir = paths.backup_dir
 
+        # 检查 scrapers 目录是否为空(没有 .so/.pyd 文件)
+        has_scrapers = any(
+            f.suffix in ['.so', '.pyd']
+            for f in scrapers_dir.iterdir()
+            if f.is_file()
+        )
+
+        # 判断是否需要恢复
+        should_restore = False
+        restore_reason = ""
+
+        if not has_scrapers and backup_dir.exists():
             # 情况1: scrapers 目录为空但有备份
-            # 情况2: 备份目录有更新的文件（通过比较 versions.json 的 updated_at 时间戳）
-            should_restore = False
-            restore_reason = ""
+            backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
+            if backup_files:
+                should_restore = True
+                restore_reason = f"scrapers 目录为空但存在备份 ({len(backup_files)} 个文件)"
+        elif has_scrapers and backup_dir.exists():
+            # 情况2: 备份目录有更新的版本（通过比较 manifest）
+            scrapers_manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+            backup_manifest = ScraperVersionManager.load_manifest(backup_dir)
 
-            if not has_scrapers and backup_dir.exists():
-                backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
-                if backup_files:
+            if backup_manifest and scrapers_manifest:
+                result, reason = ScraperVersionManager.compare_manifests(
+                    scrapers_manifest,
+                    backup_manifest
+                )
+                if result < 0:  # 备份更新
                     should_restore = True
-                    restore_reason = f"scrapers 目录为空但存在备份 ({len(backup_files)} 个文件)"
-            elif has_scrapers and backup_dir.exists():
-                import json
-                scrapers_versions_file = scrapers_dir / "versions.json"
-                backup_versions_file = backup_dir / "versions.json"
-                if backup_versions_file.exists():
-                    try:
-                        backup_data = json.loads(backup_versions_file.read_text())
-                        backup_updated_at = backup_data.get("updated_at", "")
-                        scrapers_updated_at = ""
-                        if scrapers_versions_file.exists():
-                            scrapers_data = json.loads(scrapers_versions_file.read_text())
-                            scrapers_updated_at = scrapers_data.get("updated_at", "")
-                        if backup_updated_at and backup_updated_at > scrapers_updated_at:
-                            should_restore = True
-                            restore_reason = f"备份目录有更新 (backup: {backup_updated_at}, scrapers: {scrapers_updated_at or 'N/A'})"
-                    except Exception as e:
-                        logging.getLogger(__name__).debug(f"比较版本信息失败: {e}")
+                    restore_reason = f"备份目录版本更新: {reason}"
 
-            if should_restore:
-                backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
-                if backup_files:
-                    import shutil
-                    logging.getLogger(__name__).info(f"检测到需要从备份恢复: {restore_reason}")
-                    logging.getLogger(__name__).info(f"正在恢复 {len(backup_files)} 个弹幕源文件...")
-                    for file in backup_files:
-                        shutil.copy2(file, scrapers_dir / file.name)
-                    backup_package_file = backup_dir / "package.json"
-                    if backup_package_file.exists():
-                        shutil.copy2(backup_package_file, scrapers_dir / "package.json")
-                        logging.getLogger(__name__).info("已恢复 package.json")
-                    backup_versions_file = backup_dir / "versions.json"
-                    if backup_versions_file.exists():
-                        shutil.copy2(backup_versions_file, scrapers_dir / "versions.json")
-                        logging.getLogger(__name__).info("已恢复 versions.json")
-                    logging.getLogger(__name__).info("备份恢复完成")
-        else:
-            # why：热加载时文件已由 apply_deferred_overlay 就位，无需备份还原；
-            #      跳过避免 versions.json 被 overlay 覆盖后 updated_at 为空，
-            #      误判"备份更新 > scrapers"而重复 import .so 触发 native crash。
-            logging.getLogger(__name__).debug("跳过备份恢复检查（热加载模式）")
+        if should_restore:
+            await self._perform_backup_restore(backup_dir, scrapers_dir, restore_reason)
 
-        self._domain_map.clear()
-        discovered_providers = []
-        default_configs_to_register: Dict[str, Tuple[Any, str]] = {}
-
-        # 从 versions.json 读取各个源的版本号（优先使用，因为 .so 模块无法热更新）
-        versions_from_file: Dict[str, str] = {}
-        global_min_version: Optional[str] = None
-        versions_json_path = scrapers_dir / "versions.json"
-        if versions_json_path.exists():
-            try:
-                import json
-                versions_data = json.loads(versions_json_path.read_text())
-                # versions.json 中的 scrapers 字段存储各个源的版本号
-                versions_from_file = versions_data.get('scrapers', {})
-                # 读取全局版本限制字段
-                global_min_version = versions_data.get('min_server_version')
-                logging.getLogger(__name__).debug(f"从 versions.json 读取到 {len(versions_from_file)} 个源的版本信息")
-            except Exception as e:
-                logging.getLogger(__name__).warning(f"读取 versions.json 失败: {e}")
-
-        # 全局版本检查：若弹幕源包要求的最低服务器版本高于当前版本，跳过全部加载
-        if global_min_version:
-            from src._version import APP_VERSION
-            if not _version_satisfies(APP_VERSION, global_min_version):
-                logging.getLogger(__name__).warning(
-                    f"弹幕源包要求服务器版本 >= {global_min_version}，"
-                    f"当前版本 {APP_VERSION}，跳过全部弹幕源加载"
-                )
-                self._global_version_skip = global_min_version  # 记录以供 /load-check 接口查询
-                return
-
-        # 使用 pkgutil 发现模块，这对于 .py, .pyc, .so 文件都有效。
-        # 我们需要同时处理源码和编译后的情况。
-        # 对文件列表排序以确保每次发现的顺序一致
-        failed_providers: list = []  # import 失败的源，同步数据库时保留，不删除
-        for file_path in sorted(scrapers_dir.iterdir()):
-            # 我们只关心 .py 文件或已知的二进制扩展名
-            if not (file_path.name.endswith(".py") or file_path.name.endswith(".so") or file_path.name.endswith(".pyd")):
-                continue
-
-            # 防御性检查：跳过 0 字节的二进制文件（损坏/不完整的 .so/.pyd）
-            if file_path.name.endswith((".so", ".pyd")):
-                try:
-                    fsize = file_path.stat().st_size
-                    if fsize == 0:
-                        logging.getLogger(__name__).warning(
-                            f"跳过 0 字节文件: {file_path.name}（文件损坏或下载不完整）"
-                        )
-                        failed_providers.append(file_path.stem.split('.')[0])
-                        continue
-                except OSError as e:
-                    logging.getLogger(__name__).warning(f"无法读取文件信息 {file_path.name}: {e}")
-                    failed_providers.append(file_path.stem.split('.')[0])
-                    continue
-
-
-            module_name_stem = file_path.stem.split('.')[0] # e.g., 'bilibili.cpython-311-x86_64-linux-gnu' -> 'bilibili'
-            if module_name_stem.startswith("_") or module_name_stem == "base":
-                continue
-            try:
-
-
-                module_name = f"src.scrapers.{module_name_stem}"
-                module = importlib.import_module(module_name)
-
-                # 提取模块级别的 __version__ 属性（源自身代码版本，仅供展示/存储）
-                module_version = getattr(module, '__version__', None)
-                # PACKAGE_VERSION 是弹幕源总版本号，由发布流程统一注入，用于弹幕库兼容性校验
-                # 与 __version__（各源自身迭代版本）完全独立
-                package_version = getattr(module, 'PACKAGE_VERSION', None)
-
-                for name, obj in inspect.getmembers(module, inspect.isclass):
-                    if issubclass(obj, BaseScraper) and obj is not BaseScraper:
-                        # [E] provider_name 必须是非空字符串，否则后续用作 dict key 会静默污染
-                        provider_name = getattr(obj, 'provider_name', None)
-                        if not provider_name or not isinstance(provider_name, str):
-                            logging.getLogger(__name__).warning(
-                                f"跳过 {module_name_stem} 中的类 {name}："
-                                f"provider_name 缺失或非字符串（值={provider_name!r}）"
-                            )
-                            continue
-
-                        # 双向版本检查
-                        from src._version import APP_VERSION, MIN_SCRAPER_VERSION
-
-                        # 1. 单源要求最低服务器版本（弹幕源 → 服务器）
-                        source_min_ver = getattr(obj, 'min_server_version', None) or ''
-                        if source_min_ver:
-                            if _version_satisfies(APP_VERSION, source_min_ver):
-                                logging.getLogger(__name__).info(
-                                    f"✓ {provider_name} 服务器版本检查通过 (要求 >= {source_min_ver}, 当前 {APP_VERSION})"
-                                )
-                            else:
-                                logging.getLogger(__name__).warning(
-                                    f"✗ 跳过 {provider_name}: 要求服务器版本 >= {source_min_ver}，当前 {APP_VERSION}"
-                                )
-                                self._version_skipped[provider_name] = f"要求服务器 >= {source_min_ver}"
-                                failed_providers.append(module_name_stem)
-                                continue
-
-                        # 2. 服务器要求最低弹幕源总版本号（服务器 → 弹幕源）
-                        # 使用 PACKAGE_VERSION（弹幕源总版本号，由发布流程统一注入），而非源自身 __version__
-                        if package_version:
-                            if not _version_satisfies(package_version, MIN_SCRAPER_VERSION):
-                                logging.getLogger(__name__).warning(
-                                    f"✗ 跳过 {provider_name}: 弹幕源版本过旧"
-                                    f" (弹幕源总版本号 {package_version}, 要求 >= {MIN_SCRAPER_VERSION})"
-                                )
-                                self._version_skipped[provider_name] = (
-                                    f"弹幕源总版本号过旧 (当前 {package_version}, 要求 >= {MIN_SCRAPER_VERSION})"
-                                )
-                                failed_providers.append(module_name_stem)
-                                continue
-                        else:
-                            # 未注入 PACKAGE_VERSION，说明是旧格式或本地开发源，允许加载但记录警告
-                            logging.getLogger(__name__).warning(
-                                f"⚠ {provider_name}: 未声明 PACKAGE_VERSION，跳过弹幕源总版本号检查"
-                            )
-
-                        discovered_providers.append(provider_name)
-                        # [C] handled_domains 必须是可迭代的字符串序列，不能是裸字符串
-                        # （裸字符串会被逐字符迭代，把 "b","i","l"... 写入 _domain_map）
-                        raw_domains = getattr(obj, 'handled_domains', [])
-                        if isinstance(raw_domains, str):
-                            logging.getLogger(__name__).warning(
-                                f"{provider_name}.handled_domains 是裸字符串 {raw_domains!r}，"
-                                f"应为列表；已自动包装为单元素列表。"
-                            )
-                            raw_domains = [raw_domains]
-                        for domain in raw_domains:
-                            if isinstance(domain, str) and domain:
-                                self._domain_map[domain] = provider_name
-
-                        # 在加载时直接发现并收集提供商特定的默认配置
-                        if hasattr(obj, '_PROVIDER_SPECIFIC_BLACKLIST_DEFAULT'):
-                            config_key = f"{provider_name}_episode_blacklist_regex"
-                            # [D] 默认值必须是字符串；compiled pattern 等类型 str() 兜底
-                            default_value = getattr(obj, '_PROVIDER_SPECIFIC_BLACKLIST_DEFAULT', '')
-                            if not isinstance(default_value, str):
-                                default_value = str(default_value)
-                            description = f"{provider_name.capitalize()} 源的特定分集标题黑名单 (正则表达式)。"
-                            default_configs_to_register[config_key] = (default_value, description)
-
-                        # 收集 scraper 声明的其他默认配置（如 dandanplay 的跨域代理配置）
-                        if hasattr(obj, '_DEFAULT_CONFIGS'):
-                            # [B] 显式 _DEFAULT_CONFIGS = None 时 getattr 返回 None，.items() 会崩
-                            scraper_default_configs = getattr(obj, '_DEFAULT_CONFIGS', None)
-                            if not isinstance(scraper_default_configs, dict):
-                                if scraper_default_configs is not None:
-                                    logging.getLogger(__name__).warning(
-                                        f"跳过 {provider_name}._DEFAULT_CONFIGS：应为 dict，"
-                                        f"实际类型为 {type(scraper_default_configs).__name__}。"
-                                    )
-                                scraper_default_configs = {}
-                            for config_key, config_tuple in scraper_default_configs.items():
-                                # why：值必须是 (默认值, 描述) 二元组；裸字符串会被
-                                # initialize_configs 按字符解包，直接崩启动流程。
-                                if not (isinstance(config_tuple, (tuple, list)) and len(config_tuple) == 2):
-                                    logging.getLogger(__name__).warning(
-                                        f"跳过 {provider_name}._DEFAULT_CONFIGS[{config_key!r}]："
-                                        f"值应为 (默认值, 描述) 二元组，"
-                                        f"实际类型为 {type(config_tuple).__name__}={config_tuple!r}。"
-                                    )
-                                    continue
-                                default_configs_to_register[config_key] = config_tuple
-                                logging.getLogger(__name__).debug(f"发现 {provider_name} 的默认配置: {config_key}")
-
-                        self._scraper_classes[provider_name] = obj
-                        # 存储版本号：优先使用 versions.json 中的版本（因为 .so 模块无法热更新）
-                        if provider_name in versions_from_file:
-                            self._scraper_versions[provider_name] = versions_from_file[provider_name]
-                        elif module_version:
-                            self._scraper_versions[provider_name] = module_version
-
-            except TypeError as e:
-                if "couldn't parse file content" in str(e).lower():
-                    # 这是一个针对 protobuf 版本不兼容的特殊情况。
-                    error_msg = (
-                        f"加载搜索源模块 {module_name} 失败，疑似 protobuf 版本不兼容。 "
-                        f"请确保已将 'protobuf' 版本固定为 '3.20.3' (在 requirements.txt 中), "
-                        f"并且已经通过 'docker-compose build' 命令重新构建了您的 Docker 镜像。"
-                    )
-                    logging.getLogger(__name__).error(error_msg)
-                else:
-                    # 正常处理其他 TypeError
-                    logging.getLogger(__name__).error(f"加载搜索源模块 {module_name} 失败，已跳过。错误: {e}", exc_info=True)
-                failed_providers.append(module_name_stem)
-            except Exception as e:
-                # 使用标准日志记录器
-                logging.getLogger(__name__).error(f"加载搜索源模块 {module_name} 失败，已跳过。错误: {e}", exc_info=True)
-                failed_providers.append(module_name_stem)
-        
-        # 在同步数据库之前，注册所有发现的默认配置
-        if default_configs_to_register:
-            try:
-                await self.config_manager.register_defaults(default_configs_to_register)
-                logging.getLogger(__name__).info(
-                    f"已为 {len(default_configs_to_register)} 个搜索源注册默认配置。"
-                )
-            except Exception as e:
-                # why：兜底——收集阶段的格式校验应已过滤坏数据，
-                # 但若仍有漏网条目导致注册失败，记录错误后继续启动而非崩溃。
-                # 默认配置注册失败的最坏结果是某些配置项没有默认值，
-                # 不应因此阻塞整个弹幕服务的启动。
-                logging.getLogger(__name__).error(
-                    f"注册弹幕源默认配置时出错（已跳过，不影响启动）: {e}", exc_info=True
-                )
-
-        # ── 远程版本校验：拉取公共仓库 package.json，比较全局最低版本要求 ──
-        if await self._check_remote_min_version():
-            # 当前服务器版本不满足远程弹幕源包的最低版本要求，跳过全部加载
+    async def _perform_backup_restore(self, backup_dir: Path, scrapers_dir: Path, reason: str):
+        """执行备份恢复操作"""
+        backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
+        if not backup_files:
             return
 
-        # 同步数据库：清理不可用的源，确保 'custom' 源始终存在。
+        logger = logging.getLogger(__name__)
+
+        # 从 manifest 读取版本号用于日志对比
+        backup_version = ScraperVersionManager.get_version_from_manifest(
+            ScraperVersionManager.load_manifest(backup_dir)
+        )
+        scrapers_version = ScraperVersionManager.get_version_from_manifest(
+            ScraperVersionManager.load_manifest(scrapers_dir)
+        )
+
+        logger.info(f"检测到需要从备份恢复: {reason}")
+        logger.info(
+            f"备份恢复详情:\n"
+            f"  备份版本: {backup_version}\n"
+            f"  运行版本: {scrapers_version}\n"
+            f"  恢复文件数: {len(backup_files)}"
+        )
+
+        # 复制二进制文件
+        for file in backup_files:
+            shutil.copy2(file, scrapers_dir / file.name)
+
+        # 恢复 legacy 文件（供 manifest 缺失时提取）
+        for legacy_name in ("package.json", "versions.json"):
+            legacy_file = backup_dir / legacy_name
+            if legacy_file.exists():
+                shutil.copy2(legacy_file, scrapers_dir / legacy_name)
+
+        # 恢复 manifest（如果存在且格式正确）
+        backup_manifest_path = backup_dir / ScraperVersionManager.MANIFEST_FILENAME
+        if backup_manifest_path.exists():
+            # 先尝试加载并验证格式
+            backup_manifest = ScraperVersionManager.load_manifest(backup_dir)
+            if backup_manifest and ScraperVersionManager.validate_manifest(backup_manifest):
+                # 格式正确，直接复制
+                shutil.copy2(backup_manifest_path, scrapers_dir / ScraperVersionManager.MANIFEST_FILENAME)
+                logger.info("已恢复 scraper_manifest.json")
+            else:
+                # 格式错误或无效，从 legacy 文件重新生成
+                logger.warning("备份的 manifest 格式不正确，将从 legacy 文件重新生成")
+                try:
+                    package_json = backup_dir / "package.json"
+                    versions_json = backup_dir / "versions.json"
+                    if package_json.exists() or versions_json.exists():
+                        regenerated_manifest = ScraperVersionManager.extract_manifest_from_legacy(
+                            package_json,
+                            versions_json,
+                            backup_dir
+                        )
+                        ScraperVersionManager.save_manifest(regenerated_manifest, scrapers_dir)
+                        # 同时更新 backup 目录的 manifest
+                        ScraperVersionManager.save_manifest(regenerated_manifest, backup_dir)
+                        logger.info("已从 legacy 文件重新生成 scraper_manifest.json")
+                except Exception as e:
+                    logger.error(f"重新生成 manifest 失败: {e}")
+
+        logger.info(f"备份恢复完成 - 当前版本: {backup_version}")
+
+    def _ensure_manifest_exists(self, scrapers_dir: Path):
+        """确保 manifest 文件存在且格式正确，如不存在或格式错误则从 legacy 文件提取生成"""
+        logger = logging.getLogger(__name__)
+        manifest_path = scrapers_dir / ScraperVersionManager.MANIFEST_FILENAME
+
+        # 检查是否存在且格式正确
+        need_regenerate = False
+        if manifest_path.exists():
+            manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+            if not manifest or not ScraperVersionManager.validate_manifest(manifest):
+                logger.warning("现有 manifest 格式不正确，将重新生成")
+                need_regenerate = True
+        else:
+            need_regenerate = True
+
+        if not need_regenerate:
+            return
+
+        try:
+            manifest = ScraperVersionManager.extract_manifest_from_legacy(
+                scrapers_dir / "package.json",
+                scrapers_dir / "versions.json",
+                scrapers_dir
+            )
+            ScraperVersionManager.save_manifest(manifest, scrapers_dir)
+
+            # 同步到备份目录
+            backup_dir = self._get_scraper_paths().backup_dir
+            if backup_dir.exists():
+                ScraperVersionManager.save_manifest(manifest, backup_dir)
+
+            logger.info("已生成/更新 scraper_manifest.json")
+        except Exception as e:
+            logger.warning(f"生成 manifest 失败: {e}")
+
+    def _cleanup_legacy_version_files(self, scrapers_dir: Path):
+        """
+        清理 scrapers 目录中的 legacy 版本文件（package.json 和 versions.json）
+
+        这些文件已被 scraper_manifest.json 取代，不再需要保留在运行目录中。
+        """
+        logger = logging.getLogger(__name__)
+        legacy_files = ["package.json", "versions.json"]
+
+        for filename in legacy_files:
+            file_path = scrapers_dir / filename
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                    logger.info(f"✓ 已清理 legacy 文件: {filename}")
+                except Exception as e:
+                    logger.warning(f"清理 {filename} 失败: {e}")
+
+    async def load_and_sync_scrapers(self, skip_backup_restore: bool = False):
+        """
+        动态发现、同步到数据库并根据数据库设置加载搜索源。
+        此方法可以被再次调用以重新加载搜索源。
+
+        Args:
+            skip_backup_restore: True = 跳过备份恢复检查。
+                用于 executor 热加载场景——文件已经由 apply_deferred_overlay 就位。
+        """
+        # 清理现有爬虫以确保全新加载
+        await self.close_all()
+        self._cleanup_existing_state()
+
+        # 获取路径配置
+        paths = self._get_scraper_paths()
+
+        # 检查是否需要从备份恢复
+        if not skip_backup_restore:
+            await self._restore_from_backup_if_needed(paths)
+        else:
+            logging.getLogger(__name__).debug("跳过备份恢复检查（热加载模式）")
+
+        # 确保 manifest 文件存在
+        self._ensure_manifest_exists(paths.scrapers_dir)
+
+        # 清理 legacy 版本文件（package.json 和 versions.json）
+        self._cleanup_legacy_version_files(paths.scrapers_dir)
+
+        # 版本文件完整性检查
+        self._check_version_file_integrity(paths.scrapers_dir)
+
+        # 全局版本检查
+        if not await self._check_global_version_compatibility(paths.scrapers_dir):
+            return
+
+        # 发现并加载模块
+        result = await self._discover_and_load_modules(paths.scrapers_dir)
+
+        # 注册默认配置
+        if result.default_configs:
+            await self._register_default_configs(result.default_configs)
+
+        # 远程版本校验
+        if await self._check_remote_min_version():
+            return
+
+        # 同步到数据库
+        await self._sync_to_database(result.discovered_providers, result.failed_providers)
+
+        # 实例化爬虫
+        await self._instantiate_scrapers()
+
+    async def _check_global_version_compatibility(self, scrapers_dir: Path) -> bool:
+        """
+        检查全局版本兼容性。
+
+        Returns:
+            bool: True 表示版本兼容可以继续，False 表示版本不兼容需要跳过加载
+        """
+        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        if not manifest:
+            return True
+
+        global_min_version = manifest.get("min_server_version")
+        if not global_min_version:
+            return True
+
+        from src._version import APP_VERSION
+        if not _version_satisfies(APP_VERSION, global_min_version):
+            logging.getLogger(__name__).warning(
+                f"弹幕源包要求服务器版本 >= {global_min_version}，"
+                f"当前版本 {APP_VERSION}，跳过全部弹幕源加载"
+            )
+            self._global_version_skip = global_min_version
+            return False
+
+        return True
+
+    async def _register_default_configs(self, default_configs: Dict[str, Tuple[Any, str]]):
+        """注册爬虫的默认配置"""
+        try:
+            await self.config_manager.register_defaults(default_configs)
+            logging.getLogger(__name__).info(
+                f"已为 {len(default_configs)} 个搜索源注册默认配置。"
+            )
+        except Exception as e:
+            logging.getLogger(__name__).error(
+                f"注册弹幕源默认配置时出错（已跳过，不影响启动）: {e}", exc_info=True
+            )
+
+    async def _sync_to_database(self, discovered_providers: List[str], failed_providers: List[str]):
+        """将发现的爬虫同步到数据库"""
         async with self._session_factory() as session:
-            # 1. 清理数据库中不再存在的源（只保留成功加载的 + custom）。
-            #    加载失败的源也会被移除，避免前端显示不可用的源。
+            # 清理数据库中不再存在的源（只保留成功加载的 + custom）
             providers_to_keep = discovered_providers + ['custom']
             await crud.remove_stale_scrapers(session, providers_to_keep)
-            
-            # 2. 确保所有发现的搜索源和 'custom' 源都存在于数据库中。
-            #    这会添加任何新的搜索源，包括首次添加 'custom'。
+
+            # 确保所有发现的搜索源和 'custom' 源都存在于数据库中
             providers_to_sync = discovered_providers + ['custom']
             await crud.sync_scrapers_to_db(session, providers_to_sync)
 
-            # 2.5 按用户保存的顺序快照重排 display_order。
-            #    why：弹幕源更新/重启时源可能短暂缺失被删、回归后被当新源追加到末尾，
-            #    用 config 表的顺序快照恢复用户调好的顺序，避免顺序反复丢失。
+            # 按用户保存的顺序快照重排 display_order
             await crud.apply_scraper_order_from_snapshot(session)
 
-            # 3. 重新加载所有设置。
+            # 重新加载所有设置
             settings_list = await crud.get_all_scraper_settings(session)
+
         self.scraper_settings = {s['providerName']: s for s in settings_list}
 
-        # Instantiate all discovered scrapers
+    async def _instantiate_scrapers(self):
+        """实例化所有已发现的爬虫类"""
         enabled_count = 0
         disabled_count = 0
-        scraper_items = []  # (order, name, status)
+        scraper_items = []  # (order, name)
 
         for provider_name, scraper_class in list(self._scraper_classes.items()):
-            # why：__init__ 是第三方源自己的代码，可能因源内部错误（读配置、编译正则、
-            # 建 httpx 客户端等）抛异常。原实现无保护，一个源构造失败会中断整个循环，
-            # 后续所有源都不会被实例化，直接导致主程序启动失败。改为逐源隔离：
-            # 失败的源移出 _scraper_classes 并计入 failed，其余源照常可用。
             try:
-                scraper_instance = scraper_class(self._session_factory, self.config_manager, self.transport_manager)
-                # 【优化】设置 scraper_manager 引用,以便使用缓存的配置
+                scraper_instance = scraper_class(
+                    self._session_factory,
+                    self.config_manager,
+                    self.transport_manager
+                )
+                # 设置 scraper_manager 引用，以便使用缓存的配置
                 scraper_instance._scraper_manager_ref = self
             except Exception as e:
                 logging.getLogger(__name__).error(
@@ -443,12 +467,11 @@ class ScraperManager:
             setting = self.scraper_settings.get(provider_name, {})
 
             is_enabled = setting.get('isEnabled', True)
-            # why：displayOrder 来自数据库，历史脏数据可能是 None 或字符串。
-            # 直接拿去排序/格式化会抛 TypeError，让整段汇总日志连带启动一起失败。
             try:
                 order = int(setting.get('displayOrder', 999))
             except (TypeError, ValueError):
                 order = 999
+
             if is_enabled:
                 enabled_count += 1
             else:
@@ -456,16 +479,316 @@ class ScraperManager:
             scraper_items.append((order, provider_name))
 
             if not setting:
-                logging.getLogger(__name__).warning(f"已加载搜索源 '{provider_name}'，但在数据库中未找到其设置。")
+                logging.getLogger(__name__).warning(
+                    f"已加载搜索源 '{provider_name}'，但在数据库中未找到其设置。"
+                )
 
         # 汇总输出（按顺序排列）
         scraper_items.sort(key=lambda x: (x[0], x[1]))
-        _P = "  - "
         total = enabled_count + disabled_count
         log_lines = [f"已加载 {total} 个搜索源 (已启用: {enabled_count}, 已禁用: {disabled_count})"]
         for order, name in scraper_items:
-            log_lines.append(f"{_P}(顺序: {order:02d}) {name}")
+            log_lines.append(f"  - (顺序: {order:02d}) {name}")
         logging.getLogger(__name__).info("\n".join(log_lines))
+
+    async def _discover_and_load_modules(self, scrapers_dir: Path) -> ModuleDiscoveryResult:
+        """
+        发现并加载爬虫模块。
+
+        Returns:
+            ModuleDiscoveryResult: 包含发现的提供者、失败的提供者和默认配置
+        """
+        self._domain_map.clear()
+        discovered_providers = []
+        failed_providers = []
+        default_configs = {}
+
+        # 从 manifest 读取各源版本号
+        versions_from_file = self._load_versions_from_manifest(scrapers_dir)
+
+        # 遍历所有模块文件
+        for file_path in sorted(scrapers_dir.iterdir()):
+            if not self._is_valid_module_file(file_path):
+                continue
+
+            # 防御性检查：跳过损坏的二进制文件
+            if file_path.name.endswith((".so", ".pyd")):
+                if not self._check_binary_file_integrity(file_path, failed_providers):
+                    continue
+
+            module_name_stem = file_path.stem.split('.')[0]
+            if module_name_stem.startswith("_") or module_name_stem == "base":
+                continue
+
+            # 加载单个模块
+            result = await self._load_single_module(
+                module_name_stem,
+                versions_from_file,
+                default_configs
+            )
+
+            if result:
+                discovered_providers.append(result)
+            else:
+                failed_providers.append(module_name_stem)
+
+        return ModuleDiscoveryResult(
+            discovered_providers=discovered_providers,
+            failed_providers=failed_providers,
+            default_configs=default_configs
+        )
+
+    def _load_versions_from_manifest(self, scrapers_dir: Path) -> Dict[str, str]:
+        """从 manifest 读取版本信息"""
+        versions = {}
+        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        if manifest:
+            for provider, info in manifest.get("sources", {}).items():
+                ver = info.get("version")
+                if ver:
+                    versions[provider] = ver
+            logging.getLogger(__name__).debug(
+                f"从 manifest 读取到 {len(versions)} 个源的版本信息"
+            )
+        return versions
+
+    def _is_valid_module_file(self, file_path: Path) -> bool:
+        """检查文件是否是有效的模块文件"""
+        return (
+            file_path.name.endswith(".py") or
+            file_path.name.endswith(".so") or
+            file_path.name.endswith(".pyd")
+        )
+
+    def _check_binary_file_integrity(self, file_path: Path, failed_providers: List[str]) -> bool:
+        """检查二进制文件完整性，返回 True 表示文件正常"""
+        try:
+            fsize = file_path.stat().st_size
+            if fsize == 0:
+                logging.getLogger(__name__).warning(
+                    f"跳过 0 字节文件: {file_path.name}（文件损坏或下载不完整）"
+                )
+                failed_providers.append(file_path.stem.split('.')[0])
+                return False
+        except OSError as e:
+            logging.getLogger(__name__).warning(f"无法读取文件信息 {file_path.name}: {e}")
+            failed_providers.append(file_path.stem.split('.')[0])
+            return False
+        return True
+
+    async def _load_single_module(
+        self,
+        module_name_stem: str,
+        versions_from_file: Dict[str, str],
+        default_configs: Dict[str, Tuple[Any, str]]
+    ) -> Optional[str]:
+        """
+        加载单个爬虫模块。
+
+        Returns:
+            str: 成功加载的 provider_name，失败返回 None
+        """
+        module_name = f"src.scrapers.{module_name_stem}"
+
+        try:
+            module = importlib.import_module(module_name)
+            module_version = getattr(module, '__version__', None)
+            package_version = getattr(module, 'PACKAGE_VERSION', None)
+
+            # 查找 BaseScraper 子类
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                if not (issubclass(obj, BaseScraper) and obj is not BaseScraper):
+                    continue
+
+                provider_name = self._validate_provider_name(obj, module_name_stem, name)
+                if not provider_name:
+                    continue
+
+                # 版本兼容性检查
+                if not self._check_version_compatibility(provider_name, package_version, obj):
+                    return None
+
+                # 注册提供者
+                self._register_provider(
+                    provider_name,
+                    obj,
+                    module_version,
+                    versions_from_file,
+                    default_configs
+                )
+
+                return provider_name
+
+        except TypeError as e:
+            self._handle_module_load_error(module_name, module_name_stem, e, is_type_error=True)
+        except Exception as e:
+            self._handle_module_load_error(module_name, module_name_stem, e, is_type_error=False)
+
+        return None
+
+    def _validate_provider_name(self, obj: Type, module_name_stem: str, class_name: str) -> Optional[str]:
+        """验证并返回 provider_name"""
+        provider_name = getattr(obj, 'provider_name', None)
+        if not provider_name or not isinstance(provider_name, str):
+            logging.getLogger(__name__).warning(
+                f"跳过 {module_name_stem} 中的类 {class_name}："
+                f"provider_name 缺失或非字符串（值={provider_name!r}）"
+            )
+            return None
+        return provider_name
+
+    def _check_version_compatibility(
+        self,
+        provider_name: str,
+        package_version: Optional[str],
+        scraper_class: Type
+    ) -> bool:
+        """
+        检查版本兼容性（双向检查）。
+
+        Returns:
+            bool: True 表示兼容，False 表示不兼容需要跳过
+        """
+        from src._version import APP_VERSION, MIN_SCRAPER_VERSION
+
+        # 1. 单源要求最低服务器版本（弹幕源 → 服务器）
+        source_min_ver = getattr(scraper_class, 'min_server_version', None) or ''
+        if source_min_ver:
+            if _version_satisfies(APP_VERSION, source_min_ver):
+                logging.getLogger(__name__).info(
+                    f"✓ {provider_name} 服务器版本检查通过 "
+                    f"(要求 >= {source_min_ver}, 当前 {APP_VERSION})"
+                )
+            else:
+                logging.getLogger(__name__).warning(
+                    f"✗ 跳过 {provider_name}: "
+                    f"要求服务器版本 >= {source_min_ver}，当前 {APP_VERSION}"
+                )
+                self._version_skipped[provider_name] = f"要求服务器 >= {source_min_ver}"
+                return False
+
+        # 2. 服务器要求最低弹幕源总版本号（服务器 → 弹幕源）
+        if package_version:
+            if not _version_satisfies(package_version, MIN_SCRAPER_VERSION):
+                logging.getLogger(__name__).warning(
+                    f"✗ 跳过 {provider_name}: 弹幕源版本过旧 "
+                    f"(弹幕源总版本号 {package_version}, 要求 >= {MIN_SCRAPER_VERSION})"
+                )
+                self._version_skipped[provider_name] = (
+                    f"弹幕源总版本号过旧 (当前 {package_version}, 要求 >= {MIN_SCRAPER_VERSION})"
+                )
+                return False
+        else:
+            # 未注入 PACKAGE_VERSION，允许加载但记录警告
+            logging.getLogger(__name__).warning(
+                f"⚠ {provider_name}: 未声明 PACKAGE_VERSION，跳过弹幕源总版本号检查"
+            )
+
+        return True
+
+    def _register_provider(
+        self,
+        provider_name: str,
+        scraper_class: Type,
+        module_version: Optional[str],
+        versions_from_file: Dict[str, str],
+        default_configs: Dict[str, Tuple[Any, str]]
+    ):
+        """注册一个已验证的爬虫提供者"""
+        # 注册域名映射
+        self._register_domains(provider_name, scraper_class)
+
+        # 收集默认配置
+        self._collect_default_configs(provider_name, scraper_class, default_configs)
+
+        # 注册爬虫类
+        self._scraper_classes[provider_name] = scraper_class
+
+        # 版本号优先从 manifest 读取（因为 .so 模块无法热更新）
+        if provider_name in versions_from_file:
+            self._scraper_versions[provider_name] = versions_from_file[provider_name]
+        elif module_version:
+            self._scraper_versions[provider_name] = module_version
+
+    def _register_domains(self, provider_name: str, scraper_class: Type):
+        """注册爬虫处理的域名"""
+        raw_domains = getattr(scraper_class, 'handled_domains', [])
+
+        # 防御：裸字符串会被逐字符迭代
+        if isinstance(raw_domains, str):
+            logging.getLogger(__name__).warning(
+                f"{provider_name}.handled_domains 是裸字符串 {raw_domains!r}，"
+                f"应为列表；已自动包装为单元素列表。"
+            )
+            raw_domains = [raw_domains]
+
+        for domain in raw_domains:
+            if isinstance(domain, str) and domain:
+                self._domain_map[domain] = provider_name
+
+    def _collect_default_configs(
+        self,
+        provider_name: str,
+        scraper_class: Type,
+        default_configs: Dict[str, Tuple[Any, str]]
+    ):
+        """收集爬虫的默认配置"""
+        # 1. 收集特定的黑名单配置
+        if hasattr(scraper_class, '_PROVIDER_SPECIFIC_BLACKLIST_DEFAULT'):
+            config_key = f"{provider_name}_episode_blacklist_regex"
+            default_value = getattr(scraper_class, '_PROVIDER_SPECIFIC_BLACKLIST_DEFAULT', '')
+
+            if not isinstance(default_value, str):
+                default_value = str(default_value)
+
+            description = f"{provider_name.capitalize()} 源的特定分集标题黑名单 (正则表达式)。"
+            default_configs[config_key] = (default_value, description)
+
+        # 2. 收集其他默认配置
+        if hasattr(scraper_class, '_DEFAULT_CONFIGS'):
+            scraper_default_configs = getattr(scraper_class, '_DEFAULT_CONFIGS', None)
+
+            if not isinstance(scraper_default_configs, dict):
+                if scraper_default_configs is not None:
+                    logging.getLogger(__name__).warning(
+                        f"跳过 {provider_name}._DEFAULT_CONFIGS：应为 dict，"
+                        f"实际类型为 {type(scraper_default_configs).__name__}。"
+                    )
+                return
+
+            for config_key, config_tuple in scraper_default_configs.items():
+                if not (isinstance(config_tuple, (tuple, list)) and len(config_tuple) == 2):
+                    logging.getLogger(__name__).warning(
+                        f"跳过 {provider_name}._DEFAULT_CONFIGS[{config_key!r}]："
+                        f"值应为 (默认值, 描述) 二元组，"
+                        f"实际类型为 {type(config_tuple).__name__}={config_tuple!r}。"
+                    )
+                    continue
+
+                default_configs[config_key] = config_tuple
+                logging.getLogger(__name__).debug(f"发现 {provider_name} 的默认配置: {config_key}")
+
+    def _handle_module_load_error(
+        self,
+        module_name: str,
+        module_name_stem: str,
+        error: Exception,
+        is_type_error: bool
+    ):
+        """统一处理模块加载错误"""
+        if is_type_error and "couldn't parse file content" in str(error).lower():
+            # protobuf 版本不兼容的特殊情况
+            error_msg = (
+                f"加载搜索源模块 {module_name} 失败，疑似 protobuf 版本不兼容。 "
+                f"请确保已将 'protobuf' 版本固定为 '3.20.3' (在 requirements.txt 中), "
+                f"并且已经通过 'docker-compose build' 命令重新构建了您的 Docker 镜像。"
+            )
+            logging.getLogger(__name__).error(error_msg)
+        else:
+            logging.getLogger(__name__).error(
+                f"加载搜索源模块 {module_name} 失败，已跳过。错误: {error}",
+                exc_info=True
+            )
 
     async def initialize(self):
         """
@@ -796,10 +1119,10 @@ class ScraperManager:
                 is_junk = True
             if not is_junk and eng_pattern and eng_pattern.search(item.title):
                 is_junk = True
-            
+
             if not is_junk:
                 filtered_results.append(item)
-        
+
         logging.getLogger(__name__).info(f"全局标题过滤: 从 {len(all_results)} 个结果中保留了 {len(filtered_results)} 个。")
 
         # 确保各源日志块在返回结果（进而触发计时报告）之前全部输出完毕
@@ -980,7 +1303,7 @@ class ScraperManager:
                     return provider_name, results
             except Exception as e:
                 logging.getLogger(__name__).error(f"顺序搜索时，提供方 '{provider_name}' 发生错误: {e}", exc_info=True)
-        
+
         return None, None
 
     async def search(self, provider: str, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[ProviderSearchInfo]:
@@ -993,7 +1316,7 @@ class ScraperManager:
         except Exception as e:
             logging.getLogger(__name__).error(f"主搜索源 '{provider}' 搜索时发生错误: {e}", exc_info=True)
             results = []
-        
+
         # 如果主搜索源没有结果，则尝试故障转移
         if not results and self.metadata_manager:
             try:
@@ -1002,7 +1325,7 @@ class ScraperManager:
                     return failover_results
             except Exception as e:
                 logging.getLogger(__name__).error(f"搜索故障转移过程中发生错误: {e}", exc_info=True)
-        
+
         return results
 
     async def close_all(self):
@@ -1038,7 +1361,7 @@ class ScraperManager:
 
     async def _check_remote_min_version(self) -> bool:
         """
-        拉取远程公共仓库的 package.json，比较全局 min_server_version。
+        拉取远程公共仓库的 manifest，比较全局 min_server_version。
         如果当前服务器版本低于远程要求的最低版本，则不允许加载弹幕源。
 
         Returns:
@@ -1064,7 +1387,7 @@ class ScraperManager:
             if not base_url:
                 return False
 
-            package_url = f"{base_url}/package.json"
+            manifest_url = f"{base_url}/{ScraperVersionManager.MANIFEST_FILENAME}"
 
             # 获取代理和 Token
             headers = {}
@@ -1077,20 +1400,20 @@ class ScraperManager:
             proxy_enabled_str = await self.config_manager.get("proxyEnabled", "false")
             proxy = proxy_url if proxy_enabled_str.lower() == "true" and proxy_url else None
 
-            # 拉取远程 package.json（超时 5 秒，不阻塞启动）
+            # 拉取远程 manifest（超时 5 秒，不阻塞启动）
             timeout = httpx.Timeout(5.0, read=5.0)
             async with httpx.AsyncClient(
                 timeout=timeout, headers=headers, follow_redirects=True, proxy=proxy
             ) as client:
-                resp = await client.get(package_url)
+                resp = await client.get(manifest_url)
                 if resp.status_code != 200:
                     logging.getLogger(__name__).debug(
-                        f"拉取远程 package.json 失败: HTTP {resp.status_code}，跳过版本校验"
+                        f"拉取远程 manifest 失败: HTTP {resp.status_code}，跳过版本校验"
                     )
                     return False
-                package_data = resp.json()
+                manifest_data = resp.json()
 
-            min_ver = package_data.get("min_server_version")
+            min_ver = manifest_data.get("min_server_version")
             if not min_ver:
                 return False
 

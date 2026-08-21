@@ -549,7 +549,7 @@ async def search_anime_provider(
             )
 
             # 2. 等待两个任务都完成
-            all_results, ((all_possible_aliases, supplemental_results, aux_title_type_map), _) = await asyncio.gather(
+            all_results, ((all_possible_aliases, supplemental_results, aux_title_type_map, alias_sources_map), _) = await asyncio.gather(
                 main_task, supp_task
             )
 

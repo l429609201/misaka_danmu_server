@@ -10,6 +10,7 @@ from typing import Dict, Optional, Tuple, List, TYPE_CHECKING
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import CommandHandler, parse_command
+from src.utils.image_utils import get_custom_domain
 
 if TYPE_CHECKING:
     from src.api.dandan import DandanSearchAnimeResponse

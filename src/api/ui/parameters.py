@@ -286,68 +286,104 @@ async def upload_scraper_package(
             scrapers_dir = _get_scrapers_dir()
             from .scraper_resources import BACKUP_DIR
 
-            # 判断是否是首次上传（当前目录和备份目录都没有弹幕源）
-            def _has_scraper_files(directory: Path) -> bool:
-                """检查目录中是否有弹幕源文件"""
-                if not directory.exists():
-                    return False
-                for f in directory.glob("*"):
+            # 统计要上传的文件数和判断部署策略
+            from src.utils.scraper_deployment_checker import should_restart_for_deployment, count_scraper_files
+
+            file_count = count_scraper_files(extract_dir)
+
+            # 综合判断部署策略
+            deployment_strategy = should_restart_for_deployment(
+                scrapers_dir=scrapers_dir,
+                backup_dir=BACKUP_DIR,
+                scraper_manager=manager,
+                logger_instance=logger
+            )
+
+            # ========== 步骤1：在临时目录生成 scraper_manifest.json ==========
+            logger.info("步骤1：在临时目录生成 scraper_manifest.json")
+
+            # 如果没有 package.json，先在临时目录创建
+            temp_package_file = extract_dir / "package.json"
+            temp_versions_file = extract_dir / "versions.json"
+
+            if not temp_package_file.exists():
+                logger.info("离线包中没有 package.json，从 versions.json 创建")
+                package_data = {
+                    "version": versions_data.get('version', 'unknown'),
+                    "platform": versions_data.get('platform', ''),
+                    "type": versions_data.get('type', ''),
+                    "min_server_version": versions_data.get('min_server_version'),
+                }
+                temp_package_file.write_text(json.dumps(package_data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+            # 在临时目录生成 manifest
+            try:
+                from src.utils.scraper_version_manager import ScraperVersionManager
+                manifest = ScraperVersionManager.extract_manifest_from_legacy(
+                    temp_package_file,
+                    temp_versions_file,
+                    extract_dir  # 扫描临时目录的 .so 文件
+                )
+                logger.info(f"✓ 已在临时目录生成 scraper_manifest.json: {len(manifest.get('sources', {}))} 个源")
+            except Exception as e:
+                logger.error(f"生成 scraper_manifest.json 失败: {e}")
+                raise HTTPException(status_code=500, detail=f"生成 manifest 失败: {e}")
+
+            # ========== 步骤2：决定部署策略 ==========
+            need_restart = deployment_strategy["need_restart"]
+            logger.info(f"部署策略: {deployment_strategy['reason']}")
+
+            # ========== 步骤3：部署文件 ==========
+            # 确保目录存在
+            scrapers_dir.mkdir(parents=True, exist_ok=True)
+            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+            if need_restart:
+                # ========== 需要重启：只部署到 backup 目录 ==========
+                logger.info("部署到 backup 目录（需要重启容器）")
+
+                # 复制 .so/.pyd 文件到 backup 目录
+                for f in extract_dir.iterdir():
                     if f.is_file() and f.suffix in ['.so', '.pyd']:
-                        return True
-                return False
+                        shutil.copy2(f, BACKUP_DIR / f.name)
+                        logger.info(f"已复制文件到 backup: {f.name}")
 
-            has_current_scrapers = _has_scraper_files(scrapers_dir)
-            has_backup_scrapers = _has_scraper_files(BACKUP_DIR)
-            is_first_upload = not has_current_scrapers and not has_backup_scrapers
+                # 复制中间文件到 backup
+                shutil.copy2(temp_versions_file, BACKUP_DIR / "versions.json")
+                shutil.copy2(temp_package_file, BACKUP_DIR / "package.json")
 
-            logger.info(f"离线包上传检测: 当前目录有弹幕源={has_current_scrapers}, 备份目录有弹幕源={has_backup_scrapers}, 首次上传={is_first_upload}")
+                # 生成 manifest 到 backup
+                ScraperVersionManager.save_manifest(manifest, BACKUP_DIR)
+                logger.info(f"✓ 已部署到 backup 目录: {file_count} 个弹幕源")
 
-            # 统计要上传的文件数
-            file_count = sum(1 for f in extract_dir.iterdir() if f.is_file() and f.suffix in ['.so', '.pyd'])
+                return {
+                    "message": f"上传成功,共安装 {file_count} 个文件（需重启容器生效）",
+                    "version": manifest.get('version'),
+                    "scrapers": list(manifest.get('sources', {}).keys()),
+                    "need_restart": True
+                }
 
-            if is_first_upload:
-                # ========== 首次上传：部署到 scrapers 和 backup 目录，然后热加载 ==========
-                logger.info("首次上传离线包，将部署到 scrapers 目录并执行热加载")
+            else:
+                # ========== 可以热加载：部署到 scrapers 和 backup 目录 ==========
+                logger.info("部署到 scrapers 和 backup 目录（可热加载）")
 
-                # 确保目录存在
-                scrapers_dir.mkdir(parents=True, exist_ok=True)
-                BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-
-                # 复制 .so 和 .pyd 文件到 scrapers 目录和 backup 目录
+                # 复制 .so/.pyd 文件到两个目录
                 for f in extract_dir.iterdir():
                     if f.is_file() and f.suffix in ['.so', '.pyd']:
                         shutil.copy2(f, scrapers_dir / f.name)
                         shutil.copy2(f, BACKUP_DIR / f.name)
                         logger.info(f"已复制文件: {f.name}")
 
-                # 复制 versions.json
-                versions_file = extract_dir / "versions.json"
-                if versions_file.exists():
-                    shutil.copy2(versions_file, scrapers_dir / "versions.json")
-                    shutil.copy2(versions_file, BACKUP_DIR / "versions.json")
-                    logger.info("已复制 versions.json")
+                # 复制中间文件到 backup
+                shutil.copy2(temp_versions_file, BACKUP_DIR / "versions.json")
+                shutil.copy2(temp_package_file, BACKUP_DIR / "package.json")
 
-                # 复制或创建 package.json
-                package_file = extract_dir / "package.json"
-                if package_file.exists():
-                    shutil.copy2(package_file, scrapers_dir / "package.json")
-                    shutil.copy2(package_file, BACKUP_DIR / "package.json")
-                    logger.info("已复制 package.json")
-                else:
-                    logger.info("离线包中没有 package.json,从 versions.json 创建")
-                    package_data = {
-                        "version": versions_data.get('version', 'unknown'),
-                        "platform": versions_data.get('platform', ''),
-                        "type": versions_data.get('type', ''),
-                        "created_from_upload": True,
-                        "upload_time": datetime.now().isoformat()
-                    }
-                    package_content = json.dumps(package_data, indent=2, ensure_ascii=False)
-                    (scrapers_dir / "package.json").write_text(package_content)
-                    (BACKUP_DIR / "package.json").write_text(package_content)
-                    logger.info("已创建 package.json")
+                # 生成 manifest 到两个目录
+                ScraperVersionManager.save_manifest(manifest, scrapers_dir)
+                ScraperVersionManager.save_manifest(manifest, BACKUP_DIR)
+                logger.info(f"✓ 已生成权威文件 scraper_manifest.json: {len(manifest.get('sources', {}))} 个源")
 
-                logger.info(f"用户 '{current_user.username}' 首次上传了离线包,共 {file_count} 个文件")
+                logger.info(f"用户 '{current_user.username}' 上传了离线包,共 {file_count} 个文件")
 
                 # 在后台异步热加载弹幕源
                 async def reload_scrapers_background():
@@ -364,110 +400,11 @@ async def upload_scraper_package(
 
                 return {
                     "message": f"上传成功,共安装 {file_count} 个文件（已热加载）",
-                    "version": versions_data.get('version'),
-                    "scrapers": list(versions_data.get('scrapers', {}).keys()),
+                    "version": manifest.get('version'),
+                    "scrapers": list(manifest.get('sources', {}).keys()),
                     "need_restart": False
                 }
 
-            else:
-                # ========== 非首次上传：只部署到 backup 目录，需要重启容器 ==========
-                logger.info("非首次上传离线包，将部署到备份目录，需要重启容器")
-
-                # 确保备份目录存在
-                BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-
-                # 清空旧备份文件（保留metadata.json）
-                for f in BACKUP_DIR.glob("*"):
-                    if f.is_file() and f.name != "backup_metadata.json":
-                        f.unlink()
-
-                # 复制 .so 和 .pyd 文件到 backup 目录
-                for f in extract_dir.iterdir():
-                    if f.is_file() and f.suffix in ['.so', '.pyd']:
-                        shutil.copy2(f, BACKUP_DIR / f.name)
-                        logger.info(f"已复制文件到备份目录: {f.name}")
-
-                # 复制 versions.json 到 backup 目录
-                # 关键：刷新 updated_at 为当前时间。scraper_manager 启动时靠比较
-                # “备份 versions.json 的 updated_at > scrapers 的 updated_at”决定是否从备份恢复。
-                # 若沿用离线包内的旧 updated_at，重启后可能不被识别为“更新”，导致上传的新版本不生效。
-                versions_file = extract_dir / "versions.json"
-                if versions_file.exists():
-                    try:
-                        _ver_data = json.loads(versions_file.read_text(encoding="utf-8"))
-                        _ver_data["updated_at"] = datetime.now().isoformat()
-                        (BACKUP_DIR / "versions.json").write_text(
-                            json.dumps(_ver_data, indent=2, ensure_ascii=False), encoding="utf-8"
-                        )
-                        logger.info("已复制 versions.json 到备份目录（已刷新 updated_at 为当前时间）")
-                    except Exception as _e:
-                        # 解析失败则退回直接复制，至少保证文件存在
-                        shutil.copy2(versions_file, BACKUP_DIR / "versions.json")
-                        logger.warning(f"刷新 versions.json 的 updated_at 失败，已直接复制: {_e}")
-
-                # 复制或创建 package.json 到 backup 目录
-                package_file = extract_dir / "package.json"
-                if package_file.exists():
-                    shutil.copy2(package_file, BACKUP_DIR / "package.json")
-                    logger.info("已复制 package.json 到备份目录")
-                else:
-                    logger.info("离线包中没有 package.json,从 versions.json 创建")
-                    package_data = {
-                        "version": versions_data.get('version', 'unknown'),
-                        "platform": versions_data.get('platform', ''),
-                        "type": versions_data.get('type', ''),
-                        "created_from_upload": True,
-                        "upload_time": datetime.now().isoformat()
-                    }
-                    (BACKUP_DIR / "package.json").write_text(json.dumps(package_data, indent=2, ensure_ascii=False))
-                    logger.info("已创建 package.json 到备份目录")
-
-                logger.info(f"用户 '{current_user.username}' 上传了离线包到备份目录,共 {file_count} 个文件")
-
-                # 检查是否在 Docker 容器内且有 Docker socket
-                from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
-                docker_available = is_docker_socket_available() and is_running_in_docker()
-
-                if docker_available:
-                    # 有 Docker socket，执行容器重启
-                    logger.info("检测到 Docker socket，将在后台重启容器")
-
-                    async def restart_container_background():
-                        try:
-                            import asyncio
-                            await asyncio.sleep(1.0)  # 延迟1秒,确保响应已发送
-                            # 直接使用端点注入的 config_manager（闭包引用）。
-                            # 注意：不要 from src.core.config import get_config_manager——
-                            # config.py 中没有该函数，会抛 ImportError 导致重启失败、上传的新版本无法生效。
-                            fallback_name = await config_manager.get("containerName", "misaka_danmu_server")
-                            result = await restart_container(fallback_name)
-                            if result.get("success"):
-                                logger.info(f"容器重启指令已发送: {result.get('message')}")
-                            else:
-                                logger.warning(f"容器重启失败: {result.get('message')}")
-                        except Exception as e:
-                            logger.error(f"后台重启容器失败: {e}", exc_info=True)
-
-                    import asyncio
-                    asyncio.create_task(restart_container_background())
-
-                    return {
-                        "message": f"上传成功,共 {file_count} 个文件已部署到备份目录，容器正在重启...",
-                        "version": versions_data.get('version'),
-                        "scrapers": list(versions_data.get('scrapers', {}).keys()),
-                        "need_restart": True,
-                        "auto_restart": True
-                    }
-                else:
-                    # 没有 Docker socket，提示手动重启
-                    logger.info("未检测到 Docker socket，需要手动重启容器")
-                    return {
-                        "message": f"上传成功,共 {file_count} 个文件已部署到备份目录。请手动重启容器以加载新的弹幕源。",
-                        "version": versions_data.get('version'),
-                        "scrapers": list(versions_data.get('scrapers', {}).keys()),
-                        "need_restart": True,
-                        "auto_restart": False
-                    }
 
     except HTTPException:
         raise

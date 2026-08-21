@@ -832,7 +832,9 @@ export const Scrapers = () => {
               checkServiceReady()
             } else {
               // 不需要重启的情况（首次下载热加载完成 或 所有弹幕源都是最新的）
-              messageApi.success(t('scrapers.scraperLoadDone'))
+              // 优先使用后端返回的 success_message，否则使用默认消息
+              const successMsg = data.success_message || t('scrapers.scraperLoadDone')
+              messageApi.success(successMsg)
 
               // 显示刷新动画
               setDownloadProgress(prev => ({
