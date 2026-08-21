@@ -530,8 +530,8 @@ async def _perform_update(
                         scrapers_dir = _get_scrapers_dir()
                         await asyncio.to_thread(
                             ScraperVersionManager.save_manifest,
-                            scrapers_dir,
-                            manifest_data
+                            manifest_data,  # 第一个参数：manifest 数据
+                            scrapers_dir    # 第二个参数：目标目录
                         )
                         logger.info(f"已更新 manifest: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
 
@@ -657,8 +657,8 @@ async def _perform_update(
         scrapers_dir = _get_scrapers_dir()
         await asyncio.to_thread(
             ScraperVersionManager.save_manifest,
-            scrapers_dir,
-            manifest_data
+            manifest_data,  # 第一个参数：manifest 数据
+            scrapers_dir    # 第二个参数：目标目录
         )
 
         # 下载文件（增加超时时间：连接30秒，读取60秒）
@@ -717,11 +717,19 @@ async def _perform_update(
             try:
                 logger.info("正在备份新下载的资源到持久化目录...")
                 # 非首次下载时，传入新版本信息以保存到备份目录
+                # 注意：backup_scrapers 接受的是 package_data，需要从 manifest_data 转换
+                # 或者直接构造一个简单的 package_data
+                package_data_for_backup = {
+                    "version": manifest_data.get("version", "unknown"),
+                    "min_server_version": manifest_data.get("min_server_version"),
+                    "resources": manifest_data.get("resources", {}),
+                    "updated_at": manifest_data.get("updated_at")
+                }
                 await backup_scrapers(
                     SystemUser(),
                     new_versions_data=versions_data,
                     new_hashes_data=hashes_data,
-                    manifest_data=manifest_data
+                    package_data=package_data_for_backup
                 )
                 # 校验备份目录 package.json 版本号是否已更新为远程版本（确认落盘成功）
                 backup_ok = _verify_backup_version(remote_version)
