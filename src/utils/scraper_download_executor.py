@@ -1564,6 +1564,53 @@ class ScraperDownloadExecutor:
 
         self._log("✓ 备份目录版本信息已更新")
 
+        # 同时生成/更新 backup 目录的 scraper_manifest.json
+        # why: 重启后恢复逻辑依赖 manifest 的 updated_at 比较，必须同步更新
+        try:
+            from src.utils.scraper_version_manager import ScraperVersionManager
+            from src.api.ui.scraper_resources import BACKUP_DIR
+
+            # 直接使用已有数据构造 manifest，避免重新读取文件
+            manifest = {
+                "version": package_data.get("version", versions_json.get("version", "unknown")),
+                "updated_at": versions_json["updated_at"],
+                "platform": versions_json["platform"],
+                "branch": versions_json.get("branch", "main"),
+                "sources": {}
+            }
+
+            # 添加 min_server_version（如果存在）
+            min_server_version = package_data.get("min_server_version") or package_data.get("min_fetchable_version")
+            if min_server_version:
+                manifest["min_server_version"] = min_server_version
+
+            # 构造 sources
+            for scraper_name, version in existing_scrapers.items():
+                source_entry = {
+                    "version": version
+                }
+
+                # 添加哈希值（如果存在）
+                if scraper_name in existing_hashes:
+                    source_entry["hashes"] = {
+                        platform_info.get('platform', 'unknown'): existing_hashes[scraper_name]
+                    }
+
+                manifest["sources"][scraper_name] = source_entry
+
+            # 保存到 backup 目录
+            await asyncio.to_thread(
+                ScraperVersionManager.save_manifest,
+                manifest,
+                BACKUP_DIR
+            )
+
+            self._log(f"✓ 已更新 backup 目录的 scraper_manifest.json: {len(manifest.get('sources', {}))} 个源")
+        except Exception as e:
+            self._log(f"更新 backup manifest 失败: {e}", "warning")
+            import traceback
+            logger.warning(f"更新 backup manifest 详细错误: {traceback.format_exc()}")
+
     async def _save_versions(self, versions_data, hashes_data, platform_info, package_data, failed_downloads):
         """保存版本信息到 backup 目录（不再保存到 scrapers 目录）"""
         if not versions_data:
