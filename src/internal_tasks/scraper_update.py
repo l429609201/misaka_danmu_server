@@ -306,21 +306,21 @@ async def _get_repo_headers(config_manager, repo_url: str) -> tuple:
 
 
 async def _fetch_remote_manifest(base_url: str, headers: Dict, proxy: Optional[str]) -> Optional[Dict]:
-    """获取远程 scraper_manifest.json"""
-    manifest_url = f"{base_url}/{ScraperVersionManager.MANIFEST_FILENAME}"
-    timeout = httpx.Timeout(30.0, read=30.0)
+    """
+    获取远程 manifest 信息（已废弃，使用 remote_manifest_fetcher 模块）
 
-    try:
-        async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True, proxy=proxy) as client:
-            response = await client.get(manifest_url)
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.warning(f"获取远程 manifest 失败: HTTP {response.status_code}")
-    except Exception as e:
-        logger.warning(f"获取远程 manifest 失败: {e}")
+    为保持向后兼容，保留此函数作为适配器。
+    """
+    from src.utils.remote_manifest_fetcher import fetch_remote_manifest_dict
 
-    return None
+    return await fetch_remote_manifest_dict(
+        base_url=base_url,
+        headers=headers,
+        max_retries=1,
+        proxy=proxy,
+        timeout_seconds=30.0,
+        read_timeout_seconds=30.0
+    )
 
 
 async def _perform_update(

@@ -30,31 +30,32 @@ class ScraperVersionManager:
         versions_json_path: Path,
         scrapers_dir: Path
     ) -> Dict[str, Any]:
-        """从现有 package.json + versions.json 提取信息构建 manifest
-        
+        """从现有 package.json + versions.json 提取信息构建完整的 manifest
+
         Args:
             package_json_path: package.json 文件路径
             versions_json_path: versions.json 文件路径
             scrapers_dir: 弹幕源 .so/.pyd 文件所在目录
-            
+
         Returns:
-            manifest 字典
+            完整的 manifest 字典，包含所有必要信息
         """
         manifest: Dict[str, Any] = {
             "version": "unknown",
             "updated_at": datetime.now().isoformat(),
             "min_server_version": None,
             "platform": None,
+            "branch": "main",  # 默认分支
             "sources": {}
         }
-        
-        # 从 package.json 提取全局版本号和 min_server_version
+
+        # 从 package.json 提取全局版本号和各源的完整信息
         if package_json_path.exists():
             try:
                 package_data = json.loads(package_json_path.read_text(encoding='utf-8'))
                 manifest["version"] = package_data.get("version", "unknown")
-                manifest["min_server_version"] = package_data.get("min_server_version")
-                
+                manifest["min_server_version"] = package_data.get("min_server_version") or package_data.get("min_fetchable_version")
+
                 # 从 resources 提取各源详情
                 resources = package_data.get("resources", {})
                 for scraper_name, scraper_info in resources.items():
@@ -62,80 +63,94 @@ class ScraperVersionManager:
                         source_entry: Dict[str, Any] = {
                             "version": scraper_info.get("version"),
                         }
-                        
-                        # 提取哈希值（根据平台）
-                        hashes = scraper_info.get("hashes", )
-                        if hashes:
+
+                        # 提取多架构哈希值
+                        hashes = scraper_info.get("hashes", {})
+                        if hashes and isinstance(hashes, dict):
                             source_entry["hashes"] = hashes
-                        
-                        # 提取文件路径信息
+
+                        # 提取多架构文件路径信息
                         files = scraper_info.get("files", {})
-                        if files:
+                        if files and isinstance(files, dict):
                             source_entry["files"] = files
-                        
+
                         manifest["sources"][scraper_name] = source_entry
-                        
+
             except Exception as e:
                 logger.warning(f"从 package.json 提取信息失败: {e}")
-        
-        # 从 versions.json 提取 updated_at 和补充各源版本信息
+
+        # 从 versions.json 提取平台信息、分支信息和当前平台的哈希值
         if versions_json_path.exists():
             try:
                 versions_data = json.loads(versions_json_path.read_text(encoding='utf-8'))
-                
+
                 # 优先使用 versions.json 的 updated_at（更准确）
                 if "updated_at" in versions_data:
                     manifest["updated_at"] = versions_data["updated_at"]
-                
+
                 # 提取平台信息
-                if "platform" in versions_data:
-                    manifest["platform"] = versions_data.get("platform")
-                if "type" in versions_data:
-                    arch = versions_data.get("type")
-                    platform = manifest.get("platform", "unknown")
-                    manifest["platform"] = f"{platform}-{arch}" if platform != "unknown" else arch
-                
+                platform = versions_data.get("platform", "unknown")
+                arch = versions_data.get("type", "unknown")
+                if platform != "unknown" and arch != "unknown":
+                    manifest["platform"] = f"{platform}-{arch}"
+                elif platform != "unknown":
+                    manifest["platform"] = platform
+                elif arch != "unknown":
+                    manifest["platform"] = arch
+
+                # 提取分支信息
+                if "branch" in versions_data:
+                    manifest["branch"] = versions_data["branch"]
+
                 # 补充 min_server_version（如果 package.json 没有）
                 if not manifest["min_server_version"]:
                     manifest["min_server_version"] = versions_data.get("min_server_version")
-                
-                # 补充各源的版本号和哈希
+
+                # 补充各源的版本号
                 scrapers_versions = versions_data.get("scrapers", {})
-                hashes = versions_data.get("hashes", {})
-                
                 for scraper_name, version in scrapers_versions.items():
                     if scraper_name not in manifest["sources"]:
                         manifest["sources"][scraper_name] = {}
-                    manifest["sources"][scraper_name]["version"] = version
-                
+                    # 优先使用 package.json 的版本，如果没有则使用 versions.json 的
+                    if not manifest["sources"][scraper_name].get("version"):
+                        manifest["sources"][scraper_name]["version"] = version
+
+                # 补充当前平台的哈希值（合并到 hashes 字典中）
+                current_platform_key = manifest.get("platform", "unknown")
+                hashes = versions_data.get("hashes", {})
                 for scraper_name, hash_value in hashes.items():
                     if scraper_name not in manifest["sources"]:
                         manifest["sources"][scraper_name] = {}
-                    if "hash" not in manifest["sources"][scraper_name]:
-                        manifest["sources"][scraper_name]["hash"] = hash_value
-                        
+
+                    # 确保 hashes 字段存在
+                    if "hashes" not in manifest["sources"][scraper_name]:
+                        manifest["sources"][scraper_name]["hashes"] = {}
+
+                    # 添加当前平台的哈希值
+                    manifest["sources"][scraper_name]["hashes"][current_platform_key] = hash_value
+
             except Exception as e:
                 logger.warning(f"从 versions.json 提取信息失败: {e}")
-        
-        # 扫描实际 .so/.pyd 文件，补充文件名信息
+
+        # 扫描实际 .so/.pyd 文件，补充文件名和文件大小信息
         if scrapers_dir.exists():
             for file_path in scrapers_dir.glob("*"):
                 if file_path.suffix not in ['.so', '.pyd']:
                     continue
-                
+
                 # 提取弹幕源名称（文件名第一个点之前的部分）
                 scraper_name = file_path.name.split('.')[0]
-                
+
                 # 跳过内部文件
                 if scraper_name.startswith('_') or scraper_name == 'base':
                     continue
-                
+
                 if scraper_name not in manifest["sources"]:
                     manifest["sources"][scraper_name] = {}
-                
+
                 manifest["sources"][scraper_name]["filename"] = file_path.name
                 manifest["sources"][scraper_name]["size"] = file_path.stat().st_size
-        
+
         return manifest
     
     @staticmethod

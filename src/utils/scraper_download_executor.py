@@ -1470,31 +1470,42 @@ class ScraperDownloadExecutor:
         hashes_data: dict,
         platform_info: dict
     ):
-        """更新版本信息文件到 scrapers 和 backup 目录"""
+        """更新版本信息文件（只生成 scraper_manifest.json，不再保存 package.json 和 versions.json 到 scrapers）"""
         import shutil
 
         self._log("正在更新版本信息...")
 
-        # 1. 保存新的 package.json 到 scrapers 目录
-        scrapers_package_file = scrapers_dir / "package.json"
-        package_json_str = json.dumps(package_data, indent=2, ensure_ascii=False)
-        await asyncio.to_thread(scrapers_package_file.write_text, package_json_str)
+        # 1. 在 backup 目录保存 package.json 和 versions.json（作为中间文件）
+        backup_package_file = backup_dir / "package.json"
+        backup_versions_file = backup_dir / "versions.json"
 
-        # 2. 保存 versions.json 到 scrapers 目录
+        package_json_str = json.dumps(package_data, indent=2, ensure_ascii=False)
+        await asyncio.to_thread(backup_package_file.write_text, package_json_str)
+
+        # 保存 versions.json 到 backup
         await self._save_versions(versions_data, hashes_data, platform_info, package_data, [])
 
-        # 3. 同步 package.json 和 versions.json 到 backup 目录
-        scrapers_versions_file = scrapers_dir / "versions.json"
-        backup_versions_file = backup_dir / "versions.json"
-        backup_package_file = backup_dir / "package.json"
+        # 2. 从 backup 目录的两个文件提取信息，生成完整的 scraper_manifest.json
+        try:
+            from src.utils.scraper_version_manager import ScraperVersionManager
+            manifest = await asyncio.to_thread(
+                ScraperVersionManager.extract_manifest_from_legacy,
+                backup_package_file,
+                backup_versions_file,
+                scrapers_dir
+            )
 
-        if scrapers_versions_file.exists():
-            shutil.copy2(scrapers_versions_file, backup_versions_file)
+            # 保存到 scrapers 目录（权威文件）
+            await asyncio.to_thread(ScraperVersionManager.save_manifest, manifest, scrapers_dir)
+            self._log(f"✓ 已生成权威文件 scraper_manifest.json: {len(manifest.get('sources', {}))} 个源")
 
-        if scrapers_package_file.exists():
-            shutil.copy2(scrapers_package_file, backup_package_file)
+            # 同时保存到 backup 目录
+            await asyncio.to_thread(ScraperVersionManager.save_manifest, manifest, backup_dir)
 
-        self._log("✓ 版本信息已更新并同步到备份目录")
+        except Exception as e:
+            self._log(f"生成 scraper_manifest.json 失败: {e}", "warning")
+
+        self._log("✓ 版本信息已更新（scrapers 目录仅保留 scraper_manifest.json）")
 
     async def _update_version_files_backup_only(
         self,
@@ -1554,13 +1565,13 @@ class ScraperDownloadExecutor:
         self._log("✓ 备份目录版本信息已更新")
 
     async def _save_versions(self, versions_data, hashes_data, platform_info, package_data, failed_downloads):
-        """保存版本信息"""
+        """保存版本信息到 backup 目录（不再保存到 scrapers 目录）"""
         if not versions_data:
             return
 
         try:
-            scrapers_dir = _get_scrapers_dir()
-            versions_file = scrapers_dir / "versions.json"
+            from src.api.ui.scraper_resources import BACKUP_DIR
+            versions_file = BACKUP_DIR / "versions.json"
 
             # 合并旧版本信息
             existing_scrapers = {}
@@ -1579,13 +1590,12 @@ class ScraperDownloadExecutor:
             # 从 package_data 读取全局版本限制字段
             min_server_version = package_data.get('min_server_version')
 
-            # P1-1: 统一版本号权威源 - versions.json 不再存储全局 version 字段
+            # versions.json 只作为中间文件，保存到 backup 目录
             full_versions_data = {
                 "platform": platform_info['platform'],
                 "type": platform_info['arch'],
-                # "version": package_data.get("version", "unknown"),  # ❌ 已移除：统一使用 package.json
                 "scrapers": merged_scrapers,
-                "branch": self.task.branch if hasattr(self.task, 'branch') else 'main',  # 记录分支信息
+                "branch": self.task.branch if hasattr(self.task, 'branch') else 'main',
                 "updated_at": datetime.now().isoformat()
             }
 
@@ -1596,32 +1606,7 @@ class ScraperDownloadExecutor:
 
             versions_json_str = json.dumps(full_versions_data, indent=2, ensure_ascii=False)
             await asyncio.to_thread(versions_file.write_text, versions_json_str)
-            self._log(f"已保存 {len(merged_scrapers)} 个弹幕源的版本信息")
-
-            # 保存 package.json（如果有新数据）
-            package_file = scrapers_dir / "package.json"
-            if package_data:
-                try:
-                    package_json_str = json.dumps(package_data, indent=2, ensure_ascii=False)
-                    await asyncio.to_thread(package_file.write_text, package_json_str)
-                    self._log("已保存 package.json")
-                except Exception as e:
-                    self._log(f"保存 package.json 失败: {e}", "warning")
-
-            # 重新生成 scraper_manifest.json
-            # why: 从最新的 package.json 和 versions.json 提取信息，确保 manifest 是完整的
-            try:
-                from src.utils.scraper_version_manager import ScraperVersionManager
-                manifest = await asyncio.to_thread(
-                    ScraperVersionManager.extract_manifest_from_legacy,
-                    package_file,
-                    versions_file,
-                    scrapers_dir
-                )
-                await asyncio.to_thread(ScraperVersionManager.save_manifest, manifest, scrapers_dir)
-                self._log(f"已更新 scraper_manifest.json: {len(manifest.get('sources', {}))} 个源")
-            except Exception as e:
-                self._log(f"更新 scraper_manifest.json 失败: {e}", "warning")
+            self._log(f"已保存 {len(merged_scrapers)} 个弹幕源的版本信息到 backup 目录")
 
         except Exception as e:
             self._log(f"保存版本信息失败: {e}", "warning")

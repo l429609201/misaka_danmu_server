@@ -276,6 +276,24 @@ class ScraperManager:
         except Exception as e:
             logging.getLogger(__name__).warning(f"生成 manifest 失败: {e}")
 
+    def _cleanup_legacy_version_files(self, scrapers_dir: Path):
+        """
+        清理 scrapers 目录中的 legacy 版本文件（package.json 和 versions.json）
+
+        这些文件已被 scraper_manifest.json 取代，不再需要保留在运行目录中。
+        """
+        logger = logging.getLogger(__name__)
+        legacy_files = ["package.json", "versions.json"]
+
+        for filename in legacy_files:
+            file_path = scrapers_dir / filename
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                    logger.info(f"✓ 已清理 legacy 文件: {filename}")
+                except Exception as e:
+                    logger.warning(f"清理 {filename} 失败: {e}")
+
     async def load_and_sync_scrapers(self, skip_backup_restore: bool = False):
         """
         动态发现、同步到数据库并根据数据库设置加载搜索源。
@@ -300,6 +318,9 @@ class ScraperManager:
 
         # 确保 manifest 文件存在
         self._ensure_manifest_exists(paths.scrapers_dir)
+
+        # 清理 legacy 版本文件（package.json 和 versions.json）
+        self._cleanup_legacy_version_files(paths.scrapers_dir)
 
         # 版本文件完整性检查
         self._check_version_file_integrity(paths.scrapers_dir)
