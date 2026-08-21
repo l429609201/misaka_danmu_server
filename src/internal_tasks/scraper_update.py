@@ -7,8 +7,13 @@ import json
 import asyncio
 import logging
 import hashlib
+import shutil
+import sys
+import time
+import platform as plat
 from pathlib import Path
 from typing import Optional, Dict, Any
+from datetime import datetime
 
 import httpx
 from fastapi import FastAPI
@@ -16,6 +21,14 @@ from fastapi import FastAPI
 from .base import BasePollingTask
 from src.core.env import is_docker_environment
 from src.utils.scraper_version_manager import ScraperVersionManager
+from src.utils.version_comparator import VersionComparator
+from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
+from src.utils.remote_manifest_fetcher import fetch_remote_manifest_dict
+from src.utils.scraper_deployment_checker import should_restart_for_deployment
+from src.utils.scraper_download_executor import check_scraper_compat_in_dir, _get_temp_download_base_dir
+from src._version import APP_VERSION
+from src.services.scraper_manager import _version_satisfies
+import src.api.ui.scraper_resources as sr
 
 # 复用 scraper_resources 中的工具函数
 from ..api.ui.scraper_resources import (
@@ -29,6 +42,7 @@ from ..api.ui.scraper_resources import (
     backup_scrapers,
     _fetch_github_release_asset,
     _download_and_extract_release,
+    BACKUP_DIR,
 )
 
 logger = logging.getLogger("ScraperAutoUpdate")
@@ -105,9 +119,6 @@ async def _restart_to_apply_backup(config_manager, target_version: str) -> None:
     why：以版本状态决策——当上一轮已把新版本下载/上传到备份目录、但因重启失败等原因
     未生效时，无需重新下载，只要重启让 scraper_manager 从备份恢复即可。
     """
-    from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
-    import sys
-
     docker_available = is_docker_socket_available() and is_running_in_docker()
     if not docker_available:
         logger.warning(
@@ -133,34 +144,12 @@ async def _restart_to_apply_backup(config_manager, target_version: str) -> None:
 
 
 
-def _write_full_replace_fail_flag(flag_path: Path, error: str, version: str) -> None:
-    """写入全量替换失败标志，冷却期内自动降级为增量更新。
-
-    why：所有失败退出点都必须刷新标志时间戳。此前仅异常分支写入，
-    备份校验失败等提前 return 的分支不写，导致旧标志的时间戳一直不更新，
-    冷却判断失准（可能提前失效，每轮轮询都重复下载）。
-    """
-    try:
-        from datetime import datetime
-        fail_info = {
-            "time": datetime.now().isoformat(),
-            "error": str(error)[:200],
-            "version": version or "unknown"
-        }
-        flag_path.parent.mkdir(parents=True, exist_ok=True)
-        flag_path.write_text(json.dumps(fail_info, ensure_ascii=False))
-        logger.info("已写入全量替换失败标志，冷却期内将自动降级为增量更新")
-    except Exception as e:
-        logger.debug(f"写入全量替换失败标志失败: {e}")
-
-
 async def _restore_from_backup(scrapers_dir: Path) -> None:
     """从持久化备份目录恢复 .so/.pyd，用于全量替换失败后回滚被覆盖的运行目录。"""
     try:
         backup_dir = _get_backup_dir_path()
         if not backup_dir.exists():
             return
-        import shutil
         backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
         if not backup_files:
             return
@@ -230,8 +219,6 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
     # 一路下载备份重启后才发现所有源都不满足版本 → 源全部加载失败。
     remote_min_server = manifest_data.get("min_server_version") or manifest_data.get("min_fetchable_version")
     if remote_min_server:
-        from src._version import APP_VERSION
-        from src.services.scraper_manager import _version_satisfies
         if not _version_satisfies(APP_VERSION, remote_min_server):
             logger.warning(
                 f"远程弹幕源包要求服务器版本 >= {remote_min_server}，"
@@ -240,7 +227,6 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
             return
 
     # 导入版本比较工具
-    from src.utils.version_comparator import VersionComparator
     scrapers_dir = _get_scrapers_dir()
 
     # 版本状态预校（代替时间冷却）：若备份目录已经是目标版本，说明上一轮已下载/上传好，
@@ -342,8 +328,6 @@ async def _fetch_remote_manifest(base_url: str, headers: Dict, proxy: Optional[s
 
     为保持向后兼容，保留此函数作为适配器。
     """
-    from src.utils.remote_manifest_fetcher import fetch_remote_manifest_dict
-
     return await fetch_remote_manifest_dict(
         base_url=base_url,
         headers=headers,
@@ -374,14 +358,6 @@ async def _perform_update(
         return
 
     async with _download_lock:
-        # 备份当前文件
-        try:
-            await backup_scrapers(SystemUser())
-            logger.info("备份当前弹幕源成功")
-        except Exception as e:
-            logger.error(f"备份失败，取消更新: {e}")
-            return
-
         # 获取平台信息
         platform_key = get_platform_key()
         platform_info = get_platform_info()
@@ -390,29 +366,6 @@ async def _perform_update(
         # 检查是否启用全量替换模式
         full_replace_enabled = await config_manager.get("scraperFullReplaceEnabled", "false")
         use_full_replace = full_replace_enabled.lower() == "true"
-
-        # 全量替换防御：检查最近是否失败过（防止 native crash 导致无限重启循环）
-        FULL_REPLACE_FAIL_FLAG = Path("/app/config/full_replace_failed") if is_docker_environment() else Path("config/full_replace_failed")
-        if use_full_replace and FULL_REPLACE_FAIL_FLAG.exists():
-            try:
-                from datetime import datetime
-                fail_data = json.loads(FULL_REPLACE_FAIL_FLAG.read_text())
-                fail_time = datetime.fromisoformat(fail_data.get("time", ""))
-                cooldown_minutes = 60
-                elapsed = (datetime.now() - fail_time).total_seconds() / 60
-                if elapsed < cooldown_minutes:
-                    logger.warning(
-                        f"全量替换在 {int(elapsed)} 分钟前失败过，冷却期 {cooldown_minutes} 分钟内跳过本次更新。"
-                        f"上次失败原因: {fail_data.get('error', '未知')}"
-                    )
-                    return
-                else:
-                    # 冷却期已过，清除标志文件
-                    FULL_REPLACE_FAIL_FLAG.unlink(missing_ok=True)
-                    logger.info("全量替换冷却期已过，清除失败标志")
-            except Exception:
-                # 标志文件格式异常，清除并继续
-                FULL_REPLACE_FAIL_FLAG.unlink(missing_ok=True)
 
         # ========== 全量替换模式 ==========
         if use_full_replace and repo_info:
@@ -428,7 +381,6 @@ async def _perform_update(
 
                 if asset_info:
                     # 使用部署检测工具判断是否需要延迟覆盖
-                    from src.utils.scraper_deployment_checker import should_restart_for_deployment
                     deployment_strategy = should_restart_for_deployment(
                         scrapers_dir=scrapers_dir,
                         backup_dir=Path(config_manager.get_sync("scraperBackupDir", "config/backup")),
@@ -451,7 +403,6 @@ async def _perform_update(
                         # ========== 全量模式：临时目录校验 ==========
                         # why：全量包解压到临时目录后，先校验版本再决定是否继续部署
                         # 避免下载7.3MB后发现版本相同还要继续走完整备份链路
-                        from src.utils.version_comparator import VersionComparator
 
                         # 读取临时目录的 manifest（刚解压出来的）
                         temp_manifest = await asyncio.to_thread(
@@ -461,7 +412,6 @@ async def _perform_update(
                         temp_version = ScraperVersionManager.get_version_from_manifest(temp_manifest)
 
                         # 读取当前运行目录的 manifest（对比基准）
-                        from src.api.ui.scraper_resources import BACKUP_DIR
                         local_manifest = await asyncio.to_thread(
                             ScraperVersionManager.load_manifest,
                             scrapers_dir if not need_defer else Path(BACKUP_DIR).parent / "src" / "scrapers"
@@ -476,7 +426,6 @@ async def _perform_update(
                             )
                             # 清理临时目录
                             try:
-                                import shutil
                                 temp_dir = scrapers_dir / ".tmp_update"
                                 if temp_dir.exists():
                                     await asyncio.to_thread(shutil.rmtree, temp_dir)
@@ -485,7 +434,6 @@ async def _perform_update(
                                 logger.warning(f"清理临时目录失败: {e}")
 
                             # 清除版本缓存
-                            import src.api.ui.scraper_resources as sr
                             sr._version_cache = None
                             sr._version_cache_time = None
                             return
@@ -493,7 +441,6 @@ async def _perform_update(
                         logger.info(f"✓ 全量替换版本校验通过: {local_version_actual} -> {temp_version}，继续部署流程")
                         # ========== 版本校验通过，继续原有流程 ==========
                         # 更新 manifest
-                        from datetime import datetime
                         release_version = asset_info['version'].lstrip('v')
 
                         # 部署前预检：逐个 import 解压出的 .so，确认各源 min_server_version 均满足
@@ -501,25 +448,16 @@ async def _perform_update(
                         # 此前自动更新完全没有这一步，下载解压后直接备份并重启，重启时
                         # scraper_manager 才逐个加载失败 → 所有源全废（前端弹"需要服务器版本≥x"）。
                         # 与手动下载路径共用同一探测实现，改为"预检不通过就不重启"。
-                        from src.utils.scraper_download_executor import check_scraper_compat_in_dir
                         incompatible = await check_scraper_compat_in_dir(scrapers_dir)
                         if incompatible:
-                            from src._version import APP_VERSION
                             detail = ", ".join(f"{k} 需要 >= {v}" for k, v in sorted(incompatible.items()))
                             logger.error(
                                 f"全量替换预检失败：当前服务器版本 {APP_VERSION}，"
                                 f"有 {len(incompatible)} 个弹幕源版本要求不满足（{detail}）。"
                                 "为避免重启后源全部加载失败，本次不写入版本信息、不备份、不重启。"
                             )
-                            # 写入失败标志，冷却期内降级为增量更新，避免每轮轮询重复下载
-                            _write_full_replace_fail_flag(
-                                FULL_REPLACE_FAIL_FLAG,
-                                f"预检失败：{len(incompatible)} 个源要求更高服务器版本（{detail}）",
-                                release_version
-                            )
                             # 从备份恢复被解压覆盖掉的旧版 .so，保证当前运行的源不被破坏
                             await _restore_from_backup(scrapers_dir)
-                            import src.api.ui.scraper_resources as sr
                             sr._version_cache = None
                             sr._version_cache_time = None
                             return
@@ -630,20 +568,11 @@ async def _perform_update(
                                 f"全量替换备份校验失败：备份目录版本未更新为 {release_version}，"
                                 "为避免版本回退导致无限重启循环，本次不重启容器。请检查备份目录权限或磁盘空间。"
                             )
-                            # 刷新失败标志，让冷却期从本次失败重新计时
-                            _write_full_replace_fail_flag(
-                                FULL_REPLACE_FAIL_FLAG,
-                                f"备份校验失败：备份目录版本未更新为 {release_version}",
-                                release_version
-                            )
-                            import src.api.ui.scraper_resources as sr
                             sr._version_cache = None
                             sr._version_cache_time = None
                             return
 
                         # 检查是否在 Docker 容器内且有 Docker socket
-                        from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
-                        import sys
                         docker_available = is_docker_socket_available() and is_running_in_docker()
 
                         # 根据部署策略决定后续操作
@@ -689,12 +618,9 @@ async def _perform_update(
                                 logger.error(f"热加载失败: {e}")
 
                         # 清除版本缓存
-                        import src.api.ui.scraper_resources as sr
                         sr._version_cache = None
                         sr._version_cache_time = None
 
-                        # 全量替换成功，清除失败标志
-                        FULL_REPLACE_FAIL_FLAG.unlink(missing_ok=True)
                         return
                     else:
                         logger.warning("全量替换失败，回退到逐文件下载模式")
@@ -704,12 +630,6 @@ async def _perform_update(
             except Exception as full_replace_error:
                 # 全量替换过程中发生异常（包括可能的 native crash 前的 Python 异常）
                 logger.error(f"全量替换异常: {full_replace_error}", exc_info=True)
-                # 写入失败标志文件，防止重启后立即重试导致无限重启
-                _write_full_replace_fail_flag(
-                    FULL_REPLACE_FAIL_FLAG,
-                    str(full_replace_error),
-                    asset_info.get('version', 'unknown') if isinstance(asset_info, dict) else 'unknown'
-                )
                 # 尝试从备份恢复
                 await _restore_from_backup(_get_scrapers_dir())
                 logger.warning("全量替换异常，回退到逐文件下载模式")
@@ -728,54 +648,74 @@ async def _perform_update(
         versions_data = {}
         hashes_data = {}
 
-        # 保存 manifest 到本地
-        scrapers_dir = _get_scrapers_dir()
-        await asyncio.to_thread(
-            ScraperVersionManager.save_manifest,
-            manifest_data,  # 第一个参数：manifest 数据
-            scrapers_dir    # 第二个参数：目标目录
-        )
+        # 创建临时下载目录（与手动下载保持一致）
+        temp_dir = _get_temp_download_base_dir() / f"auto_update_{int(time.time())}"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"创建临时下载目录: {temp_dir}")
 
-        # 下载文件（增加超时时间：连接30秒，读取60秒）
-        download_timeout = httpx.Timeout(30.0, read=60.0)
-        async with httpx.AsyncClient(timeout=download_timeout, headers=headers, follow_redirects=True, proxy=proxy_to_use) as client:
-            for scraper_name, scraper_info in resources.items():
-                result = await _download_single_scraper(
-                    client=client,
-                    scraper_name=scraper_name,
-                    scraper_info=scraper_info,
-                    platform_key=platform_key,
-                    base_url=base_url,
-                    scrapers_dir=scrapers_dir,
-                    versions_data=versions_data,
-                    hashes_data=hashes_data
-                )
+        try:
+            # 下载到临时目录
+            logger.info(f"开始下载 {total_count} 个文件到临时目录...")
 
-                if result == "downloaded":
-                    download_count += 1
-                elif result == "skipped":
-                    skip_count += 1
-                elif result == "failed":
-                    failed_downloads.append(scraper_name)
+            # 下载文件（增加超时时间：连接30秒，读取60秒）
+            download_timeout = httpx.Timeout(30.0, read=60.0)
+            async with httpx.AsyncClient(timeout=download_timeout, headers=headers, follow_redirects=True, proxy=proxy_to_use) as client:
+                for scraper_name, scraper_info in resources.items():
+                    result = await _download_single_scraper(
+                        client=client,
+                        scraper_name=scraper_name,
+                        scraper_info=scraper_info,
+                        platform_key=platform_key,
+                        base_url=base_url,
+                        scrapers_dir=temp_dir,  # 下载到临时目录
+                        versions_data=versions_data,
+                        hashes_data=hashes_data
+                    )
 
-        # 检查是否有下载失败的文件
-        if failed_downloads:
-            logger.warning(f"有 {len(failed_downloads)} 个文件下载失败: {failed_downloads}")
-            logger.warning("由于存在下载失败，不更新版本信息，不执行重启")
-            # 清除版本缓存
-            import src.api.ui.scraper_resources as sr
-            sr._version_cache = None
-            sr._version_cache_time = None
-            return  # 有失败则不继续执行
+                    if result == "downloaded":
+                        download_count += 1
+                    elif result == "skipped":
+                        skip_count += 1
+                    elif result == "failed":
+                        failed_downloads.append(scraper_name)
 
-        # 如果没有成功下载任何文件，直接返回
-        if download_count == 0:
-            logger.info(f"没有新文件需要下载 (跳过: {skip_count})")
-            # 清除版本缓存
-            import src.api.ui.scraper_resources as sr
-            sr._version_cache = None
-            sr._version_cache_time = None
-            return
+            # 检查是否有下载失败的文件
+            if failed_downloads:
+                logger.warning(f"有 {len(failed_downloads)} 个文件下载失败: {failed_downloads}")
+                logger.warning("由于存在下载失败，不更新版本信息，不执行重启")
+                return  # 有失败则不继续执行
+
+            # 如果没有成功下载任何文件，直接返回
+            if download_count == 0:
+                logger.info(f"没有新文件需要下载 (跳过: {skip_count})")
+                return
+
+            logger.info(f"临时目录下载完成: 下载 {download_count} 个, 跳过 {skip_count} 个")
+
+            # 从临时目录复制到运行目录
+            scrapers_dir = _get_scrapers_dir()
+            logger.info(f"将文件从临时目录复制到运行目录...")
+            copied_count = 0
+            for file in temp_dir.iterdir():
+                if file.suffix in ('.so', '.pyd'):
+                    await asyncio.to_thread(shutil.copy2, file, scrapers_dir / file.name)
+                    copied_count += 1
+            logger.info(f"已复制 {copied_count} 个文件到运行目录")
+
+            # 保存 manifest 到运行目录
+            await asyncio.to_thread(
+                ScraperVersionManager.save_manifest,
+                manifest_data,  # 第一个参数：manifest 数据
+                scrapers_dir    # 第二个参数：目标目录
+            )
+
+        finally:
+            # 清理临时目录
+            try:
+                await asyncio.to_thread(shutil.rmtree, temp_dir, ignore_errors=True)
+                logger.info("已清理临时下载目录")
+            except Exception as e:
+                logger.warning(f"清理临时目录失败: {e}")
 
         # 判断是否是首次下载（本地没有任何弹幕源）
         existing_scrapers = set(scraper_manager.scrapers.keys())
@@ -843,14 +783,11 @@ async def _perform_update(
                     "冷却期内不会重复尝试同版本，请检查备份目录权限或磁盘空间。"
                 )
                 # 清除版本缓存后直接返回，不重启
-                import src.api.ui.scraper_resources as sr
                 sr._version_cache = None
                 sr._version_cache_time = None
                 return
 
             # 根据是否在 Docker 容器内且有 Docker socket 决定重启方式
-            from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
-            import sys
             docker_available = is_docker_socket_available() and is_running_in_docker()
 
             if docker_available:
@@ -879,7 +816,6 @@ async def _perform_update(
                 logger.warning("⚠️ 未检测到 Docker 套接字，请手动重启容器以加载新的弹幕源（.so 文件需要重启才能生效）")
 
         # 清除版本缓存
-        import src.api.ui.scraper_resources as sr
         sr._version_cache = None
         sr._version_cache_time = None
 
@@ -1014,7 +950,6 @@ async def _verify_local_files_consistency() -> bool:
             return True
 
         # 确定文件扩展名
-        import platform as plat
         system = plat.system().lower()
         if system == 'windows':
             ext = '.pyd'
