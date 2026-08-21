@@ -466,6 +466,7 @@ async def _perform_update(
                         # 优先从解压后的 scraper_manifest.json 读取，回退到 package.json
                         scrapers_versions = {}
                         scrapers_hashes = {}
+                        local_package_file = scrapers_dir / "package.json"  # 提前定义，避免后续使用时未定义
 
                         # 尝试从 manifest 读取（新架构）
                         manifest = await asyncio.to_thread(ScraperVersionManager.load_manifest, scrapers_dir)
@@ -481,8 +482,6 @@ async def _perform_update(
                                         scrapers_hashes[scraper_name] = hash_value
                             logger.info(f"从 scraper_manifest.json 读取: {len(scrapers_versions)} 个源版本")
                         else:
-                            # 回退：从 package.json 读取（兼容旧格式的压缩包）
-                            local_package_file = scrapers_dir / "package.json"
                             try:
                                 if local_package_file.exists():
                                     package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))

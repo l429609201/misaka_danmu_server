@@ -856,7 +856,13 @@ class TelegramChannel(BaseNotificationChannel):
                         # 会把 [海报](URL) 原样打印到消息里（TG 纯文本不渲染 Markdown 链接）。
                         # 改为就地降级，plain_caption 已经过 _strip_markdown_v2 完整清洗。
                         self.logger.warning(f"send_photo 图片发送失败，降级为纯文字消息（图片 URL 可能不可访问）: {photo_err}")
-                        sent = await asyncio.to_thread(self._bot.send_message, chat_id, plain_caption, reply_markup=markup)
+                        try:
+                            # 尝试发送带 markup 的纯文本消息
+                            sent = await asyncio.to_thread(self._bot.send_message, chat_id, plain_caption, reply_markup=markup)
+                        except Exception as text_err:
+                            # markup 中可能也包含不可访问的 URL（如按钮链接），最后降级为无 markup 的纯文本
+                            self.logger.warning(f"带 markup 的纯文本消息也失败，移除 markup 重试: {text_err}")
+                            sent = await asyncio.to_thread(self._bot.send_message, chat_id, plain_caption)
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)
             else:
