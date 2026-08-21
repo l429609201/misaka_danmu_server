@@ -444,3 +444,25 @@ class ScraperVersionManager:
         manifest["updated_at"] = datetime.now().isoformat()
 
         return ScraperVersionManager.save_manifest(manifest, scrapers_dir)
+
+    @staticmethod
+    def validate_manifest(manifest: Optional[Dict[str, Any]]) -> bool:
+        """验证 manifest 的有效性
+
+        Args:
+            manifest: 要验证的 manifest 字典
+
+        Returns:
+            manifest 是否有效
+        """
+        if manifest is None:
+            return False
+
+        # 检查必需字段
+        if "version" not in manifest:
+            return False
+
+        if "sources" not in manifest or not isinstance(manifest["sources"], dict):
+            return False
+
+        return True
