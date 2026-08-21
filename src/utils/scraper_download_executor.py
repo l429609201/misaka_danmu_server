@@ -823,16 +823,8 @@ class ScraperDownloadExecutor:
             self._log("所有弹幕源都是最新的，无需下载")
             self.task.need_restart = False
             self.task.status = TaskStatus.COMPLETED
-
-            # 等待 SSE 发送最新的进度消息
-            await asyncio.sleep(1.0)
-
-            # 设置 restart_pending 让 SSE 发送 done 消息并退出
-            self.task.restart_pending = True
-            logger.info(f"[任务 {self.task.task_id}] 所有弹幕源已是最新，设置 restart_pending=True，等待 SSE 发送 done 消息")
-
-            # 等待 SSE 发送 done 消息
-            await asyncio.sleep(2.0)
+            # why: 所有文件都是最新，不需要重启
+            # 直接返回即可，SSE会因为status=COMPLETED自动发送done消息
             return
 
         # 创建临时下载目录
