@@ -25,7 +25,6 @@ from ..api.ui.scraper_resources import (
     get_platform_key,
     get_platform_info,
     _get_scrapers_dir,
-    SCRAPERS_PACKAGE_FILE,
     _download_lock,
     backup_scrapers,
     _fetch_github_release_asset,
@@ -437,31 +436,41 @@ async def _perform_update(
                             sr._version_cache_time = None
                             return
 
-                        # 从解压后的 package.json 读取各个源的版本信息
+                        # 优先从解压后的 scraper_manifest.json 读取，回退到 package.json
                         scrapers_versions = {}
                         scrapers_hashes = {}
-                        local_package_file = scrapers_dir / "package.json"
-                        try:
-                            if local_package_file.exists():
-                                package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
-                                # 从 resources 字段提取各个源的版本号和哈希值
-                                resources = package_content.get('resources', {})
-                                for scraper_name, scraper_info in resources.items():
-                                    if isinstance(scraper_info, dict):
-                                        version = scraper_info.get('version')
-                                        if version:
-                                            scrapers_versions[scraper_name] = version
-                                        # 提取哈希值：直接用外层 get_platform_key() 的连字符格式键
-                                        # why：包内 hashes 的键是连字符格式（如 linux-x86_64）。此前在循环内
-                                        # 用下划线格式重新赋值 platform_key，一是哈希取不到全部落空，
-                                        # 二是污染了外层变量——全量替换失败回退到逐文件下载时，
-                                        # files.get(platform_key) 同样取不到路径，导致所有源下载失败。
-                                        hashes = scraper_info.get('hashes', {})
-                                        if platform_key in hashes:
-                                            scrapers_hashes[scraper_name] = hashes[platform_key]
-                                logger.info(f"从 package.json 读取到 {len(scrapers_versions)} 个源的版本信息")
-                        except Exception as e:
-                            logger.warning(f"读取 package.json 中的源版本信息失败: {e}")
+
+                        # 尝试从 manifest 读取（新架构）
+                        manifest = await asyncio.to_thread(ScraperVersionManager.load_manifest, scrapers_dir)
+                        if manifest and manifest.get("sources"):
+                            sources = manifest.get("sources", {})
+                            for scraper_name, info in sources.items():
+                                if isinstance(info, dict):
+                                    version = info.get("version")
+                                    if version:
+                                        scrapers_versions[scraper_name] = version
+                                    hash_value = info.get("hash")
+                                    if hash_value:
+                                        scrapers_hashes[scraper_name] = hash_value
+                            logger.info(f"从 scraper_manifest.json 读取: {len(scrapers_versions)} 个源版本")
+                        else:
+                            # 回退：从 package.json 读取（兼容旧格式的压缩包）
+                            local_package_file = scrapers_dir / "package.json"
+                            try:
+                                if local_package_file.exists():
+                                    package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
+                                    resources = package_content.get('resources', {})
+                                    for scraper_name, scraper_info in resources.items():
+                                        if isinstance(scraper_info, dict):
+                                            version = scraper_info.get('version')
+                                            if version:
+                                                scrapers_versions[scraper_name] = version
+                                            hashes = scraper_info.get('hashes', {})
+                                            if platform_key in hashes:
+                                                scrapers_hashes[scraper_name] = hashes[platform_key]
+                                    logger.info(f"从 package.json 读取（兼容模式）: {len(scrapers_versions)} 个源版本")
+                            except Exception as e:
+                                logger.warning(f"读取 package.json 中的源版本信息失败: {e}")
 
                         # 从解压后的 manifest 读取全局版本限制字段（覆盖前读取）
                         min_server_version = None

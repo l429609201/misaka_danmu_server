@@ -284,31 +284,6 @@ class ScraperVersionManager:
             return False
     
     @staticmethod
-    def validate_manifest(manifest: Optional[Dict[str, Any]]) -> bool:
-        """验证 manifest 格式是否完整
-
-        Args:
-            manifest: 待验证的 manifest 字典
-
-        Returns:
-            True = 格式有效，False = 格式不完整或无效
-        """
-        if not manifest or not isinstance(manifest, dict):
-            return False
-
-        # 必需字段检查
-        required_fields = ["version", "updated_at", "sources"]
-        for field in required_fields:
-            if field not in manifest:
-                return False
-
-        # sources 必须是字典
-        if not isinstance(manifest.get("sources"), dict):
-            return False
-
-        return True
-
-    @staticmethod
     def get_version_from_manifest(manifest: Optional[Dict[str, Any]]) -> str:
         """从 manifest 获取全局版本号
         
@@ -326,20 +301,146 @@ class ScraperVersionManager:
     @staticmethod
     def has_binaries(directory: Path) -> bool:
         """检查目录是否包含弹幕源二进制文件
-        
+
         Args:
             directory: 要检查的目录
-            
+
         Returns:
             是否包含 .so 或 .pyd 文件
         """
         if not directory.exists():
             return False
-        
+
         for file_path in directory.iterdir():
             if file_path.suffix in ['.so', '.pyd']:
                 # 跳过内部文件
                 if not file_path.name.startswith('_') and file_path.name.split('.')[0] != 'base':
                     return True
-        
+
         return False
+
+    @staticmethod
+    def get_local_version(scrapers_dir: Path) -> str:
+        """获取本地弹幕源的版本号
+
+        Args:
+            scrapers_dir: scrapers 目录路径
+
+        Returns:
+            版本号字符串，如果无法获取返回 "unknown"
+        """
+        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        return ScraperVersionManager.get_version_from_manifest(manifest)
+
+    @staticmethod
+    def get_min_server_version(scrapers_dir: Path) -> Optional[str]:
+        """获取本地弹幕源要求的最低服务端版本
+
+        Args:
+            scrapers_dir: scrapers 目录路径
+
+        Returns:
+            最低服务端版本字符串，如果无法获取返回 None
+        """
+        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        if manifest is None:
+            return None
+        return manifest.get("min_server_version")
+
+    @staticmethod
+    def get_source_version(scrapers_dir: Path, scraper_name: str) -> str:
+        """获取指定弹幕源的版本号
+
+        Args:
+            scrapers_dir: scrapers 目录路径
+            scraper_name: 弹幕源名称
+
+        Returns:
+            版本号字符串，如果无法获取返回 "unknown"
+        """
+        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        if manifest is None:
+            return "unknown"
+
+        sources = manifest.get("sources", {})
+        if scraper_name not in sources:
+            return "unknown"
+
+        return sources[scraper_name].get("version", "unknown")
+
+    @staticmethod
+    def get_all_sources(scrapers_dir: Path) -> Dict[str, Dict[str, Any]]:
+        """获取所有弹幕源的信息
+
+        Args:
+            scrapers_dir: scrapers 目录路径
+
+        Returns:
+            弹幕源信息字典，格式: {scraper_name: {version, hash, filename, ...}}
+        """
+        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        if manifest is None:
+            return {}
+
+        return manifest.get("sources", {})
+
+    @staticmethod
+    def update_manifest_version(scrapers_dir: Path, version: str, min_server_version: Optional[str] = None) -> bool:
+        """更新 manifest 的全局版本号和最低服务端版本
+
+        Args:
+            scrapers_dir: scrapers 目录路径
+            version: 新的版本号
+            min_server_version: 新的最低服务端版本（可选）
+
+        Returns:
+            是否更新成功
+        """
+        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        if manifest is None:
+            logger.warning(f"无法加载 manifest，无法更新版本")
+            return False
+
+        manifest["version"] = version
+        manifest["updated_at"] = datetime.now().isoformat()
+
+        if min_server_version is not None:
+            manifest["min_server_version"] = min_server_version
+
+        return ScraperVersionManager.save_manifest(manifest, scrapers_dir)
+
+    @staticmethod
+    def update_source_info(
+        scrapers_dir: Path,
+        scraper_name: str,
+        version: Optional[str] = None,
+        hash_value: Optional[str] = None
+    ) -> bool:
+        """更新指定弹幕源的信息
+
+        Args:
+            scrapers_dir: scrapers 目录路径
+            scraper_name: 弹幕源名称
+            version: 新的版本号（可选）
+            hash_value: 新的哈希值（可选）
+
+        Returns:
+            是否更新成功
+        """
+        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        if manifest is None:
+            logger.warning(f"无法加载 manifest，无法更新弹幕源 {scraper_name} 的信息")
+            return False
+
+        if scraper_name not in manifest["sources"]:
+            manifest["sources"][scraper_name] = {}
+
+        if version is not None:
+            manifest["sources"][scraper_name]["version"] = version
+
+        if hash_value is not None:
+            manifest["sources"][scraper_name]["hash"] = hash_value
+
+        manifest["updated_at"] = datetime.now().isoformat()
+
+        return ScraperVersionManager.save_manifest(manifest, scrapers_dir)

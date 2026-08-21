@@ -58,23 +58,13 @@ def _get_backup_dir() -> Path:
 # 备份目录配置
 BACKUP_DIR = _get_backup_dir()
 
-# 弹幕源版本信息文件
-SCRAPERS_VERSIONS_FILE = _get_scrapers_dir() / "versions.json"
-SCRAPERS_PACKAGE_FILE = _get_scrapers_dir() / "package.json"
-
 
 def _get_local_min_server_version() -> Optional[str]:
-    """从本地 versions.json 或 package.json 读取 min_server_version"""
-    for f in (SCRAPERS_VERSIONS_FILE, SCRAPERS_PACKAGE_FILE):
-        if f.exists():
-            try:
-                data = json.loads(f.read_text())
-                v = data.get("min_server_version")
-                if v:
-                    return v
-            except Exception:
-                pass
-    return None
+    """从本地 scraper_manifest.json 读取 min_server_version
+
+    使用 ScraperVersionManager 统一管理
+    """
+    return ScraperVersionManager.get_min_server_version(_get_scrapers_dir())
 
 
 def get_platform_info() -> Dict[str, str]:
@@ -334,13 +324,13 @@ async def get_repo_refs(
                     resp = await client.get(f"https://api.github.com/repos/{owner}/{repo}/tags?per_page=5")
                     if resp.status_code == 200:
                         tag_names = [t["name"] for t in resp.json()]
-                        # 并发获取每个 tag 的 package.json 中的 min_server_version
+                        # 并发获取每个 tag 的 scraper_manifest.json 中的 min_server_version
                         async def _get_tag_min_ver(tag_name):
                             try:
-                                pkg_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{tag_name}/package.json"
-                                pkg_resp = await client.get(pkg_url)
-                                if pkg_resp.status_code == 200:
-                                    return pkg_resp.json().get("min_server_version")
+                                manifest_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{tag_name}/scraper_manifest.json"
+                                manifest_resp = await client.get(manifest_url)
+                                if manifest_resp.status_code == 200:
+                                    return manifest_resp.json().get("min_server_version")
                             except Exception:
                                 pass
                             return None
@@ -362,13 +352,13 @@ async def get_repo_refs(
                     resp = await client.get(f"https://gitee.com/api/v5/repos/{owner}/{repo}/tags?per_page=5")
                     if resp.status_code == 200:
                         tag_names = [t["name"] for t in resp.json()]
-                        # 并发获取每个 tag 的 package.json 中的 min_server_version
+                        # 并发获取每个 tag 的 scraper_manifest.json 中的 min_server_version
                         async def _get_gitee_tag_min_ver(tag_name):
                             try:
-                                pkg_url = f"https://gitee.com/{owner}/{repo}/raw/{tag_name}/package.json"
-                                pkg_resp = await client.get(pkg_url)
-                                if pkg_resp.status_code == 200:
-                                    return pkg_resp.json().get("min_server_version")
+                                manifest_url = f"https://gitee.com/{owner}/{repo}/raw/{tag_name}/scraper_manifest.json"
+                                manifest_resp = await client.get(manifest_url)
+                                if manifest_resp.status_code == 200:
+                                    return manifest_resp.json().get("min_server_version")
                             except Exception:
                                 pass
                             return None
@@ -389,32 +379,31 @@ async def get_repo_refs(
     }
 
 
-async def _fetch_package_info_with_retry(package_url: str, headers: Dict[str, str], max_retries: int = 3, proxy: Optional[str] = None) -> Optional[Dict[str, Optional[str]]]:
+async def _fetch_manifest_info_with_retry(manifest_url: str, headers: Dict[str, str], max_retries: int = 3, proxy: Optional[str] = None) -> Optional[Dict[str, Optional[str]]]:
     """
     带重试机制的版本信息获取函数
 
     Args:
-        package_url: package.json 的 URL
+        manifest_url: scraper_manifest.json 的 URL
         headers: HTTP 请求头
         max_retries: 最大重试次数（默认3次）
         proxy: 代理URL（可选）
 
     Returns:
-        包含 version 和 changelog 的字典，失败返回 None
+        包含 version 和 min_server_version 的字典，失败返回 None
     """
     timeout_config = httpx.Timeout(15.0, read=8.0)  # 版本检查是非关键操作，超时快速失败
 
     for attempt in range(max_retries):
         try:
             async with httpx.AsyncClient(timeout=timeout_config, headers=headers, follow_redirects=True, proxy=proxy) as client:
-                response = await client.get(package_url)
+                response = await client.get(manifest_url)
                 if response.status_code == 200:
-                    package_data = response.json()
-                    version = package_data.get("version", "unknown")
-                    changelog = package_data.get("changelog", None)
-                    min_fetchable_version = package_data.get("min_fetchable_version", None)
+                    manifest_data = response.json()
+                    version = manifest_data.get("version", "unknown")
+                    min_server_version = manifest_data.get("min_server_version", None)
                     logger.info(f"成功获取版本信息: {version} (尝试 {attempt + 1}/{max_retries})")
-                    return {"version": version, "changelog": changelog, "minFetchableVersion": min_fetchable_version}
+                    return {"version": version, "minServerVersion": min_server_version}
                 else:
                     logger.warning(f"获取版本失败 HTTP {response.status_code} (尝试 {attempt + 1}/{max_retries})")
         except httpx.TimeoutException:
@@ -428,7 +417,7 @@ async def _fetch_package_info_with_retry(package_url: str, headers: Dict[str, st
         if attempt < max_retries - 1:
             await asyncio.sleep(0.5)
 
-    logger.error(f"获取版本失败，已重试 {max_retries} 次: {package_url}")
+    logger.error(f"获取版本失败，已重试 {max_retries} 次: {manifest_url}")
     return None
 
 
@@ -449,17 +438,9 @@ async def get_versions(
                 logger.debug(f"使用缓存的版本信息 (缓存时间: {cache_age.total_seconds():.1f}秒)")
                 return _version_cache
 
-        # 获取本地版本和changelog
-        local_version = "unknown"
-        local_changelog = None
-        local_package_file = _get_scrapers_dir() / "package.json"
-        if local_package_file.exists():
-            try:
-                local_package = json.loads(local_package_file.read_text())
-                local_version = local_package.get("version", "unknown")
-                local_changelog = local_package.get("changelog", None)
-            except Exception as e:
-                logger.warning(f"读取本地 package.json 失败: {e}")
+        # 获取本地版本
+        # why: 使用 ScraperVersionManager 统一读取
+        local_version = ScraperVersionManager.get_local_version(_get_scrapers_dir())
 
         # 获取代理配置
         proxy_url = await config_manager.get("proxyUrl", "")
@@ -469,8 +450,7 @@ async def get_versions(
 
         # 获取远程版本（当前配置的资源仓库）
         remote_version = None
-        remote_changelog = None
-        remote_min_fetchable = None
+        remote_min_server_version = None
         repo_url = await config_manager.get("scraper_resource_repo", "")
 
         if repo_url:
@@ -494,23 +474,21 @@ async def get_versions(
                     headers["Authorization"] = f"Bearer {github_token}"
 
             base_url = _build_base_url(repo_info, repo_url, gitee_info)
-            package_url = f"{base_url}/package.json"
+            manifest_url = f"{base_url}/scraper_manifest.json"
 
             # 区分日志：用户配置的仓库
             platform_name = "Gitee" if gitee_info else "GitHub"
             logger.info(f"[版本检查] 正在获取用户配置仓库版本 ({platform_name}): {repo_url}")
-            remote_info = await _fetch_package_info_with_retry(package_url, headers, max_retries=1, proxy=proxy_to_use)
+            remote_info = await _fetch_manifest_info_with_retry(manifest_url, headers, max_retries=1, proxy=proxy_to_use)
             if remote_info:
                 remote_version = remote_info["version"]
-                remote_changelog = remote_info.get("changelog")
-                remote_min_fetchable = remote_info.get("minFetchableVersion")
+                remote_min_server_version = remote_info.get("minServerVersion")
                 logger.info(f"[版本检查] 用户配置仓库版本: {remote_version}")
             else:
                 logger.warning(f"[版本检查] 用户配置仓库版本获取失败")
 
         # 固定源仓库（官方仓库）版本——仅在用户已配置资源仓库时才请求，避免无谓的网络超时
         official_version = None
-        official_changelog = None
         if repo_url:
             try:
                 official_repo_info = parse_github_url("https://github.com/l429609201/Misaka-Scraper-Resources")
@@ -521,13 +499,12 @@ async def get_versions(
                     headers_official["Authorization"] = f"Bearer {github_token}"
 
                 official_base_url = _build_base_url(official_repo_info, "https://github.com/l429609201/Misaka-Scraper-Resources")
-                official_package_url = f"{official_base_url}/package.json"
+                official_manifest_url = f"{official_base_url}/scraper_manifest.json"
 
                 logger.info(f"[版本检查] 正在获取官方仓库版本 (GitHub): https://github.com/l429609201/Misaka-Scraper-Resources")
-                official_info = await _fetch_package_info_with_retry(official_package_url, headers_official, max_retries=1, proxy=proxy_to_use)
+                official_info = await _fetch_manifest_info_with_retry(official_manifest_url, headers_official, max_retries=1, proxy=proxy_to_use)
                 if official_info:
                     official_version = official_info["version"]
-                    official_changelog = official_info.get("changelog")
                     logger.info(f"[版本检查] 官方仓库版本: {official_version}")
                 else:
                     logger.warning(f"[版本检查] 官方仓库版本获取失败")
@@ -540,10 +517,7 @@ async def get_versions(
             "remoteVersion": remote_version,
             "officialVersion": official_version,
             "hasUpdate": remote_version and local_version != "unknown" and remote_version != local_version,
-            "localChangelog": local_changelog,
-            "remoteChangelog": remote_changelog,
-            "officialChangelog": official_changelog,
-            "minFetchableVersion": remote_min_fetchable,
+            "minServerVersion": remote_min_server_version,
         }
 
         # 更新缓存
@@ -599,13 +573,10 @@ async def backup_scrapers(
         # 创建备份目录
         BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
-        # 读取版本信息（用于元数据）
-        versions = {}
-        if SCRAPERS_VERSIONS_FILE.exists():
-            try:
-                versions = json.loads(SCRAPERS_VERSIONS_FILE.read_text())
-            except Exception as e:
-                logger.warning(f"读取版本信息失败: {e}")
+        # 读取版本信息（使用 ScraperVersionManager 统一管理）
+        manifest = ScraperVersionManager.load_manifest(_get_scrapers_dir())
+        if manifest is None:
+            manifest = {"sources": {}}
 
         # 清空旧备份文件（保留metadata.json）
         for file in BACKUP_DIR.glob("*"):
@@ -620,8 +591,6 @@ async def backup_scrapers(
                 shutil.copy2(file, BACKUP_DIR / file.name)
 
                 # 从文件名提取弹幕源名称
-                # 文件名格式: bilibili.cpython-312-aarch64-linux-gnu.so
-                # 需要提取第一个 '.' 之前的部分作为弹幕源名称
                 scraper_name = file.name.split('.')[0]
 
                 file_info = {
@@ -631,76 +600,33 @@ async def backup_scrapers(
                     "modified": datetime.fromtimestamp(file.stat().st_mtime).isoformat()
                 }
 
-                # 添加版本号（如果有）- 从 versions.json 的 scrapers 字段中查找
-                if scraper_name in versions:
-                    file_info["version"] = versions[scraper_name]
-                elif isinstance(versions, dict) and 'scrapers' in versions:
-                    # 兼容新格式的 versions.json
-                    if scraper_name in versions.get('scrapers', {}):
-                        file_info["version"] = versions['scrapers'][scraper_name]
+                # 添加版本号（从 manifest 的 sources 中查找）
+                sources = manifest.get("sources", {})
+                if scraper_name in sources:
+                    file_info["version"] = sources[scraper_name].get("version", "unknown")
 
                 backed_files.append(file_info)
                 backup_count += 1
 
-        # 使用 ScraperVersionManager 生成并保存 manifest
-        # why: 新架构只保留 scraper_manifest.json 作为唯一权威文件
-        try:
-            manifest = ScraperVersionManager.extract_manifest_from_legacy(
-                SCRAPERS_PACKAGE_FILE,
-                SCRAPERS_VERSIONS_FILE,
-                scrapers_dir
-            )
-
-            # 如果有新的 package_data，更新 manifest 中的全局版本号
+        # 备份 scraper_manifest.json（使用 ScraperVersionManager）
+        if manifest:
+            # 如果有新的 package_data，更新 manifest
             if package_data is not None:
-                manifest["version"] = package_data.get("version", manifest["version"])
+                manifest["version"] = package_data.get("version", manifest.get("version", "unknown"))
                 if package_data.get("min_server_version"):
                     manifest["min_server_version"] = package_data["min_server_version"]
-
-            # 如果有新的版本数据，更新 manifest 中的各源版本
-            if new_versions_data is not None:
                 manifest["updated_at"] = datetime.now().isoformat()
-                for scraper_name, version in new_versions_data.items():
-                    if scraper_name not in manifest["sources"]:
-                        manifest["sources"][scraper_name] = {}
-                    manifest["sources"][scraper_name]["version"] = version
 
-            # 如果有新的哈希数据，更新 manifest
-            if new_hashes_data is not None:
-                for scraper_name, hash_value in new_hashes_data.items():
-                    if scraper_name not in manifest["sources"]:
-                        manifest["sources"][scraper_name] = {}
-                    manifest["sources"][scraper_name]["hash"] = hash_value
-
-            # 保存 manifest 到 scrapers 和 backup 目录
-            ScraperVersionManager.save_manifest(manifest, scrapers_dir)
+            # 保存到备份目录
             ScraperVersionManager.save_manifest(manifest, BACKUP_DIR)
-            logger.info("已生成并备份 scraper_manifest.json")
-
-            # 删除 scrapers 目录中的 legacy 文件
-            # why: 新架构只保留 scraper_manifest.json
-            legacy_files_to_remove = ["package.json", "versions.json"]
-            for legacy_file in legacy_files_to_remove:
-                legacy_path = scrapers_dir / legacy_file
-                if legacy_path.exists():
-                    legacy_path.unlink()
-                    logger.info(f"已删除 scrapers 目录的 legacy 文件: {legacy_file}")
-
-        except Exception as e:
-            logger.warning(f"生成 manifest 失败: {e}")
+            logger.info("已备份 scraper_manifest.json")
+        else:
+            logger.warning("无 manifest 数据，无法备份版本信息")
 
         # 读取 manifest 的版本号（用于元数据）
-        package_version = manifest.get("version", "unknown") if 'manifest' in locals() else None
-        if not package_version:
-            # 回退：尝试从 package_data 读取
-            if package_data is not None:
-                package_version = package_data.get("version")
-            elif SCRAPERS_PACKAGE_FILE.exists():
-                try:
-                    local_package_data = json.loads(SCRAPERS_PACKAGE_FILE.read_text())
-                    package_version = local_package_data.get("version")
-                except Exception as e:
-                    logger.warning(f"读取 package.json 失败: {e}")
+        package_version = manifest.get("version", "unknown") if manifest else None
+        if not package_version and package_data is not None:
+            package_version = package_data.get("version")
 
         logger.info(f"用户 '{current_user.username}' 备份了 {backup_count} 个弹幕源文件到 {BACKUP_DIR}")
         return {"message": f"成功备份 {backup_count} 个文件", "count": backup_count}
@@ -972,9 +898,8 @@ async def load_resources_stream(
                         asset_version = asset_info['version']
                         yield f"data: {json.dumps({'type': 'info', 'message': f'找到压缩包: {asset_filename} (版本: {asset_version})'}, ensure_ascii=False)}\n\n"
 
-                        # 前置版本校验：在备份/下载之前先取 package.json（几KB）核验 min_server_version。
-                        # why：_fetch_package_info_with_retry 只解析 version/changelog 两字段，丢掉了
-                        #      min_server_version；整包下载+备份耗时可达数分钟，版本不满足时应在任何
+                        # 前置版本校验：在备份/下载之前先取 scraper_manifest.json（几KB）核验 min_server_version。
+                        # why：整包下载+备份耗时可达数分钟，版本不满足时应在任何
                         #      磁盘写入之前快速失败。此处与 incremental 路径的前置校验对齐。
                         try:
                             _pre_timeout = httpx.Timeout(15.0, read=15.0)
@@ -982,11 +907,10 @@ async def load_resources_stream(
                                 timeout=_pre_timeout, headers=headers,
                                 follow_redirects=True, proxy=proxy_to_use
                             ) as _pre_client:
-                                _pre_resp = await _pre_client.get(f"{base_url}/package.json")
+                                _pre_resp = await _pre_client.get(f"{base_url}/scraper_manifest.json")
                                 if _pre_resp.status_code == 200:
-                                    _pre_pkg = _pre_resp.json()
-                                    # 两个字段语义相同，取其一阻断下载
-                                    _min_req = _pre_pkg.get("min_server_version") or _pre_pkg.get("min_fetchable_version")
+                                    _pre_manifest = _pre_resp.json()
+                                    _min_req = _pre_manifest.get("min_server_version")
                                     if _min_req:
                                         from src._version import APP_VERSION
                                         from src.services.scraper_manager import _version_satisfies
@@ -1076,46 +1000,46 @@ async def load_resources_stream(
                             return
 
                     # ========== 逐文件下载模式（默认）==========
-                    # 下载 package.json
-                    package_url = f"{base_url}/package.json"
-                    logger.info(f"正在从 {package_url} 获取资源包信息...")
+                    # 下载 scraper_manifest.json 获取资源包信息
+                    manifest_url = f"{base_url}/scraper_manifest.json"
+                    logger.info(f"正在从 {manifest_url} 获取资源包信息...")
                     yield f"data: {json.dumps({'type': 'info', 'message': '正在获取资源包信息...'}, ensure_ascii=False)}\n\n"
 
                     # 设置更详细的超时配置: 连接超时30秒, 读取超时30秒
                     timeout_config = httpx.Timeout(30.0, read=30.0)
-                    max_package_retries = 3  # 获取 package.json 的重试次数
+                    max_manifest_retries = 3  # 获取 scraper_manifest.json 的重试次数
                     package_data = None
 
-                    for pkg_retry in range(max_package_retries + 1):
+                    for pkg_retry in range(max_manifest_retries + 1):
                         try:
                             if pkg_retry > 0:
                                 wait_time = min(2 ** pkg_retry, 8)
-                                logger.warning(f"获取资源包信息重试 {pkg_retry}/{max_package_retries}，等待 {wait_time} 秒...")
-                                yield f"data: {json.dumps({'type': 'info', 'message': f'获取资源包信息失败，正在重试 ({pkg_retry}/{max_package_retries})...'}, ensure_ascii=False)}\n\n"
+                                logger.warning(f"获取资源包信息重试 {pkg_retry}/{max_manifest_retries}，等待 {wait_time} 秒...")
+                                yield f"data: {json.dumps({'type': 'info', 'message': f'获取资源包信息失败，正在重试 ({pkg_retry}/{max_manifest_retries})...'}, ensure_ascii=False)}\n\n"
                                 await asyncio.sleep(wait_time)
 
                             async with httpx.AsyncClient(timeout=timeout_config, headers=headers, follow_redirects=True, proxy=proxy_to_use) as client:
-                                response = await client.get(package_url)
+                                response = await client.get(manifest_url)
                                 if response.status_code == 200:
                                     package_data = response.json()
                                     logger.info("成功获取资源包信息")
                                     break  # 成功，跳出重试循环
                                 else:
-                                    logger.warning(f"获取资源包信息失败: HTTP {response.status_code} (重试 {pkg_retry}/{max_package_retries})")
-                                    if pkg_retry == max_package_retries:
+                                    logger.warning(f"获取资源包信息失败: HTTP {response.status_code} (重试 {pkg_retry}/{max_manifest_retries})")
+                                    if pkg_retry == max_manifest_retries:
                                         yield f"data: {json.dumps({'type': 'error', 'message': f'无法获取资源包信息 (HTTP {response.status_code})，请检查仓库链接或更换CDN节点'}, ensure_ascii=False)}\n\n"
                                         yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
                                         return
 
                         except httpx.TimeoutException as timeout_err:
-                            logger.warning(f"连接超时 (重试 {pkg_retry}/{max_package_retries}): {timeout_err}")
-                            if pkg_retry == max_package_retries:
+                            logger.warning(f"连接超时 (重试 {pkg_retry}/{max_manifest_retries}): {timeout_err}")
+                            if pkg_retry == max_manifest_retries:
                                 yield f"data: {json.dumps({'type': 'error', 'message': '连接超时，请检查网络或更换CDN节点'}, ensure_ascii=False)}\n\n"
                                 yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
                                 return
                         except httpx.ConnectError as conn_err:
-                            logger.warning(f"连接失败 (重试 {pkg_retry}/{max_package_retries}): {conn_err}")
-                            if pkg_retry == max_package_retries:
+                            logger.warning(f"连接失败 (重试 {pkg_retry}/{max_manifest_retries}): {conn_err}")
+                            if pkg_retry == max_manifest_retries:
                                 yield f"data: {json.dumps({'type': 'error', 'message': '无法连接到资源仓库，请检查网络或更换CDN节点'}, ensure_ascii=False)}\n\n"
                                 yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
                                 return
@@ -1178,15 +1102,6 @@ async def load_resources_stream(
                             logger.info(f"已读取本地 manifest，包含 {len(local_hashes)} 个哈希值")
                         except Exception as e:
                             logger.warning(f"读取本地 manifest 失败: {e}")
-
-                    # 兼容旧版本：如果 manifest 不存在，尝试读取 versions.json
-                    if not local_hashes and SCRAPERS_VERSIONS_FILE.exists():
-                        try:
-                            local_versions = json.loads(await asyncio.to_thread(SCRAPERS_VERSIONS_FILE.read_text))
-                            local_hashes = local_versions.get('hashes', {})
-                            logger.info(f"已读取本地 versions.json (兼容模式)，包含 {len(local_hashes)} 个哈希值")
-                        except Exception as e:
-                            logger.warning(f"读取本地版本文件失败: {e}")
 
                     if not local_hashes:
                         logger.info("本地无版本信息，所有源都需要下载")
