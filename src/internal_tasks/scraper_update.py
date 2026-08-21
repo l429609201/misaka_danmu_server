@@ -227,21 +227,9 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
             )
             return
 
-    # 使用版本比较工具判断是否需要更新
+    # 导入版本比较工具
     from src.utils.version_comparator import VersionComparator
-
     scrapers_dir = _get_scrapers_dir()
-    should_update, reason = VersionComparator.should_update(
-        local_dir=scrapers_dir,
-        remote_version=remote_version,
-        remote_branch=None  # 自动更新默认跟踪 main 分支
-    )
-
-    if not should_update:
-        logger.debug(f"弹幕源无需更新: {reason}")
-        return
-
-    logger.info(f"检测到需要更新: {reason}，开始自动更新...")
 
     # 版本状态预校（代替时间冷却）：若备份目录已经是目标版本，说明上一轮已下载/上传好，
     # 只是尚未重启生效（如上次重启失败）。此时不重复下载，直接触发重启让备份生效即可。
@@ -249,6 +237,28 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
     if _verify_backup_version(remote_version):
         await _restart_to_apply_backup(config_manager, remote_version)
         return
+
+    # 检查是否启用全量替换模式
+    full_replace_enabled = await config_manager.get("scraperFullReplaceEnabled", "false")
+    use_full_replace = full_replace_enabled.lower() == "true"
+
+    # 分支决策：全量模式延后到临时目录校验，增量模式现在就校验
+    if not use_full_replace:
+        # 增量模式：获取版本后立即校验（避免无效下载）
+        should_update, reason = VersionComparator.should_update(
+            local_dir=scrapers_dir,
+            remote_version=remote_version,
+            remote_branch=None
+        )
+
+        if not should_update:
+            logger.info(f"弹幕源无需更新: {reason}，跳过下载")
+            return
+
+        logger.info(f"检测到需要更新: {reason}，开始增量下载...")
+    else:
+        # 全量模式：暂不校验，在解压到临时目录后再校验
+        logger.info(f"开始全量替换更新（目标版本: {remote_version}）...")
 
     # 执行更新
     await _perform_update(
@@ -426,6 +436,50 @@ async def _perform_update(
                     )
 
                     if success:
+                        # ========== 全量模式：临时目录校验 ==========
+                        # why：全量包解压到临时目录后，先校验版本再决定是否继续部署
+                        # 避免下载7.3MB后发现版本相同还要继续走完整备份链路
+                        from src.utils.version_comparator import VersionComparator
+
+                        # 读取临时目录的 manifest（刚解压出来的）
+                        temp_manifest = await asyncio.to_thread(
+                            ScraperVersionManager.load_manifest,
+                            scrapers_dir  # 解压目标是临时目录或运行目录（根据 defer_overlay）
+                        )
+                        temp_version = ScraperVersionManager.get_version_from_manifest(temp_manifest)
+
+                        # 读取当前运行目录的 manifest（对比基准）
+                        from src.api.ui.scraper_resources import BACKUP_DIR
+                        local_manifest = await asyncio.to_thread(
+                            ScraperVersionManager.load_manifest,
+                            scrapers_dir if not need_defer else Path(BACKUP_DIR).parent / "src" / "scrapers"
+                        )
+                        local_version_actual = ScraperVersionManager.get_version_from_manifest(local_manifest)
+
+                        # 版本比较
+                        if temp_version and temp_version == local_version_actual:
+                            logger.info(
+                                f"✓ 全量替换版本校验: 临时目录版本 {temp_version} 与本地版本相同，"
+                                f"无需更新，清理临时目录并跳过部署"
+                            )
+                            # 清理临时目录
+                            try:
+                                import shutil
+                                temp_dir = scrapers_dir / ".tmp_update"
+                                if temp_dir.exists():
+                                    await asyncio.to_thread(shutil.rmtree, temp_dir)
+                                    logger.info("已清理临时目录")
+                            except Exception as e:
+                                logger.warning(f"清理临时目录失败: {e}")
+
+                            # 清除版本缓存
+                            import src.api.ui.scraper_resources as sr
+                            sr._version_cache = None
+                            sr._version_cache_time = None
+                            return
+
+                        logger.info(f"✓ 全量替换版本校验通过: {local_version_actual} -> {temp_version}，继续部署流程")
+                        # ========== 版本校验通过，继续原有流程 ==========
                         # 更新 manifest
                         from datetime import datetime
                         release_version = asset_info['version'].lstrip('v')
