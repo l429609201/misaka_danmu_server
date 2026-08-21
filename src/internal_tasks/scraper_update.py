@@ -227,12 +227,21 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
             )
             return
 
-    # 比较版本
-    if local_version == remote_version:
-        logger.debug(f"弹幕源已是最新版本 ({local_version})")
+    # 使用版本比较工具判断是否需要更新
+    from src.utils.version_comparator import VersionComparator
+
+    scrapers_dir = _get_scrapers_dir()
+    should_update, reason = VersionComparator.should_update(
+        local_dir=scrapers_dir,
+        remote_version=remote_version,
+        remote_branch=None  # 自动更新默认跟踪 main 分支
+    )
+
+    if not should_update:
+        logger.debug(f"弹幕源无需更新: {reason}")
         return
 
-    logger.info(f"检测到新版本: {local_version} -> {remote_version}，开始自动更新...")
+    logger.info(f"检测到需要更新: {reason}，开始自动更新...")
 
     # 版本状态预校（代替时间冷却）：若备份目录已经是目标版本，说明上一轮已下载/上传好，
     # 只是尚未重启生效（如上次重启失败）。此时不重复下载，直接触发重启让备份生效即可。
