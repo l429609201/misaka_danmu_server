@@ -69,19 +69,31 @@ def _backup_has_binaries() -> bool:
 
 
 def _verify_backup_version(remote_version: str) -> bool:
-    """校验备份目录是否已成功落盘为指定的目标版本。
+    """校验备份目录是否已成功落盘为指定的目标版本，且运行目录尚未应用。
 
     判据（必须同时满足）：
     - 备份目录含 .so/.pyd 文件（保证重启后有可恢复的源）；
-    - 备份目录 manifest 的 version == remote_version（严格版本匹配）。
+    - 备份目录 manifest 的 version == remote_version（严格版本匹配）；
+    - 运行目录 manifest 的 version != remote_version（运行目录尚未更新）。
 
-    why：以“版本状态”而非“时间冷却”决策——仅在确认目标版本已真正持久化到备份目录后，
-    才允许重启，避免重启后版本回退导致无限循环。
+    why：以“版本状态”而非“时间冷却”决策——仅在确认目标版本已真正持久化到备份目录、
+    但运行目录尚未更新时，才允许重启应用备份。如果运行目录已是目标版本，则无需重启。
     """
     try:
         if not _backup_has_binaries():
             return False
-        return _get_backup_version() == remote_version
+
+        backup_version = _get_backup_version()
+        if backup_version != remote_version:
+            return False
+
+        # 检查运行目录的版本
+        scrapers_dir = _get_scrapers_dir()
+        local_manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        local_version = ScraperVersionManager.get_version_from_manifest(local_manifest)
+
+        # 只有当运行目录版本不同时才需要重启
+        return local_version != remote_version
     except Exception as e:
         logger.debug(f"校验备份版本失败（视为未就绪）: {e}")
         return False
