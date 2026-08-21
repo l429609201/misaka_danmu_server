@@ -381,9 +381,10 @@ async def _perform_update(
 
                 if asset_info:
                     # 使用部署检测工具判断是否需要延迟覆盖
+                    backup_dir = Path(await config_manager.get("scraperBackupDir", "config/backup"))
                     deployment_strategy = should_restart_for_deployment(
                         scrapers_dir=scrapers_dir,
-                        backup_dir=Path(config_manager.get_sync("scraperBackupDir", "config/backup")),
+                        backup_dir=backup_dir,
                         scraper_manager=scraper_manager,
                         logger_instance=logger
                     )
