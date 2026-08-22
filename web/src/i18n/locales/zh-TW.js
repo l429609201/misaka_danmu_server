@@ -2259,7 +2259,7 @@ export default {
     filledDefaultRules: '已填充預設規則',
     noDefaultRules: '未找到預設規則',
     getDefaultRulesFailed: '取得預設規則失敗',
-    title: '全域過濾配置',
+    title: '標題過濾配置',
     filterLevelTitle: '🔍 過濾層級說明',
     filterLevelTree: `搜尋結果/
 ├── 葬送的芙莉蓮   ← 【全域搜尋結果標題過濾】針對這裡
@@ -2270,10 +2270,12 @@ export default {
 │       ├── 第2話 別人生         過濾掉"PV1"、"特典"、"OP"等分集
 │       ├── PV1 (被過濾)
 `,
-    episodeFilterTip: '💡 如需調整分集過濾，請前往「搜尋源」→ 「彈幕搜尋源」點擊對應源的 ⚙️ 設定按鈕 → 「分集標題黑名單 (正則)」',
+    episodeFilterTip: '💡 本頁配置的是「全域搜尋結果標題過濾」，針對整條搜尋結果（作品）進行篩選；如需過濾分集，請前往「分集標題過濾配置」頁籤。',
+    episodeFilterTip2: '💡 分集過濾分三層逐級收口：① 單源分集標題黑名單 → ② 兜底分集標題過濾 → ③ 單劇過濾，均在「分集標題過濾配置」與「單劇過濾」頁籤中管理。',
     cnRules: '中文規則 (關鍵詞)',
     cnRulesTip: "用於匹配標題中任何位置出現的中文關鍵詞，例如'特典|預告|廣告'。",
     fillDefaultRules: '填充預設規則',
+    aiGenerate: 'AI 生成',
     cnRulesPlaceholder: '請輸入中文過濾關鍵詞，使用 | 分隔',
     enRules: '英文/縮寫規則 (獨立詞)',
     enRulesTip: "用於匹配獨立的英文縮寫或單詞，例如'OP|ED|PV'。系統會自動處理單詞邊界。",
@@ -2300,12 +2302,18 @@ export default {
 
 
   globalEpisodeTitleFilter: {
-    title: '兜底全域分集標題過濾',
+    // 頁籤標題（三級頁籤用）
+    tabTitle: '分集標題過濾配置',
+    // 卡片標題（兜底卡片用）
+    title: '兜底分集標題過濾',
     desc: '對所有搜尋結果的分集清單進行兜底性的正則過濾，過濾掉花絮、預告、加更等非正片分集。',
     enableLabel: '啟用兜底分集標題過濾',
+    enabledText: '已啟用',
+    disabledText: '已停用',
     regexLabel: '過濾規則（正規表達式）',
     regexPlaceholder: '輸入正規表達式，匹配到的分集標題將被過濾',
     fillDefault: '填充預設正則',
+    aiGenerate: 'AI 生成',
     hint1: '• 正則參考 logvar 過濾正則，使用 Python regex 模組（支援不等長 lookbehind）',
     hint2: '• 匹配到的分集標題將被自動過濾，不顯示在分集清單中',
     hint3: '• 規則不區分大小寫，對所有搜尋源的分集清單統一生效',
@@ -2313,6 +2321,77 @@ export default {
     saveChanges: '儲存修改',
     saveSuccess: '兜底分集標題過濾配置已儲存',
     saveFailed: '儲存兜底分集標題過濾配置失敗',
+  },
+  // 分集標題過濾流程說明（頁籤頂部的層級說明區塊）
+  episodeFilterFlow: {
+    title: '分集過濾流程說明',
+    // 流程起點：源站回傳的原始分集標題清單（不參與過濾，作為過濾輸入）
+    start: {
+      name: '取得分集標題',
+      where: '源站回傳原始分集清單',
+      desc: '下方各環節均基於這些原始分集標題進行過濾',
+    },
+    // 三階段橫向流程：每階段含 名稱 / 位置 / 說明
+    step1: {
+      name: '單源分集標題黑名單',
+      where: '本頁左側卡片 · 按彈幕源過濾',
+      desc: '過濾掉該源的「PV/特典/花絮/預告/OP/ED」等分集',
+    },
+    step2: {
+      name: '兜底分集標題過濾',
+      where: '本頁右側卡片 · 開關開啟後全域兜底',
+      desc: '對所有源統一再兜一層，漏網的非正片分集在此過濾',
+    },
+    step3: {
+      name: '單劇過濾（可選）',
+      where: '「單劇過濾」頁籤 · 按作品精準過濾',
+      desc: '僅對指定作品/源生效，過濾「加更/純享/會員版」等',
+    },
+    note2: '• 三者都作用於「分集標題」，任一環節命中即被過濾，不顯示在分集清單中',
+    note3: '💡 ① 等同於「彈幕搜尋源」中各源 ⚙️ 設定裡的「分集標題黑名單(正則)」，此處集中管理更方便',
+  },
+  // AI 正則生成彈窗（分集過濾各處複用：示例標籤 / 預覽對比 / 追加或覆蓋）
+  aiRegexModal: {
+    title: 'AI 輔助生成過濾正則',
+    descLabel: '用自然語言描述你想過濾掉的分集',
+    descPlaceholder: '例如：過濾掉加更、純享、會員版、下期預告、花絮、彩蛋',
+    examplesLabel: '快捷示例（點擊填入）',
+    example1: '過濾預告、花絮、彩蛋',
+    example2: '過濾加更、純享、會員版',
+    example3: '過濾 OP、ED、PV、CM 等非正片',
+    example4: '過濾特典、SP、番外、幕後',
+    generate: '生成正則',
+    generating: 'AI 生成中…',
+    resultLabel: '生成結果',
+    currentLabel: '目前正則',
+    empty: '（空）',
+    apply: '套用',
+    applyOverwrite: '覆蓋目前',
+    applyAppend: '追加到現有',
+    applyMode: '套用方式',
+    noResult: 'AI 未能生成有效規則，請換個描述再試',
+    failed: 'AI 生成規則失敗',
+    emptyDescWarn: '請先描述你想過濾的內容',
+    appended: '已追加到現有正則',
+    overwritten: '已覆蓋目前正則',
+  },
+  // 單源分集標題過濾配置（集成各彈幕源的 episodeBlacklistRegex，可切換查看/編輯）
+  sourceEpisodeFilter: {
+    title: '單源分集標題過濾配置',
+    desc: '為單個彈幕源配置分集標題黑名單正則，等同於「彈幕搜尋源」中該源的分集標題黑名單設定。',
+    sourceLabel: '彈幕源',
+    sourcePlaceholder: '選擇要配置的彈幕源',
+    noSource: '暫無可配置的彈幕源',
+    regexLabel: '分集標題黑名單（正則）',
+    regexPlaceholder: '輸入正規表達式，匹配到的分集標題將被過濾',
+    fillDefault: '填充該源預設正則',
+    fillCommon: '填充通用預設正則',
+    aiGenerate: 'AI 生成',
+    selectSourceFirst: '請先選擇一個彈幕源',
+    loadFailed: '載入該源配置失敗',
+    saveSuccess: '該源分集標題過濾已儲存',
+    saveFailed: '儲存該源分集標題過濾失敗',
+    saveChanges: '儲存修改',
   },
   singleEpisodeFilter: {
     title: '單劇過濾',

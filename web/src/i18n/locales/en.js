@@ -2257,7 +2257,7 @@ export default {
     filledDefaultRules: 'Filled with default rules',
     noDefaultRules: 'No default rules found',
     getDefaultRulesFailed: 'Failed to get default rules',
-    title: 'Global Filter Config',
+    title: 'Title Filter Config',
     filterLevelTitle: '🔍 Filter Levels',
     filterLevelTree: `Search Results/
 ├── Frieren   ← [Global search result title filter] applies here
@@ -2268,10 +2268,12 @@ export default {
 │       ├── Ep 2 Someone's Life            Filters out episodes like "PV1", "special", "OP"
 │       ├── PV1 (filtered)
 `,
-    episodeFilterTip: '💡 To adjust episode filtering, go to "Sources" → "Danmaku Sources", click the ⚙️ settings button of the source → "Episode Title Blacklist (regex)"',
+    episodeFilterTip: '💡 This tab configures the "Global Search Result Title Filter", which filters entire search results (works). To filter episodes, go to the "Episode Title Filter Config" tab.',
+    episodeFilterTip2: '💡 Episode filtering has three layers: (1) per-source episode blacklist → (2) fallback episode title filter → (3) per-title filter, managed under the "Episode Title Filter Config" and "Per-Title Filter" tabs.',
     cnRules: 'Chinese Rules (keywords)',
     cnRulesTip: "Matches Chinese keywords appearing anywhere in the title, e.g. 'special|trailer|ad'.",
     fillDefaultRules: 'Fill Default Rules',
+    aiGenerate: 'AI Generate',
     cnRulesPlaceholder: 'Enter Chinese filter keywords, separated by |',
     enRules: 'English/Abbreviation Rules (whole words)',
     enRulesTip: "Matches standalone English abbreviations or words, e.g. 'OP|ED|PV'. Word boundaries are handled automatically.",
@@ -2298,19 +2300,96 @@ export default {
 
 
   globalEpisodeTitleFilter: {
-    title: 'Global Episode Title Filter',
+    // Tab title (third-level tab)
+    tabTitle: 'Episode Title Filter Config',
+    // Card title (fallback card)
+    title: 'Fallback Episode Title Filter',
     desc: 'A fallback regex filter applied to all episode lists, removing non-main episodes like trailers, extras, etc.',
-    enableLabel: 'Enable Global Episode Title Filter',
+    enableLabel: 'Enable Fallback Episode Title Filter',
+    enabledText: 'Enabled',
+    disabledText: 'Disabled',
     regexLabel: 'Filter Rules (Regex)',
     regexPlaceholder: 'Enter regex, matched episode titles will be filtered',
     fillDefault: 'Fill Default Regex',
+    aiGenerate: 'AI Generate',
     hint1: '• Regex based on logvar filter rules, uses Python regex module (supports variable-length lookbehind)',
     hint2: '• Matched episode titles will be automatically filtered from episode lists',
     hint3: '• Case-insensitive, applies to all source episode lists',
     hint4: '• For per-title filtering, use the "Per-Title Filter" tab',
     saveChanges: 'Save Changes',
-    saveSuccess: 'Global episode title filter saved',
-    saveFailed: 'Failed to save global episode title filter',
+    saveSuccess: 'Fallback episode title filter saved',
+    saveFailed: 'Failed to save fallback episode title filter',
+  },
+  // Episode title filter flow explanation (info block at top of the tab)
+  episodeFilterFlow: {
+    title: 'Episode Filtering Flow',
+    // Flow start: raw episode title list returned by the source (filter input)
+    start: {
+      name: 'Fetch Episode Titles',
+      where: 'Raw episode list from source',
+      desc: 'All stages below filter based on these raw episode titles',
+    },
+    // Three-stage horizontal flow: each stage has name / where / desc
+    step1: {
+      name: 'Per-source Blacklist',
+      where: 'Left card · filter per scraper',
+      desc: 'Removes "PV/Extra/Trailer/OP/ED" episodes of that source',
+    },
+    step2: {
+      name: 'Fallback Title Filter',
+      where: 'Right card · global fallback when enabled',
+      desc: 'A unified extra pass over all sources for leftover non-main episodes',
+    },
+    step3: {
+      name: 'Per-title Filter (optional)',
+      where: '"Per-Title Filter" tab · precise per-work filter',
+      desc: 'Applies only to specified work/source (e.g. "bonus/member-only")',
+    },
+    note2: '• All three act on the episode title; a hit at any stage removes it from the list',
+    note3: '💡 (1) equals the "Episode Title Blacklist (Regex)" under each source\'s ⚙️ settings in "Danmaku Sources", managed here centrally',
+  },
+  // AI regex generation modal (reused across episode filters: example tags / preview diff / append or overwrite)
+  aiRegexModal: {
+    title: 'AI-Assisted Filter Regex',
+    descLabel: 'Describe the episodes you want to filter out',
+    descPlaceholder: 'e.g. filter out bonus, member-only, next-episode trailer, extra, bloopers',
+    examplesLabel: 'Quick examples (click to fill)',
+    example1: 'Filter trailers, extras, bloopers',
+    example2: 'Filter bonus, uncut, member-only',
+    example3: 'Filter non-main like OP, ED, PV, CM',
+    example4: 'Filter specials, SP, side-story, behind-the-scenes',
+    generate: 'Generate',
+    generating: 'Generating…',
+    resultLabel: 'Result',
+    currentLabel: 'Current regex',
+    empty: '(empty)',
+    apply: 'Apply',
+    applyOverwrite: 'Overwrite current',
+    applyAppend: 'Append to existing',
+    applyMode: 'Apply mode',
+    noResult: 'AI could not generate a valid rule, try another description',
+    failed: 'Failed to generate regex',
+    emptyDescWarn: 'Please describe what you want to filter first',
+    appended: 'Appended to existing regex',
+    overwritten: 'Current regex overwritten',
+  },
+  // Per-source episode title filter (integrates each scraper's episodeBlacklistRegex, switchable)
+  sourceEpisodeFilter: {
+    title: 'Per-Source Episode Title Filter',
+    desc: "Configure the episode title blacklist regex for a single scraper. Equivalent to that source's episode title blacklist under \"Danmaku Sources\".",
+    sourceLabel: 'Source',
+    sourcePlaceholder: 'Select a source to configure',
+    noSource: 'No configurable source available',
+    regexLabel: 'Episode Title Blacklist (Regex)',
+    regexPlaceholder: 'Enter regex, matched episode titles will be filtered',
+    fillDefault: "Fill Source Default Regex",
+    fillCommon: "Fill Common Default Regex",
+    aiGenerate: 'AI Generate',
+    selectSourceFirst: 'Please select a source first',
+    loadFailed: 'Failed to load source config',
+    saveSuccess: 'Source episode title filter saved',
+    saveFailed: 'Failed to save source episode title filter',
+    saveChanges: 'Save Changes',
   },
   singleEpisodeFilter: {
     title: 'Per-Title Filter',
