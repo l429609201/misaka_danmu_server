@@ -1,5 +1,5 @@
 # 版本号
-APP_VERSION = "2.8.9"
+APP_VERSION = "2.9.0"
 
 # 弹幕源最低可用版本：服务器拒绝加载低于此版本的弹幕源
 MIN_SCRAPER_VERSION = "2.2.7"

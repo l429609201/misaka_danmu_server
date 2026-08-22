@@ -499,10 +499,17 @@ def create_cache_backend(
 _global_backend: Optional[AsyncCacheBackend] = None
 
 
-def get_cache_backend() -> AsyncCacheBackend:
-    """获取全局缓存后端实例"""
-    if _global_backend is None:
-        raise RuntimeError("缓存后端尚未初始化，请先调用 init_cache_backend()")
+def get_cache_backend() -> Optional[AsyncCacheBackend]:
+    """获取全局缓存后端实例。
+
+    契约：未初始化（或初始化失败）时返回 None，而非抛异常。
+    why：全项目约 70 处调用方均按「后端不可用则降级到数据库」处理，
+    写法为 `backend = get_cache_backend(); if backend is not None: ...`。
+    此前实现抛 RuntimeError，导致 `_backend = get_cache_backend()` 这类
+    先赋值后判空的调用点在赋值行就崩溃（如 unified_search / webhook 任务），
+    降级路径永远走不到。改为返回 None 后，所有降级分支即可正常生效，
+    缓存不可用时自动回退数据库，不再中断业务任务。
+    """
     return _global_backend
 
 
@@ -512,6 +519,8 @@ async def init_cache_backend(session_factory=None, cache_config=None) -> AsyncCa
 
     - 如果配置了 Redis，会先进行连接健康检查
     - Redis 不可用时自动降级到 Hybrid 模式（Memory L1 + Database L2）
+    - 构造阶段异常（如 redis 模式却未配置 redis_url）同样自动降级，
+      确保 _global_backend 一定被赋值，避免后续 get_cache_backend() 拿到 None
 
     Args:
         session_factory: SQLAlchemy 异步会话工厂
@@ -522,11 +531,32 @@ async def init_cache_backend(session_factory=None, cache_config=None) -> AsyncCa
     if cache_config is None:
         cache_config = CacheConfig()
 
-    backend = create_cache_backend(
-        backend_type=cache_config.backend,
-        session_factory=session_factory,
-        cache_config=cache_config,
-    )
+    try:
+        backend = create_cache_backend(
+            backend_type=cache_config.backend,
+            session_factory=session_factory,
+            cache_config=cache_config,
+        )
+    except Exception as e:
+        # why：构造失败（例如 backend=redis 但 redis_url 为空 → ValueError）不应中断
+        # 整个应用启动，也不应让缓存后端保持 None（否则全项目降级判断虽已生效，
+        # 但会失去 L2 数据库缓存）。此处按既定「不可用自动降级」意图兜底：
+        # 有 session_factory 用 Hybrid（内存 L1 + 数据库 L2），否则退到纯内存。
+        logger.warning(
+            f"缓存后端构造失败（backend={cache_config.backend}）：{e}；"
+            "自动降级到 Hybrid/Memory 模式"
+        )
+        if session_factory is not None:
+            backend = create_cache_backend(
+                backend_type="hybrid",
+                session_factory=session_factory,
+                cache_config=cache_config,
+            )
+        else:
+            backend = create_cache_backend(
+                backend_type="memory",
+                cache_config=cache_config,
+            )
 
     # Redis 后端健康检查
     if cache_config.backend == "redis" and isinstance(backend, RedisBackend):
