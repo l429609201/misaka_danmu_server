@@ -25,7 +25,10 @@ from src.utils.version_comparator import VersionComparator
 from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
 from src.utils.remote_manifest_fetcher import fetch_remote_manifest_dict
 from src.utils.scraper_deployment_checker import should_restart_for_deployment
-from src.utils.scraper_download_executor import check_scraper_compat_in_dir, _get_temp_download_base_dir
+from src.utils.scraper_download_executor import (
+    _get_temp_download_base_dir,
+    verify_scraper_package,
+)
 from src._version import APP_VERSION
 from src.services.scraper_manager import _version_satisfies
 import src.api.ui.scraper_resources as sr
@@ -477,63 +480,44 @@ async def _perform_update(
                     )
 
                     if success:
-                        # ========== 全量模式：包内容完整性断言 ==========
-                        # 与前置校验（该不该下）语义不同：此处断言"下到的包确实是远程声明的版本"，
-                        # 比对对象是解压出的临时目录，而非运行目录。
-                        # why：远程 manifest 的版本号与压缩包内实际内容可能不一致（发布错挂资产、
-                        # 资产未随 manifest 同步更新等）。若不断言就部署，会把标着 2.2.9 的旧包
-                        # 写进备份目录并重启，重启后版本号与内容不符，下一轮又判定需要更新 → 反复循环。
+                        # ========== 部署前统一校验（架构/版本/最低可用版本/哈希） ==========
+                        # why：校验对象必须是解压出的新包所在目录，而非运行目录——defer 模式下
+                        # 运行目录仍是旧内容，查它等于空转。校验以权威文件为唯一基准；
+                        # 临时目录若无权威文件，会先从 package.json + versions.json 整合生成。
                         temp_dir = _get_deferred_overlay_dir(scrapers_dir)
-                        if need_defer and temp_dir.exists():
-                            tmp_manifest = await asyncio.to_thread(
-                                ScraperVersionManager.load_manifest,
-                                temp_dir
-                            )
-                            tmp_version = ScraperVersionManager.get_version_from_manifest(tmp_manifest)
+                        verify_dir = temp_dir if (need_defer and temp_dir.exists()) else scrapers_dir
 
-                            if tmp_version and tmp_version.lstrip('v') != remote_version.lstrip('v'):
-                                logger.error(
-                                    f"全量替换包内容校验失败：远程声明版本 {remote_version}，"
-                                    f"但包内实际版本为 {tmp_version}。为避免部署错误版本，"
-                                    "本次不写入版本信息、不重启。"
-                                )
-                                # 运行目录在 defer 模式下未被覆盖，无需回滚；仅清理临时目录。
-                                # 注意：备份目录已由 _persist_new_version_to_backup 写入该包，
-                                # 但其内容与自身 manifest 自洽，重启后恢复不会破坏运行环境。
+                        passed, verify_errors = await verify_scraper_package(
+                            verify_dir,
+                            expected_version=remote_version
+                        )
+
+                        if not passed:
+                            detail = "；".join(verify_errors)
+                            logger.error(
+                                f"全量替换部署前校验失败（{verify_dir.name}）：{detail}。"
+                                "为避免部署损坏或不兼容的包，本次不写入版本信息、不重启。"
+                            )
+
+                            if verify_dir == temp_dir:
+                                # defer 模式下运行目录未被覆盖，仅清理临时目录即可
                                 try:
                                     await asyncio.to_thread(shutil.rmtree, temp_dir)
                                     logger.info("已清理临时目录")
                                 except Exception as e:
                                     logger.warning(f"清理临时目录失败: {e}")
+                            else:
+                                # 运行目录已被解压覆盖，从备份恢复旧版 .so
+                                await _restore_from_backup(scrapers_dir)
 
-                                sr._version_cache = None
-                                sr._version_cache_time = None
-                                return
-
-                            logger.info(f"✓ 全量替换包内容校验通过（版本 {tmp_version or remote_version}），继续部署流程")
-
-                        # ========== 校验通过，继续原有流程 ==========
-                        # 更新 manifest
-                        release_version = asset_info['version'].lstrip('v')
-
-                        # 部署前预检：逐个 import 解压出的 .so，确认各源 min_server_version 均满足
-                        # why：包级 min_server_version 只是声明值，可能缺失或与单源类属性不一致。
-                        # 此前自动更新完全没有这一步，下载解压后直接备份并重启，重启时
-                        # scraper_manager 才逐个加载失败 → 所有源全废（前端弹"需要服务器版本≥x"）。
-                        # 与手动下载路径共用同一探测实现，改为"预检不通过就不重启"。
-                        incompatible = await check_scraper_compat_in_dir(scrapers_dir)
-                        if incompatible:
-                            detail = ", ".join(f"{k} 需要 >= {v}" for k, v in sorted(incompatible.items()))
-                            logger.error(
-                                f"全量替换预检失败：当前服务器版本 {APP_VERSION}，"
-                                f"有 {len(incompatible)} 个弹幕源版本要求不满足（{detail}）。"
-                                "为避免重启后源全部加载失败，本次不写入版本信息、不备份、不重启。"
-                            )
-                            # 从备份恢复被解压覆盖掉的旧版 .so，保证当前运行的源不被破坏
-                            await _restore_from_backup(scrapers_dir)
                             sr._version_cache = None
                             sr._version_cache_time = None
                             return
+
+                        logger.info(f"✓ 部署前校验通过（{verify_dir.name}，版本 {remote_version}），继续部署流程")
+
+                        # ========== 校验通过，继续原有流程 ==========
+                        release_version = asset_info['version'].lstrip('v')
 
                         # 优先从解压后的 scraper_manifest.json 读取，回退到 package.json
                         scrapers_versions = {}

@@ -15,7 +15,7 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -159,6 +159,116 @@ async def check_scraper_compat_in_dir(check_dir: Path) -> dict:
             # 无法 import 的模块跳过，不阻断整体校验
             logger.debug(f"check_scraper_compat_in_dir 跳过 {file_path.name}: {e}")
     return incompatible
+
+
+async def ensure_manifest_in_dir(check_dir: Path) -> Optional[Dict[str, Any]]:
+    """确保目录内存在权威文件；缺失时从 legacy 两份配置整合生成并落盘。
+
+    生成即整合完整数据（版本/哈希/架构/大小），之后该目录的一切操作只读权威文件。
+    """
+    manifest = await asyncio.to_thread(ScraperVersionManager.load_manifest, check_dir)
+    if manifest and ScraperVersionManager.validate_manifest(manifest):
+        return manifest
+
+    logger.info(f"{check_dir.name} 内无有效权威文件，从 legacy 配置整合生成")
+    manifest = await asyncio.to_thread(
+        ScraperVersionManager.extract_manifest_from_legacy,
+        check_dir / "package.json",
+        check_dir / "versions.json",
+        check_dir,
+    )
+    if manifest and manifest.get("sources"):
+        await asyncio.to_thread(ScraperVersionManager.save_manifest, manifest, check_dir)
+        return manifest
+
+    logger.warning(f"{check_dir.name} 无法生成权威文件（无源文件或 legacy 配置）")
+    return None
+
+
+async def verify_scraper_package(
+    check_dir: Path,
+    expected_version: Optional[str] = None,
+) -> Tuple[bool, List[str]]:
+    """对目录（通常是解压出的临时目录）做部署前四项校验。
+
+    校验项：架构 / 各源版本 / 最低可用版本 / 哈希。
+    全部通过才应继续备份与部署流程。
+
+    Returns:
+        (是否通过, 失败原因列表)
+    """
+    errors: List[str] = []
+
+    if not check_dir.exists():
+        return False, [f"目录不存在: {check_dir}"]
+
+    manifest = await ensure_manifest_in_dir(check_dir)
+    if not manifest:
+        return False, ["缺少权威文件且无法生成"]
+
+    platform_key = ScraperVersionManager.get_platform_key()
+    expected_arch = ScraperVersionManager.normalize_arch(platform_key)
+    sources = manifest.get("sources") or {}
+
+    # ── 1. 包版本与远程声明一致 ──
+    pkg_version = ScraperVersionManager.get_version_from_manifest(manifest)
+    if expected_version and pkg_version:
+        if pkg_version.lstrip('v') != expected_version.lstrip('v'):
+            errors.append(
+                f"包版本不符：声明 {expected_version}，实际 {pkg_version}"
+            )
+
+    # ── 2. 包级最低可用版本 ──
+    min_server = manifest.get("min_server_version")
+    if min_server and not _version_satisfies(APP_VERSION, min_server):
+        errors.append(
+            f"服务器版本不足：当前 {APP_VERSION}，包要求 >= {min_server}"
+        )
+
+    binaries = [p for p in sorted(check_dir.iterdir())
+                if ScraperVersionManager.is_scraper_binary(p)]
+    if not binaries:
+        return False, ["目录内无弹幕源二进制文件"]
+
+    # ── 3. 架构与哈希（逐文件，均以权威文件为基准） ──
+    def _verify_files() -> List[str]:
+        problems: List[str] = []
+        for file_path in binaries:
+            name = file_path.name.split('.')[0]
+            entry = sources.get(name) or {}
+
+            actual_arch = ScraperVersionManager.detect_binary_arch(file_path)
+            if actual_arch and expected_arch:
+                if ScraperVersionManager.normalize_arch(actual_arch) != expected_arch:
+                    problems.append(
+                        f"{name} 架构不符：本机 {expected_arch}，文件 {actual_arch}"
+                    )
+                    continue
+
+            expected_hash = None
+            hashes = entry.get("hashes")
+            if isinstance(hashes, dict):
+                expected_hash = hashes.get(platform_key)
+            if not expected_hash:
+                expected_hash = entry.get("hash")
+
+            if expected_hash:
+                actual_hash = ScraperVersionManager.calculate_file_hash(file_path)
+                if actual_hash != expected_hash:
+                    problems.append(
+                        f"{name} 哈希不符：期望 {expected_hash[:12]}…，实际 {actual_hash[:12]}…"
+                    )
+        return problems
+
+    errors.extend(await asyncio.to_thread(_verify_files))
+
+    # ── 4. 各源 min_server_version（import 探测，最可靠） ──
+    incompatible = await check_scraper_compat_in_dir(check_dir)
+    if incompatible:
+        detail = ", ".join(f"{k} 需要 >= {v}" for k, v in sorted(incompatible.items()))
+        errors.append(f"{len(incompatible)} 个源版本要求不满足（{detail}）")
+
+    return (not errors), errors
 
 
 class ScraperDownloadExecutor:

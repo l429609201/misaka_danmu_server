@@ -2431,6 +2431,33 @@ async def _download_and_extract_release(
             logger.error("解压结果为空，取消更新")
             return False
 
+        # ========== 备份前校验：架构 / 版本 / 最低可用版本 / 哈希 ==========
+        # why：备份目录是重启后恢复的唯一依据，一旦写入损坏或架构不符的包，
+        # 重启后会从备份恢复出坏包，且轮询又判定需要更新 → 循环。因此必须在
+        # 持久化之前校验临时目录，不通过就地清理、不污染备份。
+        # 临时目录若无权威文件，会先从 package.json + versions.json 整合生成。
+        if progress_callback:
+            await progress_callback("正在校验新版本文件...")
+
+        # 延迟导入：scraper_download_executor 在模块顶层导入了本模块，
+        # 顶层反向导入会造成循环，故置于函数内。
+        from src.utils.scraper_download_executor import verify_scraper_package
+
+        expected_version = str(asset_info.get('version', '')).lstrip('v')
+        verify_passed, verify_errors = await verify_scraper_package(
+            extract_dir,
+            expected_version=expected_version or None
+        )
+        if not verify_passed:
+            detail = "；".join(verify_errors)
+            logger.error(f"新版本文件校验失败，取消更新以避免污染备份目录：{detail}")
+            if progress_callback:
+                await progress_callback(f"校验失败: {detail}")
+            _shutil.rmtree(extract_dir, ignore_errors=True)
+            return False
+
+        logger.info(f"✓ 新版本文件校验通过（{extracted_count} 个文件，版本 {expected_version or '未知'}）")
+
         # ========== 关键顺序（断循环）：先把新版持久化到 backup 目录，再覆盖运行目录 ==========
         # why: 只有 backup 目录（/app/config/scrapers_backup）是持久化的。必须保证在覆盖
         # 运行中的 .so（可能 native crash）之前，backup 已是新版；这样即便覆盖时崩溃，重启后

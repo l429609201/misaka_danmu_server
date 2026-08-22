@@ -3,10 +3,13 @@
 
 负责管理唯一权威版本文件 scraper_manifest.json，从现有 package.json 和 versions.json 提取信息。
 """
+import hashlib
 import json
 import logging
+import platform as plat
+import sys
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -24,6 +27,164 @@ class ScraperVersionManager:
 
     MANIFEST_FILENAME = "scraper_manifest.json"
 
+    # 弹幕源二进制扩展名
+    _BINARY_SUFFIXES = ('.so', '.pyd')
+
+    # ─── 平台与架构基础设施 ───
+
+    # ELF e_machine（偏移 0x12，2 字节小端）→ 架构名
+    _ELF_MACHINE_MAP = {
+        0x3E: "x86_64",
+        0xB7: "aarch64",
+        0x28: "arm",
+        0x03: "i386",
+    }
+
+    # PE COFF Machine（e_lfanew+4，2 字节小端）→ 架构名
+    _PE_MACHINE_MAP = {
+        0x8664: "x86_64",
+        0xAA64: "aarch64",
+        0x01C0: "arm",
+        0x014C: "i386",
+    }
+
+    # 平台键中的架构片段 → 规范化架构名
+    # why：平台键历史上有 x86 / amd64 / arm 三种写法指向同一类架构，
+    # 架构校验必须先归一化再比对，否则 windows-amd64 与 x86_64 会被判为不匹配。
+    _ARCH_ALIASES = {
+        "x86": "x86_64",
+        "amd64": "x86_64",
+        "x86_64": "x86_64",
+        "arm": "aarch64",
+        "arm64": "aarch64",
+        "aarch64": "aarch64",
+    }
+
+    @staticmethod
+    def get_platform_key() -> str:
+        """获取当前平台的资源 key（linux-x86 / linux-arm / windows-amd64 等）。
+
+        why：与 scraper_resources.get_platform_key 保持完全一致的映射规则。
+        此处独立实现以避免 utils 反向依赖 api 层造成循环导入。
+        平台键是 manifest 中 hashes/files 字典的唯一键来源，绝不可再从
+        versions.json 的 platform+type 拼接（那会在 Windows 上得到
+        windows-x86_64，与 package.json 的 windows-amd64 对不上）。
+        """
+        system = plat.system().lower()
+        machine = plat.machine().lower()
+
+        arch_map = {
+            'x86_64': 'x86',
+            'amd64': 'amd64',
+            'aarch64': 'arm',
+            'arm64': 'arm',
+        }
+        arch = arch_map.get(machine, machine)
+
+        if system == 'linux':
+            return f'linux-{arch}'
+        elif system == 'windows':
+            return f'windows-{arch}'
+        elif system == 'darwin':
+            return f'macos-{arch}'
+        return f'{system}-{arch}'
+
+    # 规范架构名 → 各操作系统下的平台键架构片段
+    # why：linux 用 x86/arm，windows 用 amd64/arm，同一架构在不同系统下写法不同。
+    _PLATFORM_ARCH_SEGMENT = {
+        "linux": {"x86_64": "x86", "aarch64": "arm"},
+        "windows": {"x86_64": "amd64", "aarch64": "arm"},
+        "macos": {"x86_64": "x86", "aarch64": "arm"},
+    }
+
+    @staticmethod
+    def normalize_platform_key(platform: Optional[str], arch: Optional[str]) -> Optional[str]:
+        """把 legacy 的 platform + type 归一化为标准平台键。
+
+        why：versions.json 用 platform="linux" / type="x86" 描述自身平台，而 manifest
+        的 hashes 字典以标准平台键为索引。直接拼接会产出 windows-x86_64 这类
+        与 package.json（windows-amd64）对不上的键，导致哈希查不到。
+        """
+        if not platform:
+            return None
+
+        system = platform.strip().lower()
+        if system == "darwin":
+            system = "macos"
+
+        normalized_arch = ScraperVersionManager.normalize_arch(arch or "")
+        if not normalized_arch:
+            return None
+
+        segment = ScraperVersionManager._PLATFORM_ARCH_SEGMENT.get(system, {}).get(normalized_arch)
+        if not segment:
+            # 未知组合时保留原始架构片段，至少不丢信息
+            segment = normalized_arch
+
+        return f"{system}-{segment}"
+
+    @staticmethod
+    def normalize_arch(value: str) -> str:
+        """把平台键或架构名归一化为规范架构名（x86_64 / aarch64 等）。"""
+        if not value:
+            return ""
+        token = value.strip().lower()
+        # 平台键形如 linux-x86，取末段
+        if "-" in token:
+            token = token.rsplit("-", 1)[-1]
+        return ScraperVersionManager._ARCH_ALIASES.get(token, token)
+
+    @staticmethod
+    def detect_binary_arch(file_path: Path) -> Optional[str]:
+        """读取 .so/.pyd 文件头，返回其真实架构名；无法识别返回 None。
+
+        支持 ELF（Linux）与 PE（Windows）。
+        why：文件名和目录结构都可以伪造或错挂，只有二进制文件头是事实。
+        arm 包落到 x86 机器上时 import 才会失败，那时已经完成部署，代价太大。
+        """
+        try:
+            with open(file_path, "rb") as f:
+                head = f.read(64)
+                if len(head) < 24:
+                    return None
+
+                # ELF: \x7fELF
+                if head[:4] == b"\x7fELF":
+                    e_machine = int.from_bytes(head[18:20], "little")
+                    return ScraperVersionManager._ELF_MACHINE_MAP.get(e_machine)
+
+                # PE: MZ ... e_lfanew(0x3C) → PE\0\0 → Machine
+                if head[:2] == b"MZ":
+                    e_lfanew = int.from_bytes(head[60:64], "little")
+                    f.seek(e_lfanew)
+                    pe_sig = f.read(6)
+                    if len(pe_sig) < 6 or pe_sig[:4] != b"PE\x00\x00":
+                        return None
+                    machine = int.from_bytes(pe_sig[4:6], "little")
+                    return ScraperVersionManager._PE_MACHINE_MAP.get(machine)
+        except Exception as e:
+            logger.debug(f"读取 {file_path.name} 架构失败: {e}")
+        return None
+
+    @staticmethod
+    def calculate_file_hash(file_path: Path) -> str:
+        """分块计算文件 sha256（避免大文件一次性读入内存）。"""
+        h = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    @staticmethod
+    def is_scraper_binary(file_path: Path) -> bool:
+        """是否为需要纳管的弹幕源二进制（排除 _ 前缀与 base）。"""
+        if not file_path.is_file():
+            return False
+        if file_path.suffix not in ScraperVersionManager._BINARY_SUFFIXES:
+            return False
+        stem = file_path.name.split('.')[0]
+        return not (stem.startswith('_') or stem == 'base')
+
     @staticmethod
     def extract_manifest_from_legacy(
         package_json_path: Path,
@@ -31,6 +192,10 @@ class ScraperVersionManager:
         scrapers_dir: Path
     ) -> Dict[str, Any]:
         """从现有 package.json + versions.json 提取信息构建完整的 manifest
+
+        生成时即完成全部数据整合——包含各源版本、当前平台哈希（缺失则从 .so 实算）、
+        实际架构、文件大小。生成后 manifest 即为唯一权威来源，后续所有操作只读它，
+        不再回头查 legacy 文件。
 
         Args:
             package_json_path: package.json 文件路径
@@ -40,11 +205,16 @@ class ScraperVersionManager:
         Returns:
             完整的 manifest 字典，包含所有必要信息
         """
+        # 平台键一律由运行环境决定，不从 versions.json 的 platform+type 拼接。
+        # why：拼接会在 Windows 上得到 windows-x86_64，而 package.json 用的是
+        # windows-amd64，键对不上导致哈希永久查不到。
+        platform_key = ScraperVersionManager.get_platform_key()
+
         manifest: Dict[str, Any] = {
             "version": "unknown",
             "updated_at": datetime.now().isoformat(),
             "min_server_version": None,
-            "platform": None,
+            "platform": platform_key,
             "branch": "main",  # 默认分支
             "sources": {}
         }
@@ -64,10 +234,10 @@ class ScraperVersionManager:
                             "version": scraper_info.get("version"),
                         }
 
-                        # 提取多架构哈希值
+                        # 提取多架构哈希值（package.json 的 hashes 是 {平台键: 哈希}）
                         hashes = scraper_info.get("hashes", {})
                         if hashes and isinstance(hashes, dict):
-                            source_entry["hashes"] = hashes
+                            source_entry["hashes"] = dict(hashes)
 
                         # 提取多架构文件路径信息
                         files = scraper_info.get("files", {})
@@ -79,24 +249,18 @@ class ScraperVersionManager:
             except Exception as e:
                 logger.warning(f"从 package.json 提取信息失败: {e}")
 
-        # 从 versions.json 提取平台信息、分支信息和当前平台的哈希值
+        # 从 versions.json 提取分支信息和当前平台的哈希值
         if versions_json_path.exists():
             try:
                 versions_data = json.loads(versions_json_path.read_text(encoding='utf-8'))
 
+                # 全局版本号：package.json 缺失时用 versions.json 兜底
+                if manifest["version"] == "unknown":
+                    manifest["version"] = versions_data.get("version", "unknown")
+
                 # 优先使用 versions.json 的 updated_at（更准确）
                 if "updated_at" in versions_data:
                     manifest["updated_at"] = versions_data["updated_at"]
-
-                # 提取平台信息
-                platform = versions_data.get("platform", "unknown")
-                arch = versions_data.get("type", "unknown")
-                if platform != "unknown" and arch != "unknown":
-                    manifest["platform"] = f"{platform}-{arch}"
-                elif platform != "unknown":
-                    manifest["platform"] = platform
-                elif arch != "unknown":
-                    manifest["platform"] = arch
 
                 # 提取分支信息
                 if "branch" in versions_data:
@@ -104,7 +268,10 @@ class ScraperVersionManager:
 
                 # 补充 min_server_version（如果 package.json 没有）
                 if not manifest["min_server_version"]:
-                    manifest["min_server_version"] = versions_data.get("min_server_version")
+                    manifest["min_server_version"] = (
+                        versions_data.get("min_server_version")
+                        or versions_data.get("min_fetchable_version")
+                    )
 
                 # 补充各源的版本号
                 scrapers_versions = versions_data.get("scrapers", {})
@@ -115,41 +282,59 @@ class ScraperVersionManager:
                     if not manifest["sources"][scraper_name].get("version"):
                         manifest["sources"][scraper_name]["version"] = version
 
-                # 补充当前平台的哈希值（合并到 hashes 字典中）
-                current_platform_key = manifest.get("platform", "unknown")
+                # 合并 versions.json 的哈希值
+                # 其 hashes 结构是 {源名: 哈希}，属于**单一平台**的落地记录，该平台由
+                # 自身的 platform+type 字段声明。必须挂到它声明的平台键下，不能挂到当前
+                # 运行平台——否则在 Windows 上读一份 linux 的 versions.json 时，会把
+                # linux 哈希写进 windows-amd64 键，覆盖掉 package.json 里正确的值。
+                legacy_platform_key = ScraperVersionManager.normalize_platform_key(
+                    versions_data.get("platform"),
+                    versions_data.get("type"),
+                ) or platform_key
+
                 hashes = versions_data.get("hashes", {})
                 for scraper_name, hash_value in hashes.items():
                     if scraper_name not in manifest["sources"]:
                         manifest["sources"][scraper_name] = {}
-
-                    # 确保 hashes 字段存在
-                    if "hashes" not in manifest["sources"][scraper_name]:
-                        manifest["sources"][scraper_name]["hashes"] = {}
-
-                    # 添加当前平台的哈希值
-                    manifest["sources"][scraper_name]["hashes"][current_platform_key] = hash_value
+                    entry = manifest["sources"][scraper_name]
+                    if "hashes" not in entry or not isinstance(entry.get("hashes"), dict):
+                        entry["hashes"] = {}
+                    entry["hashes"][legacy_platform_key] = hash_value
 
             except Exception as e:
                 logger.warning(f"从 versions.json 提取信息失败: {e}")
 
-        # 扫描实际 .so/.pyd 文件，补充文件名和文件大小信息
+        # 扫描实际 .so/.pyd 文件，一次性补齐文件名/大小/架构/哈希。
+        # why：生成时即整合完整数据，不留"事后补"。legacy 文件随后会被清理，
+        # 之后所有校验与决策都只读 manifest，不再回头查 legacy。
         if scrapers_dir.exists():
-            for file_path in scrapers_dir.glob("*"):
-                if file_path.suffix not in ['.so', '.pyd']:
+            for file_path in sorted(scrapers_dir.iterdir()):
+                if not ScraperVersionManager.is_scraper_binary(file_path):
                     continue
 
                 # 提取弹幕源名称（文件名第一个点之前的部分）
                 scraper_name = file_path.name.split('.')[0]
 
-                # 跳过内部文件
-                if scraper_name.startswith('_') or scraper_name == 'base':
-                    continue
-
                 if scraper_name not in manifest["sources"]:
                     manifest["sources"][scraper_name] = {}
 
-                manifest["sources"][scraper_name]["filename"] = file_path.name
-                manifest["sources"][scraper_name]["size"] = file_path.stat().st_size
+                entry = manifest["sources"][scraper_name]
+                entry["filename"] = file_path.name
+                entry["size"] = file_path.stat().st_size
+
+                # 记录二进制真实架构（来自文件头，不可伪造）
+                detected_arch = ScraperVersionManager.detect_binary_arch(file_path)
+                if detected_arch:
+                    entry["arch"] = detected_arch
+
+                # 当前平台哈希：legacy 未提供时从文件实算，确保 manifest 自洽完整
+                if "hashes" not in entry or not isinstance(entry.get("hashes"), dict):
+                    entry["hashes"] = {}
+                if not entry["hashes"].get(platform_key):
+                    try:
+                        entry["hashes"][platform_key] = ScraperVersionManager.calculate_file_hash(file_path)
+                    except Exception as e:
+                        logger.warning(f"计算 {file_path.name} 哈希失败: {e}")
 
         return manifest
 
@@ -268,6 +453,51 @@ class ScraperVersionManager:
                 return (-1, f"版本相同({version_a})，manifest_b 更新时间更晚")
 
         return (0, "版本和时间戳相同")
+
+    @staticmethod
+    def get_hashes_from_manifest(
+        manifest: Optional[Dict[str, Any]],
+        platform_key: Optional[str] = None
+    ) -> Dict[str, str]:
+        """从 manifest 读取当前平台各源的哈希，返回 {源名: 哈希}。
+
+        why：历史上存在两种字段写法——复数 hashes={平台键:哈希}（由 legacy 合并生成）
+        与单数 hash=哈希（由备份持久化路径写入）。此处统一读取并兼容单数形式，
+        使旧 manifest 不会因字段名不同而被判定为"无哈希"。
+        """
+        if not manifest:
+            return {}
+
+        key = platform_key or manifest.get("platform") or ScraperVersionManager.get_platform_key()
+        result: Dict[str, str] = {}
+
+        for scraper_name, entry in (manifest.get("sources") or {}).items():
+            if not isinstance(entry, dict):
+                continue
+
+            hashes = entry.get("hashes")
+            value = hashes.get(key) if isinstance(hashes, dict) else None
+
+            # 兼容单数字段
+            if not value:
+                value = entry.get("hash")
+
+            if value:
+                result[scraper_name] = value
+
+        return result
+
+    @staticmethod
+    def get_versions_from_manifest(manifest: Optional[Dict[str, Any]]) -> Dict[str, str]:
+        """从 manifest 读取各源版本号，返回 {源名: 版本}。"""
+        if not manifest:
+            return {}
+
+        result: Dict[str, str] = {}
+        for scraper_name, entry in (manifest.get("sources") or {}).items():
+            if isinstance(entry, dict) and entry.get("version"):
+                result[scraper_name] = entry["version"]
+        return result
 
     @staticmethod
     def sync_manifest_with_binaries(

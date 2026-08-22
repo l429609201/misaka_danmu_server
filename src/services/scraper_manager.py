@@ -253,6 +253,18 @@ class ScraperManager:
         logger = logging.getLogger(__name__)
         manifest_path = scrapers_dir / ScraperVersionManager.MANIFEST_FILENAME
 
+        # 空目录不生成 manifest
+        # why：删除源接口会先删掉 .so 与 manifest，随后调用 load_and_sync_scrapers。
+        # 若此处无条件重建，会在空目录上产出一份没有 sources 的空壳 manifest，
+        # 表现为"源已删除但 scraper_manifest.json 还在、本地版本显示 unknown"。
+        has_binary = scrapers_dir.exists() and any(
+            ScraperVersionManager.is_scraper_binary(p) for p in scrapers_dir.iterdir()
+        )
+        if not has_binary:
+            if manifest_path.exists():
+                logger.debug("运行目录无弹幕源二进制，跳过 manifest 重建")
+            return
+
         # 检查是否存在且格式正确
         need_regenerate = False
         if manifest_path.exists():
@@ -274,11 +286,10 @@ class ScraperManager:
             )
             ScraperVersionManager.save_manifest(manifest, scrapers_dir)
 
-            # 同步到备份目录
-            backup_dir = self._get_scraper_paths().backup_dir
-            if backup_dir.exists():
-                ScraperVersionManager.save_manifest(manifest, backup_dir)
-
+            # 不同步到备份目录
+            # why：备份目录的 manifest 必须与其自身的 .so 保持一致。运行目录重建出的
+            # manifest 反映的是运行目录状态，写进备份会造成"备份 .so 与 manifest 错配"，
+            # 之后从备份还原会拿到错误的版本与哈希信息。
             logger.info("已生成/更新 scraper_manifest.json")
         except Exception as e:
             logger.warning(f"生成 manifest 失败: {e}")
