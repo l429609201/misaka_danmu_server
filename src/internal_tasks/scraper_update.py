@@ -25,7 +25,10 @@ from src.utils.version_comparator import VersionComparator
 from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
 from src.utils.remote_manifest_fetcher import fetch_remote_manifest_dict
 from src.utils.scraper_deployment_checker import should_restart_for_deployment
-from src.utils.scraper_download_executor import check_scraper_compat_in_dir, _get_temp_download_base_dir
+from src.utils.scraper_download_executor import (
+    _get_temp_download_base_dir,
+    verify_scraper_package,
+)
 from src._version import APP_VERSION
 from src.services.scraper_manager import _version_satisfies
 import src.api.ui.scraper_resources as sr
@@ -42,7 +45,8 @@ from ..api.ui.scraper_resources import (
     backup_scrapers,
     _fetch_github_release_asset,
     _download_and_extract_release,
-    BACKUP_DIR,
+    apply_deferred_overlay,
+    _get_deferred_overlay_dir,
 )
 
 logger = logging.getLogger("ScraperAutoUpdate")
@@ -82,6 +86,65 @@ def _backup_has_binaries() -> bool:
         return False
 
 
+def _verify_backup_only(target_version: str) -> bool:
+    """校验备份目录本身是否已落盘为目标版本（不关心运行目录状态）。
+
+    判据：
+    - 备份目录含 .so/.pyd 文件；
+    - 备份目录 manifest 的 version == target_version。
+
+    why：与 _verify_backup_version 的问句不同——此处只问"这一轮备份落盘成功了吗"，
+    用于部署完成前的落盘确认。而 _verify_backup_version 问的是"上一轮下好了但没重启成功吗"，
+    额外要求运行目录版本不等于目标版本。两者在 defer 模式下必然冲突：defer 的设计就是
+    "备份先落新版、运行目录留旧版待重启恢复"，若用后者做落盘确认会恒判失败。
+    """
+    try:
+        if not _backup_has_binaries():
+            return False
+        return _get_backup_version() == target_version
+    except Exception as e:
+        logger.debug(f"校验备份落盘失败（视为未就绪）: {e}")
+        return False
+
+
+def _describe_version_state() -> str:
+    """汇总运行目录/备份目录/临时目录三处的版本状态，用于日志诊断。
+
+    why：更新链路涉及三个目录，各自的 manifest 由不同时机写入。仅打印目标版本号时，
+    一旦行为异常无法从日志判断是哪一处没落盘，只能靠推断。此处统一输出三者实际版本，
+    让每条决策日志自带可核对的现场信息。
+
+    版本号后缀说明：
+    - (无 manifest)：目录存在但没有 manifest 文件；
+    - (缺二进制)：有 manifest 但无 .so/.pyd，属错配状态；
+    - (不存在)：目录本身不存在。
+    """
+    def _probe(directory: Path) -> str:
+        try:
+            if not directory.exists():
+                return "不存在"
+            manifest = ScraperVersionManager.load_manifest(directory)
+            if not manifest:
+                return "无 manifest"
+            version = ScraperVersionManager.get_version_from_manifest(manifest)
+            has_binaries = any(
+                f.suffix in (".so", ".pyd") for f in directory.iterdir() if f.is_file()
+            )
+            return version if has_binaries else f"{version} (缺二进制)"
+        except Exception as e:
+            return f"读取失败({e})"
+
+    try:
+        scrapers_dir = _get_scrapers_dir()
+        return (
+            f"运行目录={_probe(scrapers_dir)}, "
+            f"备份目录={_probe(_get_backup_dir_path())}, "
+            f"临时目录={_probe(_get_deferred_overlay_dir(scrapers_dir))}"
+        )
+    except Exception as e:
+        return f"版本状态读取失败({e})"
+
+
 def _verify_backup_version(remote_version: str) -> bool:
     """校验备份目录是否已成功落盘为指定的目标版本，且运行目录尚未应用。
 
@@ -119,15 +182,21 @@ async def _restart_to_apply_backup(config_manager, target_version: str) -> None:
     why：以版本状态决策——当上一轮已把新版本下载/上传到备份目录、但因重启失败等原因
     未生效时，无需重新下载，只要重启让 scraper_manager 从备份恢复即可。
     """
+    version_state = _describe_version_state()
+
     docker_available = is_docker_socket_available() and is_running_in_docker()
     if not docker_available:
         logger.warning(
             f"备份目录已是目标版本 {target_version}，但未检测到 Docker 套接字，"
             f"无法自动重启。请手动重启容器以加载新弹幕源（.so 需重启生效）。"
+            f" [版本状态] {version_state}"
         )
         return
 
-    logger.info(f"备份目录已是目标版本 {target_version}，无需重复下载，准备重启容器使其生效...")
+    logger.info(
+        f"备份目录已是目标版本 {target_version}，无需重复下载，准备重启容器使其生效... "
+        f"[版本状态] {version_state}"
+    )
     for handler in logging.getLogger().handlers:
         handler.flush()
     sys.stdout.flush()
@@ -226,7 +295,6 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
             )
             return
 
-    # 导入版本比较工具
     scrapers_dir = _get_scrapers_dir()
 
     # 版本状态预校（代替时间冷却）：若备份目录已经是目标版本，说明上一轮已下载/上传好，
@@ -236,27 +304,35 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
         await _restart_to_apply_backup(config_manager, remote_version)
         return
 
+    # 统一前置校验：全量/增量共用同一判据——运行目录版本 vs 远程版本。
+    # why：这是纯版本比较，不依赖下载结果，必须放在任何下载动作之前。
+    # 此前全量模式把该校验放到"下载解压 + 写备份目录"之后，导致运行目录已是目标版本时
+    # 仍每轮完整下载压缩包并改写备份目录，最后才判定"无需更新"→ 无限重复下载循环，
+    # 且备份目录的改写属既成副作用无法回滚。
+    should_update, reason = VersionComparator.should_update(
+        local_dir=scrapers_dir,
+        remote_version=remote_version,
+        remote_branch=None
+    )
+
+    if not should_update:
+        logger.info(f"弹幕源无需更新: {reason}，跳过下载 [版本状态] {_describe_version_state()}")
+        return
+
     # 检查是否启用全量替换模式
     full_replace_enabled = await config_manager.get("scraperFullReplaceEnabled", "false")
     use_full_replace = full_replace_enabled.lower() == "true"
 
-    # 分支决策：全量模式延后到临时目录校验，增量模式现在就校验
-    if not use_full_replace:
-        # 增量模式：获取版本后立即校验（避免无效下载）
-        should_update, reason = VersionComparator.should_update(
-            local_dir=scrapers_dir,
-            remote_version=remote_version,
-            remote_branch=None
+    if use_full_replace:
+        logger.info(
+            f"检测到需要更新: {reason}，开始全量替换更新（目标版本: {remote_version}）... "
+            f"[版本状态] {_describe_version_state()}"
         )
-
-        if not should_update:
-            logger.info(f"弹幕源无需更新: {reason}，跳过下载")
-            return
-
-        logger.info(f"检测到需要更新: {reason}，开始增量下载...")
     else:
-        # 全量模式：暂不校验，在解压到临时目录后再校验
-        logger.info(f"开始全量替换更新（目标版本: {remote_version}）...")
+        logger.info(
+            f"检测到需要更新: {reason}，开始增量下载... "
+            f"[版本状态] {_describe_version_state()}"
+        )
 
     # 执行更新
     await _perform_update(
@@ -381,7 +457,10 @@ async def _perform_update(
 
                 if asset_info:
                     # 使用部署检测工具判断是否需要延迟覆盖
-                    backup_dir = Path(await config_manager.get("scraperBackupDir", "config/backup"))
+                    # why：备份目录路径由环境决定（Docker 下为 /app/config/scrapers_backup），
+                    # 不是可配置项。此前读 scraperBackupDir 并回退 "config/backup"，
+                    # 指向了一个不存在的目录，使 has_backup_files 恒为 False（假信号）。
+                    backup_dir = _get_backup_dir_path()
                     deployment_strategy = should_restart_for_deployment(
                         scrapers_dir=scrapers_dir,
                         backup_dir=backup_dir,
@@ -401,71 +480,49 @@ async def _perform_update(
                     )
 
                     if success:
-                        # ========== 全量模式：临时目录校验 ==========
-                        # why：全量包解压到临时目录后，先校验版本再决定是否继续部署
-                        # 避免下载7.3MB后发现版本相同还要继续走完整备份链路
+                        # ========== 部署前统一校验（架构/版本/最低可用版本/哈希） ==========
+                        # why：校验对象必须是解压出的新包所在目录，而非运行目录——defer 模式下
+                        # 运行目录仍是旧内容，查它等于空转。校验以权威文件为唯一基准；
+                        # 临时目录若无权威文件，会先从 package.json + versions.json 整合生成。
+                        temp_dir = _get_deferred_overlay_dir(scrapers_dir)
+                        verify_dir = temp_dir if (need_defer and temp_dir.exists()) else scrapers_dir
 
-                        # 读取临时目录的 manifest（刚解压出来的）
-                        temp_manifest = await asyncio.to_thread(
-                            ScraperVersionManager.load_manifest,
-                            scrapers_dir  # 解压目标是临时目录或运行目录（根据 defer_overlay）
+                        passed, verify_errors = await verify_scraper_package(
+                            verify_dir,
+                            expected_version=remote_version
                         )
-                        temp_version = ScraperVersionManager.get_version_from_manifest(temp_manifest)
 
-                        # 读取当前运行目录的 manifest（对比基准）
-                        local_manifest = await asyncio.to_thread(
-                            ScraperVersionManager.load_manifest,
-                            scrapers_dir if not need_defer else Path(BACKUP_DIR).parent / "src" / "scrapers"
-                        )
-                        local_version_actual = ScraperVersionManager.get_version_from_manifest(local_manifest)
-
-                        # 版本比较
-                        if temp_version and temp_version == local_version_actual:
-                            logger.info(
-                                f"✓ 全量替换版本校验: 临时目录版本 {temp_version} 与本地版本相同，"
-                                f"无需更新，清理临时目录并跳过部署"
+                        if not passed:
+                            detail = "；".join(verify_errors)
+                            logger.error(
+                                f"全量替换部署前校验失败（{verify_dir.name}）：{detail}。"
+                                "为避免部署损坏或不兼容的包，本次不写入版本信息、不重启。"
                             )
-                            # 清理临时目录
-                            try:
-                                temp_dir = scrapers_dir / ".tmp_update"
-                                if temp_dir.exists():
+
+                            if verify_dir == temp_dir:
+                                # defer 模式下运行目录未被覆盖，仅清理临时目录即可
+                                try:
                                     await asyncio.to_thread(shutil.rmtree, temp_dir)
                                     logger.info("已清理临时目录")
-                            except Exception as e:
-                                logger.warning(f"清理临时目录失败: {e}")
+                                except Exception as e:
+                                    logger.warning(f"清理临时目录失败: {e}")
+                            else:
+                                # 运行目录已被解压覆盖，从备份恢复旧版 .so
+                                await _restore_from_backup(scrapers_dir)
 
-                            # 清除版本缓存
                             sr._version_cache = None
                             sr._version_cache_time = None
                             return
 
-                        logger.info(f"✓ 全量替换版本校验通过: {local_version_actual} -> {temp_version}，继续部署流程")
-                        # ========== 版本校验通过，继续原有流程 ==========
-                        # 更新 manifest
+                        logger.info(f"✓ 部署前校验通过（{verify_dir.name}，版本 {remote_version}），继续部署流程")
+
+                        # ========== 校验通过，继续原有流程 ==========
                         release_version = asset_info['version'].lstrip('v')
-
-                        # 部署前预检：逐个 import 解压出的 .so，确认各源 min_server_version 均满足
-                        # why：包级 min_server_version 只是声明值，可能缺失或与单源类属性不一致。
-                        # 此前自动更新完全没有这一步，下载解压后直接备份并重启，重启时
-                        # scraper_manager 才逐个加载失败 → 所有源全废（前端弹"需要服务器版本≥x"）。
-                        # 与手动下载路径共用同一探测实现，改为"预检不通过就不重启"。
-                        incompatible = await check_scraper_compat_in_dir(scrapers_dir)
-                        if incompatible:
-                            detail = ", ".join(f"{k} 需要 >= {v}" for k, v in sorted(incompatible.items()))
-                            logger.error(
-                                f"全量替换预检失败：当前服务器版本 {APP_VERSION}，"
-                                f"有 {len(incompatible)} 个弹幕源版本要求不满足（{detail}）。"
-                                "为避免重启后源全部加载失败，本次不写入版本信息、不备份、不重启。"
-                            )
-                            # 从备份恢复被解压覆盖掉的旧版 .so，保证当前运行的源不被破坏
-                            await _restore_from_backup(scrapers_dir)
-                            sr._version_cache = None
-                            sr._version_cache_time = None
-                            return
 
                         # 优先从解压后的 scraper_manifest.json 读取，回退到 package.json
                         scrapers_versions = {}
                         scrapers_hashes = {}
+                        local_package_file = scrapers_dir / "package.json"  # 提前定义，避免后续使用时未定义
 
                         # 尝试从 manifest 读取（新架构）
                         manifest = await asyncio.to_thread(ScraperVersionManager.load_manifest, scrapers_dir)
@@ -481,8 +538,6 @@ async def _perform_update(
                                         scrapers_hashes[scraper_name] = hash_value
                             logger.info(f"从 scraper_manifest.json 读取: {len(scrapers_versions)} 个源版本")
                         else:
-                            # 回退：从 package.json 读取（兼容旧格式的压缩包）
-                            local_package_file = scrapers_dir / "package.json"
                             try:
                                 if local_package_file.exists():
                                     package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
@@ -520,7 +575,11 @@ async def _perform_update(
                                 pass
 
                         # 构建 manifest 数据
-                        manifest_data = {
+                        # why：用独立变量名而非复用 manifest_data——后者是函数入参持有的远程 manifest，
+                        # 逐文件下载模式（本 try 块之后）仍要读它的 resources。全量分支若在此之后
+                        # 抛异常被外层捕获并回退到逐文件模式，复用同名变量会让逐文件模式读到
+                        # 这份 resources 为空的本地 manifest，导致"manifest 中未找到弹幕源文件"。
+                        full_replace_manifest = {
                             "version": release_version,
                             "platform": platform_info['platform'],
                             "arch": platform_info['arch'],
@@ -530,7 +589,7 @@ async def _perform_update(
 
                         # 添加各源的版本和哈希
                         for scraper_name, version in scrapers_versions.items():
-                            manifest_data["resources"][scraper_name] = {
+                            full_replace_manifest["resources"][scraper_name] = {
                                 "version": version,
                                 "hashes": {
                                     platform_key: scrapers_hashes.get(scraper_name, "")
@@ -538,36 +597,55 @@ async def _perform_update(
                             }
 
                         if min_server_version:
-                            manifest_data['min_server_version'] = min_server_version
+                            full_replace_manifest['min_server_version'] = min_server_version
 
-                        # 保存 manifest
                         scrapers_dir = _get_scrapers_dir()
-                        await asyncio.to_thread(
-                            ScraperVersionManager.save_manifest,
-                            manifest_data,  # 第一个参数：manifest 数据
-                            scrapers_dir    # 第二个参数：目标目录
-                        )
-                        logger.info(f"已更新 manifest: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
 
-                        # 全量替换模式：一定是更新已有源，需要重启容器
-                        # 先备份新下载的资源到持久化目录
-                        try:
-                            logger.info("正在备份全量替换的资源到持久化目录...")
-                            await backup_scrapers(SystemUser())
-                            logger.info("全量替换资源备份完成")
-                        except Exception as backup_error:
-                            logger.warning(f"备份资源失败: {backup_error}")
+                        if need_defer:
+                            # defer 模式：运行目录的 .so 尚未覆盖（仍是旧版），因此绝不能把新版本号
+                            # 写进运行目录的 manifest。
+                            # why：manifest 必须与同目录 .so 的实际版本保持一致。若提前写成新版，
+                            # 一旦此后重启失败或进程被杀，下一轮前置校验会读到"运行目录==远程版本"
+                            # 而判定无需更新，更新将静默卡死在旧版且永不重试（比重启循环更难发现）。
+                            # 新版本信息已由 _persist_new_version_to_backup 随 .so 一并写入备份目录，
+                            # 重启后由 scraper_manager 从备份恢复时一并生效。
+                            #
+                            # 同理不调用 backup_scrapers：它会先清空备份目录，再从运行目录复制 .so
+                            # （此刻是旧版）并复制运行目录的 manifest，等于把已落好的新版备份
+                            # 替换成"旧版 .so + 新版 manifest"的错配状态。
+                            logger.info(
+                                f"defer 模式：跳过运行目录 manifest 写入与二次备份，"
+                                f"新版 {release_version} 已随 .so 持久化至备份目录"
+                            )
+                        else:
+                            # 热加载模式：运行目录的 .so 已被实际覆盖为新版，此时写入 manifest
+                            # 与其内容一致，再从运行目录备份也是正确的新版内容。
+                            await asyncio.to_thread(
+                                ScraperVersionManager.save_manifest,
+                                full_replace_manifest,  # 第一个参数：manifest 数据
+                                scrapers_dir    # 第二个参数：目标目录
+                            )
+                            logger.info(f"已更新 manifest: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
 
-                        # 关键防护(重启循环)：校验备份目录是否已落盘为目标版本。
-                        # 全量替换已先更新 scrapers/manifest.json(含 updated_at 与新 version)，
-                        # backup_scrapers 无参复制即把新版本写入持久化备份目录；此处再校验一次，
-                        # 若备份未成功落盘则绝不重启——否则重启后 scrapers 回退镜像旧版、备份也无新版，
+                            try:
+                                logger.info("正在备份全量替换的资源到持久化目录...")
+                                await backup_scrapers(SystemUser())
+                                logger.info("全量替换资源备份完成")
+                            except Exception as backup_error:
+                                logger.warning(f"备份资源失败: {backup_error}")
+
+                        # 关键防护(重启循环)：确认目标版本已真正落盘到持久化备份目录。
+                        # 用 _verify_backup_only 而非 _verify_backup_version：后者额外要求
+                        # "运行目录版本 != 目标版本"，那是用于判断"待重启"的问句；此处只问
+                        # "备份落盘成功了吗"，运行目录处于何种状态都不影响该结论。
+                        # 若备份未落盘则绝不重启——否则重启后运行目录回退镜像旧版、备份也无新版，
                         # 轮询又检测到新版 → 无限下载重启循环。
-                        full_replace_backup_ok = _verify_backup_version(release_version)
-                        if not full_replace_backup_ok:
+                        if not _verify_backup_only(release_version):
                             logger.error(
-                                f"全量替换备份校验失败：备份目录版本未更新为 {release_version}，"
-                                "为避免版本回退导致无限重启循环，本次不重启容器。请检查备份目录权限或磁盘空间。"
+                                f"全量替换备份校验失败：备份目录未落盘为 {release_version}，"
+                                "为避免版本回退导致无限重启循环，本次不重启容器。"
+                                "请检查备份目录权限或磁盘空间。"
+                                f" [版本状态] {_describe_version_state()}"
                             )
                             sr._version_cache = None
                             sr._version_cache_time = None
@@ -598,6 +676,28 @@ async def _perform_update(
                                 await asyncio.sleep(1.0)
 
                                 container_name = await config_manager.get("containerName", "misaka-danmu-server")
+
+                                # ========== 最后一步：覆盖运行目录里正在被加载的 .so，然后立即重启 ==========
+                                # why：defer 模式下解压只写了临时目录与备份目录，运行目录的 .so 仍是旧版。
+                                # 若不覆盖就重启，重启后运行目录依旧是旧版，只能指望 load_and_sync_scrapers
+                                # 的备份恢复兜底；一旦恢复未生效，版本回退，下一轮轮询又检测到新版 → 重启循环。
+                                # 覆盖必须放在紧邻重启处：覆盖后进程内存中是旧模块而磁盘已是新二进制，
+                                # 此后任何延迟 import 都可能 segfault，因此中间不执行任何业务代码。
+                                # 对齐手动下载路径 scraper_download_executor.py 的做法。
+                                logger.info("正在应用新版 .so 到运行目录...")
+                                for handler in logging.getLogger().handlers:
+                                    handler.flush()
+                                try:
+                                    overlay_count = apply_deferred_overlay(scrapers_dir)
+                                    logger.info(f"已应用 {overlay_count} 个文件，立即重启")
+                                except Exception as overlay_err:
+                                    # 覆盖失败不影响重启：备份目录已是新版，重启后会从备份恢复
+                                    logger.error(f"应用新版文件失败: {overlay_err}")
+                                for handler in logging.getLogger().handlers:
+                                    handler.flush()
+                                sys.stdout.flush()
+                                sys.stderr.flush()
+
                                 result = await restart_container(container_name)
                                 if result.get("success"):
                                     logger.info(f"弹幕源全量替换完成: {local_version} -> {release_version}，已向容器 '{container_name}' 发送重启指令")
@@ -606,6 +706,9 @@ async def _perform_update(
                                     logger.warning("⚠️ 请手动重启容器以加载新的弹幕源")
                             else:
                                 # 没有 Docker socket：提示手动重启
+                                # why：此处不调用 apply_deferred_overlay——覆盖后进程仍会长时间运行
+                                # （等用户手动重启），磁盘新二进制与内存旧模块不一致期间极易 segfault。
+                                # 备份目录已是新版，重启后由 load_and_sync_scrapers 从备份恢复即可。
                                 logger.warning("未检测到 Docker socket")
                                 logger.warning(f"弹幕源全量替换完成: {local_version} -> {release_version}，新版本已部署到备份目录")
                                 logger.warning("⚠️ 请手动重启容器以加载新的弹幕源")

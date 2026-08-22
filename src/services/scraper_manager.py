@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type, TYPE_CHECKING
 from urllib.parse import urlparse
 
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.core.env import is_docker_environment
@@ -212,9 +211,17 @@ class ScraperManager:
             await self._perform_backup_restore(backup_dir, scrapers_dir, restore_reason)
 
     async def _perform_backup_restore(self, backup_dir: Path, scrapers_dir: Path, reason: str):
-        """执行备份恢复操作"""
-        backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
-        if not backup_files:
+        """执行备份恢复操作
+
+        使用 ScraperVersionManager.copy_scraper_files 统一搬运，**只搬 manifest + *.so/.pyd**。
+        不再搬 legacy 文件（package.json / versions.json），也不再反向修改备份目录的 manifest。
+        """
+        # 预检：备份目录必须有二进制文件
+        backup_binaries = [
+            f for f in backup_dir.iterdir()
+            if f.is_file() and f.suffix in ScraperVersionManager._BINARY_SUFFIXES
+        ] if backup_dir.exists() else []
+        if not backup_binaries:
             return
 
         logger = logging.getLogger(__name__)
@@ -232,53 +239,30 @@ class ScraperManager:
             f"备份恢复详情:\n"
             f"  备份版本: {backup_version}\n"
             f"  运行版本: {scrapers_version}\n"
-            f"  恢复文件数: {len(backup_files)}"
+            f"  备份二进制数: {len(backup_binaries)}"
         )
 
-        # 复制二进制文件
-        for file in backup_files:
-            shutil.copy2(file, scrapers_dir / file.name)
+        # 使用统一搬运工具：只搬 manifest + 二进制，不搬 legacy 文件，不反向写源目录
+        copied = ScraperVersionManager.copy_scraper_files(backup_dir, scrapers_dir)
 
-        # 恢复 legacy 文件（供 manifest 缺失时提取）
-        for legacy_name in ("package.json", "versions.json"):
-            legacy_file = backup_dir / legacy_name
-            if legacy_file.exists():
-                shutil.copy2(legacy_file, scrapers_dir / legacy_name)
-
-        # 恢复 manifest（如果存在且格式正确）
-        backup_manifest_path = backup_dir / ScraperVersionManager.MANIFEST_FILENAME
-        if backup_manifest_path.exists():
-            # 先尝试加载并验证格式
-            backup_manifest = ScraperVersionManager.load_manifest(backup_dir)
-            if backup_manifest and ScraperVersionManager.validate_manifest(backup_manifest):
-                # 格式正确，直接复制
-                shutil.copy2(backup_manifest_path, scrapers_dir / ScraperVersionManager.MANIFEST_FILENAME)
-                logger.info("已恢复 scraper_manifest.json")
-            else:
-                # 格式错误或无效，从 legacy 文件重新生成
-                logger.warning("备份的 manifest 格式不正确，将从 legacy 文件重新生成")
-                try:
-                    package_json = backup_dir / "package.json"
-                    versions_json = backup_dir / "versions.json"
-                    if package_json.exists() or versions_json.exists():
-                        regenerated_manifest = ScraperVersionManager.extract_manifest_from_legacy(
-                            package_json,
-                            versions_json,
-                            backup_dir
-                        )
-                        ScraperVersionManager.save_manifest(regenerated_manifest, scrapers_dir)
-                        # 同时更新 backup 目录的 manifest
-                        ScraperVersionManager.save_manifest(regenerated_manifest, backup_dir)
-                        logger.info("已从 legacy 文件重新生成 scraper_manifest.json")
-                except Exception as e:
-                    logger.error(f"重新生成 manifest 失败: {e}")
-
-        logger.info(f"备份恢复完成 - 当前版本: {backup_version}")
+        logger.info(f"备份恢复完成 - 已复制 {copied} 个文件，当前版本: {backup_version}")
 
     def _ensure_manifest_exists(self, scrapers_dir: Path):
         """确保 manifest 文件存在且格式正确，如不存在或格式错误则从 legacy 文件提取生成"""
         logger = logging.getLogger(__name__)
         manifest_path = scrapers_dir / ScraperVersionManager.MANIFEST_FILENAME
+
+        # 空目录不生成 manifest
+        # why：删除源接口会先删掉 .so 与 manifest，随后调用 load_and_sync_scrapers。
+        # 若此处无条件重建，会在空目录上产出一份没有 sources 的空壳 manifest，
+        # 表现为"源已删除但 scraper_manifest.json 还在、本地版本显示 unknown"。
+        has_binary = scrapers_dir.exists() and any(
+            ScraperVersionManager.is_scraper_binary(p) for p in scrapers_dir.iterdir()
+        )
+        if not has_binary:
+            if manifest_path.exists():
+                logger.debug("运行目录无弹幕源二进制，跳过 manifest 重建")
+            return
 
         # 检查是否存在且格式正确
         need_regenerate = False
@@ -301,11 +285,10 @@ class ScraperManager:
             )
             ScraperVersionManager.save_manifest(manifest, scrapers_dir)
 
-            # 同步到备份目录
-            backup_dir = self._get_scraper_paths().backup_dir
-            if backup_dir.exists():
-                ScraperVersionManager.save_manifest(manifest, backup_dir)
-
+            # 不同步到备份目录
+            # why：备份目录的 manifest 必须与其自身的 .so 保持一致。运行目录重建出的
+            # manifest 反映的是运行目录状态，写进备份会造成"备份 .so 与 manifest 错配"，
+            # 之后从备份还原会拿到错误的版本与哈希信息。
             logger.info("已生成/更新 scraper_manifest.json")
         except Exception as e:
             logger.warning(f"生成 manifest 失败: {e}")
@@ -370,9 +353,6 @@ class ScraperManager:
         if result.default_configs:
             await self._register_default_configs(result.default_configs)
 
-        # 远程版本校验
-        if await self._check_remote_min_version():
-            return
 
         # 同步到数据库
         await self._sync_to_database(result.discovered_providers, result.failed_providers)
@@ -1358,79 +1338,5 @@ class ScraperManager:
             return self.get_scraper(provider_name) if provider_name else None
         except Exception:
             return None
-
-    async def _check_remote_min_version(self) -> bool:
-        """
-        拉取远程公共仓库的 manifest，比较全局 min_server_version。
-        如果当前服务器版本低于远程要求的最低版本，则不允许加载弹幕源。
-
-        Returns:
-            True = 版本不满足，应跳过加载
-            False = 版本满足或无法校验，正常加载
-        """
-        try:
-            repo_url = await self.config_manager.get("scraper_resource_repo", "")
-            if not repo_url:
-                return False
-
-            from src.api.ui.scraper_resources import parse_github_url, parse_gitee_url, _build_base_url
-
-            gitee_info = parse_gitee_url(repo_url)
-            repo_info = None
-            if not gitee_info:
-                try:
-                    repo_info = parse_github_url(repo_url)
-                except ValueError:
-                    pass
-
-            base_url = _build_base_url(repo_info, repo_url, gitee_info)
-            if not base_url:
-                return False
-
-            manifest_url = f"{base_url}/{ScraperVersionManager.MANIFEST_FILENAME}"
-
-            # 获取代理和 Token
-            headers = {}
-            if repo_info:
-                github_token = await self.config_manager.get("github_token", "")
-                if github_token:
-                    headers["Authorization"] = f"Bearer {github_token}"
-
-            proxy_url = await self.config_manager.get("proxyUrl", "")
-            proxy_enabled_str = await self.config_manager.get("proxyEnabled", "false")
-            proxy = proxy_url if proxy_enabled_str.lower() == "true" and proxy_url else None
-
-            # 拉取远程 manifest（超时 5 秒，不阻塞启动）
-            timeout = httpx.Timeout(5.0, read=5.0)
-            async with httpx.AsyncClient(
-                timeout=timeout, headers=headers, follow_redirects=True, proxy=proxy
-            ) as client:
-                resp = await client.get(manifest_url)
-                if resp.status_code != 200:
-                    logging.getLogger(__name__).debug(
-                        f"拉取远程 manifest 失败: HTTP {resp.status_code}，跳过版本校验"
-                    )
-                    return False
-                manifest_data = resp.json()
-
-            min_ver = manifest_data.get("min_server_version")
-            if not min_ver:
-                return False
-
-            from src._version import APP_VERSION
-
-            if not _version_satisfies(APP_VERSION, min_ver):
-                logging.getLogger(__name__).warning(
-                    f"远程弹幕源包要求服务器版本 >= {min_ver}，"
-                    f"当前版本 {APP_VERSION}，跳过全部弹幕源加载"
-                )
-                return True
-
-            return False
-
-        except Exception as e:
-            # 拉取失败不影响正常加载（宽松策略）
-            logging.getLogger(__name__).debug(f"远程版本校验失败，跳过: {e}")
-            return False
 
 

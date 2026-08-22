@@ -2795,7 +2795,7 @@ export default {
     filledDefaultRules: '已填充默认规则',
     noDefaultRules: '未找到默认规则',
     getDefaultRulesFailed: '获取默认规则失败',
-    title: '全局过滤配置',
+    title: '标题过滤配置',
     filterLevelTitle: '🔍 过滤层级说明',
     filterLevelTree: `搜索结果/
 ├── 葬送的芙莉莲   ← 【全局搜索结果标题过滤】针对这里
@@ -2806,10 +2806,12 @@ export default {
 │       ├── 第2话 别人生         过滤掉"PV1"、"特典"、"OP"等分集
 │       ├── PV1 (被过滤)
 `,
-    episodeFilterTip: '💡 如需调整分集过滤，请前往「搜索源」→ 「弹幕搜索源」点击对应源的 ⚙️ 设置按钮 → 「分集标题黑名单 (正则)」',
+    episodeFilterTip: '💡 本页配置的是「全局搜索结果标题过滤」，针对整条搜索结果（作品）进行筛选；如需过滤分集，请前往「分集标题过滤配置」页签。',
+    episodeFilterTip2: '💡 分集过滤分三层逐级收口：① 单源分集标题黑名单 → ② 兜底分集标题过滤 → ③ 单剧过滤，均在「分集标题过滤配置」与「单剧过滤」页签中管理。',
     cnRules: '中文规则 (关键词)',
     cnRulesTip: "用于匹配标题中任何位置出现的中文关键词，例如'特典|预告|广告'。",
     fillDefaultRules: '填充默认规则',
+    aiGenerate: 'AI 生成',
     cnRulesPlaceholder: '请输入中文过滤关键词，使用 | 分隔',
     enRules: '英文/缩写规则 (独立词)',
     enRulesTip: "用于匹配独立的英文缩写或单词，例如'OP|ED|PV'。系统会自动处理单词边界。",
@@ -2836,12 +2838,18 @@ export default {
 
 
   globalEpisodeTitleFilter: {
-    title: '兜底全局分集标题过滤',
+    // 页签标题（三级页签用）
+    tabTitle: '分集标题过滤配置',
+    // 卡片标题（兜底卡片用）
+    title: '兜底分集标题过滤',
     desc: '对所有搜索结果的分集列表进行兜底性的正则过滤，过滤掉花絮、预告、加更等非正片分集。',
     enableLabel: '启用兜底分集标题过滤',
+    enabledText: '已启用',
+    disabledText: '已禁用',
     regexLabel: '过滤规则（正则表达式）',
     regexPlaceholder: '输入正则表达式，匹配到的分集标题将被过滤',
     fillDefault: '填充默认正则',
+    aiGenerate: 'AI 生成',
     hint1: '• 正则参考 logvar 过滤正则，使用 Python regex 模块（支持不等长 lookbehind）',
     hint2: '• 匹配到的分集标题将被自动过滤，不显示在分集列表中',
     hint3: '• 规则不区分大小写，对所有搜索源的分集列表统一生效',
@@ -2849,6 +2857,77 @@ export default {
     saveChanges: '保存修改',
     saveSuccess: '兜底分集标题过滤配置已保存',
     saveFailed: '保存兜底分集标题过滤配置失败',
+  },
+  // 分集标题过滤流程说明（页签顶部的层级说明区块）
+  episodeFilterFlow: {
+    title: '分集过滤流程说明',
+    // 流程起点：源站返回的原始分集标题列表（不参与过滤，作为过滤输入）
+    start: {
+      name: '获取分集标题',
+      where: '源站返回原始分集列表',
+      desc: '下方各环节均基于这些原始分集标题进行过滤',
+    },
+    // 三阶段横向流程：每阶段含 名称 / 位置 / 说明
+    step1: {
+      name: '单源分集标题黑名单',
+      where: '本页左侧卡片 · 按弹幕源过滤',
+      desc: '过滤掉该源的"PV/特典/花絮/预告/OP/ED"等分集',
+    },
+    step2: {
+      name: '兜底分集标题过滤',
+      where: '本页右侧卡片 · 开关开启后全局兜底',
+      desc: '对所有源统一再兜一层，漏网的非正片分集在此过滤',
+    },
+    step3: {
+      name: '单剧过滤（可选）',
+      where: '「单剧过滤」页签 · 按作品精准过滤',
+      desc: '仅对指定作品/源生效，过滤"加更/纯享/会员版"等',
+    },
+    note2: '• 三者都作用于「分集标题」，任一环节命中即被过滤，不显示在分集列表中',
+    note3: '💡 ① 等同于「弹幕搜索源」中各源 ⚙️ 设置里的「分集标题黑名单(正则)」，此处集中管理更方便',
+  },
+  // AI 正则生成弹窗（分集过滤各处复用：示例标签 / 预览对比 / 追加或覆盖）
+  aiRegexModal: {
+    title: 'AI 辅助生成过滤正则',
+    descLabel: '用自然语言描述你想过滤掉的分集',
+    descPlaceholder: '例如：过滤掉加更、纯享、会员版、下期预告、花絮、彩蛋',
+    examplesLabel: '快捷示例（点击填入）',
+    example1: '过滤预告、花絮、彩蛋',
+    example2: '过滤加更、纯享、会员版',
+    example3: '过滤 OP、ED、PV、CM 等非正片',
+    example4: '过滤特典、SP、番外、幕后',
+    generate: '生成正则',
+    generating: 'AI 生成中…',
+    resultLabel: '生成结果',
+    currentLabel: '当前正则',
+    empty: '（空）',
+    apply: '应用',
+    applyOverwrite: '覆盖当前',
+    applyAppend: '追加到现有',
+    applyMode: '应用方式',
+    noResult: 'AI 未能生成有效规则，请换个描述再试',
+    failed: 'AI 生成规则失败',
+    emptyDescWarn: '请先描述你想过滤的内容',
+    appended: '已追加到现有正则',
+    overwritten: '已覆盖当前正则',
+  },
+  // 单源分集标题过滤配置（集成各弹幕源的 episodeBlacklistRegex，可切换查看/编辑）
+  sourceEpisodeFilter: {
+    title: '单源分集标题过滤配置',
+    desc: '为单个弹幕源配置分集标题黑名单正则，等同于「弹幕搜索源」中该源的分集标题黑名单设置。',
+    sourceLabel: '弹幕源',
+    sourcePlaceholder: '选择要配置的弹幕源',
+    noSource: '暂无可配置的弹幕源',
+    regexLabel: '分集标题黑名单（正则）',
+    regexPlaceholder: '输入正则表达式，匹配到的分集标题将被过滤',
+    fillDefault: '填充该源默认正则',
+    fillCommon: '填充通用默认正则',
+    aiGenerate: 'AI 生成',
+    selectSourceFirst: '请先选择一个弹幕源',
+    loadFailed: '加载该源配置失败',
+    saveSuccess: '该源分集标题过滤已保存',
+    saveFailed: '保存该源分集标题过滤失败',
+    saveChanges: '保存修改',
   },
   singleEpisodeFilter: {
     title: '单剧过滤',

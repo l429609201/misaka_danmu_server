@@ -13,12 +13,25 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # 启动预处理：检查配置文件、环境变量、打印来源日志
 # 必须在 settings 导入之前调用，确保配置文件存在
-from src.core.bootstrap import preload_config
+from src.core.bootstrap import preload_config, _safe_print
 preload_config()
+
+import time as _t
+_load_tag = "[模块加载]"
+_load_t0 = _t.perf_counter()
+_safe_print(f"{_load_tag} 开始导入应用模块（首次启动需编译字节码，请稍候）...")
+
+
+def _load_step(_desc: str):
+    """打印某个导入阶段的累计耗时"""
+    _safe_print(f"{_load_tag} {_desc} (累计 {_t.perf_counter() - _load_t0:.1f}s)")
+
 
 # 内部模块导入
 from src.core import settings
+_load_step("核心配置已加载")
 from src.api import api_router, control_router
+_load_step("API 路由与搜索源/元数据源已加载")
 from src.api.dandan import dandan_router
 from src.api.mcp import setup_mcp
 from src.frontend import register_pwa_routes
@@ -26,6 +39,7 @@ from src.utils.asgi_middleware import NotFoundGuardMiddleware, CaptureApiRespons
 from src.api.control.openapi_docs import register_control_api_docs
 from src.core.env import is_docker_environment as _is_docker_environment
 from src.core.app_lifecycle import run_startup, run_shutdown
+_load_step("全部应用模块导入完成")
 
 logger = logging.getLogger(__name__)
 logger.info(f"当前环境: {settings.environment}")

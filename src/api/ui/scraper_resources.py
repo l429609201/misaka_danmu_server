@@ -557,35 +557,34 @@ async def backup_scrapers(
         if manifest is None:
             manifest = {"sources": {}}
 
-        # 清空旧备份文件（保留metadata.json）
-        for file in BACKUP_DIR.glob("*"):
-            if file.is_file() and file.name != "backup_metadata.json":
-                file.unlink()
+        # 搬运权威文件与二进制到备份目录（clear_dst 先清空同类旧文件，保留 backup_metadata.json）
+        # 使用统一搬运工具，只搬 scraper_manifest.json + *.so/*.pyd，不搬 legacy 文件
+        backup_count = ScraperVersionManager.copy_scraper_files(
+            scrapers_dir, BACKUP_DIR, clear_dst=True
+        )
 
-        # 备份 .so 和 .pyd 文件
-        backup_count = 0
+        # 收集已备份二进制的元数据（供接口返回）
         backed_files = []
-        for file in scrapers_dir.glob("*"):
-            if file.suffix in ['.so', '.pyd']:
-                shutil.copy2(file, BACKUP_DIR / file.name)
+        sources = manifest.get("sources", {})
+        for file in BACKUP_DIR.iterdir():
+            if not file.is_file() or file.suffix not in ['.so', '.pyd']:
+                continue
 
-                # 从文件名提取弹幕源名称
-                scraper_name = file.name.split('.')[0]
+            # 从文件名提取弹幕源名称
+            scraper_name = file.name.split('.')[0]
 
-                file_info = {
-                    "name": file.name,
-                    "scraper": scraper_name,
-                    "size": file.stat().st_size,
-                    "modified": datetime.fromtimestamp(file.stat().st_mtime).isoformat()
-                }
+            file_info = {
+                "name": file.name,
+                "scraper": scraper_name,
+                "size": file.stat().st_size,
+                "modified": datetime.fromtimestamp(file.stat().st_mtime).isoformat()
+            }
 
-                # 添加版本号（从 manifest 的 sources 中查找）
-                sources = manifest.get("sources", {})
-                if scraper_name in sources:
-                    file_info["version"] = sources[scraper_name].get("version", "unknown")
+            # 添加版本号（从 manifest 的 sources 中查找）
+            if scraper_name in sources:
+                file_info["version"] = sources[scraper_name].get("version", "unknown")
 
-                backed_files.append(file_info)
-                backup_count += 1
+            backed_files.append(file_info)
 
         # 备份 scraper_manifest.json（使用 ScraperVersionManager）
         if manifest:
@@ -673,12 +672,9 @@ async def restore_scrapers(
         manifest = json.loads(backup_manifest_file.read_text(encoding="utf-8"))
         logger.info(f"备份信息: 版本 {manifest.get('version')}, 平台 {manifest.get('platform')}, {len(manifest.get('sources', {}))} 个源")
 
-        # 还原文件
-        restore_count = 0
-        for file in BACKUP_DIR.glob("*"):
-            if file.is_file() and file.suffix in ['.so', '.pyd', '.json']:
-                shutil.copy2(file, scrapers_dir / file.name)
-                restore_count += 1
+        # 还原文件（使用统一搬运工具）
+        # 原来通配 .json 会把 backup_metadata.json 一并还原到运行目录，造成污染
+        restore_count = ScraperVersionManager.copy_scraper_files(BACKUP_DIR, scrapers_dir)
 
         if restore_count == 0:
             raise HTTPException(status_code=404, detail="备份目录为空")
@@ -2016,6 +2012,23 @@ def _find_matching_asset(
     return None
 
 
+def _purge_legacy_version_files(target_dir: Path) -> None:
+    """清除目录中的 legacy 版本文件（package.json / versions.json）。
+
+    why: 新架构只以 scraper_manifest.json 为权威。历史版本或旧代码路径可能在备份目录
+    留下这两个文件，它们不属于搬运范围、也不会被同名覆盖，滞留后会被误当作版本依据，
+    造成备份目录显示的版本与实际 .so 不一致。
+    """
+    for name in ("package.json", "versions.json"):
+        stale = target_dir / name
+        if stale.exists():
+            try:
+                stale.unlink()
+                logger.info(f"已清除备份目录的 legacy 文件: {name}")
+            except OSError as e:
+                logger.warning(f"清除 legacy 文件 {name} 失败: {e}")
+
+
 def _persist_new_version_to_backup(
     extract_dir: Path,
     release_version: str,
@@ -2053,7 +2066,11 @@ def _persist_new_version_to_backup(
         )
 
         # 更新全局版本号
-        manifest["version"] = release_version
+        # why: release_version 来自 asset_info['version']，按 tag 下载时可能为空字符串。
+        # 空值直接赋值会抹掉 extract_manifest_from_legacy 从包内 versions.json 提取到的
+        # 版本号，导致权威文件的 version 为空、后续版本比较全部失效。
+        if release_version:
+            manifest["version"] = release_version
         manifest["updated_at"] = datetime.now().isoformat()
 
         # 如果临时目录没有版本信息，使用远端 package.json 兜底
@@ -2093,13 +2110,15 @@ def _persist_new_version_to_backup(
         logger.error(f"生成 manifest 失败: {e}", exc_info=True)
         raise
 
-    # 2) 复制临时目录的所有文件（.so/.pyd + scraper_manifest.json）到备份目录
-    # 注意：此时 package.json 和 versions.json 已被删除
-    backup_count = 0
-    for f in extract_dir.iterdir():
-        if f.is_file():
-            shutil.copy2(f, BACKUP_DIR / f.name)
-            backup_count += 1
+    # 2) 搬运临时目录的权威文件与二进制到备份目录
+    # 使用统一搬运工具，不再依赖"legacy 文件已被删除"这一前置条件
+    # clear_dst=True: 复制前先清空备份目录的同类旧文件。
+    # why: 覆盖式写入只能盖住同名文件，历史遗留的 package.json / versions.json
+    # 不在搬运范围内，会永久滞留在备份目录并被误当作版本依据。
+    backup_count = ScraperVersionManager.copy_scraper_files(
+        extract_dir, BACKUP_DIR, clear_dst=True
+    )
+    _purge_legacy_version_files(BACKUP_DIR)
 
     logger.info(f"已将新版 {release_version} 持久化到备份目录: {backup_count} 个文件, {len(manifest.get('sources', {}))} 个源")
 
@@ -2124,17 +2143,12 @@ def _overlay_extract_dir_to_scrapers(
     注意：临时目录中应该只包含 scraper_manifest.json 和 .so/.pyd 文件，
     package.json 和 versions.json 已在生成 manifest 后被删除。
     """
-    import shutil as _shutil
-
-    overlay_count = 0
-    for f in extract_dir.iterdir():
-        if not f.is_file():
-            continue
-        try:
-            _shutil.copy2(f, scrapers_dir / f.name)
-            overlay_count += 1
-        except Exception as e:
-            logger.warning(f"覆盖运行目录文件 {f.name} 失败: {e}")
+    # 使用统一搬运工具：只搬 manifest + 二进制
+    try:
+        overlay_count = ScraperVersionManager.copy_scraper_files(extract_dir, scrapers_dir)
+    except Exception as e:
+        logger.warning(f"覆盖运行目录失败: {e}")
+        overlay_count = 0
 
     # 覆盖成功后，清理不再存在于新包中的旧文件
     if old_files and overlay_count > 0:
@@ -2159,7 +2173,7 @@ def _overlay_extract_dir_to_scrapers(
         logger.warning(f"清理运行目录 legacy 文件失败: {e}")
 
     # 清理临时目录
-    _shutil.rmtree(extract_dir, ignore_errors=True)
+    shutil.rmtree(extract_dir, ignore_errors=True)
     return overlay_count
 
 
@@ -2195,7 +2209,8 @@ async def _download_and_extract_release(
     headers: Dict[str, str],
     proxy: Optional[str] = None,
     progress_callback = None,
-    defer_overlay: bool = False
+    defer_overlay: bool = False,
+    remote_package_json: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
     下载并解压 Release 压缩包（支持 .zip 和 .tar.gz）
@@ -2211,6 +2226,8 @@ async def _download_and_extract_release(
             此后任何延迟 import / 未加载符号的访问都可能 segfault（表现为 SSE 心跳
             永久消失、前端卡住）。因此对齐逐文件更新路径的做法——把覆盖动作推迟到
             最后，等 SSE 终态消息发完，紧邻重启时再执行。
+        remote_package_json: 下载前从远端预拉取的 package.json 内容，透传给
+            _persist_new_version_to_backup 作为生成权威文件时的兜底数据源。
 
     Returns:
         是否成功
@@ -2444,6 +2461,33 @@ async def _download_and_extract_release(
             logger.error("解压结果为空，取消更新")
             return False
 
+        # ========== 备份前校验：架构 / 版本 / 最低可用版本 / 哈希 ==========
+        # why：备份目录是重启后恢复的唯一依据，一旦写入损坏或架构不符的包，
+        # 重启后会从备份恢复出坏包，且轮询又判定需要更新 → 循环。因此必须在
+        # 持久化之前校验临时目录，不通过就地清理、不污染备份。
+        # 临时目录若无权威文件，会先从 package.json + versions.json 整合生成。
+        if progress_callback:
+            await progress_callback("正在校验新版本文件...")
+
+        # 延迟导入：scraper_download_executor 在模块顶层导入了本模块，
+        # 顶层反向导入会造成循环，故置于函数内。
+        from src.utils.scraper_download_executor import verify_scraper_package
+
+        expected_version = str(asset_info.get('version', '')).lstrip('v')
+        verify_passed, verify_errors = await verify_scraper_package(
+            extract_dir,
+            expected_version=expected_version or None
+        )
+        if not verify_passed:
+            detail = "；".join(verify_errors)
+            logger.error(f"新版本文件校验失败，取消更新以避免污染备份目录：{detail}")
+            if progress_callback:
+                await progress_callback(f"校验失败: {detail}")
+            _shutil.rmtree(extract_dir, ignore_errors=True)
+            return False
+
+        logger.info(f"✓ 新版本文件校验通过（{extracted_count} 个文件，版本 {expected_version or '未知'}）")
+
         # ========== 关键顺序（断循环）：先把新版持久化到 backup 目录，再覆盖运行目录 ==========
         # why: 只有 backup 目录（/app/config/scrapers_backup）是持久化的。必须保证在覆盖
         # 运行中的 .so（可能 native crash）之前，backup 已是新版；这样即便覆盖时崩溃，重启后
@@ -2452,7 +2496,9 @@ async def _download_and_extract_release(
             await progress_callback("正在备份新版本到持久化目录...")
         try:
             release_version = str(asset_info.get('version', '')).lstrip('v')
-            _persist_new_version_to_backup(extract_dir, release_version)
+            _persist_new_version_to_backup(
+                extract_dir, release_version, remote_package_json
+            )
         except Exception as persist_err:
             logger.error(f"持久化新版到备份目录失败，取消覆盖运行目录以避免版本回退循环: {persist_err}", exc_info=True)
             _shutil.rmtree(extract_dir, ignore_errors=True)
