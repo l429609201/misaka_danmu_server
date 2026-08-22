@@ -557,35 +557,34 @@ async def backup_scrapers(
         if manifest is None:
             manifest = {"sources": {}}
 
-        # 清空旧备份文件（保留metadata.json）
-        for file in BACKUP_DIR.glob("*"):
-            if file.is_file() and file.name != "backup_metadata.json":
-                file.unlink()
+        # 搬运权威文件与二进制到备份目录（clear_dst 先清空同类旧文件，保留 backup_metadata.json）
+        # 使用统一搬运工具，只搬 scraper_manifest.json + *.so/*.pyd，不搬 legacy 文件
+        backup_count = ScraperVersionManager.copy_scraper_files(
+            scrapers_dir, BACKUP_DIR, clear_dst=True
+        )
 
-        # 备份 .so 和 .pyd 文件
-        backup_count = 0
+        # 收集已备份二进制的元数据（供接口返回）
         backed_files = []
-        for file in scrapers_dir.glob("*"):
-            if file.suffix in ['.so', '.pyd']:
-                shutil.copy2(file, BACKUP_DIR / file.name)
+        sources = manifest.get("sources", {})
+        for file in BACKUP_DIR.iterdir():
+            if not file.is_file() or file.suffix not in ['.so', '.pyd']:
+                continue
 
-                # 从文件名提取弹幕源名称
-                scraper_name = file.name.split('.')[0]
+            # 从文件名提取弹幕源名称
+            scraper_name = file.name.split('.')[0]
 
-                file_info = {
-                    "name": file.name,
-                    "scraper": scraper_name,
-                    "size": file.stat().st_size,
-                    "modified": datetime.fromtimestamp(file.stat().st_mtime).isoformat()
-                }
+            file_info = {
+                "name": file.name,
+                "scraper": scraper_name,
+                "size": file.stat().st_size,
+                "modified": datetime.fromtimestamp(file.stat().st_mtime).isoformat()
+            }
 
-                # 添加版本号（从 manifest 的 sources 中查找）
-                sources = manifest.get("sources", {})
-                if scraper_name in sources:
-                    file_info["version"] = sources[scraper_name].get("version", "unknown")
+            # 添加版本号（从 manifest 的 sources 中查找）
+            if scraper_name in sources:
+                file_info["version"] = sources[scraper_name].get("version", "unknown")
 
-                backed_files.append(file_info)
-                backup_count += 1
+            backed_files.append(file_info)
 
         # 备份 scraper_manifest.json（使用 ScraperVersionManager）
         if manifest:
@@ -673,12 +672,9 @@ async def restore_scrapers(
         manifest = json.loads(backup_manifest_file.read_text(encoding="utf-8"))
         logger.info(f"备份信息: 版本 {manifest.get('version')}, 平台 {manifest.get('platform')}, {len(manifest.get('sources', {}))} 个源")
 
-        # 还原文件
-        restore_count = 0
-        for file in BACKUP_DIR.glob("*"):
-            if file.is_file() and file.suffix in ['.so', '.pyd', '.json']:
-                shutil.copy2(file, scrapers_dir / file.name)
-                restore_count += 1
+        # 还原文件（使用统一搬运工具）
+        # 原来通配 .json 会把 backup_metadata.json 一并还原到运行目录，造成污染
+        restore_count = ScraperVersionManager.copy_scraper_files(BACKUP_DIR, scrapers_dir)
 
         if restore_count == 0:
             raise HTTPException(status_code=404, detail="备份目录为空")
@@ -2093,13 +2089,9 @@ def _persist_new_version_to_backup(
         logger.error(f"生成 manifest 失败: {e}", exc_info=True)
         raise
 
-    # 2) 复制临时目录的所有文件（.so/.pyd + scraper_manifest.json）到备份目录
-    # 注意：此时 package.json 和 versions.json 已被删除
-    backup_count = 0
-    for f in extract_dir.iterdir():
-        if f.is_file():
-            shutil.copy2(f, BACKUP_DIR / f.name)
-            backup_count += 1
+    # 2) 搬运临时目录的权威文件与二进制到备份目录
+    # 使用统一搬运工具，不再依赖"legacy 文件已被删除"这一前置条件
+    backup_count = ScraperVersionManager.copy_scraper_files(extract_dir, BACKUP_DIR)
 
     logger.info(f"已将新版 {release_version} 持久化到备份目录: {backup_count} 个文件, {len(manifest.get('sources', {}))} 个源")
 
@@ -2124,17 +2116,12 @@ def _overlay_extract_dir_to_scrapers(
     注意：临时目录中应该只包含 scraper_manifest.json 和 .so/.pyd 文件，
     package.json 和 versions.json 已在生成 manifest 后被删除。
     """
-    import shutil as _shutil
-
-    overlay_count = 0
-    for f in extract_dir.iterdir():
-        if not f.is_file():
-            continue
-        try:
-            _shutil.copy2(f, scrapers_dir / f.name)
-            overlay_count += 1
-        except Exception as e:
-            logger.warning(f"覆盖运行目录文件 {f.name} 失败: {e}")
+    # 使用统一搬运工具：只搬 manifest + 二进制
+    try:
+        overlay_count = ScraperVersionManager.copy_scraper_files(extract_dir, scrapers_dir)
+    except Exception as e:
+        logger.warning(f"覆盖运行目录失败: {e}")
+        overlay_count = 0
 
     # 覆盖成功后，清理不再存在于新包中的旧文件
     if old_files and overlay_count > 0:
@@ -2159,7 +2146,7 @@ def _overlay_extract_dir_to_scrapers(
         logger.warning(f"清理运行目录 legacy 文件失败: {e}")
 
     # 清理临时目录
-    _shutil.rmtree(extract_dir, ignore_errors=True)
+    shutil.rmtree(extract_dir, ignore_errors=True)
     return overlay_count
 
 

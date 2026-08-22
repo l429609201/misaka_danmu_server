@@ -104,6 +104,44 @@ def _verify_backup_only(target_version: str) -> bool:
         return False
 
 
+def _describe_version_state() -> str:
+    """汇总运行目录/备份目录/临时目录三处的版本状态，用于日志诊断。
+
+    why：更新链路涉及三个目录，各自的 manifest 由不同时机写入。仅打印目标版本号时，
+    一旦行为异常无法从日志判断是哪一处没落盘，只能靠推断。此处统一输出三者实际版本，
+    让每条决策日志自带可核对的现场信息。
+
+    版本号后缀说明：
+    - (无 manifest)：目录存在但没有 manifest 文件；
+    - (缺二进制)：有 manifest 但无 .so/.pyd，属错配状态；
+    - (不存在)：目录本身不存在。
+    """
+    def _probe(directory: Path) -> str:
+        try:
+            if not directory.exists():
+                return "不存在"
+            manifest = ScraperVersionManager.load_manifest(directory)
+            if not manifest:
+                return "无 manifest"
+            version = ScraperVersionManager.get_version_from_manifest(manifest)
+            has_binaries = any(
+                f.suffix in (".so", ".pyd") for f in directory.iterdir() if f.is_file()
+            )
+            return version if has_binaries else f"{version} (缺二进制)"
+        except Exception as e:
+            return f"读取失败({e})"
+
+    try:
+        scrapers_dir = _get_scrapers_dir()
+        return (
+            f"运行目录={_probe(scrapers_dir)}, "
+            f"备份目录={_probe(_get_backup_dir_path())}, "
+            f"临时目录={_probe(_get_deferred_overlay_dir(scrapers_dir))}"
+        )
+    except Exception as e:
+        return f"版本状态读取失败({e})"
+
+
 def _verify_backup_version(remote_version: str) -> bool:
     """校验备份目录是否已成功落盘为指定的目标版本，且运行目录尚未应用。
 
@@ -141,15 +179,21 @@ async def _restart_to_apply_backup(config_manager, target_version: str) -> None:
     why：以版本状态决策——当上一轮已把新版本下载/上传到备份目录、但因重启失败等原因
     未生效时，无需重新下载，只要重启让 scraper_manager 从备份恢复即可。
     """
+    version_state = _describe_version_state()
+
     docker_available = is_docker_socket_available() and is_running_in_docker()
     if not docker_available:
         logger.warning(
             f"备份目录已是目标版本 {target_version}，但未检测到 Docker 套接字，"
             f"无法自动重启。请手动重启容器以加载新弹幕源（.so 需重启生效）。"
+            f" [版本状态] {version_state}"
         )
         return
 
-    logger.info(f"备份目录已是目标版本 {target_version}，无需重复下载，准备重启容器使其生效...")
+    logger.info(
+        f"备份目录已是目标版本 {target_version}，无需重复下载，准备重启容器使其生效... "
+        f"[版本状态] {version_state}"
+    )
     for handler in logging.getLogger().handlers:
         handler.flush()
     sys.stdout.flush()
@@ -269,7 +313,7 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
     )
 
     if not should_update:
-        logger.info(f"弹幕源无需更新: {reason}，跳过下载")
+        logger.info(f"弹幕源无需更新: {reason}，跳过下载 [版本状态] {_describe_version_state()}")
         return
 
     # 检查是否启用全量替换模式
@@ -277,9 +321,15 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
     use_full_replace = full_replace_enabled.lower() == "true"
 
     if use_full_replace:
-        logger.info(f"检测到需要更新: {reason}，开始全量替换更新（目标版本: {remote_version}）...")
+        logger.info(
+            f"检测到需要更新: {reason}，开始全量替换更新（目标版本: {remote_version}）... "
+            f"[版本状态] {_describe_version_state()}"
+        )
     else:
-        logger.info(f"检测到需要更新: {reason}，开始增量下载...")
+        logger.info(
+            f"检测到需要更新: {reason}，开始增量下载... "
+            f"[版本状态] {_describe_version_state()}"
+        )
 
     # 执行更新
     await _perform_update(
@@ -608,9 +658,10 @@ async def _perform_update(
                         # 轮询又检测到新版 → 无限下载重启循环。
                         if not _verify_backup_only(release_version):
                             logger.error(
-                                f"全量替换备份校验失败：备份目录未落盘为 {release_version}"
-                                f"（当前备份版本: {_get_backup_version() or '无'}），"
-                                "为避免版本回退导致无限重启循环，本次不重启容器。请检查备份目录权限或磁盘空间。"
+                                f"全量替换备份校验失败：备份目录未落盘为 {release_version}，"
+                                "为避免版本回退导致无限重启循环，本次不重启容器。"
+                                "请检查备份目录权限或磁盘空间。"
+                                f" [版本状态] {_describe_version_state()}"
                             )
                             sr._version_cache = None
                             sr._version_cache_time = None

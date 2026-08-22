@@ -212,9 +212,17 @@ class ScraperManager:
             await self._perform_backup_restore(backup_dir, scrapers_dir, restore_reason)
 
     async def _perform_backup_restore(self, backup_dir: Path, scrapers_dir: Path, reason: str):
-        """执行备份恢复操作"""
-        backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
-        if not backup_files:
+        """执行备份恢复操作
+
+        使用 ScraperVersionManager.copy_scraper_files 统一搬运，**只搬 manifest + *.so/.pyd**。
+        不再搬 legacy 文件（package.json / versions.json），也不再反向修改备份目录的 manifest。
+        """
+        # 预检：备份目录必须有二进制文件
+        backup_binaries = [
+            f for f in backup_dir.iterdir()
+            if f.is_file() and f.suffix in ScraperVersionManager._BINARY_SUFFIXES
+        ] if backup_dir.exists() else []
+        if not backup_binaries:
             return
 
         logger = logging.getLogger(__name__)
@@ -232,48 +240,13 @@ class ScraperManager:
             f"备份恢复详情:\n"
             f"  备份版本: {backup_version}\n"
             f"  运行版本: {scrapers_version}\n"
-            f"  恢复文件数: {len(backup_files)}"
+            f"  备份二进制数: {len(backup_binaries)}"
         )
 
-        # 复制二进制文件
-        for file in backup_files:
-            shutil.copy2(file, scrapers_dir / file.name)
+        # 使用统一搬运工具：只搬 manifest + 二进制，不搬 legacy 文件，不反向写源目录
+        copied = ScraperVersionManager.copy_scraper_files(backup_dir, scrapers_dir)
 
-        # 恢复 legacy 文件（供 manifest 缺失时提取）
-        for legacy_name in ("package.json", "versions.json"):
-            legacy_file = backup_dir / legacy_name
-            if legacy_file.exists():
-                shutil.copy2(legacy_file, scrapers_dir / legacy_name)
-
-        # 恢复 manifest（如果存在且格式正确）
-        backup_manifest_path = backup_dir / ScraperVersionManager.MANIFEST_FILENAME
-        if backup_manifest_path.exists():
-            # 先尝试加载并验证格式
-            backup_manifest = ScraperVersionManager.load_manifest(backup_dir)
-            if backup_manifest and ScraperVersionManager.validate_manifest(backup_manifest):
-                # 格式正确，直接复制
-                shutil.copy2(backup_manifest_path, scrapers_dir / ScraperVersionManager.MANIFEST_FILENAME)
-                logger.info("已恢复 scraper_manifest.json")
-            else:
-                # 格式错误或无效，从 legacy 文件重新生成
-                logger.warning("备份的 manifest 格式不正确，将从 legacy 文件重新生成")
-                try:
-                    package_json = backup_dir / "package.json"
-                    versions_json = backup_dir / "versions.json"
-                    if package_json.exists() or versions_json.exists():
-                        regenerated_manifest = ScraperVersionManager.extract_manifest_from_legacy(
-                            package_json,
-                            versions_json,
-                            backup_dir
-                        )
-                        ScraperVersionManager.save_manifest(regenerated_manifest, scrapers_dir)
-                        # 同时更新 backup 目录的 manifest
-                        ScraperVersionManager.save_manifest(regenerated_manifest, backup_dir)
-                        logger.info("已从 legacy 文件重新生成 scraper_manifest.json")
-                except Exception as e:
-                    logger.error(f"重新生成 manifest 失败: {e}")
-
-        logger.info(f"备份恢复完成 - 当前版本: {backup_version}")
+        logger.info(f"备份恢复完成 - 已复制 {copied} 个文件，当前版本: {backup_version}")
 
     def _ensure_manifest_exists(self, scrapers_dir: Path):
         """确保 manifest 文件存在且格式正确，如不存在或格式错误则从 legacy 文件提取生成"""

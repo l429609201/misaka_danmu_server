@@ -342,15 +342,11 @@ async def upload_scraper_package(
                 # ========== 需要重启：只部署到 backup 目录 ==========
                 logger.info("部署到 backup 目录（需要重启容器）")
 
-                # 复制 .so/.pyd 文件到 backup 目录
-                for f in extract_dir.iterdir():
-                    if f.is_file() and f.suffix in ['.so', '.pyd']:
-                        shutil.copy2(f, BACKUP_DIR / f.name)
-                        logger.info(f"已复制文件到 backup: {f.name}")
-
-                # 复制中间文件到 backup
-                shutil.copy2(temp_versions_file, BACKUP_DIR / "versions.json")
-                shutil.copy2(temp_package_file, BACKUP_DIR / "package.json")
+                # 搬运二进制到 backup 目录（统一工具，不搬 legacy 文件）
+                # why: legacy 文件（versions.json/package.json）会被启动期 _cleanup_legacy_version_files
+                # 清理，写入备份目录属于无效污染，权威文件只有 scraper_manifest.json
+                copied = ScraperVersionManager.copy_scraper_files(extract_dir, BACKUP_DIR)
+                logger.info(f"已复制 {copied} 个文件到 backup 目录")
 
                 # 生成 manifest 到 backup
                 ScraperVersionManager.save_manifest(manifest, BACKUP_DIR)
@@ -367,16 +363,10 @@ async def upload_scraper_package(
                 # ========== 可以热加载：部署到 scrapers 和 backup 目录 ==========
                 logger.info("部署到 scrapers 和 backup 目录（可热加载）")
 
-                # 复制 .so/.pyd 文件到两个目录
-                for f in extract_dir.iterdir():
-                    if f.is_file() and f.suffix in ['.so', '.pyd']:
-                        shutil.copy2(f, scrapers_dir / f.name)
-                        shutil.copy2(f, BACKUP_DIR / f.name)
-                        logger.info(f"已复制文件: {f.name}")
-
-                # 复制中间文件到 backup
-                shutil.copy2(temp_versions_file, BACKUP_DIR / "versions.json")
-                shutil.copy2(temp_package_file, BACKUP_DIR / "package.json")
+                # 搬运二进制到两个目录（统一工具，不搬 legacy 文件）
+                copied = ScraperVersionManager.copy_scraper_files(extract_dir, scrapers_dir)
+                ScraperVersionManager.copy_scraper_files(extract_dir, BACKUP_DIR)
+                logger.info(f"已复制 {copied} 个文件到 scrapers 和 backup 目录")
 
                 # 生成 manifest 到两个目录
                 ScraperVersionManager.save_manifest(manifest, scrapers_dir)
