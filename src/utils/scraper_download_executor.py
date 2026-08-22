@@ -607,8 +607,8 @@ class ScraperDownloadExecutor:
         #      下载整包+备份耗时可达数分钟，若版本不满足应在任何磁盘写入之前快速报错。
         #      与 _do_incremental_download 中第一步就校验 min_server_version 的做法对齐。
         # 额外用途：全量包（tar.gz）本身不内置 package.json，把这里拉到的内容保存为
-        # remote_pre_pkg，后续传给 _update_versions_json 作兜底，确保 backup/versions.json
-        # 和 backup/package.json 即使在包内缺文件时也能正确写入，从根本上避免循环重启。
+        # remote_pre_pkg，后续传给 _persist_new_version_to_backup 作兜底，确保生成的
+        # scraper_manifest.json 即使在包内缺文件时也能正确写入版本信息，避免循环重启。
         self._log("正在预检弹幕源包服务器版本要求...")
         remote_pre_pkg = None  # 保存网络拉取的 package.json，供后续兜底
         try:
@@ -634,7 +634,7 @@ class ScraperDownloadExecutor:
         except ValueError:
             raise  # 版本不满足直接上抛，不做备份/下载
         except Exception as _pre_err:
-            # 预检网络失败不阻断：解压后的后置校验（_update_versions_json 段）仍会兜底
+            # 预检网络失败不阻断：解压后从 manifest 读取 min_server_version 仍会做后置校验
             self._log(f"版本预检跳过（网络异常: {_pre_err}）", "debug")
 
         # 下载并解压（先不备份，等版本校验通过后再备份）
@@ -661,13 +661,17 @@ class ScraperDownloadExecutor:
         # 下载成功（新版已解压到临时目录并持久化到 backup，运行目录尚未被覆盖）
         pending_dir = _get_deferred_overlay_dir(scrapers_dir)
 
-        # 更新 versions.json（从临时目录读取新包的 package.json；包内若无则用网络预检拿到的兜底）
-        self._log("正在更新版本信息...")
-        full_replace_min_ver = await self._update_versions_json(
-            asset_info, scrapers_dir, platform_key,
-            source_dir=pending_dir,
-            remote_package_json=remote_pre_pkg,
+        # 从权威文件读取最低服务器版本要求
+        # why：原先此处调用 _update_versions_json 重新生成 package.json / versions.json 并
+        # 同步进备份目录，但 _persist_new_version_to_backup 早已生成 manifest 并删掉这两个
+        # legacy 文件。该后置步骤会（1）把 legacy 文件重新造回备份目录，推翻清理；
+        # （2）因 package.json 已被删而走远端兜底，写入远端最新版本号——与本次实际部署的
+        # .so 版本不一致，造成"备份里 manifest 版本号与二进制对不上"。
+        # 权威文件已在持久化阶段完成全部数据整合，这里只读取，不再写任何文件。
+        pending_manifest = await asyncio.to_thread(
+            ScraperVersionManager.load_manifest, pending_dir
         )
+        full_replace_min_ver = (pending_manifest or {}).get("min_server_version")
 
         # 全量替换后检查：解压出的弹幕源包是否要求更高的服务器版本
         if full_replace_min_ver:
@@ -1793,170 +1797,6 @@ class ScraperDownloadExecutor:
             logger.info("已清除版本缓存")
         except Exception as e:
             logger.warning(f"清除版本缓存失败: {e}")
-
-    async def _update_versions_json(
-        self,
-        asset_info: Dict[str, Any],
-        scrapers_dir: Path,
-        platform_key: str,
-        source_dir: Optional[Path] = None,
-        remote_package_json: Optional[Dict] = None,
-    ) -> Optional[str]:
-        """全量替换后更新 versions.json，返回 min_server_version（如有）
-
-        Args:
-            source_dir: 新包内 package.json / versions.json 的所在目录。
-                推迟覆盖模式下新文件还在临时目录里，需从那里读取；默认取 scrapers_dir。
-            remote_package_json: 下载前从远端仓库预拉取的 package.json 内容（dict）。
-                why：全量包（tar.gz）本身不内置 package.json，当包内既无 package.json
-                也无 versions.json 时，直接用此兜底，确保 backup/package.json 和
-                backup/versions.json 能正确写入版本信息，避免循环重启。
-        """
-        try:
-            platform_info = get_platform_info()
-            release_version = asset_info['version'].lstrip('v')
-
-            # 从新包读取各源版本号与哈希
-            # why：全量包（tar.gz 单平台格式）不含 package.json，版本/哈希在 versions.json；
-            #      多平台 zip 包含 package.json，哈希格式 {platform_key: hash}；
-            #      优先 package.json，缺失时从 versions.json 回退。
-            read_dir = source_dir if source_dir is not None else scrapers_dir
-            scrapers_versions = {}
-            scrapers_hashes = {}
-            min_server_version = None
-
-            # 步骤1：尝试从 package.json 读（多平台包格式）
-            local_package_file = read_dir / "package.json"
-            if local_package_file.exists():
-                try:
-                    package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
-                    resources = package_content.get('resources', {})
-                    for scraper_name, scraper_info in resources.items():
-                        if isinstance(scraper_info, dict):
-                            version = scraper_info.get('version')
-                            if version:
-                                scrapers_versions[scraper_name] = version
-                            # package.json 里哈希键是连字符格式 platform_key（如 linux-x86）
-                            hashes = scraper_info.get('hashes', {})
-                            if platform_key in hashes:
-                                scrapers_hashes[scraper_name] = hashes[platform_key]
-                    logger.info(f"从 package.json 读取到 {len(scrapers_versions)} 个源的版本信息, {len(scrapers_hashes)} 个哈希值")
-                    if not min_server_version:
-                        min_server_version = package_content.get('min_server_version')
-                except Exception as e:
-                    logger.warning(f"读取 package.json 中的源版本信息失败: {e}")
-
-            # 步骤2：从 versions.json 补充/回退（单平台包主流路径）
-            # why：单平台 tar.gz 里 versions.json 的 scrapers={name:ver}, hashes={name:hash}，
-            #      直接就是所需结构，不需要 platform_key 查找。
-            existing_versions_file = read_dir / "versions.json"
-            if existing_versions_file.exists():
-                try:
-                    existing_ver_data = json.loads(await asyncio.to_thread(existing_versions_file.read_text))
-                    if not min_server_version:
-                        min_server_version = existing_ver_data.get('min_server_version')
-                    # 若 package.json 未读到版本/哈希，从 versions.json 补充
-                    if not scrapers_versions:
-                        scrapers_versions = existing_ver_data.get('scrapers', {}) or {}
-                    if not scrapers_hashes:
-                        scrapers_hashes = existing_ver_data.get('hashes', {}) or {}
-                    logger.info(f"从 versions.json 补充读取: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
-                except Exception as e:
-                    logger.warning(f"读取 versions.json 版本信息失败: {e}")
-
-            # 步骤3：远端 package.json 兜底
-            # why：全量包（tar.gz）通常不内置 package.json，且上游可能也不内置 versions.json，
-            #      导致步骤1/2 均为空，_persist_new_version_to_backup 写出的 backup/versions.json
-            #      里 scrapers={} → _verify_backup_version 永远校验失败 → 循环重启。
-            #      _do_full_replace 在下包前已从远端仓库拉取 package.json（remote_package_json），
-            #      这里作为最后一道兜底：若包内完全没有版本信息，就用远端数据补全；
-            #      同时把它写入临时目录，让后续 _persist_new_version_to_backup 复制时自然包含。
-            if remote_package_json and (not scrapers_versions or not min_server_version):
-                try:
-                    if not min_server_version:
-                        min_server_version = (
-                            remote_package_json.get('min_server_version')
-                            or remote_package_json.get('min_fetchable_version')
-                        )
-                    if not scrapers_versions:
-                        for scraper_name, scraper_info in (remote_package_json.get('resources', {}) or {}).items():
-                            if isinstance(scraper_info, dict):
-                                ver = scraper_info.get('version')
-                                if ver:
-                                    scrapers_versions[scraper_name] = ver
-                                hashes = scraper_info.get('hashes', {}) or {}
-                                if platform_key in hashes:
-                                    scrapers_hashes[scraper_name] = hashes[platform_key]
-                    # 把远端 package.json 写入临时目录，确保后续持久化到 backup 时有完整文件
-                    if not local_package_file.exists():
-                        remote_pkg_with_ver = dict(remote_package_json)
-                        remote_pkg_with_ver['version'] = release_version
-                        await asyncio.to_thread(
-                            local_package_file.write_text,
-                            json.dumps(remote_pkg_with_ver, indent=2, ensure_ascii=False)
-                        )
-                        logger.info(f"全量包内无 package.json，已用远端内容写入临时目录作兜底（版本 {release_version}）")
-                    logger.info(f"远端兜底后: {len(scrapers_versions)} 个源版本, min_server_version={min_server_version}")
-                except Exception as e:
-                    logger.warning(f"远端 package.json 兜底失败: {e}")
-
-            # P1-1: 统一版本号权威源 - versions.json 不再存储全局 version 字段
-            # package.json 是唯一权威版本源，versions.json 只保留 updated_at 和各源详情
-            versions_data = {
-                "platform": platform_info['platform'],
-                "type": platform_info['arch'],
-                # "version": release_version,  # ❌ 已移除：统一使用 package.json
-                "scrapers": scrapers_versions,
-                "hashes": scrapers_hashes,
-                "full_replace": True,
-                "branch": self.task.branch if hasattr(self.task, 'branch') else 'main',  # 记录分支信息
-                "updated_at": datetime.now().isoformat()  # 使用 updated_at 与其他地方保持一致
-            }
-            if min_server_version:
-                versions_data['min_server_version'] = min_server_version
-
-            # 写入 versions.json 到 scrapers 目录
-            versions_file = scrapers_dir / "versions.json"
-            versions_json_str = json.dumps(versions_data, indent=2, ensure_ascii=False)
-            await asyncio.to_thread(versions_file.write_text, versions_json_str)
-            logger.info(f"已更新 versions.json: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
-
-            # 先更新 package.json 的版本号（前端从这里读取整体版本），再同步到备份目录
-            # why: 原先先同步 backup 再改版本号，导致 backup 里的 package.json 版本号仍是旧值
-            package_written_to: Optional[Path] = None
-            try:
-                if local_package_file.exists():
-                    package_content = json.loads(await asyncio.to_thread(local_package_file.read_text))
-                    package_content['version'] = release_version
-                else:
-                    package_content = {"version": release_version}
-                package_json_str = json.dumps(package_content, indent=2, ensure_ascii=False)
-                # 写回新包所在目录（推迟覆盖模式下即临时目录，后续会被覆盖到运行目录）
-                await asyncio.to_thread(local_package_file.write_text, package_json_str)
-                package_written_to = local_package_file
-                # 同时写入运行目录，保证前端立即能读到新版本号
-                scrapers_package_file = scrapers_dir / "package.json"
-                if scrapers_package_file != local_package_file:
-                    await asyncio.to_thread(scrapers_package_file.write_text, package_json_str)
-                logger.info(f"已更新 package.json 版本号为: {release_version}")
-            except Exception as pkg_err:
-                logger.warning(f"更新 package.json 失败: {pkg_err}")
-
-            # 同步到 backup 目录
-            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-            backup_versions_file = BACKUP_DIR / "versions.json"
-            backup_package_file = BACKUP_DIR / "package.json"
-            shutil.copy2(versions_file, backup_versions_file)
-            if package_written_to and package_written_to.exists():
-                shutil.copy2(package_written_to, backup_package_file)
-            logger.info("已同步版本信息到备份目录")
-
-            return min_server_version
-
-        except Exception as e:
-            logger.error(f"更新版本信息失败: {e}", exc_info=True)
-            self._log(f"更新版本信息失败: {e}", "warning")
-            return None
 
 
 async def start_download_task(
