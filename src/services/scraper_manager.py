@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type, TYPE_CHECKING
 from urllib.parse import urlparse
 
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.core.env import is_docker_environment
@@ -354,9 +353,6 @@ class ScraperManager:
         if result.default_configs:
             await self._register_default_configs(result.default_configs)
 
-        # 远程版本校验
-        if await self._check_remote_min_version():
-            return
 
         # 同步到数据库
         await self._sync_to_database(result.discovered_providers, result.failed_providers)
@@ -1342,79 +1338,5 @@ class ScraperManager:
             return self.get_scraper(provider_name) if provider_name else None
         except Exception:
             return None
-
-    async def _check_remote_min_version(self) -> bool:
-        """
-        拉取远程公共仓库的 manifest，比较全局 min_server_version。
-        如果当前服务器版本低于远程要求的最低版本，则不允许加载弹幕源。
-
-        Returns:
-            True = 版本不满足，应跳过加载
-            False = 版本满足或无法校验，正常加载
-        """
-        try:
-            repo_url = await self.config_manager.get("scraper_resource_repo", "")
-            if not repo_url:
-                return False
-
-            from src.api.ui.scraper_resources import parse_github_url, parse_gitee_url, _build_base_url
-
-            gitee_info = parse_gitee_url(repo_url)
-            repo_info = None
-            if not gitee_info:
-                try:
-                    repo_info = parse_github_url(repo_url)
-                except ValueError:
-                    pass
-
-            base_url = _build_base_url(repo_info, repo_url, gitee_info)
-            if not base_url:
-                return False
-
-            manifest_url = f"{base_url}/{ScraperVersionManager.MANIFEST_FILENAME}"
-
-            # 获取代理和 Token
-            headers = {}
-            if repo_info:
-                github_token = await self.config_manager.get("github_token", "")
-                if github_token:
-                    headers["Authorization"] = f"Bearer {github_token}"
-
-            proxy_url = await self.config_manager.get("proxyUrl", "")
-            proxy_enabled_str = await self.config_manager.get("proxyEnabled", "false")
-            proxy = proxy_url if proxy_enabled_str.lower() == "true" and proxy_url else None
-
-            # 拉取远程 manifest（超时 5 秒，不阻塞启动）
-            timeout = httpx.Timeout(5.0, read=5.0)
-            async with httpx.AsyncClient(
-                timeout=timeout, headers=headers, follow_redirects=True, proxy=proxy
-            ) as client:
-                resp = await client.get(manifest_url)
-                if resp.status_code != 200:
-                    logging.getLogger(__name__).debug(
-                        f"拉取远程 manifest 失败: HTTP {resp.status_code}，跳过版本校验"
-                    )
-                    return False
-                manifest_data = resp.json()
-
-            min_ver = manifest_data.get("min_server_version")
-            if not min_ver:
-                return False
-
-            from src._version import APP_VERSION
-
-            if not _version_satisfies(APP_VERSION, min_ver):
-                logging.getLogger(__name__).warning(
-                    f"远程弹幕源包要求服务器版本 >= {min_ver}，"
-                    f"当前版本 {APP_VERSION}，跳过全部弹幕源加载"
-                )
-                return True
-
-            return False
-
-        except Exception as e:
-            # 拉取失败不影响正常加载（宽松策略）
-            logging.getLogger(__name__).debug(f"远程版本校验失败，跳过: {e}")
-            return False
 
 
