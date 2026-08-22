@@ -750,10 +750,10 @@ class ScraperDownloadExecutor:
                 self.task.success_message = f"当前弹幕源版本与所选加载版本（{remote_version}）相同，无需重载"
                 return
 
-        # 版本不同，需要部署，先备份当前版本
-        self._log("正在备份当前弹幕源...")
-        await backup_scrapers(self.current_user)
-        self._log("备份完成")
+        # 版本不同，需要部署
+        # 注意：全量替换模式下，_download_and_extract_release 内部的 _persist_new_version_to_backup
+        # 已经将新版本写入备份目录，此处不再备份旧版本（否则会覆盖新版本的 manifest）
+        # 旧版本的 .so 文件会在覆盖时自然被替换，不需要单独备份
 
         # 判断是否是首次下载（本地没有任何弹幕源）
         existing_scrapers = set(self.scraper_manager.scrapers.keys())
