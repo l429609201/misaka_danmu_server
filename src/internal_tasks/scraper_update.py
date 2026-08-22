@@ -225,7 +225,6 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
             )
             return
 
-    # 导入版本比较工具
     scrapers_dir = _get_scrapers_dir()
 
     # 版本状态预校（代替时间冷却）：若备份目录已经是目标版本，说明上一轮已下载/上传好，
@@ -235,27 +234,29 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
         await _restart_to_apply_backup(config_manager, remote_version)
         return
 
+    # 统一前置校验：全量/增量共用同一判据——运行目录版本 vs 远程版本。
+    # why：这是纯版本比较，不依赖下载结果，必须放在任何下载动作之前。
+    # 此前全量模式把该校验放到"下载解压 + 写备份目录"之后，导致运行目录已是目标版本时
+    # 仍每轮完整下载压缩包并改写备份目录，最后才判定"无需更新"→ 无限重复下载循环，
+    # 且备份目录的改写属既成副作用无法回滚。
+    should_update, reason = VersionComparator.should_update(
+        local_dir=scrapers_dir,
+        remote_version=remote_version,
+        remote_branch=None
+    )
+
+    if not should_update:
+        logger.info(f"弹幕源无需更新: {reason}，跳过下载")
+        return
+
     # 检查是否启用全量替换模式
     full_replace_enabled = await config_manager.get("scraperFullReplaceEnabled", "false")
     use_full_replace = full_replace_enabled.lower() == "true"
 
-    # 分支决策：全量模式延后到临时目录校验，增量模式现在就校验
-    if not use_full_replace:
-        # 增量模式：获取版本后立即校验（避免无效下载）
-        should_update, reason = VersionComparator.should_update(
-            local_dir=scrapers_dir,
-            remote_version=remote_version,
-            remote_branch=None
-        )
-
-        if not should_update:
-            logger.info(f"弹幕源无需更新: {reason}，跳过下载")
-            return
-
-        logger.info(f"检测到需要更新: {reason}，开始增量下载...")
+    if use_full_replace:
+        logger.info(f"检测到需要更新: {reason}，开始全量替换更新（目标版本: {remote_version}）...")
     else:
-        # 全量模式：暂不校验，在解压到临时目录后再校验
-        logger.info(f"开始全量替换更新（目标版本: {remote_version}）...")
+        logger.info(f"检测到需要更新: {reason}，开始增量下载...")
 
     # 执行更新
     await _perform_update(
@@ -380,7 +381,10 @@ async def _perform_update(
 
                 if asset_info:
                     # 使用部署检测工具判断是否需要延迟覆盖
-                    backup_dir = Path(await config_manager.get("scraperBackupDir", "config/backup"))
+                    # why：备份目录路径由环境决定（Docker 下为 /app/config/scrapers_backup），
+                    # 不是可配置项。此前读 scraperBackupDir 并回退 "config/backup"，
+                    # 指向了一个不存在的目录，使 has_backup_files 恒为 False（假信号）。
+                    backup_dir = _get_backup_dir_path()
                     deployment_strategy = should_restart_for_deployment(
                         scrapers_dir=scrapers_dir,
                         backup_dir=backup_dir,
@@ -400,32 +404,42 @@ async def _perform_update(
                     )
 
                     if success:
-                        # ========== 全量模式：版本校验 ==========
-                        # 使用统一的 VersionComparator 校验，与增量模式保持一致
-                        should_update, reason = VersionComparator.should_update(
-                            local_dir=scrapers_dir,
-                            remote_version=remote_version,
-                            remote_branch=None
-                        )
+                        # ========== 全量模式：包内容完整性断言 ==========
+                        # 与前置校验（该不该下）语义不同：此处断言"下到的包确实是远程声明的版本"，
+                        # 比对对象是解压出的临时目录，而非运行目录。
+                        # why：远程 manifest 的版本号与压缩包内实际内容可能不一致（发布错挂资产、
+                        # 资产未随 manifest 同步更新等）。若不断言就部署，会把标着 2.2.9 的旧包
+                        # 写进备份目录并重启，重启后版本号与内容不符，下一轮又判定需要更新 → 反复循环。
+                        temp_dir = scrapers_dir / ".tmp_update"
+                        if need_defer and temp_dir.exists():
+                            tmp_manifest = await asyncio.to_thread(
+                                ScraperVersionManager.load_manifest,
+                                temp_dir
+                            )
+                            tmp_version = ScraperVersionManager.get_version_from_manifest(tmp_manifest)
 
-                        if not should_update:
-                            logger.info(f"✓ 全量替换版本校验: {reason}，无需更新，清理临时目录并跳过部署")
-                            # 清理临时目录
-                            try:
-                                temp_dir = scrapers_dir / ".tmp_update"
-                                if temp_dir.exists():
+                            if tmp_version and tmp_version.lstrip('v') != remote_version.lstrip('v'):
+                                logger.error(
+                                    f"全量替换包内容校验失败：远程声明版本 {remote_version}，"
+                                    f"但包内实际版本为 {tmp_version}。为避免部署错误版本，"
+                                    "本次不写入版本信息、不重启。"
+                                )
+                                # 运行目录在 defer 模式下未被覆盖，无需回滚；仅清理临时目录。
+                                # 注意：备份目录已由 _persist_new_version_to_backup 写入该包，
+                                # 但其内容与自身 manifest 自洽，重启后恢复不会破坏运行环境。
+                                try:
                                     await asyncio.to_thread(shutil.rmtree, temp_dir)
                                     logger.info("已清理临时目录")
-                            except Exception as e:
-                                logger.warning(f"清理临时目录失败: {e}")
+                                except Exception as e:
+                                    logger.warning(f"清理临时目录失败: {e}")
 
-                            # 清除版本缓存
-                            sr._version_cache = None
-                            sr._version_cache_time = None
-                            return
+                                sr._version_cache = None
+                                sr._version_cache_time = None
+                                return
 
-                        logger.info(f"✓ 全量替换版本校验通过: {reason}，继续部署流程")
-                        # ========== 版本校验通过，继续原有流程 ==========
+                            logger.info(f"✓ 全量替换包内容校验通过（版本 {tmp_version or remote_version}），继续部署流程")
+
+                        # ========== 校验通过，继续原有流程 ==========
                         # 更新 manifest
                         release_version = asset_info['version'].lstrip('v')
 
