@@ -42,6 +42,8 @@ from ..api.ui.scraper_resources import (
     backup_scrapers,
     _fetch_github_release_asset,
     _download_and_extract_release,
+    apply_deferred_overlay,
+    _get_deferred_overlay_dir,
 )
 
 logger = logging.getLogger("ScraperAutoUpdate")
@@ -78,6 +80,27 @@ def _backup_has_binaries() -> bool:
             f.suffix in (".so", ".pyd") for f in backup_dir.iterdir() if f.is_file()
         )
     except Exception:
+        return False
+
+
+def _verify_backup_only(target_version: str) -> bool:
+    """校验备份目录本身是否已落盘为目标版本（不关心运行目录状态）。
+
+    判据：
+    - 备份目录含 .so/.pyd 文件；
+    - 备份目录 manifest 的 version == target_version。
+
+    why：与 _verify_backup_version 的问句不同——此处只问"这一轮备份落盘成功了吗"，
+    用于部署完成前的落盘确认。而 _verify_backup_version 问的是"上一轮下好了但没重启成功吗"，
+    额外要求运行目录版本不等于目标版本。两者在 defer 模式下必然冲突：defer 的设计就是
+    "备份先落新版、运行目录留旧版待重启恢复"，若用后者做落盘确认会恒判失败。
+    """
+    try:
+        if not _backup_has_binaries():
+            return False
+        return _get_backup_version() == target_version
+    except Exception as e:
+        logger.debug(f"校验备份落盘失败（视为未就绪）: {e}")
         return False
 
 
@@ -410,7 +433,7 @@ async def _perform_update(
                         # why：远程 manifest 的版本号与压缩包内实际内容可能不一致（发布错挂资产、
                         # 资产未随 manifest 同步更新等）。若不断言就部署，会把标着 2.2.9 的旧包
                         # 写进备份目录并重启，重启后版本号与内容不符，下一轮又判定需要更新 → 反复循环。
-                        temp_dir = scrapers_dir / ".tmp_update"
+                        temp_dir = _get_deferred_overlay_dir(scrapers_dir)
                         if need_defer and temp_dir.exists():
                             tmp_manifest = await asyncio.to_thread(
                                 ScraperVersionManager.load_manifest,
@@ -518,7 +541,11 @@ async def _perform_update(
                                 pass
 
                         # 构建 manifest 数据
-                        manifest_data = {
+                        # why：用独立变量名而非复用 manifest_data——后者是函数入参持有的远程 manifest，
+                        # 逐文件下载模式（本 try 块之后）仍要读它的 resources。全量分支若在此之后
+                        # 抛异常被外层捕获并回退到逐文件模式，复用同名变量会让逐文件模式读到
+                        # 这份 resources 为空的本地 manifest，导致"manifest 中未找到弹幕源文件"。
+                        full_replace_manifest = {
                             "version": release_version,
                             "platform": platform_info['platform'],
                             "arch": platform_info['arch'],
@@ -528,7 +555,7 @@ async def _perform_update(
 
                         # 添加各源的版本和哈希
                         for scraper_name, version in scrapers_versions.items():
-                            manifest_data["resources"][scraper_name] = {
+                            full_replace_manifest["resources"][scraper_name] = {
                                 "version": version,
                                 "hashes": {
                                     platform_key: scrapers_hashes.get(scraper_name, "")
@@ -536,35 +563,53 @@ async def _perform_update(
                             }
 
                         if min_server_version:
-                            manifest_data['min_server_version'] = min_server_version
+                            full_replace_manifest['min_server_version'] = min_server_version
 
-                        # 保存 manifest
                         scrapers_dir = _get_scrapers_dir()
-                        await asyncio.to_thread(
-                            ScraperVersionManager.save_manifest,
-                            manifest_data,  # 第一个参数：manifest 数据
-                            scrapers_dir    # 第二个参数：目标目录
-                        )
-                        logger.info(f"已更新 manifest: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
 
-                        # 全量替换模式：一定是更新已有源，需要重启容器
-                        # 先备份新下载的资源到持久化目录
-                        try:
-                            logger.info("正在备份全量替换的资源到持久化目录...")
-                            await backup_scrapers(SystemUser())
-                            logger.info("全量替换资源备份完成")
-                        except Exception as backup_error:
-                            logger.warning(f"备份资源失败: {backup_error}")
+                        if need_defer:
+                            # defer 模式：运行目录的 .so 尚未覆盖（仍是旧版），因此绝不能把新版本号
+                            # 写进运行目录的 manifest。
+                            # why：manifest 必须与同目录 .so 的实际版本保持一致。若提前写成新版，
+                            # 一旦此后重启失败或进程被杀，下一轮前置校验会读到"运行目录==远程版本"
+                            # 而判定无需更新，更新将静默卡死在旧版且永不重试（比重启循环更难发现）。
+                            # 新版本信息已由 _persist_new_version_to_backup 随 .so 一并写入备份目录，
+                            # 重启后由 scraper_manager 从备份恢复时一并生效。
+                            #
+                            # 同理不调用 backup_scrapers：它会先清空备份目录，再从运行目录复制 .so
+                            # （此刻是旧版）并复制运行目录的 manifest，等于把已落好的新版备份
+                            # 替换成"旧版 .so + 新版 manifest"的错配状态。
+                            logger.info(
+                                f"defer 模式：跳过运行目录 manifest 写入与二次备份，"
+                                f"新版 {release_version} 已随 .so 持久化至备份目录"
+                            )
+                        else:
+                            # 热加载模式：运行目录的 .so 已被实际覆盖为新版，此时写入 manifest
+                            # 与其内容一致，再从运行目录备份也是正确的新版内容。
+                            await asyncio.to_thread(
+                                ScraperVersionManager.save_manifest,
+                                full_replace_manifest,  # 第一个参数：manifest 数据
+                                scrapers_dir    # 第二个参数：目标目录
+                            )
+                            logger.info(f"已更新 manifest: {len(scrapers_versions)} 个源版本, {len(scrapers_hashes)} 个哈希值")
 
-                        # 关键防护(重启循环)：校验备份目录是否已落盘为目标版本。
-                        # 全量替换已先更新 scrapers/manifest.json(含 updated_at 与新 version)，
-                        # backup_scrapers 无参复制即把新版本写入持久化备份目录；此处再校验一次，
-                        # 若备份未成功落盘则绝不重启——否则重启后 scrapers 回退镜像旧版、备份也无新版，
+                            try:
+                                logger.info("正在备份全量替换的资源到持久化目录...")
+                                await backup_scrapers(SystemUser())
+                                logger.info("全量替换资源备份完成")
+                            except Exception as backup_error:
+                                logger.warning(f"备份资源失败: {backup_error}")
+
+                        # 关键防护(重启循环)：确认目标版本已真正落盘到持久化备份目录。
+                        # 用 _verify_backup_only 而非 _verify_backup_version：后者额外要求
+                        # "运行目录版本 != 目标版本"，那是用于判断"待重启"的问句；此处只问
+                        # "备份落盘成功了吗"，运行目录处于何种状态都不影响该结论。
+                        # 若备份未落盘则绝不重启——否则重启后运行目录回退镜像旧版、备份也无新版，
                         # 轮询又检测到新版 → 无限下载重启循环。
-                        full_replace_backup_ok = _verify_backup_version(release_version)
-                        if not full_replace_backup_ok:
+                        if not _verify_backup_only(release_version):
                             logger.error(
-                                f"全量替换备份校验失败：备份目录版本未更新为 {release_version}，"
+                                f"全量替换备份校验失败：备份目录未落盘为 {release_version}"
+                                f"（当前备份版本: {_get_backup_version() or '无'}），"
                                 "为避免版本回退导致无限重启循环，本次不重启容器。请检查备份目录权限或磁盘空间。"
                             )
                             sr._version_cache = None
@@ -596,6 +641,28 @@ async def _perform_update(
                                 await asyncio.sleep(1.0)
 
                                 container_name = await config_manager.get("containerName", "misaka-danmu-server")
+
+                                # ========== 最后一步：覆盖运行目录里正在被加载的 .so，然后立即重启 ==========
+                                # why：defer 模式下解压只写了临时目录与备份目录，运行目录的 .so 仍是旧版。
+                                # 若不覆盖就重启，重启后运行目录依旧是旧版，只能指望 load_and_sync_scrapers
+                                # 的备份恢复兜底；一旦恢复未生效，版本回退，下一轮轮询又检测到新版 → 重启循环。
+                                # 覆盖必须放在紧邻重启处：覆盖后进程内存中是旧模块而磁盘已是新二进制，
+                                # 此后任何延迟 import 都可能 segfault，因此中间不执行任何业务代码。
+                                # 对齐手动下载路径 scraper_download_executor.py 的做法。
+                                logger.info("正在应用新版 .so 到运行目录...")
+                                for handler in logging.getLogger().handlers:
+                                    handler.flush()
+                                try:
+                                    overlay_count = apply_deferred_overlay(scrapers_dir)
+                                    logger.info(f"已应用 {overlay_count} 个文件，立即重启")
+                                except Exception as overlay_err:
+                                    # 覆盖失败不影响重启：备份目录已是新版，重启后会从备份恢复
+                                    logger.error(f"应用新版文件失败: {overlay_err}")
+                                for handler in logging.getLogger().handlers:
+                                    handler.flush()
+                                sys.stdout.flush()
+                                sys.stderr.flush()
+
                                 result = await restart_container(container_name)
                                 if result.get("success"):
                                     logger.info(f"弹幕源全量替换完成: {local_version} -> {release_version}，已向容器 '{container_name}' 发送重启指令")
@@ -604,6 +671,9 @@ async def _perform_update(
                                     logger.warning("⚠️ 请手动重启容器以加载新的弹幕源")
                             else:
                                 # 没有 Docker socket：提示手动重启
+                                # why：此处不调用 apply_deferred_overlay——覆盖后进程仍会长时间运行
+                                # （等用户手动重启），磁盘新二进制与内存旧模块不一致期间极易 segfault。
+                                # 备份目录已是新版，重启后由 load_and_sync_scrapers 从备份恢复即可。
                                 logger.warning("未检测到 Docker socket")
                                 logger.warning(f"弹幕源全量替换完成: {local_version} -> {release_version}，新版本已部署到备份目录")
                                 logger.warning("⚠️ 请手动重启容器以加载新的弹幕源")
