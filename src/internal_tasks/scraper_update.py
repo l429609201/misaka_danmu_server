@@ -42,7 +42,6 @@ from ..api.ui.scraper_resources import (
     backup_scrapers,
     _fetch_github_release_asset,
     _download_and_extract_release,
-    BACKUP_DIR,
 )
 
 logger = logging.getLogger("ScraperAutoUpdate")
@@ -401,30 +400,16 @@ async def _perform_update(
                     )
 
                     if success:
-                        # ========== 全量模式：临时目录校验 ==========
-                        # why：全量包解压到临时目录后，先校验版本再决定是否继续部署
-                        # 避免下载7.3MB后发现版本相同还要继续走完整备份链路
-
-                        # 读取临时目录的 manifest（刚解压出来的）
-                        temp_manifest = await asyncio.to_thread(
-                            ScraperVersionManager.load_manifest,
-                            scrapers_dir  # 解压目标是临时目录或运行目录（根据 defer_overlay）
+                        # ========== 全量模式：版本校验 ==========
+                        # 使用统一的 VersionComparator 校验，与增量模式保持一致
+                        should_update, reason = VersionComparator.should_update(
+                            local_dir=scrapers_dir,
+                            remote_version=remote_version,
+                            remote_branch=None
                         )
-                        temp_version = ScraperVersionManager.get_version_from_manifest(temp_manifest)
 
-                        # 读取当前运行目录的 manifest（对比基准）
-                        local_manifest = await asyncio.to_thread(
-                            ScraperVersionManager.load_manifest,
-                            scrapers_dir if not need_defer else Path(BACKUP_DIR).parent / "src" / "scrapers"
-                        )
-                        local_version_actual = ScraperVersionManager.get_version_from_manifest(local_manifest)
-
-                        # 版本比较
-                        if temp_version and temp_version == local_version_actual:
-                            logger.info(
-                                f"✓ 全量替换版本校验: 临时目录版本 {temp_version} 与本地版本相同，"
-                                f"无需更新，清理临时目录并跳过部署"
-                            )
+                        if not should_update:
+                            logger.info(f"✓ 全量替换版本校验: {reason}，无需更新，清理临时目录并跳过部署")
                             # 清理临时目录
                             try:
                                 temp_dir = scrapers_dir / ".tmp_update"
@@ -439,7 +424,7 @@ async def _perform_update(
                             sr._version_cache_time = None
                             return
 
-                        logger.info(f"✓ 全量替换版本校验通过: {local_version_actual} -> {temp_version}，继续部署流程")
+                        logger.info(f"✓ 全量替换版本校验通过: {reason}，继续部署流程")
                         # ========== 版本校验通过，继续原有流程 ==========
                         # 更新 manifest
                         release_version = asset_info['version'].lstrip('v')
