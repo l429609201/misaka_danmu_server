@@ -650,7 +650,11 @@ class ScraperDownloadExecutor:
             # 只解压到临时目录 + 持久化到 backup，不覆盖运行中的 .so。
             # why: 对齐逐文件更新路径的做法——覆盖 .so 之后进程随时可能 segfault，
             # 必须等版本信息写完、SSE 终态发完，才在紧邻重启处执行覆盖。
-            defer_overlay=True
+            defer_overlay=True,
+            # 预检阶段拉到的远端 package.json，作为生成权威文件时的兜底数据源。
+            # why: 全量包内只有 versions.json（无 resources/多平台哈希），缺 package.json
+            # 时各源的完整信息无从补齐，需要用远端内容填补。
+            remote_package_json=remote_pre_pkg,
         )
 
         if not success:

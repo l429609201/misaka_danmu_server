@@ -2012,6 +2012,23 @@ def _find_matching_asset(
     return None
 
 
+def _purge_legacy_version_files(target_dir: Path) -> None:
+    """清除目录中的 legacy 版本文件（package.json / versions.json）。
+
+    why: 新架构只以 scraper_manifest.json 为权威。历史版本或旧代码路径可能在备份目录
+    留下这两个文件，它们不属于搬运范围、也不会被同名覆盖，滞留后会被误当作版本依据，
+    造成备份目录显示的版本与实际 .so 不一致。
+    """
+    for name in ("package.json", "versions.json"):
+        stale = target_dir / name
+        if stale.exists():
+            try:
+                stale.unlink()
+                logger.info(f"已清除备份目录的 legacy 文件: {name}")
+            except OSError as e:
+                logger.warning(f"清除 legacy 文件 {name} 失败: {e}")
+
+
 def _persist_new_version_to_backup(
     extract_dir: Path,
     release_version: str,
@@ -2049,7 +2066,11 @@ def _persist_new_version_to_backup(
         )
 
         # 更新全局版本号
-        manifest["version"] = release_version
+        # why: release_version 来自 asset_info['version']，按 tag 下载时可能为空字符串。
+        # 空值直接赋值会抹掉 extract_manifest_from_legacy 从包内 versions.json 提取到的
+        # 版本号，导致权威文件的 version 为空、后续版本比较全部失效。
+        if release_version:
+            manifest["version"] = release_version
         manifest["updated_at"] = datetime.now().isoformat()
 
         # 如果临时目录没有版本信息，使用远端 package.json 兜底
@@ -2091,7 +2112,13 @@ def _persist_new_version_to_backup(
 
     # 2) 搬运临时目录的权威文件与二进制到备份目录
     # 使用统一搬运工具，不再依赖"legacy 文件已被删除"这一前置条件
-    backup_count = ScraperVersionManager.copy_scraper_files(extract_dir, BACKUP_DIR)
+    # clear_dst=True: 复制前先清空备份目录的同类旧文件。
+    # why: 覆盖式写入只能盖住同名文件，历史遗留的 package.json / versions.json
+    # 不在搬运范围内，会永久滞留在备份目录并被误当作版本依据。
+    backup_count = ScraperVersionManager.copy_scraper_files(
+        extract_dir, BACKUP_DIR, clear_dst=True
+    )
+    _purge_legacy_version_files(BACKUP_DIR)
 
     logger.info(f"已将新版 {release_version} 持久化到备份目录: {backup_count} 个文件, {len(manifest.get('sources', {}))} 个源")
 
@@ -2182,7 +2209,8 @@ async def _download_and_extract_release(
     headers: Dict[str, str],
     proxy: Optional[str] = None,
     progress_callback = None,
-    defer_overlay: bool = False
+    defer_overlay: bool = False,
+    remote_package_json: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
     下载并解压 Release 压缩包（支持 .zip 和 .tar.gz）
@@ -2198,6 +2226,8 @@ async def _download_and_extract_release(
             此后任何延迟 import / 未加载符号的访问都可能 segfault（表现为 SSE 心跳
             永久消失、前端卡住）。因此对齐逐文件更新路径的做法——把覆盖动作推迟到
             最后，等 SSE 终态消息发完，紧邻重启时再执行。
+        remote_package_json: 下载前从远端预拉取的 package.json 内容，透传给
+            _persist_new_version_to_backup 作为生成权威文件时的兜底数据源。
 
     Returns:
         是否成功
@@ -2466,7 +2496,9 @@ async def _download_and_extract_release(
             await progress_callback("正在备份新版本到持久化目录...")
         try:
             release_version = str(asset_info.get('version', '')).lstrip('v')
-            _persist_new_version_to_backup(extract_dir, release_version)
+            _persist_new_version_to_backup(
+                extract_dir, release_version, remote_package_json
+            )
         except Exception as persist_err:
             logger.error(f"持久化新版到备份目录失败，取消覆盖运行目录以避免版本回退循环: {persist_err}", exc_info=True)
             _shutil.rmtree(extract_dir, ignore_errors=True)
