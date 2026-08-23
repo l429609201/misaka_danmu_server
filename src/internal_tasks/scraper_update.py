@@ -850,8 +850,14 @@ async def _perform_update(
                     new_hashes_data=hashes_data,
                     package_data=package_data_for_backup
                 )
-                # 校验备份目录 package.json 版本号是否已更新为远程版本（确认落盘成功）
-                backup_ok = _verify_backup_version(remote_version)
+                # 校验备份目录版本号是否已更新为远程版本（确认落盘成功）
+                # why：逐文件模式在上面 L799-814 已把新版 .so + manifest 复制进运行目录，
+                # 运行目录此刻已是新版。必须用 _verify_backup_only（只问"备份落盘成功了吗"），
+                # 不能用 _verify_backup_version——后者额外要求"运行目录版本 != 目标版本"，
+                # 那是给 defer/全量替换"待重启"场景的判据，在本模式下运行目录已是新版会恒判失败，
+                # 导致备份其实成功却误报"未落盘"而中止重启，新版本永不生效。
+                # 与全量替换模式 L643 的落盘确认保持一致。
+                backup_ok = _verify_backup_only(remote_version)
                 if backup_ok:
                     logger.info("新资源备份完成并校验通过")
                 else:
