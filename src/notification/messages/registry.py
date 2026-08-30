@@ -39,7 +39,7 @@ class MessageRegistry:
             logger.debug(f"未注册的消息类型: {event_type}")
             return None
         try:
-            return cls(payload=payload)
+            return cls(payload=payload, message_type=event_type)
         except Exception as e:
             logger.error(f"创建消息对象失败 [{event_type}]: {e}", exc_info=True)
             return None
