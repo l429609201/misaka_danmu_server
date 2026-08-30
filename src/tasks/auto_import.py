@@ -665,13 +665,19 @@ async def auto_search_and_import_task(
             key=lambda item: (
                 # 优先级1：年份匹配（最高优先级，避免下载错误年份的版本）
                 10000 if year is not None and item.year is not None and item.year == year else 0,
-                # 优先级2：完全匹配的标题
+                # 优先级2：季度匹配（双保险：季度过滤可能因 season 解析不准漏掉，
+                #          此处再按季度排序，确保同名不同季时目标季排最前，避免第1/2季得分相同）
+                5000 if (season and season > 0 and getattr(item, "season", None) == season) else 0,
+                # 优先级3：完全匹配的标题
                 1000 if item.title.strip() == main_title.strip() else 0,
-                # 优先级3：标题相似度
+                # 优先级4：标题相似度
                 fuzz.token_set_ratio(main_title, item.title),
-                # 优先级4：惩罚年份不匹配的结果
+                # 优先级5：惩罚年份不匹配的结果
                 -1000 if year is not None and item.year is not None and item.year != year else 0,
-                # 优先级5：源优先级
+                # 优先级6：惩罚季度不匹配的结果
+                -5000 if (season and season > 0 and getattr(item, "season", None) is not None
+                          and item.season != season) else 0,
+                # 优先级7：源优先级
                 -provider_order.get(item.provider, 999)
             ),
             reverse=True # 按得分从高到低排序

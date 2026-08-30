@@ -711,3 +711,40 @@ class SubscriptionCandidateItem(Base):
         Index('idx_candidate_parent', 'parent_id'),
     )
 
+
+class AssistantSession(Base):
+    """御坂助手会话表（P4：多会话历史）"""
+    __tablename__ = "assistant_sessions"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # 客户端生成的会话唯一标识（web-xxx）
+    sessionId: Mapped[str] = mapped_column("session_id", String(128), unique=True, index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    persona: Mapped[str] = mapped_column(String(64), default="misaka_20001", nullable=False)
+    # 是否正在处理中（断流恢复用：SSE 期间为 True，完成置 False）
+    isProcessing: Mapped[bool] = mapped_column("is_processing", Boolean, default=False, nullable=False)
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False)
+    updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime, default=get_now, onupdate=get_now, nullable=False)
+
+    messages: Mapped[List["AssistantMessage"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+
+
+class AssistantMessage(Base):
+    """御坂助手消息表（P4：会话内消息）"""
+    __tablename__ = "assistant_messages"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    sessionDbId: Mapped[int] = mapped_column(
+        "session_db_id", BigInteger,
+        ForeignKey("assistant_sessions.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False)  # user / bot
+    content: Mapped[str] = mapped_column(MEDIUMTEXT, default="", nullable=False)
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False)
+
+    session: Mapped["AssistantSession"] = relationship(back_populates="messages")
+
+    __table_args__ = (
+        Index('idx_assistant_msg_session', 'session_db_id'),
+    )
+

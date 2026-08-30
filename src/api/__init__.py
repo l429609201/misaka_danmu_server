@@ -12,7 +12,7 @@ from src.api.ui import (
     health, diagnostics, data_check, recognition_check, config_history,
     trends, audit, calendar_extra, ai_explain, scan_index,
     subscriptions,
-    perf,
+    perf, assistant, assistant_sessions,
 )
 
 # This router aggregates all non-dandanplay API endpoints.
@@ -117,6 +117,11 @@ api_router.include_router(subscriptions.router, prefix="/ui", tags=["Subscriptio
 
 # 性能统计
 api_router.include_router(perf.router, prefix="/ui", tags=["Perf"], include_in_schema=False)
+
+# 御坂助手对话（LLM）
+api_router.include_router(assistant.router, prefix="/ui", tags=["Assistant"], include_in_schema=False)
+# 御坂助手会话历史
+api_router.include_router(assistant_sessions.router, prefix="/ui", tags=["Assistant"], include_in_schema=False)
 
 api_router.include_router(webhook_router, prefix="/webhook", tags=["Webhook"], include_in_schema=False)
 

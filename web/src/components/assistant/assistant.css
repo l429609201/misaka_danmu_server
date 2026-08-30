@@ -1,0 +1,280 @@
+/* ============================================================
+ * 看板娘助手样式
+ * 命名前缀统一 assistant-，避免与 antd / 业务样式冲突
+ * ============================================================ */
+
+/* ---------- 形象与伪动效 ---------- */
+.assistant-pet-stage {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  pointer-events: none; /* 形象本身不拦截点击，交给外层入口 */
+}
+.assistant-pet-img {
+  display: block;
+  user-select: none;
+  transition: opacity 0.18s ease;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.22));
+}
+.assistant-pet-img.is-visible {
+  opacity: 1;
+}
+.assistant-pet-img.is-hidden {
+  opacity: 0;
+}
+
+/* 呼吸浮动：待命时上下轻微起伏。
+ * 注意：动画必须作用在"整个形象容器"上，让身体与眼睛层一起浮动；
+ * 若只让身体图(.assistant-pet-img)浮动，绝对定位的眼睛层不会跟着动，
+ * 就会出现"身体一呼一吸、眼睛相对脸上下漂移"的错觉。 */
+@keyframes assistantBreathe {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+.assistant-pet-stage.pet-anim-breathe {
+  animation: assistantBreathe 3s ease-in-out infinite;
+}
+
+/* 说话弹动：回复时快速小幅上下（同样作用在整个容器上） */
+@keyframes assistantTalk {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+.assistant-pet-stage.pet-anim-talk {
+  animation: assistantTalk 0.5s ease-in-out infinite;
+}
+
+/* ---------- 右下角悬浮入口 ---------- */
+.assistant-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1200;
+  cursor: pointer;
+  transition: transform 0.25s ease;
+}
+/* 默认悬浮模式的 hover 上浮（贴边模式不套用，避免 transform 冲突） */
+.assistant-fab:not(.is-dock):hover {
+  transform: translateY(-6px) scale(1.04);
+}
+/* 移动端缩小并靠边，避免遮挡底部 Tab */
+.assistant-fab.is-mobile {
+  right: 12px;
+  bottom: 76px;
+}
+
+/* ---------- 可拖动 + 墙边探头模式 ----------
+ * 位置由 JS(usePetDrag) 通过 left/top 控制，可拖到任意处并持久化。
+ * 平时完整显示；拖到贴近某条屏幕边时(JS 加对应收起类)，用旋转/位移让角色
+ * "歪头从墙边探出来"——身子旋转出视口藏起来，只露出斜着的完整脑袋，自然俏皮。
+ *   - is-hide-left  贴左墙：逆时针歪头，头从左墙探出
+ *   - is-hide-right 贴右墙：顺时针歪头，头从右墙探出
+ *   - is-hide-bottom贴底墙：整体下沉，只露头顶
+ * 悬停/拖动时(.is-expanded)转回完整显示。
+ * 可调变量：--tilt 旋转角度、--peek-top 底部露头比例。
+ */
+.assistant-fab.is-dock {
+  right: auto;
+  bottom: auto;
+  cursor: grab;
+  /* 丝滑：稍长时长 + 轻微回弹缓动，模拟"滑进墙"的顺势感 */
+  transition: transform 0.55s cubic-bezier(0.34, 1.32, 0.5, 1);
+  will-change: transform;
+}
+/* 展开：完整、无旋转 */
+.assistant-fab.is-dock.is-expanded {
+  transform: rotate(0deg) translate(0, 0);
+}
+/* 贴左墙探头：以"向左滑进墙"为主（大位移），叠加小角度倾斜做趴墙俏皮感，
+ * 只露出右侧的头和手(扒着墙沿)。--slide 控制滑进深度，--tilt 倾斜角。 */
+.assistant-fab.is-dock.is-hide-left {
+  transform-origin: 28% 30%;
+  transform: translateX(calc(-1 * var(--slide, 68%))) rotate(var(--tilt, 18deg));
+}
+/* 贴右墙探头：向右滑进墙，露出左侧头+手 */
+.assistant-fab.is-dock.is-hide-right {
+  transform-origin: 72% 30%;
+  transform: translateX(var(--slide, 68%)) rotate(calc(-1 * var(--tilt, 18deg)));
+}
+/* 贴底墙：向下滑进墙，只露头顶 */
+.assistant-fab.is-dock.is-hide-bottom {
+  transform: translateY(calc((1 - var(--peek-top, 0.32)) * 100%));
+}
+/* 拖动中：抓取光标、去掉过渡跟手 */
+.assistant-fab.is-dock.is-dragging {
+  cursor: grabbing;
+  transition: none;
+  user-select: none;
+}
+/* 收起态隐藏气泡 */
+.assistant-fab.is-dock:not(.is-expanded) .assistant-fab-bubble {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 入口气泡 */
+.assistant-fab-bubble {
+  position: absolute;
+  right: 100%;
+  top: 20px;
+  margin-right: 10px;
+  white-space: nowrap;
+  background: var(--assistant-bubble-bg, #ffffff);
+  color: var(--assistant-bubble-color, #2c3e50);
+  padding: 7px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  animation: assistantBreathe 2.8s ease-in-out infinite;
+}
+.assistant-fab-bubble::after {
+  content: '';
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 6px solid transparent;
+  border-left-color: var(--assistant-bubble-bg, #ffffff);
+}
+
+/* 面板内顶部大立绘展示区已移除，仅保留标题栏小头像（antd Avatar） */
+
+/* 工具调用进度卡：御坂正在查询… */
+.assistant-tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  border-radius: 10px;
+  background: rgba(58, 123, 213, 0.12);
+  color: #3a7bd5;
+  animation: assistant-tool-pulse 1.2s ease-in-out infinite;
+}
+@keyframes assistant-tool-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* 写类工具二次确认卡 */
+.assistant-confirm-card {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(250, 173, 20, 0.4);
+  background: rgba(250, 173, 20, 0.08);
+}
+.assistant-confirm-desc {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: rgba(0, 0, 0, 0.75);
+}
+.assistant-confirm-args {
+  color: #999;
+  font-size: 12px;
+}
+.assistant-confirm-btns {
+  display: flex;
+  gap: 8px;
+}
+
+/* 消息中的图片附件 */
+.assistant-msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.assistant-msg-image {
+  max-width: 160px;
+  max-height: 160px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+/* 待发送图片预览 */
+.assistant-pending-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.03);
+}
+.assistant-pending-image {
+  position: relative;
+}
+.assistant-pending-image img {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.assistant-pending-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* 标题栏头像：使用专门的 avatar 图，轻微放大填满圆形即可，避免过度裁切。 */
+.assistant-title-avatar img {
+  object-fit: cover;
+  object-position: center;
+  transform: scale(1.05);
+  transform-origin: center;
+}
+
+/* ---------- 聊天消息 ---------- */
+.assistant-msg {
+  max-width: 82%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.assistant-msg.bot {
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+  background: var(--assistant-msg-bot-bg, rgba(0, 0, 0, 0.04));
+}
+.assistant-msg.user {
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+  background: #3a7bd5;
+  color: #fff;
+}
+.assistant-msg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px;
+}
+/* 让 markdown 段落间距更紧凑 */
+.assistant-msg p {
+  margin: 0 0 6px;
+}
+.assistant-msg p:last-child {
+  margin-bottom: 0;
+}

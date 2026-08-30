@@ -503,9 +503,14 @@ async def webhook_search_and_dispatch_task(
             if effective_year is not None and item.year is not None and item.year == effective_year:
                 score += 200
 
-            # 7. 季度匹配: +100
-            if season is not None and mediaType == 'tv_series' and item.season == season:
-                score += 100
+            # 7. 季度匹配: +500 / 不匹配 -500
+            #    修复：原仅 +100 且不匹配不扣分，同名不同季（如爱情公寓 S1/S2）标题相似度均为满分时
+            #    100 分差距易被其他因素抹平导致两季得分相同。提高权重并对不匹配扣分以拉开差距。
+            if season is not None and mediaType == 'tv_series' and item.season is not None:
+                if item.season == season:
+                    score += 500
+                else:
+                    score -= 500
 
             # 8. 一般相似度 (>=85%时计入实际分数 0~100)
             token_set = fuzz.token_set_ratio(match_title, item.title)

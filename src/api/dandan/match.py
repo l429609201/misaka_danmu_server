@@ -651,6 +651,17 @@ async def get_match_for_item(
                             score -= 200
                             logger.debug(f"  - {result.provider} - {result.title}: 年份不匹配({parsed_year}≠{result.year}) -200")
 
+                    # 4. 季度匹配 (电视剧才判；同名不同季必须靠季度区分，权重高于标题/年份)
+                    #    修复：此前打分不含季度，导致搜"爱情公寓 S01"时第1季与第2季标题相似度均为100、
+                    #    源优先级相同 → 两季得分完全一样。季度匹配 +500 / 不匹配 -500 以拉开差距。
+                    if not is_movie and season is not None and getattr(result, "season", None) is not None:
+                        if result.season == season:
+                            score += 500
+                            logger.debug(f"  - {result.provider} - {result.title}: 季度匹配(S{season}) +500")
+                        else:
+                            score -= 500
+                            logger.debug(f"  - {result.provider} - {result.title}: 季度不匹配(S{season}≠S{result.season}) -500")
+
                     return score
 
                 # 【性能优化】按分数排序 + 缓存分数（避免日志打印时重复计算）

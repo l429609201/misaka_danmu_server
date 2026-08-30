@@ -3,6 +3,7 @@ import { ErrorFallback } from '../components/ErrorFallback.jsx'
 import { Outlet } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Header } from './Header.jsx'
+import { AssistantWidget } from '../components/assistant/AssistantWidget.jsx'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { isMobileAtom, userinfoAtom } from '../../store/index.js'
 import { getUserInfo, autoLogin } from '../apis/index.js'
@@ -94,6 +95,8 @@ export const Layout = () => {
           >
             <Outlet />
           </div>
+          {/* 全局看板娘助手：认证通过后挂载，全站右下角可用 */}
+          <AssistantWidget />
         </>
       )}
     </ErrorBoundary>
