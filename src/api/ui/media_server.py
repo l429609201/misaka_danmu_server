@@ -8,11 +8,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.db import crud, models, get_db_session, ConfigManager
 from src.db.crud.media_server import get_episode_ids_by_show, get_episode_ids_by_season
-from src.db.orm_models import MediaItem
+from src.db.models import AnimeDetailUpdate
+from src.db.orm_models import MediaItem, Anime as AnimeORM
 from src import security, tasks
 from src.services import TaskManager, ScraperManager, MetadataSourceManager, get_media_server_manager
 from src.ai.ai_matcher_manager import AIMatcherManager
@@ -717,3 +718,166 @@ async def import_all_unimported_media_items(
         "message": "导入任务已提交，请在任务管理器查看进度",
         "taskId": task_id
     }
+
+
+# ==================== 手动反查并绑定媒体服务器条目 ====================
+
+class MediaServerLookupRequest(BaseModel):
+    """反查请求：按标题在指定媒体服务器中搜索候选条目"""
+    keyword: str = Field(..., min_length=1, description="搜索关键词（作品标题）")
+    mediaType: Optional[str] = Field(None, description="限定类型：movie / tv_series，留空则全部")
+
+
+class MediaServerLookupItem(BaseModel):
+    """反查结果中的单个候选条目（顶层 Series / Movie）"""
+    itemId: str = Field(..., description="媒体服务器中的条目 ID")
+    title: str
+    mediaType: Optional[str] = None
+    year: Optional[int] = None
+    seriesId: Optional[str] = Field(None, description="Series 级 ID（剧集才有）")
+    seasonId: Optional[str] = Field(None, description="Season 级 ID（分季才有）")
+    season: Optional[int] = None
+    tmdbId: Optional[str] = None
+    imdbId: Optional[str] = None
+    posterUrl: Optional[str] = None
+
+
+class MediaServerBindRequest(BaseModel):
+    """绑定请求：把选中的媒体服务器条目写入作品的绑定字段"""
+    serverId: int = Field(..., description="媒体服务器配置 ID")
+    seriesId: str = Field(..., min_length=1, description="Series/Movie 级 ID")
+    seasonId: Optional[str] = Field(None, description="Season 级 ID，剧集分季时提供")
+
+
+async def _resolve_server_instance(session: AsyncSession, server_id: int):
+    """取得媒体服务器客户端实例。优先复用 manager 中已加载的，否则按配置临时创建。"""
+    manager = get_media_server_manager()
+    server = manager.servers.get(server_id)
+    if server:
+        return server, None  # 复用实例，调用方不负责关闭
+
+    config = await crud.get_media_server_by_id(session, server_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="媒体服务器不存在")
+
+    server_classes = {
+        'emby': EmbyMediaServer,
+        'jellyfin': JellyfinMediaServer,
+        'plex': PlexMediaServer,
+    }
+    provider_name = config['providerName']
+    if provider_name not in server_classes:
+        raise HTTPException(status_code=400, detail=f"不支持的服务器类型: {provider_name}")
+
+    temp_server = server_classes[provider_name](url=config['url'], api_token=config['apiToken'])
+    return temp_server, temp_server  # 第二个返回值表示需由调用方关闭
+
+
+@router.post("/media-server/{serverId}/lookup", summary="反查媒体服务器条目")
+async def lookup_media_server_items(
+    serverId: int,
+    payload: MediaServerLookupRequest,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: models.User = Depends(security.get_current_user)
+) -> List[MediaServerLookupItem]:
+    """按关键词搜索媒体服务器中的条目，返回候选列表供用户选择绑定。
+
+    走媒体服务器原生搜索接口（Emby/Jellyfin 的 SearchTerm、Plex 的 /search），
+    单次请求即可返回顶层条目，不拉全库、不展开分集，媒体库规模再大也不影响速度。
+    """
+    server, temp_server = await _resolve_server_instance(session, serverId)
+    try:
+        # 1. 测试连接（失败会抛异常，统一转成 503）
+        try:
+            await server.test_connection()
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"媒体服务器连接失败: {e}")
+
+        # 2. 调用原生搜索（服务端完成匹配）
+        keyword = payload.keyword.strip()
+        try:
+            found = await server.search_items(
+                keyword=keyword,
+                media_type=payload.mediaType,
+                limit=50,
+            )
+        except Exception as e:
+            logger.error(f"反查媒体服务器 {serverId} 失败: {e}", exc_info=True)
+            raise HTTPException(status_code=502, detail=f"搜索失败: {e}")
+
+        # 3. 转换为响应模型
+        candidates = [
+            MediaServerLookupItem(
+                itemId=item.media_id,
+                title=item.title,
+                mediaType=item.media_type,
+                year=item.year,
+                seriesId=item.series_id,
+                seasonId=item.season_id,
+                season=item.season,
+                tmdbId=item.tmdb_id,
+                imdbId=item.imdb_id,
+                posterUrl=item.poster_url,
+            )
+            for item in found
+            if item.media_id and item.title
+        ]
+
+        # 4. 按标题匹配度排序：完全相同 > 前缀命中 > 其他
+        keyword_lower = keyword.lower()
+
+        def _match_score(item: MediaServerLookupItem) -> int:
+            title_lower = (item.title or "").lower()
+            if title_lower == keyword_lower:
+                return 2
+            if title_lower.startswith(keyword_lower):
+                return 1
+            return 0
+
+        candidates.sort(key=_match_score, reverse=True)
+        return candidates
+
+    finally:
+        if temp_server:
+            await temp_server.close()
+
+
+@router.put("/library/anime/{animeId}/bind-media-server", summary="绑定媒体服务器条目")
+async def bind_media_server_to_anime(
+    animeId: int,
+    payload: MediaServerBindRequest,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: models.User = Depends(security.get_current_user)
+):
+    """将反查得到的媒体服务器条目绑定到指定作品，写入 anime_metadata 表。
+
+    绑定后，webhook 删除事件可通过这些 ID 自动清理对应弹幕库条目。
+    """
+    # 1. 验证作品存在
+    anime = await session.get(AnimeORM, animeId)
+    if not anime:
+        raise HTTPException(status_code=404, detail="作品不存在")
+
+    # 2. 获取服务器配置，提取类型
+    config = await crud.get_media_server_by_id(session, payload.serverId)
+    if not config:
+        raise HTTPException(status_code=404, detail="媒体服务器不存在")
+
+    server_type = config['providerName']  # emby/jellyfin/plex
+
+    # 3. 写入绑定（通过 update_anime_details 复用逻辑）
+    update_payload = AnimeDetailUpdate(
+        title=anime.title,  # 保持原有字段不变
+        type=anime.type,
+        season=anime.season,
+        mediaServerType=server_type,
+        mediaServerSeriesId=payload.seriesId,
+        mediaServerSeasonId=payload.seasonId,
+    )
+    success = await crud.update_anime_details(session, animeId, update_payload)
+    if not success:
+        raise HTTPException(status_code=500, detail="绑定失败")
+
+    logger.info(f"用户 '{current_user.username}' 将作品 {animeId} 绑定到媒体服务器 {server_type} (SeriesId={payload.seriesId})")
+    return {"message": "绑定成功"}
+

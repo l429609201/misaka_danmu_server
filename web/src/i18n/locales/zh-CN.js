@@ -4423,7 +4423,7 @@ export default {
     newChat: '新建对话',
     exportChat: '导出对话',
     noHistory: '暂无历史会话',
-    inputPlaceholder: '输入消息，Enter 发送…',
+    inputPlaceholder: '输入消息，Enter 发送，可粘贴图片…',
     send: '发送',
     stop: '停止',
     stopped: '（已停止）',

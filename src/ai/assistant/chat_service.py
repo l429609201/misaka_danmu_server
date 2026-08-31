@@ -20,6 +20,7 @@ from .personas import get_persona_prompt, DEFAULT_PERSONA
 from ..ai_providers import get_provider_config
 
 logger = logging.getLogger(__name__)
+ai_responses_logger = logging.getLogger("ai_responses")  # 专用日志器，用于记录原始 AI 交互
 
 # 默认 OpenAI 兼容 base_url 兜底（provider 未配置 baseUrl 时用其默认值）
 _DEFAULT_TIMEOUT = 120.0
@@ -58,6 +59,8 @@ class AssistantChatService:
         if proxy_enabled:
             proxy_url = await self.config_manager.get("proxyUrl", "")
 
+        log_raw = (await self.config_manager.get("aiLogRawResponse", "false")).lower() == "true"
+
         return {
             "provider": provider,
             "api_key": api_key,
@@ -70,7 +73,29 @@ class AssistantChatService:
             "frequency_penalty": frequency_penalty,
             "timeout": timeout,
             "proxy_url": proxy_url if proxy_url else None,
+            "log_raw_response": log_raw,  # 是否记录原始交互到 ai_responses.log
         }
+
+    @staticmethod
+    def _log_raw(enabled: bool, section: str, content) -> None:
+        """按开关将纯对话的原始交互写入 ai_responses.log。
+
+        Args:
+            enabled: 是否启用记录（来自 aiLogRawResponse 配置）
+            section: 段落标题，如「请求 messages」「完整回答」
+            content: 要记录的内容，dict/list 会序列化为 JSON
+        """
+        if not enabled:
+            return
+        try:
+            if isinstance(content, (dict, list)):
+                body = json.dumps(content, ensure_ascii=False, indent=2)
+            else:
+                body = str(content)
+            ai_responses_logger.info(f"[御坂助手·对话] {section}:\n{body}\n{'=' * 80}")
+        except Exception as e:  # noqa: BLE001
+            # 日志记录本身失败不应影响主流程
+            logger.warning(f"记录助手对话原始交互失败: {e}")
 
     async def is_ready(self) -> bool:
         """对话是否可用：需已配置 apiKey 与 model。"""
@@ -124,6 +149,10 @@ class AssistantChatService:
             "frequency_penalty": cfg["frequency_penalty"],
         }
 
+        log_raw = cfg.get("log_raw_response", False)
+        self._log_raw(log_raw, "请求 messages", messages)
+        collected: List[str] = []  # 收集流式片段，用于完整记录回答
+
         try:
             timeout = httpx.Timeout(cfg["timeout"], connect=10.0)
             async with httpx.AsyncClient(timeout=timeout, proxy=cfg["proxy_url"]) as client:
@@ -132,6 +161,7 @@ class AssistantChatService:
                         body = await resp.aread()
                         detail = body.decode("utf-8", "ignore")[:300]
                         self.logger.error(f"AI 流式请求失败 {resp.status_code}: {detail}")
+                        self._log_raw(log_raw, f"请求失败（HTTP {resp.status_code}）", detail)
                         yield {"type": "error", "content": f"AI 请求失败（{resp.status_code}）"}
                         return
 
@@ -152,7 +182,10 @@ class AssistantChatService:
                         delta = choices[0].get("delta") or {}
                         piece = delta.get("content")
                         if piece:
+                            collected.append(piece)
                             yield {"type": "delta", "content": piece}
+
+            self._log_raw(log_raw, "完整回答", "".join(collected))
             yield {"type": "done"}
         except httpx.TimeoutException:
             yield {"type": "error", "content": "AI 响应超时，请稍后重试。"}

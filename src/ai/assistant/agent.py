@@ -24,9 +24,9 @@ from src.db import ConfigManager
 from .personas import get_persona_prompt, DEFAULT_PERSONA
 from ..ai_providers import get_provider_config
 from .tools import registry
-from .security_gateway import ToolPermission
 
 logger = logging.getLogger(__name__)
+ai_responses_logger = logging.getLogger("ai_responses")  # 专用日志器，用于记录原始 AI 交互
 
 _TIMEOUT = 120.0
 _MAX_TOOL_ROUNDS = 8  # 最多工具调用轮数，防止无限循环（三段式导入需 搜索→查分集→导入 多步只读调用）
@@ -54,6 +54,7 @@ class AssistantAgent:
         frequency_penalty = float(await self.config_manager.get("assistantFrequencyPenalty", "0.0"))
         timeout = int(await self.config_manager.get("assistantTimeout", "120"))
         proxy_enabled = (await self.config_manager.get("assistantProxyEnabled", "false")).lower() == "true"
+        log_raw = (await self.config_manager.get("aiLogRawResponse", "false")).lower() == "true"
 
         if not base_url:
             cfg = get_provider_config(provider) or {}
@@ -76,6 +77,7 @@ class AssistantAgent:
             "frequency_penalty": frequency_penalty,
             "timeout": timeout,
             "proxy_url": proxy_url if proxy_url else None,
+            "log_raw_response": log_raw,  
         }
 
     def _build_messages(self, history: List[Dict[str, Any]], persona_key: str) -> List[Dict[str, Any]]:
@@ -101,6 +103,27 @@ class AssistantAgent:
             else:
                 messages.append({"role": role, "content": content})
         return messages
+
+    @staticmethod
+    def _log_raw(enabled: bool, section: str, content: Any) -> None:
+        """按开关将助手的原始交互写入 ai_responses.log。
+
+        Args:
+            enabled: 是否启用记录（来自 aiLogRawResponse 配置）
+            section: 段落标题，如「请求 messages」「响应」「工具执行」
+            content: 要记录的内容，dict/list 会序列化为 JSON
+        """
+        if not enabled:
+            return
+        try:
+            if isinstance(content, (dict, list)):
+                body = json.dumps(content, ensure_ascii=False, indent=2)
+            else:
+                body = str(content)
+            ai_responses_logger.info(f"[御坂助手] {section}:\n{body}\n{'=' * 80}")
+        except Exception as e:  # noqa: BLE001
+            # 日志记录本身失败不应影响主流程
+            logger.warning(f"记录助手原始交互失败: {e}")
 
     async def _post(self, cfg: Dict[str, str], payload: Dict[str, Any]) -> httpx.Response:
         url = f"{cfg['base_url']}/chat/completions"
@@ -136,8 +159,12 @@ class AssistantAgent:
         if context_extra:
             context.update(context_extra)
 
+        log_raw = cfg.get("log_raw_response", False)
+
         try:
             for _round in range(_MAX_TOOL_ROUNDS):
+                self._log_raw(log_raw, f"第 {_round + 1} 轮请求 messages", messages)
+
                 resp = await self._post(cfg, {
                     "model": cfg["model"],
                     "messages": messages,
@@ -150,6 +177,7 @@ class AssistantAgent:
                 if resp.status_code != 200:
                     detail = resp.text[:300]
                     self.logger.error(f"AI 工具轮请求失败 {resp.status_code}: {detail}")
+                    self._log_raw(log_raw, f"第 {_round + 1} 轮请求失败（HTTP {resp.status_code}）", detail)
                     yield {"type": "error", "content": f"AI 请求失败（{resp.status_code}）"}
                     return
 
@@ -157,18 +185,15 @@ class AssistantAgent:
                 msg = choice.get("message") or {}
                 tool_calls = msg.get("tool_calls") or []
 
+                self._log_raw(log_raw, f"第 {_round + 1} 轮模型响应", msg)
+
                 if not tool_calls:
                     async for ev in self._stream_final(cfg, messages):
                         yield ev
                     return
 
-                # 检查是否有写类工具需要确认（有则拦截整轮，先请求确认）
-                confirm_ev = self._check_write_confirmation(tool_calls)
-                if confirm_ev:
-                    yield confirm_ev
-                    yield {"type": "done"}
-                    return
-
+                # 写操作确认已改为自然对话方式：由 persona 提示词约束 AI
+                # 先说明意图并等用户同意，不再产出 confirm 事件打断前端
                 messages.append({
                     "role": "assistant",
                     "content": msg.get("content") or "",
@@ -183,7 +208,9 @@ class AssistantAgent:
                         args = json.loads(fn.get("arguments") or "{}")
                     except json.JSONDecodeError:
                         args = {}
+                    self._log_raw(log_raw, f"工具调用 {name} 入参", args)
                     result = await registry.execute(name, args, context)
+                    self._log_raw(log_raw, f"工具调用 {name} 返回", result)
                     yield {"type": "tool", "name": name, "label": label, "status": "done"}
                     messages.append({
                         "role": "tool",
@@ -206,27 +233,6 @@ class AssistantAgent:
         tool = registry.get(name)
         return (tool.running_label if tool and tool.running_label else f"调用 {name}")
 
-    @staticmethod
-    def _check_write_confirmation(tool_calls: List[Dict[str, Any]]):
-        """检测本轮 tool_calls 是否含写类工具。含则返回 confirm 事件（供前端弹确认卡），否则 None。"""
-        for tc in tool_calls:
-            fn = tc.get("function") or {}
-            name = fn.get("name") or ""
-            tool = registry.get(name)
-            if tool and tool.permission == ToolPermission.WRITE:
-                try:
-                    args = json.loads(fn.get("arguments") or "{}")
-                except json.JSONDecodeError:
-                    args = {}
-                return {
-                    "type": "confirm",
-                    "name": name,
-                    "label": tool.running_label or name,
-                    "description": tool.description,
-                    "arguments": args,
-                }
-        return None
-
     async def _stream_final(
         self, cfg: Dict[str, str], messages: List[Dict[str, Any]]
     ) -> AsyncGenerator[Dict[str, Any], None]:
@@ -246,14 +252,18 @@ class AssistantAgent:
             "presence_penalty": cfg["presence_penalty"],
             "frequency_penalty": cfg["frequency_penalty"],
         }
+        log_raw = cfg.get("log_raw_response", False)
+        self._log_raw(log_raw, "最终回答请求 messages", messages)
+        collected: List[str] = []  # 收集流式片段，用于完整记录最终回答
+
         timeout = httpx.Timeout(cfg.get("timeout", _TIMEOUT), connect=10.0)
         async with httpx.AsyncClient(timeout=timeout, proxy=cfg.get("proxy_url")) as client:
             async with client.stream("POST", url, headers=headers, json=payload) as resp:
                 if resp.status_code != 200:
                     body = await resp.aread()
-                    self.logger.error(
-                        f"AI 最终流式失败 {resp.status_code}: {body.decode('utf-8', 'ignore')[:300]}"
-                    )
+                    detail = body.decode('utf-8', 'ignore')[:300]
+                    self.logger.error(f"AI 最终流式失败 {resp.status_code}: {detail}")
+                    self._log_raw(log_raw, f"最终回答请求失败（HTTP {resp.status_code}）", detail)
                     yield {"type": "error", "content": f"AI 请求失败（{resp.status_code}）"}
                     return
                 async for line in resp.aiter_lines():
@@ -271,5 +281,8 @@ class AssistantAgent:
                         continue
                     piece = (choices[0].get("delta") or {}).get("content")
                     if piece:
+                        collected.append(piece)
                         yield {"type": "delta", "content": piece}
+
+        self._log_raw(log_raw, "最终回答（完整）", "".join(collected))
         yield {"type": "done"}

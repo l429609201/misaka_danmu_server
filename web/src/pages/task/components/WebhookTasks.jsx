@@ -178,7 +178,6 @@ export const WebhookTasks = () => {
     <div className="my-6">
       <Card
         loading={loading}
-        title={t('webhookTasks.cardTitle')}
         extra={
           <Space>
             <Tooltip title={t('webhookTasks.selectAllTip')}>

@@ -61,17 +61,18 @@ def _ensure_required_directories():
 
 
 def _init_skills():
-    """初始化技能系统：设置目录 → 同步内置示例 → 加载全部技能。
+    """初始化技能系统：设置用户技能目录 → 清理旧版残留 → 加载全部技能。
 
-    内置示例只在目标不存在时写入，不覆盖用户已修改的同名技能。
+    内置技能随代码发布、常驻内存，不落盘；用户自建技能仍存 config/skills/。
     """
     try:
         from src.ai.assistant.skill_manager import set_skills_base_dir, get_skill_manager
-        from src.ai.assistant.builtin_skills import sync_builtin_skills
+        from src.ai.assistant.builtin_skills import cleanup_legacy_builtin_files
 
         base_dir = Path("/app") if is_docker_environment() else Path(".")
         set_skills_base_dir(base_dir)
-        sync_builtin_skills()
+        # 清理早期版本落盘的内置技能目录，避免与内存内置技能同名冲突
+        cleanup_legacy_builtin_files()
         get_skill_manager().load_all()
     except Exception as e:  # noqa: BLE001
         # 技能系统属增强能力，失败不应阻塞应用启动

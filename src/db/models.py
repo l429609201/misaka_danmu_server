@@ -183,6 +183,9 @@ class AnimeDetailUpdate(BaseModel):
     aliasCn2: Optional[str] = None
     aliasCn3: Optional[str] = None
     aliasLocked: Optional[bool] = Field(None, description="别名是否锁定")
+    mediaServerType: Optional[str] = Field(None, description="媒体服务器类型：emby/jellyfin/plex")
+    mediaServerSeriesId: Optional[str] = Field(None, description="媒体服务器 Series/Movie 级 ID")
+    mediaServerSeasonId: Optional[str] = Field(None, description="媒体服务器 Season 级 ID")
 
 class EpisodeInfoUpdate(BaseModel):
     """用于更新分集信息的模型"""
@@ -214,6 +217,9 @@ class AnimeFullDetails(BaseModel):
     aliasCn2: Optional[str] = None
     aliasCn3: Optional[str] = None
     aliasLocked: Optional[bool] = False
+    mediaServerType: Optional[str] = None
+    mediaServerSeriesId: Optional[str] = None
+    mediaServerSeasonId: Optional[str] = None
 
 class SourceCreate(BaseModel):
     providerName: str = Field(..., description="数据源提供方名称")

@@ -122,6 +122,30 @@ class PlexMediaServer(BaseMediaServer):
             self.logger.error(f"获取Plex媒体库项失败: {e}")
             return []
     
+    async def search_items(
+        self,
+        keyword: str,
+        media_type: Optional[str] = None,
+        limit: int = 50
+    ) -> List[MediaItem]:
+        """按关键词搜索顶层条目，使用 Plex 原生 /search 端点（单次请求，不展开分集）。"""
+        try:
+            params = {'query': keyword, 'limit': limit}
+            data = await self._request('GET', '/search', params=params)
+
+            items = []
+            for item in (data or {}).get('MediaContainer', {}).get('Metadata', []):
+                item_type = item.get('type')
+                # Plex 的 show 对应剧集，movie 对应电影；其他类型（season/episode/artist 等）忽略
+                if item_type == 'movie' and (not media_type or media_type == 'movie'):
+                    items.append(self._parse_movie(item))
+                elif item_type == 'show' and (not media_type or media_type == 'tv_series'):
+                    items.append(self._parse_series(item))
+            return items[:limit]
+        except Exception as e:
+            self.logger.error(f"Plex 原生搜索失败: {e}")
+            return []
+
     async def get_item_details(self, item_id: str) -> Optional[MediaItem]:
         """获取单个媒体项详情"""
         try:

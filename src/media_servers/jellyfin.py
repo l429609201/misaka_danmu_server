@@ -113,6 +113,42 @@ class JellyfinMediaServer(BaseMediaServer):
             self.logger.error(f"获取Jellyfin媒体库项失败: {e}")
             return []
 
+    async def search_items(
+        self,
+        keyword: str,
+        media_type: Optional[str] = None,
+        limit: int = 50
+    ) -> List[MediaItem]:
+        """按关键词搜索顶层条目，使用 Jellyfin 原生 searchTerm 参数（单次请求，不展开分集）。"""
+        try:
+            # 默认只搜剧集与电影两类顶层条目
+            include_types = 'Series,Movie'
+            if media_type == 'movie':
+                include_types = 'Movie'
+            elif media_type == 'tv_series':
+                include_types = 'Series'
+
+            params = {
+                'searchTerm': keyword,
+                'includeItemTypes': include_types,
+                'recursive': 'true',
+                'fields': 'ProviderIds,ProductionYear',
+                'limit': limit,
+            }
+            data = await self._request('GET', '/Items', params=params)
+
+            items = []
+            for item in (data or {}).get('Items', []):
+                item_type = item.get('Type')
+                if item_type == 'Movie':
+                    items.append(self._parse_movie(item))
+                elif item_type == 'Series':
+                    items.append(self._parse_series(item))
+            return items
+        except Exception as e:
+            self.logger.error(f"Jellyfin 原生搜索失败: {e}")
+            return []
+
     async def get_item_details(self, item_id: str) -> Optional[MediaItem]:
         """获取单个媒体项详情"""
         try:

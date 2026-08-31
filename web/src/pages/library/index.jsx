@@ -50,6 +50,9 @@ import {
   renameAnimeGroup,
   deleteAnimeGroup,
   setAnimeGroupMembership,
+  getMediaServers,
+  lookupMediaServerItems,
+  bindMediaServerToAnime,
 } from '../../apis'
 import LibraryGroupView from './LibraryGroupView'
 import { MyIcon } from '@/components/MyIcon'
@@ -234,6 +237,17 @@ export const Library = () => {
   const [localImagePath, setLocalImagePath] = useState(null)
   const [downloadingLocal, setDownloadingLocal] = useState(false)
   const [previewVisible, setPreviewVisible] = useState(false)
+
+  // 媒体服务器反查绑定状态
+  const [msLookupOpen, setMsLookupOpen] = useState(false) // 反查弹窗开关
+  const [msServers, setMsServers] = useState([]) // 已配置的媒体服务器列表
+  const [msSelectedServer, setMsSelectedServer] = useState(null) // 当前选中的服务器 ID
+  const [msKeyword, setMsKeyword] = useState('') // 反查关键词
+  const [msResults, setMsResults] = useState([]) // 反查候选结果
+  const [msLoading, setMsLoading] = useState(false) // 反查请求中
+  const [msBinding, setMsBinding] = useState(false) // 绑定请求中
+  const msServerType = Form.useWatch('mediaServerType', form)
+  const msSeriesId = Form.useWatch('mediaServerSeriesId', form)
 
   const modalApi = useModal()
   const messageApi = useMessage()
@@ -679,6 +693,99 @@ export const Library = () => {
     if (!str) return false
     // 此正则表达式匹配日文假名和常见的CJK统一表意文字
     return /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(str)
+  }
+
+  /** ========== 媒体服务器反查与绑定 ========== */
+
+  /** 打开反查弹窗：加载服务器列表，预填当前作品标题 */
+  const handleOpenMsLookup = async () => {
+    try {
+      const res = await getMediaServers()
+      const servers = res?.data || []
+      if (!servers.length) {
+        messageApi.warning('尚未配置媒体服务器，请先到「媒体获取」页面添加')
+        return
+      }
+      setMsServers(servers)
+      // 默认选中第一个启用的服务器
+      const firstEnabled = servers.find(s => s.isEnabled) || servers[0]
+      setMsSelectedServer(firstEnabled?.id ?? null)
+      setMsKeyword(title || '')
+      setMsResults([])
+      setMsLookupOpen(true)
+    } catch (error) {
+      messageApi.error(`加载媒体服务器列表失败：${error.message || error.detail}`)
+    }
+  }
+
+  /** 执行反查：在选中的服务器里按关键词搜索候选条目 */
+  const handleMsLookup = async () => {
+    if (!msSelectedServer) {
+      messageApi.warning('请先选择媒体服务器')
+      return
+    }
+    if (!msKeyword?.trim()) {
+      messageApi.warning('请输入搜索关键词')
+      return
+    }
+    try {
+      setMsLoading(true)
+      const res = await lookupMediaServerItems(msSelectedServer, {
+        keyword: msKeyword.trim(),
+        // 按当前作品类型过滤，提高命中精度
+        mediaType: type === DANDAN_TYPE_MAPPING.tvseries ? 'tv_series' : 'movie',
+      })
+      const items = res?.data || []
+      setMsResults(items)
+      if (!items.length) {
+        messageApi.info('未找到匹配的条目，可尝试调整关键词')
+      }
+    } catch (error) {
+      messageApi.error(`反查失败：${error.detail || error.message}`)
+    } finally {
+      setMsLoading(false)
+    }
+  }
+
+  /** 绑定选中的候选条目到当前作品 */
+  const handleMsBind = async item => {
+    if (!animeId) {
+      messageApi.error('缺少作品 ID，无法绑定')
+      return
+    }
+    try {
+      setMsBinding(true)
+      // seriesId 优先用候选项的 seriesId，电影类型回落到 itemId 自身
+      const seriesId = item.seriesId || item.itemId
+      await bindMediaServerToAnime(animeId, {
+        serverId: msSelectedServer,
+        seriesId,
+        seasonId: item.seasonId || null,
+      })
+      // 同步回填表单，让用户立即看到绑定结果
+      const server = msServers.find(s => s.id === msSelectedServer)
+      form.setFieldsValue({
+        mediaServerType: server?.providerName || null,
+        mediaServerSeriesId: seriesId,
+        mediaServerSeasonId: item.seasonId || null,
+      })
+      messageApi.success(`已绑定到《${item.title}》`)
+      setMsLookupOpen(false)
+    } catch (error) {
+      messageApi.error(`绑定失败：${error.detail || error.message}`)
+    } finally {
+      setMsBinding(false)
+    }
+  }
+
+  /** 解除绑定：清空三个字段（需点击保存才生效） */
+  const handleMsUnbind = () => {
+    form.setFieldsValue({
+      mediaServerType: null,
+      mediaServerSeriesId: null,
+      mediaServerSeasonId: null,
+    })
+    messageApi.info('已清空绑定信息，点击「保存」后生效')
   }
 
   /** 搜索相关 */
@@ -1867,10 +1974,191 @@ export const Library = () => {
           >
             <Switch />
           </Form.Item>
+
+          {/* 媒体服务器绑定：用于 webhook 删除联动，可手动反查或编辑 */}
+          <Collapse
+            ghost
+            className="-mx-3"
+            items={[
+              {
+                key: 'mediaServer',
+                label: (
+                  <Space size={8}>
+                    <LinkOutlined />
+                    <span>媒体服务器绑定</span>
+                    {msServerType ? (
+                      <Tag color="green">{msServerType}</Tag>
+                    ) : (
+                      <Tag>未绑定</Tag>
+                    )}
+                  </Space>
+                ),
+                children: (
+                  <>
+                    <div className="mb-3 text-xs opacity-60">
+                      绑定后，媒体服务器删除该条目时可自动清理对应弹幕。
+                      通常由 webhook 入库时自动填充，也可在此手动反查绑定。
+                    </div>
+                    <Form.Item name="mediaServerType" label="服务器类型">
+                      <Select
+                        allowClear
+                        placeholder="未绑定"
+                        options={[
+                          { value: 'emby', label: 'Emby' },
+                          { value: 'jellyfin', label: 'Jellyfin' },
+                          { value: 'plex', label: 'Plex' },
+                        ]}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      name="mediaServerSeriesId"
+                      label={
+                        <Space>
+                          <span>Series / Movie ID</span>
+                          <Tooltip title="剧集为 SeriesId，电影为条目自身 ID。Plex 对应 ratingKey。">
+                            <QuestionCircleOutlined />
+                          </Tooltip>
+                        </Space>
+                      }
+                    >
+                      <Input placeholder="未绑定" allowClear />
+                    </Form.Item>
+                    <Form.Item
+                      name="mediaServerSeasonId"
+                      label={
+                        <Space>
+                          <span>Season ID</span>
+                          <Tooltip title="剧集分季时的季度 ID，电影留空。">
+                            <QuestionCircleOutlined />
+                          </Tooltip>
+                        </Space>
+                      }
+                    >
+                      <Input placeholder="未绑定（电影留空）" allowClear />
+                    </Form.Item>
+                    <div className="flex gap-2">
+                      <Button
+                        icon={<SearchOutlined />}
+                        onClick={handleOpenMsLookup}
+                      >
+                        从媒体服务器反查
+                      </Button>
+                      <Button
+                        danger
+                        disabled={!msServerType && !msSeriesId}
+                        onClick={handleMsUnbind}
+                      >
+                        解除绑定
+                      </Button>
+                    </div>
+                  </>
+                ),
+              },
+            ]}
+          />
           <Form.Item name="animeId" hidden>
             <Input />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 媒体服务器条目反查弹窗 */}
+      <Modal
+        title="从媒体服务器反查条目"
+        open={msLookupOpen}
+        footer={null}
+        width={720}
+        zIndex={120}
+        onCancel={() => setMsLookupOpen(false)}
+      >
+        <div className="mb-3 flex gap-2">
+          <Select
+            value={msSelectedServer}
+            onChange={setMsSelectedServer}
+            style={{ width: 180 }}
+            placeholder="选择服务器"
+            options={msServers.map(s => ({
+              value: s.id,
+              label: `${s.name}（${s.providerName}）`,
+              disabled: !s.isEnabled,
+            }))}
+          />
+          <Input.Search
+            value={msKeyword}
+            onChange={e => setMsKeyword(e.target.value)}
+            onSearch={handleMsLookup}
+            enterButton="搜索"
+            loading={msLoading}
+            placeholder="输入作品标题"
+            allowClear
+          />
+        </div>
+        <List
+          dataSource={msResults}
+          loading={msLoading}
+          locale={{ emptyText: '输入关键词后点击搜索' }}
+          style={{ maxHeight: 420, overflowY: 'auto' }}
+          renderItem={item => (
+            <List.Item
+              actions={[
+                <Button
+                  key="bind"
+                  type="primary"
+                  size="small"
+                  loading={msBinding}
+                  onClick={() => handleMsBind(item)}
+                >
+                  绑定
+                </Button>,
+              ]}
+            >
+              <List.Item.Meta
+                avatar={
+                  item.posterUrl ? (
+                    <Image
+                      src={item.posterUrl}
+                      width={48}
+                      height={68}
+                      style={{ objectFit: 'cover', borderRadius: 4 }}
+                      preview={false}
+                      fallback="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+                    />
+                  ) : null
+                }
+                title={
+                  <Space size={6} wrap>
+                    <span>{item.title}</span>
+                    {item.year ? <Tag>{item.year}</Tag> : null}
+                    {item.mediaType ? (
+                      <Tag color="blue">
+                        {item.mediaType === 'movie' ? '电影' : '剧集'}
+                      </Tag>
+                    ) : null}
+                    {item.season != null ? (
+                      <Tag color="purple">S{item.season}</Tag>
+                    ) : null}
+                  </Space>
+                }
+                description={
+                  <div className="text-xs opacity-70">
+                    <div>
+                      ItemId: {item.itemId}
+                      {item.seriesId ? ` · SeriesId: ${item.seriesId}` : ''}
+                      {item.seasonId ? ` · SeasonId: ${item.seasonId}` : ''}
+                    </div>
+                    {item.tmdbId || item.imdbId ? (
+                      <div>
+                        {item.tmdbId ? `TMDB: ${item.tmdbId}` : ''}
+                        {item.tmdbId && item.imdbId ? ' · ' : ''}
+                        {item.imdbId ? `IMDb: ${item.imdbId}` : ''}
+                      </div>
+                    ) : null}
+                  </div>
+                }
+              />
+            </List.Item>
+          )}
+        />
       </Modal>
       <Modal
         title={t('libraryPage.searchTmdbTitle', { title })}

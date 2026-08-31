@@ -3,6 +3,7 @@ Anime相关的CRUD操作
 """
 
 import logging
+import re
 from typing import Optional, Dict, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, distinct, case, or_, and_, update, delete
@@ -587,6 +588,13 @@ async def update_anime_details(session: AsyncSession, anime_id: int, update_data
     anime.metadataRecord.tvdbId = update_data.tvdbId
     anime.metadataRecord.doubanId = update_data.doubanId
     anime.metadataRecord.imdbId = update_data.imdbId
+    _fields_set = update_data.model_fields_set
+    if "mediaServerType" in _fields_set:
+        anime.metadataRecord.mediaServerType = update_data.mediaServerType or None
+    if "mediaServerSeriesId" in _fields_set:
+        anime.metadataRecord.mediaServerSeriesId = update_data.mediaServerSeriesId or None
+    if "mediaServerSeasonId" in _fields_set:
+        anime.metadataRecord.mediaServerSeasonId = update_data.mediaServerSeasonId or None
 
     # Update or create AnimeAlias
     if not anime.aliases:
@@ -930,6 +938,9 @@ async def get_anime_full_details(session: AsyncSession, anime_id: int) -> Option
             Anime.episodeCount.label("episodeCount"), Anime.imageUrl.label("imageUrl"),
             AnimeMetadata.tmdbId.label("tmdbId"), AnimeMetadata.tmdbEpisodeGroupId.label("tmdbEpisodeGroupId"),
             AnimeMetadata.bangumiId.label("bangumiId"), AnimeMetadata.tvdbId.label("tvdbId"), AnimeMetadata.doubanId.label("doubanId"), AnimeMetadata.imdbId.label("imdbId"),
+            AnimeMetadata.mediaServerType.label("mediaServerType"),
+            AnimeMetadata.mediaServerSeriesId.label("mediaServerSeriesId"),
+            AnimeMetadata.mediaServerSeasonId.label("mediaServerSeasonId"),
             AnimeAlias.nameEn.label("nameEn"), AnimeAlias.nameJp.label("nameJp"), AnimeAlias.nameRomaji.label("nameRomaji"), AnimeAlias.aliasCn1.label("aliasCn1"),
             AnimeAlias.aliasCn2.label("aliasCn2"), AnimeAlias.aliasCn3.label("aliasCn3"), AnimeAlias.aliasLocked.label("aliasLocked")
         )

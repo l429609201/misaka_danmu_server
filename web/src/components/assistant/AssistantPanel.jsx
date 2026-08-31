@@ -133,6 +133,31 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
     setPendingImages(prev => prev.filter((_, i) => i !== idx))
   }, [])
 
+  // 处理粘贴事件（支持粘贴图片）
+  const handlePaste = useCallback(async (e) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        if (pendingImages.length >= 3) {
+          antdMessage.warning(t('assistant.imgMax'))
+          break
+        }
+        const file = item.getAsFile()
+        if (!file) continue
+        const reader = new FileReader()
+        reader.onload = ev => {
+          const dataUrl = ev.target?.result
+          if (dataUrl) setPendingImages(prev => [...prev, dataUrl])
+        }
+        reader.readAsDataURL(file)
+      }
+    }
+  }, [pendingImages, t])
+
   // 断流恢复：SSE 意外中断后，后端任务仍会跑完并存快照。
   // 这里带退避轮询会话详情，isProcessing 变 false 后用服务端消息恢复；多次失败则回退到 onFail。
   const recoverFromServer = useCallback((sid, onFail) => {
@@ -519,6 +544,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
           onChange={e => setInput(e.target.value)}
           placeholder={t('assistant.inputPlaceholder')}
           autoSize={{ minRows: 1, maxRows: 3 }}
+          onPaste={handlePaste}
           onPressEnter={e => {
             if (!e.shiftKey) {
               e.preventDefault()

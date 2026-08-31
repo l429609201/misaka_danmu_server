@@ -1375,3 +1375,12 @@ export const getLowConfidenceMatches = () => api.get('/api/ui/ai-explain/low-con
 export const getScanIndexStats = () => api.get('/api/ui/local-scan/index-stats')
 export const rebuildScanIndex = () => api.post('/api/ui/local-scan/rebuild-index')
 export const getScanIndexDetail = (params) => api.get('/api/ui/local-scan/index-detail', params)
+
+// ==================== 媒体服务器条目反查与绑定 ====================
+/** 在指定媒体服务器中按关键词反查候选条目 */
+export const lookupMediaServerItems = (serverId, data) =>
+  api.post(`/api/ui/media-server/${serverId}/lookup`, data)
+
+/** 将反查选中的条目绑定到作品 */
+export const bindMediaServerToAnime = (animeId, data) =>
+  api.put(`/api/ui/library/anime/${animeId}/bind-media-server`, data)

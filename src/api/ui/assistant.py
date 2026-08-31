@@ -198,8 +198,12 @@ class SkillToggleRequest(BaseModel):
     enabled: bool = Field(..., description="true 启用 / false 停用")
 
 
-def _skill_to_dict(skill) -> dict:
-    """把 Skill 对象转成前端可用的 dict。"""
+def _skill_to_dict(skill, content: Optional[str] = None) -> dict:
+    """把 Skill 对象转成前端可用的 dict。
+
+    正文按需加载：列表接口不传 content（省内存与传输量），
+    详情接口传入由 SkillManager.get_content() 取到的正文。
+    """
     return {
         "skillId": skill.skill_id,
         "name": skill.name,
@@ -207,7 +211,8 @@ def _skill_to_dict(skill) -> dict:
         "description": skill.description,
         "allowedTools": skill.allowed_tools,
         "enabled": skill.enabled,
-        "content": skill.content,
+        "builtin": skill.builtin,  # 内置技能前端应禁用编辑/删除
+        "content": content if content is not None else "",
     }
 
 
@@ -225,11 +230,12 @@ async def get_skill_api(
     skill_id: str,
     current_user: models.User = Depends(security.get_current_user),
 ):
-    """获取单个技能的完整内容。"""
-    skill = get_skill_manager().get_skill(skill_id)
+    """获取单个技能的完整内容（正文此刻按需读取）。"""
+    manager = get_skill_manager()
+    skill = manager.get_skill(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"技能 {skill_id} 不存在")
-    return _skill_to_dict(skill)
+    return _skill_to_dict(skill, content=manager.get_content(skill_id) or "")
 
 
 @router.post("/assistant/skills", status_code=201, summary="创建技能", include_in_schema=False)

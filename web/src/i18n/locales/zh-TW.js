@@ -3869,7 +3869,7 @@ export default {
     newChat: '新建對話',
     exportChat: '匯出對話',
     noHistory: '暫無歷史對話',
-    inputPlaceholder: '輸入訊息，Enter 傳送…',
+    inputPlaceholder: '輸入訊息，Enter 傳送，可貼上圖片…',
     send: '傳送',
     stop: '停止',
     stopped: '（已停止）',

@@ -37,21 +37,30 @@ async def _list_skills(arguments: Dict[str, Any], context: Dict[str, Any]) -> Di
                 "description": s.description,
                 "enabled": s.enabled,
                 "allowedTools": s.allowed_tools,
+                "builtin": s.builtin,  # 内置技能随版本发布，不可改不可删
             }
             for s in skills
         ],
-        "hint": "需要某技能的详细步骤时调 read_skill(skillId) 取全文。",
+        "hint": (
+            "需要某技能的详细步骤时调 read_skill(skillId) 取全文。"
+            "builtin=true 的是内置技能，不能 update/delete，只能 toggle 停用；"
+            "用户想定制时应用 create_skill 新建。"
+        ),
     }
 
 
 async def _read_skill(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-    """读取某技能的完整作业指导书（正文全文）。"""
+    """读取某技能的完整作业指导书（正文按需加载，不常驻内存）。"""
     skill_id = (arguments.get("skillId") or "").strip()
     if not skill_id:
         return {"error": "缺少 skillId"}
-    skill = get_skill_manager().get_skill(skill_id)
+    manager = get_skill_manager()
+    skill = manager.get_skill(skill_id)
     if not skill:
         return {"error": f"技能 {skill_id} 不存在，可先用 list_skills 查看可用技能"}
+    content = manager.get_content(skill_id)
+    if content is None:
+        return {"error": f"技能 {skill_id} 正文读取失败，请检查日志"}
     return {
         "skillId": skill.skill_id,
         "name": skill.name,
@@ -59,7 +68,8 @@ async def _read_skill(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dic
         "description": skill.description,
         "enabled": skill.enabled,
         "allowedTools": skill.allowed_tools,
-        "content": skill.content,
+        "builtin": skill.builtin,
+        "content": content,
     }
 
 
