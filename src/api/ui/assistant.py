@@ -18,7 +18,7 @@
 
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -32,6 +32,7 @@ from src.ai.assistant import (
     AssistantChatService, AssistantAgent, list_personas, DEFAULT_PERSONA,
 )
 from src.ai.assistant.skill_manager import get_skill_manager
+from src.ai.assistant.tools import registry
 from .assistant_sessions import mark_session_processing, save_session_snapshot
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,12 @@ class ChatStreamRequest(BaseModel):
     messages: List[ChatMessage] = Field(default_factory=list, description="最近 N 轮对话")
     persona: Optional[str] = Field(DEFAULT_PERSONA, description="人设 key")
     sessionId: Optional[str] = Field(None, description="会话 ID（用于断流恢复标记处理状态）")
+
+
+class ToolExecuteRequest(BaseModel):
+    """执行用户已确认的写类工具（方案 A：前端直接执行，渠道端架构统一）"""
+    name: str = Field(..., description="工具名")
+    arguments: Dict[str, Any] = Field(default_factory=dict, description="工具参数")
 
 
 @router.get("/assistant/personas", summary="获取御坂助手人设列表", include_in_schema=False)
@@ -126,6 +133,46 @@ async def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/assistant/tool/execute", summary="执行已确认的写类工具", include_in_schema=False)
+async def execute_confirmed_tool(
+    payload: ToolExecuteRequest,
+    request: Request,
+    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """用户点确认卡后，前端直接执行写工具，跳过 LLM 重新决策（断开循环）。
+
+    返回 {ok, data|error, message}，前端把结果作为 tool 消息追加到对话，
+    LLM 看到执行结果后生成自然语言回复。
+    """
+    st = request.app.state
+    session_factory = getattr(st, "db_session_factory", None)
+
+    # 复刻 stream 接口的 context 组装逻辑
+    context = {
+        "session_factory": session_factory,
+        "task_manager": getattr(st, "task_manager", None),
+        "scraper_manager": getattr(st, "scraper_manager", None),
+        "rate_limiter": getattr(st, "rate_limiter", None),
+        "scheduler_manager": getattr(st, "scheduler_manager", None),
+        "metadata_manager": getattr(st, "metadata_manager", None),
+        "ai_matcher_manager": getattr(st, "ai_matcher_manager", None),
+        "title_recognition_manager": getattr(st, "title_recognition_manager", None),
+        "config_manager": config_manager,
+    }
+
+    try:
+        result = await registry.execute(payload.name, payload.arguments, context)
+        if result.get("ok"):
+            data = result.get("data") or {}
+            msg = data.get("message") if isinstance(data, dict) else None
+            return {"ok": True, "data": data, "message": msg or "操作已提交"}
+        return {"ok": False, "error": result.get("error", "未知错误")}
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"执行工具 {payload.name} 失败: {e}", exc_info=True)
+        return {"ok": False, "error": f"工具执行出错：{e}"}
 
 
 # ────────────────────────────────────────────────────────────

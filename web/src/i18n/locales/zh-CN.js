@@ -4450,6 +4450,7 @@ export default {
     confirmPrompt: '御坂御坂需要你确认是否执行「{{label}}」哦，御坂御坂谨慎地询问道。',
     decisionYes: '确认执行，请继续。',
     decisionNo: '算了，取消吧。',
+    execFailed: '工具执行失败',
     processingTool: '正在处理',
     welcome: '御坂御坂在此待命，随时可以帮忙哦，御坂御坂元气满满地打招呼道！',
     thinking: '让我想想…，御坂御坂歪着头思考道。',

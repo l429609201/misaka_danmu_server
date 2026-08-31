@@ -295,17 +295,76 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
     machine.idle?.()
   }, [abort, machine])
 
-  // 用户对写类工具确认卡做出选择：确认=回一句同意让御坂继续执行；取消=回一句放弃
-  const respondConfirm = useCallback((msgIndex, agree) => {
+  // 用户对写类工具确认卡做出选择
+  const respondConfirm = useCallback(async (msgIndex, agree) => {
+    // 取消：发一句拒绝让 LLM 知道并结束话题
+    if (!agree) {
+      setMessages(prev => {
+        const next = [...prev]
+        if (next[msgIndex]) next[msgIndex] = { ...next[msgIndex], confirm: null }
+        return next
+      })
+      const decision = t('assistant.decisionNo')
+      send(decision)
+      return
+    }
+
+    // 确认：直接调执行接口，把结果作为 tool 消息追加到对话，LLM 据此生成自然语言回复
+    const msg = messages[msgIndex]
+    const confirmData = msg?.confirm
+    if (!confirmData) return
+
     setMessages(prev => {
       const next = [...prev]
       if (next[msgIndex]) next[msgIndex] = { ...next[msgIndex], confirm: null }
       return next
     })
-    // 把用户的决定作为一条普通消息发出，御坂据此决定是否真正调用写工具
-    const decision = agree ? t('assistant.decisionYes') : t('assistant.decisionNo')
-    send(decision)
-  }, [send])
+
+    setSending(true)
+    try {
+      const res = await fetch('/api/ui/assistant/tool/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: confirmData.name,
+          arguments: confirmData.arguments,
+        }),
+      })
+      const result = await res.json()
+
+      // 执行结果文案（同时用于界面展示与回传给 LLM）
+      const resultText = result.ok
+        ? `[系统] 工具 ${confirmData.name} 执行成功：${result.message || '操作已提交'}`
+        : `[系统] 工具 ${confirmData.name} 执行失败：${result.error || '未知错误'}`
+
+      // 界面上追加一条系统提示气泡，让用户看到执行结果
+      setMessages(prev => [...prev, {
+        role: 'system',
+        content: result.ok
+          ? `✅ ${result.message || '操作已提交'}`
+          : `❌ ${result.error || '执行失败'}`,
+        timestamp: Date.now(),
+      }])
+
+      // 回传给 LLM 让它用自然语言复述结果。
+      // 注意：用 user 角色而非 tool —— 后端 _build_messages 只接受 user/assistant，
+      // tool 角色会被静默丢弃，LLM 将看不到执行结果。
+      const historyWithResult = [
+        ...messages
+          .filter(m => m.role === 'user' || m.role === 'bot')
+          .map(m => ({ role: m.role === 'bot' ? 'assistant' : 'user', content: m.content })),
+        { role: 'user', content: resultText },
+      ]
+      await streamChat(historyWithResult, undefined, {
+        onDone: () => { setSending(false); machine.idle?.() },
+        onError: err => { message.error(err); setSending(false); machine.idle?.() },
+      })
+    } catch (error) {
+      message.error(t('assistant.execFailed'))
+      setSending(false)
+      machine.idle?.()
+    }
+  }, [messages, send, streamChat, machine, t])
 
   return (
     <Drawer
