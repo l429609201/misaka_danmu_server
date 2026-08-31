@@ -54,8 +54,9 @@ from .alias_service import (
     validate_aliases_with_ai, save_aliases, fetch_and_save_aliases,
 )
 
-# 通知服务
-from .notification_service import NotificationService
+# 通知服务 NotificationService 移除顶层导出以打破循环依赖：
+# tools → services.search → services.__init__ → notification_service → llm_menu → assistant → tools
+# 需要它的地方直接从子模块导入: from src.services.notification_service import NotificationService
 from .notification_manager import NotificationManager
 
 # VPS 隧道服务
@@ -108,8 +109,7 @@ __all__ = [
     'validate_aliases_with_ai',
     'save_aliases',
     'fetch_and_save_aliases',
-    # 通知服务
-    'NotificationService',
+    # 通知服务（NotificationService 不在此导出，见上方注释）
     'NotificationManager',
     # VPS 隧道服务
     'TunnelService',

@@ -33,22 +33,43 @@ class AssistantChatService:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     async def _load_ai_config(self) -> Dict[str, str]:
-        """读取现有 AI 配置（与 ai_matcher_manager 同一套 key）。"""
+        """读取 AI 配置（包含御坂助手专属的高级参数）。"""
         provider = await self.config_manager.get("aiProvider", "deepseek")
         api_key = await self.config_manager.get("aiApiKey", "")
         base_url = await self.config_manager.get("aiBaseUrl", "")
         model = await self.config_manager.get("aiModel", "")
+
+        # 御坂助手高级 LLM 参数
+        temperature = float(await self.config_manager.get("assistantTemperature", "0.7"))
+        max_tokens = int(await self.config_manager.get("assistantMaxTokens", "2000"))
+        top_p = float(await self.config_manager.get("assistantTopP", "0.9"))
+        presence_penalty = float(await self.config_manager.get("assistantPresencePenalty", "0.0"))
+        frequency_penalty = float(await self.config_manager.get("assistantFrequencyPenalty", "0.0"))
+        timeout = int(await self.config_manager.get("assistantTimeout", "120"))
+        proxy_enabled = (await self.config_manager.get("assistantProxyEnabled", "false")).lower() == "true"
 
         # base_url 缺省时回退到 provider 默认值
         if not base_url:
             cfg = get_provider_config(provider) or {}
             base_url = cfg.get("defaultBaseUrl", "")
 
+        # 代理配置（复用全局 proxyUrl）
+        proxy_url = ""
+        if proxy_enabled:
+            proxy_url = await self.config_manager.get("proxyUrl", "")
+
         return {
             "provider": provider,
             "api_key": api_key,
             "base_url": base_url.rstrip("/"),
             "model": model,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "top_p": top_p,
+            "presence_penalty": presence_penalty,
+            "frequency_penalty": frequency_penalty,
+            "timeout": timeout,
+            "proxy_url": proxy_url if proxy_url else None,
         }
 
     async def is_ready(self) -> bool:
@@ -96,10 +117,16 @@ class AssistantChatService:
             "model": cfg["model"],
             "messages": messages,
             "stream": True,
+            "temperature": cfg["temperature"],
+            "max_tokens": cfg["max_tokens"],
+            "top_p": cfg["top_p"],
+            "presence_penalty": cfg["presence_penalty"],
+            "frequency_penalty": cfg["frequency_penalty"],
         }
 
         try:
-            async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as client:
+            timeout = httpx.Timeout(cfg["timeout"], connect=10.0)
+            async with httpx.AsyncClient(timeout=timeout, proxy=cfg["proxy_url"]) as client:
                 async with client.stream("POST", url, headers=headers, json=payload) as resp:
                     if resp.status_code != 200:
                         body = await resp.aread()

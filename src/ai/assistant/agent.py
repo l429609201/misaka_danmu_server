@@ -45,14 +45,37 @@ class AssistantAgent:
         api_key = await self.config_manager.get("aiApiKey", "")
         base_url = await self.config_manager.get("aiBaseUrl", "")
         model = await self.config_manager.get("aiModel", "")
+
+        # 御坂助手高级 LLM 参数
+        temperature = float(await self.config_manager.get("assistantTemperature", "0.7"))
+        max_tokens = int(await self.config_manager.get("assistantMaxTokens", "2000"))
+        top_p = float(await self.config_manager.get("assistantTopP", "0.9"))
+        presence_penalty = float(await self.config_manager.get("assistantPresencePenalty", "0.0"))
+        frequency_penalty = float(await self.config_manager.get("assistantFrequencyPenalty", "0.0"))
+        timeout = int(await self.config_manager.get("assistantTimeout", "120"))
+        proxy_enabled = (await self.config_manager.get("assistantProxyEnabled", "false")).lower() == "true"
+
         if not base_url:
             cfg = get_provider_config(provider) or {}
             base_url = cfg.get("defaultBaseUrl", "")
+
+        # 代理配置
+        proxy_url = ""
+        if proxy_enabled:
+            proxy_url = await self.config_manager.get("proxyUrl", "")
+
         return {
             "provider": provider,
             "api_key": api_key,
             "base_url": base_url.rstrip("/"),
             "model": model,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "top_p": top_p,
+            "presence_penalty": presence_penalty,
+            "frequency_penalty": frequency_penalty,
+            "timeout": timeout,
+            "proxy_url": proxy_url if proxy_url else None,
         }
 
     def _build_messages(self, history: List[Dict[str, Any]], persona_key: str) -> List[Dict[str, Any]]:
@@ -85,7 +108,9 @@ class AssistantAgent:
             "Authorization": f"Bearer {cfg['api_key']}",
             "Content-Type": "application/json",
         }
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        # 使用配置的超时与代理
+        timeout = httpx.Timeout(cfg.get("timeout", _TIMEOUT), connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout, proxy=cfg.get("proxy_url")) as client:
             return await client.post(url, headers=headers, json=payload)
 
     async def stream(
@@ -119,6 +144,8 @@ class AssistantAgent:
                     "tools": tools,
                     "tool_choice": "auto",
                     "stream": False,
+                    "temperature": cfg["temperature"],
+                    "top_p": cfg["top_p"],
                 })
                 if resp.status_code != 200:
                     detail = resp.text[:300]
@@ -209,8 +236,18 @@ class AssistantAgent:
             "Authorization": f"Bearer {cfg['api_key']}",
             "Content-Type": "application/json",
         }
-        payload = {"model": cfg["model"], "messages": messages, "stream": True}
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        payload = {
+            "model": cfg["model"],
+            "messages": messages,
+            "stream": True,
+            "temperature": cfg["temperature"],
+            "max_tokens": cfg["max_tokens"],
+            "top_p": cfg["top_p"],
+            "presence_penalty": cfg["presence_penalty"],
+            "frequency_penalty": cfg["frequency_penalty"],
+        }
+        timeout = httpx.Timeout(cfg.get("timeout", _TIMEOUT), connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout, proxy=cfg.get("proxy_url")) as client:
             async with client.stream("POST", url, headers=headers, json=payload) as resp:
                 if resp.status_code != 200:
                     body = await resp.aread()

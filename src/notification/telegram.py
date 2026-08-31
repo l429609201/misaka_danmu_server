@@ -439,35 +439,68 @@ class TelegramChannel(BaseNotificationChannel):
     async def _llm_chat_stream(self, text: str, user_id: str, chat_id, reply_to_id: int):
         """御坂 LLM 伪流式：先发占位消息，随增量限流 edit 更新（Telegram 专属）。"""
         import time as _t
-        # 先发占位消息拿 message_id
-        placeholder = await asyncio.to_thread(
-            self._bot.send_message, chat_id, "御坂御坂正在思考…", reply_to_message_id=reply_to_id
-        )
-        msg_id = placeholder.message_id
-        last_edit = {"t": 0.0, "shown": ""}
 
-        async def on_stream(partial: str):
-            # 限流：距上次 edit ≥1.3s 才更新，避免触发 Telegram 速率限制
-            now = _t.monotonic()
-            if now - last_edit["t"] < 1.3 or partial == last_edit["shown"]:
-                return
-            last_edit["t"] = now
-            last_edit["shown"] = partial
-            try:
-                await asyncio.to_thread(
-                    self._bot.edit_message_text, partial or "…", chat_id, msg_id
-                )
-            except Exception:
-                pass  # edit 失败（内容未变/限流）忽略，最终结果会补发
+        # ① 先发 typing action，让用户看到"正在输入…"状态
+        typing_task = None
+        typing_active = {"stop": False}
 
-        result = await self.service.handle_llm_chat(text, user_id, stream_callback=on_stream)
-        final = (result.text if result else "") or "……"
-        # 最终定稿：edit 成完整内容（若与上次相同则跳过）
-        if final != last_edit["shown"]:
-            try:
-                await asyncio.to_thread(self._bot.edit_message_text, final, chat_id, msg_id)
-            except Exception:
-                pass
+        async def maintain_typing():
+            """后台任务：每 4.5 秒重发 typing，直到占位消息发出（typing 状态维持 5 秒）"""
+            while not typing_active["stop"]:
+                try:
+                    await asyncio.to_thread(self._bot.send_chat_action, chat_id, "typing")
+                except Exception as e:
+                    self.logger.debug(f"[Typing] 发送失败: {e}")
+                await asyncio.sleep(4.5)
+
+        try:
+            # 启动 typing 维持任务
+            typing_task = asyncio.create_task(maintain_typing())
+
+            # ② 发占位消息拿 message_id（此时 typing 任务已在后台运行）
+            placeholder = await asyncio.to_thread(
+                self._bot.send_message, chat_id, "御坂御坂正在思考…", reply_to_message_id=reply_to_id
+            )
+            msg_id = placeholder.message_id
+
+            # 占位消息已发出，但 LLM 首个 token 可能仍需数秒，
+            # 故 typing 状态持续维持，直到首次真正把增量内容 edit 进占位消息为止。
+
+            last_edit = {"t": 0.0, "shown": ""}
+
+            async def on_stream(partial: str):
+                # 限流：距上次 edit ≥1.3s 才更新，避免触发 Telegram 速率限制
+                now = _t.monotonic()
+                if now - last_edit["t"] < 1.3 or partial == last_edit["shown"]:
+                    return
+                last_edit["t"] = now
+                last_edit["shown"] = partial
+                # 首次成功刷出增量内容后停止 typing（用户已看到实际内容在生成）
+                typing_active["stop"] = True
+                try:
+                    await asyncio.to_thread(
+                        self._bot.edit_message_text, partial or "…", chat_id, msg_id
+                    )
+                except Exception:
+                    pass  # edit 失败（内容未变/限流）忽略，最终结果会补发
+
+            result = await self.service.handle_llm_chat(text, user_id, stream_callback=on_stream)
+            final = (result.text if result else "") or "……"
+            # 最终定稿：edit 成完整内容（若与上次相同则跳过）
+            if final != last_edit["shown"]:
+                try:
+                    await asyncio.to_thread(self._bot.edit_message_text, final, chat_id, msg_id)
+                except Exception:
+                    pass
+        finally:
+            # 确保 typing 任务被清理
+            typing_active["stop"] = True
+            if typing_task and not typing_task.done():
+                typing_task.cancel()
+                try:
+                    await typing_task
+                except asyncio.CancelledError:
+                    pass
 
     # ── 渲染引擎 ──
 

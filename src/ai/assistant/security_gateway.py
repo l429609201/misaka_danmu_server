@@ -143,9 +143,11 @@ _SECRET_FIELD_NAMES = frozenset({
     "session_token", "credential", "credentials",
 })
 # 后缀匹配：xxx_token / xxx_secret / xxx_key / xxx_password 等
+# 覆盖元数据源与弹幕源的驼峰命名密钥（tmdbApiKey / tvdbApiKey / gamerCookie / bilibiliCookie …）
 _SECRET_FIELD_ENDINGS = tuple(
     f"_{n}" for n in ("token", "secret", "key", "password", "passwd",
-                      "credential", "apikey", "authorization")
+                      "credential", "credentials", "apikey", "authorization",
+                      "cookie", "auth", "session", "signature")
 )
 
 _MAX_FIELD_NAME_CHARS = 256

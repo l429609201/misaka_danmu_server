@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Form, Input, Select, Switch, Button, message, Spin, Card, Tabs, Space, Tooltip, Row, Col, Alert, Statistic, AutoComplete, InputNumber } from 'antd'
+import { Form, Input, Select, Switch, Button, message, Spin, Card, Tabs, Space, Tooltip, Row, Col, Alert, Statistic, AutoComplete, InputNumber, Collapse, Slider } from 'antd'
 const { TextArea } = Input
 const { TabPane } = Tabs
 const { Option } = Select
@@ -7,6 +7,7 @@ import { getConfig, setConfig, getDefaultAIPrompts, getAIBalance, getAIModels } 
 import api from '@/apis/fetch'
 import { QuestionCircleOutlined, SaveOutlined, ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import AIMetrics from './AIMetrics'
+import { SkillManager } from './SkillManager'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store/index.js'
 import { useTranslation } from 'react-i18next'
@@ -90,7 +91,14 @@ const AutoMatchSetting = () => {
         asstNotifyCompleteRes,
         asstNotifyFailedRes,
         asstNotifyStartRes,
-        asstNotifyIntervalRes
+        asstNotifyIntervalRes,
+        asstTemperatureRes,
+        asstMaxTokensRes,
+        asstTopPRes,
+        asstPresencePenaltyRes,
+        asstFrequencyPenaltyRes,
+        asstTimeoutRes,
+        asstProxyEnabledRes
       ] = await Promise.all([
         getConfig('aiMatchEnabled'),
         getConfig('aiFallbackEnabled'),
@@ -126,7 +134,15 @@ const AutoMatchSetting = () => {
         getConfig('assistantNotifyOnComplete').catch(() => ({ data: { value: 'true' } })),
         getConfig('assistantNotifyOnFailed').catch(() => ({ data: { value: 'true' } })),
         getConfig('assistantNotifyOnStart').catch(() => ({ data: { value: 'false' } })),
-        getConfig('assistantNotifyInterval').catch(() => ({ data: { value: '15' } }))
+        getConfig('assistantNotifyInterval').catch(() => ({ data: { value: '15' } })),
+        // 御坂助手高级 LLM 参数（容错：不存在时用默认值）
+        getConfig('assistantTemperature').catch(() => ({ data: { value: '0.7' } })),
+        getConfig('assistantMaxTokens').catch(() => ({ data: { value: '2000' } })),
+        getConfig('assistantTopP').catch(() => ({ data: { value: '0.9' } })),
+        getConfig('assistantPresencePenalty').catch(() => ({ data: { value: '0.0' } })),
+        getConfig('assistantFrequencyPenalty').catch(() => ({ data: { value: '0.0' } })),
+        getConfig('assistantTimeout').catch(() => ({ data: { value: '120' } })),
+        getConfig('assistantProxyEnabled').catch(() => ({ data: { value: 'false' } }))
       ])
 
       const enabled = enabledRes.data.value === 'true'
@@ -184,6 +200,14 @@ const AutoMatchSetting = () => {
         assistantNotifyOnFailed: asstNotifyFailedRes.data.value !== 'false',
         assistantNotifyOnStart: asstNotifyStartRes.data.value === 'true',
         assistantNotifyInterval: parseInt(asstNotifyIntervalRes.data.value || '15', 10),
+        // 御坂助手高级 LLM 参数
+        assistantTemperature: parseFloat(asstTemperatureRes.data.value || '0.7'),
+        assistantMaxTokens: parseInt(asstMaxTokensRes.data.value || '2000', 10),
+        assistantTopP: parseFloat(asstTopPRes.data.value || '0.9'),
+        assistantPresencePenalty: parseFloat(asstPresencePenaltyRes.data.value || '0.0'),
+        assistantFrequencyPenalty: parseFloat(asstFrequencyPenaltyRes.data.value || '0.0'),
+        assistantTimeout: parseInt(asstTimeoutRes.data.value || '120', 10),
+        assistantProxyEnabled: asstProxyEnabledRes.data.value === 'true',
       })
 
       // 设置当前选中的提供商配置
@@ -383,6 +407,13 @@ const AutoMatchSetting = () => {
       setSaving(true)
       const values = form.getFieldsValue()
       const interval = Math.min(60, Math.max(10, parseInt(values.assistantNotifyInterval || 15, 10) || 15))
+      const timeout = Math.min(300, Math.max(10, parseInt(values.assistantTimeout || 120, 10) || 120))
+      const temperature = Math.min(2, Math.max(0, parseFloat(values.assistantTemperature || 0.7) || 0.7))
+      const maxTokens = Math.min(8000, Math.max(100, parseInt(values.assistantMaxTokens || 2000, 10) || 2000))
+      const topP = Math.min(1, Math.max(0, parseFloat(values.assistantTopP || 0.9) || 0.9))
+      const presencePenalty = Math.min(2, Math.max(-2, parseFloat(values.assistantPresencePenalty || 0) || 0))
+      const frequencyPenalty = Math.min(2, Math.max(-2, parseFloat(values.assistantFrequencyPenalty || 0) || 0))
+
       await Promise.all([
         setConfig('assistantChannelChatEnabled', values.assistantChannelChatEnabled ? 'true' : 'false'),
         setConfig('assistantNotifyEnabled', values.assistantNotifyEnabled ? 'true' : 'false'),
@@ -390,6 +421,14 @@ const AutoMatchSetting = () => {
         setConfig('assistantNotifyOnFailed', values.assistantNotifyOnFailed ? 'true' : 'false'),
         setConfig('assistantNotifyOnStart', values.assistantNotifyOnStart ? 'true' : 'false'),
         setConfig('assistantNotifyInterval', String(interval)),
+        // 高级 LLM 参数
+        setConfig('assistantTemperature', String(temperature)),
+        setConfig('assistantMaxTokens', String(maxTokens)),
+        setConfig('assistantTopP', String(topP)),
+        setConfig('assistantPresencePenalty', String(presencePenalty)),
+        setConfig('assistantFrequencyPenalty', String(frequencyPenalty)),
+        setConfig('assistantTimeout', String(timeout)),
+        setConfig('assistantProxyEnabled', values.assistantProxyEnabled ? 'true' : 'false'),
       ])
       message.success(t('autoMatch.assistantSaveSuccess'))
     } catch (error) {
@@ -1278,35 +1317,111 @@ const AutoMatchSetting = () => {
                     <CustomSwitch />
                   </Form.Item>
                 </Col>
-                <Col xs={24} sm={8}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="assistantNotifyOnComplete" valuePropName="checked" label={t('autoMatch.assistantNotifyOnCompleteLabel')}>
                     <CustomSwitch />
                   </Form.Item>
                 </Col>
-                <Col xs={24} sm={8}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="assistantNotifyOnFailed" valuePropName="checked" label={t('autoMatch.assistantNotifyOnFailedLabel')}>
                     <CustomSwitch />
                   </Form.Item>
                 </Col>
-                <Col xs={24} sm={8}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="assistantNotifyOnStart" valuePropName="checked"
                     label={t('autoMatch.assistantNotifyOnStartLabel')} tooltip={t('autoMatch.assistantNotifyOnStartTooltip')}>
                     <CustomSwitch />
                   </Form.Item>
                 </Col>
-                <Col xs={24} sm={8}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="assistantNotifyInterval"
                     label={t('autoMatch.assistantNotifyIntervalLabel')} tooltip={t('autoMatch.assistantNotifyIntervalTooltip')}>
                     <InputNumber min={10} max={60} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
               </Row>
+
+              {/* 高级 LLM 参数（参考 MoviePilot AI Agent，默认展开可折叠） */}
+              <Collapse
+                defaultActiveKey={['advanced']}
+                style={{ marginTop: 16 }}
+                items={[{
+                  key: 'advanced',
+                  label: t('autoMatch.assistantAdvancedTitle'),
+                  children: (
+                    <>
+                      <Alert
+                        type="info"
+                        message={t('autoMatch.assistantAdvancedDesc')}
+                        style={{ marginBottom: 16 }}
+                      />
+                      <Row gutter={[16, 8]}>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="assistantTemperature"
+                            label={t('autoMatch.assistantTemperatureLabel')}
+                            tooltip={t('autoMatch.assistantTemperatureTooltip')}>
+                            <Slider min={0} max={2} step={0.1} marks={{ 0: '0', 0.7: '0.7', 2: '2' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="assistantTopP"
+                            label={t('autoMatch.assistantTopPLabel')}
+                            tooltip={t('autoMatch.assistantTopPTooltip')}>
+                            <Slider min={0} max={1} step={0.05} marks={{ 0: '0', 0.9: '0.9', 1: '1' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="assistantPresencePenalty"
+                            label={t('autoMatch.assistantPresencePenaltyLabel')}
+                            tooltip={t('autoMatch.assistantPresencePenaltyTooltip')}>
+                            <Slider min={-2} max={2} step={0.1} marks={{ '-2': '-2', 0: '0', 2: '2' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="assistantFrequencyPenalty"
+                            label={t('autoMatch.assistantFrequencyPenaltyLabel')}
+                            tooltip={t('autoMatch.assistantFrequencyPenaltyTooltip')}>
+                            <Slider min={-2} max={2} step={0.1} marks={{ '-2': '-2', 0: '0', 2: '2' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="assistantMaxTokens"
+                            label={t('autoMatch.assistantMaxTokensLabel')}
+                            tooltip={t('autoMatch.assistantMaxTokensTooltip')}>
+                            <InputNumber min={100} max={8000} step={100} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="assistantTimeout"
+                            label={t('autoMatch.assistantTimeoutLabel')}
+                            tooltip={t('autoMatch.assistantTimeoutTooltip')}>
+                            <InputNumber min={10} max={300} step={10} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} sm={12}>
+                          <Form.Item name="assistantProxyEnabled" valuePropName="checked"
+                            label={t('autoMatch.assistantProxyEnabledLabel')}
+                            tooltip={t('autoMatch.assistantProxyEnabledTooltip')}>
+                            <CustomSwitch />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    </>
+                  ),
+                }]}
+              />
+
               <div style={{ marginTop: '24px', textAlign: 'center' }}>
                 <Button type="primary" icon={<SaveOutlined />} onClick={handleSaveAssistantConfig}
                   loading={saving} size="large" style={{ minWidth: '200px' }}>
                   {t('autoMatch.assistantSaveBtn')}
                 </Button>
               </div>
+            </TabPane>
+
+            {/* 标签页: 御坂技能管理（用户可自制 skill 到 config/skills/） */}
+            <TabPane tab={t('autoMatch.skillsTab')} key="skills">
+              <SkillManager />
             </TabPane>
 
             {/* 标签页4: AI使用统计 */}

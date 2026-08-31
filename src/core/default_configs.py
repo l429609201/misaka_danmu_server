@@ -168,13 +168,21 @@ def get_default_configs(settings=None, ai_prompts=None):
     # 添加AI相关配置
     if ai_prompts:
         configs.update({
-            # 御坂助手（看板娘 LLM 对话 + 任务气泡播报）
+            # 御坂助手（弹幕库助手 LLM 对话 + 任务气泡播报）
             'assistantChannelChatEnabled': ('true', '是否允许通知渠道(Telegram/企业微信等)与御坂助手自然语言对话。'),
             'assistantNotifyEnabled': ('true', '是否启用御坂助手任务气泡播报(网页端看板娘主动提示任务动态)。'),
             'assistantNotifyOnComplete': ('true', '御坂播报：任务完成时提示。'),
             'assistantNotifyOnFailed': ('true', '御坂播报：任务失败时提示。'),
             'assistantNotifyOnStart': ('false', '御坂播报：新任务开始时提示(默认关，避免频繁打扰)。'),
             'assistantNotifyInterval': ('15', '御坂任务播报的轮询间隔(秒)，范围 10-60。'),
+            # 御坂助手高级 LLM 参数（参考 MoviePilot AI Agent）
+            'assistantTemperature': ('0.7', 'LLM 温度 0-2，控制回答随机性。0=精确，0.7=平衡，2=创意。'),
+            'assistantMaxTokens': ('2000', 'LLM 最大输出 token 数，范围 100-8000。'),
+            'assistantTopP': ('0.9', 'Top-p 采样 0-1，控制词汇多样性。'),
+            'assistantPresencePenalty': ('0.0', '存在惩罚 -2到2，抑制重复话题。'),
+            'assistantFrequencyPenalty': ('0.0', '频率惩罚 -2到2，抑制重复用词。'),
+            'assistantTimeout': ('120', 'API 请求超时秒数（10-300）。慢速模型（o3/o4）建议 180-300。'),
+            'assistantProxyEnabled': ('false', '是否为御坂助手启用代理（复用全局 proxyUrl 配置）。'),
             'aiMatchEnabled': ('false', '是否启用AI智能匹配。启用后，在自动匹配场景(外部API、Webhook、匹配后备)中使用AI选择最佳搜索结果。'),
             'aiFallbackEnabled': ('true', '是否启用传统匹配兜底。当AI匹配失败时，自动降级到传统匹配算法。'),
             'aiProvider': ('deepseek', 'AI提供商: deepseek, siliconflow, openai, gemini'),

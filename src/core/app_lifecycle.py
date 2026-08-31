@@ -47,9 +47,9 @@ logger = logging.getLogger(__name__)
 def _ensure_required_directories():
     """确保应用运行所需的目录存在"""
     if is_docker_environment():
-        required_dirs = [Path("/app/config/image")]
+        required_dirs = [Path("/app/config/image"), Path("/app/config/skills")]
     else:
-        required_dirs = [Path("config/image")]
+        required_dirs = [Path("config/image"), Path("config/skills")]
 
     for dir_path in required_dirs:
         try:
@@ -57,6 +57,24 @@ def _ensure_required_directories():
             logger.info(f"确保目录存在: {dir_path}")
         except (OSError, PermissionError) as e:
             logger.warning(f"无法创建目录 {dir_path}: {e}")
+
+
+def _init_skills():
+    """初始化技能系统：设置目录 → 同步内置示例 → 加载全部技能。
+
+    内置示例只在目标不存在时写入，不覆盖用户已修改的同名技能。
+    """
+    try:
+        from src.ai.assistant.skill_manager import set_skills_base_dir, get_skill_manager
+        from src.ai.assistant.builtin_skills import sync_builtin_skills
+
+        base_dir = Path("/app") if is_docker_environment() else Path(".")
+        set_skills_base_dir(base_dir)
+        sync_builtin_skills()
+        get_skill_manager().load_all()
+    except Exception as e:  # noqa: BLE001
+        # 技能系统属增强能力，失败不应阻塞应用启动
+        logger.warning(f"技能系统初始化失败（不影响主流程）: {e}", exc_info=True)
 
 
 async def _apply_tunnel_from_channels(app: FastAPI):
@@ -92,6 +110,9 @@ async def run_startup(app: FastAPI):
 
     # 创建必要的目录
     _ensure_required_directories()
+
+    # 初始化技能目录并加载用户自制技能（config/skills/*/SKILL.md）
+    _init_skills()
 
     # init_db_tables 处理数据库创建、引擎和会话工厂的创建
     try:

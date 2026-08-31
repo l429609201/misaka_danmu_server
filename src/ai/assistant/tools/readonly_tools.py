@@ -13,7 +13,10 @@ import logging
 from typing import Any, Dict
 
 from src.db import crud, models
-from src.services import unified_search
+# 直接从子模块导入，绕过 src.services.__init__（它会加载 notification_service，
+# 进而 → llm_menu → src.ai.assistant，形成循环）。
+# 这样依赖精确指向真正需要的 search 模块，不牵连整个 services 包。
+from src.services.search import unified_search
 from ..security_gateway import ToolPermission
 from .base import Tool, registry
 from .search_session import save_search_results, get_result_item
