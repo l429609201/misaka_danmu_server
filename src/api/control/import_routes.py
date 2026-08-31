@@ -30,7 +30,8 @@ from .models import (
     AutoImportSearchType, AutoImportMediaType,
     ControlTaskResponse, ControlSearchResponse, ControlSearchResultItem,
     ControlAutoImportRequest, ControlDirectImportRequest,
-    ControlEditedImportRequest, ControlXmlImportRequest, ControlUrlImportRequest
+    ControlEditedImportRequest, ControlXmlImportRequest, ControlUrlImportRequest,
+    EpisodesWithFilteredResponse,
 )
 from .dependencies import (
     verify_api_key, get_scraper_manager, get_metadata_manager,
@@ -528,21 +529,26 @@ async def direct_import(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="提交任务时发生内部错误。")
 
 
-from typing import List
+from typing import List, Union
 
-@router.get("/episodes", response_model=List[models.ProviderEpisodeInfo], summary="获取搜索结果的分集列表")
+@router.get("/episodes", summary="获取搜索结果的分集列表")
 async def get_episodes(
     searchId: str = Query(..., description="来自/search接口的searchId"),
     result_index: int = Query(..., ge=0, description="要获取分集的结果的索引"),
+    includeFiltered: int = Query(0, ge=0, le=1, description="是否返回被过滤的分集：0=否(默认，仅返回保留分集数组)，1=是(返回 {episodes, filteredEpisodes} 对象)"),
     session: AsyncSession = Depends(get_db_session),
     manager: ScraperManager = Depends(get_scraper_manager),
-):
+) -> Union[List[models.ProviderEpisodeInfo], EpisodesWithFilteredResponse]:
     """
     ### 功能
     在执行`/search`后，获取指定搜索结果的完整分集列表。
 
     ### 工作流程
     此接口主要用于"编辑后导入"的场景。您可以先获取原始的分集列表，在您的客户端进行修改（例如，删除预告、调整顺序），然后再通过`/import/edited`接口提交修改后的列表进行导入。
+
+    ### includeFiltered 参数
+    - **0（默认）**: 返回 `List[ProviderEpisodeInfo]`，即直接返回保留的分集数组，与旧版本行为一致。
+    - **1**: 返回 `EpisodesWithFilteredResponse` 对象，包含 `episodes`（保留分集）和 `filteredEpisodes`（被黑名单/正则过滤掉的分集，如预告、花絮）。可用于判断是否需要通过 `/import/edited` 手动纳入这些被过滤的分集。
     """
     cache_key = f"control_search_{searchId}"
     cached_results_raw = None
@@ -569,7 +575,17 @@ async def get_episodes(
     item_to_fetch = cached_results[result_index]
 
     try:
-        return await manager.get_episodes_routed(item_to_fetch.provider, item_to_fetch.mediaId, db_media_type=item_to_fetch.type)
+        result = await manager.get_episodes_routed(
+            item_to_fetch.provider, item_to_fetch.mediaId,
+            db_media_type=item_to_fetch.type,
+            return_filtered=bool(includeFiltered)
+        )
+        if includeFiltered:
+            kept, filtered = result
+            return EpisodesWithFilteredResponse(episodes=kept, filteredEpisodes=filtered)
+        else:
+            # 默认行为：直接返回分集数组，与旧版本兼容
+            return result
     except httpx.RequestError as e:
         logger.error(f"获取分集列表时发生网络错误 (provider={item_to_fetch.provider}, media_id={item_to_fetch.mediaId}): {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"从 {item_to_fetch.provider} 获取分集列表时发生网络错误: {e}")

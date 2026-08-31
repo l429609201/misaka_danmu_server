@@ -168,6 +168,13 @@ def get_default_configs(settings=None, ai_prompts=None):
     # 添加AI相关配置
     if ai_prompts:
         configs.update({
+            # 御坂助手（看板娘 LLM 对话 + 任务气泡播报）
+            'assistantChannelChatEnabled': ('true', '是否允许通知渠道(Telegram/企业微信等)与御坂助手自然语言对话。'),
+            'assistantNotifyEnabled': ('true', '是否启用御坂助手任务气泡播报(网页端看板娘主动提示任务动态)。'),
+            'assistantNotifyOnComplete': ('true', '御坂播报：任务完成时提示。'),
+            'assistantNotifyOnFailed': ('true', '御坂播报：任务失败时提示。'),
+            'assistantNotifyOnStart': ('false', '御坂播报：新任务开始时提示(默认关，避免频繁打扰)。'),
+            'assistantNotifyInterval': ('15', '御坂任务播报的轮询间隔(秒)，范围 10-60。'),
             'aiMatchEnabled': ('false', '是否启用AI智能匹配。启用后，在自动匹配场景(外部API、Webhook、匹配后备)中使用AI选择最佳搜索结果。'),
             'aiFallbackEnabled': ('true', '是否启用传统匹配兜底。当AI匹配失败时，自动降级到传统匹配算法。'),
             'aiProvider': ('deepseek', 'AI提供商: deepseek, siliconflow, openai, gemini'),

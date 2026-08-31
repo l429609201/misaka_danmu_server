@@ -56,13 +56,14 @@ export const TRANSIENT_STATES = ['happy', 'sad', 'surprised']
  * 状态 -> 视觉/文案配置
  * img：立绘图片；bubble：idle 时可展示的气泡文案；label：状态中文名（用于面板状态栏）
  */
+// label/bubble 改为 i18n key，运行时用 t() 取；无 t 时回退中文默认值
 export const PET_ACTIONS = {
-  idle: { img: idleImg, bubble: '有什么可以帮你？', label: '待命中' },
-  thinking: { img: thinkingImg, bubble: '让我想想…', label: '思考中' },
-  happy: { img: happyImg, bubble: '搞定啦！', label: '完成' },
-  sad: { img: sadImg, bubble: '出了点问题…', label: '失败' },
-  surprised: { img: surprisedImg, bubble: '咦？', label: '异常' },
-  talking: { img: talkingImg, bubble: '', label: '回复中' },
+  idle: { img: idleImg, bubbleKey: 'petIdleBubble', labelKey: 'petIdle', label: '待命中' },
+  thinking: { img: thinkingImg, bubbleKey: 'petThinkingBubble', labelKey: 'petThinking', label: '思考中' },
+  happy: { img: happyImg, bubbleKey: 'petHappyBubble', labelKey: 'petHappy', label: '完成' },
+  sad: { img: sadImg, bubbleKey: 'petSadBubble', labelKey: 'petSad', label: '失败' },
+  surprised: { img: surprisedImg, bubbleKey: 'petSurprisedBubble', labelKey: 'petSurprised', label: '异常' },
+  talking: { img: talkingImg, bubbleKey: '', labelKey: 'petTalking', label: '回复中' },
 }
 
 /** 头像图（面板顶部小圆头像用） */
@@ -73,7 +74,16 @@ export function getPetImage(state) {
   return (PET_ACTIONS[state] || PET_ACTIONS[DEFAULT_STATE]).img
 }
 
-/** 便捷取状态标签 */
-export function getPetLabel(state) {
-  return (PET_ACTIONS[state] || PET_ACTIONS[DEFAULT_STATE]).label
+/** 便捷取状态标签（传入 t 则返回 i18n 文案，否则回退中文默认） */
+export function getPetLabel(state, t) {
+  const action = PET_ACTIONS[state] || PET_ACTIONS[DEFAULT_STATE]
+  if (t && action.labelKey) return t(`assistant.${action.labelKey}`)
+  return action.label
+}
+
+/** 便捷取状态气泡文案（传入 t 则返回 i18n 文案，否则空） */
+export function getPetBubble(state, t) {
+  const action = PET_ACTIONS[state] || PET_ACTIONS[DEFAULT_STATE]
+  if (t && action.bubbleKey) return t(`assistant.${action.bubbleKey}`)
+  return ''
 }

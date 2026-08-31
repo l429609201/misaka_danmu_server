@@ -29,7 +29,7 @@ from .security_gateway import ToolPermission
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 120.0
-_MAX_TOOL_ROUNDS = 5  # 最多工具调用轮数，防止无限循环
+_MAX_TOOL_ROUNDS = 8  # 最多工具调用轮数，防止无限循环（三段式导入需 搜索→查分集→导入 多步只读调用）
 
 
 class AssistantAgent:

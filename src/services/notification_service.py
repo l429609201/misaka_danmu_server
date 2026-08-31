@@ -25,6 +25,7 @@ from src.notification.menus import (
     TaskManagerMenuMixin,
     CacheMenuMixin,
     StatusMenuMixin,
+    LlmChatMixin,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ class NotificationService(
     TaskManagerMenuMixin,
     CacheMenuMixin,
     StatusMenuMixin,
+    LlmChatMixin,
 ):
     """通知系统核心服务：命令处理 / 回调处理 / 对话状态 / 事件分发"""
 
@@ -292,8 +294,10 @@ class NotificationService(
         logger.info(f"[文本输入] user={user_id} text={text[:50]} conversations={list(self._conversations.keys())}")
         conv = self.get_conversation(user_id)
         if not conv:
-            logger.info(f"[文本输入] user={user_id} 无活跃对话，忽略")
-            return None  # 没有活跃对话，忽略
+            # 无活跃命令流程 → 交给御坂 LLM 对话兜底（渠道端纯问答+只读工具，非流式）。
+            # 渠道若支持伪流式（Telegram），会在渠道层用 stream_callback 覆盖此路径。
+            logger.info(f"[文本输入] user={user_id} 无活跃对话，转御坂 LLM")
+            return await self.handle_llm_chat(text, user_id)
         state = conv.state
         logger.info(f"[文本输入] user={user_id} state={state}")
         text_handler_map = {

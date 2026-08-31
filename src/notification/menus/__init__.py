@@ -15,6 +15,7 @@ from .tasks_menu import TasksMenuMixin
 from .task_manager_menu import TaskManagerMenuMixin
 from .cache import CacheMenuMixin
 from .status import StatusMenuMixin
+from .llm_menu import LlmChatMixin
 
 __all__ = [
     "ImportBaseMixin",
@@ -29,5 +30,6 @@ __all__ = [
     "TaskManagerMenuMixin",
     "CacheMenuMixin",
     "StatusMenuMixin",
+    "LlmChatMixin",
 ]
 

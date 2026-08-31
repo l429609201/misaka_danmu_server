@@ -84,7 +84,13 @@ const AutoMatchSetting = () => {
         seasonMappingSourceRes,
         seasonMappingPromptRes,
         episodeGroupEnabledRes,
-        episodeGroupPromptRes
+        episodeGroupPromptRes,
+        asstChannelChatRes,
+        asstNotifyRes,
+        asstNotifyCompleteRes,
+        asstNotifyFailedRes,
+        asstNotifyStartRes,
+        asstNotifyIntervalRes
       ] = await Promise.all([
         getConfig('aiMatchEnabled'),
         getConfig('aiFallbackEnabled'),
@@ -113,7 +119,14 @@ const AutoMatchSetting = () => {
         getConfig('seasonMappingMetadataSource'),
         getConfig('seasonMappingPrompt'),
         getConfig('aiEpisodeGroupEnabled'),
-        getConfig('aiEpisodeGroupPrompt')
+        getConfig('aiEpisodeGroupPrompt'),
+        // 御坂助手配置（容错：不存在时用默认值）
+        getConfig('assistantChannelChatEnabled').catch(() => ({ data: { value: 'true' } })),
+        getConfig('assistantNotifyEnabled').catch(() => ({ data: { value: 'true' } })),
+        getConfig('assistantNotifyOnComplete').catch(() => ({ data: { value: 'true' } })),
+        getConfig('assistantNotifyOnFailed').catch(() => ({ data: { value: 'true' } })),
+        getConfig('assistantNotifyOnStart').catch(() => ({ data: { value: 'false' } })),
+        getConfig('assistantNotifyInterval').catch(() => ({ data: { value: '15' } }))
       ])
 
       const enabled = enabledRes.data.value === 'true'
@@ -163,7 +176,14 @@ const AutoMatchSetting = () => {
         seasonMappingMetadataSource: seasonMappingSourceRes.data.value || 'tmdb',
         seasonMappingPrompt: seasonMappingPromptRes.data.value || '',
         aiEpisodeGroupEnabled: episodeGroup,
-        aiEpisodeGroupPrompt: episodeGroupPromptRes.data.value || ''
+        aiEpisodeGroupPrompt: episodeGroupPromptRes.data.value || '',
+        // 御坂助手
+        assistantChannelChatEnabled: asstChannelChatRes.data.value !== 'false',
+        assistantNotifyEnabled: asstNotifyRes.data.value !== 'false',
+        assistantNotifyOnComplete: asstNotifyCompleteRes.data.value !== 'false',
+        assistantNotifyOnFailed: asstNotifyFailedRes.data.value !== 'false',
+        assistantNotifyOnStart: asstNotifyStartRes.data.value === 'true',
+        assistantNotifyInterval: parseInt(asstNotifyIntervalRes.data.value || '15', 10),
       })
 
       // 设置当前选中的提供商配置
@@ -186,7 +206,7 @@ const AutoMatchSetting = () => {
         }
       }
     } catch (error) {
-      console.error('加载配置失败:', error)
+      console.error(t('autoMatch.logLoadConfigFailed'), error)
       message.error(t('autoMatch.loadFailed', { error: error?.response?.data?.message || error?.message || error?.detail || String(error) || t('common.unknown') }))
     } finally {
       setLoading(false)
@@ -202,26 +222,26 @@ const AutoMatchSetting = () => {
       setAiProviders(providers)
       return providers
     } catch (error) {
-      console.error('加载AI提供商列表失败:', error)
+      console.error(t('autoMatch.logLoadProvidersFailed'), error)
       // 使用默认配置
       const defaultProviders = [
         {
           id: 'deepseek',
           displayName: 'DeepSeek',
-          modelPlaceholder: '请通过刷新按钮获取模型列表',
-          baseUrlPlaceholder: 'https://api.deepseek.com (默认)'
+          modelPlaceholder: t('autoMatch.modelPlaceholder'),
+          baseUrlPlaceholder: `https://api.deepseek.com ${t('autoMatch.baseUrlDefaultHint')}`
         },
         {
           id: 'siliconflow',
           displayName: 'SiliconFlow 硅基流动',
-          modelPlaceholder: '请通过刷新按钮获取模型列表',
-          baseUrlPlaceholder: 'https://api.siliconflow.cn/v1 (默认)'
+          modelPlaceholder: t('autoMatch.modelPlaceholder'),
+          baseUrlPlaceholder: `https://api.siliconflow.cn/v1 ${t('autoMatch.baseUrlDefaultHint')}`
         },
         {
           id: 'openai',
           displayName: 'OpenAI (兼容接口)',
-          modelPlaceholder: '请通过刷新按钮获取模型列表',
-          baseUrlPlaceholder: 'https://api.openai.com/v1 (默认) 或自定义兼容接口'
+          modelPlaceholder: t('autoMatch.modelPlaceholder'),
+          baseUrlPlaceholder: `https://api.openai.com/v1 ${t('autoMatch.baseUrlDefaultHint')} ${t('autoMatch.baseUrlOpenaiHint')}`
         }
       ]
       setAiProviders(defaultProviders)
@@ -263,7 +283,7 @@ const AutoMatchSetting = () => {
       const res = await getAIBalance()
       setBalanceInfo(res.data)
     } catch (error) {
-      console.error('获取余额失败:', error)
+      console.error(t('autoMatch.logFetchBalanceFailed'), error)
       // 不显示错误消息,因为可能是提供商不支持
     } finally {
       setBalanceLoading(false)
@@ -293,7 +313,7 @@ const AutoMatchSetting = () => {
         fetchBalance()
       }
     } catch (error) {
-      console.error('保存配置失败:', error)
+      console.error(t('autoMatch.logSaveConfigFailed'), error)
       message.error(t('autoMatch.saveFailed', { error: error?.response?.data?.message || error?.message || t('common.unknown') }))
     } finally {
       setSaving(false)
@@ -324,7 +344,7 @@ const AutoMatchSetting = () => {
 
       message.success(t('autoMatch.saveMatchSuccess'))
     } catch (error) {
-      console.error('保存配置失败:', error)
+      console.error(t('autoMatch.logSaveConfigFailed'), error)
       message.error(t('autoMatch.saveFailed', { error: error?.response?.data?.message || error?.message || t('common.unknown') }))
     } finally {
       setSaving(false)
@@ -350,7 +370,30 @@ const AutoMatchSetting = () => {
 
       message.success(t('autoMatch.saveRecognitionSuccess'))
     } catch (error) {
-      console.error('保存配置失败:', error)
+      console.error(t('autoMatch.logSaveConfigFailed'), error)
+      message.error(t('autoMatch.saveFailed', { error: error?.response?.data?.message || error?.message || t('common.unknown') }))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 保存 Tab: 御坂助手
+  const handleSaveAssistantConfig = async () => {
+    try {
+      setSaving(true)
+      const values = form.getFieldsValue()
+      const interval = Math.min(60, Math.max(10, parseInt(values.assistantNotifyInterval || 15, 10) || 15))
+      await Promise.all([
+        setConfig('assistantChannelChatEnabled', values.assistantChannelChatEnabled ? 'true' : 'false'),
+        setConfig('assistantNotifyEnabled', values.assistantNotifyEnabled ? 'true' : 'false'),
+        setConfig('assistantNotifyOnComplete', values.assistantNotifyOnComplete ? 'true' : 'false'),
+        setConfig('assistantNotifyOnFailed', values.assistantNotifyOnFailed ? 'true' : 'false'),
+        setConfig('assistantNotifyOnStart', values.assistantNotifyOnStart ? 'true' : 'false'),
+        setConfig('assistantNotifyInterval', String(interval)),
+      ])
+      message.success(t('autoMatch.assistantSaveSuccess'))
+    } catch (error) {
+      console.error(t('autoMatch.logSaveConfigFailed'), error)
       message.error(t('autoMatch.saveFailed', { error: error?.response?.data?.message || error?.message || t('common.unknown') }))
     } finally {
       setSaving(false)
@@ -395,7 +438,7 @@ const AutoMatchSetting = () => {
         }
       }
     } catch (error) {
-      console.error('刷新模型列表失败:', error)
+      console.error(t('autoMatch.logRefreshModelsFailed'), error)
       message.error(t('autoMatch.refreshModelsFailed', { error: error.response?.data?.detail || error.message }))
     } finally {
       setRefreshingModels(false)
@@ -483,7 +526,7 @@ const AutoMatchSetting = () => {
         message.error(t('autoMatch.fillDefaultNotFound'))
       }
     } catch (error) {
-      console.error('获取默认提示词失败:', error)
+      console.error(t('autoMatch.logFetchDefaultPromptFailed'), error)
       message.error(t('autoMatch.fillDefaultFailed', { error: error?.response?.data?.message || error?.message || t('common.unknown') }))
     }
   }
@@ -1210,6 +1253,58 @@ const AutoMatchSetting = () => {
                 <Button type="primary" icon={<SaveOutlined />} onClick={handleSaveRecognitionConfig}
                   loading={saving} size="large" style={{ minWidth: '200px' }}>
                   {t('autoMatch.btnSaveRecognition')}
+                </Button>
+              </div>
+            </TabPane>
+
+            {/* 标签页: 御坂助手（看板娘对话 + 任务播报） */}
+            <TabPane tab={t('autoMatch.assistantTab')} key="assistant">
+              <Alert
+                type="info"
+                message={t('autoMatch.assistantAlertTitle')}
+                description={t('autoMatch.assistantAlertDesc')}
+                style={{ marginBottom: 16 }}
+              />
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12}>
+                  <Form.Item name="assistantChannelChatEnabled" valuePropName="checked"
+                    label={t('autoMatch.assistantChannelChatLabel')} tooltip={t('autoMatch.assistantChannelChatTooltip')}>
+                    <CustomSwitch />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12}>
+                  <Form.Item name="assistantNotifyEnabled" valuePropName="checked"
+                    label={t('autoMatch.assistantNotifyEnabledLabel')} tooltip={t('autoMatch.assistantNotifyEnabledTooltip')}>
+                    <CustomSwitch />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Form.Item name="assistantNotifyOnComplete" valuePropName="checked" label={t('autoMatch.assistantNotifyOnCompleteLabel')}>
+                    <CustomSwitch />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Form.Item name="assistantNotifyOnFailed" valuePropName="checked" label={t('autoMatch.assistantNotifyOnFailedLabel')}>
+                    <CustomSwitch />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Form.Item name="assistantNotifyOnStart" valuePropName="checked"
+                    label={t('autoMatch.assistantNotifyOnStartLabel')} tooltip={t('autoMatch.assistantNotifyOnStartTooltip')}>
+                    <CustomSwitch />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Form.Item name="assistantNotifyInterval"
+                    label={t('autoMatch.assistantNotifyIntervalLabel')} tooltip={t('autoMatch.assistantNotifyIntervalTooltip')}>
+                    <InputNumber min={10} max={60} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <div style={{ marginTop: '24px', textAlign: 'center' }}>
+                <Button type="primary" icon={<SaveOutlined />} onClick={handleSaveAssistantConfig}
+                  loading={saving} size="large" style={{ minWidth: '200px' }}>
+                  {t('autoMatch.assistantSaveBtn')}
                 </Button>
               </div>
             </TabPane>

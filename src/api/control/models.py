@@ -263,3 +263,16 @@ class EpisodeGroupAssociateRequest(BaseModel):
     """关联/解关联剧集组与条目"""
     animeId: int = Field(..., description="要关联的条目ID")
 
+
+class EpisodesWithFilteredResponse(BaseModel):
+    """分集列表 + 被过滤项响应（includeFiltered=1 时返回）。
+
+    episodes 为保留的分集（默认导入范围）；
+    filteredEpisodes 为被分集黑名单/全局正则过滤掉的分集（如预告、花絮等），
+    供调用方判断是否需要通过 /import/edited 手动纳入这些分集。
+    """
+    episodes: List[models.ProviderEpisodeInfo] = Field(..., description="保留的分集列表")
+    filteredEpisodes: List[models.ProviderEpisodeInfo] = Field(
+        default_factory=list, description="被过滤掉的分集（预告/花絮等）"
+    )
+

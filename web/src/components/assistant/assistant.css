@@ -67,8 +67,9 @@
 .assistant-fab:not(.is-dock):hover {
   transform: translateY(-6px) scale(1.04);
 }
-/* 移动端缩小并靠边，避免遮挡底部 Tab */
-.assistant-fab.is-mobile {
+/* 移动端缩小并靠边，避免遮挡底部 Tab（仅非 dock 时用固定定位；
+ * dock 模式下位置由 JS 的 left/top inline 样式控制，可拖动+贴边隐入） */
+.assistant-fab.is-mobile:not(.is-dock) {
   right: 12px;
   bottom: 76px;
 }
@@ -187,6 +188,46 @@
 .assistant-confirm-btns {
   display: flex;
   gap: 8px;
+}
+
+/* 消息复制按钮：默认淡，hover 消息时显现 */
+.assistant-msg-copy {
+  display: inline-block;
+  margin-left: 6px;
+  opacity: 0;
+  cursor: pointer;
+  color: var(--assistant-accent, #d9a441);
+  font-size: 13px;
+  transition: opacity 0.2s;
+  vertical-align: middle;
+}
+.assistant-msg.bot:hover .assistant-msg-copy {
+  opacity: 0.7;
+}
+.assistant-msg-copy:hover {
+  opacity: 1 !important;
+}
+
+/* "正在输入"三点跳动动画（替代原竖条光标） */
+.assistant-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+}
+.assistant-typing-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--assistant-accent, #d9a441);
+  opacity: 0.4;
+  animation: assistant-typing-bounce 1.2s infinite ease-in-out;
+}
+.assistant-typing-dots i:nth-child(2) { animation-delay: 0.15s; }
+.assistant-typing-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes assistant-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
 }
 
 /* 消息中的图片附件 */

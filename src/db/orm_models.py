@@ -739,7 +739,7 @@ class AssistantMessage(Base):
         ForeignKey("assistant_sessions.id", ondelete="CASCADE"), index=True, nullable=False
     )
     role: Mapped[str] = mapped_column(String(16), nullable=False)  # user / bot
-    content: Mapped[str] = mapped_column(MEDIUMTEXT, default="", nullable=False)
+    content: Mapped[str] = mapped_column(TEXT().with_variant(MEDIUMTEXT, "mysql"), default="", nullable=False)
     createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False)
 
     session: Mapped["AssistantSession"] = relationship(back_populates="messages")

@@ -67,30 +67,44 @@ export function usePetDrag({
     [width, height, margin]
   )
 
-  const onMouseDown = useCallback(
+  // 统一从鼠标/触摸事件提取坐标（触摸取第一个触点）
+  const getPoint = ev => {
+    if (ev.touches && ev.touches.length) return { x: ev.touches[0].clientX, y: ev.touches[0].clientY }
+    if (ev.changedTouches && ev.changedTouches.length) return { x: ev.changedTouches[0].clientX, y: ev.changedTouches[0].clientY }
+    return { x: ev.clientX, y: ev.clientY }
+  }
+
+  // 指针按下：同时支持鼠标(mousedown)与触摸(touchstart)，实现移动端可拖动
+  const onPointerDown = useCallback(
     e => {
-      // 只响应左键
-      if (e.button !== 0) return
+      const isTouch = e.type === 'touchstart'
+      // 鼠标仅响应左键；触摸不判断 button
+      if (!isTouch && e.button !== 0) return
       movedRef.current = false
-      start.current = { mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y }
+      const p0 = getPoint(e.nativeEvent || e)
+      start.current = { mx: p0.x, my: p0.y, px: pos.x, py: pos.y }
 
       const onMove = ev => {
-        const dx = ev.clientX - start.current.mx
-        const dy = ev.clientY - start.current.my
+        const p = getPoint(ev)
+        const dx = p.x - start.current.mx
+        const dy = p.y - start.current.my
         if (!movedRef.current && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
           movedRef.current = true
           setDragging(true)
         }
         if (movedRef.current) {
+          // 触摸拖动时阻止页面滚动
+          if (ev.cancelable) ev.preventDefault()
           setPos(clamp(start.current.px + dx, start.current.py + dy))
         }
       }
       const onUp = () => {
         window.removeEventListener('mousemove', onMove)
         window.removeEventListener('mouseup', onUp)
+        window.removeEventListener('touchmove', onMove)
+        window.removeEventListener('touchend', onUp)
         setDragging(false)
         if (movedRef.current) {
-          // 拖动结束后持久化位置
           setPos(p => {
             try {
               localStorage.setItem(storeKey, JSON.stringify(p))
@@ -103,6 +117,9 @@ export function usePetDrag({
       }
       window.addEventListener('mousemove', onMove)
       window.addEventListener('mouseup', onUp)
+      // touchmove 需 passive:false 才能 preventDefault 阻止滚动
+      window.addEventListener('touchmove', onMove, { passive: false })
+      window.addEventListener('touchend', onUp)
     },
     [pos.x, pos.y, clamp, storeKey]
   )
@@ -114,5 +131,6 @@ export function usePetDrag({
     return () => window.removeEventListener('resize', onResize)
   }, [clamp])
 
-  return { pos, onMouseDown, dragging, movedRef }
+  // onMouseDown 保留为别名（兼容旧调用），onPointerDown 同时支持鼠标+触摸
+  return { pos, onPointerDown, onMouseDown: onPointerDown, dragging, movedRef }
 }

@@ -79,6 +79,10 @@ async def chat_stream(
         "task_manager": getattr(st, "task_manager", None),
         "scraper_manager": getattr(st, "scraper_manager", None),
         "rate_limiter": getattr(st, "rate_limiter", None),
+        "scheduler_manager": getattr(st, "scheduler_manager", None),
+        "metadata_manager": getattr(st, "metadata_manager", None),
+        "ai_matcher_manager": getattr(st, "ai_matcher_manager", None),
+        "title_recognition_manager": getattr(st, "title_recognition_manager", None),
         "config_manager": config_manager,
     }
 

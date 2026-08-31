@@ -19,8 +19,9 @@
  * @param {number}  peekTop  底边露头顶比例（0~1，默认 0.32）
  */
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { PetStage } from './pet/PetStage'
-import { PET_ACTIONS } from './pet/petActions'
+import { getPetBubble } from './pet/petActions'
 import { usePeekDock } from './pet/usePeekDock'
 import { usePetDrag } from './pet/usePetDrag'
 
@@ -35,18 +36,20 @@ export function AssistantEntry({
   slide = 68,
   tilt = 18,
   peekTop = 0.32,
+  notice = '',
 }) {
-  // 仅在 idle 且有文案时展示气泡，避免思考/说话时气泡干扰
-  const bubble = state === 'idle' ? PET_ACTIONS.idle.bubble : ''
-  // 移动端不启用拖动/探头
-  const useDock = dock && !isMobile
+  const { t } = useTranslation()
+  // 任务播报气泡(notice)优先；否则 idle 时展示默认文案
+  const bubble = notice || (state === 'idle' ? getPetBubble('idle', t) : '')
+  // 移动端同样启用拖动/贴边探头（触摸驱动）
+  const useDock = dock
 
   const size = isMobile ? 84 : 110
   // 立绘高约为宽的 1.25 倍，估个入口高度供拖动边界/贴边判定用
   const estH = Math.round(size * 1.25)
 
   const { open, enter, leave, arm, disarm } = usePeekDock({ idleMs: 4000, enabled: useDock })
-  const { pos, onMouseDown, dragging, movedRef } = usePetDrag({
+  const { pos, onPointerDown, dragging, movedRef } = usePetDrag({
     width: size,
     height: estH,
     topRatio: 0.4,
@@ -104,12 +107,13 @@ export function AssistantEntry({
         `${dragging ? 'is-dragging' : ''}`
       }
       style={positionStyle}
-      onMouseDown={useDock ? onMouseDown : undefined}
+      onMouseDown={useDock ? onPointerDown : undefined}
+      onTouchStart={useDock ? onPointerDown : undefined}
       onClick={handleClick}
-      onMouseEnter={useDock ? enter : undefined}
-      onMouseLeave={useDock ? leave : undefined}
+      onMouseEnter={useDock && !isMobile ? enter : undefined}
+      onMouseLeave={useDock && !isMobile ? leave : undefined}
       role="button"
-      aria-label="打开助手"
+      aria-label={t('assistant.title')}
     >
       {bubble && <div className="assistant-fab-bubble">{bubble}</div>}
       <PetStage state={state} size={size} floating />

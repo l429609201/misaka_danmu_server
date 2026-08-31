@@ -7,6 +7,7 @@
 import { useCallback, useRef } from 'react'
 import Cookies from 'js-cookie'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
+import { useTranslation } from 'react-i18next'
 
 /**
  * @returns {{ send, abort }}
@@ -16,6 +17,7 @@ import { fetchEventSource } from '@microsoft/fetch-event-source'
  *   abort()：中断当前流
  */
 export function useAssistantChat() {
+  const { t } = useTranslation()
   const abortRef = useRef(null)
 
   const abort = useCallback(() => {
@@ -29,7 +31,7 @@ export function useAssistantChat() {
     const { onDelta, onDone, onError, onTool, onConfirm } = handlers
     const token = Cookies.get('danmu_token')
     if (!token) {
-      onError?.('未登录，请重新登录后再试。')
+      onError?.(t('assistant.errNotLoggedIn'))
       return
     }
 
@@ -51,7 +53,7 @@ export function useAssistantChat() {
         openWhenHidden: true,
         onopen: async response => {
           if (!response.ok) {
-            throw new Error(`连接失败: ${response.status}`)
+            throw new Error(t('assistant.errConnFailed', { status: response.status }))
           }
         },
         onmessage: event => {
@@ -67,7 +69,7 @@ export function useAssistantChat() {
           else if (data.type === 'tool') onTool?.(data)
           else if (data.type === 'confirm') onConfirm?.(data)
           else if (data.type === 'done') onDone?.()
-          else if (data.type === 'error') onError?.(data.content || '对话出错了')
+          else if (data.type === 'error') onError?.(data.content || t('assistant.replyError'))
         },
         onerror: err => {
           // 抛出以停止自动重连，交给外层 catch
@@ -76,7 +78,7 @@ export function useAssistantChat() {
       })
     } catch (err) {
       if (err?.name !== 'AbortError') {
-        onError?.(err?.message || '对话连接中断')
+        onError?.(err?.message || t('assistant.errConnInterrupted'))
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null

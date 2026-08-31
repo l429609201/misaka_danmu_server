@@ -8,10 +8,11 @@
  * 当前为纯 UI 外壳：sendMessage 走"假回复占位"，
  * 真正接 LLM 时只需替换 requestReply 的实现即可（已预留 TODO 口子）。
  */
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Drawer, Input, Button, Avatar, Dropdown, message as antdMessage } from 'antd'
-import { SendOutlined, HistoryOutlined, PlusOutlined, DeleteOutlined, PaperClipOutlined } from '@ant-design/icons'
+import { SendOutlined, HistoryOutlined, PlusOutlined, DeleteOutlined, PaperClipOutlined, CopyOutlined, DownloadOutlined } from '@ant-design/icons'
 import Markdown from 'react-markdown'
+import { useTranslation } from 'react-i18next'
 import { AVATAR_IMG, getPetLabel } from './pet/petActions'
 import { useAssistantChat } from './useAssistantChat'
 import { useAssistantSessions, createSessionId } from './useAssistantSessions'
@@ -20,9 +21,11 @@ const { TextArea } = Input
 
 // 发送给后端的最大历史轮数（控制 token），只取最近 N 条 user/assistant
 const MAX_HISTORY = 20
-const WELCOME = { role: 'bot', content: '御坂御坂在此待命，随时可以帮忙哦，御坂御坂精神满满地打招呼道！有什么想问的吗？' }
 
 export function AssistantPanel({ open, onClose, machine, isMobile }) {
+  const { t } = useTranslation()
+  // 欢迎语随语言变化（人设文案已 i18n）
+  const WELCOME = useMemo(() => ({ role: 'bot', content: t('assistant.welcome') }), [t])
   const [messages, setMessages] = useState([WELCOME])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -70,7 +73,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
       setMessages(data.messages?.length ? data.messages : [WELCOME])
       setSending(false)
     } catch {
-      antdMessage.error('加载会话失败')
+      antdMessage.error(t('assistant.loadSessionFailed'))
     }
   }, [sessionId, abort, loadSession])
 
@@ -82,14 +85,28 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
       .then(refreshSessions)
   }, [sessionId, saveSession, refreshSessions])
 
+  // 导出当前对话为纯文本文件下载
+  const exportChat = useCallback(() => {
+    const real = messages.filter(m => m.content)
+    if (real.length === 0) { antdMessage.info(t('assistant.noExportContent')); return }
+    const lines = real.map(m => `【${m.role === 'user' ? t('assistant.roleMe') : t('assistant.roleBot')}】\n${m.content}\n`)
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `misaka_chat_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [messages, t])
+
   // 选择附件：图片转 base64 预览待发；文本文件读内容拼进输入框
   const handleFiles = useCallback(async (fileList) => {
     const files = Array.from(fileList || [])
     for (const f of files) {
       const isImage = f.type.startsWith('image/')
       if (isImage) {
-        if (f.size > 4 * 1024 * 1024) { antdMessage.warning(`图片 ${f.name} 超过 4MB`); continue }
-        if (pendingImages.length >= 3) { antdMessage.warning('最多 3 张图片'); break }
+        if (f.size > 4 * 1024 * 1024) { antdMessage.warning(t('assistant.imgTooLarge', { name: f.name })); continue }
+        if (pendingImages.length >= 3) { antdMessage.warning(t('assistant.imgMax')); break }
         const dataUrl = await new Promise(res => {
           const r = new FileReader()
           r.onload = () => res(r.result)
@@ -98,14 +115,14 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
         setPendingImages(prev => [...prev, dataUrl])
       } else {
         // 文本文件：限 256KB，读内容拼进输入
-        if (f.size > 256 * 1024) { antdMessage.warning(`文件 ${f.name} 超过 256KB`); continue }
+        if (f.size > 256 * 1024) { antdMessage.warning(t('assistant.fileTooLarge', { name: f.name })); continue }
         try {
           const text = await f.text()
           // 简单二进制探测：含 NUL 字节视为二进制，拒绝
-          if (text.includes('\u0000')) { antdMessage.warning(`${f.name} 疑似二进制文件，已忽略`); continue }
-          setInput(prev => `${prev ? prev + '\n' : ''}【文件 ${f.name}】\n${text}`)
+          if (text.includes('\u0000')) { antdMessage.warning(t('assistant.fileBinary', { name: f.name })); continue }
+          setInput(prev => `${prev ? prev + '\n' : ''}【${f.name}】\n${text}`)
         } catch {
-          antdMessage.error(`读取 ${f.name} 失败`)
+          antdMessage.error(t('assistant.fileReadFailed', { name: f.name }))
         }
       }
     }
@@ -209,7 +226,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
     await streamChat(history, undefined, {
       onTool: ev => {
         // running 显示标签，done 清除
-        setLastBotTool(ev.status === 'running' ? (ev.label || '正在处理') : '')
+        setLastBotTool(ev.status === 'running' ? (ev.label || t('assistant.processingTool')) : '')
       },
       onConfirm: ev => {
         // 写类工具需二次确认：把确认卡挂到最后一条 bot 消息
@@ -222,7 +239,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
                 streaming: false,
                 toolLabel: '',
                 confirm: ev, // {name,label,description,arguments}
-                content: next[i].content || `御坂御坂需要你确认是否执行「${ev.label}」哦，御坂御坂谨慎地询问道。`,
+                content: next[i].content || t('assistant.confirmPrompt', { label: ev.label }),
               }
               break
             }
@@ -249,7 +266,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
       onError: msg => {
         // 断流恢复：SSE 中断时后端任务仍会跑完并存快照，尝试轮询拉取最终结果
         recoverFromServer(sessionId, () => {
-          appendToLastBot(msg || '对话出错了', true, true)
+          appendToLastBot(msg || t('assistant.replyError'), true, true)
           machine.sad()
           setSending(false)
         })
@@ -267,7 +284,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
         if (next[i].role === 'bot' && next[i].streaming) {
           next[i] = {
             ...next[i],
-            content: next[i].content || '（已停止）',
+            content: next[i].content || t('assistant.stopped'),
             streaming: false,
           }
           break
@@ -286,7 +303,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
       return next
     })
     // 把用户的决定作为一条普通消息发出，御坂据此决定是否真正调用写工具
-    const decision = agree ? '确认执行，请继续。' : '算了，取消吧。'
+    const decision = agree ? t('assistant.decisionYes') : t('assistant.decisionNo')
     send(decision)
   }, [send])
 
@@ -300,8 +317,8 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Avatar className="assistant-title-avatar" src={AVATAR_IMG} size={36} />
           <div style={{ lineHeight: 1.2 }}>
-            <div style={{ fontWeight: 600 }}>御坂助手</div>
-            <div style={{ fontSize: 12, opacity: 0.6 }}>在线 · {getPetLabel(machine.state)}</div>
+            <div style={{ fontWeight: 600 }}>{t('assistant.title')}</div>
+            <div style={{ fontSize: 12, opacity: 0.6 }}>{t('assistant.online')} · {getPetLabel(machine.state, t)}</div>
           </div>
         </div>
       }
@@ -330,12 +347,13 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
                     ),
                     onClick: () => switchSession(s.sessionId),
                   }))
-                : [{ key: 'empty', label: '暂无历史会话', disabled: true }],
+                : [{ key: 'empty', label: t('assistant.noHistory'), disabled: true }],
             }}
           >
-            <Button type="text" icon={<HistoryOutlined />} title="历史会话" />
+            <Button type="text" icon={<HistoryOutlined />} title={t('assistant.historyTitle')} />
           </Dropdown>
-          <Button type="text" icon={<PlusOutlined />} title="新建对话" onClick={newSession} />
+          <Button type="text" icon={<PlusOutlined />} title={t('assistant.newChat')} onClick={newSession} />
+          <Button type="text" icon={<DownloadOutlined />} title={t('assistant.exportChat')} onClick={exportChat} />
         </div>
       }
       styles={{ body: { display: 'flex', flexDirection: 'column', padding: 12 } }}
@@ -351,15 +369,31 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
                   <div className="assistant-tool-chip">🔧 {m.toolLabel}…</div>
                 )}
                 <Markdown>{m.content || ''}</Markdown>
-                {/* 流式中且暂无内容也无工具时显示等待光标 */}
+                {/* 复制按钮：非流式且有内容时显示（hover 出现） */}
+                {!m.streaming && m.content && (
+                  <span
+                    className="assistant-msg-copy"
+                    title={t('assistant.copy')}
+                    onClick={() => {
+                      navigator.clipboard?.writeText(m.content)
+                        .then(() => antdMessage.success(t('assistant.copied')))
+                        .catch(() => antdMessage.error(t('assistant.copyFailed')))
+                    }}
+                  >
+                    <CopyOutlined />
+                  </span>
+                )}
+                {/* 流式中且暂无内容也无工具时显示"正在输入"三点动画 */}
                 {m.streaming && !m.content && !m.toolLabel && (
-                  <span className="assistant-typing-dot">▍</span>
+                  <span className="assistant-typing-dots" aria-label={t('assistant.typing')}>
+                    <i></i><i></i><i></i>
+                  </span>
                 )}
                 {/* 写类工具二次确认卡 */}
                 {m.confirm && (
                   <div className="assistant-confirm-card">
                     <div className="assistant-confirm-desc">
-                      操作：{m.confirm.label}
+                      {t('assistant.operation')}：{m.confirm.label}
                       {m.confirm.arguments && Object.keys(m.confirm.arguments).length > 0 && (
                         <span className="assistant-confirm-args">
                           （{Object.entries(m.confirm.arguments).map(([k, v]) => `${k}=${v}`).join(', ')}）
@@ -368,10 +402,10 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
                     </div>
                     <div className="assistant-confirm-btns">
                       <Button size="small" type="primary" onClick={() => respondConfirm(i, true)}>
-                        确认执行
+                        {t('assistant.confirmExec')}
                       </Button>
                       <Button size="small" onClick={() => respondConfirm(i, false)}>
-                        取消
+                        {t('assistant.cancel')}
                       </Button>
                     </div>
                   </div>
@@ -383,7 +417,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
                 {m.images && m.images.length > 0 && (
                   <div className="assistant-msg-images">
                     {m.images.map((src, k) => (
-                      <img key={k} src={src} alt="附件" className="assistant-msg-image" />
+                      <img key={k} src={src} alt="" className="assistant-msg-image" />
                     ))}
                   </div>
                 )}
@@ -399,7 +433,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
         <div className="assistant-pending-images">
           {pendingImages.map((src, k) => (
             <div key={k} className="assistant-pending-image">
-              <img src={src} alt="待发送" />
+              <img src={src} alt="" />
               <span className="assistant-pending-remove" onClick={() => removeImage(k)}>×</span>
             </div>
           ))}
@@ -418,13 +452,13 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
         />
         <Button
           icon={<PaperClipOutlined />}
-          title="添加附件（图片/文本文件）"
+          title={t('assistant.attach')}
           onClick={() => fileInputRef.current?.click()}
         />
         <TextArea
           value={input}
           onChange={e => setInput(e.target.value)}
-          placeholder="输入消息，Enter 发送…"
+          placeholder={t('assistant.inputPlaceholder')}
           autoSize={{ minRows: 1, maxRows: 3 }}
           onPressEnter={e => {
             if (!e.shiftKey) {
@@ -439,7 +473,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
           onClick={sending ? handleStop : send}
           danger={sending}
         >
-          {sending ? '停止' : ''}
+          {sending ? t('assistant.stop') : ''}
         </Button>
       </div>
     </Drawer>

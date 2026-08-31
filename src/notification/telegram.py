@@ -420,19 +420,54 @@ class TelegramChannel(BaseNotificationChannel):
         chat_id = message.chat.id
         text = (message.text or "").strip()
         try:
+            # 若无活跃命令流程且御坂 LLM 可用 → 走伪流式对话（Telegram 支持 edit）
+            conv = self.service.get_conversation(user_id)
+            if not conv and await self.service.is_llm_chat_enabled():
+                await self._llm_chat_stream(text, user_id, chat_id, message.message_id)
+                return
+
             result: CommandResult = await self.service.handle_text_input(
                 text, user_id, self, chat_id=chat_id
             )
             if result is None:
-                # 无活跃对话状态，记录调试信息
-                conv = self.service.get_conversation(user_id)
-                if conv:
-                    self.logger.warning(f"[文本处理] 用户 {user_id} 状态 '{conv.state}' 无匹配处理器")
                 return
             if result and result.text:
                 await self._render_result(result, chat_id, reply_to_message_id=message.message_id)
         except Exception as e:
             self.logger.error(f"[文本处理] 处理失败 user={user_id}: {e}", exc_info=True)
+
+    async def _llm_chat_stream(self, text: str, user_id: str, chat_id, reply_to_id: int):
+        """御坂 LLM 伪流式：先发占位消息，随增量限流 edit 更新（Telegram 专属）。"""
+        import time as _t
+        # 先发占位消息拿 message_id
+        placeholder = await asyncio.to_thread(
+            self._bot.send_message, chat_id, "御坂御坂正在思考…", reply_to_message_id=reply_to_id
+        )
+        msg_id = placeholder.message_id
+        last_edit = {"t": 0.0, "shown": ""}
+
+        async def on_stream(partial: str):
+            # 限流：距上次 edit ≥1.3s 才更新，避免触发 Telegram 速率限制
+            now = _t.monotonic()
+            if now - last_edit["t"] < 1.3 or partial == last_edit["shown"]:
+                return
+            last_edit["t"] = now
+            last_edit["shown"] = partial
+            try:
+                await asyncio.to_thread(
+                    self._bot.edit_message_text, partial or "…", chat_id, msg_id
+                )
+            except Exception:
+                pass  # edit 失败（内容未变/限流）忽略，最终结果会补发
+
+        result = await self.service.handle_llm_chat(text, user_id, stream_callback=on_stream)
+        final = (result.text if result else "") or "……"
+        # 最终定稿：edit 成完整内容（若与上次相同则跳过）
+        if final != last_edit["shown"]:
+            try:
+                await asyncio.to_thread(self._bot.edit_message_text, final, chat_id, msg_id)
+            except Exception:
+                pass
 
     # ── 渲染引擎 ──
 
