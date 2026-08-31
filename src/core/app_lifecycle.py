@@ -25,10 +25,11 @@ from src.services import (
     TaskManager, MetadataSourceManager, ScraperManager, WebhookManager,
     SchedulerManager, TitleRecognitionManager, MediaServerManager,
     TransportManager,
-    NotificationService, NotificationManager,
+    NotificationManager,
     TunnelService, apply_tunnel_from_notification_manager,
     init_bangumi_data_manager,
 )
+from src.services.notification_service import NotificationService
 from src.utils import InternalPollingManager, init_proxy_middleware
 from src.utils.server_instance_id import generate_server_instance_id
 from src.rate_limiter import RateLimiter
