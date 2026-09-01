@@ -75,10 +75,16 @@ class LlmChatMixin:
         text: str,
         user_id: str,
         stream_callback: Optional[Callable[[str], Awaitable[None]]] = None,
+        images: Optional[List[str]] = None,
+        rich_text: bool = False,
     ) -> Optional[CommandResult]:
         """
         用御坂 Agent 处理一句自然语言。
         - stream_callback：若提供，则每积累一段增量就回调一次（供 Telegram 伪流式 edit）。
+        - images：图片 data URL 列表（渠道收到图片/贴纸时传入），需 vision 模型才生效。
+        - rich_text：目标渠道是否支持 Markdown 渲染。由渠道按自身
+          ChannelCapability.RICH_TEXT 传入；默认 False 走纯文本，
+          这样新接入的渠道不会因为漏传参数就把 Markdown 符号裸露给用户。
         - 返回最终 CommandResult（完整文本），供渠道兜底一次性发送。
         """
         if not await self.is_llm_chat_enabled():
@@ -99,11 +105,20 @@ class LlmChatMixin:
 
         agent = AssistantAgent(self.config_manager, session_factory=self._session_factory)
         context_extra = self._agent_context_extra()  # 渠道端也注入写工具依赖
-        history = self._get_llm_history(user_id) + [{"role": "user", "content": text}]
+        # 图片只挂在本轮 user 消息上；历史里不留图片，避免 token 随轮数膨胀
+        current_turn = {"role": "user", "content": text}
+        if images:
+            current_turn["images"] = images
+        history = self._get_llm_history(user_id) + [current_turn]
 
         reply = ""
         try:
-            async for event in agent.stream(history, DEFAULT_PERSONA, context_extra):
+            # is_channel=True：渠道侧会把贴纸/图片/引用翻译成方括号标注，
+            # 需要让模型知道这套约定
+            async for event in agent.stream(
+                history, DEFAULT_PERSONA, context_extra,
+                rich_text=rich_text, is_channel=True,
+            ):
                 etype = event.get("type")
                 if etype == "delta":
                     reply += event.get("content", "")

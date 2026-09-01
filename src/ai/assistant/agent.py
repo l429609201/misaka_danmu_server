@@ -80,9 +80,22 @@ class AssistantAgent:
             "log_raw_response": log_raw,  
         }
 
-    def _build_messages(self, history: List[Dict[str, Any]], persona_key: str) -> List[Dict[str, Any]]:
+    def _build_messages(
+        self,
+        history: List[Dict[str, Any]],
+        persona_key: str,
+        rich_text: bool = True,
+        is_channel: bool = False,
+    ) -> List[Dict[str, Any]]:
         messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": get_persona_prompt(persona_key or DEFAULT_PERSONA)}
+            {
+                "role": "system",
+                "content": get_persona_prompt(
+                    persona_key or DEFAULT_PERSONA,
+                    rich_text=rich_text,
+                    is_channel=is_channel,
+                ),
+            }
         ]
         for m in history:
             role = m.get("role")
@@ -141,19 +154,27 @@ class AssistantAgent:
         history: List[Dict[str, str]],
         persona_key: str = DEFAULT_PERSONA,
         context_extra: Dict[str, Any] = None,
+        rich_text: bool = True,
+        is_channel: bool = False,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """ReAct 主循环：先用非流式判断工具调用，最终回答用流式输出。
 
         写类工具需二次确认：遇到写工具的 tool_call 时不直接执行，
         而是产出 confirm 事件并结束本轮，等前端把用户确认后的选择作为
         新一轮 user 消息带回（P3 采用"确认即在对话里回一句同意"的轻量方案）。
+
+        :param rich_text: 目标渠道是否支持 Markdown 渲染（决定 system prompt 里的排版约束）。
+            默认 True 兼容 Web 端；纯文本渠道（企业微信/Server酱）需显式传 False。
+        :param is_channel: 是否来自通知渠道对话（决定是否注入方括号标注说明）。
         """
         cfg = await self._load_ai_config()
         if not (cfg["api_key"] and cfg["model"] and cfg["base_url"]):
             yield {"type": "error", "content": "AI 未配置：请先在设置中填写 API Key、Base URL 与模型。"}
             return
 
-        messages = self._build_messages(history, persona_key)
+        messages = self._build_messages(
+            history, persona_key, rich_text=rich_text, is_channel=is_channel
+        )
         tools = registry.openai_tools(include_write=True)  # P3 暴露只读+写工具
         context = {"session_factory": self.session_factory}
         if context_extra:

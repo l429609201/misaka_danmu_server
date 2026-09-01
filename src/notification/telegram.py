@@ -59,6 +59,9 @@ class TelegramChannel(BaseNotificationChannel):
         self._polling_thread: Optional[threading.Thread] = None
         self._running = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None  # 主事件循环引用
+        # bot 自身身份（start() 中通过 get_me 填充），用于 @提及剥离与"引用自己回复"判断
+        self._bot_username: str = ""
+        self._bot_id: Optional[int] = None
 
     @staticmethod
     def _escape_markdown_v2(text: str) -> str:
@@ -521,6 +524,21 @@ class TelegramChannel(BaseNotificationChannel):
         telebot.apihelper.READ_TIMEOUT = 15
 
         self._bot = telebot.TeleBot(bot_token, threaded=False)
+
+        # 缓存 bot 自身信息（id / username）。
+        # why：剥离群聊里的 "@BotName" 提及、以及判断"用户引用的是不是机器人自己的回复"，
+        # 都要用到 bot username/id。telebot 的 bot.user 属性需先调用过 get_me 才有值，
+        # 这里主动取一次并存下来，失败则降级（提及不剥离，功能不中断）。
+        self._bot_username = ""
+        self._bot_id = None
+        try:
+            me = await asyncio.to_thread(self._bot.get_me)
+            self._bot_username = getattr(me, "username", "") or ""
+            self._bot_id = getattr(me, "id", None)
+            self.logger.info(f"Telegram Bot 身份: @{self._bot_username} (id={self._bot_id})")
+        except Exception as e:
+            self.logger.warning(f"获取 Bot 身份失败（@提及剥离将不生效）: {e}")
+
         self._register_handlers()
 
         mode = self.config.get("mode", "polling")
@@ -619,6 +637,31 @@ class TelegramChannel(BaseNotificationChannel):
                 self._handle_async_text(message), loop
             )
 
+        # ── 非文本消息处理（贴纸/图片/语音/文件/位置等）──
+        # why：原先只注册 ['text']，其余类型被 telebot 直接丢弃，用户发贴纸或图片时
+        # 机器人毫无反应。这里统一收下，交给 _normalize_incoming 翻译成 LLM 可理解的描述。
+        @bot.message_handler(
+            func=lambda m: True,
+            content_types=[
+                'sticker', 'photo', 'voice', 'audio', 'video', 'video_note',
+                'animation', 'document', 'location', 'venue', 'contact',
+                'poll', 'dice',
+            ],
+        )
+        def handle_rich_message(message):
+            self._log_raw("⬇ 收到富消息", {
+                "from": message.from_user.id,
+                "type": message.content_type,
+                "chat_id": message.chat.id,
+            })
+            if not self._is_allowed(message.from_user.id):
+                return
+            loop = self._get_event_loop()
+            if loop is None:
+                return
+            asyncio.run_coroutine_threadsafe(
+                self._handle_async_rich_message(message), loop
+            )
 
 
     def _get_event_loop(self):
@@ -669,7 +712,12 @@ class TelegramChannel(BaseNotificationChannel):
             # 若无活跃命令流程且御坂 LLM 可用 → 走伪流式对话（Telegram 支持 edit）
             conv = self.service.get_conversation(user_id)
             if not conv and await self.service.is_llm_chat_enabled():
-                await self._llm_chat_stream(text, user_id, chat_id, message.message_id)
+                # 纯文本也可能带引用/@提及/转发标记，统一规范化后再交给 LLM，
+                # 否则「引用某条消息 + 追问」时模型不知道用户在指哪条
+                llm_text, images = await self._normalize_incoming(message)
+                await self._llm_chat_stream(
+                    llm_text or text, user_id, chat_id, message.message_id, images=images
+                )
                 return
 
             result: CommandResult = await self.service.handle_text_input(
@@ -682,8 +730,290 @@ class TelegramChannel(BaseNotificationChannel):
         except Exception as e:
             self.logger.error(f"[文本处理] 处理失败 user={user_id}: {e}", exc_info=True)
 
-    async def _llm_chat_stream(self, text: str, user_id: str, chat_id, reply_to_id: int):
-        """御坂 LLM 伪流式：先发占位消息，随增量限流 edit 更新（Telegram 专属）。"""
+    async def _handle_async_rich_message(self, message):
+        """
+        异步处理非纯文本消息（贴纸/图片/语音/文件/位置/联系人等）。
+
+        统一交给 _normalize_incoming 翻译成「文本描述 + 可选图片」，再走 LLM 对话。
+        why：原先 handler 只注册 content_types=['text']，其余类型直接被 telebot 丢弃，
+        用户发贴纸或图片时机器人完全无反应，看起来像卡死。
+        """
+        user_id = str(message.from_user.id)
+        chat_id = message.chat.id
+        try:
+            # 非文本消息不参与命令对话状态机（状态机只认文本输入），
+            # 有活跃流程时提示用户先完成或取消，避免静默吞掉消息
+            conv = self.service.get_conversation(user_id)
+            if conv:
+                await asyncio.to_thread(
+                    self._bot.send_message, chat_id,
+                    "当前有正在进行的操作，请先完成或发送 /cancel 取消，之后再发送这类消息。",
+                    reply_to_message_id=message.message_id,
+                )
+                return
+
+            if not await self.service.is_llm_chat_enabled():
+                return
+
+            text, images = await self._normalize_incoming(message)
+            if not text and not images:
+                return
+            await self._llm_chat_stream(
+                text, user_id, chat_id, message.message_id, images=images
+            )
+        except Exception as e:
+            self.logger.error(f"[富消息处理] 处理失败 user={user_id}: {e}", exc_info=True)
+
+    # 单张图片下载上限（超过则只给文字描述，不喂给 vision 模型）
+    _VISION_MAX_BYTES = 4 * 1024 * 1024
+
+    async def _download_photo_data_url(self, file_id: str) -> Optional[str]:
+        """
+        把 Telegram 图片下载为 data URL（base64），供 vision 模型识别。
+
+        why：Telegram 的文件直链带 bot token 且有时效，不能直接给第三方 LLM；
+        统一转 data URL 内联，既避免泄露 token，也不依赖外网可达性。
+        失败返回 None，由调用方降级为纯文字描述。
+        """
+        try:
+            info = await asyncio.to_thread(self._bot.get_file, file_id)
+            size = getattr(info, "file_size", 0) or 0
+            if size and size > self._VISION_MAX_BYTES:
+                self.logger.info(f"[富消息] 图片超过 {self._VISION_MAX_BYTES // 1024 // 1024}MB，跳过识别")
+                return None
+            raw = await asyncio.to_thread(self._bot.download_file, info.file_path)
+            if not raw or len(raw) > self._VISION_MAX_BYTES:
+                return None
+            import base64
+            path = (info.file_path or "").lower()
+            if path.endswith(".png"):
+                mime = "image/png"
+            elif path.endswith(".webp"):
+                mime = "image/webp"
+            elif path.endswith(".gif"):
+                mime = "image/gif"
+            else:
+                mime = "image/jpeg"
+            return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+        except Exception as e:
+            self.logger.warning(f"[富消息] 下载图片失败: {e}")
+            return None
+
+    @staticmethod
+    def _describe_user(user) -> str:
+        """把 Telegram User 对象描述成「昵称(@username)」，供引用/转发场景标注来源。"""
+        if not user:
+            return "某人"
+        name = " ".join(
+            p for p in (getattr(user, "first_name", ""), getattr(user, "last_name", "")) if p
+        ).strip()
+        uname = getattr(user, "username", "")
+        if name and uname:
+            return f"{name}(@{uname})"
+        return name or (f"@{uname}" if uname else "某人")
+
+    @classmethod
+    def _summarize_message(cls, msg) -> str:
+        """
+        把任意 Telegram 消息概括成一行文本，供「引用消息」标注被引内容。
+
+        只概括被引消息本身，不再递归展开它的引用/转发链：对 LLM 理解无益，
+        还会撑大 token。
+        """
+        if msg is None:
+            return ""
+        # 有文字/图片说明就直接用，这是最常见情况
+        body = (getattr(msg, "text", "") or getattr(msg, "caption", "") or "").strip()
+        if body:
+            return body if len(body) <= 300 else body[:300] + "…"
+        # 无文字则按媒体类型给个占位描述
+        if getattr(msg, "sticker", None):
+            emoji = getattr(msg.sticker, "emoji", "") or ""
+            return f"[贴纸 {emoji}]".replace(" ]", "]")
+        if getattr(msg, "photo", None):
+            return "[图片]"
+        if getattr(msg, "voice", None):
+            return "[语音]"
+        if getattr(msg, "video", None):
+            return "[视频]"
+        if getattr(msg, "animation", None):
+            return "[GIF 动图]"
+        if getattr(msg, "audio", None):
+            return "[音频]"
+        if getattr(msg, "document", None):
+            return f"[文件 {getattr(msg.document, 'file_name', '') or ''}]".replace(" ]", "]")
+        if getattr(msg, "location", None):
+            return "[位置]"
+        if getattr(msg, "contact", None):
+            return "[联系人名片]"
+        if getattr(msg, "poll", None):
+            return f"[投票 {getattr(msg.poll, 'question', '') or ''}]".replace(" ]", "]")
+        return "[非文本消息]"
+
+    async def _normalize_incoming(self, message) -> tuple:
+        """
+        把一条 Telegram 消息规范化为 (给 LLM 的文本, 图片 data URL 列表)。
+
+        设计原则：LLM 只认文本和图片，所以其余类型统一翻译成「带方括号标注的
+        自然语言描述」，让模型知道用户发了什么、能接着聊，而不是收到空字符串。
+
+        处理的类型：
+        - 引用消息(reply_to_message)：把被引内容作为上下文前置，让 LLM 知道在说哪条
+        - @提及：剥掉 @机器人用户名，只留真正的诉求（群里 @Bot 提问的标准姿势）
+        - 贴纸：给出 emoji 与贴纸集名；静态贴纸额外下载图像交 vision 识别
+        - 图片：下载交 vision 识别，caption 作为提问文本
+        - 语音/音频/视频/动图/文件/位置/联系人/投票：给出文字描述与元信息
+        - 转发消息：标注原作者
+        """
+        parts: List[str] = []
+        images: List[str] = []
+
+        # ── 引用消息：把被引内容作为上下文前置 ──
+        replied = getattr(message, "reply_to_message", None)
+        if replied:
+            who = self._describe_user(getattr(replied, "from_user", None))
+            # 被引的是机器人自己 → 说明用户在追问上一条回复
+            me_id = getattr(self, "_bot_id", None)
+            replied_uid = getattr(getattr(replied, "from_user", None), "id", None)
+            if me_id and replied_uid == me_id:
+                parts.append(f"[用户引用了你之前的回复]「{self._summarize_message(replied)}」")
+            else:
+                parts.append(f"[用户引用了 {who} 的消息]「{self._summarize_message(replied)}」")
+
+        # ── 转发消息：标注原始来源 ──
+        fwd_from = getattr(message, "forward_from", None)
+        fwd_chat = getattr(message, "forward_from_chat", None)
+        if fwd_from or fwd_chat:
+            src = (
+                self._describe_user(fwd_from) if fwd_from
+                else (getattr(fwd_chat, "title", "") or "某频道")
+            )
+            parts.append(f"[这是从 {src} 转发的消息]")
+
+        text = (getattr(message, "text", "") or "").strip()
+        caption = (getattr(message, "caption", "") or "").strip()
+
+        # ── 剥离 @机器人提及：群聊里 "@MyBot 帮我查X" 应只把 "帮我查X" 交给 LLM ──
+        bot_username = getattr(self, "_bot_username", "")
+        if bot_username:
+            mention = f"@{bot_username}"
+            text = text.replace(mention, "").strip()
+            caption = caption.replace(mention, "").strip()
+
+        # ── 各媒体类型：翻译成描述，必要时下载图像 ──
+        sticker = getattr(message, "sticker", None)
+        if sticker:
+            emoji = getattr(sticker, "emoji", "") or ""
+            set_name = getattr(sticker, "set_name", "") or ""
+            desc = "[用户发来一张贴纸"
+            if emoji:
+                desc += f"，对应表情 {emoji}"
+            if set_name:
+                desc += f"，来自贴纸包「{set_name}」"
+            desc += "]"
+            parts.append(desc)
+            # 动态贴纸(webm/tgs)无法作为静态图识别，只有静态 webp 才喂 vision
+            if not getattr(sticker, "is_animated", False) and not getattr(sticker, "is_video", False):
+                data_url = await self._download_photo_data_url(sticker.file_id)
+                if data_url:
+                    images.append(data_url)
+            # 纯贴纸无文字时，给 LLM 一个明确的行为指引，避免它答"我看不到图"
+            if not text and not caption:
+                parts.append("请结合这张贴纸的情绪自然回应用户。")
+
+        photos = getattr(message, "photo", None)
+        if photos:
+            parts.append("[用户发来一张图片]")
+            # telebot 的 photo 是不同尺寸列表，取最后一个（分辨率最高）
+            data_url = await self._download_photo_data_url(photos[-1].file_id)
+            if data_url:
+                images.append(data_url)
+            else:
+                parts.append("（图片过大或下载失败，无法识别内容，请让用户改用文字描述）")
+
+        voice = getattr(message, "voice", None)
+        if voice:
+            parts.append(
+                f"[用户发来一条语音，时长 {getattr(voice, 'duration', 0)} 秒]"
+                "（你无法收听语音，请礼貌请用户改用文字）"
+            )
+
+        audio = getattr(message, "audio", None)
+        if audio:
+            title = getattr(audio, "title", "") or getattr(audio, "file_name", "") or "未命名"
+            parts.append(f"[用户发来一个音频文件「{title}」]（你无法收听音频内容）")
+
+        video = getattr(message, "video", None)
+        if video:
+            parts.append(
+                f"[用户发来一段视频，时长 {getattr(video, 'duration', 0)} 秒]"
+                "（你无法观看视频内容）"
+            )
+
+        video_note = getattr(message, "video_note", None)
+        if video_note:
+            parts.append("[用户发来一条圆形视频消息]（你无法观看视频内容）")
+
+        animation = getattr(message, "animation", None)
+        if animation:
+            parts.append("[用户发来一个 GIF 动图]（你无法观看动图内容）")
+
+        document = getattr(message, "document", None)
+        # 注意：GIF/视频类消息也会带 document 字段，已被上面的 animation/video 分支覆盖，
+        # 这里只处理真正的文件，避免同一条消息被描述两次
+        if document and not animation and not video:
+            fname = getattr(document, "file_name", "") or "未命名文件"
+            fsize = getattr(document, "file_size", 0) or 0
+            size_txt = f"，约 {fsize // 1024} KB" if fsize else ""
+            parts.append(f"[用户发来一个文件「{fname}」{size_txt}]（你无法读取文件内容）")
+
+        location = getattr(message, "location", None)
+        if location:
+            parts.append(
+                f"[用户分享了一个位置，经纬度 "
+                f"{getattr(location, 'latitude', '?')},{getattr(location, 'longitude', '?')}]"
+            )
+
+        contact = getattr(message, "contact", None)
+        if contact:
+            cname = " ".join(
+                p for p in (
+                    getattr(contact, "first_name", ""), getattr(contact, "last_name", "")
+                ) if p
+            ).strip() or "某人"
+            parts.append(f"[用户分享了「{cname}」的联系人名片]")
+
+        poll = getattr(message, "poll", None)
+        if poll:
+            parts.append(f"[用户发来一个投票：{getattr(poll, 'question', '') or ''}]")
+
+        dice = getattr(message, "dice", None)
+        if dice:
+            parts.append(
+                f"[用户投出了一个骰子，表情 {getattr(dice, 'emoji', '🎲')}，"
+                f"点数 {getattr(dice, 'value', '?')}]"
+            )
+
+        # ── 用户自己的文字放最后，作为真正的诉求 ──
+        body = text or caption
+        if body:
+            parts.append(body)
+
+        # 什么都没识别出来时给个兜底，至少让 LLM 能回应
+        if not parts:
+            parts.append("[用户发来一条无法识别的消息]（请让用户改用文字说明需求）")
+
+        return "\n".join(parts), images
+
+    async def _llm_chat_stream(
+        self, text: str, user_id: str, chat_id, reply_to_id: int,
+        images: Optional[List[str]] = None,
+    ):
+        """御坂 LLM 伪流式：先发占位消息，随增量限流 edit 更新（Telegram 专属）。
+
+        images：图片 data URL 列表（贴纸/图片消息经 _normalize_incoming 提取），
+        透传给 Agent 交 vision 模型识别。
+        """
         import time as _t
 
         # ① 先发 typing action，让用户看到"正在输入…"状态
@@ -741,7 +1071,12 @@ class TelegramChannel(BaseNotificationChannel):
                     except Exception:
                         pass  # 内容未变/限流，最终定稿会补发
 
-            result = await self.service.handle_llm_chat(text, user_id, stream_callback=on_stream)
+            # rich_text 取自本渠道声明的能力：Telegram 支持 MarkdownV2，
+            # 所以允许 LLM 用 Markdown 排版，再由 _markdown_to_v2 转成 TG 语法
+            result = await self.service.handle_llm_chat(
+                text, user_id, stream_callback=on_stream, images=images,
+                rich_text=self.get_capabilities().supports(ChannelCapability.RICH_TEXT),
+            )
             final = (result.text if result else "") or "……"
             # 最终定稿：完整文本转 MarkdownV2；解析失败则降级纯文本，避免整条回复发不出去
             if final != last_edit["shown"]:
