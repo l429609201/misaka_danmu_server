@@ -7,7 +7,6 @@ import {
   InputNumber,
   List,
   Modal,
-  Pagination,
   Radio,
   Select,
   Space,
@@ -69,6 +68,7 @@ import PosterSearchModal from '../media-fetch/components/PosterSearchModal'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../store/index.js'
 import { useDefaultPageSize } from '../../hooks/useDefaultPageSize'
+import { StickyPagination } from '@/components/StickyPagination'
 
 import { useTranslation } from 'react-i18next'
 
@@ -1521,24 +1521,23 @@ export const Library = () => {
           onDeleteGroupSilent={handleDeleteGroupSilent}
         />
 
-        {/* 分页器：在 LibraryGroupView 外部统一显示 */}
+        {/* 分页器：桌面端吸底卡片，移动端自动切换为悬浮按钮 + 底部抽屉 */}
         {pagination.total > 0 && (
-          <div className="mt-4 flex justify-end">
-            <Pagination
-              current={pagination.current}
-              pageSize={pagination.pageSize}
-              total={pagination.total}
-              showTotal={total => t('libraryPage.totalItems', { total })}
-              showSizeChanger
-              hideOnSinglePage
-              onChange={(page, pageSize) => {
-                setPagination(n => ({ ...n, current: page, pageSize }))
-              }}
-              onShowSizeChange={(_, size) => {
-                setPagination(n => ({ ...n, pageSize: size }))
-              }}
-            />
-          </div>
+          <StickyPagination
+            current={pagination.current}
+            pageSize={pagination.pageSize}
+            total={pagination.total}
+            showTotal={total => t('libraryPage.totalItems', { total })}
+            showSizeChanger
+            showQuickJumper
+            showScrollButtons
+            onChange={(page, pageSize) => {
+              setPagination(n => ({ ...n, current: page, pageSize }))
+            }}
+            onShowSizeChange={(_, size) => {
+              setPagination(n => ({ ...n, pageSize: size }))
+            }}
+          />
         )}
       </Card>
       <CreateAnimeModal

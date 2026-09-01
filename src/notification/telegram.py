@@ -74,6 +74,252 @@ class TelegramChannel(BaseNotificationChannel):
                 out.append(ch)
         return "".join(out)
 
+    # MarkdownV2 保留字符（出现在普通文本里必须反斜杠转义，否则 TG 报 can't parse entities）
+    _MDV2_SPECIALS = frozenset(r'_*[]()~`>#+-=|{}.!')
+
+    # 行内 token 正则：按优先级排列，一次扫描全部识别。
+    # why：必须一次扫描完成。若分多次 re.sub（先转粗体再转链接再转义剩余文本），
+    # 上一轮产出的 * 和 []() 会被下一轮当普通文本二次转义，格式全废。
+    _MDV2_TOKEN_RE = None  # 惰性编译，见 _get_token_re
+
+    @classmethod
+    def _get_token_re(cls):
+        """惰性编译行内 token 正则，避免每次调用重复编译。"""
+        if cls._MDV2_TOKEN_RE is None:
+            import re
+            cls._MDV2_TOKEN_RE = re.compile(
+                # 1) 围栏代码块 ```lang\n...```（内容原样保留）
+                r'(?P<fence>```[\s\S]*?```)'
+                # 2) 行内代码 `code`（内容仅转义 ` 和 \）
+                r'|(?P<code>`[^`\n]+`)'
+                # 3) 图片 ![alt](url) —— 先于链接匹配，否则前导 ! 会被当普通文本
+                r'|(?P<image>!\[(?P<img_alt>[^\]]*)\]\((?P<img_url>[^)\s]+)\))'
+                # 4) 链接 [text](url)
+                r'|(?P<link>\[(?P<link_text>[^\]]*)\]\((?P<link_url>[^)\s]+)\))'
+                # 5) 加粗 **text** / __text__ → MarkdownV2 的 *text*
+                r'|(?P<bold>\*\*(?P<bold_in>[^\n]+?)\*\*|__(?P<bold_in2>[^\n]+?)__)'
+                # 6) 删除线 ~~text~~ → MarkdownV2 的 ~text~
+                r'|(?P<strike>~~(?P<strike_in>[^\n]+?)~~)'
+                # 7) 斜体 *text* / _text_ → MarkdownV2 的 _text_
+                #    放在加粗之后，避免 **x** 被拆成两个斜体
+                r'|(?P<italic>\*(?P<italic_in>[^*\n]+?)\*|_(?P<italic_in2>[^_\n]+?)_)'
+                # 8) 裸 URL（http/https），MarkdownV2 里 URL 本身不转义
+                r'|(?P<url>https?://[^\s<>()]+)'
+            )
+        return cls._MDV2_TOKEN_RE
+
+    @classmethod
+    def _mdv2_escape_plain(cls, s: str) -> str:
+        """转义普通文本段落中的 MarkdownV2 保留字符。"""
+        if not s:
+            return ""
+        return "".join("\\" + ch if ch in cls._MDV2_SPECIALS else ch for ch in s)
+
+    @classmethod
+    def _mdv2_escape_code(cls, s: str) -> str:
+        """代码内容只需转义反引号和反斜杠，其余字符原样（TG 官方规则）。"""
+        return s.replace("\\", "\\\\").replace("`", "\\`")
+
+    @classmethod
+    def _mdv2_escape_url(cls, s: str) -> str:
+        """链接 URL 内只需转义 ) 和 \\（TG 官方规则），其余原样以免破坏地址。"""
+        return s.replace("\\", "\\\\").replace(")", "\\)")
+
+    @classmethod
+    def _convert_inline(cls, text: str) -> str:
+        """
+        转换一行（或一段无块级语义的文本）中的行内 Markdown 语法。
+
+        单次线性扫描：命中 token 按各自规则处理，未命中的间隙按普通文本转义。
+        这样 token 产出的格式标记不会被再次转义。
+        """
+        if not text:
+            return ""
+
+        out = []
+        pos = 0
+        for m in cls._get_token_re().finditer(text):
+            # 先补齐上一个 token 到当前 token 之间的普通文本
+            if m.start() > pos:
+                out.append(cls._mdv2_escape_plain(text[pos:m.start()]))
+            pos = m.end()
+
+            if m.group('fence'):
+                # 围栏代码块：拆出语言标记和代码体，代码体按 code 规则转义
+                raw = m.group('fence')
+                inner = raw[3:-3]
+                if '\n' in inner:
+                    lang, _, body = inner.partition('\n')
+                else:
+                    lang, body = '', inner
+                lang = lang.strip()
+                out.append(f"```{lang}\n{cls._mdv2_escape_code(body)}```")
+            elif m.group('code'):
+                body = m.group('code')[1:-1]
+                out.append(f"`{cls._mdv2_escape_code(body)}`")
+            elif m.group('image'):
+                # TG 不支持行内图片语法，降级为链接，保留 alt 文字
+                alt = m.group('img_alt') or '图片'
+                out.append(
+                    f"[{cls._mdv2_escape_plain(alt)}]"
+                    f"({cls._mdv2_escape_url(m.group('img_url'))})"
+                )
+            elif m.group('link'):
+                label = m.group('link_text') or m.group('link_url')
+                out.append(
+                    f"[{cls._convert_inline(label)}]"
+                    f"({cls._mdv2_escape_url(m.group('link_url'))})"
+                )
+            elif m.group('bold'):
+                inner = m.group('bold_in') or m.group('bold_in2') or ''
+                out.append(f"*{cls._convert_inline(inner)}*")
+            elif m.group('strike'):
+                out.append(f"~{cls._convert_inline(m.group('strike_in'))}~")
+            elif m.group('italic'):
+                inner = m.group('italic_in') or m.group('italic_in2') or ''
+                out.append(f"_{cls._convert_inline(inner)}_")
+            elif m.group('url'):
+                # 裸 URL 包成显式链接，避免地址里的 . - 等字符被转义后显示错乱
+                raw_url = m.group('url')
+                out.append(f"[{cls._mdv2_escape_plain(raw_url)}]({cls._mdv2_escape_url(raw_url)})")
+
+        # 收尾：最后一个 token 之后的普通文本
+        if pos < len(text):
+            out.append(cls._mdv2_escape_plain(text[pos:]))
+        return "".join(out)
+
+    @staticmethod
+    def _close_dangling_markdown(text: str) -> str:
+        """
+        补齐流式中途未闭合的 Markdown 标记（仅供伪流式增量帧使用）。
+
+        why：LLM 边生成边发，某一帧可能正好停在 "**粗体" 或 "`code" 这种半截语法上。
+        此时正则匹配不到成对标记，会把 ** 和 ` 当普通文本转义，用户看到裸露的 \\*\\*。
+        这里在帧末尾临时补上闭合符，让这一帧能正常渲染；下一帧用新的完整文本重算，
+        不会累积副作用。
+
+        只处理最常见的三类：围栏代码块、行内代码、加粗。斜体因与加粗共用 *，
+        单独补齐容易误判，交由 _convert_inline 当普通文本转义即可。
+        """
+        if not text:
+            return text
+
+        out = text
+
+        # 围栏代码块：``` 出现奇数次说明尾部未闭合
+        if out.count('```') % 2 == 1:
+            # 末尾若不是换行，先补换行再闭合，避免最后一行代码与 ``` 挤在一起
+            if not out.endswith('\n'):
+                out += '\n'
+            return out + '```'
+
+        # 行内代码：反引号奇数个则补一个（此时已排除围栏情况）
+        if out.count('`') % 2 == 1:
+            return out + '`'
+
+        # 加粗：** 成对出现，奇数组说明尾部有半截加粗
+        if out.count('**') % 2 == 1:
+            return out + '**'
+
+        return out
+
+    @classmethod
+    def _markdown_to_v2(cls, text: str) -> str:
+        """
+        将标准 Markdown（LLM 输出）智能转换为 Telegram MarkdownV2。
+
+        支持的语法：
+        - 围栏代码块 ```lang ... ``` / 行内代码 `code`
+        - 加粗 **x** / __x__ → *x*，斜体 *x* / _x_ → _x_，删除线 ~~x~~ → ~x~
+        - 链接 [文字](url)、图片 ![alt](url)（降级为链接）、裸 URL 自动成链
+        - 标题 # ~ ###### → 加粗行（TG 无标题语法）
+        - 无序列表 - / * / + → •，有序列表保留编号
+        - 引用块 > text
+        - 水平分割线 --- / *** → 一行长划线
+
+        实现要点：块级结构按行判定，行内语法交给 _convert_inline 单次扫描，
+        普通文本段落逐字转义 MarkdownV2 保留字符。
+
+        why：LLM 按标准 Markdown 输出，Telegram 只认 MarkdownV2 且转义规则严苛，
+        直接发送会 400 can't parse entities；粗暴全转义又会让格式符号裸露给用户。
+        """
+        if not text:
+            return ""
+
+        import re
+
+        lines = str(text).split('\n')
+        result = []
+        in_fence = False   # 是否处于围栏代码块内
+        fence_lang = ''
+        fence_body = []
+
+        for line in lines:
+            stripped = line.strip()
+
+            # ── 围栏代码块：整块收集，内部不做任何 Markdown 解析 ──
+            if stripped.startswith('```'):
+                if not in_fence:
+                    in_fence = True
+                    fence_lang = stripped[3:].strip()
+                    fence_body = []
+                else:
+                    in_fence = False
+                    body = '\n'.join(fence_body)
+                    result.append(f"```{fence_lang}\n{cls._mdv2_escape_code(body)}```")
+                    fence_lang = ''
+                    fence_body = []
+                continue
+            if in_fence:
+                fence_body.append(line)
+                continue
+
+            # ── 空行原样保留（段落间距）──
+            if not stripped:
+                result.append('')
+                continue
+
+            # ── 水平分割线 --- / *** / ___ ──
+            if re.fullmatch(r'(-{3,}|\*{3,}|_{3,})', stripped):
+                result.append(cls._mdv2_escape_plain('─' * 20))
+                continue
+
+            # ── 标题 # ~ ######：TG 无标题语法，转为加粗整行 ──
+            heading = re.match(r'^(#{1,6})\s+(.*)$', stripped)
+            if heading:
+                result.append(f"*{cls._convert_inline(heading.group(2))}*")
+                continue
+
+            # ── 引用块 > text ──
+            quote = re.match(r'^>\s?(.*)$', line)
+            if quote:
+                result.append(f">{cls._convert_inline(quote.group(1))}")
+                continue
+
+            # ── 无序列表 - / * / +（保留缩进层级）──
+            ul = re.match(r'^(\s*)[-*+]\s+(.*)$', line)
+            if ul:
+                indent, content = ul.group(1), ul.group(2)
+                result.append(f"{indent}• {cls._convert_inline(content)}")
+                continue
+
+            # ── 有序列表 1. 2. 3.（编号里的 . 需转义）──
+            ol = re.match(r'^(\s*)(\d+)\.\s+(.*)$', line)
+            if ol:
+                indent, num, content = ol.group(1), ol.group(2), ol.group(3)
+                result.append(f"{indent}{num}\\. {cls._convert_inline(content)}")
+                continue
+
+            # ── 普通正文行 ──
+            result.append(cls._convert_inline(line))
+
+        # 容错：文本以未闭合的 ``` 结尾时，把已收集内容按代码块补齐输出
+        if in_fence and fence_body:
+            body = '\n'.join(fence_body)
+            result.append(f"```{fence_lang}\n{cls._mdv2_escape_code(body)}```")
+
+        return '\n'.join(result)
+
     @staticmethod
     def _strip_markdown_v2(text: str) -> str:
         """将 MarkdownV2 文本清洗为纯文本（去转义反斜杠、引用块 > 前缀、加粗/代码符号、Markdown 链接）"""
@@ -477,21 +723,42 @@ class TelegramChannel(BaseNotificationChannel):
                 last_edit["shown"] = partial
                 # 首次成功刷出增量内容后停止 typing（用户已看到实际内容在生成）
                 typing_active["stop"] = True
+                # 流式中途文本常有未闭合语法（如刚吐出 "**粗" 还没收尾），
+                # 先补齐再转换，失败则退回纯文本，保证这一帧一定能刷出去。
                 try:
+                    formatted = self._markdown_to_v2(
+                        self._close_dangling_markdown(partial or "…")
+                    )
                     await asyncio.to_thread(
-                        self._bot.edit_message_text, partial or "…", chat_id, msg_id
+                        self._bot.edit_message_text,
+                        formatted, chat_id, msg_id, parse_mode="MarkdownV2",
                     )
                 except Exception:
-                    pass  # edit 失败（内容未变/限流）忽略，最终结果会补发
+                    try:
+                        await asyncio.to_thread(
+                            self._bot.edit_message_text, partial or "…", chat_id, msg_id
+                        )
+                    except Exception:
+                        pass  # 内容未变/限流，最终定稿会补发
 
             result = await self.service.handle_llm_chat(text, user_id, stream_callback=on_stream)
             final = (result.text if result else "") or "……"
-            # 最终定稿：edit 成完整内容（若与上次相同则跳过）
+            # 最终定稿：完整文本转 MarkdownV2；解析失败则降级纯文本，避免整条回复发不出去
             if final != last_edit["shown"]:
                 try:
-                    await asyncio.to_thread(self._bot.edit_message_text, final, chat_id, msg_id)
-                except Exception:
-                    pass
+                    formatted = self._markdown_to_v2(final)
+                    await asyncio.to_thread(
+                        self._bot.edit_message_text,
+                        formatted, chat_id, msg_id, parse_mode="MarkdownV2",
+                    )
+                except Exception as fmt_err:
+                    self.logger.warning(f"LLM 回复 MarkdownV2 渲染失败，降级纯文本: {fmt_err}")
+                    try:
+                        await asyncio.to_thread(
+                            self._bot.edit_message_text, final, chat_id, msg_id
+                        )
+                    except Exception:
+                        pass
         finally:
             # 确保 typing 任务被清理
             typing_active["stop"] = True

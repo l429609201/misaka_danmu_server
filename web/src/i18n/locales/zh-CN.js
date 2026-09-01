@@ -3631,6 +3631,16 @@ export default {
     altMonths: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
   },
 
+  // 移动端悬浮分页器
+  pagination: {
+    backToTop: '回到顶部',
+    goToBottom: '跳到底部',
+    openPageSheet: '打开分页菜单',
+    sheetTitle: '翻页与定位',
+    summary: '共 {{total}} 条 · 当前第 {{current}} / {{totalPages}} 页',
+    perPage: '每页',
+  },
+
   // 进行中的任务 ImportTask
   importTask: {
     pollFailed: '轮询获取数据失败:',

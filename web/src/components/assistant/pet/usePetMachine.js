@@ -5,7 +5,7 @@
  * 职责：集中管理助手的"情绪状态"，并提供语义化的切换方法。
  * 说明：状态本身与"如何渲染"解耦——状态机只负责 state，具体画什么由渲染器决定。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PET_STATES, DEFAULT_STATE, TRANSIENT_STATES } from './petActions'
 
 /**
@@ -62,5 +62,13 @@ export function usePetMachine(options = {}) {
   // 组件卸载时清理定时器
   useEffect(() => clearRevert, [clearRevert])
 
-  return { state, to, idle, thinking, happy, sad, surprised, talking }
+  // why：必须 useMemo 缓存返回对象。此前每次渲染都返回新对象字面量，
+  // 导致下游 useCallback([machine]) 反复重建，进而让 useTaskNotifier 的
+  // useEffect 无限清理/重建 setInterval，轮询永远停在"首次建快照不播报"，
+  // 气泡因此永不触发。state 变化时对象仍会更新（渲染需要），但
+  // 方法引用保持稳定，下游只依赖方法时不会被无谓重建。
+  return useMemo(
+    () => ({ state, to, idle, thinking, happy, sad, surprised, talking }),
+    [state, to, idle, thinking, happy, sad, surprised, talking]
+  )
 }

@@ -267,6 +267,8 @@ export const WebhookTasks = () => {
                 ...pagination,
                 align: 'center',
                 showSizeChanger: true,
+                // 开启页码快速跳转，便于在长任务列表中直达指定页
+                showQuickJumper: true,
                 pageSizeOptions: ['20', '50', '100'],
                 onChange: (page, pageSize) => {
                   setPagination(prev => ({ ...prev, current: page, pageSize }))

@@ -2951,3 +2951,175 @@ html[data-page-style="glass"].dark .ant-card.storage-inner-card .ant-card-body,
 html[data-page-style="acg-glass"].dark .ant-card.storage-inner-card .ant-card-body {
   background: transparent !important;
 }
+
+
+/* ==================== 吸底分页卡片（StickyPagination） ==================== */
+/* why：分页器原先直接躺在列表卡片内容流末尾，长列表滚动时会跟着滚出视野。
+   这里把它抽成独立的圆角卡片并用 sticky 吸附在屏幕底部，需要一个
+   与页面卡片视觉一致、但略带半透明与模糊的底色，避免遮挡下方内容时显得生硬。 */
+.sticky-pagination-card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 6px 20px var(--color-shadow, rgba(255, 107, 155, 0.14));
+}
+
+/* 分页器内部元素不需要额外外边距，避免卡片内出现多余空白 */
+.sticky-pagination-card .ant-pagination {
+  margin: 0 !important;
+}
+
+/* 毛玻璃 / 壁纸类主题：卡片背景改为半透明，配合 backdrop-blur 呈现玻璃质感。
+   这些主题没有覆盖 --color-card（仍是实色），必须单独处理，否则会是一块实底。 */
+html[data-page-style="wallpaper-acg"] .sticky-pagination-card,
+html[data-page-style="liquid-glass"] .sticky-pagination-card,
+html[data-page-style="glass"] .sticky-pagination-card,
+html[data-page-style="acg-glass"] .sticky-pagination-card {
+  background: color-mix(in srgb, var(--color-primary) 6%, rgba(255, 255, 255, 0.62)) !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+}
+
+html[data-page-style="wallpaper-acg"].dark .sticky-pagination-card,
+html[data-page-style="liquid-glass"].dark .sticky-pagination-card,
+html[data-page-style="glass"].dark .sticky-pagination-card,
+html[data-page-style="acg-glass"].dark .sticky-pagination-card {
+  background: rgba(30, 41, 59, 0.66) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* GitHub 主题：扁平风格，去掉投影并收窄圆角，与该主题其他卡片保持一致 */
+html[data-page-style="github"] .sticky-pagination-card {
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
+/* 纸张主题：硬阴影，呼应该主题的印刷叠放质感 */
+html[data-page-style="paper"] .sticky-pagination-card {
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+/* ==================== 移动端悬浮分页器 ==================== */
+/* why：移动端横向空间有限，常驻底部横条既挤占内容视野，又让页码、每页条数等
+   控件被压缩到难以点击的尺寸。改为右下角悬浮按钮 + 底部抽屉：
+   底部完全不放常驻元素，视野交给内容；需要翻页时才展开抽屉。 */
+
+.mobile-pagination-fabs {
+  position: fixed;
+  /* 避开底部悬浮导航栏（Header.jsx 中 bottom-5 的浮动导航，高度约 60px） */
+  bottom: 92px;
+  right: 16px;
+  z-index: 96;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+/* 置顶按钮：次级样式（描边），滚动后弹性淡入 */
+.mobile-pagination-fab-top {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--color-card);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  font-size: 17px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 默认隐藏：缩小并下移，配合弹性缓动做出"弹出"观感 */
+  opacity: 0;
+  transform: scale(0.6) translateY(6px);
+  pointer-events: none;
+  transition: opacity 0.24s ease, transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.mobile-pagination-fab-top.is-visible {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  pointer-events: auto;
+}
+
+/* 分页主按钮：常驻，直接显示当前页码，无需展开即可知道所在位置 */
+.mobile-pagination-fab-page {
+  min-width: 52px;
+  height: 52px;
+  padding: 0 12px;
+  border-radius: 26px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-primary) 40%, transparent);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.1;
+  transition: transform 0.18s ease;
+}
+
+.mobile-pagination-fab-page:active {
+  transform: scale(0.94);
+}
+
+.mobile-pagination-fab-page b {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.mobile-pagination-fab-page small {
+  font-size: 9px;
+  opacity: 0.85;
+  margin-top: 1px;
+}
+
+/* 抽屉：圆角顶部，贴合移动端底部弹层的原生观感 */
+.mobile-pagination-drawer .ant-drawer-content {
+  border-radius: 20px 20px 0 0;
+}
+
+.mobile-pagination-summary {
+  font-size: 12px;
+  color: var(--color-sub-text, #6b7280);
+  margin: 0 0 8px;
+}
+
+/* 页码网格：每行 5 个，44px 高度满足移动端最小触控区域 */
+.mobile-pagination-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  /* 页数很多时限制高度并允许滚动，避免抽屉撑满全屏 */
+  max-height: 40vh;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.mobile-pagination-page {
+  height: 44px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.mobile-pagination-page.is-active {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+  font-weight: 600;
+}
+
+.mobile-pagination-size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-sub-text, #6b7280);
+}
+

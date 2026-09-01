@@ -3099,6 +3099,16 @@ Singer 2024 => {[rules=extra|pure version|preview|behind the scenes]}`,
     altMonths: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
   },
 
+  // Mobile floating pagination
+  pagination: {
+    backToTop: 'Back to Top',
+    goToBottom: 'Go to Bottom',
+    openPageSheet: 'Open pagination menu',
+    sheetTitle: 'Pagination & Navigation',
+    summary: 'Total {{total}} items · Page {{current}} / {{totalPages}}',
+    perPage: 'Items per page',
+  },
+
   // Import task manager
   importTask: {
     pollFailed: 'Polling data failed:',

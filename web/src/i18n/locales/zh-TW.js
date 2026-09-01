@@ -3093,6 +3093,16 @@ export default {
     altMonths: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
   },
 
+  // 移動端懸浮分頁器
+  pagination: {
+    backToTop: '回到頂部',
+    goToBottom: '跳到底部',
+    openPageSheet: '打開分頁選單',
+    sheetTitle: '翻頁與定位',
+    summary: '共 {{total}} 條 · 當前第 {{current}} / {{totalPages}} 頁',
+    perPage: '每頁',
+  },
+
   // 進行中的任務 ImportTask
   importTask: {
     pollFailed: '輪詢取得資料失敗:',
