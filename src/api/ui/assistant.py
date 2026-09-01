@@ -31,6 +31,10 @@ from src.api.dependencies import get_config_manager
 from src.ai.assistant import (
     AssistantChatService, AssistantAgent, list_personas, DEFAULT_PERSONA,
 )
+from src.ai.assistant.mcp import (
+    PERMISSION_READONLY, PERMISSION_WRITE, SUPPORTED_TRANSPORTS, TRANSPORT_STDIO,
+    McpManager, McpServerConfig,
+)
 from src.ai.assistant.skill_manager import get_skill_manager
 from src.ai.assistant.tools import registry
 from .assistant_sessions import mark_session_processing, save_session_snapshot
@@ -198,6 +202,27 @@ class SkillToggleRequest(BaseModel):
     enabled: bool = Field(..., description="true 启用 / false 停用")
 
 
+class McpServerRequest(BaseModel):
+    """MCP 服务器配置（新增/更新/测试共用）。
+
+    字段按传输类型二选一：stdio 用 command/args/env，
+    http 与 sse 用 url/headers。校验在 _validate_mcp_server 中完成。
+    """
+    name: str = Field(..., description="服务器名称，作为工具名前缀，须唯一")
+    enabled: bool = Field(True, description="是否启用")
+    transport: str = Field(TRANSPORT_STDIO, description="传输类型：stdio / http / sse")
+    command: str = Field("", description="stdio：可执行命令，如 npx")
+    args: List[str] = Field(default_factory=list, description="stdio：命令参数")
+    env: Dict[str, str] = Field(default_factory=dict, description="stdio：环境变量")
+    url: str = Field("", description="http/sse：服务地址")
+    headers: Dict[str, str] = Field(default_factory=dict, description="http/sse：请求头")
+    timeout: float = Field(30.0, description="单次请求超时（秒）", ge=1, le=300)
+    permission: str = Field(
+        PERMISSION_WRITE, description="权限级别：read_only 只读 / write 可写"
+    )
+    description: str = Field("", description="备注说明")
+
+
 def _skill_to_dict(skill, content: Optional[str] = None) -> dict:
     """把 Skill 对象转成前端可用的 dict。
 
@@ -322,3 +347,175 @@ async def reload_skills_api(
     manager.reload()
     skills = manager.list_skills()
     return {"message": f"已重载 {len(skills)} 个技能", "total": len(skills)}
+
+
+# ======================================================================
+# MCP 服务器管理（外部工具接入）
+# ======================================================================
+
+
+def _validate_mcp_server(payload: McpServerRequest) -> McpServerConfig:
+    """校验并构造 MCP 服务器配置。字段缺失按传输类型给出明确报错。"""
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="服务器名称不能为空")
+
+    transport = (payload.transport or TRANSPORT_STDIO).strip().lower()
+    if transport not in SUPPORTED_TRANSPORTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的传输类型：{transport}（可选：{', '.join(SUPPORTED_TRANSPORTS)}）",
+        )
+    if transport == TRANSPORT_STDIO and not (payload.command or "").strip():
+        raise HTTPException(status_code=400, detail="stdio 传输必须填写启动命令")
+    if transport != TRANSPORT_STDIO and not (payload.url or "").strip():
+        raise HTTPException(status_code=400, detail=f"{transport} 传输必须填写服务地址")
+
+    permission = (payload.permission or PERMISSION_WRITE).strip().lower()
+    if permission not in {PERMISSION_READONLY, PERMISSION_WRITE}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"权限级别只能是 {PERMISSION_READONLY} 或 {PERMISSION_WRITE}",
+        )
+
+    return McpServerConfig(
+        name=name,
+        enabled=payload.enabled,
+        transport=transport,
+        command=(payload.command or "").strip(),
+        args=payload.args or [],
+        env=payload.env or {},
+        url=(payload.url or "").strip(),
+        headers=payload.headers or {},
+        timeout=payload.timeout,
+        permission=permission,
+        description=(payload.description or "").strip(),
+    )
+
+
+@router.get("/assistant/mcp/servers", summary="列出 MCP 服务器", include_in_schema=False)
+async def list_mcp_servers_api(
+    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """列出所有已配置的 MCP 服务器。"""
+    servers = await McpManager(config_manager).get_servers()
+    return {
+        "total": len(servers),
+        "servers": [s.model_dump() for s in servers],
+        "transports": list(SUPPORTED_TRANSPORTS),
+    }
+
+
+@router.post(
+    "/assistant/mcp/servers", status_code=201, summary="新增 MCP 服务器",
+    include_in_schema=False,
+)
+async def create_mcp_server_api(
+    payload: McpServerRequest,
+    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """新增 MCP 服务器。名称作为工具命名空间，必须唯一。"""
+    server = _validate_mcp_server(payload)
+    manager = McpManager(config_manager)
+    servers = await manager.get_servers()
+    if any(s.name == server.name for s in servers):
+        raise HTTPException(status_code=400, detail=f"服务器名称 {server.name} 已存在")
+    servers.append(server)
+    await manager.save_servers(servers)
+    logger.info(f"用户 '{current_user.username}' 新增 MCP 服务器: {server.name}")
+    return server.model_dump()
+
+
+@router.put(
+    "/assistant/mcp/servers/{server_name}", summary="更新 MCP 服务器",
+    include_in_schema=False,
+)
+async def update_mcp_server_api(
+    server_name: str,
+    payload: McpServerRequest,
+    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """更新 MCP 服务器配置。改名时校验新名称不与其他条目冲突。"""
+    server = _validate_mcp_server(payload)
+    manager = McpManager(config_manager)
+    servers = await manager.get_servers()
+    index = next((i for i, s in enumerate(servers) if s.name == server_name), -1)
+    if index < 0:
+        raise HTTPException(status_code=404, detail=f"MCP 服务器 {server_name} 不存在")
+    if server.name != server_name and any(s.name == server.name for s in servers):
+        raise HTTPException(status_code=400, detail=f"服务器名称 {server.name} 已存在")
+    servers[index] = server
+    await manager.save_servers(servers)
+    logger.info(f"用户 '{current_user.username}' 更新 MCP 服务器: {server_name}")
+    return server.model_dump()
+
+
+@router.delete(
+    "/assistant/mcp/servers/{server_name}", summary="删除 MCP 服务器",
+    include_in_schema=False,
+)
+async def delete_mcp_server_api(
+    server_name: str,
+    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """删除 MCP 服务器，其工具随即从助手能力中移除。"""
+    manager = McpManager(config_manager)
+    servers = await manager.get_servers()
+    remaining = [s for s in servers if s.name != server_name]
+    if len(remaining) == len(servers):
+        raise HTTPException(status_code=404, detail=f"MCP 服务器 {server_name} 不存在")
+    await manager.save_servers(remaining)
+    logger.info(f"用户 '{current_user.username}' 删除 MCP 服务器: {server_name}")
+    return {"message": f"MCP 服务器 {server_name} 已删除"}
+
+
+@router.post(
+    "/assistant/mcp/servers/test", summary="测试 MCP 服务器连通性",
+    include_in_schema=False,
+)
+async def test_mcp_server_api(
+    payload: McpServerRequest,
+    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """连通性测试：直接用传入配置试连并发现工具，无需先保存。"""
+    server = _validate_mcp_server(payload)
+    return await McpManager(config_manager).test_server(server)
+
+
+@router.get("/assistant/mcp/tools", summary="列出已接入的 MCP 工具", include_in_schema=False)
+async def list_mcp_tools_api(
+    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """列出所有已启用服务器当前可用的工具（走发现缓存）。"""
+    specs = await McpManager(config_manager).list_enabled_tool_specs()
+    return {
+        "total": len(specs),
+        "tools": [
+            {
+                "serverName": s.server_name,
+                "originalName": s.original_name,
+                "agentToolName": s.agent_tool_name,
+                "description": s.description,
+                "permission": s.permission.value,
+            }
+            for s in specs
+        ],
+    }
+
+
+@router.post("/assistant/mcp/refresh", summary="刷新 MCP 工具缓存", include_in_schema=False)
+async def refresh_mcp_tools_api(
+    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """清空工具发现缓存并立即重新发现（服务端工具变更后可调此接口）。"""
+    manager = McpManager(config_manager)
+    await manager.invalidate_cache()
+    specs = await manager.list_enabled_tool_specs()
+    return {"message": f"已刷新，当前可用 {len(specs)} 个 MCP 工具", "total": len(specs)}

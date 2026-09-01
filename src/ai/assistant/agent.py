@@ -16,13 +16,14 @@ P2 只启用只读工具（include_write=False），写类工具留到 P3。
 
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import httpx
 
 from src.db import ConfigManager
 from .personas import get_persona_prompt, DEFAULT_PERSONA
 from ..ai_providers import get_provider_config
+from .mcp import McpManager, McpToolSpec
 from .tools import registry
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,8 @@ class AssistantAgent:
         self.config_manager = config_manager
         self.session_factory = session_factory
         self.logger = logging.getLogger(self.__class__.__name__)
+        # 外部 MCP 服务器工具管理器（工具不入静态 registry，按前缀路由）
+        self.mcp = McpManager(config_manager)
 
     async def _load_ai_config(self) -> Dict[str, str]:
         provider = await self.config_manager.get("aiProvider", "deepseek")
@@ -162,12 +165,13 @@ class AssistantAgent:
         is_channel: bool = False,
         supports_table: bool = True,
         rich_message: bool = False,
+        include_write_tools: bool = True,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """ReAct 主循环：先用非流式判断工具调用，最终回答用流式输出。
 
-        写类工具需二次确认：遇到写工具的 tool_call 时不直接执行，
-        而是产出 confirm 事件并结束本轮，等前端把用户确认后的选择作为
-        新一轮 user 消息带回（P3 采用"确认即在对话里回一句同意"的轻量方案）。
+        写类工具的风险确认在对话中自然完成（模型先说明意图再执行），
+        不产出独立的 confirm 事件，调用方无需维护挂起状态机。
+        工具名带 mcp__ 前缀的路由到外部 MCP 服务器，其余走内部注册表。
 
         :param rich_text: 目标渠道是否支持 Markdown 渲染（决定 system prompt 里的排版约束）。
             默认 True 兼容 Web 端；纯文本渠道（企业微信/Server酱）需显式传 False。
@@ -176,6 +180,8 @@ class AssistantAgent:
             时生效；无表格语法的发送方式需传 False。
         :param rich_message: 是否走结构化富消息（Telegram sendRichMessage，GFM 兼容）。
             True 时开放表格/标题/任务列表/公式等完整排版能力。
+        :param include_write_tools: 是否向 LLM 暴露写类工具（含 MCP 的写权限工具）。
+            默认 True，Web 端与通知渠道均为全功能；传 False 则只暴露只读工具。
         """
         cfg = await self._load_ai_config()
         if not (cfg["api_key"] and cfg["model"] and cfg["base_url"]):
@@ -187,7 +193,14 @@ class AssistantAgent:
             is_channel=is_channel, supports_table=supports_table,
             rich_message=rich_message,
         )
-        tools = registry.openai_tools(include_write=True)  # P3 暴露只读+写工具
+        tools = registry.openai_tools(include_write=include_write_tools)
+        # 合并外部 MCP 工具：发现失败只少几个工具，不影响内部工具可用性
+        mcp_specs = await self.mcp.list_enabled_tool_specs(
+            include_write=include_write_tools
+        )
+        if mcp_specs:
+            tools += [spec.to_openai_schema() for spec in mcp_specs]
+            self.logger.debug(f"已接入 {len(mcp_specs)} 个外部 MCP 工具")
         context = {"session_factory": self.session_factory}
         if context_extra:
             context.update(context_extra)
@@ -235,14 +248,19 @@ class AssistantAgent:
                 for tc in tool_calls:
                     fn = tc.get("function") or {}
                     name = fn.get("name") or ""
-                    label = self._tool_label(name)
+                    label = self._tool_label(name, mcp_specs)
                     yield {"type": "tool", "name": name, "label": label, "status": "running"}
                     try:
                         args = json.loads(fn.get("arguments") or "{}")
                     except json.JSONDecodeError:
                         args = {}
                     self._log_raw(log_raw, f"工具调用 {name} 入参", args)
-                    result = await registry.execute(name, args, context)
+                    # 按 mcp__ 前缀路由：外部 MCP 工具走管理器，其余走内部注册表
+                    if McpManager.is_mcp_tool_name(name):
+                        # 复用本轮已发现的规格，避免缓存过期时重连所有服务器
+                        result = await self.mcp.call_tool(name, args, mcp_specs)
+                    else:
+                        result = await registry.execute(name, args, context)
                     self._log_raw(log_raw, f"工具调用 {name} 返回", result)
                     yield {"type": "tool", "name": name, "label": label, "status": "done"}
                     messages.append({
@@ -261,10 +279,16 @@ class AssistantAgent:
             yield {"type": "error", "content": "对话出错了，请稍后重试。"}
 
     @staticmethod
-    def _tool_label(name: str) -> str:
+    def _tool_label(name: str, mcp_specs: Optional[List[McpToolSpec]] = None) -> str:
         """取工具的中文动作标签，供前端展示"御坂正在…"。"""
         tool = registry.get(name)
-        return (tool.running_label if tool and tool.running_label else f"调用 {name}")
+        if tool and tool.running_label:
+            return tool.running_label
+        # MCP 工具没有 running_label，用「服务器 · 工具名」代替裸露的带前缀名
+        for spec in mcp_specs or []:
+            if spec.agent_tool_name == name:
+                return f"调用 {spec.server_name} · {spec.original_name}"
+        return f"调用 {name}"
 
     async def _stream_final(
         self, cfg: Dict[str, str], messages: List[Dict[str, Any]]

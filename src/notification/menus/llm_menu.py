@@ -2,30 +2,26 @@
 LLM 对话 Mixin — 通知渠道接入御坂 Agent
 ------------------------------------------------------------
 当用户在渠道（Telegram/企业微信/SC3）发自然语言、且无活跃命令流程时，
-转交御坂 AssistantAgent 处理。复用 Web 端同一套 Agent + 只读工具 + 安全网关。
+转交御坂 AssistantAgent 处理。复用 Web 端同一套 Agent + 工具集 + 安全网关。
 
 渠道端策略（P-渠道）：
-- 只读工具直接执行；写类工具渠道端暂不开放（confirm 事件降级为提示）。
+- 工具能力与 Web 端对齐（含写类工具与 MCP 外部工具），风险确认由 agent
+  在对话中自然完成，渠道侧不再维护挂起-回复的确认状态机。
 - 流式：通过 stream_callback 把增量文本回吐给渠道层，
   支持 edit 的渠道（Telegram）做"伪流式"，不支持的攒完一次性发。
 - 渠道会话历史用内存滑动窗口（每用户最近 N 轮），不落库，保持轻量。
 """
 
-import json
 import logging
 from typing import Callable, Dict, List, Optional, Awaitable
 
 from src.notification.base import CommandResult
 from src.ai.assistant import AssistantAgent, DEFAULT_PERSONA
-from src.ai.assistant.tools import registry as _tool_registry
 
 logger = logging.getLogger(__name__)
 
 # 每个渠道用户在内存里保留的最近对话轮数（user/bot 各算一条）
 _LLM_HISTORY_LIMIT = 12
-
-# 渠道端确认写操作的肯定词
-_CONFIRM_WORDS = ("确认", "是", "执行", "好", "可以", "yes", "y", "ok", "确定")
 
 
 class LlmChatMixin:
@@ -33,8 +29,6 @@ class LlmChatMixin:
 
     # 渠道 LLM 对话历史：{user_id: [{"role","content"}, ...]}（内存滑动窗口）
     _llm_histories: Dict[str, List[dict]] = {}
-    # 挂起的写工具确认：{user_id: {"name","arguments","label"}}
-    _llm_pending_writes: Dict[str, dict] = {}
 
     def _agent_context_extra(self) -> dict:
         """写类工具执行所需的管理器（渠道端）。"""
@@ -94,19 +88,6 @@ class LlmChatMixin:
         if not await self.is_llm_chat_enabled():
             return None
 
-        # ① 若有挂起的写操作确认，先看这句是不是确认/取消
-        pending = self._llm_pending_writes.get(user_id)
-        if pending:
-            self._llm_pending_writes.pop(user_id, None)
-            if text.strip().lower() in _CONFIRM_WORDS:
-                res = await self._exec_pending_write(pending)
-                self._append_llm_history(user_id, "user", text)
-                self._append_llm_history(user_id, "assistant", res)
-                if stream_callback:
-                    await stream_callback(res)
-                return CommandResult(text=res)
-            # 非确认词 → 取消挂起，把这句当普通新对话继续往下走
-
         agent = AssistantAgent(self.config_manager, session_factory=self._session_factory)
         context_extra = self._agent_context_extra()  # 渠道端也注入写工具依赖
         # 图片只挂在本轮 user 消息上；历史里不留图片，避免 token 随轮数膨胀
@@ -122,10 +103,13 @@ class LlmChatMixin:
             # Telegram 降级路径走 sendMessage（MarkdownV2/HTML 均无 table），企业微信与
             # Server酱走纯文本。输出表格后竖线只会原样堆叠，故统一禁用，改用「每条一段」列表。
             # rich_message=True 时该参数不生效：富消息的 markdown 与 GFM 兼容，表格原生支持。
+            # include_write_tools=True：渠道端与 Web 端能力对齐（含写类工具与 MCP 外部工具），
+            # 写操作的风险确认由 agent 在对话中自然完成，渠道侧不再维护挂起-回复状态机。
             async for event in agent.stream(
                 history, DEFAULT_PERSONA, context_extra,
                 rich_text=rich_text, is_channel=True, supports_table=False,
                 rich_message=rich_message,
+                include_write_tools=True,
             ):
                 etype = event.get("type")
                 if etype == "delta":
@@ -136,19 +120,6 @@ class LlmChatMixin:
                     if stream_callback:
                         note = f"🔧 {event.get('label', '处理中')}…"
                         await stream_callback(reply + ("\n" + note if reply else note))
-                elif etype == "confirm":
-                    # 写类工具 → 存挂起，要求用户回"确认"执行（渠道端文字确认降级）
-                    self._llm_pending_writes[user_id] = {
-                        "name": event.get("name"),
-                        "arguments": event.get("arguments") or {},
-                        "label": event.get("label") or event.get("name"),
-                    }
-                    args = event.get("arguments") or {}
-                    arg_str = "，".join(f"{k}={v}" for k, v in args.items())
-                    reply = (f"御坂御坂要执行「{event.get('label')}」"
-                             f"{('（' + arg_str + '）') if arg_str else ''}，"
-                             f"确认的话请回复「确认」，御坂御坂等待指示道。")
-                    break
                 elif etype == "error":
                     reply = event.get("content") or "对话出错了"
                     break
@@ -162,23 +133,6 @@ class LlmChatMixin:
         self._append_llm_history(user_id, "assistant", reply)
         return CommandResult(text=reply)
 
-    async def _exec_pending_write(self, pending: dict) -> str:
-        """执行用户已确认的写工具，返回给用户的结果文案。"""
-        name = pending.get("name")
-        args = pending.get("arguments") or {}
-        context = {"session_factory": self._session_factory, **self._agent_context_extra()}
-        try:
-            result = await _tool_registry.execute(name, args, context)
-            if result.get("ok"):
-                data = result.get("data") or {}
-                msg = data.get("message") if isinstance(data, dict) else None
-                return f"✅ {msg or '操作已提交'}，御坂御坂利落地完成道。"
-            return f"❌ 执行失败：{result.get('error', '未知错误')}"
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"[渠道LLM] 执行写工具 {name} 失败: {e}", exc_info=True)
-            return "❌ 执行出错了，御坂御坂懊恼道。"
-
     def clear_llm_history(self, user_id: str):
-        """清除某用户的渠道 LLM 对话历史与挂起确认。"""
+        """清除某用户的渠道 LLM 对话历史。"""
         self._llm_histories.pop(user_id, None)
-        self._llm_pending_writes.pop(user_id, None)
