@@ -77,6 +77,7 @@ class LlmChatMixin:
         stream_callback: Optional[Callable[[str], Awaitable[None]]] = None,
         images: Optional[List[str]] = None,
         rich_text: bool = False,
+        rich_message: bool = False,
     ) -> Optional[CommandResult]:
         """
         用御坂 Agent 处理一句自然语言。
@@ -85,6 +86,9 @@ class LlmChatMixin:
         - rich_text：目标渠道是否支持 Markdown 渲染。由渠道按自身
           ChannelCapability.RICH_TEXT 传入；默认 False 走纯文本，
           这样新接入的渠道不会因为漏传参数就把 Markdown 符号裸露给用户。
+        - rich_message：目标渠道是否走结构化富消息（Telegram 的 sendRichMessage）。
+          由渠道按 ChannelCapability.RICH_MESSAGE 并结合运行时可用性传入；
+          默认 False，未支持的渠道行为不变。
         - 返回最终 CommandResult（完整文本），供渠道兜底一次性发送。
         """
         if not await self.is_llm_chat_enabled():
@@ -113,11 +117,15 @@ class LlmChatMixin:
 
         reply = ""
         try:
-            # is_channel=True：渠道侧会把贴纸/图片/引用翻译成方括号标注，
-            # 需要让模型知道这套约定
+            # is_channel=True：渠道侧会把贴纸/图片/引用翻译成方括号标注，需让模型知道这套约定。
+            # supports_table=False：非富消息渠道实际使用的发送方式都没有表格语法——
+            # Telegram 降级路径走 sendMessage（MarkdownV2/HTML 均无 table），企业微信与
+            # Server酱走纯文本。输出表格后竖线只会原样堆叠，故统一禁用，改用「每条一段」列表。
+            # rich_message=True 时该参数不生效：富消息的 markdown 与 GFM 兼容，表格原生支持。
             async for event in agent.stream(
                 history, DEFAULT_PERSONA, context_extra,
-                rich_text=rich_text, is_channel=True,
+                rich_text=rich_text, is_channel=True, supports_table=False,
+                rich_message=rich_message,
             ):
                 etype = event.get("type")
                 if etype == "delta":

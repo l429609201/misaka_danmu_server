@@ -1,4 +1,4 @@
-"""
+﻿"""
 Telegram 通知渠道实现
 使用 pyTelegramBotAPI (telebot) 库，支持 Polling 和 Webhook 两种模式。
 支持 InlineKeyboard、CallbackQuery、多步对话等交互能力。
@@ -15,6 +15,9 @@ from src._version import APP_VERSION
 from src.notification.base import (
     BaseNotificationChannel, CommandResult,
     ChannelCapability, ChannelCapabilities, IMAGE_MODE_FIELD,
+)
+from src.notification.markdown_converter import (
+    markdown_to_v2, strip_markdown, escape_v2,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +48,7 @@ class TelegramChannel(BaseNotificationChannel):
             ChannelCapability.MESSAGE_DELETION,
             ChannelCapability.CALLBACK_QUERIES,
             ChannelCapability.RICH_TEXT,
+            ChannelCapability.RICH_MESSAGE,
             ChannelCapability.IMAGES,
             ChannelCapability.LINKS,
         },
@@ -59,298 +63,26 @@ class TelegramChannel(BaseNotificationChannel):
         self._polling_thread: Optional[threading.Thread] = None
         self._running = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None  # 主事件循环引用
-        # bot 自身身份（start() 中通过 get_me 填充），用于 @提及剥离与"引用自己回复"判断
         self._bot_username: str = ""
         self._bot_id: Optional[int] = None
+        self._rich_message_available: Optional[bool] = None
+
+    # ── Markdown 格式转换（薄封装，实际逻辑在 markdown_converter 模块）──
 
     @staticmethod
     def _escape_markdown_v2(text: str) -> str:
-        """转义 MarkdownV2 特殊字符（用于把纯文本 title 安全嵌入 MarkdownV2）"""
-        if not text:
-            return ""
-        special = r'_*[]()~`>#+-=|{}.!'
-        out = []
-        for ch in str(text):
-            if ch in special:
-                out.append("\\" + ch)
-            else:
-                out.append(ch)
-        return "".join(out)
-
-    # MarkdownV2 保留字符（出现在普通文本里必须反斜杠转义，否则 TG 报 can't parse entities）
-    _MDV2_SPECIALS = frozenset(r'_*[]()~`>#+-=|{}.!')
-
-    # 行内 token 正则：按优先级排列，一次扫描全部识别。
-    # why：必须一次扫描完成。若分多次 re.sub（先转粗体再转链接再转义剩余文本），
-    # 上一轮产出的 * 和 []() 会被下一轮当普通文本二次转义，格式全废。
-    _MDV2_TOKEN_RE = None  # 惰性编译，见 _get_token_re
-
-    @classmethod
-    def _get_token_re(cls):
-        """惰性编译行内 token 正则，避免每次调用重复编译。"""
-        if cls._MDV2_TOKEN_RE is None:
-            import re
-            cls._MDV2_TOKEN_RE = re.compile(
-                # 1) 围栏代码块 ```lang\n...```（内容原样保留）
-                r'(?P<fence>```[\s\S]*?```)'
-                # 2) 行内代码 `code`（内容仅转义 ` 和 \）
-                r'|(?P<code>`[^`\n]+`)'
-                # 3) 图片 ![alt](url) —— 先于链接匹配，否则前导 ! 会被当普通文本
-                r'|(?P<image>!\[(?P<img_alt>[^\]]*)\]\((?P<img_url>[^)\s]+)\))'
-                # 4) 链接 [text](url)
-                r'|(?P<link>\[(?P<link_text>[^\]]*)\]\((?P<link_url>[^)\s]+)\))'
-                # 5) 加粗 **text** / __text__ → MarkdownV2 的 *text*
-                r'|(?P<bold>\*\*(?P<bold_in>[^\n]+?)\*\*|__(?P<bold_in2>[^\n]+?)__)'
-                # 6) 删除线 ~~text~~ → MarkdownV2 的 ~text~
-                r'|(?P<strike>~~(?P<strike_in>[^\n]+?)~~)'
-                # 7) 斜体 *text* / _text_ → MarkdownV2 的 _text_
-                #    放在加粗之后，避免 **x** 被拆成两个斜体
-                r'|(?P<italic>\*(?P<italic_in>[^*\n]+?)\*|_(?P<italic_in2>[^_\n]+?)_)'
-                # 8) 裸 URL（http/https），MarkdownV2 里 URL 本身不转义
-                r'|(?P<url>https?://[^\s<>()]+)'
-            )
-        return cls._MDV2_TOKEN_RE
-
-    @classmethod
-    def _mdv2_escape_plain(cls, s: str) -> str:
-        """转义普通文本段落中的 MarkdownV2 保留字符。"""
-        if not s:
-            return ""
-        return "".join("\\" + ch if ch in cls._MDV2_SPECIALS else ch for ch in s)
-
-    @classmethod
-    def _mdv2_escape_code(cls, s: str) -> str:
-        """代码内容只需转义反引号和反斜杠，其余字符原样（TG 官方规则）。"""
-        return s.replace("\\", "\\\\").replace("`", "\\`")
-
-    @classmethod
-    def _mdv2_escape_url(cls, s: str) -> str:
-        """链接 URL 内只需转义 ) 和 \\（TG 官方规则），其余原样以免破坏地址。"""
-        return s.replace("\\", "\\\\").replace(")", "\\)")
-
-    @classmethod
-    def _convert_inline(cls, text: str) -> str:
-        """
-        转换一行（或一段无块级语义的文本）中的行内 Markdown 语法。
-
-        单次线性扫描：命中 token 按各自规则处理，未命中的间隙按普通文本转义。
-        这样 token 产出的格式标记不会被再次转义。
-        """
-        if not text:
-            return ""
-
-        out = []
-        pos = 0
-        for m in cls._get_token_re().finditer(text):
-            # 先补齐上一个 token 到当前 token 之间的普通文本
-            if m.start() > pos:
-                out.append(cls._mdv2_escape_plain(text[pos:m.start()]))
-            pos = m.end()
-
-            if m.group('fence'):
-                # 围栏代码块：拆出语言标记和代码体，代码体按 code 规则转义
-                raw = m.group('fence')
-                inner = raw[3:-3]
-                if '\n' in inner:
-                    lang, _, body = inner.partition('\n')
-                else:
-                    lang, body = '', inner
-                lang = lang.strip()
-                out.append(f"```{lang}\n{cls._mdv2_escape_code(body)}```")
-            elif m.group('code'):
-                body = m.group('code')[1:-1]
-                out.append(f"`{cls._mdv2_escape_code(body)}`")
-            elif m.group('image'):
-                # TG 不支持行内图片语法，降级为链接，保留 alt 文字
-                alt = m.group('img_alt') or '图片'
-                out.append(
-                    f"[{cls._mdv2_escape_plain(alt)}]"
-                    f"({cls._mdv2_escape_url(m.group('img_url'))})"
-                )
-            elif m.group('link'):
-                label = m.group('link_text') or m.group('link_url')
-                out.append(
-                    f"[{cls._convert_inline(label)}]"
-                    f"({cls._mdv2_escape_url(m.group('link_url'))})"
-                )
-            elif m.group('bold'):
-                inner = m.group('bold_in') or m.group('bold_in2') or ''
-                out.append(f"*{cls._convert_inline(inner)}*")
-            elif m.group('strike'):
-                out.append(f"~{cls._convert_inline(m.group('strike_in'))}~")
-            elif m.group('italic'):
-                inner = m.group('italic_in') or m.group('italic_in2') or ''
-                out.append(f"_{cls._convert_inline(inner)}_")
-            elif m.group('url'):
-                # 裸 URL 包成显式链接，避免地址里的 . - 等字符被转义后显示错乱
-                raw_url = m.group('url')
-                out.append(f"[{cls._mdv2_escape_plain(raw_url)}]({cls._mdv2_escape_url(raw_url)})")
-
-        # 收尾：最后一个 token 之后的普通文本
-        if pos < len(text):
-            out.append(cls._mdv2_escape_plain(text[pos:]))
-        return "".join(out)
-
-    @staticmethod
-    def _close_dangling_markdown(text: str) -> str:
-        """
-        补齐流式中途未闭合的 Markdown 标记（仅供伪流式增量帧使用）。
-
-        why：LLM 边生成边发，某一帧可能正好停在 "**粗体" 或 "`code" 这种半截语法上。
-        此时正则匹配不到成对标记，会把 ** 和 ` 当普通文本转义，用户看到裸露的 \\*\\*。
-        这里在帧末尾临时补上闭合符，让这一帧能正常渲染；下一帧用新的完整文本重算，
-        不会累积副作用。
-
-        只处理最常见的三类：围栏代码块、行内代码、加粗。斜体因与加粗共用 *，
-        单独补齐容易误判，交由 _convert_inline 当普通文本转义即可。
-        """
-        if not text:
-            return text
-
-        out = text
-
-        # 围栏代码块：``` 出现奇数次说明尾部未闭合
-        if out.count('```') % 2 == 1:
-            # 末尾若不是换行，先补换行再闭合，避免最后一行代码与 ``` 挤在一起
-            if not out.endswith('\n'):
-                out += '\n'
-            return out + '```'
-
-        # 行内代码：反引号奇数个则补一个（此时已排除围栏情况）
-        if out.count('`') % 2 == 1:
-            return out + '`'
-
-        # 加粗：** 成对出现，奇数组说明尾部有半截加粗
-        if out.count('**') % 2 == 1:
-            return out + '**'
-
-        return out
+        """转义 MarkdownV2 保留字符。"""
+        return escape_v2(text)
 
     @classmethod
     def _markdown_to_v2(cls, text: str) -> str:
-        """
-        将标准 Markdown（LLM 输出）智能转换为 Telegram MarkdownV2。
-
-        支持的语法：
-        - 围栏代码块 ```lang ... ``` / 行内代码 `code`
-        - 加粗 **x** / __x__ → *x*，斜体 *x* / _x_ → _x_，删除线 ~~x~~ → ~x~
-        - 链接 [文字](url)、图片 ![alt](url)（降级为链接）、裸 URL 自动成链
-        - 标题 # ~ ###### → 加粗行（TG 无标题语法）
-        - 无序列表 - / * / + → •，有序列表保留编号
-        - 引用块 > text
-        - 水平分割线 --- / *** → 一行长划线
-
-        实现要点：块级结构按行判定，行内语法交给 _convert_inline 单次扫描，
-        普通文本段落逐字转义 MarkdownV2 保留字符。
-
-        why：LLM 按标准 Markdown 输出，Telegram 只认 MarkdownV2 且转义规则严苛，
-        直接发送会 400 can't parse entities；粗暴全转义又会让格式符号裸露给用户。
-        """
-        if not text:
-            return ""
-
-        import re
-
-        lines = str(text).split('\n')
-        result = []
-        in_fence = False   # 是否处于围栏代码块内
-        fence_lang = ''
-        fence_body = []
-
-        for line in lines:
-            stripped = line.strip()
-
-            # ── 围栏代码块：整块收集，内部不做任何 Markdown 解析 ──
-            if stripped.startswith('```'):
-                if not in_fence:
-                    in_fence = True
-                    fence_lang = stripped[3:].strip()
-                    fence_body = []
-                else:
-                    in_fence = False
-                    body = '\n'.join(fence_body)
-                    result.append(f"```{fence_lang}\n{cls._mdv2_escape_code(body)}```")
-                    fence_lang = ''
-                    fence_body = []
-                continue
-            if in_fence:
-                fence_body.append(line)
-                continue
-
-            # ── 空行原样保留（段落间距）──
-            if not stripped:
-                result.append('')
-                continue
-
-            # ── 水平分割线 --- / *** / ___ ──
-            if re.fullmatch(r'(-{3,}|\*{3,}|_{3,})', stripped):
-                result.append(cls._mdv2_escape_plain('─' * 20))
-                continue
-
-            # ── 标题 # ~ ######：TG 无标题语法，转为加粗整行 ──
-            heading = re.match(r'^(#{1,6})\s+(.*)$', stripped)
-            if heading:
-                result.append(f"*{cls._convert_inline(heading.group(2))}*")
-                continue
-
-            # ── 引用块 > text ──
-            quote = re.match(r'^>\s?(.*)$', line)
-            if quote:
-                result.append(f">{cls._convert_inline(quote.group(1))}")
-                continue
-
-            # ── 无序列表 - / * / +（保留缩进层级）──
-            ul = re.match(r'^(\s*)[-*+]\s+(.*)$', line)
-            if ul:
-                indent, content = ul.group(1), ul.group(2)
-                result.append(f"{indent}• {cls._convert_inline(content)}")
-                continue
-
-            # ── 有序列表 1. 2. 3.（编号里的 . 需转义）──
-            ol = re.match(r'^(\s*)(\d+)\.\s+(.*)$', line)
-            if ol:
-                indent, num, content = ol.group(1), ol.group(2), ol.group(3)
-                result.append(f"{indent}{num}\\. {cls._convert_inline(content)}")
-                continue
-
-            # ── 普通正文行 ──
-            result.append(cls._convert_inline(line))
-
-        # 容错：文本以未闭合的 ``` 结尾时，把已收集内容按代码块补齐输出
-        if in_fence and fence_body:
-            body = '\n'.join(fence_body)
-            result.append(f"```{fence_lang}\n{cls._mdv2_escape_code(body)}```")
-
-        return '\n'.join(result)
+        """标准 Markdown → Telegram MarkdownV2。"""
+        return markdown_to_v2(text)
 
     @staticmethod
     def _strip_markdown_v2(text: str) -> str:
-        """将 MarkdownV2 文本清洗为纯文本（去转义反斜杠、引用块 > 前缀、加粗/代码符号、Markdown 链接）"""
-        if not text:
-            return ""
-        import re as _re
-        # 先把 [显示文字](URL) 替换为"显示文字"，避免 send_photo 图片 URL 非 HTTPS 失败时
-        # 降级发纯文本却把 Markdown 链接语法原样打印给用户（TG 不渲染无 parse_mode 的链接）。
-        # why：_strip 只处理反斜杠转义和 */` 符号，[text](url) 完全不处理，是泄漏根源。
-        text = _re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', str(text))
-        lines = []
-        for line in text.split("\n"):
-            if line.startswith(">"):
-                line = line[1:]
-            out = []
-            i = 0
-            while i < len(line):
-                ch = line[i]
-                if ch == "\\" and i + 1 < len(line):
-                    out.append(line[i + 1])
-                    i += 2
-                elif ch in ("*", "`"):
-                    i += 1
-                else:
-                    out.append(ch)
-                    i += 1
-            lines.append("".join(out))
-        return "\n".join(lines)
+        """清洗 Markdown 符号，返回纯文本。"""
+        return strip_markdown(text)
 
     @staticmethod
     def get_config_schema() -> list:
@@ -1005,6 +737,163 @@ class TelegramChannel(BaseNotificationChannel):
 
         return "\n".join(parts), images
 
+    # ── 富消息发送（Bot API 10.1） ──
+
+    # 判定"服务端不支持富消息"的错误特征。
+    # why：telebot 抛的是通用 ApiTelegramException，只能靠 description 文本区分
+    # "服务端没这个能力"（应永久降级）和"这条内容有问题/网络抖动"（下一帧还能试）。
+    # 注意：不能把宽泛的 "not found" 放进来——"message to edit not found"（用户删了
+    # 占位消息）与富消息能力无关，误判会让整个进程错误地永久降级。
+    _RICH_UNSUPPORTED_SIGNS = (
+        "method not found",           # 服务端未部署 sendRichMessage
+        "unknown method",
+        "method is not available",
+        "unsupported parameter",      # 旧版服务端不认 rich_message 字段
+        "unknown parameter",
+        "unknown field",
+        'field "rich_message"',
+    )
+
+    def _use_rich_message(self) -> bool:
+        """当前是否应该走结构化富消息。
+
+        库层声明能力 ∧ 运行时未被判定不可用。首次调用时 _rich_message_available
+        为 None（未探测），按"乐观尝试"返回 True，由实际发送结果来确认。
+        """
+        if not self.get_capabilities().supports(ChannelCapability.RICH_MESSAGE):
+            return False
+        return self._rich_message_available is not False
+
+    def _build_rich_message(self, markdown: str, image_url: str = ""):
+        """把 Markdown 文本包装成 InputRichMessage。
+
+        why：富消息的 markdown 字段与 GitHub Flavored Markdown 兼容，标准 Markdown
+        （**粗体**、# 标题、- 列表、``` 代码块、> 引用、| 表格 |）可以零转换直传。
+
+        :param image_url: 可选的图片 HTTPS URL。非空时以媒体块内嵌到正文顶部。
+            注意只支持 HTTP(S) URL——telebot 的 send_rich_message/edit_message_text
+            走的是 params（表单编码），没有 multipart 通道，本地字节流无法上传。
+
+        skip_entity_detection 不启用：让 Telegram 自动识别 URL、@提及、/命令等，
+        回复里出现的链接和命令能直接点击。
+        """
+        telebot = _get_telebot()
+        if image_url:
+            # 媒体块必须独立成段（官方："Media can be specified only as a separate block"）
+            markdown = f"![]({image_url})\n\n{markdown}"
+        return telebot.types.InputRichMessage(markdown=markdown)
+
+    def _note_rich_failure(self, err: Exception, context: str) -> bool:
+        """归类一次富消息发送失败，维护 _rich_message_available 标志。
+
+        :return: True 表示"服务端不支持"（已永久降级），False 表示属于内容/网络层
+            问题（能力判定不变，仅本条降级）。
+        """
+        err_str = str(err).lower()
+        if any(sign in err_str for sign in self._RICH_UNSUPPORTED_SIGNS):
+            if self._rich_message_available is not False:
+                self._rich_message_available = False
+                self.logger.warning(
+                    "Telegram 服务端不支持富消息（sendRichMessage），"
+                    f"已降级为传统发送方式：{err}"
+                )
+            return True
+        self.logger.warning(f"{context}富消息发送失败，本条降级处理: {err}")
+        return False
+
+    def _mark_rich_ok(self) -> None:
+        """标记富消息通路可用（首次成功时记一条日志，便于排查）。"""
+        if self._rich_message_available is None:
+            self._rich_message_available = True
+            self.logger.info(
+                "Telegram 富消息（sendRichMessage）可用，已启用结构化排版"
+            )
+
+    async def _rich_edit(self, chat_id, msg_id: int, markdown: str,
+                         image_url: str = "", markup=None) -> bool:
+        """用富消息编辑已有消息。返回是否成功；失败时已完成能力标志维护。
+
+        markup 必须一并传入：editMessageText 不带 reply_markup 会清空原有按钮。
+        """
+        if not self._use_rich_message():
+            return False
+        try:
+            await asyncio.to_thread(
+                self._bot.edit_message_text,
+                chat_id=chat_id, message_id=msg_id,
+                rich_message=self._build_rich_message(markdown, image_url),
+                reply_markup=markup,
+            )
+            self._mark_rich_ok()
+            return True
+        except Exception as err:
+            # 内容与当前完全一致：Telegram 报 not modified，实质是成功（通路也正常）
+            if "not modified" in str(err).lower():
+                self._mark_rich_ok()
+                return True
+            self._note_rich_failure(err, "编辑消息")
+            return False
+
+    async def _rich_send(self, chat_id, markdown: str, image_url: str = "",
+                         markup=None, reply_to_message_id: Optional[int] = None):
+        """用富消息发送新消息。返回 Message 对象，失败返回 None。"""
+        if not self._use_rich_message():
+            return None
+        try:
+            telebot = _get_telebot()
+            reply_params = None
+            if reply_to_message_id:
+                # 富消息没有 reply_to_message_id 参数，只接受 ReplyParameters 对象
+                reply_params = telebot.types.ReplyParameters(
+                    message_id=reply_to_message_id
+                )
+            sent = await asyncio.to_thread(
+                self._bot.send_rich_message,
+                chat_id,
+                self._build_rich_message(markdown, image_url),
+                reply_markup=markup,
+                reply_parameters=reply_params,
+            )
+            self._mark_rich_ok()
+            return sent
+        except Exception as err:
+            self._note_rich_failure(err, "发送消息")
+            return None
+
+    async def _edit_llm_frame(
+        self, chat_id, msg_id: int, content: str, is_final: bool = False
+    ) -> bool:
+        """把一帧 LLM 回复内容写入占位消息。
+
+        两级：富消息（标准 Markdown 直传）→ 纯文本兜底。
+        中间不再插 MarkdownV2 一级——LLM 输出的就是标准 Markdown，富消息原生吃下；
+        富消息不可用时说明服务端版本过旧，直接给纯文本，不为此维护第三套转义。
+
+        :param is_final: 是否为最终定稿帧。中途帧失败属正常（限流、内容未变），
+            静默跳过；最终帧失败要记警告，因为用户会看到不完整的回复。
+        :return: 是否成功写入
+        """
+        if await self._rich_edit(chat_id, msg_id, content):
+            return True
+
+        # 纯文本兜底：剥掉 Markdown 符号，避免用户看到裸露的 ** 和 [文字](URL)。
+        # 必须先过 _markdown_to_v2 再 strip，不能直接 strip——
+        # why：_strip_markdown_v2 只处理转义反斜杠和 */` 符号，不认表格。
+        # 直接 strip 会把 | 源 | 集数 | 和 |:---|---:| 原样留下，
+        # 正是最初要解决的"裸竖线堆叠"问题。表格降级逻辑在 _markdown_to_v2
+        # 的 _convert_table 里，走一遍才能转成「每条一段」列表。
+        try:
+            await asyncio.to_thread(
+                self._bot.edit_message_text,
+                self._strip_markdown_v2(self._markdown_to_v2(content)),
+                chat_id, msg_id,
+            )
+            return True
+        except Exception as err:
+            if is_final:
+                self.logger.warning(f"LLM 回复发送失败: {err}")
+            return False
+
     async def _llm_chat_stream(
         self, text: str, user_id: str, chat_id, reply_to_id: int,
         images: Optional[List[str]] = None,
@@ -1053,47 +942,22 @@ class TelegramChannel(BaseNotificationChannel):
                 last_edit["shown"] = partial
                 # 首次成功刷出增量内容后停止 typing（用户已看到实际内容在生成）
                 typing_active["stop"] = True
-                # 流式中途文本常有未闭合语法（如刚吐出 "**粗" 还没收尾），
-                # 先补齐再转换，失败则退回纯文本，保证这一帧一定能刷出去。
-                try:
-                    formatted = self._markdown_to_v2(
-                        self._close_dangling_markdown(partial or "…")
-                    )
-                    await asyncio.to_thread(
-                        self._bot.edit_message_text,
-                        formatted, chat_id, msg_id, parse_mode="MarkdownV2",
-                    )
-                except Exception:
-                    try:
-                        await asyncio.to_thread(
-                            self._bot.edit_message_text, partial or "…", chat_id, msg_id
-                        )
-                    except Exception:
-                        pass  # 内容未变/限流，最终定稿会补发
+                # 中途帧允许失败：这一帧刷不出去，下一帧或最终定稿会补上，
+                # 故不记录警告日志，避免流式过程中刷屏。
+                await self._edit_llm_frame(chat_id, msg_id, partial or "…", is_final=False)
 
-            # rich_text 取自本渠道声明的能力：Telegram 支持 MarkdownV2，
-            # 所以允许 LLM 用 Markdown 排版，再由 _markdown_to_v2 转成 TG 语法
+            # rich_message 反映"结构化富消息是否真正可用"：库层能力 ∧ 运行时未被判定不可用。
+            # 富消息的 markdown 与 GFM 兼容，表格/标题/公式全部原生支持，
+            # 因此这里为 True 时 prompt 会放开表格；若运行时探测到不可用会自动收紧。
             result = await self.service.handle_llm_chat(
                 text, user_id, stream_callback=on_stream, images=images,
                 rich_text=self.get_capabilities().supports(ChannelCapability.RICH_TEXT),
+                rich_message=self._use_rich_message(),
             )
             final = (result.text if result else "") or "……"
-            # 最终定稿：完整文本转 MarkdownV2；解析失败则降级纯文本，避免整条回复发不出去
+            # 最终定稿：这一帧必须成功，失败会逐级降级并记录日志
             if final != last_edit["shown"]:
-                try:
-                    formatted = self._markdown_to_v2(final)
-                    await asyncio.to_thread(
-                        self._bot.edit_message_text,
-                        formatted, chat_id, msg_id, parse_mode="MarkdownV2",
-                    )
-                except Exception as fmt_err:
-                    self.logger.warning(f"LLM 回复 MarkdownV2 渲染失败，降级纯文本: {fmt_err}")
-                    try:
-                        await asyncio.to_thread(
-                            self._bot.edit_message_text, final, chat_id, msg_id
-                        )
-                    except Exception:
-                        pass
+                await self._edit_llm_frame(chat_id, msg_id, final, is_final=True)
         finally:
             # 确保 typing 任务被清理
             typing_active["stop"] = True
@@ -1411,12 +1275,19 @@ class TelegramChannel(BaseNotificationChannel):
         image: str = kwargs.get("image", "") or ""
         # image_bytes：聚合海报 PNG 字节（如后备搜索九宫格），优先级高于单图 URL
         image_bytes: Optional[bytes] = kwargs.get("image_bytes")
-        # caption：title 已是纯文本（to_markdown 返回的 title 去掉了 *），需转义后再套 *粗体*
-        # body(text) 已是合法 MarkdownV2，直接拼接
-        safe_title = self._escape_markdown_v2(title) if title else ""
-        caption = f"*{safe_title}*\n{text}" if title else text
-        # 纯文本兜底版（解析失败时使用，去掉所有 markdown 符号）
-        plain_caption = f"{title}\n{self._strip_markdown_v2(text)}" if title else self._strip_markdown_v2(text)
+
+        # ── 正文格式约定 ──
+        # 入参 text 一律是**标准 Markdown**（由 to_markdown / render_progress_text
+        # 等上游产出），title 是纯文本。平台专属的转义只在这里做一次：
+        #   md_body    → 标准 Markdown，直接喂富消息的 markdown 字段
+        #   caption    → MarkdownV2，喂 send_photo/sendMessage 的 parse_mode
+        #   plain_*    → 纯文本兜底，解析失败时用
+        # why：过去 text 进来就已经是 MarkdownV2，等于把平台方言当成了模块间的
+        # 传输格式，换发送方式就得反向还原一遍。现在统一为标准 Markdown 入、
+        # 各自转义出，新增发送方式不必再关心历史包袱。
+        md_body = f"**{title}**\n{text}" if title else text
+        caption = self._markdown_to_v2(md_body)
+        plain_caption = self._strip_markdown_v2(caption)
         # edit_message_id：有则 edit 已有消息，无则发新消息
         edit_message_id: Optional[int] = kwargs.get("edit_message_id")
         # _msg_id_out：调用方传入的列表，发新消息后把 message_id 写进去
@@ -1448,11 +1319,16 @@ class TelegramChannel(BaseNotificationChannel):
             # Telegram 无法把纯文本消息 edit 成图片消息，需改为"先删旧消息再发新图"，
             # 落入下方 image_bytes / image 分支处理。
             if edit_message_id and not (image or image_bytes):
-                # 尝试 edit 已有消息（带重试）
-                success = await self._edit_with_retry(
-                    chat_id, edit_message_id, caption,
-                    markup=markup, parse_mode="MarkdownV2",
+                # 优先富消息（标准 Markdown 直传，进度条的 `[███░░]` 45% 无需转义）；
+                # 不可用时回落到 MarkdownV2 带重试编辑
+                success = await self._rich_edit(
+                    chat_id, edit_message_id, md_body, markup=markup
                 )
+                if not success:
+                    success = await self._edit_with_retry(
+                        chat_id, edit_message_id, caption,
+                        markup=markup, parse_mode="MarkdownV2",
+                    )
                 if not success:
                     # 重试全部失败，降级为发新消息（纯文本，不带 parse_mode）
                     self.logger.warning(f"edit_message_text 重试全部失败，降级为发纯文本新消息")
@@ -1501,7 +1377,7 @@ class TelegramChannel(BaseNotificationChannel):
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)
             elif image:
-                # 有封面图：发带图片的消息，正文作为 caption
+                # 有封面图（HTTPS URL）：优先富消息，图片以媒体块内嵌到正文顶部。
                 # why：若带 edit_message_id（完成消息取代原进度消息），先删旧进度消息，
                 # 因为图片消息无法由文本消息 edit 而来，只能"先删后发"。
                 if edit_message_id:
@@ -1511,6 +1387,16 @@ class TelegramChannel(BaseNotificationChannel):
                         )
                     except Exception as del_err:
                         self.logger.debug(f"删除旧进度消息失败（忽略）: {del_err}")
+                # 富消息只支持 HTTP(S) URL 的媒体（无 multipart 通道），
+                # 非 http 开头的地址（如本地路径）仍走 send_photo
+                if image.startswith("http"):
+                    sent = await self._rich_send(
+                        chat_id, md_body, image_url=image, markup=markup
+                    )
+                    if sent:
+                        if msg_id_out is not None:
+                            msg_id_out.append(sent.message_id)
+                        return
                 try:
                     sent = await asyncio.to_thread(self._bot.send_photo, chat_id, image, caption=caption, parse_mode="MarkdownV2", reply_markup=markup)
                 except Exception as photo_err:
@@ -1536,6 +1422,12 @@ class TelegramChannel(BaseNotificationChannel):
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)
             else:
+                # 无图纯文本：优先富消息（标准 Markdown 直传，表格/标题原生渲染）
+                sent = await self._rich_send(chat_id, md_body, markup=markup)
+                if sent:
+                    if msg_id_out is not None:
+                        msg_id_out.append(sent.message_id)
+                    return
                 try:
                     sent = await asyncio.to_thread(self._bot.send_message, chat_id, caption, parse_mode="MarkdownV2", reply_markup=markup)
                 except Exception as send_err:
@@ -1549,27 +1441,32 @@ class TelegramChannel(BaseNotificationChannel):
                     msg_id_out.append(sent.message_id)
         except Exception as e:
             self.logger.error(f"发送消息失败: {e}")
-            # 降级为纯文本（清洗掉 MarkdownV2 符号，避免显示反斜杠和 > 前缀）
+            # 降级为纯文本。直接复用上面算好的 plain_caption，
+            # 它是 _strip_markdown_v2(_markdown_to_v2(md_body)) 的产物——
+            # why：不能对原始 text 直接 strip，那样表格的 | 和 |---| 会原样留下
+            # （_strip_markdown_v2 不认表格，表格降级在 _markdown_to_v2 里）。
             try:
-                plain = f"{title}\n{self._strip_markdown_v2(text)}" if title else self._strip_markdown_v2(text)
-                sent = await asyncio.to_thread(self._bot.send_message, chat_id, plain)
+                sent = await asyncio.to_thread(
+                    self._bot.send_message, chat_id, plain_caption
+                )
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)
             except Exception:
                 pass
 
     def render_progress_text(self, progress: int, description: str) -> str:
-        """渲染 MarkdownV2 进度条。
+        """渲染进度条，产出**标准 Markdown**。
 
-        why：进度条本体用反引号 code 包裹（█░ 不含 MarkdownV2 保留字符），
-        但百分比和描述必须转义——description 里的 "..." 含保留字符 "."，
-        未转义会导致 edit 时解析失败 → 降级发新消息 → 进度刷屏。
+        why：本方法过去直接产出 MarkdownV2（用 _escape_markdown_v2 转义百分号和
+        描述里的 "."），导致 MarkdownV2 这个平台专属方言泄漏成了模块间的传输格式，
+        下游想改用别的发送方式就得先反向还原一遍。
+        现在统一约定：**上游一律产出标准 Markdown，转义只在 send_message 里
+        按目标 API 做一次**。进度条本体用反引号包裹（█░ 无需转义），
+        百分比和描述直接写，交由发送层处理。
         """
         filled = max(0, min(10, int(progress / 10)))
         bar = "█" * filled + "░" * (10 - filled)
-        pct = self._escape_markdown_v2(f"{progress}%")
-        desc = self._escape_markdown_v2(description)
-        return f"`[{bar}]` {pct}\n• {desc}"
+        return f"`[{bar}]` {progress}%\n• {description}"
 
     async def send_quick(self, text: str, chat_id=None) -> Optional[int]:
         """发送一条快速消息，返回 message_id 供后续 edit 使用"""
@@ -1599,7 +1496,7 @@ class TelegramChannel(BaseNotificationChannel):
             elif self.proxy_url:
                 telebot.apihelper.proxy = {"https": self.proxy_url}
                 telebot.apihelper.API_URL = "https://api.telegram.org/bot{0}/{1}"
-            else: 
+            else:
                 telebot.apihelper.proxy = None
                 telebot.apihelper.API_URL = "https://api.telegram.org/bot{0}/{1}"
             telebot.apihelper.CONNECT_TIMEOUT = 10
@@ -1635,4 +1532,3 @@ class TelegramChannel(BaseNotificationChannel):
         update = telebot.types.Update.de_json(update_json)
         self._bot.process_new_updates([update])
         return True
-    

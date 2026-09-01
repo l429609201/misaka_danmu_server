@@ -28,6 +28,7 @@ class ChannelCapability(Enum):
     RICH_TEXT = "rich_text"                  # 支持富文本（Markdown/HTML）
     IMAGES = "images"                        # 支持图片发送
     LINKS = "links"                          # 支持链接
+    RICH_MESSAGE = "rich_message"            # 支持「结构化富消息」
 
 
 # ── 图片发送模式（各渠道通用）──
@@ -77,6 +78,11 @@ class ChannelCapabilities:
     @property
     def supports_callbacks(self) -> bool:
         return self.supports(ChannelCapability.CALLBACK_QUERIES)
+
+    @property
+    def supports_rich_message(self) -> bool:
+        """是否支持结构化富消息（表格、标题、脚注、公式等）。"""
+        return self.supports(ChannelCapability.RICH_MESSAGE)
 
     @property
     def supports_editing(self) -> bool:

@@ -86,6 +86,8 @@ class AssistantAgent:
         persona_key: str,
         rich_text: bool = True,
         is_channel: bool = False,
+        supports_table: bool = True,
+        rich_message: bool = False,
     ) -> List[Dict[str, Any]]:
         messages: List[Dict[str, Any]] = [
             {
@@ -94,6 +96,8 @@ class AssistantAgent:
                     persona_key or DEFAULT_PERSONA,
                     rich_text=rich_text,
                     is_channel=is_channel,
+                    supports_table=supports_table,
+                    rich_message=rich_message,
                 ),
             }
         ]
@@ -156,6 +160,8 @@ class AssistantAgent:
         context_extra: Dict[str, Any] = None,
         rich_text: bool = True,
         is_channel: bool = False,
+        supports_table: bool = True,
+        rich_message: bool = False,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """ReAct 主循环：先用非流式判断工具调用，最终回答用流式输出。
 
@@ -166,6 +172,10 @@ class AssistantAgent:
         :param rich_text: 目标渠道是否支持 Markdown 渲染（决定 system prompt 里的排版约束）。
             默认 True 兼容 Web 端；纯文本渠道（企业微信/Server酱）需显式传 False。
         :param is_channel: 是否来自通知渠道对话（决定是否注入方括号标注说明）。
+        :param supports_table: 富文本渠道是否支持 Markdown 表格。仅在 rich_message=False
+            时生效；无表格语法的发送方式需传 False。
+        :param rich_message: 是否走结构化富消息（Telegram sendRichMessage，GFM 兼容）。
+            True 时开放表格/标题/任务列表/公式等完整排版能力。
         """
         cfg = await self._load_ai_config()
         if not (cfg["api_key"] and cfg["model"] and cfg["base_url"]):
@@ -173,7 +183,9 @@ class AssistantAgent:
             return
 
         messages = self._build_messages(
-            history, persona_key, rich_text=rich_text, is_channel=is_channel
+            history, persona_key, rich_text=rich_text,
+            is_channel=is_channel, supports_table=supports_table,
+            rich_message=rich_message,
         )
         tools = registry.openai_tools(include_write=True)  # P3 暴露只读+写工具
         context = {"session_factory": self.session_factory}

@@ -49,7 +49,9 @@ PyYAML>=6.0
 # Docker 容器管理功能依赖
 docker>=6.0.0  # Docker SDK for Python
 # Telegram 通知渠道
-pyTelegramBotAPI
+# why：需 >=4.36.1 才有 Bot API 10.1 的富消息支持（sendRichMessage / InputRichMessage），
+# 富消息是 Telegram 唯一能渲染表格的发送方式。旧版（如 4.31.0）没有这些接口。
+pyTelegramBotAPI>=4.36.1
 
 # Redis 缓存后端（可选，仅 cache.backend 配置为 redis 时需要）
 redis>=5.0.0  # redis-py，含 asyncio 支持

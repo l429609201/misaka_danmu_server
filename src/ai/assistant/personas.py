@@ -39,15 +39,80 @@ MISAKA_20001_PROMPT = """你是「御坂 20001 号」，昵称"最后之作"（L
 # ChannelCapability.RICH_TEXT 声明，这里据此给出对应的排版约束。
 # ────────────────────────────────────────────────────────────
 
-# 支持富文本的渠道（Web 端 react-markdown、Telegram MarkdownV2）
+# 全功能 Markdown 渠道（Web 端 react-markdown，支持表格）
 _FORMAT_RICH = """
+━━━━━━ 排版格式 ━━━━━━
+当前渠道支持完整 Markdown 渲染，可适度使用以提升可读性：
+- **粗体** 强调关键信息（作品名、状态、数字）
+- `行内代码` 标注 ID、配置键名、文件路径、正则表达式
+- ```代码块``` 展示多行配置、日志片段、结构化数据
+- 无序/有序列表罗列多个条目
+- | 表格 | 语法 | 对比多个条目的多个字段
+- [文字](URL) 形式给出链接
+排版服务于可读性，不要为了用格式而堆砌符号；一两句话的回答直接说，无需列表。
+"""
+
+# 结构化富消息渠道（Telegram，走 Bot API 10.1 的 sendRichMessage）
+#
+# why：富消息的 markdown 字段与 GitHub Flavored Markdown 兼容（官方原文：
+# "Rich Markdown is compatible with GitHub Flavored Markdown where possible"），
+# 表格、标题层级、任务列表、脚注、LaTeX 公式、可折叠块全部原生支持，
+# 因此 LLM 输出的标准 Markdown 可以零转换直传，不需要任何转义处理。
+#
+# 与 _FORMAT_RICH（Web 端）的差别：这里额外开放富消息独有的语法，
+# 同时要提醒表格单元格只能放行内格式（官方限制："Table cells can contain
+# only inline formatting"），避免模型在单元格里塞代码块或列表导致解析失败。
+_FORMAT_RICH_MESSAGE = """
+━━━━━━ 排版格式 ━━━━━━
+当前渠道支持**结构化富消息**渲染（GitHub Flavored Markdown 兼容），排版能力完整：
+- **粗体** 强调关键信息（作品名、状态、数字）
+- `行内代码` 标注 ID、配置键名、文件路径、正则表达式
+- ```代码块``` 展示多行配置、日志片段（可标注语言，如 ```python）
+- 无序/有序列表罗列多个条目；`- [ ]` / `- [x]` 表示待办与已完成
+- `## 小标题` 给长回答分节（层级从 ## 起，不要用 #，避免标题过大）
+- > 引用块 引述用户原话或日志摘录
+- | 表格 | 语法 | 对比"多个条目 × 多个字段"，支持 |:---|---:| 控制对齐
+- [文字](URL) 形式给出链接
+- --- 分割线切分不同主题
+
+【表格注意】单元格里只能放行内格式（粗体、行内代码、链接等），
+不要在单元格内写代码块、列表或换行。列数控制在 4 列以内，手机上更易读。
+
+排版服务于可读性，不要为了用格式而堆砌符号；一两句话的回答直接说，无需列表和表格。
+"""
+
+# 富文本但当前发送方式不支持表格的渠道
+#
+# why：Telegram 的 sendMessage 无论用 MarkdownV2 还是 HTML 都没有表格语法，官方实体
+# 只有粗体、斜体、下划线、删除线、剧透、行内代码、代码块、链接、提及、引用块。输出
+# Markdown 表格后竖线会被转义成 \\| 原样显示，比纯文本列表更难读，故显式禁止并给替代写法。
+#
+# 目前作为 Telegram 富消息路径的降级兜底：若服务端未部署 sendRichMessage，
+# 渠道会退回 sendMessage + MarkdownV2，此时仍需按无表格约束输出。
+_FORMAT_RICH_NO_TABLE = """
 ━━━━━━ 排版格式 ━━━━━━
 当前渠道支持 Markdown 渲染，可适度使用以提升可读性：
 - **粗体** 强调关键信息（作品名、状态、数字）
 - `行内代码` 标注 ID、配置键名、文件路径、正则表达式
 - ```代码块``` 展示多行配置、日志片段、结构化数据
 - 无序/有序列表罗列多个条目
+- > 引用块 引述用户原话或日志摘录
 - [文字](URL) 形式给出链接
+
+【严禁使用表格】（重要）
+本渠道当前的发送方式**不渲染 Markdown 表格**。写 | 列1 | 列2 | 这种语法，用户看到的
+会是一堆竖线和 --- 符号堆在一起，完全没有对齐效果，观感极差。
+需要罗列"多个条目 × 多个字段"时，改用「每条一段」的写法：
+- 每个条目起一行，用 • 或编号开头，粗体标出主标识
+- 该条目的各个字段写在同一行内用「，」或「·」分隔，或换行缩进列出
+正确示例：
+• **cc0966a3**：❌ 失败 · 任务已被用户取消
+• **453b032f**：❌ 失败 · 任务已被用户取消
+字段较多时也可以：
+• **幼女战记 2**
+  状态：失败　进度：237/261　原因：用户取消
+若确实需要等宽对齐（如日志、命令输出），把整块放进代码块，代码块内允许出现竖线。
+
 排版服务于可读性，不要为了用格式而堆砌符号；一两句话的回答直接说，无需列表。
 """
 
@@ -317,12 +382,14 @@ def get_persona_prompt(
     persona_key: str = DEFAULT_PERSONA,
     rich_text: bool = True,
     is_channel: bool = False,
+    supports_table: bool = True,
+    rich_message: bool = False,
 ) -> str:
     """获取指定人设的 system 提示词。
 
     组成部分（职责分离）：
     - 人设：管"怎么说话"（角色风格与口癖）
-    - 排版格式：管"能用什么语法"，按 rich_text 二选一注入
+    - 排版格式：管"能用什么语法"，按渠道能力四选一注入
     - SYSTEM_KNOWLEDGE：管"懂什么、会用什么工具"（领域知识 + 工具清单）
     - 渠道消息标注说明：仅 is_channel=True 时注入
     - 技能摘要：管"遇到特定场景该走什么流程"（渐进式披露只给摘要）
@@ -334,13 +401,26 @@ def get_persona_prompt(
         why：默认 True 是为了让 Web 端调用方无需改动即保持原有行为。
     :param is_channel: 是否来自通知渠道对话。渠道侧会把贴纸/图片/引用等
         翻译成方括号标注，需要额外告知模型这套约定；Web 端不产生这类标注。
+    :param supports_table: 富文本渠道是否支持 Markdown 表格。仅在 rich_text=True 且
+        rich_message=False 时有意义。
+        True（默认）→ Web 端 react-markdown 能渲染表格；
+        False → 当前发送方式无表格语法的渠道（如 Telegram 降级到 sendMessage 时），
+                改用「每条一段」的列表写法。
+    :param rich_message: 是否走结构化富消息（Telegram 的 sendRichMessage）。
+        True → 注入 _FORMAT_RICH_MESSAGE，开放表格/标题/任务列表/公式等完整能力；
+        优先级高于 supports_table。默认 False，保持既有调用方行为不变。
     """
     persona = PERSONAS.get(persona_key) or PERSONAS[DEFAULT_PERSONA]
-    sections = [
-        persona["prompt"],
-        _FORMAT_RICH if rich_text else _FORMAT_PLAIN,
-        SYSTEM_KNOWLEDGE,
-    ]
+    if not rich_text:
+        fmt = _FORMAT_PLAIN
+    elif rich_message:
+        # 富消息能力最强，独立一档；不再受 supports_table 影响
+        fmt = _FORMAT_RICH_MESSAGE
+    elif supports_table:
+        fmt = _FORMAT_RICH
+    else:
+        fmt = _FORMAT_RICH_NO_TABLE
+    sections = [persona["prompt"], fmt, SYSTEM_KNOWLEDGE]
     if is_channel:
         sections.append(_CHANNEL_MESSAGE_HINTS)
     sections.append(_build_skills_section())
