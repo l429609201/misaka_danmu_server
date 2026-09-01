@@ -284,6 +284,12 @@ def setup_logging():
             filepath, maxBytes=max_bytes, backupCount=3, encoding='utf-8'
         )
         handler.setFormatter(logging.Formatter(fmt, datefmt='%Y-%m-%d %H:%M:%S'))
+        # why：这些专用 logger 都设了 propagate=False，记录不会流到 root，
+        # 因此 root 上挂的 SensitiveInfoFilter 对它们完全无效。而这几个文件
+        # (scraper_responses / bot_raw 等) 恰恰记录原始响应与原始交互，出现
+        # Cookie、token 的概率最高。必须在自己的 handler 上单独挂脱敏过滤器，
+        # 否则密钥会明文落盘，且会被日志检索工具回灌给模型。
+        handler.addFilter(SensitiveInfoFilter())
         spec_logger.addHandler(handler)
 
     # 汇总输出日志系统初始化信息
@@ -381,6 +387,103 @@ def read_log_file(
         return {"lines": page_lines, "hasMore": has_more, "total": total}
     except Exception as e:
         raise IOError(f"读取日志文件失败: {e}") from e
+
+
+# 行首级别标签，对应 verbose_formatter/ui_formatter 里的 [%(levelname)s]
+_LEVEL_TAG_RE = re.compile(r'\[(DEBUG|INFO|WARNING|ERROR|CRITICAL)\]')
+
+# 检索时跳过轮转文件（.log.1/.log.2），只扫当前活跃日志。
+# why：轮转文件是历史归档，排障关注的是"刚刚发生了什么"，全扫会成倍放大 IO 和噪音。
+# 确需翻历史时用 read_log_file 指名读取。
+_ACTIVE_LOG_RE = re.compile(r'^.+\.log$')
+
+
+def search_logs(
+    keyword: str = "",
+    level: str = "",
+    filename: str = "",
+    limit: int = 30,
+    line_max_chars: int = 300,
+) -> dict:
+    """跨日志文件检索，供 AI 排障定位问题。
+
+    与 read_log_file 的区别：后者是"读某个文件的某一页"，本函数是"在所有日志里找线索"，
+    不需要预先知道该查哪个文件。
+
+    :param keyword:        空格分隔的多个词，需全部命中（AND）；大小写不敏感。空则不按词过滤
+    :param level:          级别过滤，如 ERROR；同时匹配该级别及更高级别
+    :param filename:       限定单个文件；空则扫描日志目录下所有活跃 .log
+    :param limit:          最多返回条数，上限 100
+    :param line_max_chars: 单行截断长度，防止超长堆栈打爆上下文
+    :return: {"matches": [{"file","level","line"}], "total": int, "truncated": bool,
+              "scannedFiles": [...]}
+             matches 按时间倒序（最新在前）
+    """
+    log_dir = get_log_dir().resolve()
+    if not log_dir.exists():
+        return {"matches": [], "total": 0, "truncated": False, "scannedFiles": []}
+
+    limit = max(1, min(limit, 100))
+    words = [w.lower() for w in keyword.split() if w.strip()]
+
+    # 级别过滤：命中该级别及以上，符合"查 WARNING 也该看到 ERROR"的直觉
+    wanted_levels: set = set()
+    if level:
+        order = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        lv = level.strip().upper()
+        if lv in order:
+            wanted_levels = set(order[order.index(lv):])
+
+    if filename:
+        target = (log_dir / filename).resolve()
+        # 与 read_log_file 一致的路径穿越防护
+        if target.parent != log_dir or not target.is_file():
+            raise ValueError("非法的文件路径")
+        files = [target]
+    else:
+        files = sorted(
+            (f for f in log_dir.iterdir() if f.is_file() and _ACTIVE_LOG_RE.match(f.name)),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+
+    matches: List[dict] = []
+    total = 0
+    scanned: List[str] = []
+
+    for path in files:
+        scanned.append(path.name)
+        try:
+            with open(path, 'rb') as f:
+                raw = f.read()
+        except OSError as e:
+            logging.warning(f"检索日志跳过不可读文件 {path.name}: {e}")
+            continue
+
+        # 倒序遍历：优先拿到最新的记录
+        for line in reversed(raw.decode('utf-8', errors='replace').splitlines()):
+            if not line.strip():
+                continue
+            if words:
+                low = line.lower()
+                if not all(w in low for w in words):
+                    continue
+            tag = _LEVEL_TAG_RE.search(line)
+            line_level = tag.group(1) if tag else ""
+            if wanted_levels and line_level not in wanted_levels:
+                continue
+
+            total += 1
+            if len(matches) < limit:
+                text = line if len(line) <= line_max_chars else line[:line_max_chars] + "…"
+                matches.append({"file": path.name, "level": line_level, "line": text})
+
+    return {
+        "matches": matches,
+        "total": total,
+        "truncated": total > len(matches),
+        "scannedFiles": scanned,
+    }
 
 
 def subscribe_to_logs(queue: asyncio.Queue) -> None:
