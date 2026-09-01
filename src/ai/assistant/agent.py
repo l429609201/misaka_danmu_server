@@ -17,6 +17,7 @@ P2 只启用只读工具（include_write=False），写类工具留到 P3。
 import json
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
+from datetime import datetime
 
 import httpx
 
@@ -25,6 +26,7 @@ from .personas import get_persona_prompt, DEFAULT_PERSONA
 from ..ai_providers import get_provider_config
 from .mcp import McpManager, McpToolSpec
 from .tools import registry
+from ..ai_metrics import AIMetricsCollector, AICallMetrics
 
 logger = logging.getLogger(__name__)
 ai_responses_logger = logging.getLogger("ai_responses")  # 专用日志器，用于记录原始 AI 交互
@@ -42,6 +44,8 @@ class AssistantAgent:
         self.logger = logging.getLogger(self.__class__.__name__)
         # 外部 MCP 服务器工具管理器（工具不入静态 registry，按前缀路由）
         self.mcp = McpManager(config_manager)
+        # AI 调用指标收集器（用于统计 LLM 工具调用的 token 消耗）
+        self.metrics = AIMetricsCollector(db_session_factory=session_factory)
 
     async def _load_ai_config(self) -> Dict[str, str]:
         provider = await self.config_manager.get("aiProvider", "deepseek")
@@ -211,6 +215,7 @@ class AssistantAgent:
             for _round in range(_MAX_TOOL_ROUNDS):
                 self._log_raw(log_raw, f"第 {_round + 1} 轮请求 messages", messages)
 
+                start_time = datetime.now()
                 resp = await self._post(cfg, {
                     "model": cfg["model"],
                     "messages": messages,
@@ -220,18 +225,48 @@ class AssistantAgent:
                     "temperature": cfg["temperature"],
                     "top_p": cfg["top_p"],
                 })
+                duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+
                 if resp.status_code != 200:
                     detail = resp.text[:300]
                     self.logger.error(f"AI 工具轮请求失败 {resp.status_code}: {detail}")
                     self._log_raw(log_raw, f"第 {_round + 1} 轮请求失败（HTTP {resp.status_code}）", detail)
+                    # 记录失败的 AI 调用
+                    self.metrics.record(AICallMetrics(
+                        timestamp=datetime.now(),
+                        method="assistant_tool_call",
+                        success=False,
+                        duration_ms=duration_ms,
+                        tokens_used=0,
+                        model=cfg["model"],
+                        error=f"HTTP {resp.status_code}: {detail}",
+                        cache_hit=False
+                    ))
                     yield {"type": "error", "content": f"AI 请求失败（{resp.status_code}）"}
                     return
 
-                choice = (resp.json().get("choices") or [{}])[0]
+                resp_json = resp.json()
+                choice = (resp_json.get("choices") or [{}])[0]
                 msg = choice.get("message") or {}
                 tool_calls = msg.get("tool_calls") or []
 
+                # 提取 token 使用量
+                usage = resp_json.get("usage") or {}
+                tokens_used = usage.get("total_tokens", 0)
+
                 self._log_raw(log_raw, f"第 {_round + 1} 轮模型响应", msg)
+
+                # 记录成功的 AI 工具调用
+                self.metrics.record(AICallMetrics(
+                    timestamp=datetime.now(),
+                    method="assistant_tool_call",
+                    success=True,
+                    duration_ms=duration_ms,
+                    tokens_used=tokens_used,
+                    model=cfg["model"],
+                    error=None,
+                    cache_hit=False
+                ))
 
                 if not tool_calls:
                     async for ev in self._stream_final(cfg, messages):
@@ -313,33 +348,83 @@ class AssistantAgent:
         self._log_raw(log_raw, "最终回答请求 messages", messages)
         collected: List[str] = []  # 收集流式片段，用于完整记录最终回答
 
-        timeout = httpx.Timeout(cfg.get("timeout", _TIMEOUT), connect=10.0)
-        async with httpx.AsyncClient(timeout=timeout, proxy=cfg.get("proxy_url")) as client:
-            async with client.stream("POST", url, headers=headers, json=payload) as resp:
-                if resp.status_code != 200:
-                    body = await resp.aread()
-                    detail = body.decode('utf-8', 'ignore')[:300]
-                    self.logger.error(f"AI 最终流式失败 {resp.status_code}: {detail}")
-                    self._log_raw(log_raw, f"最终回答请求失败（HTTP {resp.status_code}）", detail)
-                    yield {"type": "error", "content": f"AI 请求失败（{resp.status_code}）"}
-                    return
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith("data:"):
-                        continue
-                    data = line[len("data:"):].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    choices = chunk.get("choices") or []
-                    if not choices:
-                        continue
-                    piece = (choices[0].get("delta") or {}).get("content")
-                    if piece:
-                        collected.append(piece)
-                        yield {"type": "delta", "content": piece}
+        start_time = datetime.now()
+        total_tokens = 0  # 累计 token 使用量
 
-        self._log_raw(log_raw, "最终回答（完整）", "".join(collected))
-        yield {"type": "done"}
+        timeout = httpx.Timeout(cfg.get("timeout", _TIMEOUT), connect=10.0)
+        try:
+            async with httpx.AsyncClient(timeout=timeout, proxy=cfg.get("proxy_url")) as client:
+                async with client.stream("POST", url, headers=headers, json=payload) as resp:
+                    if resp.status_code != 200:
+                        body = await resp.aread()
+                        detail = body.decode('utf-8', 'ignore')[:300]
+                        self.logger.error(f"AI 最终流式失败 {resp.status_code}: {detail}")
+                        self._log_raw(log_raw, f"最终回答请求失败（HTTP {resp.status_code}）", detail)
+                        duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+                        # 记录失败的最终回答调用
+                        self.metrics.record(AICallMetrics(
+                            timestamp=datetime.now(),
+                            method="assistant_final_answer",
+                            success=False,
+                            duration_ms=duration_ms,
+                            tokens_used=0,
+                            model=cfg["model"],
+                            error=f"HTTP {resp.status_code}: {detail}",
+                            cache_hit=False
+                        ))
+                        yield {"type": "error", "content": f"AI 请求失败（{resp.status_code}）"}
+                        return
+                    async for line in resp.aiter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data = line[len("data:"):].strip()
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = chunk.get("choices") or []
+                        if not choices:
+                            continue
+
+                        # 提取 token 使用量（某些提供商在流式响应中包含）
+                        usage = chunk.get("usage")
+                        if usage and usage.get("total_tokens"):
+                            total_tokens = usage.get("total_tokens", 0)
+
+                        piece = (choices[0].get("delta") or {}).get("content")
+                        if piece:
+                            collected.append(piece)
+                            yield {"type": "delta", "content": piece}
+
+            duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+
+            # 记录成功的最终回答调用
+            self.metrics.record(AICallMetrics(
+                timestamp=datetime.now(),
+                method="assistant_final_answer",
+                success=True,
+                duration_ms=duration_ms,
+                tokens_used=total_tokens,
+                model=cfg["model"],
+                error=None,
+                cache_hit=False
+            ))
+
+            self._log_raw(log_raw, "最终回答（完整）", "".join(collected))
+            yield {"type": "done"}
+        except Exception as e:
+            duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+            # 记录异常的最终回答调用
+            self.metrics.record(AICallMetrics(
+                timestamp=datetime.now(),
+                method="assistant_final_answer",
+                success=False,
+                duration_ms=duration_ms,
+                tokens_used=0,
+                model=cfg["model"],
+                error=str(e),
+                cache_hit=False
+            ))
+            raise

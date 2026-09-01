@@ -338,9 +338,15 @@ async def get_tasks_from_history(
     if status_filter == 'in_progress':
         base_stmt = base_stmt.where(TaskHistory.status.in_(['排队中', '运行中', '已暂停']))
     elif status_filter == 'completed':
-        base_stmt = base_stmt.where(TaskHistory.status == '成功')
+        base_stmt = base_stmt.where(TaskHistory.status == '已完成')
     elif status_filter == 'failed':
-        base_stmt = base_stmt.where(TaskHistory.status == '失败')
+        base_stmt = base_stmt.where(TaskHistory.status.in_(['失败', '超时', '已取消']))
+    elif status_filter == 'paused':
+        base_stmt = base_stmt.where(TaskHistory.status == '已暂停')
+    elif status_filter == 'pending':
+        base_stmt = base_stmt.where(TaskHistory.status == '排队中')
+    elif status_filter == 'running':
+        base_stmt = base_stmt.where(TaskHistory.status == '运行中')
 
     if queue_type_filter != 'all':
         base_stmt = base_stmt.where(TaskHistory.queueType == queue_type_filter)

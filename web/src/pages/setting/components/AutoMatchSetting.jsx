@@ -595,7 +595,7 @@ const AutoMatchSetting = () => {
           }}
         >
           <Tabs activeKey={activeTab} onChange={setActiveTab}>
-            {/* 标签页1: AI连接配置 */}
+            {/* 标签页1: 连接配置 */}
             <TabPane tab={t('autoMatch.tabConnection')} key="connection">
               <div id="feat-ai-connection" />
               <Form.Item
@@ -896,7 +896,7 @@ const AutoMatchSetting = () => {
               </div>
             </TabPane>
 
-            {/* 标签页2: AI自动匹配 */}
+            {/* 标签页2: 自动匹配 */}
             <TabPane tab={t('autoMatch.tabMatch')} key="match">
               <div id="feat-ai-match" />
               <Row gutter={[16, 16]}>
@@ -1166,7 +1166,7 @@ const AutoMatchSetting = () => {
               </div>
             </TabPane>
 
-            {/* 标签页3: AI识别增强 */}
+            {/* 标签页3: 识别增强 */}
             <TabPane tab={t('autoMatch.tabRecognition')} key="recognition">
               <div id="feat-ai-recognition" />
               <Row gutter={[16, 16]}>
@@ -1424,7 +1424,7 @@ const AutoMatchSetting = () => {
               <SkillManager />
             </TabPane>
 
-            {/* 标签页4: AI使用统计 */}
+            {/* 标签页4: 使用统计 */}
             <TabPane tab={t('autoMatch.tabMetrics')} key="metrics">
               <AIMetrics />
             </TabPane>

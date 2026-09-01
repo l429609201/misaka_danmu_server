@@ -424,6 +424,10 @@ export const ImportTask = () => {
     items: [
       { key: 'in_progress', label: t('importTask.filterInProgress') },
       { key: 'completed', label: t('importTask.filterCompleted') },
+      { key: 'failed', label: t('importTask.filterFailed') },
+      { key: 'paused', label: t('importTask.filterPaused') },
+      { key: 'pending', label: t('importTask.filterPending') },
+      { key: 'running', label: t('importTask.filterRunning') },
       { key: 'all', label: t('importTask.filterAll') },
     ],
     onClick: ({ key }) => {
