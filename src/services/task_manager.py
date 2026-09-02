@@ -448,10 +448,17 @@ class TaskManager:
         # 依次查找：立即执行任务 → 各队列当前任务
         task: Optional[Task] = self._immediate_tasks.get(task_id)
         if not task:
-            for t in (self._current_download_task, self._current_management_task, self._current_fallback_task):
-                if t and t.task_id == task_id:
-                    task = t
+            # 检查下载队列的所有 worker
+            for worker_task in self._current_download_tasks.values():
+                if worker_task and worker_task.task_id == task_id:
+                    task = worker_task
                     break
+            # 检查管理队列和后备队列
+            if not task:
+                for t in (self._current_management_task, self._current_fallback_task):
+                    if t and t.task_id == task_id:
+                        task = t
+                        break
         if not task:
             self.logger.debug(f"update_task_parameters: 未找到任务 {task_id}")
             return False
@@ -877,8 +884,15 @@ class TaskManager:
                         detail=f"任务 '{title}' 已在队列中，请勿重复提交。"
                     )
                 # 检查三个队列的当前任务
-                if (self._current_download_task and self._current_download_task.title == title) or \
-                   (self._current_management_task and self._current_management_task.title == title) or \
+                # 检查下载队列的所有 worker
+                for worker_task in self._current_download_tasks.values():
+                    if worker_task and worker_task.title == title:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"任务 '{title}' 已在运行中，请勿重复提交。"
+                        )
+                # 检查管理队列和后备队列
+                if (self._current_management_task and self._current_management_task.title == title) or \
                    (self._current_fallback_task and self._current_fallback_task.title == title):
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,

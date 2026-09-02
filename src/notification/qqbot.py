@@ -5,7 +5,6 @@ QQ 官方 Bot 通知渠道实现（WebSocket Gateway）
 官方文档：https://bot.q.qq.com/wiki/
 """
 
-import asyncio
 import logging
 import threading
 from typing import Any, Dict, List, Optional
@@ -112,20 +111,14 @@ class QQBotChannel(BaseNotificationChannel):
             # 在新线程中启动 Bot
             def run_bot():
                 try:
-                    # 创建新的事件循环
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    self._event_loop = loop
-
-                    # 运行 Bot
+                    # botpy 的 run() 方法会自动创建和管理事件循环
+                    # 不需要手动创建 event loop，否则会导致 "event loop is already running" 错误
                     self._bot_client.run(
                         appid=self.app_id,
                         secret=self.app_secret,
                     )
                 except Exception as e:
                     logger.error(f"QQ Bot 运行异常: {e}")
-                finally:
-                    loop.close()
 
             self._bot_thread = threading.Thread(target=run_bot, daemon=True)
             self._bot_thread.start()
@@ -139,10 +132,11 @@ class QQBotChannel(BaseNotificationChannel):
         try:
             content = message.content.strip()
             user_openid = message.author.user_openid
-            username = message.author.username or user_openid
+            # botpy 的 User 对象没有 username，直接使用 user_openid
+            username = user_openid
             msg_id = message.id
 
-            bot_raw_logger.info(f"收到QQ单聊消息: user={username}({user_openid}), content={content}")
+            bot_raw_logger.info(f"收到QQ单聊消息: user={username}, content={content}")
 
             # 检查管理员权限（如果配置了白名单）
             if self.admin_whitelist:
@@ -177,10 +171,11 @@ class QQBotChannel(BaseNotificationChannel):
             content = message.content.strip()
             user_openid = message.author.user_openid
             group_openid = message.group_openid
-            username = message.author.username or user_openid
+            # botpy 的 User 对象没有 username，直接使用 user_openid
+            username = user_openid
             msg_id = message.id
 
-            bot_raw_logger.info(f"收到QQ群聊消息: group={group_openid}, user={username}({user_openid}), content={content}")
+            bot_raw_logger.info(f"收到QQ群聊消息: group={group_openid}, user={username}, content={content}")
 
             # 检查管理员权限（如果配置了白名单）
             if self.admin_whitelist:
@@ -432,6 +427,7 @@ class QQBotChannel(BaseNotificationChannel):
                 "label_en": "App ID",
                 "label_tw": "App ID",
                 "type": "string",
+                "rowGroup": "qq_credential_row",
                 "required": True,
                 "description": "QQ 开放平台机器人 AppID",
                 "description_en": "QQ Bot App ID",
@@ -443,6 +439,7 @@ class QQBotChannel(BaseNotificationChannel):
                 "label_en": "App Secret",
                 "label_tw": "App Secret",
                 "type": "password",
+                "rowGroup": "qq_credential_row",
                 "required": True,
                 "description": "QQ 开放平台机器人 AppSecret",
                 "description_en": "QQ Bot App Secret",
@@ -454,6 +451,7 @@ class QQBotChannel(BaseNotificationChannel):
                 "label_en": "User OpenID",
                 "label_tw": "用戶 OpenID",
                 "type": "string",
+                "rowGroup": "qq_openid_row",
                 "required": False,
                 "description": "默认接收者 openid（单聊），用户需曾与机器人交互过。与「群组 OpenID」二选一",
                 "description_en": "Default receiver openid (C2C). User must have interacted with the bot. Choose one of User OpenID or Group OpenID",
@@ -465,6 +463,7 @@ class QQBotChannel(BaseNotificationChannel):
                 "label_en": "Group OpenID",
                 "label_tw": "群組 OpenID",
                 "type": "string",
+                "rowGroup": "qq_openid_row",
                 "required": False,
                 "description": "默认群组 openid（群聊）。与「用户 OpenID」二选一",
                 "description_en": "Default group openid (Group chat). Choose one of User OpenID or Group OpenID",
