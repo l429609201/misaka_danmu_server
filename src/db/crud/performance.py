@@ -287,6 +287,52 @@ async def get_metric_aggregation(
     }
 
 
+async def query_alerts(
+    session: AsyncSession,
+    is_resolved: Optional[bool] = None,
+    alert_level: Optional[str] = None,
+    metric_category: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> List[PerformanceAlert]:
+    """
+    查询性能告警
+
+    Args:
+        session: 数据库会话
+        is_resolved: 是否已解决（None=全部, True=已解决, False=未解决）
+        alert_level: 告警级别过滤
+        metric_category: 指标分类过滤
+        limit: 返回数量限制
+        offset: 偏移量
+
+    Returns:
+        告警列表
+    """
+    stmt = select(PerformanceAlert)
+
+    # 构建过滤条件
+    conditions = []
+    if is_resolved is not None:
+        conditions.append(PerformanceAlert.isResolved == (1 if is_resolved else 0))
+    if alert_level:
+        conditions.append(PerformanceAlert.alertLevel == alert_level)
+    if metric_category:
+        conditions.append(PerformanceAlert.metricCategory == metric_category)
+
+    if conditions:
+        stmt = stmt.where(and_(*conditions))
+
+    # 排序：未解决的在前，按创建时间倒序
+    stmt = stmt.order_by(
+        PerformanceAlert.isResolved.asc(),
+        desc(PerformanceAlert.createdAt)
+    ).limit(limit).offset(offset)
+
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def cleanup_old_metrics(
     session: AsyncSession,
     retention_days: int = 30,

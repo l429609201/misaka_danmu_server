@@ -66,7 +66,7 @@ class PerformanceTools:
         """
         try:
             async with self.session_factory() as session:
-                metrics = await perf_crud.get_metrics(
+                metrics = await perf_crud.query_metrics(
                     session,
                     category=category,
                     limit=limit
@@ -132,9 +132,9 @@ class PerformanceTools:
         """
         try:
             start_time = datetime.now() - timedelta(hours=hours)
-            
+
             async with self.session_factory() as session:
-                metrics = await perf_crud.get_metrics(
+                metrics = await perf_crud.query_metrics(
                     session,
                     category=category,
                     metric_name=metric_name,
@@ -214,7 +214,7 @@ class PerformanceTools:
         """
         try:
             async with self.session_factory() as session:
-                alerts = await perf_crud.get_alerts(
+                alerts = await perf_crud.query_alerts(
                     session,
                     is_resolved=False,
                     limit=limit
@@ -238,7 +238,7 @@ class PerformanceTools:
         """
         try:
             async with self.session_factory() as session:
-                alerts = await perf_crud.get_alerts(
+                alerts = await perf_crud.query_alerts(
                     session,
                     is_resolved=False,
                     alert_level="critical",
@@ -378,32 +378,32 @@ class PerformanceTools:
     
     # ===== 辅助方法 =====
     
-    def _format_metric(self, metric: Dict[str, Any]) -> Dict[str, Any]:
-        """格式化指标数据"""
+    def _format_metric(self, metric) -> Dict[str, Any]:
+        """格式化指标数据（从 ORM 对象转换为字典）"""
         return {
-            "metric_name": metric.get("metricName"),
-            "category": metric.get("category"),
-            "subcategory": metric.get("subcategory"),
-            "value_int": metric.get("valueInt"),
-            "value_float": metric.get("valueFloat"),
-            "value_text": metric.get("valueText"),
-            "unit": metric.get("unit"),
-            "status": metric.get("status"),
-            "collected_at": metric.get("collectedAt"),
-            "description": metric.get("description")
+            "metric_name": metric.metricName,
+            "category": metric.category,
+            "subcategory": metric.subcategory,
+            "value_int": metric.valueInt,
+            "value_float": float(metric.valueFloat) if metric.valueFloat is not None else None,
+            "value_text": metric.valueText,
+            "unit": metric.unit,
+            "status": metric.status,
+            "collected_at": metric.collectedAt.isoformat() if metric.collectedAt else None,
+            "description": metric.description
         }
-    
-    def _format_alert(self, alert: Dict[str, Any]) -> Dict[str, Any]:
-        """格式化告警数据"""
+
+    def _format_alert(self, alert) -> Dict[str, Any]:
+        """格式化告警数据（从 ORM 对象转换为字典）"""
         return {
-            "alert_level": alert.get("alertLevel"),
-            "metric_category": alert.get("metricCategory"),
-            "metric_name": alert.get("metricName"),
-            "alert_message": alert.get("alertMessage"),
-            "current_value": alert.get("currentValue"),
-            "threshold_value": alert.get("thresholdValue"),
-            "created_at": alert.get("createdAt"),
-            "is_resolved": alert.get("isResolved")
+            "alert_level": alert.alertLevel,
+            "metric_category": alert.metricCategory,
+            "metric_name": alert.metricName,
+            "alert_message": alert.alertMessage,
+            "current_value": float(alert.currentValue) if alert.currentValue is not None else None,
+            "threshold_value": float(alert.thresholdValue) if alert.thresholdValue is not None else None,
+            "created_at": alert.createdAt.isoformat() if alert.createdAt else None,
+            "is_resolved": bool(alert.isResolved)
         }
 
 
