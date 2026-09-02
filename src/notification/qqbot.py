@@ -181,10 +181,10 @@ class QQBotChannel(BaseNotificationChannel):
             )
 
             # 发送回复
-            if result and result.reply_text:
+            if result and result.text:
                 await self._send_c2c_message(
                     user_openid=user_openid,
-                    content=result.reply_text,
+                    content=result.text,
                     keyboard=result.reply_markup if hasattr(result, 'reply_markup') else None,
                     msg_id=msg_id,
                 )
@@ -235,10 +235,10 @@ class QQBotChannel(BaseNotificationChannel):
             )
 
             # 发送回复
-            if result and result.reply_text:
+            if result and result.text:
                 await self._send_group_message(
                     group_openid=group_openid,
-                    content=result.reply_text,
+                    content=result.text,
                     keyboard=result.reply_markup if hasattr(result, 'reply_markup') else None,
                     msg_id=msg_id,
                 )
