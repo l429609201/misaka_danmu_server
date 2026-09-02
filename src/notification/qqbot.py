@@ -69,6 +69,20 @@ class QQBotChannel(BaseNotificationChannel):
         # 事件循环（用于异步操作）
         self._event_loop = None
 
+    def _is_log_raw(self) -> bool:
+        """检查是否启用原始日志"""
+        return str(self.config.get("log_raw", "false")).lower() == "true"
+
+    def _log_raw(self, direction: str, data):
+        """记录原始交互日志"""
+        if self._is_log_raw():
+            import json
+            bot_raw_logger.info(
+                f"[QQ Bot #{self.channel_id}] {direction}\n"
+                f"{json.dumps(data, ensure_ascii=False, indent=2) if isinstance(data, (dict, list)) else data}\n"
+                f"{'─' * 60}"
+            )
+
     def _start_bot_client(self):
         """启动 Bot WebSocket 客户端（用于接收消息和事件）"""
         if not self.app_id or not self.app_secret:
@@ -130,6 +144,14 @@ class QQBotChannel(BaseNotificationChannel):
     async def _handle_c2c_message(self, message):
         """处理单聊（C2C）消息"""
         try:
+            # 记录原始消息
+            self._log_raw("⬇️ 收到单聊消息", {
+                "message_id": message.id,
+                "user_openid": message.author.user_openid,
+                "content": message.content,
+                "timestamp": message.timestamp if hasattr(message, 'timestamp') else None,
+            })
+
             content = message.content.strip()
             user_openid = message.author.user_openid
             # botpy 的 User 对象没有 username，直接使用 user_openid
@@ -168,6 +190,15 @@ class QQBotChannel(BaseNotificationChannel):
     async def _handle_group_message(self, message):
         """处理群聊 @机器人 消息"""
         try:
+            # 记录原始消息
+            self._log_raw("⬇️ 收到群聊消息", {
+                "message_id": message.id,
+                "group_openid": message.group_openid,
+                "user_openid": message.author.user_openid,
+                "content": message.content,
+                "timestamp": message.timestamp if hasattr(message, 'timestamp') else None,
+            })
+
             content = message.content.strip()
             user_openid = message.author.user_openid
             group_openid = message.group_openid
@@ -242,10 +273,22 @@ class QQBotChannel(BaseNotificationChannel):
             if msg_id:
                 message_data["msg_id"] = msg_id
 
+            # 记录发送请求
+            self._log_raw("⬆️ 发送单聊消息", {
+                "user_openid": user_openid,
+                "message_data": message_data,
+            })
+
             await self._bot_client.api.post_c2c_message(
                 openid=user_openid,
                 **message_data
             )
+
+            # 记录发送成功
+            self._log_raw("✅ 单聊消息发送成功", {
+                "user_openid": user_openid,
+            })
+
             logger.info(f"QQ Bot 单聊消息发送成功: user={user_openid}")
         except Exception as e:
             logger.error(f"QQ Bot 单聊消息发送失败: {e}", exc_info=True)
@@ -274,10 +317,22 @@ class QQBotChannel(BaseNotificationChannel):
             if msg_id:
                 message_data["msg_id"] = msg_id
 
+            # 记录发送请求
+            self._log_raw("⬆️ 发送群聊消息", {
+                "group_openid": group_openid,
+                "message_data": message_data,
+            })
+
             await self._bot_client.api.post_group_message(
                 group_openid=group_openid,
                 **message_data
             )
+
+            # 记录发送成功
+            self._log_raw("✅ 群聊消息发送成功", {
+                "group_openid": group_openid,
+            })
+
             logger.info(f"QQ Bot 群聊消息发送成功: group={group_openid}")
         except Exception as e:
             logger.error(f"QQ Bot 群聊消息发送失败: {e}", exc_info=True)
@@ -479,6 +534,30 @@ class QQBotChannel(BaseNotificationChannel):
                 "description": "可使用管理菜单及命令的用户ID列表，多个ID使用逗号分隔",
                 "description_en": "User IDs allowed to use admin menu and commands, separated by commas",
                 "description_tw": "可使用管理選單及命令的使用者ID列表，多個ID使用逗號分隔",
+            },
+            {
+                "key": "use_proxy",
+                "label": "使用代理",
+                "label_en": "Use Proxy",
+                "label_tw": "使用代理",
+                "type": "boolean",
+                "rowGroup": "qq_proxy_row",
+                "description": "启用后，Bot 将使用全局代理配置发送请求",
+                "description_en": "When enabled, Bot will use global proxy settings for requests",
+                "description_tw": "啟用後，Bot 將使用全域代理配置發送請求",
+                "default": False,
+            },
+            {
+                "key": "log_raw",
+                "label": "记录原始交互",
+                "label_en": "Log Raw Interactions",
+                "label_tw": "記錄原始互動",
+                "type": "boolean",
+                "rowGroup": "qq_proxy_row",
+                "description": "启用后，Bot 的所有收发消息将记录到 config/logs/bot_raw.log 文件中，用于调试",
+                "description_en": "When enabled, all Bot messages will be logged to config/logs/bot_raw.log for debugging",
+                "description_tw": "啟用後，Bot 的所有收發訊息將記錄到 config/logs/bot_raw.log 檔案中，用於除錯",
+                "default": False,
             },
             IMAGE_MODE_FIELD,
         ]

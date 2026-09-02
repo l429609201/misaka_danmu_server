@@ -366,6 +366,11 @@ export const Notification = () => {
       title: t('notification.colMode'), key: 'mode',
       render: (_, r) => {
         const mode = r.config?.mode
+        // QQ Bot 使用 WebSocket Gateway 模式
+        if (r.channelType === 'qq') {
+          return <Tag color="cyan">WebSocket</Tag>
+        }
+        // 企业微信使用 Webhook 模式
         const isWebhook = mode === 'webhook' || r.channelType === 'wechat'
         return isWebhook ? <Tag color="blue">{t('notification.modeWebhook')}</Tag> : <Tag>{t('notification.modePoll')}</Tag>
       },
@@ -399,7 +404,12 @@ export const Notification = () => {
         </div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
           <Tag>{getLocalizedField(typeInfo, 'displayName') || record.channelType}</Tag>
-          {(mode === 'webhook' || record.channelType === 'wechat') ? <Tag color="blue">{t('notification.modeWebhook')}</Tag> : <Tag>{t('notification.modePoll')}</Tag>}
+          {/* QQ Bot 使用 WebSocket Gateway 模式 */}
+          {record.channelType === 'qq' ? (
+            <Tag color="cyan">WebSocket</Tag>
+          ) : (
+            (mode === 'webhook' || record.channelType === 'wechat') ? <Tag color="blue">{t('notification.modeWebhook')}</Tag> : <Tag>{t('notification.modePoll')}</Tag>
+          )}
           {record.useProxy && <Tag color="orange">{t('notification.modeProxy')}</Tag>}
         </div>
         <Space size="small" wrap>
