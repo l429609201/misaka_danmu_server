@@ -55,7 +55,7 @@ pyTelegramBotAPI>=4.36.1
 # QQ Bot 通知渠道
 # why：QQ 官方 Bot OpenAPI v2 的 Python SDK，支持频道消息、私信、Markdown、按钮等功能
 qq-botpy>=2.0.0
-
+ 
 # Redis 缓存后端（可选，仅 cache.backend 配置为 redis 时需要）
 redis>=5.0.0  # redis-py，含 asyncio 支持
 # MCP Server（Model Context Protocol）支持
