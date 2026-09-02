@@ -498,12 +498,12 @@ async def direct_import(
             year=item_to_import.year,
             currentEpisodeIndex=item_to_import.currentEpisodeIndex,
             imageUrl=item_to_import.imageUrl,
-            doubanId=payload.doubanId,
             config_manager=config_manager,
-            metadata_manager=metadata_manager, tmdbId=payload.tmdbId, imdbId=payload.imdbId,
-            tvdbId=payload.tvdbId, bangumiId=payload.bangumiId,
+            metadata_manager=metadata_manager,
             progress_callback=cb, session=session, manager=manager, task_manager=task_manager,
-            rate_limiter=rate_limiter, title_recognition_manager=title_recognition_manager
+            rate_limiter=rate_limiter, title_recognition_manager=title_recognition_manager,
+            doubanId=payload.doubanId, tmdbId=payload.tmdbId, imdbId=payload.imdbId,
+            tvdbId=payload.tvdbId, bangumiId=payload.bangumiId,
         )
         # 补齐 task_parameters：供完成通知展示作品名/季/集/类型/来源
         direct_task_parameters = {

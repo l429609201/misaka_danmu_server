@@ -174,6 +174,8 @@ async def _import_selected(arguments: Dict[str, Any], context: Dict[str, Any]) -
             progress_callback=cb, session=s, manager=scraper_manager,
             task_manager=task_manager, rate_limiter=rate_limiter,
             title_recognition_manager=title_recognition_manager,
+            # 元数据 ID 可选参数（AI Agent 通常不提供）
+            doubanId=None, tmdbId=None, imdbId=None, tvdbId=None, bangumiId=None,
         ),
         task_title, unique_key=unique_key, task_parameters=task_parameters,
     )

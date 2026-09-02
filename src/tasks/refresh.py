@@ -557,14 +557,16 @@ async def incremental_refresh_task(sourceId: int, nextEpisodeIndex: int, session
             animeTitle=animeTitle, mediaType=source_info["type"],
             season=source_info.get("season", 1), year=source_info.get("year"),
             currentEpisodeIndex=nextEpisodeIndex, imageUrl=source_info.get("imageUrl"),
-            doubanId=None, tmdbId=source_info.get("tmdbId"), config_manager=config_manager, metadata_manager=metadata_manager,
-            imdbId=None, tvdbId=None, bangumiId=source_info.get("bangumiId"),
+            config_manager=config_manager, metadata_manager=metadata_manager,
             progress_callback=progress_callback,
             session=session,
             manager=manager, # type: ignore
             task_manager=task_manager,
             rate_limiter=rate_limiter,
-            title_recognition_manager=title_recognition_manager)
+            title_recognition_manager=title_recognition_manager,
+            doubanId=None, tmdbId=source_info.get("tmdbId"),
+            imdbId=None, tvdbId=None, bangumiId=source_info.get("bangumiId"),
+        )
     except TaskSuccess:
         # 显式地重新抛出 TaskSuccess，以确保它被 TaskManager 正确处理
         raise
@@ -593,14 +595,16 @@ async def fill_missing_task(sourceId: int, session: AsyncSession, manager: Scrap
             animeTitle=animeTitle, mediaType=source_info["type"],
             season=source_info.get("season", 1), year=source_info.get("year"),
             currentEpisodeIndex=None, imageUrl=source_info.get("imageUrl"),
-            doubanId=None, tmdbId=source_info.get("tmdbId"), config_manager=config_manager, metadata_manager=metadata_manager,
-            imdbId=None, tvdbId=None, bangumiId=source_info.get("bangumiId"),
+            config_manager=config_manager, metadata_manager=metadata_manager,
             progress_callback=progress_callback,
             session=session,
             manager=manager,  # type: ignore
             task_manager=task_manager,
             rate_limiter=rate_limiter,
-            title_recognition_manager=title_recognition_manager)
+            title_recognition_manager=title_recognition_manager,
+            doubanId=None, tmdbId=source_info.get("tmdbId"),
+            imdbId=None, tvdbId=None, bangumiId=source_info.get("bangumiId"),
+        )
     except TaskSuccess:
         raise
     except Exception as e:

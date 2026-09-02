@@ -278,11 +278,12 @@ class IncrementalRefreshJob(BaseJob):
                         provider=info["providerName"], mediaId=info["mediaId"], animeTitle=info["title"],
                         mediaType=info["type"], season=info.get("season", 1), year=info.get("year"),
                         currentEpisodeIndex=next_ep, imageUrl=None,
-                        doubanId=None, tmdbId=info.get("tmdbId"), imdbId=None, tvdbId=None,
-                        bangumiId=info.get("bangumiId"), metadata_manager=self.metadata_manager,
+                        config_manager=self.config_manager, metadata_manager=self.metadata_manager,
                         progress_callback=cb, session=s, manager=self.scraper_manager,
                         task_manager=self.task_manager, rate_limiter=self.rate_limiter,
-                        config_manager=self.config_manager, title_recognition_manager=self.title_recognition_manager,
+                        title_recognition_manager=self.title_recognition_manager,
+                        doubanId=None, tmdbId=info.get("tmdbId"), imdbId=None, tvdbId=None,
+                        bangumiId=info.get("bangumiId"),
                         is_incremental_refresh=True, incremental_refresh_source_id=src_id
                     )
 
