@@ -249,8 +249,8 @@ async def _run_startup_services(app: FastAPI, session_factory, startup_start: fl
         "title_recognition_manager": app.state.title_recognition_manager,
     })
 
-    # 启动服务
-    app.state.task_manager.start()
+    # 启动服务（使用异步方法，确保任务恢复完成后再启动 worker）
+    await app.state.task_manager.start_async()
     await create_initial_admin_user(app)
 
     # 一次性清理：删除旧的 system_token_reset 定时任务
