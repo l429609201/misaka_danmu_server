@@ -1,45 +1,30 @@
 """
-QQ 官方 Bot 通知渠道实现
-使用 qq-botpy 官方 SDK，支持 WebSocket Gateway 和 HTTP API。
-支持双向交互：命令处理、消息接收、富文本等。
-参考：MoviePilot 项目架构 + QQ官方文档
-官方文档：https://bot.q.qq.com/wiki/
+QQ 官方 Bot 通知渠道实现（v2 API）
+使用 QQ 官方机器人 OpenAPI v2，支持单聊（C2C）和群聊消息发送。
+参考：MoviePilot 项目架构 + QQ 官方文档
+官方文档：https://bot.q.qq.com/wiki/develop/api-v2/
 """
 
-import asyncio
-import json
 import logging
-import threading
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 from src.notification.base import (
-    BaseNotificationChannel, CommandResult,
+    BaseNotificationChannel,
     ChannelCapability, ChannelCapabilities, IMAGE_MODE_FIELD,
-    IMAGE_MODE_TEXT, IMAGE_MODE_POSTER, IMAGE_MODE_SEPARATE, IMAGE_MODE_PUBLIC_URL,
+    IMAGE_MODE_TEXT, IMAGE_MODE_PUBLIC_URL,
 )
-from src._version import APP_VERSION
 
 logger = logging.getLogger(__name__)
-bot_raw_logger = logging.getLogger("bot_raw")
 
-# QQ Bot OpenAPI 基地址
+# QQ Bot OpenAPI v2 基地址
 QQ_BOT_API_BASE = "https://api.sgroup.qq.com"
 QQ_BOT_SANDBOX_API_BASE = "https://sandbox.api.sgroup.qq.com"
 
 
-def _get_botpy():
-    """延迟导入 botpy，避免未安装时影响启动"""
-    try:
-        import botpy
-        return botpy
-    except ImportError:
-        raise ImportError("请安装 qq-botpy: pip install qq-botpy")
-
-
 class QQBotChannel(BaseNotificationChannel):
-    """QQ 官方 Bot 通知渠道 — 支持双向交互"""
+    """QQ 官方 Bot 通知渠道 — 支持单聊（C2C）和群聊消息"""
 
     channel_type = "qq"
     display_name = "QQ"
@@ -59,22 +44,22 @@ class QQBotChannel(BaseNotificationChannel):
 
     def __init__(self, channel_id: int, name: str, config: dict, notification_service):
         super().__init__(channel_id, name, config, notification_service)
-        
+
         self.app_id = config.get("app_id", "")
-        self.client_secret = config.get("client_secret", "")
-        self.bot_token = config.get("bot_token", "")
+        self.app_secret = config.get("app_secret", "")
         self.is_sandbox = config.get("is_sandbox", False)
-        self.target_channel_id = config.get("channel_id", "")  # 默认发送的频道ID
-        
+
+        # 用户 OpenID（单聊）和群组 OpenID（群聊）二选一
+        self.user_openid = config.get("user_openid", "")
+        self.group_openid = config.get("group_openid", "")
+
+        # 管理员白名单（可选）
+        self.admin_whitelist = config.get("admin_whitelist", "")
+
         # HTTP 客户端
         self.http_client: Optional[httpx.AsyncClient] = None
         self._access_token: Optional[str] = None
         self._token_expires_at: float = 0
-        
-        # Bot 实例（用于接收消息）
-        self._bot_client = None
-        self._bot_thread: Optional[threading.Thread] = None
-        self._should_stop = False
 
     @property
     def api_base(self) -> str:
@@ -87,17 +72,13 @@ class QQBotChannel(BaseNotificationChannel):
             self.http_client = httpx.AsyncClient(timeout=30.0)
 
     async def _get_access_token(self) -> Optional[str]:
-        """获取 Access Token（使用 Bot Token 或 App 鉴权）"""
+        """获取 Access Token（使用 App 鉴权）"""
         import time
-        
-        # 如果有 bot_token，直接使用
-        if self.bot_token:
-            return self.bot_token
-        
+
         # 检查缓存的 token 是否有效
         if self._access_token and time.time() < self._token_expires_at:
             return self._access_token
-        
+
         # 获取新 token
         await self._ensure_http_client()
         try:
@@ -105,244 +86,71 @@ class QQBotChannel(BaseNotificationChannel):
                 f"{self.api_base}/app/getAppAccessToken",
                 json={
                     "appId": self.app_id,
-                    "clientSecret": self.client_secret,
+                    "clientSecret": self.app_secret,
                 }
             )
             response.raise_for_status()
             data = response.json()
-            
+
             self._access_token = data.get("access_token")
             expires_in = data.get("expires_in", 7200)
             self._token_expires_at = time.time() + expires_in - 300  # 提前5分钟刷新
-            
+
             logger.info(f"QQ Bot 获取 access_token 成功，有效期 {expires_in} 秒")
             return self._access_token
-            
+
         except Exception as e:
             logger.error(f"QQ Bot 获取 access_token 失败: {e}")
             return None
 
-    async def send_message(self, channel_id: str, content: str,
-                          msg_id: Optional[str] = None,
-                          keyboard: Optional[Dict] = None,
-                          markdown: Optional[Dict] = None,
-                          image_url: Optional[str] = None) -> Optional[Dict]:
-        """
-        发送消息到指定频道
-
-        Args:
-            channel_id: 频道ID
-            content: 消息内容（纯文本）
-            msg_id: 要回复的消息ID（可选）
-            keyboard: 消息按钮（可选）
-            markdown: Markdown 消息（可选）
-            image_url: 图片URL（可选）
-        """
-        token = await self._get_access_token()
-        if not token:
-            logger.error("QQ Bot 发送消息失败：无法获取 access_token")
-            return None
-
-        await self._ensure_http_client()
-
-        # 构建消息体
-        message_body: Dict[str, Any] = {}
-
-        # 优先使用 Markdown
-        if markdown:
-            message_body["markdown"] = markdown
-        elif content:
-            message_body["content"] = content
-
-        # 添加图片（如果有）
-        if image_url:
-            message_body["image"] = image_url
-
-        # 添加按钮（如果有）
-        if keyboard:
-            message_body["keyboard"] = keyboard
-
-        # 引用消息
-        if msg_id:
-            message_body["msg_id"] = msg_id
-
-        headers = {
-            "Authorization": f"Bot {self.app_id}.{token}",
-            "Content-Type": "application/json",
-        }
-
-        try:
-            response = await self.http_client.post(
-                f"{self.api_base}/channels/{channel_id}/messages",
-                json=message_body,
-                headers=headers,
-            )
-            response.raise_for_status()
-            result = response.json()
-
-            bot_raw_logger.info(f"QQ Bot 发送消息成功: {result}")
-            return result
-
-        except Exception as e:
-            logger.error(f"QQ Bot 发送消息失败: {e}")
-            return None
-
-    def _start_bot_client(self):
-        """启动 Bot WebSocket 客户端（用于接收消息和事件）"""
-        if not self.app_id or not self.bot_token:
-            logger.warning("QQ Bot 配置不完整，无法启动消息接收")
-            return
-
-        try:
-            botpy = _get_botpy()
-
-            # 创建 Bot 客户端
-            class MessageBot(botpy.Client):
-                def __init__(self, parent_channel: 'QQBotChannel'):
-                    super().__init__()
-                    self.parent_channel = parent_channel
-
-                async def on_ready(self):
-                    logger.info(f"QQ Bot 已连接: {self.robot.name}")
-
-                async def on_at_message_create(self, message: botpy.message.Message):
-                    """处理 @机器人 消息"""
-                    await self.parent_channel._handle_message(message)
-
-                async def on_direct_message_create(self, message: botpy.message.DirectMessage):
-                    """处理私信消息"""
-                    await self.parent_channel._handle_direct_message(message)
-
-            self._bot_client = MessageBot(self)
-
-            # 在新线程中启动 Bot
-            def run_bot():
-                try:
-                    intents = botpy.Intents(public_messages=True, direct_message=True)
-                    self._bot_client.run(appid=self.app_id, secret=self.bot_token, intents=intents)
-                except Exception as e:
-                    logger.error(f"QQ Bot 运行异常: {e}")
-
-            self._bot_thread = threading.Thread(target=run_bot, daemon=True)
-            self._bot_thread.start()
-            logger.info("QQ Bot WebSocket 客户端已启动")
-
-        except Exception as e:
-            logger.error(f"QQ Bot 启动失败: {e}")
-
-    async def _handle_message(self, message):
-        """处理频道消息"""
-        try:
-            content = message.content.strip()
-            user_id = message.author.id
-            username = message.author.username
-            channel_id = message.channel_id
-            msg_id = message.id
-
-            bot_raw_logger.info(f"收到QQ频道消息: user={username}({user_id}), content={content}")
-
-            # 处理命令
-            result = await self.notification_service.handle_command(
-                user_id=user_id,
-                username=username,
-                text=content,
-                channel=self,
-            )
-
-            # 发送回复
-            if result and result.reply_text:
-                await self.send_message(
-                    channel_id=channel_id,
-                    content=result.reply_text,
-                    msg_id=msg_id,
-                )
-
-        except Exception as e:
-            logger.error(f"QQ Bot 处理消息失败: {e}")
-
-    async def _handle_direct_message(self, message):
-        """处理私信消息"""
-        try:
-            content = message.content.strip()
-            user_id = message.author.id
-            username = message.author.username
-            guild_id = message.guild_id
-
-            bot_raw_logger.info(f"收到QQ私信: user={username}({user_id}), content={content}")
-
-            # 处理命令
-            result = await self.notification_service.handle_command(
-                user_id=user_id,
-                username=username,
-                text=content,
-                channel=self,
-            )
-
-            # 发送私信回复
-            if result and result.reply_text:
-                await self._send_direct_message(guild_id, user_id, content=result.reply_text)
-
-        except Exception as e:
-            logger.error(f"QQ Bot 处理私信失败: {e}")
-
-
-    async def _send_direct_message(self, guild_id: str, user_id: str,
-                                   content: str = "", markdown: Optional[Dict] = None) -> Optional[Dict]:
-        """发送私信消息"""
-        token = await self._get_access_token()
-        if not token:
-            return None
-
-        await self._ensure_http_client()
-
-        message_body = {}
-        if markdown:
-            message_body["markdown"] = markdown
-        elif content:
-            message_body["content"] = content
-
-        headers = {
-            "Authorization": f"Bot {self.app_id}.{token}",
-            "Content-Type": "application/json",
-        }
-
-        try:
-            response = await self.http_client.post(
-                f"{self.api_base}/dms/{guild_id}/messages",
-                json=message_body,
-                headers=headers,
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"QQ Bot 发送私信失败: {e}")
-            return None
-
     async def _send_qq_message(
         self,
-        channel_id: str,
         content: Optional[str] = None,
         markdown: Optional[Dict] = None,
         keyboard: Optional[Dict] = None,
         image_url: Optional[str] = None,
         msg_id: Optional[str] = None,
-    ):
-        """通过 HTTP API 发送 QQ 消息（底层实现）"""
+        openid: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """
+        发送消息到单聊或群聊（底层实现）
+
+        Args:
+            content: 消息内容（纯文本）
+            markdown: Markdown 消息（可选）
+            keyboard: 消息按钮（可选）
+            image_url: 图片URL（可选）
+            msg_id: 要回复的消息ID（可选）
+            openid: 目标 OpenID（不传则使用配置的默认值）
+        """
         token = await self._get_access_token()
         if not token:
             logger.error("无法获取 access_token")
-            return
+            return None
 
         await self._ensure_http_client()
 
-        # 构建请求
-        url = f"{self.api_base}/channels/{channel_id}/messages"
-        headers = {
-            "Authorization": f"Bot {self.app_id}.{token}",
-            "Content-Type": "application/json",
+        # 确定目标 openid（单聊或群聊）
+        target_openid = openid or self.user_openid or self.group_openid
+        if not target_openid:
+            logger.error("QQ Bot 发送失败：未配置用户 OpenID 或群组 OpenID")
+            return None
+
+        # 判断是单聊还是群聊
+        is_group = bool(openid and openid == self.group_openid) or (not openid and self.group_openid and not self.user_openid)
+
+        # 构建 API 路径
+        if is_group:
+            url = f"{self.api_base}/v2/groups/{target_openid}/messages"
+        else:
+            url = f"{self.api_base}/v2/users/{target_openid}/messages"
+
+        # 构建消息体
+        payload: Dict[str, Any] = {
+            "msg_type": 0,  # 文本消息
+            "msg_id": msg_id or "",
         }
 
-        payload: Dict[str, Any] = {}
         if content:
             payload["content"] = content
         if markdown:
@@ -350,9 +158,12 @@ class QQBotChannel(BaseNotificationChannel):
         if keyboard:
             payload["keyboard"] = keyboard
         if image_url:
-            payload["image"] = image_url
-        if msg_id:
-            payload["msg_id"] = msg_id
+            payload["media"] = {"file_info": image_url}
+
+        headers = {
+            "Authorization": f"QQBot {self.app_id}.{token}",
+            "Content-Type": "application/json",
+        }
 
         try:
             response = await self.http_client.post(url, headers=headers, json=payload)
@@ -371,15 +182,11 @@ class QQBotChannel(BaseNotificationChannel):
 
     async def send_message(self, title: str, text: str, **kwargs):
         """发送消息（BaseNotificationChannel 要求实现）"""
-        channel_id = self.target_channel_id or kwargs.get("channel_id")
-        if not channel_id:
-            logger.error("QQ Bot 发送失败：未配置目标频道ID")
-            return
-
         # 提取参数
         image = kwargs.get("image")
         image_bytes = kwargs.get("image_bytes")
         reply_markup = kwargs.get("reply_markup", [])
+        openid = kwargs.get("openid")  # 可选：指定目标 openid
         msg_id = kwargs.get("msg_id")
 
         # 处理图片
@@ -403,39 +210,12 @@ class QQBotChannel(BaseNotificationChannel):
 
         # 调用底层 HTTP API 发送
         await self._send_qq_message(
-            channel_id=channel_id,
             content=full_text,
             keyboard=keyboard,
             image_url=image_url,
             msg_id=msg_id,
+            openid=openid,
         )
-
-    async def test_connection(self) -> Dict[str, Any]:
-        """测试连接"""
-        try:
-            token = await self._get_access_token()
-            if not token:
-                return {"success": False, "message": "无法获取 access_token"}
-
-            # 尝试获取频道信息
-            await self._ensure_http_client()
-            headers = {
-                "Authorization": f"Bot {self.app_id}.{token}",
-            }
-
-            response = await self.http_client.get(
-                f"{self.api_base}/users/@me",
-                headers=headers,
-            )
-            response.raise_for_status()
-            bot_info = response.json()
-
-            return {
-                "success": True,
-                "message": f"连接成功！Bot: {bot_info.get('username', 'Unknown')}"
-            }
-        except Exception as e:
-            return {"success": False, "message": f"连接失败: {str(e)}"}
 
     def _build_keyboard_from_markup(self, reply_markup: List[List[Dict]]) -> Dict:
         """从通用按钮格式转换为 QQ Bot 按钮格式"""
@@ -472,63 +252,40 @@ class QQBotChannel(BaseNotificationChannel):
 
         return {"content": {"rows": rows}}
 
-    def _build_keyboard(self, buttons: List[Dict]) -> Dict:
-        """构建 QQ Bot 按钮格式（旧接口兼容）"""
-        rows = []
-        current_row = []
+    async def test_connection(self) -> Dict[str, Any]:
+        """测试连接"""
+        try:
+            token = await self._get_access_token()
+            if not token:
+                return {"success": False, "message": "无法获取 access_token"}
 
-        for btn in buttons:
-            button_obj = {
-                "id": btn.get("id", btn["text"][:10]),
-                "render_data": {
-                    "label": btn["text"],
-                    "visited_label": btn.get("text", btn["text"]),
-                },
-                "action": {
-                    "type": 2,  # 回调按钮
-                    "permission": {"type": 2},  # 所有人可点击
-                    "data": btn.get("callback_data", btn["text"]),
-                }
+            # 尝试获取机器人信息
+            await self._ensure_http_client()
+            headers = {
+                "Authorization": f"QQBot {self.app_id}.{token}",
             }
 
-            current_row.append(button_obj)
-
-            # QQ Bot 每行最多 5 个按钮
-            if len(current_row) >= 5:
-                rows.append({"buttons": current_row})
-                current_row = []
-
-        if current_row:
-            rows.append({"buttons": current_row})
-
-        return {"content": {"rows": rows}}
-
-    async def reply(self, user_id: str, text: str, buttons: Optional[List[Dict]] = None):
-        """回复用户消息（兼容接口，user_id 用于标识用户但当前实现发到默认频道）"""
-        channel_id = self.target_channel_id
-        if channel_id:
-            keyboard = self._build_keyboard(buttons) if buttons else None
-            await self._send_qq_message(
-                channel_id=channel_id,
-                content=text,
-                keyboard=keyboard,
+            response = await self.http_client.get(
+                f"{self.api_base}/users/@me",
+                headers=headers,
             )
+            response.raise_for_status()
+            bot_info = response.json()
+
+            return {
+                "success": True,
+                "message": f"连接成功！Bot: {bot_info.get('username', 'Unknown')}"
+            }
+        except Exception as e:
+            return {"success": False, "message": f"连接失败: {str(e)}"}
 
     async def start(self):
         """启动渠道"""
         await super().start()
-        # 启动 Bot 客户端接收消息
-        self._start_bot_client()
         logger.info(f"QQ Bot 渠道已启动: {self.name}")
 
     async def stop(self):
         """停止渠道"""
-        self._should_stop = True
-        if self._bot_client:
-            try:
-                await self._bot_client.close()
-            except:
-                pass
         if self.http_client:
             await self.http_client.aclose()
         await super().stop()
@@ -545,42 +302,53 @@ class QQBotChannel(BaseNotificationChannel):
                 "label_tw": "App ID",
                 "type": "string",
                 "required": True,
-                "description": "QQ Bot 的 App ID（机器人ID）",
-                "description_en": "QQ Bot App ID (Bot ID)",
-                "description_tw": "QQ Bot 的 App ID（機器人ID）",
+                "description": "QQ 开放平台机器人 AppID",
+                "description_en": "QQ Bot App ID",
+                "description_tw": "QQ 開放平台機器人 AppID",
             },
             {
-                "key": "bot_token",
-                "label": "Bot Token",
-                "label_en": "Bot Token",
-                "label_tw": "Bot Token",
+                "key": "app_secret",
+                "label": "App Secret",
+                "label_en": "App Secret",
+                "label_tw": "App Secret",
                 "type": "password",
                 "required": True,
-                "description": "QQ Bot 的机器人令牌（在 QQ 开放平台获取）",
-                "description_en": "QQ Bot Token (Get from QQ Open Platform)",
-                "description_tw": "QQ Bot 的機器人令牌（在 QQ 開放平台獲取）",
+                "description": "QQ 开放平台机器人 AppSecret",
+                "description_en": "QQ Bot App Secret",
+                "description_tw": "QQ 開放平台機器人 AppSecret",
             },
             {
-                "key": "client_secret",
-                "label": "Client Secret",
-                "label_en": "Client Secret",
-                "label_tw": "Client Secret",
-                "type": "password",
-                "required": False,
-                "description": "应用密钥（使用 App 鉴权时需要）",
-                "description_en": "Client Secret (Required for App authentication)",
-                "description_tw": "應用密鑰（使用 App 鑑權時需要）",
-            },
-            {
-                "key": "channel_id",
-                "label": "默认频道ID",
-                "label_en": "Default Channel ID",
-                "label_tw": "預設頻道ID",
+                "key": "user_openid",
+                "label": "用户 OpenID",
+                "label_en": "User OpenID",
+                "label_tw": "用戶 OpenID",
                 "type": "string",
-                "required": True,
-                "description": "接收通知的频道ID（右键频道 → 复制频道ID）",
-                "description_en": "Channel ID for receiving notifications (Right-click channel → Copy Channel ID)",
-                "description_tw": "接收通知的頻道ID（右鍵頻道 → 複製頻道ID）",
+                "required": False,
+                "description": "默认接收者 openid（单聊），用户需曾与机器人交互过。与「群组 OpenID」二选一",
+                "description_en": "Default receiver openid (C2C). User must have interacted with the bot. Choose one of User OpenID or Group OpenID",
+                "description_tw": "預設接收者 openid（單聊），用戶需曾與機器人互動過。與「群組 OpenID」二選一",
+            },
+            {
+                "key": "group_openid",
+                "label": "群组 OpenID",
+                "label_en": "Group OpenID",
+                "label_tw": "群組 OpenID",
+                "type": "string",
+                "required": False,
+                "description": "默认群组 openid（群聊）。与「用户 OpenID」二选一",
+                "description_en": "Default group openid (Group chat). Choose one of User OpenID or Group OpenID",
+                "description_tw": "預設群組 openid（群聊）。與「用戶 OpenID」二選一",
+            },
+            {
+                "key": "admin_whitelist",
+                "label": "管理员白名单",
+                "label_en": "Admin Whitelist",
+                "label_tw": "管理員白名單",
+                "type": "string",
+                "required": False,
+                "description": "可使用管理菜单及命令的用户ID列表，多个ID使用逗号分隔",
+                "description_en": "User IDs allowed to use admin menu and commands, separated by commas",
+                "description_tw": "可使用管理選單及命令的使用者ID列表，多個ID使用逗號分隔",
             },
             {
                 "key": "is_sandbox",
@@ -595,4 +363,5 @@ class QQBotChannel(BaseNotificationChannel):
             },
             IMAGE_MODE_FIELD,
         ]
+
 
