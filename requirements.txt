@@ -68,3 +68,5 @@ webauthn>=2.0.0  # FIDO2/WebAuthn 服务端实现
 # 支持不等长 lookbehind 的正则引擎，用于兜底全局分集标题过滤
 regex
 Pillow>=10.0.0  # 用于将搜索结果海报聚合为九宫格图片（Telegram 搜索体验）
+# 系统性能监测
+psutil>=5.9.0  # 跨平台系统和进程监控库（CPU、内存、磁盘、网络）
