@@ -3,7 +3,7 @@ import secrets
 from pathlib import Path
 from typing import Any, Dict, Tuple, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 from src.core.env import is_docker_environment
@@ -47,6 +47,20 @@ class AdminConfig(BaseModel):
 
 class LogConfig(BaseModel):
     level: str = "INFO"
+
+# 任务管理器配置
+class TaskManagerConfig(BaseModel):
+    max_concurrent_tasks: int = 10  # 下载队列最大并发任务数（范围 1-10）
+
+    @field_validator('max_concurrent_tasks')
+    @classmethod
+    def validate_concurrent_tasks(cls, v: int) -> int:
+        """验证并发任务数在合理范围内"""
+        if v < 1:
+            return 1
+        if v > 10:
+            return 10
+        return v
 
 # 5. (新增) Bangumi OAuth 配置
 class BangumiConfig(BaseModel):
@@ -98,6 +112,10 @@ admin:
 # 日志级别（DEBUG / INFO / WARNING / ERROR）
 log:
   level: "INFO"
+
+# 任务管理器配置
+task_manager:
+  max_concurrent_tasks: 10  # 下载队列最大并发数（范围 1-10，根据 CPU 和网络调整）
 
 # 缓存配置
 cache:
@@ -172,13 +190,11 @@ class Settings(BaseSettings):
     admin: AdminConfig = AdminConfig()
     bangumi: BangumiConfig = BangumiConfig()
     log: LogConfig = LogConfig()
+    task_manager: TaskManagerConfig = TaskManagerConfig()  
     cache: CacheConfig = CacheConfig()
     douban: DoubanConfig = DoubanConfig()
-    # 新增：时区配置，从 TZ 环境变量读取
     tz: str = "Asia/Shanghai"
-    # 新增：环境标识和客户端配置
     environment: str = "production"
-    # environment: str = "development"
     client: ClientConfig = ClientConfig()
     class Config:
         # 为环境变量设置前缀，避免与系统变量冲突

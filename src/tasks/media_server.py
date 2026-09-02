@@ -252,18 +252,16 @@ async def import_media_items(
 
     logger.info(f"准备导入: {len(movies)} 部电影, {tv_season_count} 个电视季度")
 
-    # 导入电影
-    for movie in movies:
-        await progress_callback(
-            int((completed / total_tasks) * 100),
-            f"导入电影: {movie['title']}..."
-        )
+    # 优化：批量提交电影导入任务，移除单个任务间的延迟
+    movie_tasks = []
+    movie_ids_to_mark = []
 
+    for movie in movies:
         try:
             # 触发webhook式搜索
             # 注意: lambda 使用默认参数 m=movie 来捕获当前循环变量的值,
             # 避免闭包捕获引用导致所有任务都使用最后一个 movie 的数据
-            task_id, _ = await task_manager.submit_task(
+            task_coro = task_manager.submit_task(
                 lambda session, progress_callback, m=movie, mst=media_server_type: webhook_search_and_dispatch_task(
                     animeTitle=m['title'],
                     mediaType="movie",
@@ -315,28 +313,47 @@ async def import_media_items(
                     "imageUrl": movie['posterUrl'],
                 },
             )
-            logger.info(f"电影 {movie['title']} 导入任务已提交: {task_id}")
-
-            # 标记为已导入
-            await crud.mark_media_items_imported(session, [movie['id']])
-            await session.commit()
-
-            # 小延迟，避免瞬间提交过多任务
-            await asyncio.sleep(0.2)
+            movie_tasks.append((task_coro, movie))
+            movie_ids_to_mark.append(movie['id'])
 
         except Exception as e:
-            logger.error(f"导入电影 {movie['title']} 失败: {e}", exc_info=True)
+            logger.error(f"准备电影 {movie['title']} 导入任务失败: {e}", exc_info=True)
+
+    # 批量并发提交所有电影任务
+    if movie_tasks:
+        logger.info(f"批量提交 {len(movie_tasks)} 个电影导入任务...")
+        results = await asyncio.gather(*[task for task, _ in movie_tasks], return_exceptions=True)
+
+        # 处理提交结果
+        for result, (_, movie) in zip(results, movie_tasks):
+            if isinstance(result, Exception):
+                logger.error(f"电影 {movie['title']} 导入任务提交失败: {result}")
+            else:
+                task_id, _ = result
+                logger.info(f"电影 {movie['title']} 导入任务已提交: {task_id}")
+
+            # 更新进度
+            completed += 1
+            await progress_callback(
+                int((completed / total_tasks) * 100),
+                f"已提交 {completed}/{total_tasks} 个导入任务..."
+            )
+
+        # 批量标记为已导入
+        try:
+            await crud.mark_media_items_imported(session, movie_ids_to_mark)
+            await session.commit()
+            logger.info(f"已批量标记 {len(movie_ids_to_mark)} 部电影为已导入")
+        except Exception as e:
+            logger.error(f"批量标记电影导入状态失败: {e}", exc_info=True)
             await session.rollback()
 
-        completed += 1
+    # 优化：批量提交电视剧导入任务
+    tv_tasks = []
+    tv_ids_to_mark = []
 
-    # 导入电视节目(按季度合并为单个任务)
     for (title, season), season_items in tv_shows.items():
         season_str = f"S{season:02d}" if season is not None else "S??"
-        await progress_callback(
-            int((completed / total_tasks) * 100),
-            f"导入电视节目: {title} {season_str} (共 {len(season_items)} 集)..."
-        )
 
         try:
             # 选取该季度中集数最小的一集作为代表，用于搜索和匹配
@@ -348,7 +365,7 @@ async def import_media_items(
             selected_episodes = sorted([item['episode'] for item in season_items if item['episode'] is not None])
             logger.info(f"电视节目 {title} {season_str} 选中的分集: {selected_episodes}")
 
-            task_id, _ = await task_manager.submit_task(
+            task_coro = task_manager.submit_task(
                 lambda session, progress_callback, item=representative_item, selected_eps=selected_episodes, mst=media_server_type: webhook_search_and_dispatch_task(
                     animeTitle=item['title'],
                     mediaType="tv_series",
@@ -399,20 +416,40 @@ async def import_media_items(
                     "imageUrl": representative_item['posterUrl'],
                 },
             )
-            logger.info(f"电视节目 {title} S{season:02d} (共 {len(season_items)} 集) 导入任务已提交: {task_id}")
-
-            # 标记该季度内所有选中分集为已导入
-            await crud.mark_media_items_imported(session, [item['id'] for item in season_items])
-            await session.commit()
-
-            # 小延迟，避免瞬间提交过多任务
-            await asyncio.sleep(0.2)
+            tv_tasks.append((task_coro, title, season, season_items))
+            tv_ids_to_mark.extend([item['id'] for item in season_items])
 
         except Exception as e:
-            logger.error(f"导入电视节目 {title} S{season:02d} 失败: {e}", exc_info=True)
-            await session.rollback()
+            logger.error(f"准备电视节目 {title} {season_str} 导入任务失败: {e}", exc_info=True)
 
-        completed += 1  # 每个季度任务完成后递增
+    # 批量并发提交所有电视剧任务
+    if tv_tasks:
+        logger.info(f"批量提交 {len(tv_tasks)} 个电视剧季度导入任务...")
+        results = await asyncio.gather(*[task for task, _, _, _ in tv_tasks], return_exceptions=True)
+
+        # 处理提交结果
+        for result, (_, title, season, season_items) in zip(results, tv_tasks):
+            if isinstance(result, Exception):
+                logger.error(f"电视节目 {title} S{season:02d} 导入任务提交失败: {result}")
+            else:
+                task_id, _ = result
+                logger.info(f"电视节目 {title} S{season:02d} (共 {len(season_items)} 集) 导入任务已提交: {task_id}")
+
+            # 更新进度
+            completed += 1
+            await progress_callback(
+                int((completed / total_tasks) * 100),
+                f"已提交 {completed}/{total_tasks} 个导入任务..."
+            )
+
+        # 批量标记为已导入
+        try:
+            await crud.mark_media_items_imported(session, tv_ids_to_mark)
+            await session.commit()
+            logger.info(f"已批量标记 {len(tv_ids_to_mark)} 个电视剧集为已导入")
+        except Exception as e:
+            logger.error(f"批量标记电视剧导入状态失败: {e}", exc_info=True)
+            await session.rollback()
 
     await progress_callback(100, f"导入完成,共提交 {total_tasks} 个任务")
     raise TaskSuccess(f"媒体项导入完成,共提交 {total_tasks} 个任务")

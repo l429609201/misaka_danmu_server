@@ -210,7 +210,11 @@ async def run_startup(app: FastAPI):
         bangumi_router = app.state.metadata_manager.sources['bangumi'].api_router
         app.include_router(bangumi_router, prefix="/api/bangumi", tags=["Bangumi"])
 
-    app.state.task_manager = TaskManager(session_factory, app.state.config_manager)
+    app.state.task_manager = TaskManager(
+        session_factory,
+        app.state.config_manager,
+        max_concurrent_tasks=settings.task_manager.max_concurrent_tasks
+    )
     app.state.title_recognition_manager = TitleRecognitionManager(session_factory)
     app.state.media_server_manager = MediaServerManager(session_factory)
     await app.state.media_server_manager.initialize()
@@ -231,6 +235,21 @@ async def run_startup(app: FastAPI):
         app.state.config_manager, app.state.title_recognition_manager,
         app.state.ai_matcher_manager
     )
+
+    # 初始化性能监测采集器
+    from src.services.performance_collector import init_performance_collector
+    app.state.performance_collector = await init_performance_collector(
+        db_engine=app.state.db_engine,
+        task_manager=app.state.task_manager,
+        cache_manager=app.state.cache_manager,
+        auto_start=True  # 自动启动性能采集
+    )
+    logger.info("性能监测采集器已启动")
+
+    # 初始化 LLM 数据库检索工具
+    from src.services.llm_db_tools import init_llm_db_tools
+    init_llm_db_tools(session_factory)
+    logger.info("LLM 数据库检索工具已初始化")
 
     init_time = time.time() - init_start
     logger.info(f"并行初始化完成，耗时 {init_time:.2f} 秒")
@@ -323,6 +342,12 @@ async def run_shutdown(app: FastAPI):
             await app.state.cleanup_task
         except asyncio.CancelledError:
             pass
+
+    # 关闭性能监测采集器
+    if hasattr(app.state, "performance_collector"):
+        from src.services.performance_collector import shutdown_performance_collector
+        await shutdown_performance_collector()
+        logger.info("性能监测采集器已关闭")
 
     await close_cache_backend()
     await close_db_engine(app)

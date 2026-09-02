@@ -748,3 +748,205 @@ class AssistantMessage(Base):
         Index('idx_assistant_msg_session', 'session_db_id'),
     )
 
+
+class PerformanceMetric(Base):
+    """性能监测指标表"""
+    __tablename__ = 'performance_metrics'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    # 指标分类
+    category: Mapped[str] = mapped_column(String(50), nullable=False, index=True, comment='指标分类: db_pool/task_queue/slow_query/cache/api_response')
+    metricName: Mapped[str] = mapped_column("metric_name", String(100), nullable=False, index=True, comment='指标名称')
+
+    # 指标值（至少一个字段有值）
+    metricValue: Mapped[Optional[float]] = mapped_column("metric_value", DECIMAL(20, 4), nullable=True, comment='数值型指标值')
+    metricText: Mapped[Optional[str]] = mapped_column("metric_text", TEXT, nullable=True, comment='文本型指标值')
+    metricJson: Mapped[Optional[str]] = mapped_column("metric_json", TEXT, nullable=True, comment='JSON型指标值（复杂数据）')
+
+    # 状态标记
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='normal', comment='状态: normal/warning/critical')
+    thresholdWarning: Mapped[Optional[float]] = mapped_column("threshold_warning", DECIMAL(20, 4), nullable=True, comment='警告阈值')
+    thresholdCritical: Mapped[Optional[float]] = mapped_column("threshold_critical", DECIMAL(20, 4), nullable=True, comment='严重阈值')
+
+    # 元数据
+    serverInstance: Mapped[Optional[str]] = mapped_column("server_instance", String(100), nullable=True, comment='服务器实例标识')
+    tags: Mapped[Optional[str]] = mapped_column(TEXT, nullable=True, comment='标签JSON（用于分组和过滤）')
+    description: Mapped[Optional[str]] = mapped_column(TEXT, nullable=True, comment='详细说明')
+
+    # 时间戳
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False, comment='记录时间')
+
+    # 索引优化
+    __table_args__ = (
+        Index('idx_perf_category_created', 'category', 'created_at'),
+        Index('idx_perf_metric_name_created', 'metric_name', 'created_at'),
+        Index('idx_perf_status_created', 'status', 'created_at'),
+        {'comment': '性能监测指标表'}
+    )
+
+
+class PerformanceAlert(Base):
+    """性能告警记录表"""
+    __tablename__ = 'performance_alerts'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    # 关联指标
+    metricCategory: Mapped[str] = mapped_column("metric_category", String(50), nullable=False, index=True, comment='指标分类')
+    metricName: Mapped[str] = mapped_column("metric_name", String(100), nullable=False, index=True, comment='指标名称')
+
+    # 告警信息
+    alertLevel: Mapped[str] = mapped_column("alert_level", String(20), nullable=False, comment='告警级别: warning/critical')
+    alertMessage: Mapped[str] = mapped_column("alert_message", TEXT, nullable=False, comment='告警消息')
+    currentValue: Mapped[Optional[float]] = mapped_column("current_value", DECIMAL(20, 4), nullable=True, comment='当前值')
+    thresholdValue: Mapped[Optional[float]] = mapped_column("threshold_value", DECIMAL(20, 4), nullable=True, comment='阈值')
+
+    # 状态
+    isResolved: Mapped[int] = mapped_column("is_resolved", Integer, nullable=False, default=0, comment='是否已解决: 0=未解决, 1=已解决')
+    resolvedAt: Mapped[Optional[datetime]] = mapped_column("resolved_at", NaiveDateTime, nullable=True, comment='解决时间')
+    resolutionNote: Mapped[Optional[str]] = mapped_column("resolution_note", TEXT, nullable=True, comment='解决说明')
+
+    # 时间戳
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False, comment='告警时间')
+
+    # 索引
+    __table_args__ = (
+        Index('idx_alert_status', 'is_resolved', 'created_at'),
+        Index('idx_alert_level', 'alert_level', 'created_at'),
+        {'comment': '性能告警记录表'}
+    )
+
+
+class SystemMetric(Base):
+    """
+    系统指标通用表
+
+    采用宽表设计，支持记录各类系统性能和运行指标：
+    - 数据库连接池状态
+    - 任务队列状态
+    - 慢查询记录
+    - 缓存命中率
+    - API响应时间
+    - CPU/内存使用率
+    - 自定义业务指标
+
+    设计理念：
+    - 通用性：支持任意类型的指标记录
+    - 灵活性：多种数值类型 + JSON扩展字段
+    - 可查询：按分类、时间范围高效检索
+    - 可告警：内置阈值和状态判断
+    """
+    __tablename__ = 'system_metrics'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    # ===== 指标标识 =====
+    category: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True,
+        comment='指标大类: database/task/cache/api/system/custom'
+    )
+    subcategory: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, index=True,
+        comment='指标子类: pool/queue/slow_query/hit_rate/response_time/cpu/memory等'
+    )
+    metricName: Mapped[str] = mapped_column(
+        "metric_name", String(100), nullable=False, index=True,
+        comment='指标名称（唯一标识符）'
+    )
+    displayName: Mapped[Optional[str]] = mapped_column(
+        "display_name", String(200), nullable=True,
+        comment='显示名称（用于前端展示）'
+    )
+
+    # ===== 指标值（多类型支持）=====
+    # 数值型指标（支持整数、浮点数、百分比）
+    valueInt: Mapped[Optional[int]] = mapped_column(
+        "value_int", BigInteger, nullable=True,
+        comment='整数值（如：连接数、任务数、请求数）'
+    )
+    valueFloat: Mapped[Optional[float]] = mapped_column(
+        "value_float", DECIMAL(20, 4), nullable=True,
+        comment='浮点值（如：CPU使用率、响应时间、命中率）'
+    )
+    # 文本型指标
+    valueText: Mapped[Optional[str]] = mapped_column(
+        "value_text", TEXT, nullable=True,
+        comment='文本值（如：SQL语句、错误信息、状态描述）'
+    )
+    # JSON扩展字段（复杂数据结构）
+    valueJson: Mapped[Optional[str]] = mapped_column(
+        "value_json", TEXT, nullable=True,
+        comment='JSON值（如：完整的慢查询详情、连接池状态快照）'
+    )
+
+    # ===== 单位和格式化 =====
+    unit: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True,
+        comment='单位: ms/s/count/percent/MB/GB等'
+    )
+
+    # ===== 阈值和状态 =====
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default='normal', index=True,
+        comment='状态: normal/warning/critical/unknown'
+    )
+    thresholdWarning: Mapped[Optional[float]] = mapped_column(
+        "threshold_warning", DECIMAL(20, 4), nullable=True,
+        comment='警告阈值（超过此值 status=warning）'
+    )
+    thresholdCritical: Mapped[Optional[float]] = mapped_column(
+        "threshold_critical", DECIMAL(20, 4), nullable=True,
+        comment='严重阈值（超过此值 status=critical）'
+    )
+
+    # ===== 元数据和标签 =====
+    serverInstance: Mapped[Optional[str]] = mapped_column(
+        "server_instance", String(100), nullable=True, index=True,
+        comment='服务器实例标识（多实例部署时区分）'
+    )
+    tags: Mapped[Optional[str]] = mapped_column(
+        TEXT, nullable=True,
+        comment='标签JSON（用于分组、过滤、聚合）格式: {"env":"prod","region":"us-east"}'
+    )
+    source: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True,
+        comment='数据来源: auto_collect/manual/external_monitor'
+    )
+
+    # ===== 详细说明 =====
+    description: Mapped[Optional[str]] = mapped_column(
+        TEXT, nullable=True,
+        comment='详细说明（用于前端提示或告警消息）'
+    )
+    context: Mapped[Optional[str]] = mapped_column(
+        TEXT, nullable=True,
+        comment='上下文信息（如：慢查询的完整SQL、堆栈跟踪）'
+    )
+
+    # ===== 时间戳 =====
+    collectedAt: Mapped[datetime] = mapped_column(
+        "collected_at", NaiveDateTime, default=get_now, nullable=False, index=True,
+        comment='指标采集时间'
+    )
+    createdAt: Mapped[datetime] = mapped_column(
+        "created_at", NaiveDateTime, default=get_now, nullable=False,
+        comment='记录创建时间'
+    )
+
+    # ===== 复合索引优化 =====
+    __table_args__ = (
+        # 按分类查询最近指标
+        Index('idx_metric_category_time', 'category', 'collected_at'),
+        # 按子类查询
+        Index('idx_metric_subcat_time', 'subcategory', 'collected_at'),
+        # 按指标名查询时间序列
+        Index('idx_metric_name_time', 'metric_name', 'collected_at'),
+        # 按状态查询异常指标
+        Index('idx_metric_status_time', 'status', 'collected_at'),
+        # 多实例环境按实例查询
+        Index('idx_metric_instance_time', 'server_instance', 'collected_at'),
+        # 复合查询优化
+        Index('idx_metric_cat_name_time', 'category', 'metric_name', 'collected_at'),
+        {'comment': '系统性能指标通用表'}
+    )
