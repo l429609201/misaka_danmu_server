@@ -187,7 +187,8 @@ class PerformanceCollector:
 
             # 管理队列状态
             management_queue_size = self.task_manager._management_queue.qsize() if hasattr(self.task_manager, '_management_queue') else 0
-            management_running = 1 if self.task_manager._management_task_running else 0
+            # 修正：TaskManager 使用 _current_management_task（任务对象）而不是 _management_task_running（布尔值）
+            management_running = 1 if (hasattr(self.task_manager, '_current_management_task') and self.task_manager._current_management_task is not None) else 0
 
             # 最大并发数
             max_concurrent = self.task_manager._max_concurrent_tasks if hasattr(self.task_manager, '_max_concurrent_tasks') else 10
@@ -231,6 +232,19 @@ class PerformanceCollector:
                 unit="count",
                 threshold_warning=10.0,
                 threshold_critical=20.0,
+                server_instance=self.server_instance,
+            )
+
+            # 记录管理队列运行任务数
+            await perf_crud.record_metric(
+                session=session,
+                category="task",
+                subcategory="queue",
+                metric_name="management_queue_running",
+                display_name="管理队列运行任务数",
+                value_int=management_running,
+                unit="count",
+                description=f"当前管理队列运行状态: {'运行中' if management_running else '空闲'}",
                 server_instance=self.server_instance,
             )
 

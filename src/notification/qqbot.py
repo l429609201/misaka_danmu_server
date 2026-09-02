@@ -145,8 +145,8 @@ class QQBotChannel(BaseNotificationChannel):
                     logger.warning(f"用户 {user_openid} 不在管理员白名单中，忽略消息")
                     return
 
-            # 处理命令
-            result = await self.notification_service.handle_command(
+            # 处理命令（注意：父类中存储为 self.service，不是 self.notification_service）
+            result = await self.service.handle_command(
                 user_id=user_openid,
                 username=username,
                 text=content,
@@ -184,8 +184,8 @@ class QQBotChannel(BaseNotificationChannel):
                     logger.warning(f"用户 {user_openid} 不在管理员白名单中，忽略消息")
                     return
 
-            # 处理命令
-            result = await self.notification_service.handle_command(
+            # 处理命令（注意：父类中存储为 self.service，不是 self.notification_service）
+            result = await self.service.handle_command(
                 user_id=user_openid,
                 username=username,
                 text=content,
