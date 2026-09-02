@@ -296,9 +296,9 @@ class PerformanceCollector:
                     client = await cache_backend._get_client()
                     info = await client.info()
 
-                    # Redis 内存使用
+                    # Redis 内存使用（四舍五入到4位小数）
                     memory_used = info.get('used_memory', 0)
-                    memory_used_mb = memory_used / (1024 * 1024)
+                    memory_used_mb = round(memory_used / (1024 * 1024), 4)
 
                     await perf_crud.record_metric(
                         session=session,
