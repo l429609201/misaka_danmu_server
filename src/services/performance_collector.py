@@ -106,8 +106,8 @@ class PerformanceCollector:
             # 溢出连接数
             overflow = pool.overflow()
             
-            # 连接池使用率
-            usage_rate = (checked_out / pool_size * 100) if pool_size > 0 else 0
+            # 连接池使用率（四舍五入到4位小数，匹配数据库DECIMAL(20,4)精度）
+            usage_rate = round((checked_out / pool_size * 100), 4) if pool_size > 0 else 0.0
             
             # 记录连接池大小
             await perf_crud.record_metric(
@@ -130,8 +130,8 @@ class PerformanceCollector:
                 display_name="已使用连接数",
                 value_int=checked_out,
                 unit="count",
-                threshold_warning=float(pool_size * 0.8),
-                threshold_critical=float(pool_size * 0.95),
+                threshold_warning=round(pool_size * 0.8, 4),
+                threshold_critical=round(pool_size * 0.95, 4),
                 server_instance=self.server_instance,
             )
             
@@ -248,8 +248,8 @@ class PerformanceCollector:
                 server_instance=self.server_instance,
             )
 
-            # 队列利用率
-            utilization = (download_running / max_concurrent * 100) if max_concurrent > 0 else 0
+            # 队列利用率（四舍五入到4位小数，匹配数据库DECIMAL(20,4)精度）
+            utilization = round((download_running / max_concurrent * 100), 4) if max_concurrent > 0 else 0.0
             await perf_crud.record_metric(
                 session=session,
                 category="task",
@@ -349,7 +349,7 @@ class PerformanceCollector:
         """采集系统资源指标"""
         try:
             # CPU 使用率
-            cpu_percent = psutil.cpu_percent(interval=0.1)
+            cpu_percent = round(psutil.cpu_percent(interval=0.1), 4)
             await perf_crud.record_metric(
                 session=session,
                 category="system",
@@ -371,7 +371,7 @@ class PerformanceCollector:
                 subcategory="memory",
                 metric_name="memory_usage",
                 display_name="内存使用率",
-                value_float=memory.percent,
+                value_float=round(memory.percent, 4),
                 unit="percent",
                 threshold_warning=80.0,
                 threshold_critical=95.0,
@@ -387,7 +387,7 @@ class PerformanceCollector:
                 subcategory="disk",
                 metric_name="disk_usage",
                 display_name="磁盘使用率",
-                value_float=disk.percent,
+                value_float=round(disk.percent, 4),
                 unit="percent",
                 threshold_warning=80.0,
                 threshold_critical=90.0,
