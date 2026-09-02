@@ -1,30 +1,36 @@
 """
-QQ 官方 Bot 通知渠道实现（v2 API）
-使用 QQ 官方机器人 OpenAPI v2，支持单聊（C2C）和群聊消息发送。
+QQ 官方 Bot 通知渠道实现（WebSocket Gateway）
+使用 qq-botpy SDK，通过 WebSocket 接收消息和事件，支持双向交互。
 参考：MoviePilot 项目架构 + QQ 官方文档
-官方文档：https://bot.q.qq.com/wiki/develop/api-v2/
+官方文档：https://bot.q.qq.com/wiki/
 """
 
+import asyncio
 import logging
+import threading
 from typing import Any, Dict, List, Optional
 
-import httpx
-
 from src.notification.base import (
-    BaseNotificationChannel,
+    BaseNotificationChannel, CommandResult,
     ChannelCapability, ChannelCapabilities, IMAGE_MODE_FIELD,
     IMAGE_MODE_TEXT, IMAGE_MODE_PUBLIC_URL,
 )
 
 logger = logging.getLogger(__name__)
+bot_raw_logger = logging.getLogger("bot_raw")
 
-# QQ Bot OpenAPI v2 基地址
-QQ_BOT_API_BASE = "https://api.sgroup.qq.com"
-QQ_BOT_SANDBOX_API_BASE = "https://sandbox.api.sgroup.qq.com"
+
+def _get_botpy():
+    """延迟导入 botpy，避免未安装时影响启动"""
+    try:
+        import botpy
+        return botpy
+    except ImportError:
+        raise ImportError("请安装 qq-botpy: pip install qq-botpy")
 
 
 class QQBotChannel(BaseNotificationChannel):
-    """QQ 官方 Bot 通知渠道 — 支持单聊（C2C）和群聊消息"""
+    """QQ 官方 Bot 通知渠道 — 基于 WebSocket Gateway 的双向交互"""
 
     channel_type = "qq"
     display_name = "QQ"
@@ -39,6 +45,7 @@ class QQBotChannel(BaseNotificationChannel):
             ChannelCapability.RICH_TEXT,       # 支持 Markdown
             ChannelCapability.IMAGES,          # 支持图片
             ChannelCapability.LINKS,           # 支持链接
+            ChannelCapability.CALLBACK_QUERIES, # 支持按钮回调
         },
     )
 
@@ -47,136 +54,238 @@ class QQBotChannel(BaseNotificationChannel):
 
         self.app_id = config.get("app_id", "")
         self.app_secret = config.get("app_secret", "")
-        self.is_sandbox = config.get("is_sandbox", False)
 
-        # 用户 OpenID（单聊）和群组 OpenID（群聊）二选一
+        # 用户 OpenID（单聊）和群组 OpenID（群聊）
         self.user_openid = config.get("user_openid", "")
         self.group_openid = config.get("group_openid", "")
 
         # 管理员白名单（可选）
         self.admin_whitelist = config.get("admin_whitelist", "")
 
-        # HTTP 客户端
-        self.http_client: Optional[httpx.AsyncClient] = None
-        self._access_token: Optional[str] = None
-        self._token_expires_at: float = 0
+        # Bot 客户端实例
+        self._bot_client = None
+        self._bot_thread: Optional[threading.Thread] = None
+        self._should_stop = False
 
-    @property
-    def api_base(self) -> str:
-        """获取 API 基地址"""
-        return QQ_BOT_SANDBOX_API_BASE if self.is_sandbox else QQ_BOT_API_BASE
+        # 事件循环（用于异步操作）
+        self._event_loop = None
 
-    async def _ensure_http_client(self):
-        """确保 HTTP 客户端已初始化"""
-        if self.http_client is None:
-            self.http_client = httpx.AsyncClient(timeout=30.0)
+    def _start_bot_client(self):
+        """启动 Bot WebSocket 客户端（用于接收消息和事件）"""
+        if not self.app_id or not self.app_secret:
+            logger.warning("QQ Bot 配置不完整，无法启动消息接收")
+            return
 
-    async def _get_access_token(self) -> Optional[str]:
-        """获取 Access Token（使用 App 鉴权）"""
-        import time
-
-        # 检查缓存的 token 是否有效
-        if self._access_token and time.time() < self._token_expires_at:
-            return self._access_token
-
-        # 获取新 token
-        await self._ensure_http_client()
         try:
-            response = await self.http_client.post(
-                f"{self.api_base}/app/getAppAccessToken",
-                json={
-                    "appId": self.app_id,
-                    "clientSecret": self.app_secret,
-                }
-            )
-            response.raise_for_status()
-            data = response.json()
+            botpy = _get_botpy()
 
-            self._access_token = data.get("access_token")
-            expires_in = data.get("expires_in", 7200)
-            self._token_expires_at = time.time() + expires_in - 300  # 提前5分钟刷新
+            # 创建 Bot 客户端
+            class MessageBot(botpy.Client):
+                def __init__(self, parent_channel: 'QQBotChannel'):
+                    # 配置 intents - 指定需要监听的事件类型
+                    intents = botpy.Intents(
+                        public_messages=True,      # 监听公域消息（群聊）
+                        direct_message=True,       # 监听私信
+                        interaction=True,          # 监听交互事件（按钮回调）
+                    )
+                    super().__init__(intents=intents)
+                    self.parent_channel = parent_channel
 
-            logger.info(f"QQ Bot 获取 access_token 成功，有效期 {expires_in} 秒")
-            return self._access_token
+                async def on_ready(self):
+                    """Bot 连接成功回调"""
+                    logger.info(f"QQ Bot WebSocket 已连接: {self.robot.name}")
+
+                async def on_c2c_message_create(self, message):
+                    """处理单聊（C2C）消息"""
+                    await self.parent_channel._handle_c2c_message(message)
+
+                async def on_group_at_message_create(self, message):
+                    """处理群聊 @机器人 消息"""
+                    await self.parent_channel._handle_group_message(message)
+
+                async def on_interaction_create(self, interaction):
+                    """处理按钮交互回调"""
+                    await self.parent_channel._handle_interaction(interaction)
+
+            self._bot_client = MessageBot(self)
+
+            # 在新线程中启动 Bot
+            def run_bot():
+                try:
+                    # 创建新的事件循环
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    self._event_loop = loop
+
+                    # 运行 Bot
+                    self._bot_client.run(
+                        appid=self.app_id,
+                        secret=self.app_secret,
+                    )
+                except Exception as e:
+                    logger.error(f"QQ Bot 运行异常: {e}")
+                finally:
+                    loop.close()
+
+            self._bot_thread = threading.Thread(target=run_bot, daemon=True)
+            self._bot_thread.start()
+            logger.info("QQ Bot WebSocket 客户端已启动")
 
         except Exception as e:
-            logger.error(f"QQ Bot 获取 access_token 失败: {e}")
-            return None
+            logger.error(f"QQ Bot 启动失败: {e}")
 
-    async def _send_qq_message(
+    async def _handle_c2c_message(self, message):
+        """处理单聊（C2C）消息"""
+        try:
+            content = message.content.strip()
+            user_openid = message.author.user_openid
+            username = message.author.username or user_openid
+            msg_id = message.id
+
+            bot_raw_logger.info(f"收到QQ单聊消息: user={username}({user_openid}), content={content}")
+
+            # 检查管理员权限（如果配置了白名单）
+            if self.admin_whitelist:
+                allowed_users = [u.strip() for u in self.admin_whitelist.split(",")]
+                if user_openid not in allowed_users:
+                    logger.warning(f"用户 {user_openid} 不在管理员白名单中，忽略消息")
+                    return
+
+            # 处理命令
+            result = await self.notification_service.handle_command(
+                user_id=user_openid,
+                username=username,
+                text=content,
+                channel=self,
+            )
+
+            # 发送回复
+            if result and result.reply_text:
+                await self._send_c2c_message(
+                    user_openid=user_openid,
+                    content=result.reply_text,
+                    keyboard=result.reply_markup if hasattr(result, 'reply_markup') else None,
+                    msg_id=msg_id,
+                )
+
+        except Exception as e:
+            logger.error(f"QQ Bot 处理单聊消息失败: {e}", exc_info=True)
+
+    async def _handle_group_message(self, message):
+        """处理群聊 @机器人 消息"""
+        try:
+            content = message.content.strip()
+            user_openid = message.author.user_openid
+            group_openid = message.group_openid
+            username = message.author.username or user_openid
+            msg_id = message.id
+
+            bot_raw_logger.info(f"收到QQ群聊消息: group={group_openid}, user={username}({user_openid}), content={content}")
+
+            # 检查管理员权限（如果配置了白名单）
+            if self.admin_whitelist:
+                allowed_users = [u.strip() for u in self.admin_whitelist.split(",")]
+                if user_openid not in allowed_users:
+                    logger.warning(f"用户 {user_openid} 不在管理员白名单中，忽略消息")
+                    return
+
+            # 处理命令
+            result = await self.notification_service.handle_command(
+                user_id=user_openid,
+                username=username,
+                text=content,
+                channel=self,
+            )
+
+            # 发送回复
+            if result and result.reply_text:
+                await self._send_group_message(
+                    group_openid=group_openid,
+                    content=result.reply_text,
+                    keyboard=result.reply_markup if hasattr(result, 'reply_markup') else None,
+                    msg_id=msg_id,
+                )
+
+        except Exception as e:
+            logger.error(f"QQ Bot 处理群聊消息失败: {e}", exc_info=True)
+
+    async def _handle_interaction(self, interaction):
+        """处理按钮交互回调"""
+        try:
+            callback_data = interaction.data.resolved.button_data
+            user_openid = interaction.data.resolved.user_id
+
+            bot_raw_logger.info(f"收到QQ按钮回调: user={user_openid}, data={callback_data}")
+
+            # TODO: 处理按钮回调逻辑
+            # 可以调用 notification_service.handle_callback() 或其他处理方法
+
+        except Exception as e:
+            logger.error(f"QQ Bot 处理按钮回调失败: {e}", exc_info=True)
+
+    async def _send_c2c_message(
         self,
+        user_openid: str,
         content: Optional[str] = None,
-        markdown: Optional[Dict] = None,
         keyboard: Optional[Dict] = None,
         image_url: Optional[str] = None,
         msg_id: Optional[str] = None,
-        openid: Optional[str] = None,
-    ) -> Optional[Dict]:
-        """
-        发送消息到单聊或群聊（底层实现）
-
-        Args:
-            content: 消息内容（纯文本）
-            markdown: Markdown 消息（可选）
-            keyboard: 消息按钮（可选）
-            image_url: 图片URL（可选）
-            msg_id: 要回复的消息ID（可选）
-            openid: 目标 OpenID（不传则使用配置的默认值）
-        """
-        token = await self._get_access_token()
-        if not token:
-            logger.error("无法获取 access_token")
-            return None
-
-        await self._ensure_http_client()
-
-        # 确定目标 openid（单聊或群聊）
-        target_openid = openid or self.user_openid or self.group_openid
-        if not target_openid:
-            logger.error("QQ Bot 发送失败：未配置用户 OpenID 或群组 OpenID")
-            return None
-
-        # 判断是单聊还是群聊
-        is_group = bool(openid and openid == self.group_openid) or (not openid and self.group_openid and not self.user_openid)
-
-        # 构建 API 路径
-        if is_group:
-            url = f"{self.api_base}/v2/groups/{target_openid}/messages"
-        else:
-            url = f"{self.api_base}/v2/users/{target_openid}/messages"
-
-        # 构建消息体
-        payload: Dict[str, Any] = {
-            "msg_type": 0,  # 文本消息
-            "msg_id": msg_id or "",
-        }
-
-        if content:
-            payload["content"] = content
-        if markdown:
-            payload["markdown"] = markdown
-        if keyboard:
-            payload["keyboard"] = keyboard
-        if image_url:
-            payload["media"] = {"file_info": image_url}
-
-        headers = {
-            "Authorization": f"QQBot {self.app_id}.{token}",
-            "Content-Type": "application/json",
-        }
+    ):
+        """发送单聊消息（通过 botpy API）"""
+        if not self._bot_client:
+            logger.error("Bot 客户端未初始化")
+            return
 
         try:
-            response = await self.http_client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            result = response.json()
-            logger.info(f"QQ Bot 消息发送成功: {result.get('id')}")
-            return result
-        except httpx.HTTPStatusError as e:
-            logger.error(f"QQ Bot 消息发送失败: HTTP {e.response.status_code} - {e.response.text}")
-            raise
+            message_data = {}
+            if content:
+                message_data["content"] = content
+            if keyboard:
+                message_data["keyboard"] = keyboard
+            if image_url:
+                message_data["image"] = image_url
+            if msg_id:
+                message_data["msg_id"] = msg_id
+
+            await self._bot_client.api.post_c2c_message(
+                openid=user_openid,
+                **message_data
+            )
+            logger.info(f"QQ Bot 单聊消息发送成功: user={user_openid}")
         except Exception as e:
-            logger.error(f"QQ Bot 消息发送异常: {e}")
-            raise
+            logger.error(f"QQ Bot 单聊消息发送失败: {e}", exc_info=True)
+
+    async def _send_group_message(
+        self,
+        group_openid: str,
+        content: Optional[str] = None,
+        keyboard: Optional[Dict] = None,
+        image_url: Optional[str] = None,
+        msg_id: Optional[str] = None,
+    ):
+        """发送群聊消息（通过 botpy API）"""
+        if not self._bot_client:
+            logger.error("Bot 客户端未初始化")
+            return
+
+        try:
+            message_data = {}
+            if content:
+                message_data["content"] = content
+            if keyboard:
+                message_data["keyboard"] = keyboard
+            if image_url:
+                message_data["image"] = image_url
+            if msg_id:
+                message_data["msg_id"] = msg_id
+
+            await self._bot_client.api.post_group_message(
+                group_openid=group_openid,
+                **message_data
+            )
+            logger.info(f"QQ Bot 群聊消息发送成功: group={group_openid}")
+        except Exception as e:
+            logger.error(f"QQ Bot 群聊消息发送失败: {e}", exc_info=True)
 
     # ========== BaseNotificationChannel 实现 ==========
 
@@ -208,14 +317,32 @@ class QQBotChannel(BaseNotificationChannel):
         if reply_markup and self.get_capabilities().supports_buttons:
             keyboard = self._build_keyboard_from_markup(reply_markup)
 
-        # 调用底层 HTTP API 发送
-        await self._send_qq_message(
-            content=full_text,
-            keyboard=keyboard,
-            image_url=image_url,
-            msg_id=msg_id,
-            openid=openid,
-        )
+        # 确定发送目标（优先使用参数指定的 openid）
+        target_openid = openid or self.user_openid or self.group_openid
+        if not target_openid:
+            logger.error("QQ Bot 发送失败：未配置用户 OpenID 或群组 OpenID")
+            return
+
+        # 判断是单聊还是群聊
+        is_group = (openid == self.group_openid) if openid else (self.group_openid and not self.user_openid)
+
+        # 发送消息
+        if is_group:
+            await self._send_group_message(
+                group_openid=target_openid,
+                content=full_text,
+                keyboard=keyboard,
+                image_url=image_url,
+                msg_id=msg_id,
+            )
+        else:
+            await self._send_c2c_message(
+                user_openid=target_openid,
+                content=full_text,
+                keyboard=keyboard,
+                image_url=image_url,
+                msg_id=msg_id,
+            )
 
     def _build_keyboard_from_markup(self, reply_markup: List[List[Dict]]) -> Dict:
         """从通用按钮格式转换为 QQ Bot 按钮格式"""
@@ -255,39 +382,43 @@ class QQBotChannel(BaseNotificationChannel):
     async def test_connection(self) -> Dict[str, Any]:
         """测试连接"""
         try:
-            token = await self._get_access_token()
-            if not token:
-                return {"success": False, "message": "无法获取 access_token"}
+            # 测试 botpy 是否可用
+            _get_botpy()
 
-            # 尝试获取机器人信息
-            await self._ensure_http_client()
-            headers = {
-                "Authorization": f"QQBot {self.app_id}.{token}",
-            }
+            # 验证配置完整性
+            if not self.app_id or not self.app_secret:
+                return {"success": False, "message": "App ID 或 App Secret 未配置"}
 
-            response = await self.http_client.get(
-                f"{self.api_base}/users/@me",
-                headers=headers,
-            )
-            response.raise_for_status()
-            bot_info = response.json()
+            if not self.user_openid and not self.group_openid:
+                return {"success": False, "message": "请至少配置一个用户 OpenID 或群组 OpenID"}
 
             return {
                 "success": True,
-                "message": f"连接成功！Bot: {bot_info.get('username', 'Unknown')}"
+                "message": f"配置验证成功！Bot 将在启动时连接 WebSocket"
             }
+        except ImportError as e:
+            return {"success": False, "message": f"请安装 qq-botpy: pip install qq-botpy"}
         except Exception as e:
-            return {"success": False, "message": f"连接失败: {str(e)}"}
+            return {"success": False, "message": f"连接测试失败: {str(e)}"}
 
     async def start(self):
         """启动渠道"""
         await super().start()
+        # 启动 Bot WebSocket 客户端
+        self._start_bot_client()
         logger.info(f"QQ Bot 渠道已启动: {self.name}")
 
     async def stop(self):
         """停止渠道"""
-        if self.http_client:
-            await self.http_client.aclose()
+        self._should_stop = True
+
+        # 关闭 Bot 客户端
+        if self._bot_client:
+            try:
+                await self._bot_client.close()
+            except:
+                pass
+
         await super().stop()
         logger.info(f"QQ Bot 渠道已停止: {self.name}")
 
@@ -349,17 +480,6 @@ class QQBotChannel(BaseNotificationChannel):
                 "description": "可使用管理菜单及命令的用户ID列表，多个ID使用逗号分隔",
                 "description_en": "User IDs allowed to use admin menu and commands, separated by commas",
                 "description_tw": "可使用管理選單及命令的使用者ID列表，多個ID使用逗號分隔",
-            },
-            {
-                "key": "is_sandbox",
-                "label": "沙箱模式",
-                "label_en": "Sandbox Mode",
-                "label_tw": "沙盒模式",
-                "type": "boolean",
-                "default": False,
-                "description": "是否使用沙箱环境（测试用）",
-                "description_en": "Use sandbox environment (for testing)",
-                "description_tw": "是否使用沙盒環境（測試用）",
             },
             IMAGE_MODE_FIELD,
         ]
