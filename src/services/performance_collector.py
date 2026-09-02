@@ -27,7 +27,7 @@ class PerformanceCollector:
         self.db_engine = db_engine
         self.task_manager = task_manager
         self.cache_manager = cache_manager
-        self.session_factory = get_session_factory(db_engine)
+        self.session_factory = get_session_factory()  # 不需要传递参数，使用全局 session factory
         
         # 采集配置
         self.collect_interval = 60  # 采集间隔（秒）
