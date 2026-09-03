@@ -5,6 +5,9 @@
  * 通过"移动阈值"区分「拖动」与「点击」：位移小于阈值视为点击（打开面板），
  * 超过阈值视为拖动（不触发点击）。
  *
+ * ⚡ 屏幕缩放自适应：
+ * 使用百分比定位（相对视口宽高），在浏览器缩放或移动端屏幕旋转时保持相对位置。
+ *
  * @param {object} opts
  * @param {number} opts.width    入口宽度（用于初始靠右定位与边界约束）
  * @param {number} opts.height   入口高度（用于边界约束）
@@ -26,7 +29,20 @@ function loadStored(key) {
     const raw = localStorage.getItem(key)
     if (!raw) return null
     const p = JSON.parse(raw)
-    if (typeof p?.x === 'number' && typeof p?.y === 'number') return p
+    // 兼容旧版：如果存储的是像素值，转换为百分比
+    if (typeof p?.x === 'number' && typeof p?.y === 'number') {
+      // 检查是否为百分比格式（0-1之间）
+      if (p.x > 1 || p.y > 1) {
+        // 旧版像素值，转换为百分比
+        if (typeof window !== 'undefined') {
+          return {
+            x: p.x / window.innerWidth,
+            y: p.y / window.innerHeight,
+          }
+        }
+      }
+      return p
+    }
   } catch {
     /* 忽略解析失败 */
   }
@@ -40,20 +56,49 @@ export function usePetDrag({
   topRatio = 0.4,
   storeKey = 'assistant-pet-pos',
 } = {}) {
-  // 初始位置：优先用存储值，否则默认靠右、纵向 topRatio 处
-  const [pos, setPos] = useState(() => {
+  // 初始位置：优先用存储值（百分比），否则默认靠右、纵向 topRatio 处
+  const [posRatio, setPosRatio] = useState(() => {
     const stored = loadStored(storeKey)
     if (stored) return stored
-    if (typeof window === 'undefined') return { x: 0, y: 0 }
+    if (typeof window === 'undefined') return { x: 0.85, y: topRatio }
+    // 默认位置：右侧、topRatio 处（百分比）
+    const defaultX = (window.innerWidth - width - margin) / window.innerWidth
     return {
-      x: window.innerWidth - width - margin,
-      y: Math.round(window.innerHeight * topRatio),
+      x: Math.max(0, Math.min(1, defaultX)),
+      y: topRatio,
     }
   })
   const [dragging, setDragging] = useState(false)
   const movedRef = useRef(false)
   // 拖动过程中的临时数据
   const start = useRef({ mx: 0, my: 0, px: 0, py: 0 })
+
+  // 百分比转像素：根据当前视口尺寸计算实际位置
+  const toPixels = useCallback(
+    ratio => {
+      if (typeof window === 'undefined') return { x: 0, y: 0 }
+      return {
+        x: Math.round(ratio.x * window.innerWidth),
+        y: Math.round(ratio.y * window.innerHeight),
+      }
+    },
+    []
+  )
+
+  // 像素转百分比：存储时转换为相对位置
+  const toRatio = useCallback(
+    px => {
+      if (typeof window === 'undefined') return { x: 0, y: 0 }
+      return {
+        x: px.x / window.innerWidth,
+        y: px.y / window.innerHeight,
+      }
+    },
+    []
+  )
+
+  // 当前像素位置（供渲染使用）
+  const pos = toPixels(posRatio)
 
   const clamp = useCallback(
     (x, y) => {
@@ -95,7 +140,9 @@ export function usePetDrag({
         if (movedRef.current) {
           // 触摸拖动时阻止页面滚动
           if (ev.cancelable) ev.preventDefault()
-          setPos(clamp(start.current.px + dx, start.current.py + dy))
+          const newPos = clamp(start.current.px + dx, start.current.py + dy)
+          // 实时更新百分比位置
+          setPosRatio(toRatio(newPos))
         }
       }
       const onUp = () => {
@@ -105,13 +152,14 @@ export function usePetDrag({
         window.removeEventListener('touchend', onUp)
         setDragging(false)
         if (movedRef.current) {
-          setPos(p => {
+          // 存储百分比位置
+          setPosRatio(ratio => {
             try {
-              localStorage.setItem(storeKey, JSON.stringify(p))
+              localStorage.setItem(storeKey, JSON.stringify(ratio))
             } catch {
               /* 忽略写入失败 */
             }
-            return p
+            return ratio
           })
         }
       }
@@ -121,15 +169,22 @@ export function usePetDrag({
       window.addEventListener('touchmove', onMove, { passive: false })
       window.addEventListener('touchend', onUp)
     },
-    [pos.x, pos.y, clamp, storeKey]
+    [pos.x, pos.y, clamp, storeKey, toRatio]
   )
 
-  // 视口变化时把入口约束回可视范围内
+  // 视口变化时重新计算像素位置（百分比不变，像素位置自动适配）
   useEffect(() => {
-    const onResize = () => setPos(p => clamp(p.x, p.y))
+    const onResize = () => {
+      // 强制重新计算：将当前百分比约束到合法范围
+      setPosRatio(ratio => {
+        const px = toPixels(ratio)
+        const clamped = clamp(px.x, px.y)
+        return toRatio(clamped)
+      })
+    }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
-  }, [clamp])
+  }, [clamp, toPixels, toRatio])
 
   // onMouseDown 保留为别名（兼容旧调用），onPointerDown 同时支持鼠标+触摸
   return { pos, onPointerDown, onMouseDown: onPointerDown, dragging, movedRef }
