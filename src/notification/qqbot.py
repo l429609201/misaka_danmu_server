@@ -349,11 +349,12 @@ class QQBotChannel(BaseNotificationChannel):
 
             message_data = {}
 
-            # 优先使用 Markdown 格式
-            if content and markdown and MarkdownPayload:
-                message_data["markdown"] = MarkdownPayload(content=content)
-            elif content:
+            # QQ Bot API 要求：使用 markdown 时，content 也必须提供（作为降级文本）
+            if content:
                 message_data["content"] = content
+                # 同时提供 Markdown 格式（如果支持）
+                if markdown and MarkdownPayload:
+                    message_data["markdown"] = MarkdownPayload(content=content)
 
             # 只在 keyboard 非空时才传递
             if keyboard and len(keyboard) > 0:
@@ -405,11 +406,12 @@ class QQBotChannel(BaseNotificationChannel):
 
             message_data = {}
 
-            # 优先使用 Markdown 格式
-            if content and markdown and MarkdownPayload:
-                message_data["markdown"] = MarkdownPayload(content=content)
-            elif content:
+            # QQ Bot API 要求：使用 markdown 时，content 也必须提供（作为降级文本）
+            if content:
                 message_data["content"] = content
+                # 同时提供 Markdown 格式（如果支持）
+                if markdown and MarkdownPayload:
+                    message_data["markdown"] = MarkdownPayload(content=content)
 
             # 只在 keyboard 非空时才传递
             if keyboard and len(keyboard) > 0:
@@ -600,18 +602,18 @@ class QQBotChannel(BaseNotificationChannel):
                 logger.warning("[QQ Bot] Bot 客户端未初始化，无法注册命令")
                 return
 
-            # 从 NotificationService 获取所有命令
-            commands = self.service.get_available_commands()
-            if not commands:
+            # 从 NotificationService 获取菜单命令
+            menu_commands = self.service.get_menu_commands()
+            if not menu_commands:
                 logger.info("[QQ Bot] 没有可注册的命令")
                 return
 
             # 构建命令列表（QQ Bot API 格式）
             command_list = []
-            for cmd in commands:
+            for cmd_name, cmd_desc in menu_commands.items():
                 command_list.append({
-                    "name": cmd.get("command", ""),
-                    "description": cmd.get("description", ""),
+                    "name": cmd_name.lstrip('/'),  # 去掉开头的 /
+                    "description": cmd_desc,
                 })
 
             if not command_list:
