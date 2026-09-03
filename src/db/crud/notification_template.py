@@ -6,7 +6,7 @@ import logging
 from typing import Optional, Dict, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.crud.config import get_config_value, set_config_value
+from src.db.crud.config import get_config_value, update_config_value
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ async def update_notification_template(
     }
     value_str = json.dumps(data, ensure_ascii=False)
 
-    await set_config_value(session, key, value_str)
+    await update_config_value(session, key, value_str)
     return True
 
 
