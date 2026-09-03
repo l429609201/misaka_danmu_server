@@ -167,11 +167,7 @@ class QQBotChannel(BaseNotificationChannel):
 
             content = message.content.strip()
             user_openid = message.author.user_openid
-            # botpy 的 User 对象没有 username，直接使用 user_openid
-            username = user_openid
             msg_id = message.id
-
-            bot_raw_logger.info(f"收到QQ单聊消息: user={username}, content={content}")
 
             # 检查管理员权限（如果配置了白名单）
             if self.admin_whitelist:
@@ -247,11 +243,7 @@ class QQBotChannel(BaseNotificationChannel):
             content = message.content.strip()
             user_openid = message.author.user_openid
             group_openid = message.group_openid
-            # botpy 的 User 对象没有 username，直接使用 user_openid
-            username = user_openid
             msg_id = message.id
-
-            bot_raw_logger.info(f"收到QQ群聊消息: group={group_openid}, user={username}, content={content}")
 
             # 检查管理员权限（如果配置了白名单）
             if self.admin_whitelist:
@@ -316,12 +308,15 @@ class QQBotChannel(BaseNotificationChannel):
     async def _handle_interaction(self, interaction):
         """处理按钮交互回调"""
         try:
-            callback_data = interaction.data.resolved.button_data
-            user_openid = interaction.data.resolved.user_id
-
-            bot_raw_logger.info(f"收到QQ按钮回调: user={user_openid}, data={callback_data}")
+            # 记录原始交互（仅在开启 log_raw 时）
+            self._log_raw("⬇️ 收到按钮回调", {
+                "user_openid": interaction.data.resolved.user_id,
+                "callback_data": interaction.data.resolved.button_data,
+            })
 
             # TODO: 处理按钮回调逻辑
+            # callback_data = interaction.data.resolved.button_data
+            # user_openid = interaction.data.resolved.user_id
             # 可以调用 notification_service.handle_callback() 或其他处理方法
 
         except Exception as e:
@@ -600,7 +595,11 @@ class QQBotChannel(BaseNotificationChannel):
         logger.info(f"QQ Bot 渠道已停止: {self.name}")
 
     async def _register_commands(self):
-        """注册菜单命令到 QQ Bot"""
+        """注册菜单命令到 QQ Bot（快捷指令面板）
+
+        QQ Bot 的"指令模板"功能需要通过 API 设置，会在输入框底部显示快捷指令菜单。
+        注意：单聊和群聊需要分别设置。
+        """
         try:
             if not self._bot_client:
                 logger.warning("[QQ Bot] Bot 客户端未初始化，无法注册命令")
@@ -617,34 +616,50 @@ class QQBotChannel(BaseNotificationChannel):
             for cmd_name, cmd_desc in menu_commands.items():
                 command_list.append({
                     "name": cmd_name.lstrip('/'),  # 去掉开头的 /
-                    "description": cmd_desc,
+                    "desc": cmd_desc,  # QQ Bot API 使用 "desc" 而非 "description"
                 })
 
             if not command_list:
                 logger.info("[QQ Bot] 命令列表为空，跳过注册")
                 return
 
-            # 调用 QQ Bot API 注册命令
-            try:
-                # botpy 的命令注册 API（需要使用 api 对象）
-                # 参考：https://bot.q.qq.com/wiki/develop/api/openapi/setting/commands_setting.html
-                api = self._bot_client.api
-                guild_id = None  # 全局命令设置为 None
+            # 调用 QQ Bot API 注册命令（单聊和群聊都需要注册）
+            success_count = 0
 
-                await api.set_commands(
-                    guild_id=guild_id,
-                    commands=command_list,
-                )
+            # 1. 尝试注册单聊指令模板
+            if self.user_openid:
+                try:
+                    await self._bot_client.api.post(
+                        f"/applications/{self.app_id}/commands",
+                        json={"commands": command_list}
+                    )
+                    success_count += 1
+                    logger.info(f"[QQ Bot] 单聊指令模板注册成功: {len(command_list)} 条命令")
+                except Exception as e:
+                    logger.warning(f"[QQ Bot] 单聊指令模板注册失败: {e}")
 
-                logger.info(f"[QQ Bot] 菜单命令注册成功: {len(command_list)} 条命令")
+            # 2. 尝试注册群聊指令模板
+            if self.group_openid:
+                try:
+                    await self._bot_client.api.post(
+                        f"/applications/{self.app_id}/commands",
+                        json={"commands": command_list}
+                    )
+                    success_count += 1
+                    logger.info(f"[QQ Bot] 群聊指令模板注册成功: {len(command_list)} 条命令")
+                except Exception as e:
+                    logger.warning(f"[QQ Bot] 群聊指令模板注册失败: {e}")
+
+            # 如果注册成功，输出命令列表
+            if success_count > 0:
+                logger.info("[QQ Bot] 已注册的快捷指令：")
                 for cmd in command_list:
-                    logger.info(f"  - /{cmd['name']}: {cmd['description']}")
-
-            except Exception as e:
-                logger.error(f"[QQ Bot] 命令注册 API 调用失败: {e}")
-                logger.info("[QQ Bot] 请手动在 QQ 开放平台后台配置以下命令：")
+                    logger.info(f"  /{cmd['name']} - {cmd['desc']}")
+            else:
+                # 都失败了，提示手动配置
+                logger.warning("[QQ Bot] 指令模板注册失败，请手动在 QQ 开放平台后台配置以下命令：")
                 for cmd in command_list:
-                    logger.info(f"  - /{cmd['name']}: {cmd['description']}")
+                    logger.info(f"  /{cmd['name']} - {cmd['desc']}")
 
         except Exception as e:
             logger.error(f"[QQ Bot] 命令注册失败: {e}", exc_info=True)
