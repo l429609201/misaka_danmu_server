@@ -5,7 +5,6 @@
 - 旧版：{"event_name": true/false}
 - 新版：{"version": 2, "scopes": {"scope_key": true/false}}
 """
-import json
 import logging
 from typing import Dict, Any
 
@@ -119,41 +118,38 @@ def _get_all_scope_keys() -> list:
 
 
 async def migrate_all_channels_to_v2(session):
-    """迁移所有渠道的通知配置到 V2
+    """将旧渠道订阅配置一次性重置为 V2 全关闭。
 
-    Args:
-        session: 数据库会话（AsyncSession）
+    why：旧事件名与新发送范围并非一一对应，继续维护映射只会引入歧义。
+    已经是 V2 的配置必须跳过，避免应用每次启动都清空用户的新设置。
     """
     from src.db.crud import notification as crud_notification
 
     channels = await crud_notification.get_all_notification_channels(session)
+    disabled_config = {
+        "version": 2,
+        "scopes": {key: False for key in _get_all_scope_keys()},
+    }
+    reset_count = 0
 
-    migrated_count = 0
     for channel in channels:
-        try:
-            old_config_str = channel.get("eventsConfig", "{}")
-            old_config = json.loads(old_config_str) if old_config_str else {}
+        current_config = channel.get("eventsConfig")
+        if isinstance(current_config, dict) and current_config.get("version") == 2:
+            continue
 
-            # 检查是否需要迁移
-            if isinstance(old_config, dict) and old_config.get("version") == 2:
-                logger.debug(f"渠道 {channel['id']} 已是 V2 配置，跳过")
-                continue
+        await crud_notification.update_notification_channel(
+            session,
+            channel["id"],
+            events_config=disabled_config,
+        )
+        reset_count += 1
+        logger.info(
+            "渠道 %s (%s) 的旧订阅配置已重置为 V2 全关闭",
+            channel["id"],
+            channel.get("name", "Unknown"),
+        )
 
-            # 执行迁移
-            new_config = migrate_notification_event_config_v2(old_config)
-            new_config_str = json.dumps(new_config, ensure_ascii=False)
+    if reset_count:
+        await session.commit()
+    logger.info("通知订阅配置重置完成: %s 个渠道已更新", reset_count)
 
-            # 更新数据库
-            await crud_notification.update_notification_channel(
-                session,
-                channel["id"],
-                eventsConfig=new_config_str
-            )
-
-            migrated_count += 1
-            logger.info(f"渠道 {channel['id']} ({channel.get('name', 'Unknown')}) 配置已迁移到 V2")
-
-        except Exception as e:
-            logger.error(f"迁移渠道 {channel.get('id')} 配置失败: {e}", exc_info=True)
-
-    logger.info(f"通知配置迁移完成: {migrated_count} 个渠道已更新")
