@@ -349,12 +349,14 @@ class QQBotChannel(BaseNotificationChannel):
 
             message_data = {}
 
-            # QQ Bot API 要求：使用 markdown 时，content 也必须提供（作为降级文本）
+            # QQ API 消息类型必须与消息字段匹配：2=Markdown，0=纯文本
             if content:
                 message_data["content"] = content
-                # 同时提供 Markdown 格式（如果支持）
                 if markdown and MarkdownPayload:
+                    message_data["msg_type"] = 2
                     message_data["markdown"] = MarkdownPayload(content=content)
+                else:
+                    message_data["msg_type"] = 0
 
             # 只在 keyboard 非空时才传递
             if keyboard and len(keyboard) > 0:
@@ -406,12 +408,14 @@ class QQBotChannel(BaseNotificationChannel):
 
             message_data = {}
 
-            # QQ Bot API 要求：使用 markdown 时，content 也必须提供（作为降级文本）
+            # QQ API 消息类型必须与消息字段匹配：2=Markdown，0=纯文本
             if content:
                 message_data["content"] = content
-                # 同时提供 Markdown 格式（如果支持）
                 if markdown and MarkdownPayload:
+                    message_data["msg_type"] = 2
                     message_data["markdown"] = MarkdownPayload(content=content)
+                else:
+                    message_data["msg_type"] = 0
 
             # 只在 keyboard 非空时才传递
             if keyboard and len(keyboard) > 0:
