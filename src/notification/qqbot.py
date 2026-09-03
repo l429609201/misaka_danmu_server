@@ -28,6 +28,16 @@ def _get_botpy():
         raise ImportError("请安装 qq-botpy: pip install qq-botpy")
 
 
+def _get_markdown_payload():
+    """延迟导入 MarkdownPayload"""
+    try:
+        from botpy.types.message import MarkdownPayload
+        return MarkdownPayload
+    except ImportError:
+        logger.warning("无法导入 MarkdownPayload，将使用纯文本格式")
+        return None
+
+
 class QQBotChannel(BaseNotificationChannel):
     """QQ 官方 Bot 通知渠道 — 基于 WebSocket Gateway 的双向交互"""
 
@@ -107,6 +117,9 @@ class QQBotChannel(BaseNotificationChannel):
                 async def on_ready(self):
                     """Bot 连接成功回调"""
                     logger.info(f"QQ Bot WebSocket 已连接: {self.robot.name}")
+
+                    # 注册菜单命令
+                    await self.parent_channel._register_commands()
 
                 async def on_c2c_message_create(self, message):
                     """处理单聊（C2C）消息"""
@@ -321,16 +334,27 @@ class QQBotChannel(BaseNotificationChannel):
         keyboard: Optional[Dict] = None,
         image_url: Optional[str] = None,
         msg_id: Optional[str] = None,
+        markdown: bool = True,
     ):
-        """发送单聊消息（通过 botpy API）"""
+        """发送单聊消息（通过 botpy API）
+
+        :param markdown: 是否使用 Markdown 格式（默认 True）
+        """
         if not self._bot_client:
             logger.error("Bot 客户端未初始化")
             return
 
         try:
+            MarkdownPayload = _get_markdown_payload()
+
             message_data = {}
-            if content:
+
+            # 优先使用 Markdown 格式
+            if content and markdown and MarkdownPayload:
+                message_data["markdown"] = MarkdownPayload(content=content)
+            elif content:
                 message_data["content"] = content
+
             # 只在 keyboard 非空时才传递
             if keyboard and len(keyboard) > 0:
                 message_data["keyboard"] = keyboard
@@ -366,16 +390,27 @@ class QQBotChannel(BaseNotificationChannel):
         keyboard: Optional[Dict] = None,
         image_url: Optional[str] = None,
         msg_id: Optional[str] = None,
+        markdown: bool = True,
     ):
-        """发送群聊消息（通过 botpy API）"""
+        """发送群聊消息（通过 botpy API）
+
+        :param markdown: 是否使用 Markdown 格式（默认 True）
+        """
         if not self._bot_client:
             logger.error("Bot 客户端未初始化")
             return
 
         try:
+            MarkdownPayload = _get_markdown_payload()
+
             message_data = {}
-            if content:
+
+            # 优先使用 Markdown 格式
+            if content and markdown and MarkdownPayload:
+                message_data["markdown"] = MarkdownPayload(content=content)
+            elif content:
                 message_data["content"] = content
+
             # 只在 keyboard 非空时才传递
             if keyboard and len(keyboard) > 0:
                 message_data["keyboard"] = keyboard
@@ -557,6 +592,56 @@ class QQBotChannel(BaseNotificationChannel):
 
         await super().stop()
         logger.info(f"QQ Bot 渠道已停止: {self.name}")
+
+    async def _register_commands(self):
+        """注册菜单命令到 QQ Bot"""
+        try:
+            if not self._bot_client:
+                logger.warning("[QQ Bot] Bot 客户端未初始化，无法注册命令")
+                return
+
+            # 从 NotificationService 获取所有命令
+            commands = self.service.get_available_commands()
+            if not commands:
+                logger.info("[QQ Bot] 没有可注册的命令")
+                return
+
+            # 构建命令列表（QQ Bot API 格式）
+            command_list = []
+            for cmd in commands:
+                command_list.append({
+                    "name": cmd.get("command", ""),
+                    "description": cmd.get("description", ""),
+                })
+
+            if not command_list:
+                logger.info("[QQ Bot] 命令列表为空，跳过注册")
+                return
+
+            # 调用 QQ Bot API 注册命令
+            try:
+                # botpy 的命令注册 API（需要使用 api 对象）
+                # 参考：https://bot.q.qq.com/wiki/develop/api/openapi/setting/commands_setting.html
+                api = self._bot_client.api
+                guild_id = None  # 全局命令设置为 None
+
+                await api.set_commands(
+                    guild_id=guild_id,
+                    commands=command_list,
+                )
+
+                logger.info(f"[QQ Bot] 菜单命令注册成功: {len(command_list)} 条命令")
+                for cmd in command_list:
+                    logger.info(f"  - /{cmd['name']}: {cmd['description']}")
+
+            except Exception as e:
+                logger.error(f"[QQ Bot] 命令注册 API 调用失败: {e}")
+                logger.info("[QQ Bot] 请手动在 QQ 开放平台后台配置以下命令：")
+                for cmd in command_list:
+                    logger.info(f"  - /{cmd['name']}: {cmd['description']}")
+
+        except Exception as e:
+            logger.error(f"[QQ Bot] 命令注册失败: {e}", exc_info=True)
 
     @staticmethod
     def get_config_schema() -> List[Dict]:
@@ -774,12 +859,22 @@ class QQBotChannel(BaseNotificationChannel):
                 llm_text, images = text, []
 
             # 调用 Agent 处理（阻塞等待完整响应）
-            response = await self.service.handle_llm_chat(
+            result = await self.service.handle_llm_chat(
                 text=llm_text or text,
                 user_id=user_id,
-                channel=self,
                 images=images if images else None,
+                stream_callback=None,  # QQ 不支持流式
+                rich_text=False,  # QQ 不支持富文本
+                rich_message=False,
             )
+
+            # 提取响应文本
+            if result and hasattr(result, 'text') and result.text:
+                response = result.text
+            elif isinstance(result, str):
+                response = result
+            else:
+                response = None
 
             if not response or not response.strip():
                 logger.warning(f"[QQ LLM] Agent 返回空响应")
@@ -831,12 +926,22 @@ class QQBotChannel(BaseNotificationChannel):
                 llm_text, images = text, []
 
             # 调用 Agent 处理（阻塞等待完整响应）
-            response = await self.service.handle_llm_chat(
+            result = await self.service.handle_llm_chat(
                 text=llm_text or text,
                 user_id=user_id,
-                channel=self,
                 images=images if images else None,
+                stream_callback=None,  # QQ 不支持流式
+                rich_text=False,  # QQ 不支持富文本
+                rich_message=False,
             )
+
+            # 提取响应文本
+            if result and hasattr(result, 'text') and result.text:
+                response = result.text
+            elif isinstance(result, str):
+                response = result
+            else:
+                response = None
 
             if not response or not response.strip():
                 logger.warning(f"[QQ LLM Group] Agent 返回空响应")
