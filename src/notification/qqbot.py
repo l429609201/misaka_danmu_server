@@ -167,27 +167,54 @@ class QQBotChannel(BaseNotificationChannel):
                     logger.warning(f"用户 {user_openid} 不在管理员白名单中，忽略消息")
                     return
 
-            # 解析命令和参数
-            parts = content.strip().split(maxsplit=1)
-            command = parts[0].lstrip('/') if parts else ""
-            args = parts[1] if len(parts) > 1 else ""
+            # 判断是命令还是普通消息
+            if content.startswith('/'):
+                # 解析命令和参数
+                parts = content.strip().split(maxsplit=1)
+                command = parts[0].lstrip('/') if parts else ""
+                args = parts[1] if len(parts) > 1 else ""
 
-            # 处理命令（注意：父类中存储为 self.service，不是 self.notification_service）
-            result = await self.service.handle_command(
-                command=command,
-                user_id=user_openid,
-                args=args,
-                channel=self,
-            )
-
-            # 发送回复
-            if result and result.text:
-                await self._send_c2c_message(
-                    user_openid=user_openid,
-                    content=result.text,
-                    keyboard=result.reply_markup if hasattr(result, 'reply_markup') else None,
-                    msg_id=msg_id,
+                # 处理命令
+                result = await self.service.handle_command(
+                    command=command,
+                    user_id=user_openid,
+                    args=args,
+                    channel=self,
                 )
+
+                # 发送回复
+                if result and result.text:
+                    await self._send_c2c_message(
+                        user_openid=user_openid,
+                        content=result.text,
+                        keyboard=result.reply_markup if hasattr(result, 'reply_markup') else None,
+                        msg_id=msg_id,
+                    )
+            else:
+                # 普通消息：检查是否有活跃对话或触发 LLM Agent
+                conv = self.service.get_conversation(user_openid)
+                if not conv and await self.service.is_llm_chat_enabled():
+                    # 没有活跃对话且 LLM 可用 → 触发 Agent 对话
+                    await self._llm_chat_qq(
+                        text=content,
+                        user_id=user_openid,
+                        user_openid=user_openid,
+                        reply_msg_id=msg_id,
+                        message=message,  # 传递原始消息对象
+                    )
+                    return
+
+                # 有活跃对话 → 处理文本输入
+                result = await self.service.handle_text_input(
+                    content, user_openid, self
+                )
+                if result and result.text:
+                    await self._send_c2c_message(
+                        user_openid=user_openid,
+                        content=result.text,
+                        keyboard=result.reply_markup if hasattr(result, 'reply_markup') else None,
+                        msg_id=msg_id,
+                    )
 
         except Exception as e:
             logger.error(f"QQ Bot 处理单聊消息失败: {e}", exc_info=True)
@@ -220,28 +247,55 @@ class QQBotChannel(BaseNotificationChannel):
                     logger.warning(f"用户 {user_openid} 不在管理员白名单中，忽略消息")
                     return
 
-            # 解析命令和参数
-            parts = content.strip().split(maxsplit=1)
-            command = parts[0].lstrip('/') if parts else ""
-            args = parts[1] if len(parts) > 1 else ""
+            # 判断是命令还是普通消息
+            if content.startswith('/'):
+                # 解析命令和参数
+                parts = content.strip().split(maxsplit=1)
+                command = parts[0].lstrip('/') if parts else ""
+                args = parts[1] if len(parts) > 1 else ""
 
-            # 处理命令（注意：父类中存储为 self.service，不是 self.notification_service）
-            result = await self.service.handle_command(
-                command=command,
-                user_id=user_openid,
-                args=args,
-                channel=self,
-                group_openid=group_openid,
-            )
-
-            # 发送回复
-            if result and result.text:
-                await self._send_group_message(
+                # 处理命令
+                result = await self.service.handle_command(
+                    command=command,
+                    user_id=user_openid,
+                    args=args,
+                    channel=self,
                     group_openid=group_openid,
-                    content=result.text,
-                    keyboard=result.reply_markup if hasattr(result, 'reply_markup') else None,
-                    msg_id=msg_id,
                 )
+
+                # 发送回复
+                if result and result.text:
+                    await self._send_group_message(
+                        group_openid=group_openid,
+                        content=result.text,
+                        keyboard=result.reply_markup if hasattr(result, 'reply_markup') else None,
+                        msg_id=msg_id,
+                    )
+            else:
+                # 普通消息：检查是否有活跃对话或触发 LLM Agent
+                conv = self.service.get_conversation(user_openid)
+                if not conv and await self.service.is_llm_chat_enabled():
+                    # 没有活跃对话且 LLM 可用 → 触发 Agent 对话（群聊版本）
+                    await self._llm_chat_qq_group(
+                        text=content,
+                        user_id=user_openid,
+                        group_openid=group_openid,
+                        reply_msg_id=msg_id,
+                        message=message,  # 传递原始消息对象
+                    )
+                    return
+
+                # 有活跃对话 → 处理文本输入
+                result = await self.service.handle_text_input(
+                    content, user_openid, self
+                )
+                if result and result.text:
+                    await self._send_group_message(
+                        group_openid=group_openid,
+                        content=result.text,
+                        keyboard=result.reply_markup if hasattr(result, 'reply_markup') else None,
+                        msg_id=msg_id,
+                    )
 
         except Exception as e:
             logger.error(f"QQ Bot 处理群聊消息失败: {e}", exc_info=True)
@@ -277,7 +331,8 @@ class QQBotChannel(BaseNotificationChannel):
             message_data = {}
             if content:
                 message_data["content"] = content
-            if keyboard:
+            # 只在 keyboard 非空时才传递
+            if keyboard and len(keyboard) > 0:
                 message_data["keyboard"] = keyboard
             if image_url:
                 message_data["image"] = image_url
@@ -321,7 +376,8 @@ class QQBotChannel(BaseNotificationChannel):
             message_data = {}
             if content:
                 message_data["content"] = content
-            if keyboard:
+            # 只在 keyboard 非空时才传递
+            if keyboard and len(keyboard) > 0:
                 message_data["keyboard"] = keyboard
             if image_url:
                 message_data["image"] = image_url
@@ -467,7 +523,26 @@ class QQBotChannel(BaseNotificationChannel):
         await super().start()
         # 启动 Bot WebSocket 客户端
         self._start_bot_client()
+
+        # 注册菜单命令
+        menu_commands = self.service.get_menu_commands()
+        if menu_commands:
+            self.register_commands(menu_commands)
+
         logger.info(f"QQ Bot 渠道已启动: {self.name}")
+
+    def register_commands(self, commands: Dict[str, str]) -> None:
+        """注册 QQ Bot 菜单命令
+
+        注意：QQ Bot API 目前不支持通过 API 设置菜单命令，
+        需要在 QQ 开放平台后台手动配置。
+        这里只是记录日志，便于开发者了解需要配置哪些命令。
+
+        :param commands: {"/command": "描述"} 格式的命令字典
+        """
+        logger.info(f"QQ Bot 需要配置以下菜单命令（请在 QQ 开放平台后台手动配置）:")
+        for cmd, desc in commands.items():
+            logger.info(f"  {cmd} - {desc}")
 
     async def stop(self):
         """停止渠道"""
@@ -573,4 +648,220 @@ class QQBotChannel(BaseNotificationChannel):
             IMAGE_MODE_FIELD,
         ]
 
+    # 单张图片下载上限（超过则只给文字描述，不喂给 vision 模型）
+    _VISION_MAX_BYTES = 4 * 1024 * 1024
+
+    async def _download_photo_data_url(self, file_id: str) -> Optional[str]:
+        """
+        把 QQ 图片下载为 data URL（base64），供 vision 模型识别。
+
+        :param file_id: QQ 图片的 file_id
+        :return: data URL 或 None（失败时）
+        """
+        try:
+            if not self._bot_client:
+                return None
+
+            # QQ Bot API 获取文件下载 URL
+            file_info = await self._bot_client.api.get_file_info(file_id)
+            if not file_info or not file_info.get("url"):
+                logger.warning(f"[QQ 图片] 无法获取文件信息: file_id={file_id}")
+                return None
+
+            file_url = file_info["url"]
+
+            # 下载图片
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(file_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"[QQ 图片] 下载失败: status={resp.status}")
+                        return None
+
+                    raw = await resp.read()
+                    if len(raw) > self._VISION_MAX_BYTES:
+                        logger.info(f"[QQ 图片] 图片超过 {self._VISION_MAX_BYTES // 1024 // 1024}MB，跳过识别")
+                        return None
+
+                    # 转换为 base64 data URL
+                    import base64
+                    content_type = resp.headers.get('Content-Type', 'image/jpeg')
+                    if 'png' in content_type.lower():
+                        mime = 'image/png'
+                    elif 'gif' in content_type.lower():
+                        mime = 'image/gif'
+                    elif 'webp' in content_type.lower():
+                        mime = 'image/webp'
+                    else:
+                        mime = 'image/jpeg'
+
+                    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+
+        except Exception as e:
+            logger.warning(f"[QQ 图片] 下载失败: {e}")
+            return None
+
+    async def _normalize_incoming(self, message) -> tuple:
+        """
+        把一条 QQ 消息规范化为 (给 LLM 的文本, 图片 data URL 列表)。
+
+        处理的类型：
+        - 纯文本消息
+        - 图片消息（下载并转换为 data URL）
+        - 引用消息（提取被引用的内容作为上下文）
+
+        :return: (文本内容, 图片列表)
+        """
+        parts: List[str] = []
+        images: List[str] = []
+
+        # 获取消息内容
+        content = getattr(message, "content", "") or ""
+        if content:
+            parts.append(content.strip())
+
+        # 处理图片附件
+        attachments = getattr(message, "attachments", None)
+        if attachments and len(attachments) > 0:
+            parts.append("[用户发来图片]")
+            for attach in attachments:
+                # QQ Bot API 的图片附件结构
+                if attach.get("content_type", "").startswith("image/"):
+                    file_id = attach.get("id") or attach.get("file_id")
+                    if file_id:
+                        data_url = await self._download_photo_data_url(file_id)
+                        if data_url:
+                            images.append(data_url)
+                        else:
+                            parts.append("（图片过大或下载失败，无法识别内容，请让用户改用文字描述）")
+
+        # 处理引用消息
+        reference = getattr(message, "message_reference", None)
+        if reference:
+            ref_msg_id = reference.get("message_id")
+            if ref_msg_id:
+                parts.insert(0, f"[用户引用了之前的消息 ID: {ref_msg_id}]")
+
+        # 兜底
+        if not parts:
+            parts.append("[用户发来一条无法识别的消息]（请让用户改用文字说明需求）")
+
+        return "\n".join(parts), images
+
+    async def _llm_chat_qq(
+        self,
+        text: str,
+        user_id: str,
+        user_openid: str,
+        reply_msg_id: str,
+        message = None,
+    ):
+        """QQ Bot LLM 对话（非流式，直接发送完整回复）
+
+        QQ Bot API 不支持编辑消息，所以无法像 Telegram 一样实现伪流式。
+        只能等 Agent 完成后一次性发送完整回复。
+
+        :param message: 原始消息对象，用于提取图片等附件
+        """
+        try:
+            logger.info(f"[QQ LLM] 开始处理用户消息: user={user_id}, text={text[:50]}...")
+
+            # 规范化消息（提取文本和图片）
+            if message:
+                llm_text, images = await self._normalize_incoming(message)
+            else:
+                llm_text, images = text, []
+
+            # 调用 Agent 处理（阻塞等待完整响应）
+            response = await self.service.handle_llm_chat(
+                text=llm_text or text,
+                user_id=user_id,
+                channel=self,
+                images=images if images else None,
+            )
+
+            if not response or not response.strip():
+                logger.warning(f"[QQ LLM] Agent 返回空响应")
+                await self._send_c2c_message(
+                    user_openid=user_openid,
+                    content="抱歉，我现在无法回复您的消息。",
+                    msg_id=reply_msg_id,
+                )
+                return
+
+            # 发送完整回复
+            logger.info(f"[QQ LLM] Agent 响应完成，长度: {len(response)}")
+            await self._send_c2c_message(
+                user_openid=user_openid,
+                content=response,
+                msg_id=reply_msg_id,
+            )
+
+        except Exception as e:
+            logger.error(f"[QQ LLM] 处理失败: {e}", exc_info=True)
+            try:
+                await self._send_c2c_message(
+                    user_openid=user_openid,
+                    content="抱歉，处理您的消息时出现错误。",
+                    msg_id=reply_msg_id,
+                )
+            except Exception:
+                pass
+
+    async def _llm_chat_qq_group(
+        self,
+        text: str,
+        user_id: str,
+        group_openid: str,
+        reply_msg_id: str,
+        message = None,
+    ):
+        """QQ Bot 群聊 LLM 对话（非流式，直接发送完整回复）
+
+        :param message: 原始消息对象，用于提取图片等附件
+        """
+        try:
+            logger.info(f"[QQ LLM Group] 开始处理群聊消息: group={group_openid}, user={user_id}, text={text[:50]}...")
+
+            # 规范化消息（提取文本和图片）
+            if message:
+                llm_text, images = await self._normalize_incoming(message)
+            else:
+                llm_text, images = text, []
+
+            # 调用 Agent 处理（阻塞等待完整响应）
+            response = await self.service.handle_llm_chat(
+                text=llm_text or text,
+                user_id=user_id,
+                channel=self,
+                images=images if images else None,
+            )
+
+            if not response or not response.strip():
+                logger.warning(f"[QQ LLM Group] Agent 返回空响应")
+                await self._send_group_message(
+                    group_openid=group_openid,
+                    content="抱歉，我现在无法回复您的消息。",
+                    msg_id=reply_msg_id,
+                )
+                return
+
+            # 发送完整回复
+            logger.info(f"[QQ LLM Group] Agent 响应完成，长度: {len(response)}")
+            await self._send_group_message(
+                group_openid=group_openid,
+                content=response,
+                msg_id=reply_msg_id,
+            )
+
+        except Exception as e:
+            logger.error(f"[QQ LLM Group] 处理失败: {e}", exc_info=True)
+            try:
+                await self._send_group_message(
+                    group_openid=group_openid,
+                    content="抱歉，处理您的消息时出现错误。",
+                    msg_id=reply_msg_id,
+                )
+            except Exception:
+                pass
 
