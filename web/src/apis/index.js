@@ -1261,6 +1261,20 @@ export const testNotificationChannel = (channelId) => api.post(`/api/ui/notifica
 /** 校验外链模式使用的自定义域名与图片静态路由 */
 export const validateNotificationPublicDomain = () => api.get('/api/ui/notification/public-domain/validate')
 
+// ========== 通知模板 ==========
+
+/** 获取所有通知模板摘要 */
+export const getNotificationTemplates = () => api.get('/api/ui/notification/templates')
+
+/** 获取单个通知模板详情 */
+export const getNotificationTemplate = (templateId) => api.get(`/api/ui/notification/templates/${templateId}`)
+
+/** 更新通知模板 */
+export const updateNotificationTemplate = (templateId, data) => api.put(`/api/ui/notification/templates/${templateId}`, data)
+
+/** 预览通知模板 */
+export const previewNotificationTemplate = (data) => api.post('/api/ui/notification/templates/preview', data)
+
 
 // ========== 海报搜索 ==========
 

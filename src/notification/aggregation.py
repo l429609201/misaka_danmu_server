@@ -6,6 +6,9 @@ NotificationAggregator — 统一聚合管理
 - 数量阈值聚合（COUNT_THRESHOLD）：达到数量后合并
 - 去重：相同 aggregation_key 在窗口内不重复记录
 - 不直接调用渠道，只返回待发送消息给 NotificationManager
+
+注意：当前版本保留聚合器架构，但新的通用事件系统暂不使用聚合功能。
+      未来如需要聚合，可基于 UnifiedTaskMessage 实现。
 """
 import datetime
 import logging
@@ -14,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from src.notification.messages.base import AggregationPolicy, NotificationMessage
-from src.notification.messages.task import AggregatedSummaryMessage
+from src.notification.messages.unified import UnifiedTaskMessage
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +185,7 @@ class NotificationAggregator:
         return [summary]
 
     def _build_summary(self, bucket: AggregationBucket) -> NotificationMessage:
-        """从明细消息生成汇总消息"""
+        """从明细消息生成汇总消息（使用 UnifiedTaskMessage）"""
         items = []
         for msg in bucket.messages:
             items.append(msg.payload)
@@ -190,15 +193,17 @@ class NotificationAggregator:
         now_str = datetime.datetime.now().strftime("%H:%M:%S")
         start_str = datetime.datetime.fromtimestamp(bucket.created_at).strftime("%H:%M:%S")
 
-        return AggregatedSummaryMessage(
-            message_type="aggregated_summary",
-            payload={
+        # 使用 UnifiedTaskMessage 包装汇总消息
+        return UnifiedTaskMessage(
+            template_id="aggregated_summary",  # 需要在模板系统中添加此模板
+            context={
                 "count": len(bucket.messages),
                 "items": items,
                 "time_range": f"{start_str} ~ {now_str}",
                 "original_subscription_key": bucket.subscription_key,
                 "aggregation_key": bucket.key,
             },
+            subscription_key=bucket.subscription_key,
         )
 
     @staticmethod

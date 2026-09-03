@@ -1,25 +1,29 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Card, Button, Tag, Switch, Space, Form, Input, Select, Slider, Segmented,
-  Popconfirm, Spin, Empty, message, Tooltip, Row, Col,
+  Popconfirm, Spin, Empty, message, Tooltip, Row, Col, Typography,
 } from 'antd'
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, ApiOutlined,
-  ReloadOutlined, CopyOutlined,
+  ReloadOutlined, CopyOutlined, FormOutlined,
 } from '@ant-design/icons'
 import copy from 'copy-to-clipboard'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store/index.js'
 import { ResponsiveTable } from '../../../components/ResponsiveTable'
 import { ResponsiveModal } from '../../../components/ResponsiveModal'
+import { NotificationTemplateEditor } from './NotificationTemplateEditor'
 import {
   getNotificationChannelTypes, getNotificationChannels,
   createNotificationChannel, updateNotificationChannel,
   deleteNotificationChannel, testNotificationChannel,
   getWebhookApikey, validateNotificationPublicDomain,
+  getNotificationTemplates,
 } from '../../../apis'
 import { useTranslation } from 'react-i18next'
 import { getLocalizedField } from '../../../utils/i18nDynamic'
+
+const { Text } = Typography
 
 // 事件分组定义（使用 t 函数，支持国际化）
 const getEventGroups = (t) => [
@@ -118,6 +122,12 @@ export const Notification = () => {
   const [webhookApiKey, setWebhookApiKey] = useState('')
   const [form] = Form.useForm()
 
+  // 模板相关状态
+  const [templates, setTemplates] = useState([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templateEditorVisible, setTemplateEditorVisible] = useState(false)
+  const [editingTemplateId, setEditingTemplateId] = useState(null)
+
   // 监听 channelType 和 config 变化以实现 visibleWhen
   const selectedType = Form.useWatch('channelType', form)
   const configValues = Form.useWatch('config', form)
@@ -138,9 +148,25 @@ export const Notification = () => {
     } finally {
       setLoading(false)
     }
+  }, [t])
+
+  // 加载模板列表
+  const loadTemplates = useCallback(async () => {
+    setTemplatesLoading(true)
+    try {
+      const res = await getNotificationTemplates()
+      setTemplates(res.data || [])
+    } catch (e) {
+      console.error('加载模板失败:', e)
+    } finally {
+      setTemplatesLoading(false)
+    }
   }, [])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    loadData()
+    loadTemplates()
+  }, [loadData, loadTemplates])
 
   const getSchemaForType = (type) => {
     const found = channelTypes.find(t => t.channelType === type)
@@ -264,6 +290,17 @@ export const Notification = () => {
       if (e.errorFields) return // form validation
       message.error(t('notification.saveFailed'))
     } finally { setSaving(false) }
+  }
+
+  // 打开模板编辑器
+  const handleEditTemplate = (templateId) => {
+    setEditingTemplateId(templateId)
+    setTemplateEditorVisible(true)
+  }
+
+  // 模板保存后刷新列表
+  const handleTemplateSaved = () => {
+    loadTemplates()
   }
 
   // 根据 schema 的 visibleWhen 判断字段是否可见
@@ -428,6 +465,45 @@ export const Notification = () => {
 
   return (
     <div>
+      {/* 通知模板卡片区域 */}
+      <Card
+        title={t('notificationTemplate.cardTitle')}
+        style={{ marginBottom: 16 }}
+        loading={templatesLoading}
+      >
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          {t('notificationTemplate.cardDescription')}
+        </Text>
+        <Row gutter={[16, 16]}>
+          {templates.map(template => (
+            <Col xs={24} sm={12} md={8} lg={6} key={template.templateId}>
+              <Card
+                size="small"
+                hoverable
+                onClick={() => handleEditTemplate(template.templateId)}
+                style={{ cursor: 'pointer', height: '100%' }}
+              >
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Text strong>{template.displayName}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {template.description}
+                  </Text>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<FormOutlined />}
+                    style={{ padding: 0 }}
+                  >
+                    {t('notificationTemplate.editButton')}
+                  </Button>
+                </Space>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </Card>
+
+      {/* 通知渠道卡片 */}
       <Card
         title={t('notification.channelTitle')}
         extra={
@@ -628,6 +704,14 @@ export const Notification = () => {
           </Form.Item>
         </Form>
       </ResponsiveModal>
+
+      {/* 模板编辑器弹窗 */}
+      <NotificationTemplateEditor
+        visible={templateEditorVisible}
+        templateId={editingTemplateId}
+        onClose={() => setTemplateEditorVisible(false)}
+        onSaved={handleTemplateSaved}
+      />
     </div>
   )
 }

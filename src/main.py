@@ -34,6 +34,7 @@ from src.api import api_router, control_router
 _load_step("API 路由与搜索源/元数据源已加载")
 from src.api.dandan import dandan_router
 from src.api.mcp import setup_mcp
+from src.routes.notification_template import router as notification_template_router
 from src.frontend import register_pwa_routes
 from src.utils.asgi_middleware import NotFoundGuardMiddleware, CaptureApiResponseMiddleware
 from src.api.control.openapi_docs import register_control_api_docs
@@ -122,6 +123,9 @@ app.include_router(dandan_router, prefix="/api/v1", tags=["DanDanPlay Compatible
 
 # 包含所有非 dandanplay 的 API 路由
 app.include_router(api_router, prefix="/api")
+
+# 包含通知模板 API 路由
+app.include_router(notification_template_router)
 
 # --- MCP Server 初始化 ---
 # 必须在所有路由注册完毕后调用，这样 fastapi-mcp 才能扫描到所有外部控制 API

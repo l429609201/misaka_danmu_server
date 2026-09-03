@@ -310,6 +310,18 @@ async def _run_startup_services(app: FastAPI, session_factory, startup_start: fl
     app.state.notification_service.notification_manager = app.state.notification_manager
     await app.state.notification_manager.start_channels()
 
+    # 初始化通知模板和迁移配置到 V2
+    logger.info("初始化通知模板和迁移配置...")
+    async with session_factory() as session:
+        from src.db.crud.notification_template import ensure_default_templates
+        from src.db.migrations.migrate_notification_v2 import migrate_all_channels_to_v2
+        try:
+            await ensure_default_templates(session)
+            await migrate_all_channels_to_v2(session)
+            logger.info("通知模板和配置迁移完成")
+        except Exception as e:
+            logger.error(f"通知模板初始化或配置迁移失败: {e}", exc_info=True)
+
     # 初始化 TunnelService
     app.state.tunnel_service = TunnelService()
     await _apply_tunnel_from_channels(app)

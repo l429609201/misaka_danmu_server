@@ -333,6 +333,11 @@ class QQBotChannel(BaseNotificationChannel):
     ):
         """发送单聊消息（通过 botpy API）
 
+        图片发送流程：
+        1. 先调用 post_c2c_file 上传图片获取 Media 对象
+        2. 再以 msg_type=7, media=Media 发送图片消息
+        3. 文本/Markdown 与图片拆分为独立消息
+
         :param markdown: 是否使用 Markdown 格式（默认 True）
         """
         if not self._bot_client:
@@ -340,44 +345,83 @@ class QQBotChannel(BaseNotificationChannel):
             return
 
         try:
-            MarkdownPayload = _get_markdown_payload()
+            # 第一步：如果有图片，先上传并发送图片消息
+            if image_url:
+                try:
+                    self._log_raw("⬆️ 上传单聊图片", {
+                        "user_openid": user_openid,
+                        "image_url": image_url,
+                    })
 
-            message_data = {}
+                    # 上传图片获取 Media 对象
+                    media_response = await self._bot_client.api.post_c2c_file(
+                        openid=user_openid,
+                        file_type=1,  # 1=图片
+                        url=image_url,
+                        srv_send_msg=False,  # 不自动发送，手动控制
+                    )
 
-            # QQ API 消息类型必须与消息字段匹配：2=Markdown，0=纯文本
+                    if media_response and hasattr(media_response, 'file_info'):
+                        # 发送图片消息
+                        image_message_data = {
+                            "msg_type": 7,  # 7=富媒体消息
+                            "media": media_response,
+                        }
+                        if msg_id:
+                            image_message_data["msg_id"] = msg_id
+
+                        await self._bot_client.api.post_c2c_message(
+                            openid=user_openid,
+                            **image_message_data
+                        )
+
+                        logger.info(f"QQ Bot 单聊图片发送成功: user={user_openid}")
+                    else:
+                        logger.warning(f"QQ Bot 单聊图片上传失败，跳过图片: {image_url}")
+
+                except Exception as img_err:
+                    logger.error(f"QQ Bot 单聊图片发送失败，将只发送文本: {img_err}", exc_info=True)
+
+            # 第二步：如果有文本内容，发送文本/Markdown 消息
             if content:
-                message_data["content"] = content
+                MarkdownPayload = _get_markdown_payload()
+                message_data = {"content": content}
+
+                # QQ API 消息类型必须与消息字段匹配：2=Markdown，0=纯文本
                 if markdown and MarkdownPayload:
-                    message_data["msg_type"] = 2
-                    message_data["markdown"] = MarkdownPayload(content=content)
+                    try:
+                        message_data["msg_type"] = 2
+                        message_data["markdown"] = MarkdownPayload(content=content)
+                    except Exception as md_err:
+                        logger.warning(f"Markdown 创建失败，降级为纯文本: {md_err}")
+                        message_data["msg_type"] = 0
                 else:
                     message_data["msg_type"] = 0
 
-            # 只在 keyboard 非空时才传递
-            if keyboard and len(keyboard) > 0:
-                message_data["keyboard"] = keyboard
-            if image_url:
-                message_data["image"] = image_url
-            if msg_id:
-                message_data["msg_id"] = msg_id
+                # 只在 keyboard 非空时才传递
+                if keyboard and len(keyboard) > 0:
+                    message_data["keyboard"] = keyboard
+                if msg_id and not image_url:  # 如果已经在图片消息中使用了 msg_id，这里不重复
+                    message_data["msg_id"] = msg_id
 
-            # 记录发送请求
-            self._log_raw("⬆️ 发送单聊消息", {
-                "user_openid": user_openid,
-                "message_data": message_data,
-            })
+                # 记录发送请求
+                self._log_raw("⬆️ 发送单聊消息", {
+                    "user_openid": user_openid,
+                    "message_data": message_data,
+                })
 
-            await self._bot_client.api.post_c2c_message(
-                openid=user_openid,
-                **message_data
-            )
+                await self._bot_client.api.post_c2c_message(
+                    openid=user_openid,
+                    **message_data
+                )
 
-            # 记录发送成功
-            self._log_raw("✅ 单聊消息发送成功", {
-                "user_openid": user_openid,
-            })
+                # 记录发送成功
+                self._log_raw("✅ 单聊消息发送成功", {
+                    "user_openid": user_openid,
+                })
 
-            logger.info(f"QQ Bot 单聊消息发送成功: user={user_openid}")
+                logger.info(f"QQ Bot 单聊文本发送成功: user={user_openid}")
+
         except Exception as e:
             logger.error(f"QQ Bot 单聊消息发送失败: {e}", exc_info=True)
 
@@ -392,6 +436,11 @@ class QQBotChannel(BaseNotificationChannel):
     ):
         """发送群聊消息（通过 botpy API）
 
+        图片发送流程：
+        1. 先调用 post_group_file 上传图片获取 Media 对象
+        2. 再以 msg_type=7, media=Media 发送图片消息
+        3. 文本/Markdown 与图片拆分为独立消息
+
         :param markdown: 是否使用 Markdown 格式（默认 True）
         """
         if not self._bot_client:
@@ -399,44 +448,83 @@ class QQBotChannel(BaseNotificationChannel):
             return
 
         try:
-            MarkdownPayload = _get_markdown_payload()
+            # 第一步：如果有图片，先上传并发送图片消息
+            if image_url:
+                try:
+                    self._log_raw("⬆️ 上传群聊图片", {
+                        "group_openid": group_openid,
+                        "image_url": image_url,
+                    })
 
-            message_data = {}
+                    # 上传图片获取 Media 对象
+                    media_response = await self._bot_client.api.post_group_file(
+                        group_openid=group_openid,
+                        file_type=1,  # 1=图片
+                        url=image_url,
+                        srv_send_msg=False,  # 不自动发送，手动控制
+                    )
 
-            # QQ API 消息类型必须与消息字段匹配：2=Markdown，0=纯文本
+                    if media_response and hasattr(media_response, 'file_info'):
+                        # 发送图片消息
+                        image_message_data = {
+                            "msg_type": 7,  # 7=富媒体消息
+                            "media": media_response,
+                        }
+                        if msg_id:
+                            image_message_data["msg_id"] = msg_id
+
+                        await self._bot_client.api.post_group_message(
+                            group_openid=group_openid,
+                            **image_message_data
+                        )
+
+                        logger.info(f"QQ Bot 群聊图片发送成功: group={group_openid}")
+                    else:
+                        logger.warning(f"QQ Bot 群聊图片上传失败，跳过图片: {image_url}")
+
+                except Exception as img_err:
+                    logger.error(f"QQ Bot 群聊图片发送失败，将只发送文本: {img_err}", exc_info=True)
+
+            # 第二步：如果有文本内容，发送文本/Markdown 消息
             if content:
-                message_data["content"] = content
+                MarkdownPayload = _get_markdown_payload()
+                message_data = {"content": content}
+
+                # QQ API 消息类型必须与消息字段匹配：2=Markdown，0=纯文本
                 if markdown and MarkdownPayload:
-                    message_data["msg_type"] = 2
-                    message_data["markdown"] = MarkdownPayload(content=content)
+                    try:
+                        message_data["msg_type"] = 2
+                        message_data["markdown"] = MarkdownPayload(content=content)
+                    except Exception as md_err:
+                        logger.warning(f"Markdown 创建失败，降级为纯文本: {md_err}")
+                        message_data["msg_type"] = 0
                 else:
                     message_data["msg_type"] = 0
 
-            # 只在 keyboard 非空时才传递
-            if keyboard and len(keyboard) > 0:
-                message_data["keyboard"] = keyboard
-            if image_url:
-                message_data["image"] = image_url
-            if msg_id:
-                message_data["msg_id"] = msg_id
+                # 只在 keyboard 非空时才传递
+                if keyboard and len(keyboard) > 0:
+                    message_data["keyboard"] = keyboard
+                if msg_id and not image_url:  # 如果已经在图片消息中使用了 msg_id，这里不重复
+                    message_data["msg_id"] = msg_id
 
-            # 记录发送请求
-            self._log_raw("⬆️ 发送群聊消息", {
-                "group_openid": group_openid,
-                "message_data": message_data,
-            })
+                # 记录发送请求
+                self._log_raw("⬆️ 发送群聊消息", {
+                    "group_openid": group_openid,
+                    "message_data": message_data,
+                })
 
-            await self._bot_client.api.post_group_message(
-                group_openid=group_openid,
-                **message_data
-            )
+                await self._bot_client.api.post_group_message(
+                    group_openid=group_openid,
+                    **message_data
+                )
 
-            # 记录发送成功
-            self._log_raw("✅ 群聊消息发送成功", {
-                "group_openid": group_openid,
-            })
+                # 记录发送成功
+                self._log_raw("✅ 群聊消息发送成功", {
+                    "group_openid": group_openid,
+                })
 
-            logger.info(f"QQ Bot 群聊消息发送成功: group={group_openid}")
+                logger.info(f"QQ Bot 群聊文本发送成功: group={group_openid}")
+
         except Exception as e:
             logger.error(f"QQ Bot 群聊消息发送失败: {e}", exc_info=True)
 

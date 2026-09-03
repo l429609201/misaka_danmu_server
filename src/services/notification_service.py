@@ -436,21 +436,21 @@ class NotificationService(
 
     async def emit_task_progress(self, task_id: str, task_title: str, progress: int,
                                   description: str, check_event_key: str = "task_progress"):
-        """向 TG 渠道发送任务进度通知（edit 已有消息，其他渠道不推送进度）
+        """向支持编辑的渠道发送任务进度通知（edit 已有消息）
+
+        常态化实时进度：所有支持 MESSAGE_EDITING 能力的渠道都会收到进度更新，
+        不再检查 task_progress 订阅。进度消息通过编辑同一条消息实现，
+        不具备编辑能力的渠道（企业微信/Server酱）不会收到进度更新，避免刷屏。
 
         Args:
-            check_event_key: 检查用户是否订阅的事件 key。
-                - fallback 任务传 "download_fallback_complete"
-                - 普通下载任务传 "task_progress"
+            check_event_key: 已废弃，保留参数仅为兼容性（不再使用）
         """
         if not self.notification_manager:
             return
         channels = self.notification_manager.get_all_channels()
         for ch_id, channel_instance in channels.items():
             try:
-                events_cfg = channel_instance.config.get("__events_config", {})
-                if not events_cfg.get(check_event_key, False):
-                    continue
+                # 常态化实时进度：只按渠道能力判断，不检查订阅
                 # why：进度消息靠「编辑同一条消息」刷新百分比，只有声明了
                 # MESSAGE_EDITING 能力的渠道才支持。不具备该能力的渠道（企业微信/
                 # Server酱）若逐条推送进度，会变成刷屏的进度条垃圾消息，

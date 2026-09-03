@@ -2,11 +2,12 @@
 NotificationManager — 渠道动态加载与生命周期管理 + 统一通知出口
 参考 MediaServerManager 的多实例管理模式。
 
-C 方案重构后新增职责：
-- notify_event / notify_message / reply_message — 统一通知与交互出口
+新架构职责：
+- notify_event_v2 — 通用事件入口（task_event/system_event）
+- notify_message / reply_message — 直接消息发送与交互回复
 - dispatch — 遍历已启用渠道并发送
 - render_for_channel — 按渠道能力选择 Markdown / 纯文本
-- 接入 MessageRegistry 和 NotificationAggregator
+- 接入 TemplateResolver 和 SubscriptionMatcher
 """
 
 import asyncio
@@ -18,8 +19,12 @@ from typing import Callable, Dict, List, Optional, Any
 from src.db import crud
 from src.notification.base import BaseNotificationChannel, ChannelCapability, RenderedMessage
 from src.notification.messages.base import NotificationMessage
-from src.notification.messages.registry import MessageRegistry
 from src.notification.aggregation import NotificationAggregator
+# 新增导入
+from src.notification.events import EventContext, NotificationEvent
+from src.notification.template_resolver import TemplateResolver
+from src.notification.subscription_matcher import SubscriptionMatcher
+from src.notification.messages.unified import UnifiedTaskMessage, UnifiedSystemMessage
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +39,9 @@ class NotificationManager:
         self._channel_classes: Dict[str, type] = {}  # channel_type -> class
         self._discover_channel_classes()
 
-        # C 方案：消息注册表 & 聚合器
-        self._registry = MessageRegistry()
+        # 聚合器（保留用于未来的聚合功能，当前新事件系统不使用）
         self._aggregator = NotificationAggregator(time_window=30.0, max_count=10)
         self._flush_task: Optional[asyncio.Task] = None
-        self._register_message_types()
 
     def _discover_channel_classes(self):
         """自动发现 src/notification/ 下的渠道实现"""
@@ -57,53 +60,6 @@ class NotificationManager:
                         self._channel_classes[attr.channel_type] = attr
             except Exception as e:
                 logger.error(f"加载通知渠道模块 {modname} 失败: {e}", exc_info=True)
-
-    def _register_message_types(self):
-        """注册所有已知消息类型到注册表"""
-        from src.notification.messages.task import (
-            ImportMessage, AutoImportMessage, WebhookImportMessage,
-            RefreshMessage, IncrementalRefreshMessage,
-            ScheduledTaskMessage,
-            FallbackDownloadMessage, FallbackSearchMessage,
-            PredownloadMessage, MatchFallbackMessage,
-        )
-        from src.notification.messages.system import (
-            SystemStartMessage, WebhookTriggeredMessage,
-            MediaScanCompleteMessage, TaskProgressMessage,
-        )
-
-        self._registry.register_many({
-            # 导入类
-            "import_success": ImportMessage,
-            "import_failed": ImportMessage,
-            "auto_import_success": AutoImportMessage,
-            "auto_import_failed": AutoImportMessage,
-            "webhook_import_success": WebhookImportMessage,
-            "webhook_import_failed": WebhookImportMessage,
-            # 刷新类
-            "refresh_success": RefreshMessage,
-            "refresh_failed": RefreshMessage,
-            "incremental_refresh_success": IncrementalRefreshMessage,
-            "incremental_refresh_failed": IncrementalRefreshMessage,
-            # 定时任务
-            "scheduled_task_complete": ScheduledTaskMessage,
-            "scheduled_task_failed": ScheduledTaskMessage,
-            # 后备任务
-            "download_fallback_success": FallbackDownloadMessage,
-            "download_fallback_failed": FallbackDownloadMessage,
-            "fallback_search_success": FallbackSearchMessage,
-            "fallback_search_failed": FallbackSearchMessage,
-            "predownload_success": PredownloadMessage,
-            "predownload_failed": PredownloadMessage,
-            "match_fallback_success": MatchFallbackMessage,
-            "match_fallback_failed": MatchFallbackMessage,
-            # 系统
-            "system_start": SystemStartMessage,
-            "webhook_triggered": WebhookTriggeredMessage,
-            "media_scan_complete": MediaScanCompleteMessage,
-            "task_progress": TaskProgressMessage,
-        })
-        logger.debug(f"消息注册表初始化完成: {len(self._registry.get_all_types())} 种消息类型")
 
     async def _get_proxy_url(self) -> str:
         """从数据库读取全局代理 URL（仅 http_socks 模式下有效）"""
@@ -352,7 +308,7 @@ class NotificationManager:
     # ═══════════════════════════════════════════
 
     async def notify_event(self, event_type: str, payload: dict):
-        """业务层最常用入口 — 从事件创建消息对象并分发
+        """业务层最常用入口 — 从事件创建消息对象并分发（旧版本，兼容保留）
 
         Args:
             event_type: 事件类型标识
@@ -369,6 +325,72 @@ class NotificationManager:
         message.message_type = event_type
 
         await self.notify_message(message)
+
+    async def notify_event_v2(self, event_ctx: EventContext):
+        """通用事件入口 V2 — 使用 EventContext 处理通用事件
+
+        流程：
+        1. 解析事件到模板 ID（TemplateResolver）
+        2. 遍历所有已启用渠道
+        3. 判断每个渠道的发送范围（SubscriptionMatcher）
+        4. 创建统一消息对象（UnifiedTaskMessage/UnifiedSystemMessage）
+        5. 发送到匹配的渠道
+
+        Args:
+            event_ctx: 事件上下文对象
+        """
+        # 第一步：解析模板 ID
+        template_id = TemplateResolver.resolve(event_ctx)
+        if not template_id:
+            logger.warning(f"无法解析事件到模板: {event_ctx.to_dict()}")
+            return
+
+        # 第二步：创建消息对象
+        if event_ctx.event_type == NotificationEvent.TASK_EVENT:
+            message = UnifiedTaskMessage(
+                payload=event_ctx.to_dict(),
+                event_ctx=event_ctx,
+            )
+        elif event_ctx.event_type == NotificationEvent.SYSTEM_EVENT:
+            message = UnifiedSystemMessage(
+                payload=event_ctx.to_dict(),
+                event_ctx=event_ctx,
+            )
+        else:
+            logger.warning(f"未知事件类型: {event_ctx.event_type}")
+            return
+
+        # 设置消息类型为模板 ID
+        message.message_type = template_id
+
+        # 第三步：遍历渠道并判断发送范围
+        for ch_id, channel in self.channels.items():
+            try:
+                # 获取渠道的发送范围配置
+                events_cfg = channel.config.get("__events_config", {})
+
+                # 新版配置结构：{"version": 2, "scopes": {...}}
+                if isinstance(events_cfg, dict) and events_cfg.get("version") == 2:
+                    scopes = events_cfg.get("scopes", {})
+                else:
+                    # 旧版配置或空配置，使用默认范围
+                    scopes = SubscriptionMatcher.get_default_scopes()
+
+                # 判断是否应该发送
+                should_send = SubscriptionMatcher.should_send(event_ctx, scopes)
+
+                if not should_send:
+                    logger.debug(f"渠道 {ch_id} 不订阅此事件: {event_ctx.to_dict()}")
+                    continue
+
+                # 渲染并发送
+                rendered = self.render_for_channel(message, channel)
+                await channel.send_rendered(rendered)
+
+                logger.info(f"渠道 {ch_id} 发送通用事件成功: template={template_id}")
+
+            except Exception as e:
+                logger.error(f"渠道 {ch_id} 发送通用事件失败: {e}", exc_info=True)
 
     async def notify_message(self, message: NotificationMessage):
         """直接发送消息对象 — 经过聚合后分发"""
