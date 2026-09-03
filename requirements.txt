@@ -47,7 +47,7 @@ google-genai  # Google Gemini 官方 SDK (新版)
 # 御坂助手技能系统：解析 SKILL.md 的 YAML frontmatter
 PyYAML>=6.0
 # 通知模板渲染引擎
-Jinja2>=3.1.0
+Jinja2
 # Docker 容器管理功能依赖
 docker>=6.0.0  # Docker SDK for Python
 # Telegram 通知渠道

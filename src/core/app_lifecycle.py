@@ -314,7 +314,7 @@ async def _run_startup_services(app: FastAPI, session_factory, startup_start: fl
     logger.info("初始化通知模板和迁移配置...")
     async with session_factory() as session:
         from src.db.crud.notification_template import ensure_default_templates
-        from src.db.migrations.migrate_notification_v2 import migrate_all_channels_to_v2
+        from src.db.migration_scripts.migrate_notification_v2 import migrate_all_channels_to_v2
         try:
             await ensure_default_templates(session)
             await migrate_all_channels_to_v2(session)
