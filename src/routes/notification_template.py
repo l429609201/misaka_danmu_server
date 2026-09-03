@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.database import get_session
+from src.db.database import get_db_session
 from src.db.crud import notification_template as template_crud
 from src.services.template_renderer import get_template_renderer
 from src.notification.template_resolver import TemplateResolver
@@ -32,24 +32,24 @@ class TemplatePreviewRequest(BaseModel):
 
 @router.get("")
 async def get_templates(
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_db_session)
 ) -> Dict[str, Any]:
     """获取所有模板摘要"""
     templates = await template_crud.get_all_notification_templates(session)
-    
+
     # 添加显示名称
     for tmpl in templates:
         tmpl["displayName"] = TemplateResolver.get_template_display_name(tmpl["templateId"], "zh")
         tmpl["displayName_en"] = TemplateResolver.get_template_display_name(tmpl["templateId"], "en")
         tmpl["displayName_tw"] = TemplateResolver.get_template_display_name(tmpl["templateId"], "tw")
-    
-    return {"templates": templates}
+
+    return {"data": templates}
 
 
 @router.get("/{template_id}")
 async def get_template(
     template_id: str,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_db_session)
 ) -> Dict[str, Any]:
     """获取单个模板详情"""
     template = await template_crud.get_notification_template(session, template_id)
@@ -68,7 +68,7 @@ async def get_template(
 async def update_template(
     template_id: str,
     req: TemplateUpdateRequest,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_db_session)
 ) -> Dict[str, Any]:
     """更新模板"""
     # 验证模板语法
@@ -95,7 +95,7 @@ async def update_template(
 @router.post("/preview")
 async def preview_template(
     req: TemplatePreviewRequest,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_db_session)
 ) -> Dict[str, Any]:
     """预览模板渲染结果"""
     renderer = get_template_renderer()
