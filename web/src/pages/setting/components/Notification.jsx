@@ -155,9 +155,10 @@ export const Notification = () => {
     setTemplatesLoading(true)
     try {
       const res = await getNotificationTemplates()
-      setTemplates(res.data || [])
+      setTemplates(Array.isArray(res.data) ? res.data : [])
     } catch (e) {
       console.error('加载模板失败:', e)
+      setTemplates([]) // 确保失败时也设置为空数组
     } finally {
       setTemplatesLoading(false)
     }
@@ -475,7 +476,7 @@ export const Notification = () => {
           {t('notificationTemplate.cardDescription')}
         </Text>
         <Row gutter={[16, 16]}>
-          {templates.map(template => (
+          {(templates || []).map(template => (
             <Col xs={24} sm={12} md={8} lg={6} key={template.templateId}>
               <Card
                 size="small"

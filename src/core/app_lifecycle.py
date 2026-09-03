@@ -30,6 +30,7 @@ from src.services import (
     init_bangumi_data_manager,
 )
 from src.services.notification_service import NotificationService
+from src.notification.events import EventContext, NotificationEvent, SystemEventType
 from src.utils import InternalPollingManager, init_proxy_middleware
 from src.utils.server_instance_id import generate_server_instance_id
 from src.rate_limiter import RateLimiter
@@ -332,11 +333,16 @@ async def _run_startup_services(app: FastAPI, session_factory, startup_start: fl
     total_time = time.time() - startup_start
     logger.info(f"应用启动完成，总耗时 {total_time:.2f} 秒")
 
-    # 发射系统启动通知
+    # 发射系统启动通知（使用 V2 事件入口）
     try:
-        await app.state.notification_service.emit_event("system_start", {})
+        await app.state.notification_manager.notify_event_v2(
+            EventContext(
+                event_type=NotificationEvent.SYSTEM_EVENT,
+                system_type=SystemEventType.STARTUP,
+            )
+        )
     except Exception as e:
-        logger.error(f"发射 system_start 事件失败: {e}")
+        logger.error(f"发射 system_start 事件失败: {e}", exc_info=True)
 
     # 前端服务：在所有 API 路由注册完毕后挂载，确保 API 路由优先匹配
     mount_frontend(app, settings)
