@@ -758,6 +758,61 @@ async def _reset_server_instance_id_v2(conn: AsyncConnection):
     await conn.execute(text("DELETE FROM config WHERE config_key = 'serverInstanceId'"))
 
 
+async def _reset_notification_subscriptions_v1(conn: AsyncConnection):
+    """重置所有通知渠道的订阅配置为 V2 全关闭。
+
+    why：旧事件名与新发送范围并非一一对应，直接清空旧配置，
+         由用户在前端重新选择订阅。已经是 V2 的配置不会被覆盖。
+    """
+    from sqlalchemy import select, update
+    from sqlalchemy.ext.asyncio import AsyncSession
+    import json
+
+    # 使用 AsyncConnection 无法访问 ORM，需要原始 SQL
+    result = await conn.execute(text(
+        "SELECT id, events_config FROM notification_channels"
+    ))
+    rows = result.fetchall()
+
+    # 生成 V2 全关闭配置
+    disabled_scopes = {
+        "import_success": False,
+        "import_failed": False,
+        "refresh_success": False,
+        "refresh_failed": False,
+        "incremental_refresh_success": False,
+        "incremental_refresh_no_change": False,
+        "incremental_refresh_failed": False,
+        "fallback_success": False,
+        "fallback_failed": False,
+        "media_scan_success": False,
+        "media_scan_failed": False,
+        "system_startup": False,
+        "system_exception": False,
+    }
+    v2_config = {"version": 2, "scopes": disabled_scopes}
+    v2_config_str = json.dumps(v2_config, ensure_ascii=False)
+
+    reset_count = 0
+    for row in rows:
+        channel_id, events_config_str = row
+        try:
+            current_config = json.loads(events_config_str) if events_config_str else {}
+        except (json.JSONDecodeError, TypeError):
+            current_config = {}
+
+        # 跳过已经是 V2 的配置
+        if isinstance(current_config, dict) and current_config.get("version") == 2:
+            continue
+
+        await conn.execute(text(
+            "UPDATE notification_channels SET events_config = :config WHERE id = :id"
+        ), {"config": v2_config_str, "id": channel_id})
+        reset_count += 1
+
+    logger.info(f"通知订阅配置重置完成: {reset_count} 个渠道已更新为 V2 全关闭")
+
+
 # 所有迁移任务的 ID 列表（新增迁移时需同步更新此列表）
 ALL_MIGRATION_IDS = [
     "migrate_clear_rate_limit_state_v1",
@@ -773,6 +828,7 @@ ALL_MIGRATION_IDS = [
     "reset_ai_match_prompt_v2",
     "reset_server_instance_id_v1",
     "reset_server_instance_id_v2",
+    "reset_notification_subscriptions_v1",
 ]
 
 
@@ -814,6 +870,7 @@ async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
         ("reset_ai_match_prompt_v2", _reset_ai_match_prompt_v2, ()),  # 再次删除 aiMatchPrompt，回填含识别词校正的新默认值
         ("reset_server_instance_id_v1", _reset_server_instance_id_v1, ()),
         ("reset_server_instance_id_v2", _reset_server_instance_id_v2, ()),  # 重置为带归属标记的可反解格式
+        ("reset_notification_subscriptions_v1", _reset_notification_subscriptions_v1, ()),  # 清空旧订阅配置
     ]
 
     for migration_id, migration_func, args in migrations:
