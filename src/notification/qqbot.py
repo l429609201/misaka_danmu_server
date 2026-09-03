@@ -738,7 +738,8 @@ class QQBotChannel(BaseNotificationChannel):
         # 处理引用消息
         reference = getattr(message, "message_reference", None)
         if reference:
-            ref_msg_id = reference.get("message_id")
+            # reference 是 _MessageRef 对象，不是字典，需要用属性访问
+            ref_msg_id = getattr(reference, "message_id", None)
             if ref_msg_id:
                 parts.insert(0, f"[用户引用了之前的消息 ID: {ref_msg_id}]")
 
