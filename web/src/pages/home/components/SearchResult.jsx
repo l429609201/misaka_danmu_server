@@ -670,6 +670,11 @@ export const SearchResult = () => {
     } : null)
   }
 
+  // 分集唯一键：episodeId 可能为空（历史脏数据），回退到 集号+标题 避免误判重复
+  // why：若统一用空 episodeId 去重，多条被过滤分集会被判为同一条而互相覆盖丢失。
+  const episodeKey = ep =>
+    ep?.episodeId ? `id:${ep.episodeId}` : `fallback:${ep?.episodeIndex}:${ep?.title}`
+
   // 按当前排序方向对分集列表排序（加回/移入时保持顺序一致）
   const sortEpisodes = list => {
     return [...list].sort((a, b) =>
@@ -681,18 +686,20 @@ export const SearchResult = () => {
 
   // 待导入列表：点击删除 → 移入「不导入」列表（不再彻底丢弃）
   const handleDelete = item => {
-    setEditEpisodeList(list => list.filter(o => o.episodeId !== item.episodeId))
+    const key = episodeKey(item)
+    setEditEpisodeList(list => list.filter(o => episodeKey(o) !== key))
     setExcludedEpisodeList(list => {
-      if (list.some(o => o.episodeId === item.episodeId)) return list
+      if (list.some(o => episodeKey(o) === key)) return list
       return sortEpisodes([...list, item])
     })
   }
 
   // 不导入列表：点击删除 → 移回「待导入」列表
   const handleRestore = item => {
-    setExcludedEpisodeList(list => list.filter(o => o.episodeId !== item.episodeId))
+    const key = episodeKey(item)
+    setExcludedEpisodeList(list => list.filter(o => episodeKey(o) !== key))
     setEditEpisodeList(list => {
-      if (list.some(o => o.episodeId === item.episodeId)) return list
+      if (list.some(o => episodeKey(o) === key)) return list
       return sortEpisodes([...list, item])
     })
   }
@@ -703,8 +710,8 @@ export const SearchResult = () => {
       const toExclude = list.filter(predicate)
       if (toExclude.length === 0) return list
       setExcludedEpisodeList(prev => {
-        const existed = new Set(prev.map(o => o.episodeId))
-        const merged = [...prev, ...toExclude.filter(o => !existed.has(o.episodeId))]
+        const existed = new Set(prev.map(episodeKey))
+        const merged = [...prev, ...toExclude.filter(o => !existed.has(episodeKey(o)))]
         return sortEpisodes(merged)
       })
       return list.filter(it => !predicate(it))
@@ -1972,7 +1979,7 @@ export const SearchResult = () => {
                         locale={{ emptyText: t('searchResult.noExcludeEpisodes') }}
                         dataSource={excludedEpisodeList.slice((excludedPage - 1) * episodePageSize, excludedPage * episodePageSize)}
                         renderItem={item => (
-                          <List.Item key={item.episodeId}>
+                          <List.Item key={episodeKey(item)}>
                             <div className="w-full flex items-center justify-between gap-3">
                               <span className="shrink-0 text-gray-500 dark:text-gray-400">
                                 {t('searchResult.episodeIndexShort', { index: item.episodeIndex })}
