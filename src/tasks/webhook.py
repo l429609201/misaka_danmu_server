@@ -448,11 +448,15 @@ async def webhook_search_and_dispatch_task(
         logger.info("\n".join(_pre_sort_lines))
 
         # 🔧 查询库内已有源：搜索结果中哪些 provider+mediaId 已存在于 AnimeSource 表中
+        # 关键修复：同时检查作品标题和季度匹配，避免同一作品不同 mediaId 被识别为新源
         existing_source_keys = set()
+        existing_source_by_provider_title = {}  # {provider: {title_season_key: mediaId}}
         if all_search_results:
             for result in all_search_results:
+                # 精确匹配：provider + mediaId
                 stmt = (
-                    select(AnimeSource.id)
+                    select(AnimeSource.id, Anime.title, Anime.season)
+                    .join(Anime, AnimeSource.animeId == Anime.id)
                     .where(
                         AnimeSource.providerName == result.provider,
                         AnimeSource.mediaId == result.mediaId
@@ -460,8 +464,33 @@ async def webhook_search_and_dispatch_task(
                     .limit(1)
                 )
                 result_row = await session.execute(stmt)
-                if result_row.scalar_one_or_none() is not None:
+                row = result_row.first()
+                if row is not None:
                     existing_source_keys.add(f"{result.provider}:{result.mediaId}")
+                    # 记录该 provider 下已有的作品+季度组合
+                    title_season_key = f"{row.title}:S{row.season or 1}"
+                    if result.provider not in existing_source_by_provider_title:
+                        existing_source_by_provider_title[result.provider] = {}
+                    existing_source_by_provider_title[result.provider][title_season_key] = result.mediaId
+
+            # 模糊匹配：检查当前搜索结果中，是否有相同 provider + title + season 的源已存在
+            # why: iQiyi 等源的 mediaId 可能会变化（如专辑ID更新），导致同一作品被识别为新源
+            for result in all_search_results:
+                result_title_season_key = f"{result.title}:S{result.season or 1}"
+                if result.provider in existing_source_by_provider_title:
+                    # 检查是否有相同标题+季度的源
+                    for existing_key, existing_media_id in existing_source_by_provider_title[result.provider].items():
+                        if existing_key == result_title_season_key:
+                            # 找到了相同标题+季度的源，标记为已存在（即使 mediaId 不同）
+                            source_key = f"{result.provider}:{result.mediaId}"
+                            if source_key not in existing_source_keys:
+                                logger.info(
+                                    f"Webhook 任务: 发现库内已有源的标题+季度匹配 "
+                                    f"(provider={result.provider}, title={result.title}, season={result.season or 1}, "
+                                    f"当前mediaId={result.mediaId}, 库内mediaId={existing_media_id})，标记为已存在"
+                                )
+                                existing_source_keys.add(source_key)
+
             if existing_source_keys:
                 logger.info(f"Webhook 任务: 发现 {len(existing_source_keys)} 个库内已有源: {existing_source_keys}")
 

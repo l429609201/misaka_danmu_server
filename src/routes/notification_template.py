@@ -30,6 +30,49 @@ class TemplatePreviewRequest(BaseModel):
     sampleStatus: str  # success/failed/no_change
 
 
+@router.get("/scopes")
+async def get_available_scopes(
+    session: AsyncSession = Depends(get_db_session)
+) -> Dict[str, Any]:
+    """获取所有可用的发送范围（scopes）"""
+    from src.notification.subscription_matcher import ScopeKey, SubscriptionMatcher
+
+    # 精简后的核心事件：只保留用户真正需要的通知场景
+    all_scopes = [
+        # 手动操作结果
+        {"key": ScopeKey.IMPORT_SUCCESS, "category": "manual", "label_key": "notification.scopeImportSuccess"},
+        {"key": ScopeKey.IMPORT_FAILED, "category": "manual", "label_key": "notification.scopeImportFailed"},
+        {"key": ScopeKey.REFRESH_SUCCESS, "category": "manual", "label_key": "notification.scopeRefreshSuccess"},
+        {"key": ScopeKey.REFRESH_FAILED, "category": "manual", "label_key": "notification.scopeRefreshFailed"},
+
+        # 自动追更（最重要的通知场景）
+        {"key": ScopeKey.INCREMENTAL_REFRESH_SUCCESS, "category": "auto", "label_key": "notification.scopeIncrementalSuccess"},
+        {"key": ScopeKey.INCREMENTAL_REFRESH_FAILED, "category": "auto", "label_key": "notification.scopeIncrementalFailed"},
+
+        # 系统级事件
+        {"key": ScopeKey.SYSTEM_STARTUP, "category": "system", "label_key": "notification.scopeSystemStartup"},
+        {"key": ScopeKey.SYSTEM_EXCEPTION, "category": "system", "label_key": "notification.scopeSystemException"},
+    ]
+
+    # 获取默认配置
+    default_scopes = SubscriptionMatcher.get_default_scopes()
+
+    # 分类的 i18n 键
+    category_labels = {
+        "manual": "notification.groupManual",
+        "auto": "notification.groupAuto",
+        "system": "notification.groupSystem",
+    }
+
+    return {
+        "data": {
+            "scopes": all_scopes,
+            "defaults": default_scopes,
+            "category_labels": category_labels,
+        }
+    }
+
+
 @router.get("")
 async def get_templates(
     session: AsyncSession = Depends(get_db_session)

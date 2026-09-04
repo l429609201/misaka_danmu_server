@@ -20,98 +20,18 @@ import {
   getWebhookApikey, validateNotificationPublicDomain,
   getNotificationTemplates,
 } from '../../../apis'
+import { getNotificationScopes } from '../../../apis/notification_scopes'
 import { useTranslation } from 'react-i18next'
 import { getLocalizedField } from '../../../utils/i18nDynamic'
 
 const { Text } = Typography
 
-// 事件分组定义（使用 t 函数，支持国际化）
-const getEventGroups = (t) => [
-  {
-    label: t('notification.groupImport'),
-    events: [
-      { label: t('notification.eventImportSuccess'), value: 'import_success' },
-      { label: t('notification.eventImportFailed'), value: 'import_failed' },
-    ],
-  },
-  {
-    label: t('notification.groupRefresh'),
-    events: [
-      { label: t('notification.eventRefreshSuccess'), value: 'refresh_success' },
-      { label: t('notification.eventRefreshFailed'), value: 'refresh_failed' },
-    ],
-  },
-  {
-    label: t('notification.groupAutoImport'),
-    events: [
-      { label: t('notification.eventAutoImportSuccess'), value: 'auto_import_success' },
-      { label: t('notification.eventAutoImportFailed'), value: 'auto_import_failed' },
-    ],
-  },
-  {
-    label: 'Webhook',
-    events: [
-      { label: t('notification.eventWebhookTriggered'), value: 'webhook_triggered' },
-      { label: t('notification.eventWebhookImportSuccess'), value: 'webhook_import_success' },
-      { label: t('notification.eventWebhookImportFailed'), value: 'webhook_import_failed' },
-    ],
-  },
-  {
-    label: t('notification.groupIncremental'),
-    events: [
-      { label: t('notification.eventIncrementalSuccess'), value: 'incremental_refresh_success' },
-      { label: t('notification.eventIncrementalFailed'), value: 'incremental_refresh_failed' },
-    ],
-  },
-  {
-    label: t('notification.groupMedia'),
-    events: [
-      { label: t('notification.eventMediaScanComplete'), value: 'media_scan_complete' },
-    ],
-  },
-  {
-    label: t('notification.groupScheduled'),
-    events: [
-      { label: t('notification.eventScheduledComplete'), value: 'scheduled_task_complete' },
-      { label: t('notification.eventScheduledFailed'), value: 'scheduled_task_failed' },
-    ],
-  },
-  {
-    label: t('notification.groupSystem'),
-    events: [
-      { label: t('notification.eventSystemStart'), value: 'system_start' },
-    ],
-  },
-  {
-    label: t('notification.groupFallback'),
-    events: [
-      { label: t('notification.eventFallbackSearch'), value: 'fallback_search_complete' },
-      { label: t('notification.eventPredownload'), value: 'predownload_complete' },
-      { label: t('notification.eventMatchFallback'), value: 'match_fallback_complete' },
-    ],
-  },
-  {
-    label: t('notification.groupTaskProgress'),
-    events: [
-      { label: t('notification.eventTaskProgress'), value: 'task_progress' },
-    ],
-  },
-]
-
-// 扁平化所有事件（静态 value 列表，用于序列化，无需翻译）
-const ALL_EVENT_VALUES = [
-  'import_success', 'import_failed', 'refresh_success', 'refresh_failed',
-  'auto_import_success', 'auto_import_failed', 'webhook_triggered',
-  'webhook_import_success', 'webhook_import_failed', 'incremental_refresh_success',
-  'incremental_refresh_failed', 'media_scan_complete', 'scheduled_task_complete',
-  'scheduled_task_failed', 'system_start', 'fallback_search_complete',
-  'predownload_complete', 'match_fallback_complete', 'task_progress',
-]
+// 旧事件系统已完全废弃，现在使用动态加载的 V2 scopes
 
 export const Notification = () => {
   const { t } = useTranslation()
   const isMobile = useAtomValue(isMobileAtom)
-  const EVENT_GROUPS = getEventGroups(t)
+
   const [channels, setChannels] = useState([])
   const [channelTypes, setChannelTypes] = useState([])
   const [loading, setLoading] = useState(true)
@@ -127,6 +47,11 @@ export const Notification = () => {
   const [templatesLoading, setTemplatesLoading] = useState(false)
   const [templateEditorVisible, setTemplateEditorVisible] = useState(false)
   const [editingTemplateId, setEditingTemplateId] = useState(null)
+
+  // 发送范围（scopes）相关状态
+  const [availableScopes, setAvailableScopes] = useState([])
+  const [scopesLoading, setScopesLoading] = useState(false)
+  const [categoryLabels, setCategoryLabels] = useState({})
 
   // 监听 channelType 和 config 变化以实现 visibleWhen
   const selectedType = Form.useWatch('channelType', form)
@@ -164,10 +89,27 @@ export const Notification = () => {
     }
   }, [])
 
+  // 加载可用的发送范围
+  const loadScopes = useCallback(async () => {
+    setScopesLoading(true)
+    try {
+      const res = await getNotificationScopes()
+      setAvailableScopes(res.data?.scopes || [])
+      setCategoryLabels(res.data?.category_labels || {})
+    } catch (e) {
+      console.error('加载发送范围失败:', e)
+      setAvailableScopes([])
+      setCategoryLabels({})
+    } finally {
+      setScopesLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     loadData()
     loadTemplates()
-  }, [loadData, loadTemplates])
+    loadScopes()
+  }, [loadData, loadTemplates, loadScopes])
 
   const getSchemaForType = (type) => {
     const found = channelTypes.find(t => t.channelType === type)
@@ -219,15 +161,25 @@ export const Notification = () => {
 
   const handleEdit = async (record) => {
     setEditingChannel(record)
-    const eventsArr = Object.entries(record.eventsConfig || {})
-      .filter(([, v]) => v).map(([k]) => k)
+
+    // 解析 V2 格式的 eventsConfig
+    let selectedScopes = []
+    if (record.eventsConfig && typeof record.eventsConfig === 'object') {
+      if (record.eventsConfig.version === 2 && record.eventsConfig.scopes) {
+        // V2 格式：{"version": 2, "scopes": {"scope_key": true/false}}
+        selectedScopes = Object.entries(record.eventsConfig.scopes)
+          .filter(([, enabled]) => enabled)
+          .map(([key]) => key)
+      }
+    }
+
     form.setFieldsValue({
       name: record.name,
       channelType: record.channelType,
       isEnabled: record.isEnabled,
       useProxy: record.useProxy ?? false,
       config: record.config || {},
-      eventsConfig: eventsArr,
+      eventsConfig: selectedScopes,
     })
     setModalVisible(true)
     // why：已有渠道可能保存了外链模式，但全局域名已被修改或反代失效；
@@ -268,15 +220,24 @@ export const Notification = () => {
         if (!valid) return
       }
       setSaving(true)
-      const eventsObj = {}
-      ALL_EVENT_VALUES.forEach(v => { eventsObj[v] = (values.eventsConfig || []).includes(v) })
+
+      // 构建 V2 格式的 eventsConfig
+      const selectedScopes = values.eventsConfig || []
+      const scopesObj = {}
+      availableScopes.forEach(scope => {
+        scopesObj[scope.key] = selectedScopes.includes(scope.key)
+      })
+
       const payload = {
         name: values.name,
         channelType: values.channelType,
         isEnabled: values.isEnabled,
         useProxy: values.useProxy ?? false,
         config: values.config || {},
-        eventsConfig: eventsObj,
+        eventsConfig: {
+          version: 2,
+          scopes: scopesObj,
+        },
       }
       if (editingChannel) {
         await updateNotificationChannel(editingChannel.id, payload)
@@ -691,12 +652,26 @@ export const Notification = () => {
               placeholder={t('notification.eventPlaceholder')}
               maxTagCount="responsive"
               optionFilterProp="label"
+              loading={scopesLoading}
             >
-              {EVENT_GROUPS.map(group => (
-                <Select.OptGroup key={group.label} label={group.label}>
-                  {group.events.map(event => (
-                    <Select.Option key={event.value} value={event.value} label={`${group.label}-${event.label}`}>
-                      {event.label}
+              {Object.entries(
+                availableScopes.reduce((acc, scope) => {
+                  if (!acc[scope.category]) acc[scope.category] = []
+                  acc[scope.category].push(scope)
+                  return acc
+                }, {})
+              ).map(([category, scopes]) => (
+                <Select.OptGroup
+                  key={category}
+                  label={t(categoryLabels[category] || category)}
+                >
+                  {scopes.map(scope => (
+                    <Select.Option
+                      key={scope.key}
+                      value={scope.key}
+                      label={`${category}-${t(scope.label_key)}`}
+                    >
+                      {t(scope.label_key)}
                     </Select.Option>
                   ))}
                 </Select.OptGroup>

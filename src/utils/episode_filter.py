@@ -117,6 +117,10 @@ def apply_single_episode_filter(
                 f"rule={rule['title']}，过滤 {len(removed_titles)}/{before_count} 集: {removed_titles[:20]}"
             )
         filtered = kept
+
+    for i, episode in enumerate(filtered):
+        episode.episodeIndex = i + 1
+
     return (filtered, filtered_out) if return_filtered else filtered
 
 
