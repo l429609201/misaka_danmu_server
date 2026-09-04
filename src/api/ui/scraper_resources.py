@@ -25,7 +25,7 @@ from src.services.download_task_manager import TaskStatus
 from src.api.dependencies import get_scraper_manager, get_config_manager
 from src._version import APP_VERSION
 from src.core.env import is_docker_environment as _is_docker_environment
-from src.utils.scraper_version_manager import ScraperVersionManager
+from src.utils.scraper_version_manager import ScraperVersionManager, is_semantic_version
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -2066,11 +2066,19 @@ def _persist_new_version_to_backup(
         )
 
         # 更新全局版本号
-        # why: release_version 来自 asset_info['version']，按 tag 下载时可能为空字符串。
-        # 空值直接赋值会抹掉 extract_manifest_from_legacy 从包内 versions.json 提取到的
-        # 版本号，导致权威文件的 version 为空、后续版本比较全部失效。
-        if release_version:
+        # why: release_version 来自 asset_info['version']，实际是 Release 的 tag_name。
+        #  1) 按 tag 下载时可能为空字符串；
+        #  2) 测试通道使用固定标签（如 test / nightly），标签名不是版本号。
+        # 这两种情况下直接赋值都会抹掉 extract_manifest_from_legacy 从包内 versions.json
+        # 提取到的真实版本（如 2.3.0），导致权威文件 version 写成 "test"、前端"本地版本"
+        # 显示为分支名，且后续所有版本比较失效。因此仅当标签本身是语义版本时才覆盖。
+        if release_version and is_semantic_version(release_version):
             manifest["version"] = release_version
+        elif release_version:
+            logger.info(
+                f"标签 '{release_version}' 非语义版本（通常是测试通道标签），"
+                f"保留包内真实版本: {manifest.get('version') or '未知'}"
+            )
         manifest["updated_at"] = datetime.now().isoformat()
 
         # 如果临时目录没有版本信息，使用远端 package.json 兜底

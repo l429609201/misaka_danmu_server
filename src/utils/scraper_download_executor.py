@@ -54,7 +54,7 @@ from src.utils.docker_utils import (
     is_running_in_docker,
     restart_container,
 )
-from src.utils.scraper_version_manager import ScraperVersionManager
+from src.utils.scraper_version_manager import ScraperVersionManager, is_semantic_version
 from src.utils.version_comparator import VersionComparator
 
 logger = logging.getLogger(__name__)
@@ -72,21 +72,9 @@ SCRAPERS_DIR = Path("/app/scrapers")
 SCRAPERS_VERSIONS_FILE = SCRAPERS_DIR / "versions.json"
 
 
-# 语义版本形态：1.2 / 1.2.3 / v1.2.3 / 1.2.3-beta1
-_SEMVER_LIKE_PATTERN = re.compile(r"^v?\d+(\.\d+)+([.\-+].*)?$")
-
-
-def _is_semantic_version(value: Optional[str]) -> bool:
-    """判断字符串是否为语义版本号形态。
-
-    why：测试通道的 Release 使用固定标签（如 test / nightly），标签名会被当成
-    "远程声明版本"传入校验，与包内真实版本比对必然不符。用此判定把标签名
-    与真实版本区分开，避免误判为"包版本不符"而拒绝部署。
-    """
-    if not value:
-        return False
-    return bool(_SEMVER_LIKE_PATTERN.match(str(value).strip()))
-
+# 语义版本判定统一由 scraper_version_manager 提供（api 层与本模块共用同一实现）
+# 保留此别名以兼容本模块内既有调用点
+_is_semantic_version = is_semantic_version
 
 
 def _get_temp_download_base_dir() -> Path:

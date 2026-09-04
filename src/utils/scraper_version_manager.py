@@ -7,12 +7,33 @@ import hashlib
 import json
 import logging
 import platform as plat
+import re
 import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+# 语义版本形态：1.2 / 1.2.3 / v1.2.3 / 1.2.3-beta1
+_SEMVER_LIKE_PATTERN = re.compile(r"^v?\d+(\.\d+)+([.\-+].*)?$")
+
+
+def is_semantic_version(value: Optional[str]) -> bool:
+    """判断字符串是否为语义版本号形态。
+
+    why：测试通道的 Release 使用固定标签（如 test / nightly），标签名会被当成
+    "远程声明版本"在下载链路中流转。用此判定把标签名与真实版本区分开，避免
+    1) 校验时误判为"包版本不符"而拒绝部署；
+    2) 写入权威文件时把标签名当版本号，覆盖掉包内真实版本。
+
+    定义在本模块（最底层的版本管理工具）以便 api 层与 utils 层共用，
+    避免 scraper_resources 反向导入 scraper_download_executor 造成循环导入。
+    """
+    if not value:
+        return False
+    return bool(_SEMVER_LIKE_PATTERN.match(str(value).strip()))
 
 
 class ScraperVersionManager:
