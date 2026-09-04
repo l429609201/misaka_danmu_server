@@ -23,6 +23,7 @@ from src.utils.task_profiler import TaskProfiler, FLOW_WEBHOOK_IMPORT
 
 # ORM 模型别名
 AnimeSource = orm_models.AnimeSource
+Anime = orm_models.Anime
 
 logger = logging.getLogger(__name__)
 
