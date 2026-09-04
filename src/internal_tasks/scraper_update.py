@@ -309,10 +309,13 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
     # 此前全量模式把该校验放到"下载解压 + 写备份目录"之后，导致运行目录已是目标版本时
     # 仍每轮完整下载压缩包并改写备份目录，最后才判定"无需更新"→ 无限重复下载循环，
     # 且备份目录的改写属既成副作用无法回滚。
+    # 传入远程 manifest：版本号相同时继续按逐源哈希比对，
+    # 以支持版本号固定不变的测试通道（否则测试包更新永远不会被检出）。
     should_update, reason = VersionComparator.should_update(
         local_dir=scrapers_dir,
         remote_version=remote_version,
-        remote_branch=None
+        remote_branch=None,
+        remote_manifest=manifest_data,
     )
 
     if not should_update:

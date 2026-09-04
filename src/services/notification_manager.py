@@ -21,7 +21,9 @@ from src.notification.base import BaseNotificationChannel, ChannelCapability, Re
 from src.notification.messages.base import NotificationMessage
 from src.notification.aggregation import NotificationAggregator
 # 新增导入
-from src.notification.events import EventContext, NotificationEvent
+from src.notification.events import (
+    EventContext, NotificationEvent, TaskOperation, TaskSource, TaskStatus,
+)
 from src.notification.template_resolver import TemplateResolver
 from src.notification.subscription_matcher import SubscriptionMatcher
 from src.notification.messages.unified import UnifiedTaskMessage, UnifiedSystemMessage
@@ -307,24 +309,102 @@ class NotificationManager:
     # C 方案：统一通知出口
     # ═══════════════════════════════════════════
 
+    # 旧事件名 → (操作类型, 触发来源) 的映射。
+    # why：messages/registry.py 已随通用事件系统移除，旧的 self._registry 调用会抛
+    #      AttributeError 导致所有任务完成通知静默失败。此处把旧事件名翻译成
+    #      EventContext，统一转发到 notify_event_v2，避免维护两套发送链路。
+    _LEGACY_EVENT_MAP: Dict[str, tuple] = {
+        # 弹幕导入类
+        "import": (TaskOperation.IMPORT, TaskSource.MANUAL),
+        "auto_import": (TaskOperation.IMPORT, TaskSource.AUTO),
+        "webhook_import": (TaskOperation.IMPORT, TaskSource.WEBHOOK),
+        # 刷新类
+        "refresh": (TaskOperation.REFRESH, TaskSource.MANUAL),
+        "incremental_refresh": (TaskOperation.INCREMENTAL_REFRESH, TaskSource.AUTO),
+        # 后备处理类
+        "fallback_search": (TaskOperation.FALLBACK_SEARCH, TaskSource.API),
+        "download_fallback": (TaskOperation.FALLBACK_SEARCH, TaskSource.API),
+        "predownload": (TaskOperation.FALLBACK_PREDOWNLOAD, TaskSource.API),
+        "match_fallback": (TaskOperation.FALLBACK_MATCH, TaskSource.API),
+        # 定时任务：无专属模板，归入刷新（定时任务多为刷新/追更类）
+        "scheduled_task": (TaskOperation.REFRESH, TaskSource.SCHEDULER),
+    }
+
+    # 无 _success/_failed 后缀的特殊事件名 → (操作, 来源, 状态)
+    _LEGACY_EVENT_EXACT: Dict[str, tuple] = {
+        "media_scan_complete": (TaskOperation.MEDIA_SCAN, TaskSource.MANUAL, TaskStatus.SUCCESS),
+        "scheduled_task_complete": (TaskOperation.REFRESH, TaskSource.SCHEDULER, TaskStatus.SUCCESS),
+        "scheduled_task_failed": (TaskOperation.REFRESH, TaskSource.SCHEDULER, TaskStatus.FAILED),
+    }
+
+    def _build_legacy_event_ctx(self, event_type: str, payload: dict) -> Optional[EventContext]:
+        """把旧事件名 + payload 翻译成 EventContext。无法识别时返回 None。"""
+        exact = self._LEGACY_EVENT_EXACT.get(event_type)
+        if exact:
+            operation, source, status = exact
+        else:
+            # 拆出 xxx_success / xxx_failed 形式
+            if event_type.endswith("_success"):
+                base, status = event_type[: -len("_success")], TaskStatus.SUCCESS
+            elif event_type.endswith("_failed"):
+                base, status = event_type[: -len("_failed")], TaskStatus.FAILED
+            else:
+                return None
+            mapped = self._LEGACY_EVENT_MAP.get(base)
+            if not mapped:
+                return None
+            operation, source = mapped
+
+        # subject 承载展示主体，context 承载结果详情（与 UnifiedTaskMessage 约定一致）
+        subject = {
+            "anime_title": payload.get("anime_title", "") or payload.get("task_title", ""),
+            "season": payload.get("season"),
+            "episode": payload.get("episode"),
+            "episode_count": payload.get("episode_count"),
+            "provider": payload.get("provider", "") or payload.get("source", ""),
+            "source": payload.get("source", "") or payload.get("provider", ""),
+            "media_type": payload.get("media_type", ""),
+            "year": payload.get("year"),
+            "tmdb_id": payload.get("tmdb_id", ""),
+            "media_id": payload.get("media_id", ""),
+            "image_url": payload.get("image_url", ""),
+        }
+        context = {
+            "message": payload.get("message", ""),
+            "task_title": payload.get("task_title", ""),
+            "finished_at": payload.get("finished_at", ""),
+            "search_term": payload.get("search_term", ""),
+            "search_type": payload.get("search_type", ""),
+            "webhook_source": payload.get("webhook_source", ""),
+            "unique_key": payload.get("unique_key", ""),
+            # 保留原始事件名，便于渠道端做细粒度区分与排查
+            "legacy_event_type": event_type,
+        }
+        return EventContext(
+            event_type=NotificationEvent.TASK_EVENT,
+            operation=operation,
+            source=source,
+            status=status,
+            subject=subject,
+            context=context,
+            task_id=payload.get("task_id"),
+        )
+
     async def notify_event(self, event_type: str, payload: dict):
-        """业务层最常用入口 — 从事件创建消息对象并分发（旧版本，兼容保留）
+        """业务层最常用入口 — 旧事件名兼容层，内部转发到 notify_event_v2
 
         Args:
-            event_type: 事件类型标识
+            event_type: 旧事件类型标识（如 refresh_success / import_failed）
             payload: 业务数据字典
         """
-        message = self._registry.create(event_type, payload)
-        if message is None:
-            # 未注册的消息类型，降级为直接发送
-            logger.warning(f"未注册的消息类型 [{event_type}]，使用直接发送")
+        event_ctx = self._build_legacy_event_ctx(event_type, payload)
+        if event_ctx is None:
+            # 无法映射到通用事件的旧事件，降级为纯文本直发
+            logger.warning(f"事件 [{event_type}] 无法映射到通用事件模板，使用降级发送")
             await self._legacy_send(event_type, payload)
             return
 
-        # 设置 message_type（注册表创建时未设置）
-        message.message_type = event_type
-
-        await self.notify_message(message)
+        await self.notify_event_v2(event_ctx)
 
     async def notify_event_v2(self, event_ctx: EventContext):
         """通用事件入口 V2 — 使用 EventContext 处理通用事件
@@ -490,15 +570,19 @@ class NotificationManager:
 
     def render_event_for_channel(self, event_type: str, payload: dict,
                                  channel: BaseNotificationChannel) -> Optional[RenderedMessage]:
-        """根据 event_type + payload 为指定渠道生成 RenderedMessage。
+        """根据旧事件名 + payload 为指定渠道生成 RenderedMessage。
 
         供 notification_service 的进度 edit / 完成消息 edit 路径复用统一消息类，
-        避免维护重复的格式化模板。未注册的事件类型返回 None。
+        避免维护重复的格式化模板。无法映射到通用事件模板时返回 None。
         """
-        message = self._registry.create(event_type, payload)
-        if message is None:
+        event_ctx = self._build_legacy_event_ctx(event_type, payload)
+        if event_ctx is None:
             return None
-        message.message_type = event_type
+        template_id = TemplateResolver.resolve(event_ctx)
+        if not template_id:
+            return None
+        message = UnifiedTaskMessage(payload=event_ctx.to_dict(), event_ctx=event_ctx)
+        message.message_type = template_id
         return self.render_for_channel(message, channel)
 
     @staticmethod

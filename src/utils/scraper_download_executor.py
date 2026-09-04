@@ -10,6 +10,7 @@ import importlib.util
 import inspect
 import json
 import logging
+import re
 import shutil
 import sys
 import traceback
@@ -69,6 +70,23 @@ TEMP_DOWNLOAD_TTL_SECONDS = 3600  # 1小时
 # 导入需要的工具函数（稍后从 scraper_resources.py 中提取）
 SCRAPERS_DIR = Path("/app/scrapers")
 SCRAPERS_VERSIONS_FILE = SCRAPERS_DIR / "versions.json"
+
+
+# 语义版本形态：1.2 / 1.2.3 / v1.2.3 / 1.2.3-beta1
+_SEMVER_LIKE_PATTERN = re.compile(r"^v?\d+(\.\d+)+([.\-+].*)?$")
+
+
+def _is_semantic_version(value: Optional[str]) -> bool:
+    """判断字符串是否为语义版本号形态。
+
+    why：测试通道的 Release 使用固定标签（如 test / nightly），标签名会被当成
+    "远程声明版本"传入校验，与包内真实版本比对必然不符。用此判定把标签名
+    与真实版本区分开，避免误判为"包版本不符"而拒绝部署。
+    """
+    if not value:
+        return False
+    return bool(_SEMVER_LIKE_PATTERN.match(str(value).strip()))
+
 
 
 def _get_temp_download_base_dir() -> Path:
@@ -211,12 +229,20 @@ async def verify_scraper_package(
     sources = manifest.get("sources") or {}
 
     # ── 1. 包版本与远程声明一致 ──
+    # why：expected_version 可能来自 Release 的 tag_name。测试通道用固定标签（如 test），
+    #      标签名并非语义版本，与包内真实版本（2.3.0）比对必然失败，会误判为"包版本不符"
+    #      而拒绝部署。因此仅当声明值本身是语义版本时才做一致性校验。
     pkg_version = ScraperVersionManager.get_version_from_manifest(manifest)
-    if expected_version and pkg_version:
+    if expected_version and pkg_version and _is_semantic_version(expected_version):
         if pkg_version.lstrip('v') != expected_version.lstrip('v'):
             errors.append(
                 f"包版本不符：声明 {expected_version}，实际 {pkg_version}"
             )
+    elif expected_version and not _is_semantic_version(expected_version):
+        logger.info(
+            f"声明版本 '{expected_version}' 非语义版本（通常是测试通道标签），"
+            f"跳过版本一致性校验，实际包版本: {pkg_version or '未知'}"
+        )
 
     # ── 2. 包级最低可用版本 ──
     min_server = manifest.get("min_server_version")
@@ -728,10 +754,14 @@ class ScraperDownloadExecutor:
             remote_version = remote_pre_pkg.get("version", "unknown")
             remote_branch = self.task.branch if hasattr(self.task, 'branch') else None
 
+            # 传入待部署包自身的 manifest，使版本号相同时仍能按逐源哈希发现内容差异。
+            # why：测试通道包版本号固定不变，仅比版本号会把有实际变更的包判为"已是最新"。
+            pending_manifest = ScraperVersionManager.load_manifest(pending_dir) or remote_pre_pkg
             should_update, reason = VersionComparator.should_update(
                 local_dir=scrapers_dir,
                 remote_version=remote_version,
-                remote_branch=remote_branch
+                remote_branch=remote_branch,
+                remote_manifest=pending_manifest,
             )
 
             if not should_update:
@@ -1019,11 +1049,23 @@ class ScraperDownloadExecutor:
             remote_version = package_data.get("version", "unknown")
             remote_branch = self.task.branch if hasattr(self.task, 'branch') else None
 
-            should_update, reason = VersionComparator.should_update(
-                local_dir=scrapers_dir,
-                remote_version=remote_version,
-                remote_branch=remote_branch
-            )
+            # 增量模式的下载清单本身就是按哈希比对得出的（need_download），
+            # 因此"确实下载到了文件"即证明内容有变更。
+            # why：测试通道的包版本号长期固定（如一直是 2.3.0），若仅按版本号判断，
+            #      会把刚按哈希差异下载好的文件当成"已是最新"直接丢弃，导致更新永远不生效。
+            if download_count > 0:
+                self._log(
+                    f"✓ 最终版本验证: 本次按哈希差异实际下载 {download_count} 个弹幕源"
+                    f"（远程版本 {remote_version}），继续部署"
+                )
+                should_update, reason = True, "存在哈希差异的已下载文件"
+            else:
+                should_update, reason = VersionComparator.should_update(
+                    local_dir=scrapers_dir,
+                    remote_version=remote_version,
+                    remote_branch=remote_branch,
+                    remote_manifest=package_data,
+                )
 
             if not should_update:
                 self._log(f"✓ 最终版本验证: {reason}，跳过部署")
