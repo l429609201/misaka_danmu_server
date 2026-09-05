@@ -118,9 +118,6 @@ class QQBotChannel(BaseNotificationChannel):
                     """Bot 连接成功回调"""
                     logger.info(f"QQ Bot WebSocket 已连接: {self.robot.name}")
 
-                    # 注册菜单命令
-                    await self.parent_channel._register_commands()
-
                 async def on_c2c_message_create(self, message):
                     """处理单聊（C2C）消息"""
                     await self.parent_channel._handle_c2c_message(message)
@@ -681,76 +678,6 @@ class QQBotChannel(BaseNotificationChannel):
 
         await super().stop()
         logger.info(f"QQ Bot 渠道已停止: {self.name}")
-
-    async def _register_commands(self):
-        """注册菜单命令到 QQ Bot（快捷指令面板）
-
-        QQ Bot 的"指令模板"功能需要通过 API 设置，会在输入框底部显示快捷指令菜单。
-        注意：单聊和群聊需要分别设置。
-        """
-        try:
-            if not self._bot_client:
-                logger.warning("[QQ Bot] Bot 客户端未初始化，无法注册命令")
-                return
-
-            # 从 NotificationService 获取菜单命令
-            menu_commands = self.service.get_menu_commands()
-            if not menu_commands:
-                logger.info("[QQ Bot] 没有可注册的命令")
-                return
-
-            # 构建命令列表（QQ Bot API 格式）
-            command_list = []
-            for cmd_name, cmd_desc in menu_commands.items():
-                command_list.append({
-                    "name": cmd_name.lstrip('/'),  # 去掉开头的 /
-                    "desc": cmd_desc,  # QQ Bot API 使用 "desc" 而非 "description"
-                })
-
-            if not command_list:
-                logger.info("[QQ Bot] 命令列表为空，跳过注册")
-                return
-
-            # 调用 QQ Bot API 注册命令（单聊和群聊都需要注册）
-            success_count = 0
-
-            # 1. 尝试注册单聊指令模板
-            if self.user_openid:
-                try:
-                    await self._bot_client.api.post(
-                        f"/applications/{self.app_id}/commands",
-                        json={"commands": command_list}
-                    )
-                    success_count += 1
-                    logger.info(f"[QQ Bot] 单聊指令模板注册成功: {len(command_list)} 条命令")
-                except Exception as e:
-                    logger.warning(f"[QQ Bot] 单聊指令模板注册失败: {e}")
-
-            # 2. 尝试注册群聊指令模板
-            if self.group_openid:
-                try:
-                    await self._bot_client.api.post(
-                        f"/applications/{self.app_id}/commands",
-                        json={"commands": command_list}
-                    )
-                    success_count += 1
-                    logger.info(f"[QQ Bot] 群聊指令模板注册成功: {len(command_list)} 条命令")
-                except Exception as e:
-                    logger.warning(f"[QQ Bot] 群聊指令模板注册失败: {e}")
-
-            # 如果注册成功，输出命令列表
-            if success_count > 0:
-                logger.info("[QQ Bot] 已注册的快捷指令：")
-                for cmd in command_list:
-                    logger.info(f"  /{cmd['name']} - {cmd['desc']}")
-            else:
-                # 都失败了，提示手动配置
-                logger.warning("[QQ Bot] 指令模板注册失败，请手动在 QQ 开放平台后台配置以下命令：")
-                for cmd in command_list:
-                    logger.info(f"  /{cmd['name']} - {cmd['desc']}")
-
-        except Exception as e:
-            logger.error(f"[QQ Bot] 命令注册失败: {e}", exc_info=True)
 
     @staticmethod
     def get_config_schema() -> List[Dict]:

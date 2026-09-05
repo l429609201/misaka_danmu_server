@@ -84,7 +84,7 @@ _TOKEN_OPERATIONS: Tuple[ApiOperation, ...] = (
         operation_id="token.create",
         method="POST",
         path="/ui/tokens",
-        summary="创建一个新的弹幕 API Token（供第三方播放器使用），并返回可直接填入播放器的完整地址",
+        summary="创建一个新的弹幕 API Token（供第三方播放器使用）；已配置自定义域名时会返回可直接复制的完整地址",
         # 新增记录，删掉即可还原，属可逆写
         effect=ActionEffect.REVERSIBLE_WRITE,
         result_sensitivity=ResultSensitivity.SECRET,
@@ -98,7 +98,7 @@ _TOKEN_OPERATIONS: Tuple[ApiOperation, ...] = (
         # 新建的 Token 明文必须交付给用户才有使用价值，故对 token 字段开豁免。
         # 注意：token.list / token.access_logs 等读取类操作不开豁免，既有密钥仍全程打码。
         plaintext_exempt_fields=("token",),
-        success_hint="Token 已创建，请把下面的地址填入播放器。此明文仅本次展示，请及时保存。",
+        success_hint="Token 已创建。此凭据仅本次展示，请提醒用户立即保存，具体交付方式见返回的 hint。",
     ),
     ApiOperation(
         operation_id="token.toggle",

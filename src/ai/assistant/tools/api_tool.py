@@ -16,7 +16,7 @@
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ..api_gateway import (
     ApiExecutionError,
@@ -75,29 +75,26 @@ async def _list_api_operations(
     }
 
 
-async def _resolve_base_url(context: Dict[str, Any]) -> str:
+async def _resolve_custom_domain(context: Dict[str, Any]) -> Optional[str]:
     """
-    解析用于拼接对外地址的服务基址。
+    读取用户在「弹幕 → Token 管理 → 自定义域名」配置的对外域名。
 
-    优先取「自定义域名」配置（与 Webhook 地址拼接口径一致）；
-    未配置时返回占位串，由 AI 提示用户自行替换，避免给出错误地址。
+    统一走 src.utils.image_utils.get_custom_domain（配置键 custom_api_domain），
+    与海报外链、通知外链、命令指令等所有拼接外联地址的业务保持同一口径，
+    不再自己读 webhookCustomDomain 这种不一致的键。
 
     :param context: 工具执行上下文
-    :return: 形如 http://example.com 的基址，或占位提示
+    :return: 规范化后的域名（已去尾部斜杠，含 http/https 前缀）；未配置或不合规返回 None
     """
     config_manager = context.get("config_manager")
     if config_manager is None:
-        return "http://<你的服务器地址>"
+        return None
+    # 延迟导入：避免工具层与 utils 之间的模块级耦合
+    from src.utils.image_utils import get_custom_domain
     try:
-        domain = (await config_manager.get("webhookCustomDomain", "") or "").strip()
+        return await get_custom_domain(config_manager)
     except Exception:  # noqa: BLE001
-        domain = ""
-    if not domain:
-        return "http://<你的服务器地址>"
-    domain = domain.rstrip("/")
-    if not domain.startswith(("http://", "https://")):
-        domain = f"http://{domain}"
-    return domain
+        return None
 
 
 async def _build_plaintext_exempt(
@@ -107,7 +104,8 @@ async def _build_plaintext_exempt(
     按操作声明构造明文豁免回填内容。
 
     仅处理 policy 中显式登记 plaintext_exempt_fields 的操作；
-    对 Token 创建场景额外拼好可直接填入播放器的完整地址。
+    对 Token 创建场景，若已配置自定义域名则拼好完整可用地址，
+    否则回传裸 token 并提示用户去配置域名或自行替换。
 
     :param operation: 白名单操作契约
     :param data: 接口返回的原始数据
@@ -124,11 +122,19 @@ async def _build_plaintext_exempt(
         if value not in (None, ""):
             payload[field_name] = value
 
-    # Token 创建：把明文拼成播放器可直接使用的弹幕 API 地址
+    # Token 创建：尽量拼成播放器可直接使用的弹幕 API 地址
     token_value = payload.get("token")
     if token_value and operation.operation_id == "token.create":
-        base_url = await _resolve_base_url(context)
-        payload["danmakuApiUrl"] = f"{base_url}/api/v1/{token_value}"
+        domain = await _resolve_custom_domain(context)
+        if domain:
+            # 已配置自定义域名 —— 给出可直接复制粘贴的完整地址
+            payload["danmakuApiUrl"] = f"{domain}/api/v1/{token_value}"
+            payload["danmakuApiPath"] = f"/api/v1/{token_value}"
+        else:
+            # 未配置 —— 只给相对路径，并明确告诉 AI 引导用户去配置或自行补域名，
+            # 绝不编造域名（此前用错配置键导致展示成占位串，已修正）
+            payload["danmakuApiPath"] = f"/api/v1/{token_value}"
+            payload["domainNotConfigured"] = True
 
     return payload
 
@@ -187,10 +193,24 @@ async def _call_api(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[
     exempt = await _build_plaintext_exempt(operation, data, context)
     if exempt:
         payload["__plaintext_exempt__"] = exempt
-        payload["hint"] = (
-            "请把 danmakuApiUrl 完整地址原样告诉用户，并提醒这是仅此一次展示的凭据，"
-            "让用户立即保存。不要在后续对话里反复重复该明文。"
-        )
+        if exempt.get("domainNotConfigured"):
+            # 未配置自定义域名：只有相对路径，必须引导用户去配置或自行补全域名
+            payload["hint"] = (
+                "系统还没有配置「自定义域名」，所以无法拼出完整地址。请这样回复用户：\n"
+                "1. 先把弹幕接口路径原样发给用户（danmakuApiPath，形如 /api/v1/xxx），"
+                "并说明这是仅此一次展示的凭据，务必立即保存；\n"
+                "2. 再提示用户：完整地址 = 你的服务器地址 + 该路径；\n"
+                "3. 建议用户到「弹幕 → Token 管理 → 自定义域名」填写公网 HTTPS 域名，"
+                "之后系统就能自动拼出可直接复制的完整地址。\n"
+                "不要自己编造或猜测服务器域名。"
+            )
+        else:
+            # 已配置域名：给出可直接复制的完整地址
+            payload["hint"] = (
+                "请把 danmakuApiUrl 完整地址【单独成行、原样】发给用户，方便直接复制粘贴到播放器；"
+                "并提醒这是仅此一次展示的凭据，让用户立即保存。"
+                "不要在后续对话里反复重复该明文。"
+            )
     return payload
 
 
