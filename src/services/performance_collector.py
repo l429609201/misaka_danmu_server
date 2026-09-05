@@ -64,33 +64,48 @@ class PerformanceCollector:
     
     async def _collect_loop(self):
         """采集循环"""
+        # 采集器启动后先等一小段，避开应用启动瞬间的资源峰值，让首轮数据更稳定
+        loop_count = 0
         while self.is_running:
             try:
-                await self.collect_all_metrics()
+                written = await self.collect_all_metrics()
+                loop_count += 1
+                # 每轮成功都打 INFO：让运维能从日志直接确认采集器活着、写了多少条。
+                # 采集成功却看不到任何日志会让人误以为「没在采集」。
+                logger.info(
+                    f"性能采集完成（第 {loop_count} 轮）：本轮写入 {written} 条指标，"
+                    f"下次采集在 {self.collect_interval} 秒后"
+                )
             except Exception as e:
                 logger.error(f"性能指标采集失败: {e}", exc_info=True)
-            
+
             # 等待下一次采集
             await asyncio.sleep(self.collect_interval)
-    
-    async def collect_all_metrics(self):
-        """采集所有指标"""
+
+    async def collect_all_metrics(self) -> int:
+        """采集所有指标，返回本轮成功写入的指标条数。"""
         async with self.session_factory() as session:
             # 1. 数据库连接池状态
             await self._collect_db_pool_metrics(session)
-            
+
             # 2. 任务队列状态
             if self.task_manager:
                 await self._collect_task_queue_metrics(session)
-            
+
             # 3. 缓存状态
             if self.cache_manager:
                 await self._collect_cache_metrics(session)
-            
+
             # 4. 系统资源
             await self._collect_system_metrics(session)
-            
+
+            # 统计本轮新增的指标条数（commit 前 session.new 里都是待插入的 SystemMetric）
+            written = sum(
+                1 for obj in session.new
+                if obj.__class__.__name__ == "SystemMetric"
+            )
             await session.commit()
+            return written
     
     async def _collect_db_pool_metrics(self, session):
         """采集数据库连接池指标"""

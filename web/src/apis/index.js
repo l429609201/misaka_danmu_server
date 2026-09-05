@@ -1370,6 +1370,11 @@ export const getCurrentCapacity = () => api.get('/api/ui/trends/current')
 
 // ==================== 性能统计 ====================
 export const getPerfStats = (days = 7) => api.get(`/api/ui/perf/stats?days=${days}`)
+// 系统资源监控（system_metrics）：最新分组指标 + 未解决告警
+export const getSystemMetrics = () => api.get('/api/ui/perf/system-metrics')
+// 单个系统指标的历史趋势（画折线用）
+export const getSystemMetricHistory = (category, metric, hours = 24) =>
+  api.get(`/api/ui/perf/system-metrics/history?category=${encodeURIComponent(category)}&metric=${encodeURIComponent(metric)}&hours=${hours}`)
 
 // ==================== 安全审计 ====================
 export const getAuditLogs = (params) => api.get('/api/ui/audit/logs', params)

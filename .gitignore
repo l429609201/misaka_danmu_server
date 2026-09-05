@@ -25,7 +25,7 @@ src/scrapers/*
 .augment/rules/rule-name.md
 tests/*
 .pids/
-
+docs/*
 # 嵌套git仓库
 misaka-relay/
 FEATURE_IDEAS.md

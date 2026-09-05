@@ -3523,6 +3523,23 @@ export default {
     tabSchedule: '定时任务',
     tabRateLimit: '流控面板',
     tabProfile: '性能统计',
+    tabSystemMetrics: '系统资源',
+  },
+
+  // 系统资源监控 SystemMetricsPanel
+  systemMetrics: {
+    groupSystem: '系统资源',
+    groupDatabase: '数据库连接池',
+    groupTask: '任务队列',
+    groupCache: '缓存',
+    activeAlerts: '当前告警',
+    noData: '暂无采集数据（采集器每 60 秒采集一次，请稍候刷新）',
+    updatedAt: '更新于',
+    autoRefreshOn: '自动刷新',
+    autoRefreshOff: '暂停刷新',
+    range6h: '近 6 小时',
+    range24h: '近 24 小时',
+    range7d: '近 7 天',
   },
 
   // Webhook 任务 WebhookTasks

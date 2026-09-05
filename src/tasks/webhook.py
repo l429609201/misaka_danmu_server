@@ -15,9 +15,9 @@ from src.ai import AIMatcherManager
 from src.rate_limiter import RateLimiter
 from src.utils import (
     parse_search_keyword, ai_type_and_season_mapping_and_correction,
-    SearchTimer, SEARCH_TYPE_WEBHOOK
+    SearchTimer, SEARCH_TYPE_WEBHOOK, format_parse_result_log
 )
-from src.utils.filename_parser import is_movie_by_title
+from src.utils.filename_parser import is_movie_by_title, parse_filename
 from src.utils.search_timer import SubStepTiming
 from src.utils.task_profiler import TaskProfiler, FLOW_WEBHOOK_IMPORT
 
@@ -260,7 +260,21 @@ async def webhook_search_and_dispatch_task(
         await progress_callback(20, "并发搜索所有源...")
 
         timer.step_start("关键词解析与预处理")
-        parsed_keyword = parse_search_keyword(searchKeyword)
+        # 统一改用完整解析器 parse_filename：Webhook 收到的是媒体文件名/媒体名，
+        # 含年份、发布组、分辨率等噪声，简单版 parse_search_keyword 清理不干净。
+        # 解析失败时回退到简单版，保证鲁棒性。
+        _parsed_result = parse_filename(searchKeyword)
+        if _parsed_result is not None:
+            logger.info(format_parse_result_log("Webhook", searchKeyword, _parsed_result))
+            parsed_keyword = {
+                "title": _parsed_result.title,
+                "season": _parsed_result.season,
+                "episode": _parsed_result.episode,
+                "year": _parsed_result.year,
+            }
+        else:
+            parsed_keyword = parse_search_keyword(searchKeyword)
+            logger.info(format_parse_result_log("Webhook", searchKeyword, parsed_keyword))
         original_title = parsed_keyword["title"]
         season_to_filter = parsed_keyword.get("season") or season
         episode_to_filter = parsed_keyword.get("episode") or currentEpisodeIndex

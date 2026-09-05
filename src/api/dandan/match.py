@@ -23,7 +23,8 @@ from src.services import ScraperManager, TaskManager, MetadataSourceManager, uni
 from src.utils import (
     parse_search_keyword,
     ai_type_and_season_mapping_and_correction, title_contains_season_name,
-    SearchTimer, SEARCH_TYPE_FALLBACK_MATCH, SubStepTiming
+    SearchTimer, SEARCH_TYPE_FALLBACK_MATCH, SubStepTiming,
+    format_parse_result_log,
 )
 from src.utils.filename_parser import parse_filename
 from src.utils.search_timer import SubStepTiming  # noqa: F811
@@ -129,7 +130,8 @@ async def get_match_for_item(
     """
     logger.info(f"执行匹配逻辑, 文件名: '{item.fileName}'")
     parsed_info = parse_filename_for_match(item.fileName)
-    logger.info(f"文件名解析结果: {parsed_info}")
+    # 用统一格式化函数逐行打印解析结果（含年份/分辨率/发布组等全字段）
+    logger.info(format_parse_result_log("后备匹配", item.fileName, parsed_info))
     if not parsed_info:
         response = DandanMatchResponse(isMatched=False)
         logger.info(f"发送匹配响应 (解析失败): {response.model_dump_json(indent=2)}")

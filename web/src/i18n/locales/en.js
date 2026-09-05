@@ -2980,6 +2980,23 @@ Singer 2024 => {[rules=extra|pure version|preview|behind the scenes]}`,
     tabSchedule: 'Scheduled Tasks',
     tabRateLimit: 'Rate Limit Panel',
     tabProfile: 'Perf Stats',
+    tabSystemMetrics: 'System Resources',
+  },
+
+  // System Resources Monitor SystemMetricsPanel
+  systemMetrics: {
+    groupSystem: 'System Resources',
+    groupDatabase: 'DB Connection Pool',
+    groupTask: 'Task Queues',
+    groupCache: 'Cache',
+    activeAlerts: 'Active Alerts',
+    noData: 'No metrics yet (collector runs every 60s, please refresh later)',
+    updatedAt: 'Updated at',
+    autoRefreshOn: 'Auto Refresh',
+    autoRefreshOff: 'Paused',
+    range6h: 'Last 6h',
+    range24h: 'Last 24h',
+    range7d: 'Last 7d',
   },
 
   // Webhook Tasks

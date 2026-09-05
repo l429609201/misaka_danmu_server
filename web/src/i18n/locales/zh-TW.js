@@ -2974,6 +2974,23 @@ export default {
     tabSchedule: '定時任務',
     tabRateLimit: '流控面板',
     tabProfile: '效能統計',
+    tabSystemMetrics: '系統資源',
+  },
+
+  // 系統資源監控 SystemMetricsPanel
+  systemMetrics: {
+    groupSystem: '系統資源',
+    groupDatabase: '資料庫連線池',
+    groupTask: '任務佇列',
+    groupCache: '快取',
+    activeAlerts: '目前告警',
+    noData: '暫無採集資料（採集器每 60 秒採集一次，請稍候重新整理）',
+    updatedAt: '更新於',
+    autoRefreshOn: '自動重新整理',
+    autoRefreshOff: '暫停重新整理',
+    range6h: '近 6 小時',
+    range24h: '近 24 小時',
+    range7d: '近 7 天',
   },
 
   // Webhook 任務 WebhookTasks

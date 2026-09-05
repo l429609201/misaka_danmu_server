@@ -3,6 +3,7 @@ import { ScheduleTask } from './components/ScheduleTask'
 import { RateLimitPanel } from './components/RateLimitPanel'
 import { WebhookTasks } from './components/WebhookTasks'
 import { TaskProfilePanel } from './components/TaskProfilePanel'
+import { SystemMetricsPanel } from './components/SystemMetricsPanel'
 import { Tabs } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -42,6 +43,11 @@ export const Task = () => {
       label: t('taskPage.tabProfile'),
       key: 'profile',
       children: <TaskProfilePanel />,
+    },
+    {
+      label: t('taskPage.tabSystemMetrics'),
+      key: 'sysmetrics',
+      children: <SystemMetricsPanel />,
     },
   ]
 

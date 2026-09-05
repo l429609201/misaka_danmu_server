@@ -9,6 +9,7 @@
 
 import re
 import logging
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -37,7 +38,8 @@ class ParseResult:
     effect: Optional[str] = None
     original_title: Optional[str] = None
     en_name: Optional[str] = None
-    raw_input: Optional[str] = None  # 用户输入的原始完整文件名/关键词，供识别词等下游环节使用
+    raw_input: Optional[str] = None  
+    forced: Dict[str, str] = field(default_factory=dict)
 
 
 # ============================================================================
@@ -293,6 +295,320 @@ def _chinese_num_to_int(s: str) -> Optional[int]:
     return None
 
 
+# 通用强制元数据块：{key=value} 或 {key=value;key2=value2}
+# 键名统一小写、去下划线/连字符后再匹配语义（tmdb_id / TMDBID / tmdbid 等价）
+FORCED_META_BLOCK_RE = re.compile(r'\{([^{}]*?=[^{}]*?)\}')
+
+# 语义键归一映射：把各种写法归一到标准键名
+_FORCED_KEY_ALIASES = {
+    'tmdbid': 'tmdbid', 'tmdb': 'tmdbid',
+    'tvdbid': 'tvdbid', 'tvdb': 'tvdbid',
+    'imdbid': 'imdbid', 'imdb': 'imdbid',
+    'bangumiid': 'bangumiid', 'bangumi': 'bangumiid', 'bgmid': 'bangumiid', 'bgm': 'bangumiid',
+    'doubanid': 'doubanid', 'douban': 'doubanid',
+    'season': 's', 's': 's',
+    'episode': 'e', 'ep': 'e', 'e': 'e',
+    'type': 'type', 'mediatype': 'type',
+    'year': 'year',
+    'title': 'title', 'name': 'title',
+}
+
+
+def extract_forced_metadata(name: str) -> Tuple[str, Dict[str, str]]:
+    """
+    从文件名中提取并剥离通用强制元数据块 {key=value}。
+
+    借鉴 pipi/Anime-Manager 的 forced 机制，但做成**完全通用**的键值对提取：
+    不限定于 TMDBID，任意 {key=value} 都会被收集。
+
+    支持格式：
+    - 单键：'某剧 {tmdbid=1422} S01E03'
+    - 多键（分号或逗号分隔）：'某剧 {tmdbid=1422;s=2} '
+    - 多块：'某剧 {tmdbid=1422} {type=tv}'
+    - 键名容错：{TMDB_ID=1422} / {tmdbId = 1422} 均可
+
+    :param name: 原始文件名
+    :return: (剥离强制块后的文件名, 强制元数据字典)
+             字典键已归一（tmdb/tmdb_id/TMDBID → tmdbid；season → s；episode → e），
+             未识别的键保留其小写原名，值统一为去空白的字符串。
+    """
+    if not name or '{' not in name:
+        return name, {}
+
+    forced: Dict[str, str] = {}
+
+    def _collect(match: "re.Match") -> str:
+        body = match.group(1)
+        # 支持一个块内多个键值：分号/逗号分隔
+        for pair in re.split(r'[;,]', body):
+            if '=' not in pair:
+                continue
+            raw_key, _, raw_val = pair.partition('=')
+            # 键名归一：小写 + 去掉下划线/连字符/空格
+            key = re.sub(r'[\s_\-]', '', raw_key).strip().lower()
+            val = raw_val.strip()
+            if not key or not val:
+                continue
+            forced[_FORCED_KEY_ALIASES.get(key, key)] = val
+        # 剥离该块（替换为空格，避免标题粘连）
+        return ' '
+
+    stripped = FORCED_META_BLOCK_RE.sub(_collect, name)
+    stripped = re.sub(r'\s+', ' ', stripped).strip()
+    return stripped, forced
+
+
+def _apply_forced_metadata(result: ParseResult) -> ParseResult:
+    """
+    将 result.forced 中的已知语义键应用为**最高优先级**覆盖。
+
+    强制元数据代表用户的显式意图，优先级高于任何正则解析结果。
+    未知键不做处理，原样保留在 result.forced 中供下游消费。
+    """
+    if result is None or not result.forced:
+        return result
+
+    f = result.forced
+
+    # 季度 / 集数：显式指定则直接覆盖，并意味着这是剧集
+    if 's' in f:
+        try:
+            result.season = int(f['s'])
+            result.is_movie = False
+        except (ValueError, TypeError):
+            logger.debug(f"[强制元数据] 季度值无法解析为整数: {f['s']!r}")
+    if 'e' in f:
+        try:
+            result.episode = int(f['e'])
+            result.is_movie = False
+        except (ValueError, TypeError):
+            logger.debug(f"[强制元数据] 集数值无法解析为整数: {f['e']!r}")
+
+    # 媒体类型：tv/series → 剧集；movie/film → 电影
+    if 'type' in f:
+        t = f['type'].strip().lower()
+        if t in ('tv', 'tv_series', 'series', 'show', 'anime'):
+            result.is_movie = False
+            if result.season is None:
+                result.season = 1
+        elif t in ('movie', 'film', 'movies'):
+            result.is_movie = True
+            result.season = None
+            result.episode = None
+
+    # 年份
+    if 'year' in f and re.fullmatch(r'(?:19|20)\d{2}', f['year'].strip()):
+        result.year = f['year'].strip()
+
+    # 标题：显式指定标题直接覆盖（用于自动识别不准时人工兜底）
+    if 'title' in f and f['title'].strip():
+        result.title = f['title'].strip()
+
+    return result
+
+
+def _preprocess_name(name: str) -> str:
+    """
+    【阶段A】命名预处理：把国内资源站的花式命名归一，降低后续正则复杂度。
+
+    借鉴 MoviePilot 的 __prepare_title，处理项：
+    1. NFKC 折叠全角字符 → 半角（（2025）→ (2025)、Ｓ０１ → S01），
+       这样全角输入也能被后续 SxxExx 等正则命中；
+    2. 中文方头括号统一为半角方括号（【】→ []）；
+    3. 去除首部分类/搬运前缀（如 [新番][10月番][国漫][合集]）；
+    4. 去除体积标记（1.5GB / 700MB），避免被当成集数或年份；
+    5. 4K → 2160p，统一分辨率写法便于阶段B剥离。
+
+    :param name: 已去扩展名的原始文件名
+    :return: 归一化后的文件名
+    """
+    if not name:
+        return name
+
+    # 1. 全角 → 半角（NFKC 会把（）０１等折叠为 ()01，同时保留中日文字）
+    name = unicodedata.normalize('NFKC', name)
+
+    # 2. 【】→ []，便于统一按方括号处理
+    name = name.replace('【', '[').replace('】', ']')
+
+    # 3. 去除首部分类/搬运前缀括号块（仅当括号内含分类关键词时才剥，避免误删剧名）
+    #    最多剥两次，应对 [新番][10月番] 这种连续前缀
+    for _ in range(2):
+        stripped = re.sub(
+            r'^\s*\[[^\]]*?(?:新番|\d{1,2}月番|月番|日[漫剧]|国[漫剧]|美[剧漫]|韩剧|'
+            r'搬运|搬運|合集|连载|連載|全集|完结|完結)[^\]]*?\]\s*',
+            '', name
+        )
+        if stripped == name:
+            break
+        name = stripped
+
+    # 4. 去除体积标记（1.5GB / 700 MB），前后需非字母数字避免误伤编码词
+    name = re.sub(r'(?<![A-Za-z0-9])\d+(?:\.\d+)?\s*[MGT]i?B(?![A-Za-z0-9])', ' ', name, flags=re.IGNORECASE)
+
+    # 5. 4K → 2160p（统一写法，交给阶段B的 PIX_RE 剥离）
+    name = re.sub(r'(?<![A-Za-z0-9])4K(?![A-Za-z0-9])', '2160p', name, flags=re.IGNORECASE)
+
+    return re.sub(r'\s+', ' ', name).strip()
+
+
+def normalize_title_key(title: str) -> str:
+    """
+    【阶段E】生成标题归一化"指纹"，仅用于匹配/去重比对，不用于展示。
+
+    借鉴 huangxd-/danmu_api 的 normalizeRuleTitle：
+    NFKC 折叠全半角 → 去掉所有非字母数字字符（空格/标点/分隔符全去）→ 转小写。
+
+    效果：'凡人修仙传'、'凡人修仙传 '、'凡人·修仙传'、'Fanren Xiu Xian Zhuan' 等
+    在跨源去重与候选比对时能稳定命中同一 key，吃掉全半角、标点、空格、大小写差异。
+
+    :param title: 原始标题
+    :return: 归一化指纹（可能为空串，调用方需自行判空）
+    """
+    if not title:
+        return ""
+    s = unicodedata.normalize('NFKC', str(title))
+    # 仅保留：数字、拉丁字母、CJK 统一表意文字、日文平/片假名、韩文
+    s = re.sub(
+        r'[^0-9A-Za-z\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7a3]',
+        '', s
+    )
+    return s.lower()
+
+
+def _is_garbage_title(title: str) -> bool:
+    """
+    【阶段D辅助】判断标题是否为"技术垃圾"（不可信标题）。
+
+    典型垃圾：纯数字(03)、纯技术词(OVA/BD/1080p)、纯语言标记(CHS/BIG5)、长度过短。
+    借鉴 pipi PostProcessor 的 invalid_keywords 判定。
+    """
+    if not title:
+        return True
+    t = title.strip()
+    # 去掉所有非字母数字后长度不足 2，视为无效（如 "-"、"[]"、"03"）
+    core = re.sub(r'[^0-9A-Za-z\u4e00-\u9fff\u3040-\u30ff]', '', t)
+    if len(core) < 2:
+        return True
+    # 纯数字（集号残留）
+    if core.isdigit():
+        return True
+    # 纯技术词/类型词/语言标记
+    garbage_words = {
+        'OVA', 'ONA', 'OAD', 'SP', 'SPECIAL', 'SPECIALS', 'TV', 'BD', 'DVD',
+        'MOVIE', 'MP4', 'MKV', 'AVI', 'WEB', 'WEBDL', 'CHS', 'CHT', 'GB',
+        'BIG5', 'JP', 'JPSC', 'ENG', 'JAP', 'RAW', 'FIN', 'END', 'COMPLETE',
+    }
+    if core.upper() in garbage_words:
+        return True
+    # 纯分辨率（1080p / 2160P / 720x480）
+    if re.fullmatch(r'\d{3,4}[pPiI]?', core) or re.fullmatch(r'\d{3,4}[xX]\d{3,4}', core):
+        return True
+    # 序数词残留（2nd / 3rd）
+    if re.fullmatch(r'\d+(?:st|nd|rd|th)', core, re.IGNORECASE):
+        return True
+    return False
+
+
+def _rescue_title_from_brackets(raw: str) -> Optional[str]:
+    """
+    【阶段D辅助】从原始文件名的括号块中"回捞"可信标题。
+
+    借鉴 pipi PostProcessor STEP5 的深度回捞：当主流程抠出的标题不可信时，
+    遍历所有 [xxx]/【xxx】 块，排除技术词/校验码/集数块，优先返回含中文的候选。
+    """
+    if not raw:
+        return None
+    blocks = re.findall(r'[\[\【]([^\]\】]+)[\]\】]', raw)
+    cjk_candidates: List[str] = []
+    other_candidates: List[str] = []
+    for b in blocks:
+        b = b.strip()
+        if not b or len(b) < 2:
+            continue
+        # 排除技术规格块
+        if re.search(r'\d{3,4}[pPiI]\b|H\.?26[45]|x26[45]|AVC|HEVC|AAC|FLAC|'
+                     r'WEB-?DL|BDRip|CHS|CHT|BIG5|MP4|MKV|新番|\d{1,2}月番',
+                     b, re.IGNORECASE):
+            continue
+        # 排除 8 位十六进制校验码（如 FEA67121）
+        if re.fullmatch(r'[0-9A-Fa-f]{8}', b):
+            continue
+        # 排除纯集数/集数区间块（03 / 01-12 / 第03话）
+        if re.fullmatch(r'(?:第\s*)?\d{1,4}(?:\s*[-~]\s*\d{1,4})?(?:\s*[集话話回期])?', b):
+            continue
+        # 排除明显的技术垃圾词
+        if _is_garbage_title(b):
+            continue
+        if _has_cjk(b):
+            cjk_candidates.append(b)
+        else:
+            other_candidates.append(b)
+    # 中文标题优先（国内场景剧名多为中文）
+    if cjk_candidates:
+        return cjk_candidates[0]
+    if other_candidates:
+        return other_candidates[0]
+    return None
+
+
+def _post_correct(result: ParseResult, raw: str) -> ParseResult:
+    """
+    【阶段D】后处理纠偏：对解析结果做一遍"体检"，修正明显错误。
+
+    借鉴 pipi PostProcessor 的 STEP4（属性对撞）与 STEP7（类型判定），
+    是杜绝"明明有 S01/集数却被判成电影"这类错误的最后防线。
+
+    纠偏规则（按优先级）：
+    1. 年份被误当作集数（episode>1900 且无季号）→ 清空集数并判为电影；
+    2. 【硬规则】只要有 season 或 episode → 一律 TV，禁止 is_movie；有集无季补 season=1；
+    3. 剧场版特征词优先级最高 → 强制电影并清空季集；
+    4. 标题为技术垃圾 → 从原始文件名括号块回捞标题。
+
+    :param result: 待纠偏的解析结果
+    :param raw: 原始（已预处理）文件名，用于关键词判定与标题回捞
+    :return: 纠偏后的解析结果（原地修改并返回）
+    """
+    if result is None:
+        return result
+
+    # 规则1：年份误判为集数（如 "某剧 2019" 被当成第2019集）
+    if result.episode is not None and result.episode > 1900 and result.season is None:
+        logger.debug(f"[纠偏] 集数 {result.episode} 疑似年份，清空集数并判为电影")
+        result.episode = None
+        result.is_movie = True
+
+    # 规则2【硬规则】：有季号或集号 → 必为剧集，绝不判电影
+    if result.season is not None or result.episode is not None:
+        if result.is_movie:
+            logger.debug(f"[纠偏] 存在季/集(S{result.season}/E{result.episode})，撤销电影判定")
+        result.is_movie = False
+        if result.season is None:
+            # 有集无季：默认第 1 季，避免下游季度过滤取不到值
+            result.season = 1
+
+    # 规则3：剧场版/movie 特征词优先级最高（真电影不该有季集）
+    if is_movie_by_title(raw):
+        if not result.is_movie:
+            logger.debug(f"[纠偏] 命中剧场版特征词，强制判为电影并清空季集")
+        result.is_movie = True
+        result.season = None
+        result.episode = None
+
+    # 规则4：标题不可信 → 从括号块回捞
+    if _is_garbage_title(result.title):
+        rescued = _rescue_title_from_brackets(raw)
+        if rescued:
+            logger.debug(f"[纠偏] 标题 '{result.title}' 不可信，回捞为 '{rescued}'")
+            result.title = rescued
+
+    # 规则5【最高优先级】：应用文件名内嵌的强制元数据 {key=value}
+    # 用户显式指定的意图优先于一切正则解析与纠偏结果，故放在最后覆盖
+    result = _apply_forced_metadata(result)
+
+    return result
+
+
 def _strip_video_extension(filename: str) -> str:
     """移除视频文件扩展名"""
     if '.' in filename:
@@ -472,12 +788,25 @@ def parse_filename(filename: str) -> Optional[ParseResult]:
     从文件名中解析出标题、季集、元数据等信息。
     替代 parse_filename_for_match()。
 
-    采用上游 anime-matcher 的 "先剥离元数据，再提取标题" 策略：
-    1. 从原始文件名中提取元数据值（分辨率、编码等）
-    2. 剥离所有元数据标签，得到干净的标题+集数字符串
-    3. 在干净字符串上做标题/季集模式匹配
+    采用五阶段流水线（详见 docs/识别核心对比分析.md 第六章）：
+    - 阶段0 强制元数据：提取并剥离通用 {key=value} 块（extract_forced_metadata）
+    - 阶段A 预处理：全半角归一、【】→[]、去分类前缀/体积标记（_preprocess_name）
+    - 阶段B 元数据剥离：提取并剥离分辨率/编码/来源/平台等（_strip_all_metadata）
+    - 阶段C 季集提取：多梯队容错正则（SxxExx容错 → S+分隔 → 中文集数 → 裸集号 → 纯季号）
+    - 阶段D 后处理纠偏：有季集必判TV、年份误判修正、标题回捞（_post_correct）
+      并在纠偏后应用强制元数据（最高优先级覆盖）
+    - 阶段E 归一化指纹：normalize_title_key 供下游统一过滤使用（独立函数，不在此调用）
     """
     name = _strip_video_extension(filename)
+
+    # ── 阶段0: 提取并剥离通用强制元数据块 {key=value} ──
+    # 必须最先执行：{} 内容会干扰后续所有正则（如 {tmdbid=1422} 里的数字被当成集数）
+    name, forced_meta = extract_forced_metadata(name)
+    if forced_meta:
+        logger.debug(f"[强制元数据] 提取到: {forced_meta}")
+
+    # ── 阶段A: 命名预处理（全半角归一、去分类前缀/体积标记、4K→2160p）──
+    name = _preprocess_name(name)
 
     # ── 阶段1: 从原始文件名提取元数据值 ──
     # 预处理：拆分常见连写元数据 (如 WEB-DLHDR → WEB-DL.HDR) 以便正确提取
@@ -555,11 +884,18 @@ def parse_filename(filename: str) -> Optional[ParseResult]:
         dynamic_range=dynamic_range.group(1) if dynamic_range else None,
         platform=(platform.group(1) or platform.group(2)) if platform else None,
         effect=effect.group(1) if effect else None,
+        # 阶段0 提取的通用强制元数据，随所有出口一并返回
+        forced=forced_meta,
     )
 
-    # ── 阶段1.5: 在原始文件名上先尝试 SxxExx (最可靠的模式) ──
+    # ── 阶段C 梯队1: SxxExx（最可靠，容错版）──
+    # 集号后允许可选的版本/脏后缀（v2 / .5 / 单个字母），并用「后面不是数字」的
+    # 否定断言收尾替代原先的 \b。原因：\b 在 "S01E3e" 的 3 与 e 之间不成立，
+    # 会导致整条模式失配 → 季集全丢 → 最终误判为电影（真实 bug）。
     m = re.search(
-        r'(?P<title>.+?)[\s._-]*[Ss](?P<season>\d{1,2})[Ee](?P<episode>\d{1,4})\b',
+        r'(?P<title>.+?)[\s._-]*[Ss](?P<season>\d{1,2})[\s._-]*[Ee](?P<episode>\d{1,4})'
+        r'(?:[vV]\d{1,2}|\.\d{1,2}|[A-Za-z])?'
+        r'(?![0-9])',
         name
     )
     if m:
@@ -570,12 +906,17 @@ def parse_filename(filename: str) -> Optional[ParseResult]:
         title = re.sub(r'\s+', ' ', title).strip(' -')
         full_title = title
         title, en_name = _split_multilang_title(title)
-        return ParseResult(title=title, season=int(m.group('season')),
-                           episode=int(m.group('episode')),
-                           original_title=full_title if en_name else None,
-                           en_name=en_name, **meta)
+        return _post_correct(
+            ParseResult(title=title, season=int(m.group('season')),
+                        episode=int(m.group('episode')),
+                        original_title=full_title if en_name else None,
+                        en_name=en_name, **meta),
+            name
+        )
+    # ── 阶段C 梯队2: S 与集号被分隔符隔开（"标题 S01 - 03"、"标题.S1.03"）──
     m = re.search(
-        r'(?P<title>.+?)[\s._-]+[Ss](?P<season>\d{1,2})[\s._-]+(?P<episode>\d{1,4})\b',
+        r'(?P<title>.+?)[\s._-]+[Ss](?P<season>\d{1,2})[\s._-]+(?P<episode>\d{1,4})'
+        r'(?![0-9])',
         name
     )
     if m:
@@ -586,10 +927,44 @@ def parse_filename(filename: str) -> Optional[ParseResult]:
         title = re.sub(r'\s+', ' ', title).strip(' -')
         full_title = title
         title, en_name = _split_multilang_title(title)
-        return ParseResult(title=title, season=int(m.group('season')),
-                           episode=int(m.group('episode')),
-                           original_title=full_title if en_name else None,
-                           en_name=en_name, **meta)
+        return _post_correct(
+            ParseResult(title=title, season=int(m.group('season')),
+                        episode=int(m.group('episode')),
+                        original_title=full_title if en_name else None,
+                        en_name=en_name, **meta),
+            name
+        )
+    # ── 阶段C 梯队3: 中文集数（第N集/话/話/期/回），国内最常见 ──
+    # 季号可能出现在标题里（如"凡人修仙传 第二季 第3集"），交由 extract_season_from_title 提取
+    m = re.search(
+        r'(?P<title>.+?)[\s._-]*第\s*(?P<episode>\d{1,4})\s*[集话話期回]',
+        name
+    )
+    if m:
+        title = m.group('title')
+        title = _clean_brackets_and_metadata(title)
+        title = _normalize_separators(title)
+        title = _clean_year_from_title(title)
+        title = re.sub(r'\s+', ' ', title).strip(' -')
+        # 先从标题中提取季度，再剥离季度后缀，避免"第二季"残留在标题里
+        season_from_title = extract_season_from_title(title)
+        if season_from_title is not None:
+            for sp in SEASON_SUFFIX_PATTERNS:
+                cleaned_title = re.sub(sp, '', title, flags=re.IGNORECASE).strip()
+                if cleaned_title and cleaned_title != title:
+                    title = cleaned_title
+                    break
+            title = re.sub(r'[\s\-_：:]+$', '', title).strip()
+        full_title = title
+        title, en_name = _split_multilang_title(title)
+        return _post_correct(
+            ParseResult(title=title, season=season_from_title,
+                        episode=int(m.group('episode')),
+                        original_title=full_title if en_name else None,
+                        en_name=en_name, **meta),
+            name
+        )
+    # ── 阶段C 梯队5: 仅季号无集号（"标题 S2"、"标题 Season 2"）──
     for pattern in [
         re.compile(r'^(?P<title>.+?)[\s._-]+[Ss](?P<season>\d{1,2})(?:\s|$)', re.IGNORECASE),
         re.compile(r'^(?P<title>.+?)[\s._-]+Season[\s._-]*(?P<season>\d{1,2})(?:\s|$)', re.IGNORECASE),
@@ -603,9 +978,12 @@ def parse_filename(filename: str) -> Optional[ParseResult]:
             title = re.sub(r'\s+', ' ', title).strip(' -')
             full_title = title
             title, en_name = _split_multilang_title(title)
-            return ParseResult(title=title, season=int(m.group('season')),
-                               original_title=full_title if en_name else None,
-                               en_name=en_name, **meta)
+            return _post_correct(
+                ParseResult(title=title, season=int(m.group('season')),
+                            original_title=full_title if en_name else None,
+                            en_name=en_name, **meta),
+                name
+            )
     cleaned = _strip_all_metadata(name)
     # 移除年份括号 (如 "(2024)")
     cleaned = re.sub(r'[\(\（]\s*(19|20)\d{2}\s*[\)\）]', ' ', cleaned)
@@ -615,9 +993,7 @@ def parse_filename(filename: str) -> Optional[ParseResult]:
     cleaned = cleaned.replace('.', ' ').replace('_', ' ')
     cleaned = re.sub(r'\s+', ' ', cleaned).strip(' -')
 
-    # ── 阶段3: 在干净字符串上做 Episode / Movie 匹配 ──
-
-    # 模式3: Episode only ("Title - 02", "Title 02")
+    # ── 阶段C 梯队4: 裸集号（"Title - 02"、"Title 02"）──
     for pattern in [
         re.compile(r'^(?P<title>.+?)\s*[-_]\s*(?P<episode>\d{1,4})\s*$'),
         re.compile(r'^(?P<title>.+?)\s+(?P<episode>\d{1,4})\s*$'),
@@ -644,18 +1020,25 @@ def parse_filename(filename: str) -> Optional[ParseResult]:
             full_title = title
             title, en_name = _split_multilang_title(title)
             if title:
-                return ParseResult(title=title, season=season_from_title, episode=ep,
-                                   original_title=full_title if en_name else None,
-                                   en_name=en_name, **meta)
+                return _post_correct(
+                    ParseResult(title=title, season=season_from_title, episode=ep,
+                                original_title=full_title if en_name else None,
+                                en_name=en_name, **meta),
+                    name
+                )
+    # ── 兜底: 无任何季集特征 → 判为电影（仍经阶段D纠偏做最后校验）──
     title = _clean_year_from_title(cleaned)
     title = re.sub(r'\s+', ' ', title).strip(' -')
     full_title = title
     title, en_name = _split_multilang_title(title)
 
     if title:
-        return ParseResult(title=title, is_movie=True,
-                           original_title=full_title if en_name else None,
-                           en_name=en_name, **meta)
+        return _post_correct(
+            ParseResult(title=title, is_movie=True,
+                        original_title=full_title if en_name else None,
+                        en_name=en_name, **meta),
+            name
+        )
 
     return None
 
@@ -714,6 +1097,77 @@ def parse_search_keyword(keyword: str) -> Dict[str, Any]:
 
 
 # ============================================================================
+# 统一日志格式化：把解析结果拼成一条多行日志（每字段单独一行）
+# ============================================================================
+
+# 字段展示顺序与中文标签（值为空的字段不输出）
+_PARSE_LOG_FIELDS = [
+    ("title", "标题"),
+    ("year", "年份"),
+    ("season", "季度"),
+    ("episode", "集数"),
+    ("is_movie", "是否剧场版"),
+    ("resolution", "分辨率"),
+    ("video_codec", "视频编码"),
+    ("audio_codec", "音频编码"),
+    ("source", "来源"),
+    ("platform", "平台"),
+    ("dynamic_range", "动态范围"),
+    ("effect", "特效"),
+    ("team", "发布组"),
+    ("en_name", "英文名"),
+    ("original_title", "原始标题"),
+]
+
+
+def format_parse_result_log(source: str, raw_input: str, result: Any) -> str:
+    """
+    把文件名解析结果拼成一条多行日志字符串，供 logger.info 一次性输出。
+
+    每个字段单独占一行，空值字段自动跳过，避免刷屏也便于肉眼核对。
+    同时兼容 ParseResult 对象与 dict（parse_search_keyword 的返回）。
+
+    :param source: 来源标签，如「后备匹配」「Webhook」「外部自动导入」
+    :param raw_input: 用户/播放器传入的原始文件名或关键词
+    :param result: parse_filename 返回的 ParseResult，或 parse_search_keyword 返回的 dict
+    :return: 形如「[来源] 文件名解析结果：\n  原始输入: ...\n  标题: ...」的多行字符串
+    """
+    lines = [f"[{source}] 文件名解析结果："]
+    lines.append(f"  原始输入: {raw_input}")
+
+    if result is None:
+        lines.append("  （解析失败，未能提取任何信息）")
+        return "\n".join(lines)
+
+    # 统一取值：ParseResult 用属性访问，dict 用 key 访问
+    def _get(field_name: str) -> Any:
+        if isinstance(result, dict):
+            return result.get(field_name)
+        return getattr(result, field_name, None)
+
+    for field_name, label in _PARSE_LOG_FIELDS:
+        value = _get(field_name)
+        # 跳过空值（None / 空串），但布尔 False 的「是否剧场版」需特殊处理
+        if field_name == "is_movie":
+            # 仅当明确是剧场版时才打印，避免每条都显示「否」
+            if value:
+                lines.append(f"  {label}: 是")
+            continue
+        if value is None or value == "":
+            continue
+        lines.append(f"  {label}: {value}")
+
+    # 强制元数据单独展示（dict 类型，逐项列出便于核对用户显式指定的意图）
+    forced = _get("forced")
+    if forced:
+        pairs = ", ".join(f"{k}={v}" for k, v in forced.items())
+        lines.append(f"  强制元数据: {pairs}")
+
+    return "\n".join(lines)
+
+
+# ============================================================================
+
 # 核心函数 3: extract_season_episode — 从文件名提取季集
 # ============================================================================
 

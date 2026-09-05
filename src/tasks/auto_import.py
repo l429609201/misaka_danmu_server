@@ -13,8 +13,9 @@ from src.rate_limiter import RateLimiter
 from src.utils import (
     ai_type_and_season_mapping_and_correction,
     SearchTimer, SEARCH_TYPE_CONTROL_AUTO_IMPORT,
-    is_movie_by_title,
+    is_movie_by_title, format_parse_result_log,
 )
+from src.utils.filename_parser import parse_filename
 from src.utils.search_timer import SubStepTiming
 from src.utils.task_profiler import TaskProfiler, FLOW_AUTO_IMPORT
 
@@ -125,6 +126,31 @@ async def auto_search_and_import_task(
         if search_type == "keyword" and search_term.isdigit():
             logger.info(f"检测到关键词 '{search_term}' 为数字，将尝试作为TMDB ID进行元数据获取...")
             effective_search_type = "tmdb"
+
+        # keyword 类型（非数字）：searchTerm 可能是完整文件名（含年份/发布组/分辨率/季集），
+        # 走完整解析器 parse_filename 提取干净标题与季/集/年份。
+        # 显式参数优先：调用方通过 season/episode 传入的值不被解析结果覆盖。
+        if effective_search_type == "keyword":
+            _parsed = parse_filename(search_term)
+            if _parsed is not None:
+                logger.info(format_parse_result_log("外部自动导入", search_term, _parsed))
+                if _parsed.title:
+                    # 用解析出的干净标题替换原始搜索词，避免噪声污染后续元数据查询与搜索
+                    main_title = _parsed.title
+                    search_term = _parsed.title
+                    aliases = {main_title}
+                # 显式参数优先：仅当调用方未传时，才采用文件名解析出的季/集
+                if season is None and _parsed.season is not None:
+                    season = _parsed.season
+                if payload.episode is None and _parsed.episode is not None:
+                    # payload.episode 是字符串格式（支持多集），解析出的单集转成字符串
+                    payload.episode = str(_parsed.episode)
+                # 年份供后续元数据消歧使用（若解析到）
+                if _parsed.year:
+                    try:
+                        year = int(_parsed.year)
+                    except (ValueError, TypeError):
+                        pass
 
         if effective_search_type != "keyword":
             timer.step_start("元数据查询")
