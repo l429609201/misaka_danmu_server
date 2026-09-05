@@ -3,7 +3,11 @@
  * ------------------------------------------------------------
  * 参考 MoviePilot 的 AgentAssistantPanel.vue。
  * 用 antd Drawer 承载：顶部形象展示区 + 消息列表 + 输入框。
- * 回复内容用 react-markdown 渲染（项目已依赖）。
+ * 回复内容用 react-markdown + remark-gfm 渲染。
+ * why remark-gfm：表格、删除线、任务列表属于 GFM 扩展语法，
+ * 原版 Markdown 规范不含表格。缺这个插件时 LLM 输出的 | 表格 | 会原样显示成
+ * 一堆竖线纯文本（加粗等基础语法却正常），故必须显式注入。
+ * 这也是 personas.py 里 supports_table=True 能成立的前提。
  *
  * 当前为纯 UI 外壳：sendMessage 走"假回复占位"，
  * 真正接 LLM 时只需替换 requestReply 的实现即可（已预留 TODO 口子）。
@@ -12,6 +16,7 @@ import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Drawer, Input, Button, Avatar, Dropdown, message as antdMessage } from 'antd'
 import { SendOutlined, HistoryOutlined, PlusOutlined, DeleteOutlined, PaperClipOutlined, CopyOutlined, DownloadOutlined } from '@ant-design/icons'
 import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
 import { AVATAR_IMG, getPetLabel } from './pet/petActions'
 import { useAssistantChat } from './useAssistantChat'
@@ -452,7 +457,8 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
                 {m.toolLabel && (
                   <div className="assistant-tool-chip">🔧 {m.toolLabel}…</div>
                 )}
-                <Markdown>{m.content || ''}</Markdown>
+                {/* remarkGfm：启用表格/删除线/任务列表等 GFM 扩展语法 */}
+                <Markdown remarkPlugins={[remarkGfm]}>{m.content || ''}</Markdown>
                 {/* 复制按钮：非流式且有内容时显示（hover 出现） */}
                 {!m.streaming && m.content && (
                   <span

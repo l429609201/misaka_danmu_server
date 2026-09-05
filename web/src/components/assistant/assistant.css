@@ -319,3 +319,55 @@
 .assistant-msg p:last-child {
   margin-bottom: 0;
 }
+
+
+/* ---------- Markdown 表格（remark-gfm 渲染产物） ----------
+ * why：助手常用表格对比"多个配置项 × 多个字段"，无边框时几乎不可读。
+ * 面板宽度有限，故给表格套横向滚动容器，避免列多时撑破气泡。
+ * 颜色统一走 CSS 变量，随主题（浅色/深色）自动适配。
+ */
+.assistant-msg table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.assistant-msg table th,
+.assistant-msg table td {
+  border: 1px solid var(--assistant-table-border, rgba(0, 0, 0, 0.12));
+  padding: 5px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+.assistant-msg table th {
+  background: var(--assistant-table-head-bg, rgba(0, 0, 0, 0.05));
+  font-weight: 600;
+}
+/* 斑马纹：长表格里更容易横向对齐读数 */
+.assistant-msg table tbody tr:nth-child(even) {
+  background: var(--assistant-table-even-bg, rgba(0, 0, 0, 0.02));
+}
+/* 用户气泡是深蓝底，需要反色边框才看得见 */
+.assistant-msg.user table th,
+.assistant-msg.user table td {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.assistant-msg.user table th {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* 深色主题下的表格配色（项目用 .dark 类策略，见 index.css） */
+.dark .assistant-msg table th,
+.dark .assistant-msg table td {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.dark .assistant-msg table th {
+  background: rgba(255, 255, 255, 0.08);
+}
+.dark .assistant-msg table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}
