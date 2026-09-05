@@ -8,12 +8,22 @@
 
 ### 启动开发服务器
 
-```bash
-# 启动后端（FastAPI）
-python main.py
+⚠️ 根目录**没有** `main.py`，入口是 `src/main.py`，必须以模块方式启动。
 
-# 或使用 uvicorn
-uvicorn main:app --reload --host 0.0.0.0 --port 3000
+```bash
+# 启动后端（与容器内 run.sh 完全一致的方式）
+python -m src.main
+```
+
+默认监听端口 **7768**（见 `Dockerfile` 的 `EXPOSE 7768`），
+健康检查端点 `http://127.0.0.1:7768/api/health`。
+端口由配置读取，不要在命令行硬编码 `--port`。
+
+Windows 下若 `import src` 失败，先设置 PYTHONPATH：
+
+```powershell
+$env:PYTHONPATH = (Get-Location).Path
+python -m src.main
 ```
 
 ### 启动前端开发服务器
@@ -62,34 +72,57 @@ pytest tests/test_webhook.py::test_emby_parsing
 
 ## 🗄️ 数据库管理
 
-### Alembic 迁移
+### 数据库迁移（自研标志位机制，非 Alembic）
 
-```bash
-# 创建新迁移
-alembic revision --autogenerate -m "Add new column to anime table"
+⚠️ 本项目**没有** `alembic.ini`，`migrations/versions/` 为空，
+`alembic revision` / `alembic upgrade` 等命令**全部不可用**。
 
-# 应用迁移（升级到最新版本）
-alembic upgrade head
+迁移由 `src/db/migrations.py` 在启动时自动执行，机制如下：
 
-# 回退一个版本
-alembic downgrade -1
+1. 每个迁移有唯一 `migration_id`（如 `reset_notification_subscriptions_v1`）
+2. 执行前查 `config` 表是否已有该 id 的标志位，有则跳过
+3. 执行成功后写入标志位，确保只跑一次
 
-# 查看当前版本
-alembic current
+**新增迁移的步骤**（三处都要改，漏一处就会重复执行或永不执行）：
 
-# 查看迁移历史
-alembic history
+```python
+# 1. 在 src/db/migrations.py 定义迁移函数
+async def _migrate_xxx_v1(conn: AsyncConnection):
+    """迁移说明：为什么需要这次迁移。"""
+    await conn.execute(text("UPDATE ..."))
+
+# 2. 登记到 run_migrations() 的 migrations 列表
+migrations = [
+    ...
+    ("migrate_xxx_v1", _migrate_xxx_v1, ()),
+]
+
+# 3. 登记到模块级 ALL_MIGRATION_IDS 列表
+ALL_MIGRATION_IDS = [
+    ...
+    "migrate_xxx_v1",
+]
 ```
+
+**只是加字段或扩类型时无需手写迁移** —— `db_maintainer.py` 会在启动时
+自动比对 ORM 模型并补齐，仅「数据转换 / 重命名 / 回填 / 删列」才需要写迁移函数。
 
 ### 数据库备份和恢复
 
 ```bash
-# 备份数据库（SQLite）
-cp config/user.db config/user.db.backup
+# 默认数据库是 MySQL（src/core/config.py: type = "mysql"），也支持 PostgreSQL。
+# 备份不要手工拷文件，项目已有专用作业：src/jobs/database_backup.py，
+# 界面入口：设置 → 数据库备份与还原（可立即备份 / 上传还原）。
 
-# 恢复数据库
-cp config/user.db.backup config/user.db
+# MySQL 手工备份（容器外）
+mysqldump -h <host> -u <user> -p <dbname> > backup.sql
+
+# PostgreSQL 手工备份
+pg_dump -h <host> -U <user> <dbname> > backup.sql
 ```
+
+⚠️ 旧版文档写的 `cp config/user.db` 是错的：该文件不存在，
+且本项目主力使用 MySQL/PostgreSQL，不能靠拷贝单文件备份。
 
 ---
 
@@ -127,18 +160,20 @@ npm update package_name
 
 ## 🔍 代码检查
 
-### 格式化和 Lint
+⚠️ 本项目**未配置** black / pylint / mypy / ruff
+（`requirements.txt` 中无这些依赖，也没有 `pyproject.toml`、`.pylintrc`、`mypy.ini`）。
+不要建议或执行这些命令，改动后的验证手段只有：
 
 ```bash
-# 格式化 Python 代码（如果使用 black）
-black src/
+# 语法检查（改完 Python 文件必做）
+python -m py_compile src/path/to/changed_file.py
 
-# Lint 检查（如果使用 pylint）
-pylint src/
-
-# 类型检查（如果使用 mypy）
-mypy src/
+# 批量检查
+python -m compileall src/
 ```
+
+代码风格靠人工遵循 `03-code-styles.md`，没有自动化工具兜底，
+因此改动时更要严格对齐周边既有代码的写法。
 
 ---
 
@@ -157,10 +192,10 @@ docker build -t misaka-danmu-server:1.2.0 .
 ### 运行容器
 
 ```bash
-# 运行容器
+# 运行容器（端口 7768，与 Dockerfile 的 EXPOSE 一致）
 docker run -d \
   --name misaka-danmu \
-  -p 3000:3000 \
+  -p 7768:7768 \
   -v $(pwd)/config:/app/config \
   misaka-danmu-server
 
@@ -275,7 +310,8 @@ grep -rn "async def" src/tasks/
    - 修改配置后需要重启容器
 
 2. **开发环境操作**：
-   - 修改数据库模型后必须创建 Alembic 迁移
+   - 修改数据库模型：加字段/扩类型由 `db_maintainer.py` 自动处理；
+     需数据转换时在 `src/db/migrations.py` 追加迁移（本项目不用 Alembic）
    - 修改前端代码后需要重新构建
    - 修改数据源后必须更新版本号
 

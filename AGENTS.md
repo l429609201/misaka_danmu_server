@@ -1,4 +1,4 @@
-# AGENTS.md
+﻿# AGENTS.md
 
 This file is the primary instruction set for all AI agents and LLMs working in this repository. Local documentation takes precedence over general training data. You must follow this file and the rule documents it references.
 
@@ -31,10 +31,10 @@ You are NOT an advisor. You are an AUTONOMOUS coding agent that DOES the work, n
 Before generating code or proposing changes, you MUST:
 
 1. **Identify the domains** the task actually touches:
-   - Task system? → Load `docs/rules/02-design-patterns.md` (Task System Pattern)
-   - Database? → Load `docs/rules/01-architecture.md` (Database Access Rules)
-   - Data source? → Load `docs/rules/02-design-patterns.md` (Scraper Management Pattern)
-   - Webhook? → Load `docs/rules/02-design-patterns.md` (Webhook Import Flow)
+   - Task system? → Load `src/ai/assistant/rules/02-design-patterns.md` (Task System Pattern)
+   - Database? → Load `src/ai/assistant/rules/01-architecture.md` (Database Access Rules)
+   - Data source? → Load `src/ai/assistant/rules/02-design-patterns.md` (Scraper Management Pattern)
+   - Webhook? → Load `src/ai/assistant/rules/02-design-patterns.md` (Webhook Import Flow)
 
 2. **Use tools to investigate** before answering:
    ```
@@ -48,7 +48,7 @@ Before generating code or proposing changes, you MUST:
    Step 6: Report "已修复：在 webhook.py 第 26 行添加了 Anime 导入"
    ```
 
-3. **Load relevant rules** from `docs/rules/`:
+3. **Load relevant rules** from `src/ai/assistant/rules/`:
    - When modifying task system → Load pattern rules
    - When modifying database → Load architecture rules
    - When adding features → Load design patterns
@@ -66,7 +66,7 @@ Before generating code or proposing changes, you MUST:
 For work that changes repository behavior, identify domains and load applicable documents:
 
 ### Architecture and Module Boundaries
-* **Primary Reference:** `docs/rules/01-architecture.md`
+* **Primary Reference:** `src/ai/assistant/rules/01-architecture.md`
 * **Required Constraints:** 
   - Respect layer boundaries and dependency flow
   - Do not introduce circular dependencies
@@ -74,7 +74,7 @@ For work that changes repository behavior, identify domains and load applicable 
   - Tasks MUST be submitted via `TaskManager`
 
 ### Design Patterns and Business Logic
-* **Primary Reference:** `docs/rules/02-design-patterns.md`
+* **Primary Reference:** `src/ai/assistant/rules/02-design-patterns.md`
 * **Required Constraints:**
   - Task system: Use `TaskManager.submit_task()` + `TaskSuccess`/`TaskFailed`
   - Webhook: Inherit `BaseWebhookHandler`, use `dispatch_task()`
@@ -82,7 +82,7 @@ For work that changes repository behavior, identify domains and load applicable 
   - Import flow: Validate first episode → Create DB entries → Download iteratively
 
 ### Coding Standards and Style
-* **Primary Reference:** `docs/rules/03-code-styles.md`
+* **Primary Reference:** `src/ai/assistant/rules/03-code-styles.md`
 * **Required Constraints:**
   - All functions MUST have type annotations
   - Public functions MUST have Chinese docstrings
@@ -91,7 +91,7 @@ For work that changes repository behavior, identify domains and load applicable 
   - No circular imports (use delayed import if needed)
 
 ### Commands and Development Workflow
-* **Primary Reference:** `docs/rules/04-commands.md`
+* **Primary Reference:** `src/ai/assistant/rules/04-commands.md`
 * **Required Constraints:**
   - Use `python -m py_compile` to verify syntax
   - Use `alembic revision` for database schema changes
@@ -184,7 +184,7 @@ Agent: "我建议使用 asyncio.create_task() 启动后台任务"
 
 ✅ Correct:
 ```
-Agent: [loads docs/rules/02-design-patterns.md]
+Agent: [loads src/ai/assistant/rules/02-design-patterns.md]
        [reads Task System Pattern]
        "根据项目设计模式，所有后台任务必须通过 TaskManager.submit_task() 提交：
        
@@ -399,7 +399,7 @@ db_health = await perf_tools.get_database_health()
 
 For the full documentation map and cross-references, refer to:
 
-**[Documentation Hub Index](./docs/rules/README.md)**
+**[Documentation Hub Index](./src/ai/assistant/rules/README.md)**
 
 For performance system analysis and improvement plan, refer to:
 

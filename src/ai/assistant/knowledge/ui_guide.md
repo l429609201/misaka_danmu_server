@@ -355,11 +355,11 @@ XML 命名建议：电影 `电影名 (年份).xml`；剧集 `剧集名 S01E01.xm
 
 ---
 
-## 弹幕 API · Token 管理
+## 弹幕 · Token管理
 
 > 别名: token, 令牌, api密钥, 创建token, token日志, 调用限制
 
-**入口**：**弹幕** → **Token 管理**。用于控制第三方应用（播放器）对弹幕 API 的访问。
+**界面位置**：`弹幕` → `Token管理`（页签）。用于控制第三方应用（播放器）对弹幕 API 的访问。
 
 **创建 Token**：点 **创建Token** → 填 Token 名称（如"我的播放器"）、有效期（30天/90天/永久）、
 每日调用限制（可选）→ 确认。系统生成 20 位随机字符串。
@@ -373,9 +373,11 @@ XML 命名建议：电影 `电影名 (年份).xml`；剧集 `剧集名 S01E01.xm
 
 ---
 
-## 弹幕 API · 播放器搜索框指令（@指令）
+## 弹幕 · 播放器搜索框指令（@指令）
 
 > 别名: 指令, @指令, QLHC, SXDM, CXLK, CXRW, 清理缓存指令, 刷新弹幕指令
+
+**界面位置**：无独立界面，在播放器自身的搜索框内输入使用。
 
 ⚠️ **指令仅在 anime 接口中支持**，需播放器支持该接口。所有指令**大小写均可**（`@qlhc` = `@QLHC`）。
 
@@ -403,88 +405,200 @@ XML 命名建议：电影 `电影名 (年份).xml`；剧集 `剧集名 S01E01.xm
 
 ---
 
-## 弹幕 API · 弹幕输出控制（上限 / 随机颜色 / 输出黑名单）
+## 弹幕 · 弹幕输出配置（上限 / 随机颜色 / 输出黑名单）
 
 > 别名: 弹幕输出上限, 弹幕太多, 卡顿, 随机弹幕颜色, 弹幕输出黑名单, 过滤广告弹幕, 屏蔽弹幕
 
-**弹幕输出上限**：设置 API 返回的弹幕最大数量。
-- `-1` = 无限制；正整数 = 限制数量（建议 3000~5000）
+**界面位置**：`弹幕` → `弹幕输出配置`（页签）
+
+| 功能 | 配置键名 | 默认值 | 取值 |
+|---|---|---|---|
+| 单源输出上限 | `danmakuOutputLimitPerSource` | `-1` | `-1` 无限制，或正整数 |
+| 合并多源后输出 | `danmakuMergeOutputEnabled` | `false` | `true` / `false` |
+| 简繁转换 | `danmakuChConvert` | `0` | `0` 不转 / `1` 转简 / `2` 转繁 |
+| 简繁转换优先级 | `danmakuChConvertPriority` | `player` | `player` / `server` |
+| 顶部弹幕转换 | `danmakuTopConvertTo` | `none` | `none` / `bottom` / `scroll` |
+| 底部弹幕转换 | `danmakuBottomConvertTo` | `none` | `none` / `top` / `scroll` |
+| 随机染色模式 | `danmakuRandomColorMode` | `off` | `off` / `white_to_random` / `all_random` / `all_white` |
+| 随机色板 | `danmakuRandomColorPalette` | 内置 | 逗号分隔的**十进制**颜色值（`#FFFFFF`=`16777215`） |
+| 内容黑名单开关 | `danmakuBlacklistEnabled` | `false` | `true` / `false` |
+| 内容黑名单规则 | `danmakuBlacklistPatterns` | 内置数百条 | 正则，`\|` 分隔 |
+
+**弹幕输出上限**：`-1` = 无限制；正整数 = 限制数量（建议 3000~5000）。
 - 超限时系统**按时间段均匀采样**，保证弹幕在整个视频时长内分布均匀，避免客户端卡顿
 - 推荐：移动设备 3000 / 桌面 5000 / 高性能 8000+
 
-**随机弹幕颜色**：开启后为**原本没有颜色信息**的弹幕随机分配颜色；已有颜色的保持不变。
+**简繁转换优先级**：用户反馈"服务端设了简体但显示繁体"，通常是播放器传参覆盖了服务端设置，
+改成 `server` 即服务端优先。
 
-**弹幕输出黑名单**：过滤不想显示的弹幕内容。支持关键词与正则表达式。
+**弹幕位置转换**：仅在输出时转换，不改动已存储弹幕。顶部弹幕是 `mode=5`，底部是 `mode=4`；
+基于原始类型一次性映射，不会连锁转换。
+
+**随机弹幕颜色**：`white_to_random` 只为**原本没有颜色信息**（白色）的弹幕随机分配颜色，
+已有颜色的保持不变，一般推荐这一档。色板须填十进制值，用户给十六进制时先换算并告知结果。
+
+**弹幕输出黑名单**：过滤不想显示的弹幕内容，支持关键词与正则。
 **v2.7.0 起有「填充默认配置」按钮**，可一键写入推荐黑名单规则，再按习惯微调。
-用于过滤广告、剧透、不文明用语、特定格式弹幕。
+⚠️ 系统内置数百条默认规则，用 `set_config` 追加词时**必须先读后拼**（先 `get_config`
+取现值 → 拼 `|新词` → 写回），直接覆盖会丢掉全部内置规则。
 
 ---
 
-## 弹幕 API · 弹幕存储路径与文件名模板
+## 弹幕 · 弹幕存储配置（存储路径与文件名模板）
 
 > 别名: 弹幕存储, 自定义路径, 文件名模板, 弹幕存哪, 变量
 
-开启 **启用自定义弹幕路径** 后可自定义存储位置与命名模板。
+**界面位置**：`弹幕` → `弹幕存储配置`（页签）
 
-默认配置：
-- 电影：目录 `/app/config/danmaku/movies`，模板 `${title}/${episodeId}`
-- 电视：目录 `/app/config/danmaku/tv`，模板 `${animeId}/${episodeId}`
+| 界面项 | 配置键名 | 默认值 |
+|---|---|---|
+| 启用自定义弹幕路径 | `customDanmakuPathEnabled` | `false` |
+| 电影目录 | `movieDanmakuDirectoryPath` | `/app/config/danmaku/movies` |
+| 电影命名模板 | `movieDanmakuFilenameTemplate` | `${title}/${episodeId}` |
+| 电视目录 | `tvDanmakuDirectoryPath` | `/app/config/danmaku/tv` |
+| 电视命名模板 | `tvDanmakuFilenameTemplate` | `${animeId}/${episodeId}` |
+
+⚠️ `customDanmakuPathEnabled` 为 `false` 时，后面四项**全部无效**。
 
 **支持的模板变量**：
 
 | 变量 | 说明 |
 |---|---|
-| `${title}` / `${titleBase}` | 原始标题 / 标准化标题（去特殊字符） |
+| `${title}` / `${titleBase}` | 原始标题 / 标准化标题（去除季度信息） |
 | `${season}` / `${season:02d}` | 季数 / 两位数季数 |
 | `${episode}` / `${episode:02d}` / `${episode:03d}` | 集数 / 两位数 / 三位数 |
 | `${year}` | 上映年份 |
 | `${provider}` | 弹幕源提供商 |
-| `${animeId}` / `${episodeId}` / `${sourceId}` | 作品ID / 分集ID / 源ID |
+| `${animeId}` / `${episodeId}` / `${sourceId}` / `${tmdbId}` | 作品ID / 分集ID / 源ID / TMDB ID |
+
+模板支持子目录（`/` 分隔），`.xml` 后缀自动添加不要手写。
+改模板**不会**重命名已有文件，只影响后续新增。
+⚠️ 模板必须含唯一标识（`${episodeId}` 或 `${animeId}`），否则文件会互相覆盖。
 
 
 ---
 
-## 弹幕 API · 高级设置（匹配后备 / 后备搜索 / 顺延 / 预下载）
+## 弹幕 · 设置 · 后备与预下载（匹配后备 / 后备搜索 / 顺延 / 预下载 / 并行搜索）
 
-> 别名: 匹配后备, 后备搜索, 顺延机制, 预下载, 自动导入, match接口, 灰色不能点
+> 别名: 匹配后备, 后备搜索, 顺延机制, 预下载, 并行搜索, 自动导入, match接口, 灰色不能点, 后备开关
 
-这四个开关决定"播放器请求弹幕时，本地没有该怎么办"。
+**界面位置**：`弹幕` → `设置`（页签）→ `配置`（卡片）
+前端文件 `web/src/pages/bullet/components/MatchFallbackSetting.jsx`。
+本项目**没有**「弹幕 API - 高级设置」这个页面，不要这样告知用户。
 
-**匹配后备**：播放器走 `/match` 接口时，本地没有匹配弹幕 → **自动从弹幕源搜索并导入**。
-流程：播放器发 `/match`（含文件名、Hash）→ 查本地 → 没有则自动搜索 → 找到后导入并返回。
+这五个开关决定"播放器请求弹幕时，本地没有该怎么办"。全部存于 `config` 表，
+值为字符串 `"true"` / `"false"`，可用 `get_config` / `set_config` 直接读写。
 
-**后备搜索**：播放器走 `/search/anime` 接口时，本地没结果 → **自动从弹幕源搜索并返回结果**供用户选择。
+| 界面标签 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 启用后备匹配 | `matchFallbackEnabled` | `false` | `/match` 本地无结果时自动搜索并导入 |
+| 启用后备搜索 | `searchFallbackEnabled` | `false` | `/search/anime` 本地无结果时自动全网搜索返回候选 |
+| 启用顺延机制 | `externalApiFallbackEnabled` | `false` | 选中源无有效分集时自动尝试下一个源 |
+| 启用预下载 | `preDownloadNextEpisodeEnabled` | `false` | 播放当前集时后台异步下载下一集弹幕 |
+| 启用并行搜索 | `parallelSearchEnabled` | `false` | 后备搜索时并发请求各源，更快但对源压力更大 |
 
-**两者区别**：匹配后备是 `/match` 触发、自动匹配导入；后备搜索是 `/search/anime` 触发、返回候选让用户选。
+**匹配后备 vs 后备搜索**：前者由 `/match` 触发（含文件名、Hash），自动匹配并导入；
+后者由 `/search/anime` 触发，返回候选让用户自己选。二者语义不同，
+用户只说"开后备"时要问清是哪一个，不要替他决定。
 
-**顺延机制**：选中的源没有有效分集时（如只有预告片全被过滤掉），**自动尝试下一个候选源**，提高导入成功率。
+**同卡片内的两个数值项**：
 
-**预下载**：播放当前集时，**后台自动下载下一集的弹幕**（若下一集存在且无弹幕）。
-异步后台任务，不阻塞当前播放，不影响性能。
+| 界面标签 | 配置键名 | 默认值 | 取值范围 |
+|---|---|---|---|
+| 弹幕自动刷新间隔（天） | `danmakuAutoRefreshDays` | `0` | 0~365，`0` 禁用 |
+| 弹幕刷新条数阈值 | `danmakuRefreshThreshold` | `5000` | 0~1000000，`0` 不限条数 |
 
-⚠️ **顺延机制和预下载依赖「匹配后备」或「后备搜索」**。
-两者都没开时，这两个选项会被**禁用（灰色不可点）**——这是用户常问"为什么点不了"的原因。
+两者是**与关系**：仅当弹幕获取时间超过 N 天**且**该集现有弹幕低于阈值时才重抓。
 
-**匹配后备 Token 授权**：为匹配后备配专用 API Token（可加多个自动轮换），提高调用限额、避免限流。
+⚠️ **顺延机制、预下载、并行搜索依赖「匹配后备」或「后备搜索」**。
+两者都为 `false` 时这三个开关在界面上**置灰不可点**——这是用户常问"为什么点不了"的原因。
 
-**匹配后备黑名单**：阻止特定作品或特定源被自动导入。
-用于：某作品弹幕质量差不想自动导；某源经常匹配错要屏蔽。
+注意区分：置灰只是前端交互限制。用 `set_config` 单独把 `preDownloadNextEpisodeEnabled`
+写成 `true` 会写入成功，但后端判定要求两个基础开关至少一个为 `true`，否则功能不生效。
+`get_config` 返回的 `dependency_satisfied=false` 即代表这种情况。
+
+**相邻卡片**（同在 `弹幕` → `设置` 页内）：
+
+| 卡片名 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 后备匹配 Token 授权 | — | — | 为匹配后备配专用 API Token（可多个自动轮换），提高限额避免限流 |
+| 后备匹配黑名单 | `matchFallbackBlacklist` | 空 | 正则、`\|` 分隔，命中的文件名不触发后备 |
+
+另有 `matchFallbackTimeout`（默认 `60`）：`/match` 等待后备结果的最大秒数，
+`-1` 为无限等待；超时返回未匹配，但后台导入任务继续运行。
 
 ---
 
 ## 设置 · 代理配置
 
-> 别名: 代理, proxy, socks5, 科学上网, 访问不了TMDB
+> 别名: 代理, proxy, socks5, 科学上网, 访问不了TMDB, 加速代理, 代理模式, ssl证书
 
-**入口**：设置页的代理配置。
+**界面位置**：`设置` → `代理配置`
 
-| 配置项 | 说明 |
-|---|---|
-| 代理地址 | 如 `http://127.0.0.1:7890` |
-| 代理类型 | HTTP / SOCKS5 |
-| 代理用户名 / 密码 | 可选，需认证时填 |
+| 界面项 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 代理模式 | `proxyMode` | `none` | `none` 不用 / `http_socks` HTTP或SOCKS代理 / `accelerate` 加速代理 |
+| 代理地址 | `proxyUrl` | 空 | `http_socks` 模式用，如 `http://127.0.0.1:7890` 或 `socks5://...` |
+| 加速代理地址 | `accelerateProxyUrl` | 空 | `accelerate` 模式用，如 `https://your-proxy.vercel.app` |
+| 验证 SSL 证书 | `proxySslVerify` | `true` | 设 `false` 可解决自签名证书报错 |
+| （兼容项）启用代理 | `proxyEnabled` | `false` | 旧版开关，现以 `proxyMode` 为准 |
+
+⚠️ **`proxyMode` 是真正的开关**，`proxyEnabled` 只为兼容旧配置保留。
+排查代理不生效时先看 `proxyMode`，不要只看 `proxyEnabled`。
+
+⚠️ 认证型代理把用户名密码写进 URL：`http://user:pass@host:port`。
+**没有**单独的用户名/密码配置项。
 
 **适用场景**：访问 TMDB/TVDB 等国外元数据源；某些弹幕源需代理；海外部署访问国内弹幕源。
+
+**御坂助手另有独立代理开关** `assistantProxyEnabled`（默认 `false`），
+它复用这里的 `proxyUrl`，见「设置 · AI · 御坂助手高级 LLM 参数」。
+
+---
+
+## 设置 · 通知汇总与海报九宫格
+
+> 别名: 通知太多, 消息轰炸, 通知汇总, 汇总合并, 九宫格, 海报拼图, telegram海报, 通知阈值
+
+**界面位置**：`设置` → `通知配置`
+
+### 通知智能汇总（防消息轰炸）
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `notificationSurgeAggregationEnabled` | `true` | 短时间内大量同类通知自动合并为一条 |
+| `notificationSurgeWindowSeconds` | `30` | 统计窗口（秒） |
+| `notificationSurgeThreshold` | `5` | 窗口内同类通知达此数量后转入汇总 |
+
+⚠️ **仅对成功类通知生效，失败类通知始终逐条发送** —— 这是有意设计，
+避免失败信息被合并后被忽略。用户问「为什么失败通知没被汇总」时按此解释。
+
+### 海报九宫格（搜索结果聚合图）
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `telegramSearchPosterCollage` | `true` | Telegram 搜索结果先发一张带序号的九宫格海报图 |
+| `fallbackSearchPosterCollage` | `true` | 后备搜索完成通知附带九宫格海报图 |
+
+两者都是**仅支持图片的渠道生效**，失败自动降级为纯文字，
+且异步执行不阻塞搜索返回。批量导入时通知太吵可关掉。
+
+---
+
+## 设置 · 域名与壁纸（自定义域名 / 壁纸图源）
+
+> 别名: 自定义域名, 公网域名, api地址, 海报外链, 壁纸, 背景图, 二次元壁纸
+
+| 界面项 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 自定义域名 | `custom_api_domain` | 空 | **必须 `https://` 开头的公网地址**，用于拼接弹幕 API 地址与海报外链 |
+| 二次元壁纸图源 | `wallpaperAcgUrl` | `https://www.loliapi.com/acg/pc/` | 留空则仅显示渐变兜底 |
+
+⚠️ `custom_api_domain` 的键名用**下划线**（不是 `customApiDomain`），
+这是历史遗留，写配置时容易搞错。
+
+⚠️ 未配 `custom_api_domain` 时，生成的弹幕 API 地址会用内网 IP，
+播放器在外网就访问不到 —— 这是「外网连不上」的常见原因。
 
 ---
 
@@ -500,8 +614,9 @@ XML 命名建议：电影 `电影名 (年份).xml`；剧集 `剧集名 S01E01.xm
 **访问 IP 白名单**：开启后只有白名单 IP 能访问。支持单 IP（`192.168.1.100`）和 CIDR（`192.168.1.0/24`），每行一个。
 ⚠️ 配错会导致自己也无法访问，务必谨慎。
 
-**受信任反代**：部署在 Nginx/Cloudflare 等反代后面时，系统收到的是代理 IP 而非用户真实 IP。
-配置受信任反代后，系统会从 `X-Forwarded-For` / `X-Real-IP` 提取真实 IP。
+**受信任反代**（配置键名 `trustedProxies`，默认空）：部署在 Nginx/Cloudflare 等反代后面时，
+系统收到的是代理 IP 而非用户真实 IP。配置后会从 `X-Forwarded-For` / `X-Real-IP` 提取真实 IP。
+**格式：反代 IP 列表，用英文逗号分隔**（如 `172.17.0.1,10.0.0.5`）。
 **不配会导致**：所有用户被识别为同一个反代 IP、IP 白名单判断不准、一人输错密码锁定影响所有人。
 
 **登录失败锁定**（v2.7.5 起）：同一真实 IP 连续登录失败达上限后临时锁定。
@@ -675,7 +790,7 @@ docker-compose down && docker-compose up -d
 | 用户说法 | 真正指向的功能 | 关键答案 |
 |---|---|---|
 | "删了之后分集不见了" | 编辑导入的「不导入」列表 | 删除是移入「不导入」，可点恢复移回，不是真删 |
-| "顺延/预下载点不了" | 弹幕API高级设置 | 必须先开「匹配后备」或「后备搜索」 |
+| "顺延/预下载点不了" | 弹幕 → 设置 → 配置 | 必须先开「匹配后备」或「后备搜索」 |
 | "播放器拿到的弹幕不是我想要的源" | 弹幕库的默认来源 | 在条目详情页切换默认来源 |
 | "弹幕和画面差几秒" | 弹幕编辑 → 偏移 | 正值延后、负值提前 |
 | "集数对不上" | 本地剧集组 / 识别词集数偏移 | 剧集组做 local→source 映射；识别词做整体偏移 |
@@ -684,3 +799,491 @@ docker-compose down && docker-compose up -d
 | "弹幕太多播放器卡" | 弹幕输出上限 | 设 3000~5000，系统会均匀采样 |
 | "突然登不上了" | IP白名单 / 反代 / 登录锁定 | 先区分三种机制，看是 403 还是 429 |
 | "改了源配置没生效" | 重载弹幕源 | 「搜索源」页点「重载弹幕源」 |
+
+
+---
+
+## 设置 · AI · 连接配置（提供商 / 密钥 / 模型 / 超时）
+
+> 别名: AI配置, AI密钥, apikey, 大模型, deepseek, openai, gemini, 硅基流动, AI连不上, AI模型, 测试连接
+
+**界面位置**：`设置` → `AI`（页签）→ `连接配置`（子页签）
+前端文件 `web/src/pages/setting/components/AutoMatchSetting.jsx`。
+
+这是所有 AI 功能的总开关与凭据配置。**未配好这里，下面所有 AI 功能都无法使用。**
+
+| 界面标签 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| AI 服务提供商 | `aiProvider` | `deepseek` | 可选 `deepseek` / `siliconflow` / `openai` / `gemini` |
+| API 密钥 | `aiApiKey` | 空 | 必填，读取时自动掩码 |
+| Base URL | `aiBaseUrl` | 空 | 可选，用于自定义/中转接口 |
+| AI 模型 | `aiModel` | 空 | 通过界面「刷新模型列表」拉取，如 `deepseek-chat`、`gpt-4o`、`gemini-2.5-flash` |
+| 请求超时（秒） | `aiCallTimeout` | `60` | o3/o4 等慢速推理模型建议调高到 120~300 |
+| 启用思考模式 | `aiThinkingEnabled` | `false` | **仅对 DeepSeek 提供商生效**；先思维链推理再作答，更准但更慢更贵 |
+| 记录原始响应 | `aiLogRawResponse` | `false` | 排错用，会显著增大日志体积，平时关闭 |
+
+配置完必须点界面上的**「测试连接」**验证。密钥无效时所有 AI 功能会静默降级到非 AI 逻辑。
+
+⚠️ `aiApiKey` 属密钥字段，`get_config` 返回的是掩码值，不要把掩码当真实值回填。
+
+**使用统计**：同页 `使用统计`（`tabMetrics` 子页签）可查 AI 调用次数与 Token 消耗。
+
+---
+
+## 设置 · AI · 自动匹配（AI 智能匹配 / 缓存 / 降级）
+
+> 别名: AI匹配, 智能匹配, aiMatchEnabled, AI选源, 匹配不准, AI缓存, AI降级
+
+**界面位置**：`设置` → `AI`（页签）→ `自动匹配`（子页签）
+
+在外部 API、Webhook、匹配后备等场景中，用 AI 从多个搜索结果里挑最佳项。
+
+| 界面标签 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 启用 AI 智能匹配 | `aiMatchEnabled` | `false` | **本节总开关**，关闭时下面各项全部置灰 |
+| 启用传统匹配兜底 | `aiFallbackEnabled` | `true` | AI 匹配失败时降级到传统算法，**建议保持开启** |
+| 启用 AI 响应缓存 | `aiCacheEnabled` | `true` | 相同查询直接返回缓存，降低调用成本 |
+| 缓存过期时间（秒） | `aiCacheTtl` | `3600` | 注意单位是**秒**，默认 1 小时 |
+| AI 智能匹配提示词 | `aiPrompt` | 内置默认值 | 指导 AI 从候选结果中选最佳项 |
+
+⚠️ `aiMatchEnabled=false` 时，`aiFallbackEnabled`、`aiCacheEnabled` 等在界面上
+**置灰不可点**（前端 `matchMode` 由 `aiMatchEnabled` 派生）。
+
+`aiFallbackEnabled=false` 时若 AI 调用失败，匹配会直接失败而不是退回传统逻辑 ——
+除非在调试，否则不要关闭它。
+
+---
+
+## 设置 · AI · 识别增强（别名 / 剧集组 / 名称转换 / 提示词）
+
+> 别名: AI别名, AI剧集组, AI名称转换, AI识别, 提示词, prompt, 自定义提示词
+
+**界面位置**：`设置` → `AI`（页签）→ `识别增强`（子页签）
+
+用 AI 补强标题识别与别名能力，主要作用于 **TMDB 自动刮削任务**。
+
+| 界面标签 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 启用 AI 辅助识别 | `aiRecognitionEnabled` | `false` | 刮削任务中用 AI 识别标题与季度信息 |
+| 启用 AI 别名修正 | `aiAliasCorrectionEnabled` | `false` | 刮削任务中用 AI 验证并修正别名 |
+| 启用 AI 别名扩展 | `aiAliasExpansionEnabled` | `false` | 元数据源返回非中文标题时，用 AI 生成可能的别名用于搜索 |
+| 启用 AI 剧集组自动选择 | `aiEpisodeGroupEnabled` | `false` | 有 TMDB ID 但缺剧集组时，用 AI 选最佳剧集组实现等价集数映射 |
+| 启用 AI 名称转换 | `aiNameConversionEnabled` | `false` | **兜底用**：元数据源查询失败时才用 AI 做名称转换 |
+
+**五个提示词模板**（同页可编辑，留空则用内置默认值）：
+
+| 配置键名 | 对应功能 |
+|---|---|
+| `aiRecognitionPrompt` | AI 辅助识别 |
+| `aiAliasValidationPrompt` | AI 别名验证/修正 |
+| `aiAliasExpansionPrompt` | AI 别名扩展 |
+| `aiEpisodeGroupPrompt` | AI 剧集组选择 |
+| `aiNameConversionPrompt` | AI 名称转换 |
+
+（另有 `aiPrompt` 属「自动匹配」子页签，见上一节。）
+
+⚠️ 改提示词属高风险操作：格式写错会让 AI 返回无法解析的内容，进而导致该功能整体失效。
+改前先记下原值，改后立即用界面上的测试功能验证。用户没明确要求时不要主动改提示词。
+
+⚠️ 本节各开关在界面上受 `aiMatchEnabled` / `aiRecognitionEnabled` 的联动置灰控制，
+若发现某开关点不动，先确认这两个前置开关的状态。
+
+---
+
+## 设置 · AI · 御坂助手（渠道对话 / 任务播报）
+
+> 别名: 御坂助手, 看板娘, 助手设置, 任务播报, 气泡, 渠道对话, telegram对话, 助手不说话
+
+**界面位置**：`设置` → `AI`（页签）→ `御坂助手`（子页签）
+前端文件 `web/src/pages/setting/components/AutoMatchSetting.jsx`。
+
+控制助手在**通知渠道**里能否对话，以及网页端看板娘的**任务动态播报**。
+
+| 界面标签 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 通知渠道对话 | `assistantChannelChatEnabled` | `true` | 允许 Telegram / 企业微信等渠道与助手自然语言对话 |
+| 任务气泡播报总开关 | `assistantNotifyEnabled` | `true` | **下面三个播报项的前置开关** |
+| 播报：任务完成 | `assistantNotifyOnComplete` | `true` | 任务完成时气泡提示 |
+| 播报：任务失败 | `assistantNotifyOnFailed` | `true` | 任务失败时气泡提示 |
+| 播报：新任务开始 | `assistantNotifyOnStart` | `false` | 默认关闭，避免频繁打扰 |
+| 轮询间隔(秒) | `assistantNotifyInterval` | `15` | 检查任务状态的频率，**范围 10~60** |
+
+排查方向：
+- 「渠道里发消息助手不回」→ 先看 `assistantChannelChatEnabled` 是否为 `true`
+- 「网页端没有任务提示」→ 先看 `assistantNotifyEnabled`，再看对应的 `NotifyOn*` 分项
+- 「提示太频繁」→ 关 `assistantNotifyOnStart`，或调大 `assistantNotifyInterval`
+
+配置改完需点该页底部的**保存按钮**才生效。
+
+---
+
+## 设置 · AI · 御坂助手高级 LLM 参数（温度 / Top-p / 惩罚 / 超时）
+
+> 别名: LLM参数, 温度, temperature, topp, top-p, 惩罚, penalty, max tokens, 助手超时, 助手代理, 回答太啰嗦, 回答重复
+
+**界面位置**：`设置` → `AI`（页签）→ `御坂助手`（子页签）→ `高级 LLM 参数`（可折叠区，默认展开）
+
+精细控制助手对话的生成行为。**普通用户保持默认即可**，不要主动建议用户调整。
+
+| 界面标签 | 配置键名 | 默认值 | 取值范围 | 说明 |
+|---|---|---|---|---|
+| 温度 (Temperature) | `assistantTemperature` | `0.7` | 0~2，步长 0.1 | 控制随机性：`0` 精确 / `0.7` 平衡 / `2` 创意 |
+| Top-p 采样 | `assistantTopP` | `0.9` | 0~1，步长 0.05 | 控制词汇多样性 |
+| 存在惩罚 (Presence) | `assistantPresencePenalty` | `0.0` | -2~2，步长 0.1 | 抑制重复**话题** |
+| 频率惩罚 (Frequency) | `assistantFrequencyPenalty` | `0.0` | -2~2，步长 0.1 | 抑制重复**用词** |
+| 最大输出 (Max Tokens) | `assistantMaxTokens` | `2000` | 100~8000，步长 100 | 过小会导致长回答被截断 |
+| 请求超时(秒) | `assistantTimeout` | `120` | 10~300，步长 10 | 慢速模型（o3/o4）建议 180~300 |
+| 启用代理 | `assistantProxyEnabled` | `false` | — | **复用全局 `proxyUrl` 配置**，不单独填地址 |
+
+⚠️ 这些参数只影响**御坂助手对话**，与 AI 匹配无关。AI 匹配用的是
+`设置 → AI → 连接配置` 里的 `aiCallTimeout` 等项，两套互不干扰。
+
+⚠️ `assistantProxyEnabled=true` 但全局代理未配置（`proxyUrl` 为空）时不会生效，
+需先在 `设置 → 代理配置` 里填好代理地址。
+
+⚠️ 界面上的取值范围是**硬限制**：前端保存时会 clamp 到区间内。
+用 `set_config` 写入超范围值不会报错，但会与界面显示不一致，务必按上表范围传值。
+
+用户抱怨对应关系：
+- 「回答太啰嗦/太长」→ 调小 `assistantMaxTokens`
+- 「老是重复同样的话」→ 调高 `assistantFrequencyPenalty`（如 0.3~0.5）
+- 「回答太死板」→ 调高 `assistantTemperature`；「回答太跳脱」→ 调低
+- 「助手总是超时」→ 调高 `assistantTimeout`，或换更快的模型
+
+---
+
+## 设置 · Webhook 配置（总开关 / 延时导入 / 过滤 / 顺延 / 删除联动）
+
+> 别名: webhook, emby通知, jellyfin通知, plex通知, 自动导入, 延时导入, webhook不生效, webhook地址, api_key, 删除联动, 删除同步, 删了媒体弹幕还在, 媒体删除弹幕不删
+
+**界面位置**：`设置` → `Webhook`（页签）
+前端文件 `web/src/pages/setting/components/Webhook.jsx`。
+
+用于接收 Emby / Jellyfin / Plex 等外部服务的通知，实现自动化导入。
+
+**Webhook 地址格式**：
+```
+http(s)://域名(ip):端口/api/webhook/{服务名}?api_key={你的API Key}
+```
+把该地址填入媒体服务器的 Webhook 通知设置里。
+
+| 界面标签 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 启用 Webhook | `webhookEnabled` | `true` | **总开关**，关闭时本页其余开关全部置灰 |
+| 启用延时导入 | `webhookDelayedImportEnabled` | `false` | 先入库暂存，等定时任务到点再导入 |
+| 自定义延时时间 (小时) | `webhookDelayedImportHours` | `24` | 最小 `1`；需前两项均开启才可编辑 |
+| 记录原始请求 | `webhookLogRawRequest` | `false` | 排错用，会显著增大日志体积 |
+| 过滤规则 (正则表达式) | `webhookFilterRegex` | 空 | 留空则不过滤 |
+| 过滤模式 | `webhookFilterMode` | `blacklist` | `blacklist` 命中即忽略 / `whitelist` 仅命中才处理 |
+| 启用顺延机制 | `webhookFallbackEnabled` | `false` | 首选源无有效分集时自动尝试下一个候选源 |
+| 删除联动 | `webhookDeleteSyncEnabled` | `false` | Emby/Jellyfin 删除媒体时，联动删除本地对应弹幕记录 |
+| 自定义域名 (可选) | `webhookCustomDomain` | 空 | 用于拼接对外 Webhook URL，如 `https://your.domain.com` |
+| API 密钥 | `webhookApiKey` | 自动生成 | 界面可一键刷新；读取时自动掩码 |
+
+**另有一项 TMDB 季度映射**（不在本页，属元数据相关）：
+`webhookEnableTmdbSeasonMapping`（默认 `false`）—— 通过 TMDB 获取季度名称，
+提高多季度剧集的匹配准确率。
+
+### 依赖链（前端逐级置灰）
+
+```
+webhookEnabled = false
+  └→ 延时导入 / 记录原始请求 / 顺延 / 删除联动 全部置灰
+       └→ webhookDelayedImportHours 额外要求 webhookDelayedImportEnabled = true
+```
+
+### ⚠️ 延时导入必须配合定时任务
+
+`webhookDelayedImportEnabled=true` 时，通知只是先存入数据库，**真正导入由定时任务执行**。
+必须同时在 `任务管理 → 定时任务` 中启用 **Webhook 任务处理**，否则通知会一直堆积不导入。
+
+设计意图：避免媒体文件还没扫描完就开始导入弹幕，导致集数不全。
+
+### 排查「Webhook 不生效」的顺序
+
+1. `webhookEnabled` 是否为 `true`
+2. URL 里的 `api_key` 是否与当前 `webhookApiKey` 一致（刷新过密钥就要同步改媒体服务器）
+3. `webhookFilterRegex` + `webhookFilterMode` 是否把标题过滤掉了
+   （白名单模式下留空规则会导致**全部**被拦，这是常见误配）
+4. 开了延时导入但没启用对应定时任务
+5. 开 `webhookLogRawRequest` 看原始请求体，确认媒体服务器真的发出了通知
+6. 查 `任务管理 → Webhook 任务` 列表，看是否已收到但执行失败
+
+---
+
+## 元信息搜索源 · 密钥与接口地址（TMDB / TVDB / Bangumi / 豆瓣 / IMDb）
+
+> 别名: 元数据源, 刮削, tmdb, tvdb, bangumi, 豆瓣, imdb, apikey, 密钥, 刮削不到, 海报不显示, 元信息
+
+**界面位置**：`弹幕源` → `元信息搜索源`（页签）→ 点某个源的「配置」
+前端文件 `web/src/pages/source/components/MetadataSourceConfig.jsx`。
+
+元数据源用于获取标题、别名、海报、季度信息，辅助识别与匹配。
+
+### TMDB
+
+| 界面标签 | 配置键名 | 默认值 |
+|---|---|---|
+| API 密钥 | `tmdbApiKey` | 空（必填才能用） |
+| API 基础 URL | `tmdbApiBaseUrl` | `https://api.themoviedb.org` |
+| 图片基础 URL | `tmdbImageBaseUrl` | `https://image.tmdb.org` |
+
+两个 Base URL 可改为反代镜像，解决国内访问慢/不通的问题。
+
+### TVDB / 豆瓣
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `tvdbApiKey` | 空 | TheTVDB API 密钥 |
+| `doubanCookie` | 空 | 访问豆瓣 API 所需 Cookie |
+
+### IMDb
+
+| 界面标签 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 使用第三方 API | `imdbUseApi` | `true` | `true` 走 `api.imdbapi.dev`；`false` 解析官网 HTML |
+| 启用兜底 | `imdbEnableFallback` | `true` | 主方式失败时自动尝试另一种方式 |
+
+### Bangumi
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `bangumiClientId` | 空 | OAuth App ID |
+| `bangumiClientSecret` | 空 | OAuth App Secret |
+| `bangumiApiBaseUrl` | `https://api.bgm.tv` | API 域名，可改镜像 |
+| `bangumiImageBaseUrl` | `https://lain.bgm.tv` | 图片域名，可改镜像 |
+
+⚠️ 所有 `*ApiKey` / `*Secret` / `*Cookie` 均属密钥字段，
+`get_config` 返回掩码值，不要把掩码当真实值回填。
+
+排查「刮削不到信息」：先确认对应源的密钥已填且有效（界面有验证按钮），
+再看 Base URL 是否可达（国内环境常需镜像或代理）。
+
+---
+
+## 元信息搜索源 · Bangumi 离线索引（bangumi-data）
+
+> 别名: bangumi-data, 离线索引, 离线库, 同步cron, 数据集, bangumi慢, bangumi搜不到
+
+**界面位置**：`弹幕源` → `元信息搜索源` → `Bangumi` 的配置面板内
+
+用本地离线数据集加速 Bangumi 查询，减少 API 调用。
+
+| 界面标签 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 启用离线库辅助 | `bangumiDataOfflineEnabled` | `true` | 开=离线库+API 补充；关=仅用 API |
+| 启用定时同步 | `bangumiDataSyncEnabled` | `false` | 是否周期性重新拉取数据集 |
+| 同步 cron | `bangumiDataSyncCron` | `0 4 * * *` | 默认每天 4:00 |
+| 数据集地址 | `bangumiDataUrl` | `https://unpkg.com/bangumi-data@0.3/dist/data.json` | 支持自定义镜像，**多个地址用英文逗号分隔，按顺序回退** |
+| — | `bangumiDataLocalLoadRecord` | 空 | 本地 data.json 的加载记录（哈希/条数/时间） |
+
+⚠️ `bangumiDataLocalLoadRecord` 是**系统内部状态**，启动时靠比对哈希决定是否重新加载。
+**请勿手动修改或清空**，否则可能导致重复加载或加载失效。
+
+---
+
+## 设置 · TMDB 季度映射（六个场景独立开关）
+
+> 别名: 季度映射, 季度对不上, 多季度, season映射, tmdb映射, 第二季识别错
+
+> 通过元数据源获取季度名称，提高多季度剧集的匹配准确率。
+> **六个场景各自独立开关，开一个不影响其他场景**，这是最容易误解的地方。
+
+| 配置键名 | 默认值 | 生效场景 |
+|---|---|---|
+| `homeSearchEnableTmdbSeasonMapping` | `false` | 主页搜索 |
+| `fallbackSearchEnableTmdbSeasonMapping` | `false` | 后备搜索 |
+| `webhookEnableTmdbSeasonMapping` | `false` | Webhook 导入 |
+| `matchFallbackEnableTmdbSeasonMapping` | `false` | 匹配后备 |
+| `externalSearchEnableTmdbSeasonMapping` | `false` | 外部控制 API 搜索媒体 |
+| `autoImportEnableTmdbSeasonMapping` | `false` | 全自动导入 |
+
+**共用的两项配置**：
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `seasonMappingMetadataSource` | `tmdb` | 用哪个源做映射，可选 `tmdb` / `tvdb` / `imdb` / `douban` / `bangumi` |
+| `seasonMappingPrompt` | 内置默认值 | AI 季度映射提示词，指导 AI 从搜索结果中选最佳匹配 |
+
+⚠️ 用户说「季度映射开了没用」时，**先确认开的是哪个场景的开关**。
+例如从播放器触发的匹配走的是 `matchFallback`，只开 `homeSearch` 那个是不生效的。
+
+⚠️ `seasonMappingMetadataSource` 选定的源必须已配好密钥，否则映射会静默失败。
+
+---
+
+## 设置 · 缓存时间（四个 TTL）
+
+> 别名: 缓存, ttl, 缓存时间, 缓存多久, 数据不刷新, 改了没变, 清缓存
+
+**界面位置**：`设置` → `参数配置`
+
+| 配置键名 | 默认值 | 缓存对象 |
+|---|---|---|
+| `searchTtlSeconds` | `10800` | 搜索结果 |
+| `episodesTtlSeconds` | `10800` | 分集列表 |
+| `baseInfoTtlSeconds` | `10800` | 基础媒体信息（如爱奇艺） |
+| `metadataSearchTtlSeconds` | `10800` | 元数据（TMDB/Bangumi）搜索结果 |
+
+⚠️ **四项都有最低 3 小时（10800 秒）的下限**，填更小的值不会生效。
+
+用户说「源站已更新但这里还是旧的」通常就是命中缓存，
+可用播放器指令 `@QLHC` 清理缓存，或等 TTL 到期。
+
+---
+
+## 设置 · 搜索结果数量与全局标题黑名单
+
+> 别名: 搜索慢, 结果太多, 搜索数量, 全局黑名单, 过滤预告, 伪条目, 搜索结果过滤
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `searchMaxResultsPerSource` | `30` | 每个源最多返回几条结果，调小可提速 |
+| `search_result_global_blacklist_cn` | 内置正则 | 中文标题黑名单（特典\|预告\|广告\|菜单\|花絮…） |
+| `search_result_global_blacklist_eng` | 内置正则 | 英文标题黑名单（NC\|OP\|ED\|SP\|OVA…） |
+
+⚠️ 后两项键名用**下划线命名**（不是驼峰），写配置时容易搞错。
+
+⚠️ 这两个黑名单过滤的是**整条搜索结果**（伪条目，如「XX预告合集」），
+与「分集标题过滤」不是一回事，后者过滤的是某个源下的单集。
+两者层级不同，改错层会导致范围过大或不生效。
+
+⚠️ 默认值含数十条规则，用 `set_config` 追加词时**必须先读后拼**，
+直接覆盖会丢掉全部内置规则。
+
+---
+
+## 设置 · 兜底全局分集过滤
+
+> 别名: 全局分集过滤, 兜底过滤, 分集标题过滤, 过滤预告花絮, 填充默认规则
+
+| 界面标签 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 启用兜底全局分集过滤 | `globalEpisodeTitleFilterEnabled` | `false` | 总开关 |
+| 过滤正则 | `globalEpisodeTitleFilterRegex` | 空 | 匹配到的分集标题被过滤，**不区分大小写** |
+
+生效范围是**所有分集获取路径**：搜索预览、导入、预下载、自动导入、Webhook 等，
+属于三层过滤中的「第 2 层 · 兜底全局」。
+
+界面上有**「填充默认规则」**按钮，可一键写入内置默认正则（预告/花絮/彩蛋等），再按需微调。
+
+---
+
+## 弹幕点赞信息（获取 / 输出 / 样式）
+
+> 别名: 点赞, 赞, likes, 爱心, 火焰, 点赞样式, 弹幕点赞
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `danmakuLikesFetchEnabled` | `true` | 下载弹幕时是否获取并存储点赞数 |
+| `danmakuLikesOutputEnabled` | `true` | 输出弹幕时是否显示点赞状态 |
+| `danmakuLikesStyle` | `heart_white` | 显示样式，可选 `heart_white`(🤍/🔥) / `heart_red`(❤️/🔥) / `heart_outline`(♡/🔥) 等 |
+
+⚠️ 两个开关是**串联关系**：`Fetch` 关闭后新下载的弹幕**不含**点赞数据，
+此时即使 `Output` 为 `true` 也无内容可显示。想恢复需重新下载弹幕。
+
+---
+
+## 设置 · 名称转换（繁简 / 非中文转中文 / 源优先级）
+
+> 别名: 名称转换, 繁简转换, 繁体转简体, 搜不到中文名, 日文名, 英文名, 转换优先级
+
+| 界面标签 | 配置键名 | 默认值 | 说明 |
+|---|---|---|---|
+| 启用名称转换 | `nameConversionEnabled` | `false` | 搜索时自动把非中文名转为中文 |
+| 启用繁体转简体 | `nameConversionT2SEnabled` | `false` | 搜索时自动繁转简 |
+| 转换源优先级 | `nameConversionSourcePriority` | JSON 数组 | 按顺序尝试各元数据源 |
+
+`nameConversionSourcePriority` 是 **JSON 数组**，形如：
+```json
+[{"key":"bangumi","enabled":true},{"key":"tmdb","enabled":true},{"key":"tvdb","enabled":true}]
+```
+⚠️ 写入时必须是合法 JSON，格式错误会导致名称转换整体失效。
+调整顺序请先 `get_config` 取现值再改动，不要手写整个数组。
+
+AI 名称转换（`aiNameConversionEnabled`）是这里的**兜底**：
+元数据源都查不到时才调 AI，见「设置 · AI · 识别增强」。
+
+---
+
+## 弹幕源 · 各源专属配置（Cookie / UA / 接口开关）
+
+> 别名: b站cookie, bilibili, buvid3, 巴哈, 动画疯, gamer, 爱奇艺protobuf, 源配置, 源抓不到, 需要登录
+
+**界面位置**：`弹幕源` → `弹幕搜索源`（页签）→ 点某个源的「配置」
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `bilibiliCookie` | 空 | 访问 B站 API 的 Cookie，**特别是 `buvid3`** |
+| `gamerCookie` | 空 | 巴哈姆特动画疯的 Cookie |
+| `gamerUserAgent` | 空 | 巴哈姆特动画疯的 User-Agent |
+| `iqiyiUseProtobuf` | `false` | 爱奇艺是否用新的 Protobuf 弹幕接口（**实验性**） |
+| `scraperVerificationEnabled` | `false` | 是否启用搜索源签名验证 |
+
+⚠️ Cookie 类属密钥字段，`get_config` 返回掩码值。
+
+⚠️ 改完源配置需在 `弹幕源 → 弹幕搜索源` 点**「重载弹幕源」**才生效，
+这是「改了源配置没反应」的最常见原因。
+
+⚠️ `iqiyiUseProtobuf` 是实验性开关，出现爱奇艺弹幕异常时可先关掉它排除干扰。
+
+---
+
+## 外部控制 API（密钥 / 重复任务阈值）
+
+> 别名: 外部api, externalApi, 外部控制, api密钥, 重复任务, 自动导入接口
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `externalApiKey` | 空 | 外部 API 调用的安全密钥，读取时掩码 |
+| `externalApiDuplicateTaskThresholdHours` | `3` | 此时长内不允许为同一媒体重复提交自动导入任务，`0` 禁用 |
+
+`externalApiDuplicateTaskThresholdHours` 用于防止外部系统重复触发导入。
+用户说「刚导过又提交被拒」就是命中这个阈值，调小或设 `0` 可放开。
+
+---
+
+## 媒体服务器同步（自动导入 / 同步间隔）
+
+> 别名: 媒体服务器, 媒体库同步, 自动导入新媒体, 同步间隔, emby同步, 扫描到不导入
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `mediaServerAutoImport` | `false` | 是否自动导入新扫描到的媒体项 |
+| `mediaServerSyncInterval` | `3600` | 同步间隔（秒），默认 1 小时 |
+
+⚠️ 与 Webhook 是**两套独立机制**：Webhook 是媒体服务器**主动推送**，
+这里是本系统**定时拉取**。二者可同时开，但要注意重复导入。
+
+`mediaServerAutoImport=false` 时只同步列表不导入弹幕，需手动选择要导的条目。
+
+---
+
+## 增量追更失败阈值
+
+> 别名: 追更, 增量追更, 追更失败, 自动禁用, 不再更新了
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `incrementalRefreshMaxFailures` | `10` | 某源连续失败超此次数后**自动禁用该源的追更** |
+
+用户说「某个源突然不追更了」时查这里：可能已因连续失败被自动禁用，
+需在源管理中重新启用，并排查失败原因（Cookie 过期、源站改版等）。
+
+---
+
+## 运维 · 容器名 / 镜像名 / MySQL binlog 清理
+
+> 别名: 容器名, 镜像名, docker, 一键更新, 重启失败, binlog, 数据库占用大
+
+| 配置键名 | 默认值 | 说明 |
+|---|---|---|
+| `containerName` | `misaka_danmu_server` | 当前容器名，**重启与一键更新依赖它** |
+| `dockerImageName` | `l429609201/misaka_danmu_server:latest` | 一键更新拉取的镜像（含标签） |
+| `mysqlBinlogRetentionDays` | `3` | 仅 MySQL：自动清理几天前的 binlog，`0` 不清理 |
+
+⚠️ `containerName` 与实际容器名不一致时，**一键更新和重启都会失败**。
+自定义过容器名的用户必须同步改这里。
+
+⚠️ `mysqlBinlogRetentionDays` 需要数据库账号有 `SUPER` 或 `BINLOG_ADMIN` 权限，
+无权限时清理会静默失败。数据库磁盘占用持续增长时优先查这项。

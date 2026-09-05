@@ -13,32 +13,43 @@
 #### 规则
 
 1. **任务定义**：
-   - 继承 `BaseJob` 类，或
-   - 定义为 `async def` 函数签名（带 `session`, `progress_callback` 等参数）
+   - 定时作业继承 `BaseJob`（`src/jobs/base.py`），或
+   - 定义为 `async def` 协程函数，签名形如 `(session, progress_callback, ...)`
 
-2. **任务提交**：
+2. **任务提交**：真实签名见 `src/services/task_manager.py:836`
+
    ```python
-   task_id = await task_manager.submit_task(
-       func=my_task_function,
-       func_kwargs={"param1": value1},
-       task_title="任务标题",
-       task_description="任务描述"
+   # 第一个参数是 coro_factory：接收 (session, progress_callback) 并返回协程的工厂
+   # 返回值是 (task_id, done_event) 元组，不是单个 task_id
+   task_id, done_event = await task_manager.submit_task(
+       lambda s, cb: refresh_episode_task(episode_id, s, scraper_manager, rate_limiter, cb, config_manager),
+       f"刷新分集: {title}",              # title：位置参数，不是 task_title
+       unique_key=unique_key,             # 去重键，防同一目标重复排队
+       task_type="refresh_episode",       # 任务类型标识
+       task_parameters={"episodeId": episode_id},
+       queue_type="download",             # download / management / fallback
    )
    ```
+
+   完整参数：`coro_factory`, `title`, `scheduled_task_id`, `unique_key`,
+   `run_immediately`, `task_type`, `task_parameters`, `queue_type`。
+
+   ⚠️ **不存在** `func` / `func_kwargs` / `task_title` / `task_description` 这些参数，
+   传了会直接 `TypeError`。业务逻辑要用 `lambda s, cb: ...` 包成工厂传入。
 
 3. **进度报告**：
    ```python
    await progress_callback(50, "正在处理第 10/20 集")
    ```
 
-4. **结果标记**：
+4. **结果标记**（均定义在 `src/utils/task_exceptions.py`）：
    ```python
    # 成功
    raise TaskSuccess("任务完成，共导入 15 集")
-   
+
    # 失败
    raise TaskFailed("数据源无效，未获取到弹幕")
-   
+
    # 暂停（速率限制）
    raise TaskPauseForRateLimit(retry_after_seconds=60)
    ```
@@ -288,11 +299,13 @@ async def import_anime(title):
 
 ✅ **正确**：
 ```python
-async def import_anime(title, task_manager):
-    await task_manager.submit_task(
-        func=download_danmaku,
-        func_kwargs={"title": title},
-        task_title=f"导入: {title}"
+async def import_anime(title, task_manager, scraper_manager, config_manager):
+    # coro_factory 形式：lambda 接收 (session, progress_callback)
+    task_id, _ = await task_manager.submit_task(
+        lambda s, cb: download_danmaku(title, s, scraper_manager, cb, config_manager),
+        f"导入: {title}",
+        unique_key=f"import-{title}",
+        task_type="import",
     )
 ```
 
@@ -311,13 +324,15 @@ async def handle_library_new(data):
 
 ✅ **正确**：
 ```python
-# webhook/emby.py
-async def handle_library_new(data):
+# webhook/emby.py（继承 BaseWebhook，见 src/webhook/base.py:46）
+async def handle_library_new(self, data, webhook_source):
     title = extract_title(data)
-    # ✅ 只负责解析和分发
+    # ✅ 只负责解析和分发；unique_key 与 webhook_source 均为必填
     await self.dispatch_task(
         task_title=f"Webhook导入: {title}",
-        payload={"animeTitle": title, ...}
+        unique_key=f"webhook-{title}",
+        payload={"animeTitle": title},
+        webhook_source=webhook_source,
     )
 ```
 
@@ -349,7 +364,7 @@ class BilibiliScraper:
 
 - [ ] 确认是否有现有模式可以复用
 - [ ] 如果是后台任务，必须通过 `TaskManager` 提交
-- [ ] 如果是 Webhook，必须继承 `BaseWebhookHandler`
+- [ ] 如果是 Webhook，必须继承 `BaseWebhook`（`src/webhook/base.py`）
 - [ ] 如果是数据源，必须实现 `BaseScraper` 接口
 - [ ] 如果涉及配置，必须通过 `ConfigManager` 读取
 - [ ] 如果涉及 AI 匹配，必须遵循评分规则

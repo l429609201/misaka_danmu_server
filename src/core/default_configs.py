@@ -36,6 +36,7 @@ def get_default_configs(settings=None, ai_prompts=None):
         'webhookFilterMode': ('blacklist', 'Webhook 标题过滤模式 (blacklist/whitelist)。'),
         'webhookFilterRegex': ('', '用于过滤 Webhook 标题的正则表达式。'),
         'webhookLogRawRequest': ('false', '是否记录 Webhook 的原始请求体。'),
+        'webhookDeleteSyncEnabled': ('false', '是否启用 Webhook 删除同步。启用后，媒体库中删除媒体时同步删除本地对应的弹幕数据。'),
         'externalApiKey': ('', '用于外部API调用的安全密钥。'),
         'externalApiDuplicateTaskThresholdHours': (3, '（外部API）重复任务提交阈值（小时）。在此时长内，不允许为同一媒体提交重复的自动导入任务。0为禁用。'),
         'webhookCustomDomain': ('', '用于拼接Webhook URL的自定义域名。'),
@@ -66,6 +67,10 @@ def get_default_configs(settings=None, ai_prompts=None):
         'tvdbApiKey': ('', '用于访问 TheTVDB API 的密钥。'),
         'bangumiClientId': ('', '用于Bangumi OAuth的App ID。'),
         'bangumiClientSecret': ('', '用于Bangumi OAuth的App Secret。'),
+        # why: 以下两项此前仅在 metadata_sources/bangumi.py 的 config_keys 中声明，
+        # 未在此注册，导致缺少默认值与描述，现补齐。
+        'bangumiApiBaseUrl': ('https://api.bgm.tv', 'Bangumi API 的基础域名，可改为镜像地址。'),
+        'bangumiImageBaseUrl': ('https://lain.bgm.tv', 'Bangumi 图片服务的基础域名，可改为镜像地址。'),
         'bangumiDataSyncEnabled': ('false', '是否启用 bangumi-data 离线索引定时同步。'),
         'bangumiDataOfflineEnabled': ('true', '是否启用 bangumi-data 离线库辅助（开=离线库+API补充，关=仅用API）。'),
         'bangumiDataSyncCron': ('0 4 * * *', 'bangumi-data 离线索引同步的 cron 表达式（默认每天 4:00）。'),
@@ -101,6 +106,7 @@ def get_default_configs(settings=None, ai_prompts=None):
         'matchFallbackBlacklist': ('', '匹配后备黑名单，使用正则表达式过滤文件名，匹配的文件不会触发后备机制。'),
         'matchFallbackTimeout': ('60', '后备匹配接口(/match)等待结果的最大秒数。-1 表示无限等待直到匹配完成；超时后返回未匹配，匹配任务继续在后台运行。'),
         'searchFallbackEnabled': ('false', '是否为搜索接口启用后备搜索功能（全网搜索）。'),
+        'parallelSearchEnabled': ('false', '是否启用并行搜索。启用后备搜索时并发请求各搜索源，速度更快但对源站压力更大。需启用匹配后备或后备搜索。'),
         'fallbackSearchPosterCollage': ('true', '后备搜索完成通知是否将各结果海报聚合为一张带序号的九宫格图一并推送（仅支持图片的渠道生效，失败自动降级纯文字，异步执行不阻塞搜索返回）。'),
 
         # 弹幕文件路径配置
@@ -145,7 +151,6 @@ def get_default_configs(settings=None, ai_prompts=None):
         'externalSearchEnableTmdbSeasonMapping': ('false', '是否启用外部控制-搜索媒体 TMDB季度映射。启用后，系统会通过TMDB等元数据源获取季度名称，提高多季度剧集的匹配准确率。'),
         'autoImportEnableTmdbSeasonMapping': ('false', '是否启用全自动导入 TMDB季度映射。启用后，系统会通过TMDB等元数据源获取季度名称，提高多季度剧集的匹配准确率。'),
         'seasonMappingMetadataSource': ('tmdb', 'TMDB季度映射使用的元数据源。可选值: tmdb, tvdb, imdb, douban, bangumi。'),
-        'seasonMappingPrompt': ('', 'AI季度映射提示词。用于指导AI从元数据源搜索结果中选择最佳匹配。留空使用默认提示词。'),
 
         # 媒体服务器配置
         'mediaServerAutoImport': ('false', '是否自动导入新扫描到的媒体项'),

@@ -2,7 +2,7 @@
 通知模板 API 路由
 """
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,8 +26,15 @@ class TemplatePreviewRequest(BaseModel):
     templateId: str
     title: str
     body: str
-    channel: str  # telegram/qq/wecom/serverchan
-    sampleStatus: str  # success/failed/no_change
+    channel: str = "telegram"  # telegram/qq/wecom/serverchan
+    # 兼容前端历史字段名 exampleStatus，二者任一均可
+    sampleStatus: Optional[str] = None  # success/failed/no_change
+    exampleStatus: Optional[str] = None
+
+    @property
+    def resolved_status(self) -> str:
+        """归一化状态字段，优先 sampleStatus"""
+        return self.sampleStatus or self.exampleStatus or "success"
 
 
 @router.get("/scopes")
@@ -64,19 +71,19 @@ async def get_available_scopes(
         "system": "notification.groupSystem",
     }
 
+    # 与本项目其他 UI 接口保持一致：直接返回数据本体，不额外包裹 data 层
+    # （前端 axios 的 res.data 已是响应体，多包一层会导致解析为空）
     return {
-        "data": {
-            "scopes": all_scopes,
-            "defaults": default_scopes,
-            "category_labels": category_labels,
-        }
+        "scopes": all_scopes,
+        "defaults": default_scopes,
+        "category_labels": category_labels,
     }
 
 
 @router.get("")
 async def get_templates(
     session: AsyncSession = Depends(get_db_session)
-) -> Dict[str, Any]:
+) -> List[Dict[str, Any]]:
     """获取所有模板摘要"""
     templates = await template_crud.get_all_notification_templates(session)
 
@@ -86,7 +93,8 @@ async def get_templates(
         tmpl["displayName_en"] = TemplateResolver.get_template_display_name(tmpl["templateId"], "en")
         tmpl["displayName_tw"] = TemplateResolver.get_template_display_name(tmpl["templateId"], "tw")
 
-    return {"data": templates}
+    # 直接返回列表，前端以 Array.isArray(res.data) 判定
+    return templates
 
 
 @router.get("/{template_id}")
@@ -143,8 +151,8 @@ async def preview_template(
     """预览模板渲染结果"""
     renderer = get_template_renderer()
     
-    # 获取示例变量
-    sample_vars = _get_sample_variables(req.templateId, req.sampleStatus)
+    # 获取示例变量（状态字段已做新旧字段名归一化）
+    sample_vars = _get_sample_variables(req.templateId, req.resolved_status)
     
     # 渲染
     success, title, body, error = renderer.render(req.title, req.body, sample_vars)

@@ -18,14 +18,25 @@
 
 | 模块 | 职责范围 | 禁止依赖 | 代表文件 |
 |------|---------|---------|---------|
-| `src/db/` | 数据库模型（ORM）、CRUD 操作、迁移 | 业务逻辑、HTTP 请求、任务调度 | `orm_models.py`, `crud/*.py` |
+| `src/core/` | 配置加载、启动/关闭生命周期、缓存、默认配置 | 业务逻辑、数据源 | `config.py`, `app_lifecycle.py`, `default_configs.py` |
+| `src/db/` | 数据库模型（ORM）、CRUD 操作、迁移 | 业务逻辑、HTTP 请求、任务调度 | `orm_models.py`, `crud/*.py`, `migrations.py` |
+| `src/schemas/` | Pydantic 请求/响应模型定义 | 数据库、业务逻辑 | `anime.py`, `dandan.py`, `common.py` |
 | `src/scrapers/` | 数据源抓取逻辑、弹幕解析、站点适配 | 任务管理、通知系统、数据库直接操作 | `bilibili.py`, `iqiyi.py` |
-| `src/tasks/` | 后台任务编排、导入流程、Webhook 处理 | 具体数据源实现细节 | `webhook.py`, `import_core.py` |
-| `src/services/` | 业务服务层、搜索匹配、元数据管理 | 数据库直接操作（必须通过 crud） | `search.py`, `scraper_manager.py` |
-| `src/api/` | HTTP 接口、路由、请求验证 | 直接操作数据库（必须通过 services） | `control/*.py`, `ui/*.py` |
-| `src/webhook/` | Webhook 解析、媒体库事件处理 | 任务执行细节（只负责解析和分发） | `emby.py`, `plex.py` |
+| `src/metadata_sources/` | 元数据源适配（TMDB/Bangumi/豆瓣/TVDB/IMDb） | 任务调度、数据库直接操作 | `bangumi.py`, `tmdb.py`, `base.py` |
+| `src/media_servers/` | 媒体服务器适配（Emby/Jellyfin/Plex 读取媒体库） | 任务执行细节 | `emby.py`, `jellyfin.py`, `plex.py` |
+| `src/tasks/` | 后台任务编排、导入流程、Webhook 任务处理 | 具体数据源实现细节 | `webhook.py`, `import_core.py` |
+| `src/jobs/` | 可被调度的定时作业（追更、清理、数据同步） | 数据源实现细节 | `auto_finish.py`, `danmaku_cleanup.py` |
+| `src/internal_tasks/` | 内部轮询任务（Token 刷新、趋势统计、日报） | HTTP 层 | `bgm_token_refresh.py`, `daily_summary.py` |
+| `src/services/` | 业务服务层、搜索匹配、任务管理、元数据管理 | 数据库直接操作（必须通过 crud） | `search.py`, `task_manager.py`, `scraper_manager.py` |
+| `src/notification/` | 通知渠道、事件定义、订阅匹配、模板解析 | 任务执行细节 | `events.py`, `subscription_matcher.py`, `template_resolver.py` |
+| `src/api/` | HTTP 接口、路由、请求验证 | 直接操作数据库（必须通过 services/crud） | `control/*.py`, `ui/*.py`, `dandan/*.py` |
+| `src/routes/` | 独立挂载的路由（不走 `api_router` 聚合） | 直接操作数据库 | `notification_template.py` |
+| `src/webhook/` | Webhook 载荷解析、媒体库事件识别 | 任务执行细节（只负责解析和分发） | `base.py`, `emby.py`, `plex.py` |
+| `src/commands/` | 播放器搜索框 @指令实现 | 数据库直接操作 | `clear_cache.py`, `rate_limit_status.py` |
+| `src/rate_limit/` | 访问频率限制与配额统计 | 业务逻辑 | — |
+| `src/ai/` | AI 匹配、标题识别、御坂助手（工具/技能/知识库） | 具体数据源、任务调度 | `matcher.py`, `assistant/` |
+| `src/tools/` | 供 LLM 调用的诊断工具（只读查询、性能指标） | 写操作、业务编排 | `database_tools.py`, `performance_tools.py` |
 | `src/utils/` | 工具函数、通用逻辑、格式转换 | 业务规则、数据库、网络请求 | `episode_filter.py`, `filename_parser.py` |
-| `src/ai/` | AI 匹配、标题识别、智能推荐 | 具体数据源、任务调度 | `matcher.py` |
 
 ---
 
@@ -100,7 +111,7 @@ async def search_anime(session, title):
 ### 4. Webhook 处理规则
 
 - ✅ **解析与执行分离**：Webhook 只负责解析，任务执行由 `tasks/webhook.py` 处理
-- ✅ **统一入口**：所有 Webhook 继承 `BaseWebhookHandler`
+- ✅ **统一入口**：所有 Webhook 继承 `BaseWebhook`（`src/webhook/base.py`）
 - ✅ **异步分发**：使用 `dispatch_task()` 异步提交任务
 
 ---
@@ -187,7 +198,7 @@ async def import_episode(scraper, video_id):
 - [ ] 确认新功能属于哪个模块的职责范围
 - [ ] 确认没有违反依赖方向规则
 - [ ] 确认没有跨层直接调用（必须通过接口）
-- [ ] 如果修改数据库模型，创建 Alembic migration
+- [ ] 如果修改数据库模型且需数据转换，在 `src/db/migrations.py` 追加迁移（本项目不用 Alembic）
 - [ ] 如果修改数据源，更新 `__version__` 字段
 - [ ] 如果修改 API，更新前端对应代码
 

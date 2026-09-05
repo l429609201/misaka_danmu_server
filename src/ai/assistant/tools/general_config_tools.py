@@ -90,6 +90,41 @@ ASSISTANT_CONFIG_WHITELIST = {
         "type": "text",
         "description": "弹幕黑名单正则，| 分隔。系统内置数百条规则，追加时务必先读取原值再拼接",
     },
+    # ---------- 后备与预下载开关 ----------
+    # UI 位置与联动规则统一由 knowledge/ui_guide.md 描述，此处只保留类型校验所需信息
+    "matchFallbackEnabled": {
+        "type": "boolean",
+        "description": "启用后备匹配：/match 匹配不到时自动全网搜索并导入",
+    },
+    "searchFallbackEnabled": {
+        "type": "boolean",
+        "description": "启用后备搜索：/search 库内无结果时自动全网搜索",
+    },
+    "externalApiFallbackEnabled": {
+        "type": "boolean",
+        "description": "启用顺延机制：选中源无有效分集时自动尝试下一个源",
+        "requires_any": ["matchFallbackEnabled", "searchFallbackEnabled"],
+    },
+    "preDownloadNextEpisodeEnabled": {
+        "type": "boolean",
+        "description": "启用预下载：播放当前集时后台异步下载下一集弹幕",
+        "requires_any": ["matchFallbackEnabled", "searchFallbackEnabled"],
+    },
+    "parallelSearchEnabled": {
+        "type": "boolean",
+        "description": "启用并行搜索：后备搜索时并发请求各搜索源，更快但对源压力更大",
+        "requires_any": ["matchFallbackEnabled", "searchFallbackEnabled"],
+    },
+    "matchFallbackTimeout": {
+        "type": "integer",
+        "description": "后备匹配 /match 等待结果的最大秒数，-1 为无限等待；超时返回未匹配但后台任务继续",
+        "min": -1,
+        "max": 3600,
+    },
+    "matchFallbackBlacklist": {
+        "type": "text",
+        "description": "后备匹配黑名单正则，| 分隔；命中的文件名不触发后备",
+    },
     # ---------- 自动刷新 ----------
     "danmakuAutoRefreshDays": {
         "type": "integer",
@@ -334,12 +369,31 @@ async def _get_config(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dic
             display_value = raw_value if raw_value is not None else ""
 
         meta = ASSISTANT_CONFIG_WHITELIST[key]
-        results.append({
+        item = {
             "key": key,
             "value": display_value,
             "type": meta["type"],
             "description": meta.get("description", ""),
-        })
+        }
+
+        # 依赖检查：任一前置项为 true 即满足，否则标注不生效原因
+        requires_any = meta.get("requires_any")
+        if requires_any:
+            item["requires_any"] = requires_any
+            satisfied = False
+            for dep_key in requires_any:
+                dep_val = await config_manager.get(dep_key)
+                if str(dep_val).lower() == "true":
+                    satisfied = True
+                    break
+            item["dependency_satisfied"] = satisfied
+            if not satisfied:
+                item["warning"] = (
+                    f"前置条件未满足：{' 或 '.join(requires_any)} 至少需有一项为 true，"
+                    f"否则本项即使为 true 也不会生效（前端开关同时会置灰）"
+                )
+
+        results.append(item)
 
     return {"configs": results}
 
@@ -381,12 +435,33 @@ async def _set_config(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dic
     await config_manager.setValue(key, validated_value)
     logger.info(f"AI助手修改配置: {key} = {validated_value!r}（旧值 {old_value!r}）")
 
-    return {
+    result = {
         "ok": True,
         "key": key,
         "oldValue": old_value if old_value is not None else "",
         "newValue": validated_value,
     }
+
+    # 写入成功但前置条件未满足时给出警告：值已落库，功能却不会生效
+    requires_any = meta.get("requires_any")
+    if requires_any and validated_value == "true":
+        unmet = []
+        satisfied = False
+        for dep_key in requires_any:
+            dep_val = await config_manager.get(dep_key)
+            if str(dep_val).lower() == "true":
+                satisfied = True
+            else:
+                unmet.append(dep_key)
+        if not satisfied:
+            result["warning"] = (
+                f"{key} 已写入 true，但前置条件未满足：{' 或 '.join(requires_any)} "
+                f"当前均为 false，本功能不会生效。需先开启其中一项（二者语义不同，"
+                f"应由用户确认开哪个），前端开关也会保持置灰。"
+            )
+            result["unmetDependencies"] = unmet
+
+    return result
 
 
 def register_general_config_tools() -> None:
@@ -398,6 +473,8 @@ def register_general_config_tools() -> None:
                 "读取系统配置项的当前值。可一次读多个键，不传 keys 则返回全部可读配置。"
                 "密钥类字段自动脱敏。适用于查询弹幕输出、AI 参数、文件路径模板等设置。"
                 "改配置前应先用本工具确认现值。"
+                "requires_any 表示前置依赖项，dependency_satisfied=false 时该项即使为 true 也不生效。"
+                "配置项对应的 Web UI 位置请用 search_ui_guide 查询界面手册，不要自行推测页面名称。"
             ),
             parameters={
                 "type": "object",
