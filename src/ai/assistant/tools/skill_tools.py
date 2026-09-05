@@ -16,6 +16,7 @@
 import logging
 from typing import Any, Dict
 
+from ..api_gateway.contracts import ActionEffect
 from ..security_gateway import ToolPermission
 from ..skill_manager import get_skill_manager
 from .base import Tool, registry
@@ -243,6 +244,8 @@ def register_skill_tools() -> None:
         permission=ToolPermission.WRITE,
         executor=_delete_skill,
         running_label="正在删除技能",
+        # 整个技能目录被移除，文件无法恢复
+        effect=ActionEffect.DESTRUCTIVE_WRITE,
     ))
     registry.register(Tool(
         name="toggle_skill",

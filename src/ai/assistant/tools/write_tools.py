@@ -14,6 +14,7 @@ from typing import Any, Dict
 
 from src.db import crud, models
 from src import tasks
+from ..api_gateway.contracts import ActionEffect
 from ..security_gateway import ToolPermission
 from .base import Tool, registry
 from .search_session import get_result_item
@@ -273,6 +274,8 @@ def register_write_tools() -> None:
         permission=ToolPermission.WRITE,
         executor=_refresh_episode,
         running_label="刷新分集弹幕",
+        # 会向源站发起抓取请求，属外部副作用（旧弹幕会被新抓取结果覆盖）
+        effect=ActionEffect.EXTERNAL_SIDE_EFFECT,
     ))
     registry.register(Tool(
         name="delete_anime",
@@ -287,6 +290,8 @@ def register_write_tools() -> None:
         permission=ToolPermission.WRITE,
         executor=_delete_anime,
         running_label="删除作品",
+        # 弹幕数据删除后无法找回，属不可逆操作
+        effect=ActionEffect.DESTRUCTIVE_WRITE,
     ))
     registry.register(Tool(
         name="delete_source",
@@ -301,6 +306,8 @@ def register_write_tools() -> None:
         permission=ToolPermission.WRITE,
         executor=_delete_source,
         running_label="删除数据源",
+        # 同上：该源下的分集与弹幕一并丢失，不可恢复
+        effect=ActionEffect.DESTRUCTIVE_WRITE,
     ))
     registry.register(Tool(
         name="run_scheduled_task",
@@ -315,6 +322,8 @@ def register_write_tools() -> None:
         permission=ToolPermission.WRITE,
         executor=_run_scheduled_task,
         running_label="运行定时任务",
+        # 会真实触发抓取/刷新，对外部弹幕源产生请求，属外部副作用
+        effect=ActionEffect.EXTERNAL_SIDE_EFFECT,
     ))
     registry.register(Tool(
         name="import_selected",
@@ -335,6 +344,8 @@ def register_write_tools() -> None:
         permission=ToolPermission.WRITE,
         executor=_import_selected,
         running_label="导入候选源",
+        # 会向外部弹幕源发起抓取请求并写入数据，属外部副作用
+        effect=ActionEffect.EXTERNAL_SIDE_EFFECT,
     ))
     registry.register(Tool(
         name="import_edited",
@@ -356,5 +367,7 @@ def register_write_tools() -> None:
         permission=ToolPermission.WRITE,
         executor=_import_edited,
         running_label="编辑导入分集",
+        # 同 import_selected：触发外部抓取并写入
+        effect=ActionEffect.EXTERNAL_SIDE_EFFECT,
     ))
 

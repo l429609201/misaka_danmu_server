@@ -18,6 +18,7 @@ import logging
 from typing import Any, Dict, List
 
 from src.db import models
+from ..api_gateway.contracts import ActionEffect, ConfirmationMode, ResultSensitivity
 from ..security_gateway import ToolPermission
 from .base import Tool, registry
 
@@ -332,6 +333,11 @@ def register_metadata_tools() -> None:
         permission=ToolPermission.READ_ONLY,
         executor=_get_key_status,
         running_label="正在查询密钥状态",
+        # 只回掩码不回明文，但属于凭据面读取，标为敏感读以便审计
+        effect=ActionEffect.SENSITIVE_READ,
+        result_sensitivity=ResultSensitivity.SECRET,
+        # 仅查状态不产生副作用，无需逐次确认
+        confirmation=ConfirmationMode.NONE,
     ))
     registry.register(Tool(
         name="verify_metadata_source_key",
@@ -346,6 +352,9 @@ def register_metadata_tools() -> None:
         permission=ToolPermission.READ_ONLY,
         executor=_verify_metadata_source_key,
         running_label="正在验证密钥有效性",
+        # 会向外部服务实发探测请求，但不改动本地数据；保持免确认以便随时自检
+        effect=ActionEffect.SAFE_READ,
+        confirmation=ConfirmationMode.NONE,
     ))
     registry.register(Tool(
         name="set_metadata_source_key",
@@ -362,4 +371,7 @@ def register_metadata_tools() -> None:
         permission=ToolPermission.WRITE,
         executor=_set_metadata_source_key,
         running_label="正在写入密钥并验证",
+        # 旧密钥被覆盖后无法从系统内找回（需用户自己重新获取），按不可逆处理
+        effect=ActionEffect.DESTRUCTIVE_WRITE,
+        result_sensitivity=ResultSensitivity.SECRET,
     ))

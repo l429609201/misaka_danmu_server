@@ -104,6 +104,9 @@ async def chat_stream(
         "ai_matcher_manager": getattr(st, "ai_matcher_manager", None),
         "title_recognition_manager": getattr(st, "title_recognition_manager", None),
         "config_manager": config_manager,
+        # API 网关工具所需：应用实例用于内部 ASGI 调用，用户身份用于覆盖鉴权依赖
+        "app": request.app,
+        "current_user": current_user,
     }
 
     sid = payload.sessionId
@@ -165,6 +168,9 @@ async def execute_confirmed_tool(
         "ai_matcher_manager": getattr(st, "ai_matcher_manager", None),
         "title_recognition_manager": getattr(st, "title_recognition_manager", None),
         "config_manager": config_manager,
+        # API 网关工具所需：应用实例用于内部 ASGI 调用，用户身份用于覆盖鉴权依赖
+        "app": request.app,
+        "current_user": current_user,
     }
 
     try:

@@ -162,7 +162,11 @@ async def _get_anime_detail(arguments: Dict[str, Any], context: Dict[str, Any]) 
 
 
 async def _list_tokens(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-    """查询对外弹幕 API 的 Token 列表（不含完整密钥，仅名称与状态）。"""
+    """查询对外弹幕 API 的 Token 列表（不含完整密钥，仅 id、名称与状态）。
+
+    必须返回 id：后续的启用/禁用、更新、删除等操作都要用 token_id 定位，
+    只给名称会导致 AI 无法执行这些操作（早期版本漏了 id，实际用时才发现）。
+    """
     session_factory = context.get("session_factory")
     if not session_factory:
         return {"error": "会话不可用"}
@@ -170,6 +174,7 @@ async def _list_tokens(arguments: Dict[str, Any], context: Dict[str, Any]) -> Di
         tokens = await crud.get_all_api_tokens(session)
     simplified = [
         {
+            "id": t.get("id"),
             "name": t.get("name"),
             "isEnabled": t.get("isEnabled"),
             "dailyCallCount": t.get("dailyCallCount"),
@@ -177,7 +182,14 @@ async def _list_tokens(arguments: Dict[str, Any], context: Dict[str, Any]) -> Di
         }
         for t in (tokens or [])[:_MAX_ITEMS]
     ]
-    return {"total": len(tokens or []), "tokens": simplified}
+    return {
+        "total": len(tokens or []),
+        "tokens": simplified,
+        "hint": (
+            "需要新建/启停/改限额/删除 Token 时，用 call_api 配合 token.create / "
+            "token.toggle / token.update / token.delete，token_id 取上面的 id。"
+        ),
+    }
 
 
 async def _search_media(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:

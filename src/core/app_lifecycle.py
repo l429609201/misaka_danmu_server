@@ -252,6 +252,26 @@ async def run_startup(app: FastAPI):
     init_llm_db_tools(session_factory)
     logger.info("LLM 数据库检索工具已初始化")
 
+    # 御坂助手 API 网关白名单自检：
+    # 校验助手白名单登记的路径是否真实存在于路由表。后端调路径而白名单未同步时，
+    # 在启动阶段就以 ERROR 暴露，避免等到用户对话时才发现助手调用 404。
+    # 自检仅做核对，不阻断启动。
+    try:
+        from src.ai.assistant.api_gateway import validate_whitelist
+        gateway_check = validate_whitelist(app)
+        if gateway_check["ok"]:
+            logger.info(
+                "御坂助手 API 网关白名单自检通过，共 %d 个操作",
+                gateway_check["checked"],
+            )
+        else:
+            logger.error(
+                "御坂助手 API 网关白名单自检发现 %d 处路径失效，详见上方日志",
+                len(gateway_check["missing"]),
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"御坂助手 API 网关白名单自检未执行: {e}")
+
     init_time = time.time() - init_start
     logger.info(f"并行初始化完成，耗时 {init_time:.2f} 秒")
 
