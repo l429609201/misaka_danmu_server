@@ -368,6 +368,9 @@ class ScraperManager:
         if not self.scrapers:
             return
 
+        # 使用标准日志记录器（mgr_logger 仅为 search_all 内的局部变量，此处不可用）
+        logger = logging.getLogger(__name__)
+
         for provider_name in self.scrapers.keys():
             # 迁移旧配置：如果存在旧的 fetch_episode_count 配置，迁移到新的 enrich_enabled
             old_key = f"scraper_{provider_name}_fetch_episode_count"
@@ -380,11 +383,11 @@ class ScraperManager:
                 # 如果旧配置存在，迁移过来；否则默认 false
                 if old_value is not None:
                     await self.config_manager.setValue(new_key, old_value)
-                    mgr_logger.info(f"已将 {provider_name} 的旧配置 {old_key}={old_value} 迁移到 {new_key}")
+                    logger.info(f"已将 {provider_name} 的旧配置 {old_key}={old_value} 迁移到 {new_key}")
                 else:
                     await self.config_manager.setValue(new_key, "false")
 
-        mgr_logger.info(f"已为 {len(self.scrapers)} 个源初始化信息增强配置默认值（false）")
+        logger.info(f"已为 {len(self.scrapers)} 个源初始化信息增强配置默认值（false）")
 
     async def _check_global_version_compatibility(self, scrapers_dir: Path) -> bool:
         """
