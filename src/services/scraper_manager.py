@@ -1143,14 +1143,12 @@ class ScraperManager:
                         mgr_logger.debug(f"[信息增强] 源 {provider} 未开启增强，跳过")
                         return
 
-                    # 读取该源的字段配置（为空则继承全局）
-                    source_fields_str = await self.config_manager.get(f"scraper_{provider}_enrich_fields", "")
-                    fields = (
-                        [f.strip() for f in source_fields_str.split(",") if f.strip()]
-                        if source_fields_str else global_fields
-                    )
+                    # 改为读取源类硬编码的 enrich_fields（不再继承全局配置）
+                    scraper = self.scrapers.get(provider)
+                    fields = getattr(scraper, 'enrich_fields', []) if scraper else []
 
                     if not fields:
+                        mgr_logger.debug(f"[信息增强] 源 {provider} 未配置 enrich_fields，跳过")
                         return
 
                     # 只处理前 N 条

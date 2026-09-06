@@ -147,10 +147,21 @@ async def get_scraper_config(
     configurable_fields = getattr(scraper_class, 'configurable_fields', {})
     for field_key, field_info in configurable_fields.items():
         # field_key 就是配置键,例如 "gamerCookie" 或 "dandanplay_app_id"
-        value = await config_manager.get(field_key, "")
 
-        # 获取字段类型 (label, type, tooltip)
-        field_type = field_info[1] if isinstance(field_info, tuple) and len(field_info) > 1 else "string"
+        # 提取字段类型与默认值（兼容元组格式和扩展字典格式）
+        # 关键修复：读取值时以字段声明的 default 作兜底，
+        #   否则首次打开(DB无值)时 radio_group 拿到空字符串会错误回退到第一个选项
+        if isinstance(field_info, dict):
+            field_type = field_info.get("type", "string")
+            field_default = field_info.get("default", "")
+        elif isinstance(field_info, tuple):
+            field_type = field_info[1] if len(field_info) > 1 else "string"
+            field_default = ""
+        else:
+            field_type = "string"
+            field_default = ""
+
+        value = await config_manager.get(field_key, field_default)
 
         # 布尔类型字段需要转换为布尔值返回给前端
         if field_type == "boolean":
@@ -216,6 +227,71 @@ async def get_scraper_config(
 
     response_data[enrich_fields_key] = await config_manager.get(enrich_fields_key, "")
 
+    # 7. 添加字段渲染顺序配置（前端根据此顺序动态渲染表单）
+    # 获取该源的字段顺序配置（子类可覆盖 ui_field_order）
+    field_order = getattr(scraper_class, 'ui_field_order', None)
+    if field_order is None:
+        # 使用默认顺序
+        field_order = getattr(scraper_class, '_default_ui_field_order', [
+            "useProxy",
+            "searchTimeout",
+            "@custom",
+            "enrichEnabled",
+            "episodeBlacklist",
+            "logRawResponses",
+        ])
+    response_data['_uiFieldOrder'] = field_order
+
+    # 8. 添加源特有字段的元数据（供前端渲染 @custom 位置）
+    # 格式: { "fieldKey": { "label": "...", "type": "...", "tooltip": "...", "hidden": ... } }
+    custom_fields_meta = {}
+    base_fields_config = {}  # 基础字段的配置覆盖（如 hidden 标记）
+
+    # 基础字段列表（通用字段，非源特有）
+    base_field_keys = {
+        "useProxy", "searchTimeout", "enrichEnabled",
+        "episodeBlacklist", "logRawResponses", "proxyLogRow", "logOnlyRow"
+    }
+
+    for field_key, field_info in configurable_fields.items():
+        if isinstance(field_info, tuple) and len(field_info) >= 2:
+            meta = {
+                "label": field_info[0],
+                "type": field_info[1],
+                "tooltip": field_info[2] if len(field_info) > 2 else "",
+            }
+        elif isinstance(field_info, dict):
+            meta = field_info
+        else:
+            continue
+
+        # 区分基础字段和源特有字段
+        if field_key in base_field_keys:
+            base_fields_config[field_key] = meta
+        else:
+            custom_fields_meta[field_key] = meta
+
+    response_data['_customFieldsMeta'] = custom_fields_meta
+
+    # 8.1 信息增强开关自动隐藏逻辑（方案A）
+    # 源类通过 enrich_fields 硬编码声明需要补全的字段（如 ["year", "episodeCount"]）
+    # 若该源未声明 enrich_fields（空列表），则自动隐藏"信息增强"开关，
+    #   实现"新增源只需配置 enrich_fields 即可自动控制开关显示"的单一数据源效果。
+    enrich_fields = getattr(scraper_class, 'enrich_fields', [])
+    if not enrich_fields:
+        # 合并已有配置（保留源可能自定义的其他属性），强制置 hidden
+        existing = base_fields_config.get('enrichEnabled', {})
+        base_fields_config['enrichEnabled'] = {**existing, 'hidden': True}
+
+    response_data['_baseFieldsConfig'] = base_fields_config  # 基础字段配置（含 hidden 标记）
+
+    # 9. bilibili 专属：将存储字段 enableClashProxy 映射为前端的 biliProxyMode 枚举
+    # 前端用 radio_group（server/clash）表达，后端存 enableClashProxy(bool)，此处做正向转换
+    if providerName == 'bilibili':
+        enable_clash = await config_manager.get("enableClashProxy", "false")
+        enable_clash_bool = enable_clash if isinstance(enable_clash, bool) else str(enable_clash).lower() == 'true'
+        response_data['biliProxyMode'] = 'clash' if enable_clash_bool else 'server'
+
     return response_data
 
 
@@ -233,6 +309,20 @@ async def update_scraper_config(
         scraper_class = manager.get_scraper_class(providerName)
         if not scraper_class:
             raise HTTPException(status_code=404, detail="该搜索源不存在。")
+
+        # 0. bilibili 专属：将前端的 biliProxyMode 枚举反向转换为存储字段 enableClashProxy
+        #    并按模式互斥清空另一模式的地址字段（server→清 clashProxyUrl，clash→清 searchProxyServer）
+        if providerName == 'bilibili' and 'biliProxyMode' in payload:
+            mode = payload.pop('biliProxyMode')  # 移除虚拟字段，避免被下方循环误存
+            if mode == 'clash':
+                payload['enableClashProxy'] = True
+                payload['searchProxyServer'] = ''
+            else:
+                payload['enableClashProxy'] = False
+                payload['clashProxyUrl'] = ''
+
+        # 移除不需要持久化的虚拟字段（二维码登录组件、认证模式切换仅用于前端渲染）
+        payload.pop('biliQrcodeLogin', None)
 
         # 1. 单独处理 useProxy 字段,它更新的是 scrapers 表
         if 'useProxy' in payload:

@@ -314,12 +314,58 @@ class BaseScraper(ABC):
     display_name: Optional[str] = None
 
     # (可选) 子类可以覆盖此字典来声明其可配置的字段。
-    # 格式: { "config_key": ("UI显示的标签", "字段类型", "UI上的提示信息") }
-    # 支持的字段类型: "string", "boolean", "password"
-    configurable_fields: Dict[str, Tuple[str, str, str]] = {}
+    #
+    # 支持两种格式:
+    # 1. 简单格式（元组）: { "config_key": ("标签", "类型", "提示") }
+    # 2. 扩展格式（字典）: { "config_key": { "label": "标签", "type": "类型", ... } }
+    #
+    # 支持的字段类型:
+    #   - "string": 文本输入框
+    #   - "password": 密码输入框
+    #   - "boolean": 开关
+    #   - "textarea": 多行文本框
+    #   - "radio_group": 单选组（需提供 options）
+    #   - "qrcode_login": 二维码登录组件（bilibili 专用）
+    #   - "conditional": 条件显示字段（根据其他字段值动态显示）
+    #
+    # 扩展格式支持的属性:
+    #   - label (str): UI 显示的标签
+    #   - type (str): 字段类型（见上方列表）
+    #   - tooltip (str): 提示文本
+    #   - placeholder (str): 占位符文本
+    #   - required (bool): 是否必填
+    #   - default (any): 默认值
+    #   - options (List[Dict]): radio_group 类型的选项列表 [{"label": "显示名", "value": "值"}, ...]
+    #   - conditional (Dict): 条件显示配置 {"field": "关联字段key", "value": "触发值"}
+    #   - rows (int): textarea 类型的行数
+    #   - prefix_icon (str): 输入框前缀图标名（如 "KeyOutlined"）
+    #   - link (str): 字段标签旁的帮助链接
+    configurable_fields: Dict[str, Union[Tuple[str, str, str], Dict[str, Any]]] = {}
+
+    # (可选) 子类可覆盖此列表来自定义 UI 字段的渲染顺序
+    # 通用字段标识符（所有源都有）:
+    #   - "proxyLogRow": 第一行（启用代理 + 记录原始响应，同行显示）
+    #   - "searchTimeout": 第二行（搜索超时滑块）
+    #   - "episodeBlacklist": 第三行（分集黑名单正则文本框）
+    #   - "enrichEnabled": 信息增强开关+字段输入框（同一行）
+    # 特殊标记:
+    #   - "@custom": 插入源特有字段（来自 configurable_fields）的位置
+    # 默认顺序（不设置时使用）:
+    ui_field_order: Optional[List[str]] = None  # None 表示使用默认顺序
+    _default_ui_field_order = [
+        "proxyLogRow",       # 第一行：代理开关 + 日志开关（同行）
+        "searchTimeout",     # 第二行：搜索超时
+        "episodeBlacklist",  # 第三行：分集黑名单
+        "@custom",           # 第四行起：源特有字段插入在这里
+        "enrichEnabled",     # 信息增强（在源特有字段之后）
+    ]
 
     # (新增) 子类应覆盖此列表，声明它们可以处理的域名
     handled_domains: List[str] = []
+
+    # (新增) 信息增强补全字段（源在代码里硬编码，如 ["year", "episodeCount"]）
+    # 空列表表示该源不支持信息增强，搜索时不会触发补全逻辑
+    enrich_fields: List[str] = []
 
     # (新增) 子类可以覆盖此属性，以提供一个默认的 Referer
     referer: Optional[str] = None

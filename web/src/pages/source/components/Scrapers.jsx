@@ -263,10 +263,6 @@ export const Scrapers = () => {
   const [biliQrcodeChecked, setBiliQrcodeChecked] = useState(false)
   /** 扫码登录轮训 */
   const timer = useRef(0)
-  // dandanplay auth mode
-  const [dandanAuthMode, setDandanAuthMode] = useState('local') // 'local' or 'proxy'
-  // bilibili 限制内容代理模式：'server'(反向代理地址) 或 'clash'(Clash 本地代理)，二选一互斥
-  const [biliProxyMode, setBiliProxyMode] = useState('server')
 
   const [showDisclaimerModal, setShowDisclaimerModal] = useState(false)
   // 填充默认黑名单加载状态
@@ -314,6 +310,12 @@ export const Scrapers = () => {
   const [selectedBranch, setSelectedBranch] = useState('main')
   const [repoRefs, setRepoRefs] = useState({ branches: [], tags: [], minServerVersion: null })
   const [refsLoading, setRefsLoading] = useState(false)
+
+  // 当前配置中的源的字段顺序和元数据（用于动态渲染）
+  const [currentFieldOrder, setCurrentFieldOrder] = useState([])
+  const [currentCustomFieldsMeta, setCurrentCustomFieldsMeta] = useState({})
+  // 基础字段配置（含 hidden 标记，控制基础开关是否渲染）
+  const [currentBaseFieldsConfig, setCurrentBaseFieldsConfig] = useState({})
 
   // 下载进度相关
   const [downloadProgress, setDownloadProgress] = useState({
@@ -1319,6 +1321,19 @@ export const Scrapers = () => {
     })
     setOpen(true)
     setSetname(item.providerName)
+
+    // 保存字段顺序和元数据（用于动态渲染）
+    setCurrentFieldOrder(res.data?._uiFieldOrder || [
+      "useProxy",
+      "searchTimeout",
+      "@custom",
+      "enrichEnabled",
+      "episodeBlacklist",
+      "logRawResponses",
+    ])
+    setCurrentCustomFieldsMeta(res.data?._customFieldsMeta || {})
+    setCurrentBaseFieldsConfig(res.data?._baseFieldsConfig || {})  // 读取基础字段配置
+
     const setNameCapitalize = `${item.providerName.charAt(0).toUpperCase()}${item.providerName.slice(1)}`
 
     // 动态地为所有可配置字段设置表单初始值
@@ -1360,24 +1375,6 @@ export const Scrapers = () => {
         res.data?.[`scraper_${item.providerName}_enrich_fields`] || '',
       ...dynamicInitialValues,
     })
-
-    // Dandanplay specific logic
-    if (item.providerName === 'dandanplay') {
-      // 如果配置了 App ID，则为本地模式，否则默认为代理模式
-      if (res.data?.dandanplayAppId) {
-        setDandanAuthMode('local')
-      } else {
-        setDandanAuthMode('proxy')
-      }
-    }
-
-    // bilibili 限制内容代理模式：enableClashProxy=true 视为 Clash 模式，否则反代模式
-    if (item.providerName === 'bilibili') {
-      const clashOn = res.data?.enableClashProxy === true
-        || res.data?.enableClashProxy === 'true'
-        || res.data?.enableClashProxy === '1'
-      setBiliProxyMode(clashOn ? 'clash' : 'server')
-    }
   }
 
   const handleSaveSingleScraper = async () => {
@@ -1385,33 +1382,6 @@ export const Scrapers = () => {
       setConfirmLoading(true)
       const values = await form.validateFields()
       const setNameCapitalize = `${setname.charAt(0).toUpperCase()}${setname.slice(1)}`
-
-      // 根据当前模式，清空另一种模式的配置
-      if (setname === 'dandanplay') {
-        if (dandanAuthMode === 'local') {
-          values.dandanplayProxyConfig = ''
-        } else {
-          values.dandanplayAppId = ''
-          values.dandanplayAppSecret = ''
-          values.dandanplayAppSecretAlt = ''
-          values.dandanplayApiBaseUrl = ''
-        }
-        // dandanplay 不使用全局代理，移除该字段
-        delete values.useProxy
-      }
-
-      // bilibili 限制内容代理：模式二选一，保存时按模式互斥写入
-      if (setname === 'bilibili') {
-        if (biliProxyMode === 'clash') {
-          // Clash 模式：启用 Clash，清空反代地址
-          values.enableClashProxy = true
-          values.searchProxyServer = ''
-        } else {
-          // 反代模式：关闭 Clash，清空 Clash 地址
-          values.enableClashProxy = false
-          values.clashProxyUrl = ''
-        }
-      }
 
       // 信息增强开关：后端 config 表存字符串，这里显式转为 'true'/'false'
       const enrichEnabledKey = `scraper_${setname}_enrich_enabled`
@@ -1435,6 +1405,468 @@ export const Scrapers = () => {
       form.resetFields()
       getInfo() // 刷新列表以更新代理/日志图标状态
     }
+  }
+
+  // 动态渲染字段（根据后端 _uiFieldOrder 配置）
+  const renderDynamicFields = (providerName) => {
+    if (!providerName) return null
+
+    // 使用 state 中的字段顺序和元数据
+    const fieldOrder = currentFieldOrder
+    const customFieldsMeta = currentCustomFieldsMeta
+    const baseFieldsConfig = currentBaseFieldsConfig  // 基础字段配置（含 hidden）
+
+    const renderedFields = []
+
+    fieldOrder.forEach((fieldKey) => {
+      // 检查基础字段是否被配置为隐藏
+      // 基础字段列表：proxyLogRow, logOnlyRow, useProxy, searchTimeout, enrichEnabled, episodeBlacklist, logRawResponses
+      const baseFieldKeys = ['proxyLogRow', 'logOnlyRow', 'useProxy', 'searchTimeout', 'enrichEnabled', 'episodeBlacklist', 'logRawResponses']
+      if (baseFieldKeys.includes(fieldKey)) {
+        const fieldConfig = baseFieldsConfig[fieldKey] || {}
+        if (fieldConfig.hidden === true) {
+          return  // 跳过隐藏的基础字段
+        }
+      }
+
+      // 通用字段渲染
+      if (fieldKey === "proxyLogRow") {
+        // 第一行：代理开关 + 日志开关（同行显示）
+        renderedFields.push(
+          <Form.Item key="proxyLogRow" className="mb-4">
+            <div className="flex items-center gap-6">
+              <Form.Item name="useProxy" valuePropName="checked" noStyle>
+                <Switch />
+              </Form.Item>
+              <span>{t('scrapers.useProxy')}</span>
+              <Form.Item
+                name={`scraper${providerName.charAt(0).toUpperCase()}${providerName.slice(1)}LogResponses`}
+                valuePropName="checked"
+                noStyle
+              >
+                <Switch />
+              </Form.Item>
+              <span>{t('scrapers.logRawResponses')}</span>
+            </div>
+          </Form.Item>
+        )
+      } else if (fieldKey === "logOnlyRow") {
+        // 第一行：仅日志开关（无代理开关，用于 dandanplay）
+        renderedFields.push(
+          <Form.Item key="logOnlyRow" label={t('scrapers.logRawResponses')} className="mb-4">
+            <Form.Item
+              name={`scraper${providerName.charAt(0).toUpperCase()}${providerName.slice(1)}LogResponses`}
+              valuePropName="checked"
+              noStyle
+            >
+              <Switch />
+            </Form.Item>
+          </Form.Item>
+        )
+      } else if (fieldKey === "searchTimeout") {
+        renderedFields.push(
+          <Form.Item
+            key="searchTimeout"
+            label={t('scrapers.searchTimeout')}
+            tooltip={t('scrapers.searchTimeoutTip')}
+            className="mb-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-1">
+                <Form.Item name={`scraper_${providerName}_search_timeout`} noStyle>
+                  <Slider
+                    min={5}
+                    max={100}
+                    marks={{ 5: '5s', 15: '15s', 30: '30s', 60: '60s', 100: '100s' }}
+                  />
+                </Form.Item>
+              </div>
+              <div style={{ marginTop: 4 }}>
+                <Form.Item name={`scraper_${providerName}_search_timeout`} noStyle>
+                  <InputNumber min={5} max={100} controls={false} style={{ width: 80 }} addonAfter={t('scrapers.secondUnit')} />
+                </Form.Item>
+              </div>
+            </div>
+          </Form.Item>
+        )
+      } else if (fieldKey === "enrichEnabled") {
+        // 信息增强：只显示开关，补全字段由各源在代码里硬编码
+        renderedFields.push(
+          <Form.Item
+            key="enrichEnabled"
+            name={`scraper_${providerName}_enrich_enabled`}
+            label={t('scrapers.enrichEnabled')}
+            tooltip={t('scrapers.enrichEnabledTip')}
+            valuePropName="checked"
+            className="mb-4"
+          >
+            <Switch />
+          </Form.Item>
+        )
+      } else if (fieldKey === "episodeBlacklist") {
+        renderedFields.push(
+          <Form.Item
+            key="episodeBlacklist"
+            name={`${providerName}EpisodeBlacklistRegex`}
+            label={
+              <div
+                className={
+                  isMobile
+                    ? 'flex flex-col items-start gap-1 w-full'
+                    : 'flex items-center justify-between w-full'
+                }
+              >
+                <span className="whitespace-nowrap">{t('scrapers.episodeBlacklist')}</span>
+                <Space size="small" wrap>
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={handleFillDefaultBlacklist}
+                    loading={loadingDefaultBlacklist}
+                  >
+                    {t('scrapers.fillSourceDefault')}
+                  </Button>
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={handleFillCommonBlacklist}
+                    loading={loadingCommonBlacklist}
+                  >
+                    {t('scrapers.fillCommonRules')}
+                  </Button>
+                  <Button
+                    size="small"
+                    type="link"
+                    icon={<RobotOutlined />}
+                    onClick={() => setAiRegexModalOpen(true)}
+                  >
+                    {t('scrapers.aiGenerate')}
+                  </Button>
+                </Space>
+              </div>
+            }
+            className="mb-4"
+          >
+            <Input.TextArea rows={isMobile ? 4 : 6} placeholder={t('scrapers.episodeBlacklistPlaceholder')} />
+          </Form.Item>
+        )
+      } else if (fieldKey === "@custom") {
+        // 渲染源特有字段
+        Object.entries(customFieldsMeta).forEach(([key, meta]) => {
+          renderedFields.push(renderCustomField(key, meta, providerName))
+        })
+      }
+    })
+
+    return renderedFields
+  }
+
+  // 渲染单个源特有字段（支持多种类型）
+  // why: 后端配置 key 可能是下划线（如 dandanplay_auth_mode），但前端表单统一用驼峰
+  //      （后端 GET/PUT 已对 dandanplay 做驼峰转换），故此处统一转换 name 与 conditional 引用
+  const toCamelKey = (s) => s.replace(/_([a-z])/g, g => g[1].toUpperCase())
+
+  const renderCustomField = (fieldKey, meta, providerName) => {
+    const { conditional } = meta
+    const formName = toCamelKey(fieldKey)
+
+    // 条件显示逻辑：如果配置了 conditional，根据关联字段的值决定是否显示
+    if (conditional) {
+      const condField = toCamelKey(conditional.field)
+      return (
+        <Form.Item
+          key={formName}
+          noStyle
+          shouldUpdate={(prev, cur) => prev[condField] !== cur[condField]}
+        >
+          {({ getFieldValue }) => {
+            const shouldShow = getFieldValue(condField) === conditional.value
+            if (!shouldShow) return null
+
+            return renderFieldByType(formName, meta, providerName)
+          }}
+        </Form.Item>
+      )
+    }
+
+    return renderFieldByType(formName, meta, providerName)
+  }
+
+  // 根据类型渲染字段
+  const renderFieldByType = (fieldKey, meta, providerName) => {
+    const { label, type, tooltip, placeholder, required, options, rows, prefix_icon, link } = meta
+
+    // 标签处理：如果有链接，添加帮助图标
+    const labelNode = link ? (
+      <span>
+        {label}{' '}
+        <a href={link} target="_blank" rel="noopener noreferrer">
+          <QuestionCircleOutlined className="cursor-pointer text-gray-400" />
+        </a>
+      </span>
+    ) : label
+
+    // 前缀图标映射
+    const iconMap = {
+      'KeyOutlined': <KeyOutlined className="text-gray-400" />,
+      'LockOutlined': <LockOutlined className="text-gray-400" />,
+    }
+    const prefixIcon = prefix_icon ? iconMap[prefix_icon] : null
+
+    const rules = required ? [{ required: true, message: `${t('common.pleaseInput')}${label}` }] : []
+
+    switch (type) {
+      case 'boolean':
+        return (
+          <Form.Item
+            key={fieldKey}
+            name={fieldKey}
+            label={labelNode}
+            valuePropName="checked"
+            tooltip={tooltip}
+            className="mb-4"
+          >
+            <Switch />
+          </Form.Item>
+        )
+
+      case 'password':
+        return (
+          <Form.Item
+            key={fieldKey}
+            name={fieldKey}
+            label={labelNode}
+            tooltip={tooltip}
+            rules={rules}
+            className="mb-4"
+          >
+            <Input.Password
+              prefix={prefixIcon}
+              placeholder={placeholder || label}
+            />
+          </Form.Item>
+        )
+
+      case 'textarea':
+        return (
+          <Form.Item
+            key={fieldKey}
+            name={fieldKey}
+            label={labelNode}
+            tooltip={tooltip}
+            rules={rules}
+            className="mb-4"
+          >
+            <Input.TextArea
+              rows={rows || 6}
+              placeholder={placeholder}
+            />
+          </Form.Item>
+        )
+
+      case 'radio_group':
+        return (
+          <Form.Item
+            key={fieldKey}
+            label={labelNode}
+            tooltip={tooltip}
+            className="mb-4"
+          >
+            <Form.Item
+              noStyle
+              shouldUpdate={(prev, cur) => prev[fieldKey] !== cur[fieldKey]}
+            >
+              {({ getFieldValue, setFieldsValue }) => {
+                const curVal = getFieldValue(fieldKey)
+                const activeOpt = options?.find(o => o.value === curVal) || options?.[0]
+                return (
+                  <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center gap-4'}`}>
+                    <Switch
+                      checkedChildren={options?.[1]?.label || ''}
+                      unCheckedChildren={options?.[0]?.label || ''}
+                      checked={curVal === options?.[1]?.value}
+                      onChange={checked =>
+                        setFieldsValue({ [fieldKey]: checked ? options[1].value : options[0].value })
+                      }
+                    />
+                    <div className="text-sm text-gray-600">
+                      {activeOpt?.description || ''}
+                    </div>
+                  </div>
+                )
+              }}
+            </Form.Item>
+          </Form.Item>
+        )
+
+      case 'number':
+        return (
+          <Form.Item
+            key={fieldKey}
+            name={fieldKey}
+            label={labelNode}
+            tooltip={tooltip}
+            rules={rules}
+            className="mb-4"
+          >
+            <InputNumber
+              min={meta.min}
+              max={meta.max}
+              step={meta.step}
+              placeholder={placeholder}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+        )
+
+      case 'select':
+        return (
+          <Form.Item
+            key={fieldKey}
+            name={fieldKey}
+            label={labelNode}
+            tooltip={tooltip}
+            rules={rules}
+            className="mb-4"
+          >
+            <Select placeholder={placeholder || t('scrapers.pleaseSelect')}>
+              {(options || []).map(opt => (
+                <Select.Option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        )
+
+      case 'url':
+        return (
+          <Form.Item
+            key={fieldKey}
+            name={fieldKey}
+            label={labelNode}
+            tooltip={tooltip}
+            rules={rules}
+            className="mb-4"
+          >
+            <Input prefix={prefixIcon} placeholder={placeholder || 'https://example.com'} />
+          </Form.Item>
+        )
+
+      case 'action': {
+        // action 类型：渲染一个按钮，点击时调用后端 action
+        const { actionName, buttonText, buttonType, confirmText, successMessage, errorMessage } = meta
+        return (
+          <Form.Item key={fieldKey} label={labelNode} tooltip={tooltip} className="mb-4">
+            <Button
+              type={buttonType || 'default'}
+              onClick={async () => {
+                if (confirmText) {
+                  modalApi.confirm({
+                    title: t('scrapers.confirmAction'),
+                    content: confirmText,
+                    okText: t('common.confirm'),
+                    cancelText: t('common.cancel'),
+                    onOk: async () => {
+                      await handleActionClick(providerName, actionName, successMessage, errorMessage)
+                    },
+                  })
+                } else {
+                  await handleActionClick(providerName, actionName, successMessage, errorMessage)
+                }
+              }}
+            >
+              {buttonText || meta.label}
+            </Button>
+          </Form.Item>
+        )
+      }
+
+      case 'qrcode_login':
+        // 二维码登录组件（bilibili 专用），渲染登录态/扫码入口
+        return (
+          <div key={fieldKey}>
+            {renderBiliLoginSection()}
+          </div>
+        )
+
+      case 'string':
+      default:
+        return (
+          <Form.Item
+            key={fieldKey}
+            name={fieldKey}
+            label={labelNode}
+            tooltip={tooltip}
+            rules={rules}
+            className="mb-4"
+          >
+            <Input
+              prefix={prefixIcon}
+              placeholder={placeholder || label}
+            />
+          </Form.Item>
+        )
+    }
+  }
+
+  // bilibili 登录信息渲染（可被 qrcode_login 类型字段调用）
+  const renderBiliLoginSection = () => {
+    return (
+      <div className="text-center">
+        {biliUserinfo.isLogin ? (
+          <div className="text-center">
+            <div className={`flex ${isMobile ? 'flex-col items-center gap-2' : 'items-center justify-center gap-2'} mb-4`}>
+              <img
+                className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-full`}
+                src={biliUserinfo.face}
+                alt="avatar"
+              />
+              <span>{biliUserinfo.uname}</span>
+              {biliUserinfo.vipStatus === 1 && (
+                <Tag color={biliUserinfo.vipType === 2 ? '#f50' : '#2db7f5'}>
+                  {biliUserinfo.vipType === 2 ? t('scrapers.annualVip') : t('scrapers.vip')}
+                </Tag>
+              )}
+            </div>
+            <Button type="primary" danger onClick={handleBiliLogout}>
+              {t('scrapers.logout')}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-4 w-full max-w-md mx-auto p-4">
+            <div className="flex flex-col items-center gap-4">
+              <Button
+                disabled={!biliQrcodeChecked}
+                type="primary"
+                loading={biliQrcodeLoading}
+                onClick={handleBiliQrcode}
+              >
+                {t('scrapers.scanLogin')}
+              </Button>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={biliQrcodeChecked}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setShowDisclaimerModal(true)
+                    } else {
+                      setBiliQrcodeChecked(false)
+                    }
+                  }}
+                />
+                <span
+                  className="cursor-pointer text-sm"
+                  onClick={() => setShowDisclaimerModal(true)}
+                >
+                  {t('scrapers.agreeDisclaimer')}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   const startBiliLoginPoll = data => {
@@ -1624,196 +2056,6 @@ export const Scrapers = () => {
       console.error('Action error:', error)
       messageApi.error(error?.response?.data?.detail || errorMessage || t('scrapers.operationFailed'))
     }
-  }
-
-  const renderDynamicFormItems = () => {
-    const currentScraper = list.find(it => it.providerName === setname)
-    if (!currentScraper || !currentScraper.configurableFields) {
-      return null
-    }
-
-    return Object.entries(currentScraper.configurableFields).map(
-      ([key, fieldInfo]) => {
-        const config = parseFieldConfig(fieldInfo)
-        const { label, type, tooltip, placeholder, options, min, max, step, rows } = config
-        const camelKey = key.replace(/_([a-z])/g, g => g[1].toUpperCase())
-
-        // 如果是 dandanplay，则跳过所有已在定制UI中处理的字段
-        if (setname === 'dandanplay') {
-          return null
-        }
-
-        // bilibili 限制内容代理的 4 个字段改由专属"模式切换"区块渲染，这里跳过
-        if (setname === 'bilibili' &&
-            ['enableSearchProxy', 'searchProxyServer', 'enableClashProxy', 'clashProxyUrl'].includes(key)) {
-          return null
-        }
-
-        // 跳过通用黑名单字段，因为它在下面有专门的渲染逻辑
-        if (key.endsWith('_episode_blacklist_regex')) {
-          return null
-        }
-
-        // 根据类型渲染对应的表单控件
-        switch (type) {
-          case 'boolean':
-            return (
-              <Form.Item
-                key={camelKey}
-                name={camelKey}
-                label={label}
-                valuePropName="checked"
-                className="mb-4"
-                tooltip={tooltip}
-              >
-                <Switch />
-              </Form.Item>
-            )
-
-          case 'password':
-            return (
-              <Form.Item
-                key={camelKey}
-                name={camelKey}
-                label={label}
-                className="mb-4"
-                tooltip={tooltip}
-              >
-                <Input.Password placeholder={placeholder} />
-              </Form.Item>
-            )
-
-          case 'number':
-            return (
-              <Form.Item
-                key={camelKey}
-                name={camelKey}
-                label={label}
-                className="mb-4"
-                tooltip={tooltip}
-              >
-                <InputNumber
-                  min={min}
-                  max={max}
-                  step={step}
-                  placeholder={placeholder}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            )
-
-          case 'select':
-            return (
-              <Form.Item
-                key={camelKey}
-                name={camelKey}
-                label={label}
-                className="mb-4"
-                tooltip={tooltip}
-              >
-                <Select placeholder={placeholder || t('scrapers.pleaseSelect')}>
-                  {(options || []).map(opt => (
-                    <Select.Option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            )
-
-          case 'textarea':
-            return (
-              <Form.Item
-                key={camelKey}
-                name={camelKey}
-                label={label}
-                className="mb-4"
-                tooltip={tooltip}
-              >
-                <Input.TextArea rows={rows} placeholder={placeholder} />
-              </Form.Item>
-            )
-
-          case 'url':
-            return (
-              <Form.Item
-                key={camelKey}
-                name={camelKey}
-                label={label}
-                className="mb-4"
-                tooltip={tooltip}
-              >
-                <Input
-                  placeholder={placeholder || 'https://example.com'}
-                />
-              </Form.Item>
-            )
-
-          case 'action': {
-            // action 类型：配置字段只在当前 case 生效，避免 switch 词法作用域冲突
-            const { actionName, buttonText, buttonType, confirmText, successMessage, errorMessage } = config
-            return (
-              <Form.Item
-                key={camelKey}
-                label={label}
-                className="mb-4"
-                tooltip={tooltip}
-              >
-                <Button
-                  type={buttonType || 'default'}
-                  onClick={async () => {
-                    // 如果有确认文本，先弹出确认框
-                    if (confirmText) {
-                      Modal.confirm({
-                        title: t('scrapers.confirmAction'),
-                        content: confirmText,
-                        okText: t('common.confirm'),
-                        cancelText: t('common.cancel'),
-                        onOk: async () => {
-                          await handleActionClick(setname, actionName, successMessage, errorMessage)
-                        }
-                      })
-                    } else {
-                      await handleActionClick(setname, actionName, successMessage, errorMessage)
-                    }
-                  }}
-                >
-                  {buttonText || label}
-                </Button>
-              </Form.Item>
-            )
-          } // why: action case 使用独立块声明局部变量，必须在下一个 case 前闭合。
-
-          case 'string':
-          default:
-            // 为 gamer 的 cookie 提供更大的输入框
-            if (key === 'gamerCookie') {
-              return (
-                <Form.Item
-                  key={camelKey}
-                  name={camelKey}
-                  label={label}
-                  className="mb-4"
-                  tooltip={tooltip}
-                >
-                  <Input.TextArea rows={4} />
-                </Form.Item>
-              )
-            }
-            return (
-              <Form.Item
-                key={camelKey}
-                name={camelKey}
-                label={label}
-                className="mb-4"
-                tooltip={tooltip}
-              >
-                <Input placeholder={placeholder} />
-              </Form.Item>
-            )
-        }
-      }
-    )
   }
 
   return (
@@ -2591,367 +2833,8 @@ export const Scrapers = () => {
         centered
       >
         <Form form={form} layout="vertical">
-          {setname !== 'dandanplay' && (
-            <Form.Item
-              name="useProxy"
-              label={t('scrapers.useProxy')}
-              valuePropName="checked"
-              className="mb-4"
-            >
-              <Switch />
-            </Form.Item>
-          )}
-
-          <Form.Item
-            label={t('scrapers.searchTimeout')}
-            tooltip={t('scrapers.searchTimeoutTip')}
-            className="mb-4"
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex-1">
-                <Form.Item name={`scraper_${setname}_search_timeout`} noStyle>
-                  <Slider
-                    min={5}
-                    max={100}
-                    marks={{ 5: '5s', 15: '15s', 30: '30s', 60: '60s', 100: '100s' }}
-                  />
-                </Form.Item>
-              </div>
-              <div style={{ marginTop: 4 }}>
-                <Form.Item name={`scraper_${setname}_search_timeout`} noStyle>
-                  <InputNumber min={5} max={100} controls={false} style={{ width: 80 }} addonAfter={t('scrapers.secondUnit')} />
-                </Form.Item>
-              </div>
-            </div>
-          </Form.Item>
-
-          {/* 信息增强开关（补全年份、集数等缺失字段） */}
-          <Form.Item
-            name={`scraper_${setname}_enrich_enabled`}
-            label={t('scrapers.enrichEnabled')}
-            valuePropName="checked"
-            tooltip={t('scrapers.enrichEnabledTip')}
-            className="mb-4"
-          >
-            <Switch />
-          </Form.Item>
-
-          <Form.Item
-            name={`scraper_${setname}_enrich_fields`}
-            label={t('scrapers.enrichFields')}
-            tooltip={t('scrapers.enrichFieldsTip')}
-            className="mb-4"
-          >
-            <Input placeholder="year,episodeCount" />
-          </Form.Item>
-
-          {/* dandanplay specific */}
-          {setname === 'dandanplay' && (
-            <>
-              <Form.Item label={t('scrapers.authMethod')} className="mb-6">
-                <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center gap-4'}`}>
-                  <Switch
-                    checkedChildren={
-                      <Space>
-                        <CloudOutlined />
-                        {t('scrapers.crossOriginProxy')}
-                      </Space>
-                    }
-                    unCheckedChildren={
-                      <Space>
-                        <DesktopOutlined />
-                        {t('scrapers.localFunction')}
-                      </Space>
-                    }
-                    checked={dandanAuthMode === 'proxy'}
-                    onChange={checked =>
-                      setDandanAuthMode(checked ? 'proxy' : 'local')
-                    }
-                  />
-                  <div className="text-sm text-gray-600">
-                    {dandanAuthMode === 'local' ? t('scrapers.localAuthDesc') : t('scrapers.proxyAuthDesc')}
-                  </div>
-                </div>
-              </Form.Item>
-
-              {dandanAuthMode === 'local' && (
-                <>
-                  <Form.Item
-                    name="dandanplayAppId"
-                    label={
-                      <span>
-                        App ID{' '}
-                        <a
-                          href="https://www.dandanplay.com/dev"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <QuestionCircleOutlined className="cursor-pointer text-gray-400" />
-                        </a>
-                      </span>
-                    }
-                    rules={[{ required: true, message: t('scrapers.inputAppId') }]}
-                    className="mb-4"
-                  >
-                    <Input
-                      prefix={<KeyOutlined className="text-gray-400" />}
-                      placeholder={t('scrapers.inputAppId')}
-                    />
-                  </Form.Item>
-
-                  <Form.Item
-                    name="dandanplayAppSecret"
-                    label="App Secret"
-                    rules={[{ required: true, message: t('scrapers.inputAppSecret') }]}
-                    className="mb-4"
-                  >
-                    <Input.Password
-                      prefix={<LockOutlined className="text-gray-400" />}
-                      placeholder={t('scrapers.inputAppSecret')}
-                    />
-                  </Form.Item>
-
-                  <Form.Item
-                    name="dandanplayAppSecretAlt"
-                    label={t('scrapers.backupAppSecret')}
-                    tooltip={t('scrapers.backupAppSecretTip')}
-                    className="mb-4"
-                  >
-                    <Input.Password
-                      prefix={<LockOutlined className="text-gray-400" />}
-                      placeholder={t('scrapers.inputBackupAppSecret')}
-                    />
-                  </Form.Item>
-
-                  <Form.Item
-                    name="dandanplayApiBaseUrl"
-                    label={t('scrapers.apiBaseUrl')}
-                    tooltip={t('scrapers.apiBaseUrlTip')}
-                    className="mb-4"
-                  >
-                    <Input placeholder={t('scrapers.apiBaseUrlPlaceholder')} />
-                  </Form.Item>
-                </>
-              )}
-
-              {dandanAuthMode === 'proxy' && (
-                <Form.Item
-                  name="dandanplayProxyConfig"
-                  label={t('scrapers.corsProxyConfig')}
-                  rules={[
-                    { required: true, message: t('scrapers.inputProxyConfig') },
-                  ]}
-                  className="mb-6"
-                >
-                  <Input.TextArea rows={isMobile ? 6 : 8} />
-                </Form.Item>
-              )}
-
-              <Form.Item
-                name="dandanplayEpisodeIndexNormalize"
-                label={t('scrapers.episodeNormalize')}
-                valuePropName="checked"
-                className="mb-4"
-                tooltip={t('scrapers.episodeNormalizeTip')}
-              >
-                <Switch />
-              </Form.Item>
-
-              {/* 搜索限流时 bgmtv 兜底开关（与「分集序号归一化」同区块并列） */}
-              <Form.Item
-                name="dandanplaySearchFallbackBgmtv"
-                label={t('scrapers.searchFallbackBgmtv')}
-                valuePropName="checked"
-                className="mb-4"
-                tooltip={t('scrapers.searchFallbackBgmtvTip')}
-              >
-                <Switch />
-              </Form.Item>
-            </>
-          )}
-
-          {/* 动态渲染表单项 */}
-          {renderDynamicFormItems()}
-
-          {/* bilibili 限制内容代理：总开关 + 模式切换（反代地址 / Clash 本地代理，二选一） */}
-          {setname === 'bilibili' && (
-            <>
-              <Form.Item
-                name="enableSearchProxy"
-                label={t('scrapers.biliProxyEnable')}
-                valuePropName="checked"
-                className="mb-4"
-                tooltip={t('scrapers.biliProxyEnableTip')}
-              >
-                <Switch />
-              </Form.Item>
-
-              <Form.Item shouldUpdate={(prev, cur) => prev.enableSearchProxy !== cur.enableSearchProxy} noStyle>
-                {({ getFieldValue }) =>
-                  getFieldValue('enableSearchProxy') ? (
-                    <>
-                      <Form.Item label={t('scrapers.biliProxyMode')} className="mb-4">
-                        <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center gap-4'}`}>
-                          <Switch
-                            checkedChildren={t('scrapers.biliProxyModeClash')}
-                            unCheckedChildren={t('scrapers.biliProxyModeServer')}
-                            checked={biliProxyMode === 'clash'}
-                            onChange={checked => setBiliProxyMode(checked ? 'clash' : 'server')}
-                          />
-                          <div className={`${isMobile ? 'text-sm' : ''} text-gray-400`}>
-                            {biliProxyMode === 'clash'
-                              ? t('scrapers.biliProxyModeClashDesc')
-                              : t('scrapers.biliProxyModeServerDesc')}
-                          </div>
-                        </div>
-                      </Form.Item>
-
-                      {biliProxyMode === 'server' && (
-                        <Form.Item
-                          name="searchProxyServer"
-                          label={t('scrapers.biliProxyServer')}
-                          className="mb-4"
-                          tooltip={t('scrapers.biliProxyServerTip')}
-                        >
-                          <Input placeholder="https://your-proxy-server.com" />
-                        </Form.Item>
-                      )}
-
-                      {biliProxyMode === 'clash' && (
-                        <Form.Item
-                          name="clashProxyUrl"
-                          label={t('scrapers.biliClashUrl')}
-                          className="mb-4"
-                          tooltip={t('scrapers.biliClashUrlTip')}
-                        >
-                          <Input placeholder="http://127.0.0.1:7890" />
-                        </Form.Item>
-                      )}
-                    </>
-                  ) : null
-                }
-              </Form.Item>
-            </>
-          )}
-
-          {/* 通用部分 分集标题黑名单 记录原始响应 */}
-          <Form.Item
-            name={`${setname}EpisodeBlacklistRegex`}
-            label={
-              // 移动端窄屏：纵向堆叠（标题在上、按钮组在下并允许换行），
-              // 避免横向 flex 把"分集标题黑名单(正则)"挤压成一字宽竖排。
-              <div
-                className={
-                  isMobile
-                    ? 'flex flex-col items-start gap-1 w-full'
-                    : 'flex items-center justify-between w-full'
-                }
-              >
-                <span className="whitespace-nowrap">{t('scrapers.episodeBlacklist')}</span>
-                <Space size="small" wrap>
-                  <Button
-                    type="link"
-                    size="small"
-                    loading={loadingCommonBlacklist}
-                    onClick={handleFillCommonBlacklist}
-                  >
-                    {t('scrapers.fillCommonRules')}
-                  </Button>
-                  <Button
-                    type="link"
-                    size="small"
-                    loading={loadingDefaultBlacklist}
-                    onClick={handleFillDefaultBlacklist}
-                  >
-                    {t('scrapers.fillSourceDefaultRules')}
-                  </Button>
-                  <Tooltip title={t('scrapers.aiGenRegex')}>
-                    <Button
-                      type="link"
-                      size="small"
-                      icon={<RobotOutlined />}
-                      onClick={() => setAiRegexModalOpen(true)}
-                    >
-                      {t('scrapers.aiGen')}
-                    </Button>
-                  </Tooltip>
-                </Space>
-              </div>
-            }
-            className="mb-4"
-          >
-            <Input.TextArea rows={6} />
-          </Form.Item>
-          <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center justify-start flex-wrap'} gap-2 mb-4`}>
-            <Form.Item
-              name={`scraper${setname.charAt(0).toUpperCase()}${setname.slice(1)}LogResponses`}
-              label={t('scrapers.recordRawResponse')}
-              valuePropName="checked"
-              className={isMobile ? "min-w-full !mb-0" : "min-w-[100px] shrink-0 !mb-0"}
-            >
-              <Switch />
-            </Form.Item>
-            <div className={`w-full ${isMobile ? 'text-sm' : ''}`}>
-              {t('scrapers.rawResponseDesc')}
-            </div>
-          </div>
-          {/* bilibili登录信息 */}
-          {setname === 'bilibili' && (
-            <div className="text-center">
-              {biliUserinfo.isLogin ? (
-                <div className="text-center">
-                  <div className={`flex ${isMobile ? 'flex-col items-center gap-2' : 'items-center justify-center gap-2'} mb-4`}>
-                    <img
-                      className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-full`}
-                      src={biliUserinfo.face}
-                    />
-                    <span>{biliUserinfo.uname}</span>
-                    {biliUserinfo.vipStatus === 1 && (
-                      <Tag
-                        color={biliUserinfo.vipType === 2 ? '#f50' : '#2db7f5'}
-                      >
-                        {biliUserinfo.vipType === 2 ? t('scrapers.annualVip') : t('scrapers.vip')}
-                      </Tag>
-                    )}
-                  </div>
-                  <Button type="primary" danger onClick={handleBiliLogout}>
-                    {t('scrapers.logout')}
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-4 w-full max-w-md mx-auto p-4">
-                  <div className="flex flex-col items-center gap-4">
-                    <Button
-                      disabled={!biliQrcodeChecked}
-                      type="primary"
-                      loading={biliQrcodeLoading}
-                      onClick={handleBiliQrcode}
-                    >
-                      {t('scrapers.scanLogin')}
-                    </Button>
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        checked={biliQrcodeChecked}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setShowDisclaimerModal(true);
-                          } else {
-                            setBiliQrcodeChecked(false);
-                          }
-                        }}
-                      />
-                      <span
-                        className="cursor-pointer text-sm"
-                        onClick={() => setShowDisclaimerModal(true)}
-                      >
-                        {t('scrapers.agreeDisclaimer')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {/* 动态渲染字段（根据后端 _uiFieldOrder 配置，含 dandanplay/bilibili 的组件化字段） */}
+          {renderDynamicFields(setname)}
         </Form>
       </Modal>
       <Modal
