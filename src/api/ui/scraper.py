@@ -202,6 +202,20 @@ async def get_scraper_config(
     except (ValueError, TypeError):
         response_data[timeout_key] = 15
 
+    # 6. 添加"信息增强"字段(动态添加,每个源都有)
+    # 前端字段名与 DB key 一致，无需驼峰转换
+    enrich_enabled_key = f"scraper_{providerName}_enrich_enabled"
+    enrich_fields_key = f"scraper_{providerName}_enrich_fields"
+
+    enrich_enabled_value = await config_manager.get(enrich_enabled_key, "false")
+    # 转换为布尔值
+    if isinstance(enrich_enabled_value, bool):
+        response_data[enrich_enabled_key] = enrich_enabled_value
+    else:
+        response_data[enrich_enabled_key] = str(enrich_enabled_value).lower() == 'true'
+
+    response_data[enrich_fields_key] = await config_manager.get(enrich_fields_key, "")
+
     return response_data
 
 
@@ -306,6 +320,21 @@ async def update_scraper_config(
                 timeout_val = 15
             await config_manager.setValue(timeout_key, str(timeout_val))
             logger.info(f"[{providerName}] 搜索超时设置已更新: {timeout_key} = {timeout_val}")
+
+        # 6. 处理"信息增强"字段(动态字段,每个源都有)
+        # 前端发送的 key 与 DB key 一致，开关值统一存为 'true'/'false' 字符串
+        enrich_enabled_key = f"scraper_{providerName}_enrich_enabled"
+        if enrich_enabled_key in payload:
+            raw = payload[enrich_enabled_key]
+            bool_value = raw.lower() in ('true', '1', 'yes', 'on') if isinstance(raw, str) else bool(raw)
+            await config_manager.setValue(enrich_enabled_key, 'true' if bool_value else 'false')
+            logger.info(f"[{providerName}] 信息增强开关已更新: {enrich_enabled_key} = {bool_value}")
+
+        enrich_fields_key = f"scraper_{providerName}_enrich_fields"
+        if enrich_fields_key in payload:
+            fields_val = payload[enrich_fields_key] or ""
+            await config_manager.setValue(enrich_fields_key, str(fields_val).strip())
+            logger.info(f"[{providerName}] 信息增强字段已更新: {enrich_fields_key} = '{fields_val}'")
 
         # 6. 重新加载该搜索源
         await manager.reload_scraper(providerName)

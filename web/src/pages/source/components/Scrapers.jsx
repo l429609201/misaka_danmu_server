@@ -1352,6 +1352,12 @@ export const Scrapers = () => {
       useProxy: res.data?.useProxy ?? false,
       [`scraper_${item.providerName}_search_timeout`]:
         parseInt(res.data?.[`scraper_${item.providerName}_search_timeout`]) || 15,
+      // 信息增强：开关为布尔（后端存字符串 'true'/'false'），字段列表为字符串
+      [`scraper_${item.providerName}_enrich_enabled`]:
+        res.data?.[`scraper_${item.providerName}_enrich_enabled`] === true
+        || res.data?.[`scraper_${item.providerName}_enrich_enabled`] === 'true',
+      [`scraper_${item.providerName}_enrich_fields`]:
+        res.data?.[`scraper_${item.providerName}_enrich_fields`] || '',
       ...dynamicInitialValues,
     })
 
@@ -1405,6 +1411,12 @@ export const Scrapers = () => {
           values.enableClashProxy = false
           values.clashProxyUrl = ''
         }
+      }
+
+      // 信息增强开关：后端 config 表存字符串，这里显式转为 'true'/'false'
+      const enrichEnabledKey = `scraper_${setname}_enrich_enabled`
+      if (values[enrichEnabledKey] !== undefined) {
+        values[enrichEnabledKey] = values[enrichEnabledKey] ? 'true' : 'false'
       }
 
       await setSingleScraper({
@@ -2611,6 +2623,26 @@ export const Scrapers = () => {
                 </Form.Item>
               </div>
             </div>
+          </Form.Item>
+
+          {/* 信息增强开关（补全年份、集数等缺失字段） */}
+          <Form.Item
+            name={`scraper_${setname}_enrich_enabled`}
+            label={t('scrapers.enrichEnabled')}
+            valuePropName="checked"
+            tooltip={t('scrapers.enrichEnabledTip')}
+            className="mb-4"
+          >
+            <Switch />
+          </Form.Item>
+
+          <Form.Item
+            name={`scraper_${setname}_enrich_fields`}
+            label={t('scrapers.enrichFields')}
+            tooltip={t('scrapers.enrichFieldsTip')}
+            className="mb-4"
+          >
+            <Input placeholder="year,episodeCount" />
           </Form.Item>
 
           {/* dandanplay specific */}
