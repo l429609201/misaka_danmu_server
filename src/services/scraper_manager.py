@@ -360,6 +360,32 @@ class ScraperManager:
         # 实例化爬虫
         await self._instantiate_scrapers()
 
+        # 初始化信息增强开关（为所有源注册默认值 false）
+        await self._init_enrich_defaults()
+
+    async def _init_enrich_defaults(self):
+        """为所有已加载的源初始化信息增强配置默认值（避免升级后全部开启）"""
+        if not self.scrapers:
+            return
+
+        for provider_name in self.scrapers.keys():
+            # 迁移旧配置：如果存在旧的 fetch_episode_count 配置，迁移到新的 enrich_enabled
+            old_key = f"scraper_{provider_name}_fetch_episode_count"
+            new_key = f"scraper_{provider_name}_enrich_enabled"
+
+            old_value = await self.config_manager.get(old_key, None)
+            existing = await self.config_manager.get(new_key, None)
+
+            if existing is None:
+                # 如果旧配置存在，迁移过来；否则默认 false
+                if old_value is not None:
+                    await self.config_manager.setValue(new_key, old_value)
+                    mgr_logger.info(f"已将 {provider_name} 的旧配置 {old_key}={old_value} 迁移到 {new_key}")
+                else:
+                    await self.config_manager.setValue(new_key, "false")
+
+        mgr_logger.info(f"已为 {len(self.scrapers)} 个源初始化信息增强配置默认值（false）")
+
     async def _check_global_version_compatibility(self, scrapers_dir: Path) -> bool:
         """
         检查全局版本兼容性。
@@ -1085,6 +1111,90 @@ class ScraperManager:
 
         # 使用预加载的全局过滤配置（已与弹幕源并行加载完成）
         cn_pattern_str, eng_pattern_str = await filter_config_task
+
+        # ========== 通用信息增强逻辑（补全缺失字段：年份、集数等）==========
+        # 在应用全局过滤前补全，保证过滤时信息完整
+        global_enrich_enabled = (await self.config_manager.get("searchEnrichResults", "false")).lower() == "true"
+        if global_enrich_enabled and all_results:
+            enrich_limit = int(await self.config_manager.get("searchEnrichLimit", "10"))
+            enrich_timeout = float(await self.config_manager.get("searchEnrichTimeout", "5"))
+            enrich_fields_str = await self.config_manager.get("searchEnrichFields", "year,episodeCount")
+            global_fields = [f.strip() for f in enrich_fields_str.split(",") if f.strip()]
+
+            if not global_fields:
+                mgr_logger.debug("[信息增强] 全局字段配置为空，跳过增强")
+            else:
+                # 按源分组
+                from collections import defaultdict
+                results_by_provider = defaultdict(list)
+                for item in all_results:
+                    results_by_provider[item.provider].append(item)
+
+                mgr_logger.info(f"[信息增强] 全局开关已开启，待增强字段: {', '.join(global_fields)}")
+
+                # 并行处理各源（每源独立超时）
+                async def enrich_provider(provider: str, results: list):
+                    # 读取该源的开关
+                    source_enabled = (await self.config_manager.get(f"scraper_{provider}_enrich_enabled", "false")).lower() == "true"
+                    if not source_enabled:
+                        mgr_logger.debug(f"[信息增强] 源 {provider} 未开启增强，跳过")
+                        return
+
+                    # 读取该源的字段配置（为空则继承全局）
+                    source_fields_str = await self.config_manager.get(f"scraper_{provider}_enrich_fields", "")
+                    fields = (
+                        [f.strip() for f in source_fields_str.split(",") if f.strip()]
+                        if source_fields_str else global_fields
+                    )
+
+                    if not fields:
+                        return
+
+                    # 只处理前 N 条
+                    to_enrich = results[:enrich_limit]
+
+                    # 筛选出需要增强的结果（至少有一个字段缺失）
+                    need_enrich = []
+                    for result in to_enrich:
+                        missing = []
+                        for f in fields:
+                            if f == "episodeCount" and result.episodeCount is None:
+                                missing.append(f)
+                            elif f == "year" and not result.year:
+                                missing.append(f)
+                            # 未来扩展：type, season 等
+                        if missing:
+                            need_enrich.append((result, missing))
+
+                    if not need_enrich:
+                        mgr_logger.debug(f"[信息增强] 源 {provider} 无需增强的结果，跳过")
+                        return
+
+                    mgr_logger.info(f"[信息增强] 源 {provider} 开始增强前 {len(need_enrich)} 条结果")
+
+                    # 获取 scraper 实例
+                    scraper = self.scrapers.get(provider)
+                    if not scraper:
+                        mgr_logger.warning(f"[信息增强] 源 {provider} 实例未找到，跳过")
+                        return
+
+                    # 逐条增强（每条独立超时）
+                    for result, missing_fields in need_enrich:
+                        try:
+                            await asyncio.wait_for(
+                                scraper.enrich_result(result, missing_fields),
+                                timeout=enrich_timeout
+                            )
+                        except asyncio.TimeoutError:
+                            mgr_logger.warning(f"[信息增强] {provider}/{result.mediaId} 超时({enrich_timeout}s)")
+                        except Exception as e:
+                            mgr_logger.warning(f"[信息增强] {provider}/{result.mediaId} 失败: {e}")
+
+                # 并行增强各源
+                await asyncio.gather(*[enrich_provider(p, items) for p, items in results_by_provider.items()], return_exceptions=True)
+
+                mgr_logger.info(f"[信息增强] 完成，共处理 {len(all_results)} 条结果")
+        # ========== 信息增强逻辑结束 ==========
 
         cn_pattern = re.compile(cn_pattern_str, re.IGNORECASE) if cn_pattern_str else None
         eng_pattern = re.compile(r'(\[|\【|\b)(' + eng_pattern_str + r')(\d{1,2})?(\s|_ALL)?(\]|\】|\b)', re.IGNORECASE) if eng_pattern_str else None

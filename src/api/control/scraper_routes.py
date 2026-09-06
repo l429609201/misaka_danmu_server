@@ -32,6 +32,8 @@ class ScraperConfigItem(BaseModel):
     episodeBlacklistRegex: str = Field("", description="分集标题正则黑名单")
     logRawResponses: bool = Field(False, description="是否记录原始响应")
     searchTimeout: int = Field(15, description="搜索超时时间(秒)")
+    enrichEnabled: bool = Field(False, description="搜索时是否拉取详情补全缺失字段（年份、集数等）")
+    enrichFields: str = Field("", description="待补全字段列表（逗号分隔，为空则继承全局配置）")
 
 
 class ScraperConfigUpdate(BaseModel):
@@ -40,6 +42,8 @@ class ScraperConfigUpdate(BaseModel):
     episodeBlacklistRegex: Optional[str] = Field(None, description="分集标题正则黑名单")
     logRawResponses: Optional[bool] = Field(None, description="是否记录原始响应")
     searchTimeout: Optional[int] = Field(None, ge=1, le=120, description="搜索超时时间(秒), 1-120")
+    enrichEnabled: Optional[bool] = Field(None, description="搜索时是否拉取详情补全缺失字段")
+    enrichFields: Optional[str] = Field(None, description="待补全字段列表（逗号分隔）")
 
 
 # --- 接口 ---
@@ -78,6 +82,13 @@ async def get_all_scraper_configs(
         except (ValueError, TypeError):
             timeout_int = 15
 
+        # 信息增强开关
+        enrich_enabled = await config_manager.get(f"scraper_{name}_enrich_enabled", "false")
+        enrich_enabled_bool = str(enrich_enabled).lower() == "true"
+
+        # 信息增强字段列表
+        enrich_fields = await config_manager.get(f"scraper_{name}_enrich_fields", "")
+
         result.append(ScraperConfigItem(
             providerName=name,
             isEnabled=s.get('isEnabled', True),
@@ -86,6 +97,8 @@ async def get_all_scraper_configs(
             episodeBlacklistRegex=str(blacklist),
             logRawResponses=log_resp_bool,
             searchTimeout=timeout_int,
+            enrichEnabled=enrich_enabled_bool,
+            enrichFields=str(enrich_fields),
         ))
 
     return result
@@ -107,6 +120,8 @@ async def update_scraper_config(
     - **episodeBlacklistRegex**: 分集标题正则黑名单
     - **logRawResponses**: 是否记录原始响应到日志文件
     - **searchTimeout**: 搜索超时时间(秒), 范围 1-120
+    - **enrichEnabled**: 搜索时是否拉取详情补全缺失字段（年份、集数等）
+    - **enrichFields**: 待补全字段列表（逗号分隔，为空则继承全局配置）
     """
     # 验证源是否存在（数据库 + 内存实例双校验）
     scraper_setting = await crud.get_scraper_setting_by_name(session, provider)
@@ -140,6 +155,18 @@ async def update_scraper_config(
         key = f"scraper_{provider}_search_timeout"
         await config_manager.setValue(key, str(payload.searchTimeout))
         updated_fields.append(f"searchTimeout={payload.searchTimeout}")
+
+    # 更新信息增强开关（写 config 表）
+    if payload.enrichEnabled is not None:
+        key = f"scraper_{provider}_enrich_enabled"
+        await config_manager.setValue(key, str(payload.enrichEnabled).lower())
+        updated_fields.append(f"enrichEnabled={payload.enrichEnabled}")
+
+    # 更新信息增强字段列表（写 config 表）
+    if payload.enrichFields is not None:
+        key = f"scraper_{provider}_enrich_fields"
+        await config_manager.setValue(key, payload.enrichFields)
+        updated_fields.append(f"enrichFields='{payload.enrichFields}'")
 
     if not updated_fields:
         return {"message": "未提供任何需要更新的字段。"}

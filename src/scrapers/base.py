@@ -467,6 +467,57 @@ class BaseScraper(ABC):
         """
         raise NotImplementedError
 
+    async def enrich_result(
+        self,
+        result: models.ProviderSearchInfo,
+        fields: List[str]
+    ) -> models.ProviderSearchInfo:
+        """
+        补全单条搜索结果的缺失字段（通用信息增强接口）。
+
+        :param result: 搜索结果对象
+        :param fields: 需要补全的字段列表（如 ["year", "episodeCount"]）
+        :return: 补全后的搜索结果（原地修改）
+
+        子类可覆写此方法以提供更高效的批量补全逻辑。
+        默认实现：逐字段调用对应方法。
+        """
+        for field in fields:
+            try:
+                if field == "episodeCount" and result.episodeCount is None:
+                    # 调用现有 get_episodes 补全集数
+                    episodes = await self.get_episodes(result.mediaId)
+                    if episodes:
+                        result.episodeCount = len(episodes)
+                        self.logger.debug(f"[{self.provider_name}] 补全 episodeCount: {result.title} -> {result.episodeCount}")
+
+                elif field == "year" and not result.year:
+                    # 调用新方法 get_year 补全年份
+                    year = await self.get_year(result.mediaId)
+                    if year:
+                        result.year = year
+                        self.logger.debug(f"[{self.provider_name}] 补全 year: {result.title} -> {result.year}")
+
+                # 未来扩展：season, type, aliases 等
+
+            except Exception as e:
+                self.logger.warning(f"[{self.provider_name}] 补全字段 {field} 失败: {e}")
+                continue
+
+        return result
+
+    async def get_year(self, media_id: str) -> Optional[int]:
+        """
+        获取媒体的年份。
+
+        默认实现：返回 None（子类按需覆写）。
+        部分源可从详情页提取，部分源可从搜索结果的 URL 或 ID 推断。
+
+        :param media_id: 媒体ID
+        :return: 年份（如 2024），无法获取时返回 None
+        """
+        return None
+
     @abstractmethod
     async def get_comments(self, episode_id: str, progress_callback: Optional[Callable] = None) -> List[dict]:
         """
