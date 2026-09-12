@@ -107,6 +107,12 @@ class Task:
         self.pause_event.set() # 默认为运行状态 (事件被设置)
 
 class TaskManager:
+    # 等待全局流控的总时长上限（秒）。
+    # why: 兜底。流控模块若返回异常的巨大等待值，任务最终仍会放行而非永久挂起。
+    _MAX_RATE_LIMIT_WAIT_SECONDS: float = 3600.0
+    # 等待期间复查流控状态的间隔（秒）。
+    # why: 把长等待切成小片，限制提前解除或用户中止都能秒级响应。
+    _RATE_LIMIT_POLL_INTERVAL: float = 5.0
     def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager, max_concurrent_tasks: int = 10):
         self._session_factory = session_factory
         # 三队列架构: 下载队列、管理队列、后备队列
@@ -716,8 +722,20 @@ class TaskManager:
                     await self.pause_task_for_rate_limit(task, retry_after)
                     continue  # 跳过该任务，处理下一个
 
-                # 执行前检查全局限制，避免频繁暂停
-                await self._wait_for_global_limit()
+                # 执行前检查全局限制。
+                # why: 全局流控意味着所有下载任务都无法执行，因此这里阻塞当前
+                # 任务原地等待，而不是暂停后取下一个——后者会让 worker 把整个
+                # 队列逐个取出、逐个标暂停再塞回，纯属空转并打乱队列顺序。
+                # 与旧实现的区别是：等待被切成小片并每轮复查真实流控状态，
+                # 因此限制一旦提前解除即可继续，用户中止也能立刻生效，
+                # 不会再出现 worker 被一个巨大 sleep 永久钉死的情况。
+                await self._wait_for_global_limit(task, worker_id)
+
+                # 等待期间可能已被用户中止（中止会清空 worker 占位），此时不再执行
+                if self._current_download_tasks.get(worker_id) is not task:
+                    self.logger.info(f"任务 '{task.title}' 在等待全局流控期间被中止，跳过执行")
+                    continue
+
                 # The wrapper now handles removing the title from the pending set.
                 await self._run_task_wrapper(task, queue_type="download")
             except Exception as e:
@@ -812,19 +830,70 @@ class TaskManager:
             except Exception as e:
                 self.logger.error(f"❌ 暂停任务监控器发生错误: {type(e).__name__}: {e}", exc_info=True)
 
-    async def _wait_for_global_limit(self):
-        """在执行任务前检查全局限制，如果已满则等待"""
+    async def _query_global_limit(self) -> float:
+        """查询全局流控，返回建议等待秒数（0 表示当前不受限）。"""
         if not self._recovery_dependencies:
-            return
+            return 0.0
 
         rate_limiter = self._recovery_dependencies.get("rate_limiter")
         if not rate_limiter:
+            return 0.0
+
+        try:
+            is_limited, wait_seconds = await rate_limiter.get_global_limit_status()
+        except Exception as e:
+            # why: 流控查询本身失败不应该把任务卡死，按不受限放行更安全
+            self.logger.warning(f"查询全局流控状态失败，按不受限处理: {e}")
+            return 0.0
+
+        if is_limited and wait_seconds > 0:
+            return wait_seconds
+        return 0.0
+
+    async def _wait_for_global_limit(self, task: "Task", worker_id: int) -> None:
+        """全局流控命中时，阻塞当前任务直到限制解除。
+
+        why: 全局流控下所有下载任务都无法执行，因此在此原地等待，不把任务
+        踢回队列。但等待必须满足三点，否则会重现「流控永远 100% 且队列全部
+        卡死」的故障：
+          1. 分片等待 + 每轮重新查询真实状态——限制提前解除立即继续，
+             也不会被一个错误的巨大 wait 值永久钉死；
+          2. 总时长有上限兜底，异常状态下最终一定会放行而非无限挂起；
+          3. 每轮检查用户是否已中止（中止会清空 worker 占位），可即时退出。
+        """
+        wait_seconds = await self._query_global_limit()
+        if wait_seconds <= 0:
             return
 
-        is_limited, wait_seconds = await rate_limiter.get_global_limit_status()
-        if is_limited and wait_seconds > 0:
-            self.logger.info(f"全局速率限制已满，等待 {wait_seconds:.0f} 秒后继续...")
-            await asyncio.sleep(wait_seconds + 1)  # 多等1秒确保限制已重置
+        self.logger.info(
+            f"全局速率限制已满，任务 '{task.title}' 将等待约 {wait_seconds:.0f} 秒"
+        )
+        await self._safe_update_task_status(
+            task.task_id, TaskStatus.RUNNING, None,
+            f"全局流控已满，等待 {wait_seconds:.0f} 秒后继续..."
+        )
+
+        deadline = time.monotonic() + min(wait_seconds + 1, self._MAX_RATE_LIMIT_WAIT_SECONDS)
+        while time.monotonic() < deadline:
+            # 用户中止后 worker 占位会被清空，立刻停止等待
+            if self._current_download_tasks.get(worker_id) is not task:
+                return
+
+            await asyncio.sleep(min(self._RATE_LIMIT_POLL_INTERVAL, max(0.1, deadline - time.monotonic())))
+
+            # 每轮复查真实状态，限制解除即刻返回
+            remaining = await self._query_global_limit()
+            if remaining <= 0:
+                self.logger.info(f"全局速率限制已解除，任务 '{task.title}' 继续执行")
+                await self._safe_update_task_status(
+                    task.task_id, TaskStatus.RUNNING, None, "全局流控已解除，继续执行..."
+                )
+                return
+
+        self.logger.warning(
+            f"任务 '{task.title}' 等待全局流控已达上限 "
+            f"{self._MAX_RATE_LIMIT_WAIT_SECONDS:.0f} 秒，强制继续执行"
+        )
 
     async def pause_task_for_rate_limit(self, task: Task, retry_after_seconds: float):
         """将任务暂停指定时间，然后重新放回队列"""
@@ -1140,11 +1209,34 @@ class TaskManager:
                 return True
 
         # 检查下载队列的所有worker
+        # why: 不能要求 running_coro_task 必须存在。任务被 worker 取出后、
+        # 进入 _run_task_wrapper 创建协程前存在一段中间态（如正在做流控检查），
+        # 此时 running_coro_task 仍为 None。旧实现在该状态下静默跳过，
+        # 导致「删不掉、也中止不了」的僵死任务。此处改为：有协程则取消协程，
+        # 无协程则清理占位与去重集合，让 worker 与队列状态恢复一致。
         for worker_id, task in self._current_download_tasks.items():
-            if task and task.task_id == task_id and task.running_coro_task:
+            if task and task.task_id == task_id:
                 self.logger.info(f"正在中止下载队列 Worker {worker_id} 的任务 '{task.title}' (ID: {task_id})")
                 task.pause_event.set()
-                task.running_coro_task.cancel()
+                if task.running_coro_task and not task.running_coro_task.done():
+                    task.running_coro_task.cancel()
+                    return True
+
+                # 尚未创建协程：直接释放占位并标记取消
+                self._current_download_tasks[worker_id] = None
+                try:
+                    async with self._session_factory() as session:
+                        await crud.finalize_task_in_history(
+                            session, task_id, TaskStatus.CANCELLED, "用户取消"
+                        )
+                except Exception as e:
+                    self.logger.warning(f"更新任务 '{task.title}' 状态失败: {e}")
+
+                async with self._lock:
+                    if task.unique_key:
+                        self._active_unique_keys.discard(task.unique_key)
+                    self._pending_titles.discard(task.title)
+                task.done_event.set()
                 return True
 
         # 检查管理队列的当前任务
