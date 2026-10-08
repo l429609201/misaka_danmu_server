@@ -1,20 +1,30 @@
-import asyncio
+﻿import asyncio
 import logging
 import re
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy import select
+from sqlalchemy import select, func, case, or_
 import httpx
 
-from src.db import crud, models
-from src.services.alias_service import extract_aliases_from_details, validate_aliases_with_ai
+from src.db.orm_models import Anime, AnimeMetadata, AnimeAlias
+from src.schemas import ProviderSearchInfo, User
+from src.utils import parse_search_keyword
+# 别名提取只依赖纯工具，不加载业务编排及其服务依赖。
+from src.utils.data_processing.alias_utils import extract_aliases_from_details
+from src.workflows.alias_workflow import validate_aliases_with_ai
 from .base import BaseJob
-from src.rate_limiter import RateLimiter
-from src.services import TaskManager, TaskSuccess, ScraperManager, MetadataSourceManager
-from src.ai import AIMatcherManager
+# 任务成功信号需在运行时 raise，必须真实导入（不可放入 TYPE_CHECKING）
+from src.services.task_manager import TaskSuccess
+from src.services.ai_service import AIService
+from src.services.service_container import get_database_service
 from src.ai.ai_prompts import DEFAULT_AI_MATCH_PROMPT, DEFAULT_AI_RECOGNITION_PROMPT, DEFAULT_AI_ALIAS_VALIDATION_PROMPT
-from src.utils.task_profiler import profile_flow, FLOW_TMDB_AUTO_SCRAPE
+from src.services.task_profiler import profile_flow, FLOW_TMDB_AUTO_SCRAPE
+
+if TYPE_CHECKING:
+    from src.services.metadata_service import MetadataService
+    from src.services.task_manager import TaskManager
+    from src.services.ai_service import AIService
 
 class TmdbAutoMapJob(BaseJob):
     job_type = "tmdbAutoScrape"
@@ -51,13 +61,12 @@ class TmdbAutoMapJob(BaseJob):
 
     # 修正：此任务不涉及弹幕下载，因此移除不必要的 rate_limiter 依赖
     # 修正：接收正确的依赖项
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: TaskManager, metadata_manager: MetadataSourceManager, ai_matcher_manager: AIMatcherManager):
-        # 由于此任务的依赖项与基类不同，我们不调用 super().__init__，
-        # 而是直接初始化此任务所需的属性。
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: "TaskManager", metadata_manager: "MetadataService", ai_service: AIService) -> None:
+        # 仅接收作业所需依赖，AI 客户端由全局服务统一维护。
         self._session_factory = session_factory
         self.task_manager = task_manager
         self.metadata_manager = metadata_manager
-        self.ai_matcher_manager = ai_matcher_manager
+        self.ai_service = ai_service
         self.logger = logging.getLogger(self.__class__.__name__)
 
 
@@ -73,6 +82,9 @@ class TmdbAutoMapJob(BaseJob):
         Args:
             task_config: 任务实例级配置字典，包含 forceScrape 等选项。
         """
+        # DatabaseService 由文件顶部统一导入，避免错误的服务模块导入和重复初始化。
+        db = get_database_service()
+
         if task_config is None:
             task_config = {}
         force_scrape = task_config.get("forceScrape", False)
@@ -81,39 +93,45 @@ class TmdbAutoMapJob(BaseJob):
         await progress_callback(0, "正在初始化...")
 
         # 为元数据管理器调用创建一个虚拟用户对象
-        user = models.User(id=0, username="scheduled_task")
+        user = User(id=0, username="scheduled_task")
 
         # 【性能优化】AI初始化预热：如果AI已启用，提前开始初始化（不阻塞）
         ai_matcher_warmup_task = None
         ai_matcher = None
+        ai_available = False
+        ai_match_enabled = False
         ai_recognition_enabled = False
         ai_alias_correction_enabled = False
         try:
-            ai_match_enabled = await self.ai_matcher_manager.is_enabled()
-            ai_recognition_enabled = await crud.get_config_value(session, "aiRecognitionEnabled", "false") == "true"
-            ai_alias_correction_enabled = await crud.get_config_value(session, "aiAliasCorrectionEnabled", "false") == "true"
+            # AI能力开关分别控制具体场景；密钥可用性只作为共同前置条件。
+            ai_available = await self.ai_service.is_available()
+            async with db.transaction():
+                ai_match_enabled = await db.config.get_value("aiMatchEnabled", "false") == "true"
+                ai_recognition_enabled = await db.config.get_value("aiRecognitionEnabled", "false") == "true"
+                ai_alias_correction_enabled = await db.config.get_value("aiAliasCorrectionEnabled", "false") == "true"
 
-            if ai_match_enabled and ai_recognition_enabled:
-                self.logger.info("AI辅助识别已启用")
-                if ai_alias_correction_enabled:
-                    self.logger.info("AI别名修正已启用")
+                if ai_available and (ai_recognition_enabled or ai_alias_correction_enabled):
+                    if ai_recognition_enabled:
+                        self.logger.info("AI辅助识别已启用")
+                    if ai_alias_correction_enabled:
+                        self.logger.info("AI别名修正已启用")
 
-                # 动态注册AI提示词配置(如果不存在则创建,使用硬编码默认值)
-                await crud.initialize_configs(session, {
-                    "aiMatchPrompt": (DEFAULT_AI_MATCH_PROMPT, "AI智能匹配提示词"),
-                    "aiRecognitionPrompt": (DEFAULT_AI_RECOGNITION_PROMPT, "AI辅助识别提示词"),
-                    "aiAliasValidationPrompt": (DEFAULT_AI_ALIAS_VALIDATION_PROMPT, "AI别名验证提示词")
-                })
+                    # 动态注册AI提示词配置，确保功能首次启用时配置项存在。
+                    await db.config.initialize_configs({
+                        "aiMatchPrompt": (DEFAULT_AI_MATCH_PROMPT, "AI智能匹配提示词"),
+                        "aiRecognitionPrompt": (DEFAULT_AI_RECOGNITION_PROMPT, "AI辅助识别提示词"),
+                        "aiAliasValidationPrompt": (DEFAULT_AI_ALIAS_VALIDATION_PROMPT, "AI别名验证提示词")
+                    })
 
-                # 【性能优化】启动AI匹配器预热任务（并行）
-                ai_matcher_warmup_task = asyncio.create_task(self.ai_matcher_manager.get_matcher())
+            # 配置提交后再预热，避免后台协程继承即将关闭的事务上下文。
+            if ai_available and (ai_match_enabled or ai_recognition_enabled or ai_alias_correction_enabled):
+                ai_matcher_warmup_task = asyncio.create_task(self.ai_service.get_matcher())
                 self.logger.debug("TMDB自动映射 AI匹配器预热已启动（并行）")
         except Exception as e:
             self.logger.warning(f"初始化AI matcher失败: {e}, 将使用传统搜索")
 
         # 获取所有作品(TV系列和电影/剧场版)，同时带出别名信息用于增量跳过判断
-        from src.db.orm_models import Anime, AnimeMetadata, AnimeAlias
-        from sqlalchemy import func, case, or_
+        # ORM 与 SQLAlchemy 表达式均在文件顶部导入，避免运行时局部导入。
         # 子查询：检查是否存在任意非空别名
         has_alias_subq = (
             select(
@@ -203,7 +221,7 @@ class TmdbAutoMapJob(BaseJob):
 
                         if ai_matcher and ai_recognition_enabled:
                             try:
-                                recognition_result = await ai_matcher.recognize_title(
+                                recognition_result = await self.ai_service.recognize_title(
                                     title=title,
                                     year=year,
                                     anime_type=search_type
@@ -234,7 +252,6 @@ class TmdbAutoMapJob(BaseJob):
 
                         # 后备：如果AI未启用或AI未识别到季度，尝试用正则提取季度信息并清理标题
                         if recognized_season is None:
-                            from src.utils import parse_search_keyword
                             parsed = parse_search_keyword(search_title)
                             if parsed.get("season") is not None:
                                 recognized_season = parsed["season"]
@@ -259,13 +276,13 @@ class TmdbAutoMapJob(BaseJob):
                                     self.logger.info(f"筛选后剩余 {len(tv_results)} 个TV类型结果")
 
                             # 如果有多个结果且启用了AI匹配，使用AI智能选择
-                            if ai_matcher and ai_recognition_enabled and len(search_results) > 1:
+                            if ai_matcher and ai_match_enabled and len(search_results) > 1:
                                 self.logger.info(f"TMDB搜索返回 {len(search_results)} 个结果，使用AI智能匹配...")
 
                                 # 转换MetadataDetailsResponse为ProviderSearchInfo格式供AI使用
                                 provider_results = []
                                 for r in search_results:
-                                    provider_results.append(models.ProviderSearchInfo(
+                                    provider_results.append(ProviderSearchInfo(
                                         provider="tmdb",
                                         mediaId=r.tmdbId or r.id,
                                         title=r.title,
@@ -285,7 +302,9 @@ class TmdbAutoMapJob(BaseJob):
 
                                 try:
                                     # 调用AI匹配
-                                    best_index = await ai_matcher.select_best_match(query_info, provider_results, favorited_info={})
+                                    best_index = await self.ai_service.select_best_match(
+                                        query_info, provider_results, favorited_info={}
+                                    )
                                     if best_index is not None:
                                         best_match = search_results[best_index]
                                         self.logger.info(f"AI选择了结果 #{best_index}: {best_match.title} ({best_match.year})")
@@ -311,13 +330,12 @@ class TmdbAutoMapJob(BaseJob):
                             tmdb_id = best_match.tmdbId or best_match.id
                             self.logger.info(f"为 '{title}' 找到TMDB ID: {tmdb_id} (类型: {best_match.type or 'unknown'})")
 
-                            # 保存TMDB ID到数据库
-                            await crud.update_metadata_if_empty(
-                                session,
-                                anime_id,
-                                tmdb_id=tmdb_id
-                            )
-                            await session.commit()
+                            # 使用任务会话执行 Repository 写入，避免创建额外连接。
+                            async with db.transaction(session=session):
+                                await db.anime.update_metadata_if_empty(
+                                    anime_id,
+                                    tmdb_id=tmdb_id
+                                )
                             scraped_count += 1
                         else:
                             # 回退策略: 如果检测到季度信息，尝试从数据库中同系列作品继承TMDB ID
@@ -341,8 +359,11 @@ class TmdbAutoMapJob(BaseJob):
                                 if inherited_tmdb_id:
                                     tmdb_id = inherited_tmdb_id
                                     self.logger.info(f"从同系列作品继承TMDB ID: '{title}' → TMDB ID: {tmdb_id}")
-                                    await crud.update_metadata_if_empty(session, anime_id, tmdb_id=tmdb_id)
-                                    await session.commit()
+                                    async with db.transaction(session=session):
+                                        await db.anime.update_metadata_if_empty(
+                                            anime_id,
+                                            tmdb_id=tmdb_id
+                                        )
                                     scraped_count += 1
                                 else:
                                     self.logger.warning(f"未能为 '{title}' 找到TMDB搜索结果，也未找到同系列作品的TMDB ID。")
@@ -358,7 +379,6 @@ class TmdbAutoMapJob(BaseJob):
                 # 步骤 1.5: 对于已有TMDB ID的作品，也需要识别季度信息
                 # （搜索分支内的AI识别和正则提取只在没有TMDB ID时执行）
                 if recognized_season is None:
-                    from src.utils import parse_search_keyword
                     parsed = parse_search_keyword(title)
                     if parsed.get("season") is not None:
                         recognized_season = parsed["season"]
@@ -376,9 +396,10 @@ class TmdbAutoMapJob(BaseJob):
                 aliases_to_update = extract_aliases_from_details(details)
                 force_update = False
 
-                if ai_matcher and ai_recognition_enabled and search_type == "tv_series" and aliases_to_update:
+                # 已有 TMDB ID 的作品也经服务初始化，不依赖前面的标题识别分支。
+                if ai_available and ai_alias_correction_enabled and search_type == "tv_series" and aliases_to_update:
                     aliases_to_update, force_update = await validate_aliases_with_ai(
-                        title, year, search_type, aliases_to_update, ai_matcher, ai_alias_correction_enabled
+                        title, year, search_type, aliases_to_update, self.ai_service, ai_alias_correction_enabled
                     )
 
                 # 步骤 3.5: 如果识别到季度>=2，为中文别名追加季度后缀
@@ -405,7 +426,8 @@ class TmdbAutoMapJob(BaseJob):
                     self.logger.info(f"'{title}' {skip_reason}，跳过剧集组处理。")
                     # 更新别名到数据库
                     if aliases_to_update and any(aliases_to_update.values()):
-                        updated_fields = await crud.update_anime_aliases_if_empty(session, anime_id, aliases_to_update, force_update=force_update)
+                        async with db.transaction(session=session):
+                            updated_fields = await db.anime.update_aliases_if_empty(anime_id, aliases_to_update, force_update=force_update)
                         if updated_fields:
                             mode_str = "(AI修正模式)" if force_update else ""
                             self.logger.info(f"为 '{title}' 更新了别名{mode_str}: {', '.join(updated_fields)}")
@@ -418,7 +440,8 @@ class TmdbAutoMapJob(BaseJob):
                     self.logger.warning(f"TMDB源不支持 get_all_episode_groups 方法，跳过 '{title}' 的剧集组处理。")
                     # 即使不支持剧集组，也要更新别名
                     if aliases_to_update and any(aliases_to_update.values()):
-                        updated_fields = await crud.update_anime_aliases_if_empty(session, anime_id, aliases_to_update, force_update=force_update)
+                        async with db.transaction(session=session):
+                            updated_fields = await db.anime.update_aliases_if_empty(anime_id, aliases_to_update, force_update=force_update)
                         if updated_fields:
                             mode_str = "(AI修正模式)" if force_update else ""
                             self.logger.info(f"为 '{title}' 更新了别名{mode_str}: {', '.join(updated_fields)}")
@@ -485,7 +508,8 @@ class TmdbAutoMapJob(BaseJob):
                         self.logger.info(f"'{title}' (TMDB ID: {tmdb_id}) 没有找到任何剧集组。")
                         # 即使没有剧集组，也要更新别名
                         if aliases_to_update and any(aliases_to_update.values()):
-                            updated_fields = await crud.update_anime_aliases_if_empty(session, anime_id, aliases_to_update, force_update=force_update)
+                            async with db.transaction(session=session):
+                                updated_fields = await db.anime.update_aliases_if_empty(anime_id, aliases_to_update, force_update=force_update)
                             if updated_fields:
                                 mode_str = "(AI修正模式)" if force_update else ""
                                 self.logger.info(f"为 '{title}' 更新了别名{mode_str}: {', '.join(updated_fields)}")
@@ -516,7 +540,8 @@ class TmdbAutoMapJob(BaseJob):
                     self.logger.info(f"'{title}' 没有找到“原始播出顺序”(type=1)的剧集组，跳过映射更新。")
                     # 即使没有剧集组，也要更新别名
                     if aliases_to_update and any(aliases_to_update.values()):
-                        updated_fields = await crud.update_anime_aliases_if_empty(session, anime_id, aliases_to_update, force_update=force_update)
+                        async with db.transaction(session=session):
+                            updated_fields = await db.anime.update_aliases_if_empty(anime_id, aliases_to_update, force_update=force_update)
                         if updated_fields:
                             mode_str = "(AI修正模式)" if force_update else ""
                             self.logger.info(f"为 '{title}' 更新了别名{mode_str}: {', '.join(updated_fields)}")
@@ -536,7 +561,8 @@ class TmdbAutoMapJob(BaseJob):
                     await self.metadata_manager.update_tmdb_mappings(int(tmdb_id), group_id, user)
 
                     # 步骤 6: 更新作品关联的主剧集组ID
-                    await crud.update_anime_tmdb_group_id(session, anime_id, group_id)
+                    async with db.transaction(session=session):
+                        await db.anime.update_tmdb_group_id(anime_id, group_id)
                     self.logger.info(f"已将 '{title}' 的主剧集组ID更新为: {group_id}")
                     mapped_count += 1
 
@@ -570,7 +596,8 @@ class TmdbAutoMapJob(BaseJob):
 
                 # 步骤 8: 更新别名到数据库（在剧集组处理完成后，可能已追加季度后缀）
                 if aliases_to_update and any(aliases_to_update.values()):
-                    updated_fields = await crud.update_anime_aliases_if_empty(session, anime_id, aliases_to_update, force_update=force_update)
+                    async with db.transaction(session=session):
+                        updated_fields = await db.anime.update_aliases_if_empty(anime_id, aliases_to_update, force_update=force_update)
                     if updated_fields:
                         mode_str = "(AI修正模式)" if force_update else ""
                         self.logger.info(f"为 '{title}' 更新了别名{mode_str}: {', '.join(updated_fields)}")

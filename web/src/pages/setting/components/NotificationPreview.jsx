@@ -1,26 +1,29 @@
-import { useState } from 'react'
-import { Card, Segmented, Empty, Spin, Alert, Image, Typography, Space, Collapse } from 'antd'
+import { useEffect, useState } from 'react'
+import { Card, Segmented, Select, Empty, Spin, Alert, Image, Typography, Space, Collapse } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
 
 const { Text, Paragraph } = Typography
-const { Panel } = Collapse
 
 /**
  * 通知预览组件 - 实时显示模板渲染结果
  * 支持切换渠道和示例状态
  */
-export const NotificationPreview = ({ previewData, loading, onChannelChange, onStatusChange }) => {
+export const NotificationPreview = ({ previewData, loading, onChannelChange, onStatusChange, channelTypes = [] }) => {
   const { t } = useTranslation()
-  const [selectedChannel, setSelectedChannel] = useState('telegram')
+  const channelOptions = channelTypes.map((item) => ({
+    label: item.displayName || item.name || item.channelType,
+    value: item.channelType,
+  }))
+  const [selectedChannel, setSelectedChannel] = useState('')
   const [selectedStatus, setSelectedStatus] = useState('success')
 
-  const channelOptions = [
-    { label: 'Telegram', value: 'telegram' },
-    { label: 'QQ', value: 'qq' },
-    { label: t('notificationTemplate.channelWechat'), value: 'wechat' },
-    { label: 'Server酱', value: 'serverchan' },
-  ]
+  useEffect(() => {
+    if (channelTypes.length && !channelTypes.some(item => item.channelType === selectedChannel)) {
+      setSelectedChannel(channelTypes[0].channelType)
+      onChannelChange?.(channelTypes[0].channelType)
+    }
+  }, [channelTypes, selectedChannel, onChannelChange])
 
   const statusOptions = [
     { label: t('notificationTemplate.statusSuccess'), value: 'success' },
@@ -35,7 +38,7 @@ export const NotificationPreview = ({ previewData, loading, onChannelChange, onS
 
   const handleStatusChange = (value) => {
     setSelectedStatus(value)
-    onStatusChange?.(value)
+    onStatusChange?.(value, selectedChannel)
   }
 
   return (
@@ -56,11 +59,12 @@ export const NotificationPreview = ({ previewData, loading, onChannelChange, onS
           <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
             {t('notificationTemplate.channelLabel')}
           </Text>
-          <Segmented
+          <Select
             options={channelOptions}
-            value={selectedChannel}
+            value={selectedChannel || undefined}
             onChange={handleChannelChange}
-            block
+            placeholder="请选择渠道"
+            style={{ width: '100%' }}
           />
         </div>
 
@@ -98,6 +102,7 @@ export const NotificationPreview = ({ previewData, loading, onChannelChange, onS
             {/* 图片预览 */}
             {previewData.imageUrl && (
               <div style={{ marginBottom: 16 }}>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>示例图片</Text>
                 <Image
                   src={previewData.imageUrl}
                   alt="Preview"

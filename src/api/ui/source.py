@@ -4,40 +4,58 @@ Source相关的API端点
 import hashlib
 import logging
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src import security, tasks
-from src.db import crud, models, get_db_session, ConfigManager, orm_models
-from src.core.timezone import get_now
-from src.services import TaskManager, ScraperManager, MetadataSourceManager, SchedulerManager
+from src.utils.auth import security
+from src import tasks
+from src.services.service_container import get_database_service
+from src.services.task_manager import TaskManager
+from src.services.scraper_manager import ScraperManager
+from src.services.metadata_service import MetadataService
+from src.services.scheduler import SchedulerManager
+from src.services.config_service import ConfigService
 from src.rate_limiter import RateLimiter
+from src.schemas.auth import User
+from src.schemas.ui_models import (
+    SourceDetailsResponse,
+    PaginatedEpisodesResponse,
+    UITaskResponse,
+    BulkDeleteRequest,
+    ImportCollectionRequest,
+)
 
 from src.api.dependencies import (
     get_scraper_manager, get_task_manager, get_scheduler_manager,
-    get_metadata_manager, get_config_manager, get_rate_limiter,
+    get_metadata_service, get_config_service, get_rate_limiter,
     get_title_recognition_manager
 )
-from .models import UITaskResponse, BulkDeleteRequest, ImportCollectionRequest
+from src.schemas.control import (
+    ManualImportRequest,
+    BatchManualImportRequest,
+    BatchManualImportItem,
+    SplitSourceRequest,
+    SplitSourceResponse,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.get("/library/source/{sourceId}/details", response_model=models.SourceDetailsResponse, summary="获取单个数据源的详情")
+@router.get("/library/source/{sourceId}/details", response_model=SourceDetailsResponse, summary="获取单个数据源的详情")
 async def get_source_details(
     sourceId: int,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
 ):
     """获取指定数据源的详细信息，包括其提供方名称。"""
-    source_info = await crud.get_anime_source_info(session, sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(sourceId)
     if not source_info:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
-    return models.SourceDetailsResponse.model_validate(source_info)
+    return SourceDetailsResponse.model_validate(source_info)
 
 
 
@@ -45,12 +63,13 @@ async def get_source_details(
 async def delete_source_from_anime(
     sourceId: int,
     deleteFiles: bool = Query(True, description="是否同时删除弹幕XML文件"),
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     """提交一个后台任务来删除一个数据源及其所有关联的分集和弹幕。"""
-    source_info = await crud.get_anime_source_info(session, sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(sourceId)
     if not source_info:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
 
@@ -69,11 +88,12 @@ async def delete_source_from_anime(
 @router.put("/library/source/{sourceId}/favorite", status_code=status.HTTP_204_NO_CONTENT, summary="切换数据源的精确标记状态")
 async def toggle_source_favorite(
     sourceId: int,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(security.get_current_user),
 ):
     """切换指定数据源的精确标记状态。一个作品只能有一个精确标记的源。"""
-    new_status = await crud.toggle_source_favorite_status(session, sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        new_status = await db.source.toggle_source_favorite_status(sourceId)
     if new_status is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
     return # 204 No Content, so no body is needed
@@ -83,30 +103,35 @@ async def toggle_source_favorite(
 @router.put("/library/source/{sourceId}/toggle-incremental-refresh", status_code=status.HTTP_204_NO_CONTENT, summary="切换数据源的定时增量更新状态")
 async def toggle_source_incremental_refresh(
     sourceId: int,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(security.get_current_user),
 ):
     """切换指定数据源的定时增量更新的启用/禁用状态。同一番剧下只能有一个源开启追更。"""
-    new_state = await crud.toggle_source_incremental_refresh(session, sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        new_state = await db.source.toggle_incremental_refresh(sourceId)
     if new_state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
     logger.info(f"用户 '{current_user.username}' 切换了源 ID {sourceId} 的追更状态为 {new_state}。")
 
 
-@router.get("/library/source/{sourceId}/episodes", response_model=models.PaginatedEpisodesResponse, summary="获取数据源的所有分集")
+@router.get("/library/source/{sourceId}/episodes", response_model=PaginatedEpisodesResponse, summary="获取数据源的所有分集")
 async def get_source_episodes(
     sourceId: int,
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(25, ge=1, description="每页数量"),
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(security.get_current_user),
 ):
     """获取指定数据源下的所有已收录分集列表。"""
-    paginated_result = await crud.get_episodes_for_source(session, sourceId, page, pageSize)
-    # 修正：返回完整的分页响应对象
-    return models.PaginatedEpisodesResponse(
+    db = get_database_service()
+    async with db.transaction():
+        paginated_result = await db.episode.get_episodes_by_source(sourceId, page, pageSize)
+    # 查询层使用 episodeTitle/episodeNumber，UI 契约使用 title/episodeIndex。
+    return PaginatedEpisodesResponse(
         total=paginated_result["total"],
-        list=paginated_result.get("episodes", [])
+        list=[
+            {**episode, "title": episode["episodeTitle"], "episodeIndex": episode["episodeNumber"]}
+            for episode in paginated_result.get("list", [])
+        ],
     )
 
 
@@ -114,12 +139,13 @@ async def get_source_episodes(
 @router.post("/library/source/{sourceId}/reorder-episodes", status_code=status.HTTP_202_ACCEPTED, summary="重整指定源的分集顺序")
 async def reorder_source_episodes(
     sourceId: int,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     """提交一个后台任务，按当前顺序重新编号指定数据源的所有分集。"""
-    source_info = await crud.get_anime_source_info(session, sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(sourceId)
     if not source_info:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
 
@@ -140,13 +166,12 @@ async def reorder_source_episodes(
 async def refresh_anime(
     sourceId: int,
     mode: str = Query("full", description="刷新模式: 'full' (全量) 或 'incremental' (增量)"),
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     task_manager: TaskManager = Depends(get_task_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
-    config_manager: ConfigManager = Depends(get_config_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
+    config_service: ConfigService = Depends(get_config_service),
     title_recognition_manager = Depends(get_title_recognition_manager)
 ):
     """
@@ -154,15 +179,18 @@ async def refresh_anime(
     - full: 清空并重新抓取所有分集和弹幕。
     - incremental: 尝试抓取最新一集。
     """
-    source_info = await crud.get_anime_source_info(session, sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(sourceId)
     if not source_info or not source_info.get("providerName") or not source_info.get("mediaId"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anime not found or missing source information for refresh.")
-    
+
     unique_key = ""
     if mode == "incremental":
         logger.info(f"用户 '{current_user.username}' 为番剧 '{source_info['title']}' (源ID: {sourceId}) 启动了增量刷新任务。")
-        # 修正：crud.get_episodes_for_source 现在返回一个带分页的字典
-        paginated_result = await crud.get_episodes_for_source(session, sourceId, page_size=9999) # 获取所有分集以找到最大集数
+        # 修正：get_episodes_for_source 现在返回一个带分页的字典
+        async with db.transaction():
+            paginated_result = await db.episode.get_episodes_for_source(sourceId, page_size=9999) # 获取所有分集以找到最大集数
         latest_episode_index = max((ep['episodeIndex'] for ep in paginated_result.get("episodes", [])), default=0)
         next_episode_index = latest_episode_index + 1
 
@@ -170,7 +198,7 @@ async def refresh_anime(
         task_title = f"增量刷新: {source_info['title']} ({source_info['providerName']}) [mediaId={source_info['mediaId']}] - 尝试第{next_episode_index}集"
         task_coro = lambda s, cb: tasks.incremental_refresh_task(
             sourceId=sourceId, nextEpisodeIndex=next_episode_index, session=s, manager=scraper_manager,
-            task_manager=task_manager, config_manager=config_manager, progress_callback=cb, animeTitle=source_info["title"],
+            task_manager=task_manager, config_service=config_service, progress_callback=cb, animeTitle=source_info["title"],
             rate_limiter=rate_limiter, metadata_manager=metadata_manager,
             title_recognition_manager=title_recognition_manager
         )
@@ -180,21 +208,21 @@ async def refresh_anime(
     elif mode == "fill_missing":
         logger.info(f"用户 '{current_user.username}' 为番剧 '{source_info['title']}' (源ID: {sourceId}) 启动了分集补全任务。")
         unique_key = f"fill-missing-{source_info['providerName']}-{source_info['mediaId']}"
-        task_title = f"补全: {source_info['title']} ({source_info['providerName']}) [mediaId={source_info['mediaId']}]"
+        task_title = f"补全缺集: {source_info['title']} ({source_info['providerName']}) [mediaId={source_info['mediaId']}]"
         task_coro = lambda s, cb: tasks.fill_missing_task(
             sourceId=sourceId, session=s, manager=scraper_manager,
-            task_manager=task_manager, config_manager=config_manager, progress_callback=cb, animeTitle=source_info["title"],
+            task_manager=task_manager, config_service=config_service, progress_callback=cb, animeTitle=source_info["title"],
             rate_limiter=rate_limiter, metadata_manager=metadata_manager,
             title_recognition_manager=title_recognition_manager
         )
         task_type = "fill_missing"
         task_parameters = {"sourceId": sourceId, "animeTitle": source_info["title"]}
-        message_to_return = f"番剧 '{source_info['title']}' 的分集补全任务已提交。"
+        message_to_return = f"番剧 '{source_info['title']}' 的补全缺集任务已提交。"
     elif mode == "full":
         logger.info(f"用户 '{current_user.username}' 为番剧 '{source_info['title']}' (源ID: {sourceId}) 启动了全量刷新任务。")
         unique_key = f"full-refresh-{sourceId}"
         task_title = f"全量刷新: {source_info['title']} ({source_info['providerName']}) [mediaId={source_info['mediaId']}]"
-        task_coro = lambda s, cb: tasks.full_refresh_task(sourceId, s, scraper_manager, task_manager, rate_limiter, cb, metadata_manager, config_manager)
+        task_coro = lambda s, cb: tasks.full_refresh_task(sourceId, s, scraper_manager, task_manager, rate_limiter, cb, metadata_manager, config_service)
         task_type = "full_refresh"
         task_parameters = {"sourceId": sourceId}
         message_to_return = f"番剧 '{source_info['title']}' 的全量刷新任务已提交。"
@@ -212,7 +240,7 @@ async def refresh_anime(
 @router.post("/library/sources/delete-bulk", status_code=status.HTTP_202_ACCEPTED, summary="提交批量删除数据源的任务", response_model=UITaskResponse)
 async def delete_bulk_sources(
     request_data: BulkDeleteRequest,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(security.get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     """提交一个后台任务来批量删除多个数据源。"""
@@ -240,15 +268,16 @@ async def delete_bulk_sources(
 @router.post("/library/source/{source_id}/manual-import", status_code=status.HTTP_202_ACCEPTED, summary="手动导入单个分集弹幕")
 async def manual_import_episode(
     source_id: int,
-    request_data: models.ManualImportRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    request_data: ManualImportRequest,
+    current_user: User = Depends(security.get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     task_manager: TaskManager = Depends(get_task_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter)
 ):
     """提交一个后台任务，从给定的URL手动导入弹幕。"""
-    source_info = await crud.get_anime_source_info(session, source_id)
+    db = get_database_service()
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(source_id)
     if not source_info:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
 
@@ -301,9 +330,8 @@ async def manual_import_episode(
 @router.post("/library/source/{sourceId}/batch-import", status_code=status.HTTP_202_ACCEPTED, summary="批量手动导入分集", response_model=UITaskResponse)
 async def batch_manual_import(
     sourceId: int,
-    payload: models.BatchManualImportRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    payload: BatchManualImportRequest,
+    current_user: User = Depends(security.get_current_user),
     task_manager: TaskManager = Depends(get_task_manager),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
@@ -313,7 +341,9 @@ async def batch_manual_import(
     - 对于普通数据源，请求体中的 'content' 应为视频URL。
     - 对于 'custom' 数据源，'content' 应为dandanplay格式的XML弹幕文件内容。
     """
-    source_info = await crud.get_anime_source_info(session, sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(sourceId)
     if not source_info:
         raise HTTPException(status_code=404, detail="数据源未找到")
 
@@ -344,8 +374,7 @@ async def batch_manual_import(
 async def import_collection(
     sourceId: int,
     payload: ImportCollectionRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     task_manager: TaskManager = Depends(get_task_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
@@ -357,7 +386,9 @@ async def import_collection(
     2. 调 scraper 拉取合集视频列表（含 bvid/title），按合集顺序构造批量导入项。
     3. 提交 batch_manual_import_task（传入 scraperProvider），逐个 URL 抓取弹幕写入当前 sourceId。
     """
-    source_info = await crud.get_anime_source_info(session, sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(sourceId)
     if not source_info:
         raise HTTPException(status_code=404, detail="数据源未找到")
 
@@ -389,12 +420,12 @@ async def import_collection(
 
     # 4. 构造批量导入项（episodeIndex 从 startEpisodeIndex 起递增）
     start_index = payload.startEpisodeIndex if (payload.startEpisodeIndex and payload.startEpisodeIndex > 0) else 1
-    items: List[models.BatchManualImportItem] = []
+    items: List[BatchManualImportItem] = []
     for offset, v in enumerate(videos):
         video_url = v.get("url")
         if not video_url:
             continue
-        items.append(models.BatchManualImportItem(
+        items.append(BatchManualImportItem(
             title=v.get("title") or f"第 {start_index + offset} 集",
             episodeIndex=start_index + offset,
             content=video_url,
@@ -494,31 +525,32 @@ async def get_incremental_refresh_sources(
     finishedFilter: str = Query("all", pattern="^(all|finished|unfinished)$", description="完结过滤"),
     sortBy: str = Query("created", pattern="^(created|title)$", description="排序字段: created=按入库时间, title=按标题"),
     sortOrder: str = Query("desc", pattern="^(asc|desc)$", description="排序方向: asc=升序, desc=降序"),
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """获取所有源（包括启用和未启用追更的），按番剧分组返回，支持分页和过滤。用于批量管理弹窗。"""
-    result = await crud.get_incremental_refresh_sources_grouped(
-        session,
-        page=page,
-        page_size=pageSize,
-        keyword=keyword,
-        favorite_filter=favoriteFilter,
-        refresh_filter=refreshFilter,
-        type_filter=typeFilter,
-        finished_filter=finishedFilter,
-        sort_by=sortBy,
-        sort_order=sortOrder,
-    )
+    db = get_database_service()
+    async with db.transaction():
+        result = await db.source.get_incremental_refresh_sources_grouped(
+            page=page,
+            page_size=pageSize,
+            keyword=keyword,
+            favorite_filter=favoriteFilter,
+            refresh_filter=refreshFilter,
+            type_filter=typeFilter,
+            finished_filter=finishedFilter,
+            sort_by=sortBy,
+            sort_order=sortOrder,
+        )
     # 获取最大失败次数配置
-    max_failures = int(await crud.get_config_value(session, "incrementalRefreshMaxFailures", "10"))
+    max_failures = int(await config_service.get("incrementalRefreshMaxFailures", "10"))
     result["maxFailures"] = max_failures
     return result
 
 
 @router.get("/library/incremental-refresh/task-status", response_model=IncrementalRefreshTaskStatus, summary="获取增量追更定时任务状态")
 async def get_incremental_refresh_task_status(
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(security.get_current_user),
     scheduler: SchedulerManager = Depends(get_scheduler_manager),
 ):
     """检测增量追更定时任务是否存在及其状态。"""
@@ -547,11 +579,12 @@ async def get_incremental_refresh_task_status(
 @router.post("/library/incremental-refresh/batch-toggle", summary="批量开启/关闭追更")
 async def batch_toggle_incremental_refresh(
     payload: BatchToggleIncrementalRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
 ):
     """批量开启或关闭指定源的增量追更。"""
-    count = await crud.batch_toggle_incremental_refresh(session, payload.sourceIds, payload.enabled)
+    db = get_database_service()
+    async with db.transaction():
+        count = await db.source.batch_toggle_incremental_refresh(payload.sourceIds, payload.enabled)
     action = "开启" if payload.enabled else "关闭"
     return {"message": f"成功{action} {count} 个源的追更", "count": count}
 
@@ -559,33 +592,36 @@ async def batch_toggle_incremental_refresh(
 @router.post("/library/incremental-refresh/batch-favorite", summary="批量设置标记")
 async def batch_set_favorite(
     payload: BatchSetFavoriteRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
 ):
     """批量设置标记。每个源会被设为标记，同一番剧下的其他源会被取消标记。"""
-    count = await crud.batch_set_favorite(session, payload.sourceIds)
+    db = get_database_service()
+    async with db.transaction():
+        count = await db.source.batch_set_favorite(payload.sourceIds)
     return {"message": f"成功设置 {count} 个源为标记", "count": count}
 
 
 @router.post("/library/incremental-refresh/batch-unfavorite", summary="批量取消标记")
 async def batch_unset_favorite(
     payload: BatchSetFavoriteRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
 ):
     """批量取消标记。"""
-    count = await crud.batch_unset_favorite(session, payload.sourceIds)
+    db = get_database_service()
+    async with db.transaction():
+        count = await db.source.batch_unset_favorite(payload.sourceIds)
     return {"message": f"成功取消 {count} 个源的标记", "count": count}
 
 
 @router.put("/library/source/{sourceId}/toggle-finished", status_code=status.HTTP_204_NO_CONTENT, summary="切换数据源的完结状态")
 async def toggle_source_finished(
     sourceId: int,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(security.get_current_user),
 ):
     """切换指定数据源的完结标记。完结后不再预加载下一集。"""
-    new_state = await crud.toggle_source_finished(session, sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        new_state = await db.source.toggle_finished(sourceId)
     if new_state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
     return
@@ -594,22 +630,24 @@ async def toggle_source_finished(
 @router.post("/library/incremental-refresh/batch-set-finished", summary="批量标记完结")
 async def batch_set_finished(
     payload: BatchSetFavoriteRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
 ):
     """批量将指定源标记为完结。"""
-    count = await crud.batch_set_finished(session, payload.sourceIds)
+    db = get_database_service()
+    async with db.transaction():
+        count = await db.source.batch_set_finished(payload.sourceIds)
     return {"message": f"成功标记 {count} 个源为完结", "count": count}
 
 
 @router.post("/library/incremental-refresh/batch-unset-finished", summary="批量取消完结标记")
 async def batch_unset_finished(
     payload: BatchSetFavoriteRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
 ):
     """批量取消指定源的完结标记。"""
-    count = await crud.batch_unset_finished(session, payload.sourceIds)
+    db = get_database_service()
+    async with db.transaction():
+        count = await db.source.batch_unset_finished(payload.sourceIds)
     return {"message": f"成功取消 {count} 个源的完结标记", "count": count}
 
 
@@ -618,24 +656,23 @@ async def batch_unset_finished(
 @router.get("/library/source/{sourceId}/episodes-for-split", summary="获取数据源的分集列表（用于拆分选择）")
 async def get_source_episodes_for_split(
     sourceId: int,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
 ):
     """获取指定数据源的分集列表，用于拆分数据源时选择分集。"""
-    source_info = await crud.get_anime_source_info(session, sourceId)
-    if not source_info:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
-
-    episodes = await crud.get_source_episode_list(session, sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(sourceId)
+        if not source_info:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+        episodes = await db.episode.get_source_episode_list(sourceId)
     return {"episodes": episodes, "sourceInfo": source_info}
 
 
-@router.post("/library/anime/{animeId}/split-source", response_model=models.SplitSourceResponse, summary="拆分数据源")
+@router.post("/library/anime/{animeId}/split-source", response_model=SplitSourceResponse, summary="拆分数据源")
 async def split_source(
     animeId: int,
-    payload: models.SplitSourceRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    payload: SplitSourceRequest,
+    current_user: User = Depends(security.get_current_user),
 ):
     """
     将一个数据源中的部分分集拆分到新的或已有的媒体条目。
@@ -643,8 +680,10 @@ async def split_source(
     - targetType='new': 创建新的媒体条目，并将选中的分集移动到新条目
     - targetType='existing': 将选中的分集移动到已有的媒体条目
     """
+    db = get_database_service()
     # 验证源数据源属于当前媒体
-    source_info = await crud.get_anime_source_info(session, payload.sourceId)
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(payload.sourceId)
     if not source_info:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据源未找到")
     if source_info['animeId'] != animeId:
@@ -662,37 +701,27 @@ async def split_source(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="创建新条目时必须提供媒体信息")
 
         # 检查是否已存在同名同季度的作品
-        existing = await crud.find_anime_by_title_season_year(
-            session,
-            payload.newMediaInfo.title,
-            payload.newMediaInfo.season,
-            payload.newMediaInfo.year
-        )
+        async with db.transaction():
+            existing = await db.anime.find_by_title_season_year(
+                payload.newMediaInfo.title,
+                payload.newMediaInfo.season,
+                payload.newMediaInfo.year
+            )
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"已存在同名同季度的作品: {payload.newMediaInfo.title} (第 {payload.newMediaInfo.season} 季)"
             )
 
-        # 创建新的 Anime 记录
-        new_anime = orm_models.Anime(
-            title=payload.newMediaInfo.title,
-            type="tv_series",
-            season=payload.newMediaInfo.season,
-            year=payload.newMediaInfo.year,
-            imageUrl=payload.newMediaInfo.imageUrl,
-            createdAt=get_now()
-        )
-        session.add(new_anime)
-        await session.flush()
-
-        # 创建关联的元数据和别名记录
-        new_metadata = orm_models.AnimeMetadata(animeId=new_anime.id)
-        new_alias = orm_models.AnimeAlias(animeId=new_anime.id)
-        session.add_all([new_metadata, new_alias])
-        await session.flush()
-
-        target_anime_id = new_anime.id
+        async with db.transaction():
+            new_anime = await db.anime.create_with_metadata(
+                title=payload.newMediaInfo.title,
+                media_type="tv_series",
+                season=payload.newMediaInfo.season,
+                year=payload.newMediaInfo.year,
+                image_url=payload.newMediaInfo.imageUrl,
+            )
+            target_anime_id = new_anime.id
         logger.info(f"用户 '{current_user.username}' 创建了新媒体条目: {payload.newMediaInfo.title} (ID: {target_anime_id})")
 
     elif payload.targetType == "existing":
@@ -701,7 +730,8 @@ async def split_source(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="合并到已有条目时必须提供目标媒体ID")
 
         # 验证目标媒体存在
-        target_anime = await crud.get_anime_full_details(session, payload.existingMediaId)
+        async with db.transaction():
+            target_anime = await db.anime.get_full_details(payload.existingMediaId)
         if not target_anime:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="目标媒体条目未找到")
 
@@ -711,28 +741,25 @@ async def split_source(
 
     # 执行分集移动
     try:
-        moved_count = await crud.split_source_episodes(
-            session,
-            source_id=payload.sourceId,
-            episode_ids=payload.episodeIds,
-            target_anime_id=target_anime_id,
-            reindex_episodes=payload.reindexEpisodes
-        )
-        await session.commit()
+        async with db.transaction():
+            moved_count = await db.episode.split_source_episodes(
+                source_id=payload.sourceId,
+                episode_ids=payload.episodeIds,
+                target_anime_id=target_anime_id,
+                reindex_episodes=payload.reindexEpisodes
+            )
 
         logger.info(f"用户 '{current_user.username}' 将 {moved_count} 个分集从媒体 {animeId} 拆分到媒体 {target_anime_id}")
 
-        return models.SplitSourceResponse(
+        return SplitSourceResponse(
             success=True,
             targetMediaId=target_anime_id,
             movedEpisodeCount=moved_count,
             message=f"成功拆分 {moved_count} 个分集到{'新' if payload.targetType == 'new' else '已有'}条目"
         )
     except ValueError as e:
-        await session.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        await session.rollback()
         logger.error(f"拆分数据源失败: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"拆分失败: {str(e)}")
 

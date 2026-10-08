@@ -4,8 +4,8 @@
 使用方式:
     from src.api.dandan import dandan_router
     from src.api.dandan import apply_random_color, apply_blacklist_filter
-    from src.api.dandan.models import DandanResponseBase, DandanMatchResponse
-    from src.api.dandan.dependencies import get_config_manager, get_task_manager
+    from src.schemas.dandan import DandanResponseBase, DandanMatchResponse
+    from src.api.dandan.dependencies import get_config_service, get_task_manager
     from src.api.dandan.constants import DANDAN_TYPE_MAPPING
     from src.api.dandan.route_handler import DandanApiRoute, get_token_from_path
 """
@@ -18,8 +18,8 @@ from .route_handler import (
     get_token_from_path,
 )
 
-# Pydantic 模型
-from .models import (
+# Pydantic 模型 - 从 schemas 导入
+from src.schemas.dandan import (
     DandanResponseBase,
     DandanEpisodeInfo,
     DandanAnimeInfo,
@@ -43,9 +43,9 @@ from .models import (
 
 # 依赖项函数
 from .dependencies import (
-    get_config_manager,
+    get_config_service,
     get_task_manager,
-    get_metadata_manager,
+    get_metadata_service,
     get_rate_limiter,
     get_scraper_manager,
 )
@@ -70,7 +70,7 @@ from .constants import (
 )
 
 # 弹幕颜色处理
-from .danmaku_color import (
+from src.utils.danmaku_color import (
     DEFAULT_RANDOM_COLOR_MODE,
     DEFAULT_RANDOM_COLOR_PALETTE,
     apply_random_color,
@@ -79,28 +79,21 @@ from .danmaku_color import (
 )
 
 # 弹幕过滤
-from .danmaku_filter import apply_blacklist_filter
+from src.utils.danmaku_filter import apply_blacklist_filter
 
 # 弹幕解析
-from src.utils.danmaku_parser import parse_dandan_xml_to_comments
+# 弹幕解析器已迁移至 parsing 子包，使用真实定义路径。
+from src.utils.parsing.danmaku_parser import parse_dandan_xml_to_comments
 
-# 后备搜索
-from .fallback_search import (
-    handle_fallback_search,
-    execute_fallback_search_task,
-    search_implementation,
-)
-
-# 匹配功能
-from .match import (
-    parse_filename_for_match,
-    get_match_for_item,
-)
+# 业务函数已迁入编排层，包入口直接从真实定义模块导出。
+from src.workflows.match.helpers import parse_filename_for_match
+from src.workflows.match.match_flow import get_match_for_item
+from src.workflows.comments.helpers import process_comments_for_dandanplay
+from src.workflows.bangumi.helpers import generate_episode_id
 
 # 弹幕评论功能
 from .comments import (
     comments_router,
-    process_comments_for_dandanplay,
     get_external_comments_from_url,
     get_comments_for_dandan,
 )
@@ -114,7 +107,6 @@ from .taskcomment import (
 # 番剧详情功能
 from .bangumi import (
     bangumi_router,
-    generate_episode_id,
     get_bangumi_details,
 )
 
@@ -128,14 +120,12 @@ from .search import (
 # 匹配功能路由
 from .match import (
     match_router,
-    parse_filename_for_match,
-    get_match_for_item,
     match_single_file,
     match_batch_files,
 )
 
 # 预下载功能
-from .predownload import (
+from src.workflows.comments.predownload import (
     wait_for_refresh_task,
     try_predownload_next_episode,
 )
@@ -168,9 +158,9 @@ __all__ = [
     'DandanBatchMatchRequestItem',
     'DandanBatchMatchRequest',
     # 依赖项函数
-    'get_config_manager',
+    'get_config_service',
     'get_task_manager',
-    'get_metadata_manager',
+    'get_metadata_service',
     'get_rate_limiter',
     'get_scraper_manager',
     # 常量

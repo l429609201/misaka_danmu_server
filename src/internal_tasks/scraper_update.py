@@ -3,6 +3,8 @@
 
 用于后台自动检查并更新弹幕源资源。
 """
+from src.services.service_container import get_scraper_manager
+from src.services.config_service import get_config_service
 import json
 import asyncio
 import logging
@@ -20,12 +22,12 @@ from fastapi import FastAPI
 
 from .base import BasePollingTask
 from src.core.env import is_docker_environment
-from src.utils.scraper_version_manager import ScraperVersionManager
-from src.utils.version_comparator import VersionComparator
-from src.utils.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
-from src.utils.remote_manifest_fetcher import fetch_remote_manifest_dict
-from src.utils.scraper_deployment_checker import should_restart_for_deployment
-from src.utils.scraper_download_executor import (
+from src.utils.scraper_ops.scraper_version_manager import ScraperVersionManager
+from src.utils.scraper_ops.version_comparator import VersionComparator
+from src.utils.runtime.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
+from src.utils.scraper_ops.remote_manifest_fetcher import fetch_remote_manifest_dict
+from src.utils.scraper_ops.scraper_deployment_checker import should_restart_for_deployment
+from src.utils.scraper_ops.scraper_download_executor import (
     _get_temp_download_base_dir,
     verify_scraper_package,
 )
@@ -176,7 +178,7 @@ def _verify_backup_version(remote_version: str) -> bool:
         return False
 
 
-async def _restart_to_apply_backup(config_manager, target_version: str) -> None:
+async def _restart_to_apply_backup(config_service, target_version: str) -> None:
     """备份目录已是目标版本、只差重启生效时，触发容器重启（不重复下载）。
 
     why：以版本状态决策——当上一轮已把新版本下载/上传到备份目录、但因重启失败等原因
@@ -203,7 +205,7 @@ async def _restart_to_apply_backup(config_manager, target_version: str) -> None:
     sys.stderr.flush()
     await asyncio.sleep(1.0)
 
-    container_name = await config_manager.get("containerName", "misaka-danmu-server")
+    container_name = await config_service.get("containerName", "misaka-danmu-server")
     result = await restart_container(container_name)
     if result.get("success"):
         logger.info(f"已向容器 '{container_name}' 发送重启指令，重启后将从备份恢复到 {target_version}")
@@ -250,11 +252,11 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
 
     检查是否有新版本，如果有则自动下载更新。
     """
-    config_manager = app.state.config_manager
-    scraper_manager = app.state.scraper_manager
+    config_service = get_config_service()
+    scraper_manager = get_scraper_manager()
 
     # 获取资源仓库URL
-    repo_url = await config_manager.get("scraper_resource_repo", "")
+    repo_url = await config_service.get("scraper_resource_repo", "")
     if not repo_url:
         logger.debug("未配置资源仓库URL，跳过自动更新")
         return
@@ -265,10 +267,10 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
     local_version = await _get_local_version()
 
     # 获取代理配置
-    proxy_to_use = await _get_proxy_config(config_manager)
+    proxy_to_use = await _get_proxy_config(config_service)
 
     # 解析仓库URL并获取headers
-    headers, repo_info, gitee_info = await _get_repo_headers(config_manager, repo_url)
+    headers, repo_info, gitee_info = await _get_repo_headers(config_service, repo_url)
     base_url = _build_base_url(repo_info, repo_url, gitee_info)
 
     # 获取远程版本和 manifest 数据
@@ -301,7 +303,7 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
     # 只是尚未重启生效（如上次重启失败）。此时不重复下载，直接触发重启让备份生效即可。
     # why：以“版本状态”而非“时间”决策，既避免重复下载重启循环，又不会误伤正常更新。
     if _verify_backup_version(remote_version):
-        await _restart_to_apply_backup(config_manager, remote_version)
+        await _restart_to_apply_backup(config_service, remote_version)
         return
 
     # 统一前置校验：全量/增量共用同一判据——运行目录版本 vs 远程版本。
@@ -323,7 +325,7 @@ async def _scraper_auto_update_handler(app: FastAPI) -> None:
         return
 
     # 检查是否启用全量替换模式
-    full_replace_enabled = await config_manager.get("scraperFullReplaceEnabled", "false")
+    full_replace_enabled = await config_service.get("scraperFullReplaceEnabled", "false")
     use_full_replace = full_replace_enabled.lower() == "true"
 
     if use_full_replace:
@@ -365,15 +367,15 @@ async def _get_local_version() -> str:
         return "unknown"
 
 
-async def _get_proxy_config(config_manager) -> Optional[str]:
+async def _get_proxy_config(config_service) -> Optional[str]:
     """获取代理配置"""
-    proxy_url = await config_manager.get("proxyUrl", "")
-    proxy_enabled_str = await config_manager.get("proxyEnabled", "false")
+    proxy_url = await config_service.get("proxyUrl", "")
+    proxy_enabled_str = await config_service.get("proxyEnabled", "false")
     proxy_enabled = proxy_enabled_str.lower() == 'true'
     return proxy_url if proxy_enabled and proxy_url else None
 
 
-async def _get_repo_headers(config_manager, repo_url: str) -> tuple:
+async def _get_repo_headers(config_service, repo_url: str) -> tuple:
     """获取仓库请求头和解析信息
 
     Returns:
@@ -394,7 +396,7 @@ async def _get_repo_headers(config_manager, repo_url: str) -> tuple:
 
     # 如果是GitHub仓库,添加Token（Gitee不需要Token）
     if repo_info:
-        github_token = await config_manager.get("github_token", "")
+        github_token = await config_service.get("github_token", "")
         if github_token:
             headers["Authorization"] = f"Bearer {github_token}"
 
@@ -428,8 +430,8 @@ async def _perform_update(
     repo_info: Optional[Dict] = None
 ) -> None:
     """执行实际的更新操作"""
-    config_manager = app.state.config_manager
-    scraper_manager = app.state.scraper_manager
+    config_service = get_config_service()
+    scraper_manager = get_scraper_manager()
 
     # 检查下载锁
     if _download_lock.locked():
@@ -443,7 +445,7 @@ async def _perform_update(
         scrapers_dir = _get_scrapers_dir()
 
         # 检查是否启用全量替换模式
-        full_replace_enabled = await config_manager.get("scraperFullReplaceEnabled", "false")
+        full_replace_enabled = await config_service.get("scraperFullReplaceEnabled", "false")
         use_full_replace = full_replace_enabled.lower() == "true"
 
         # ========== 全量替换模式 ==========
@@ -678,7 +680,7 @@ async def _perform_update(
                                 # 等待日志写入完成
                                 await asyncio.sleep(1.0)
 
-                                container_name = await config_manager.get("containerName", "misaka-danmu-server")
+                                container_name = await config_service.get("containerName", "misaka-danmu-server")
 
                                 # ========== 最后一步：覆盖运行目录里正在被加载的 .so，然后立即重启 ==========
                                 # why：defer 模式下解压只写了临时目录与备份目录，运行目录的 .so 仍是旧版。
@@ -916,7 +918,7 @@ async def _perform_update(
                 # 等待日志写入完成
                 await asyncio.sleep(1.0)
 
-                container_name = await config_manager.get("containerName", "misaka-danmu-server")
+                container_name = await config_service.get("containerName", "misaka-danmu-server")
                 result = await restart_container(container_name)
                 if result.get("success"):
                     logger.info(f"弹幕源自动更新完成: {local_version} -> {remote_version}，已向容器 '{container_name}' 发送重启指令")

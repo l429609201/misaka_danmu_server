@@ -1,4 +1,4 @@
-"""
+﻿"""
 Bangumi Token 定时刷新任务
 
 参考 ani-rss 实现：后台定时检查所有用户的 Bangumi OAuth token，
@@ -8,6 +8,9 @@ Bangumi Token 定时刷新任务
 - 已过期的 token 也会尝试刷新，不会因为 isAuthenticated=False 而跳过
 - 全局生效，不依赖用户主动访问
 """
+from src.services.service_container import get_database_service
+from src.db.database import get_session_factory
+from src.services.config_service import get_config_service
 import logging
 from datetime import timedelta
 
@@ -44,19 +47,19 @@ async def _bgm_token_refresh_handler(app: FastAPI) -> None:
     from src.db import orm_models
     from src.core import get_now, settings
 
-    session_factory = app.state.db_session_factory
-    config_manager = app.state.config_manager
+    session_factory = get_session_factory()
+    config_service = get_config_service()
 
     # 读取 OAuth 配置
-    client_id = await config_manager.get("bangumiClientId", "")
-    client_secret = await config_manager.get("bangumiClientSecret", "")
+    client_id = await config_service.get("bangumiClientId", "")
+    client_secret = await config_service.get("bangumiClientSecret", "")
     if not client_id or not client_secret:
         logger.debug("Bangumi OAuth 未配置 (缺少 client_id/client_secret)，跳过刷新")
         return
 
     # 构造 redirect_uri（后台刷新时 bgm.tv 要求 redirect_uri 必填）
     # 优先用自定义域名；没配置时回退 localhost 并标记，供刷新函数判断是否打 warning。
-    base_url = await config_manager.get("webhookCustomDomain", "")
+    base_url = await config_service.get("webhookCustomDomain", "")
     is_localhost_fallback = False
     if not base_url:
         base_url = f"http://localhost:{settings.server.port}"
@@ -71,16 +74,16 @@ async def _bgm_token_refresh_handler(app: FastAPI) -> None:
     }
 
     # 获取 Bangumi 代理配置（仅当 bangumi 元数据源开启 useProxy 时）
-    from src.db import crud
     proxy = None
-    proxy_mode = await config_manager.get("proxyMode", "none")
-    if proxy_mode == "none" and (await config_manager.get("proxyEnabled", "false")).lower() == "true":
+    proxy_mode = await config_service.get("proxyMode", "none")
+    if proxy_mode == "none" and (await config_service.get("proxyEnabled", "false")).lower() == "true":
         proxy_mode = "http_socks"
     if proxy_mode == "http_socks":
-        proxy_url = await config_manager.get("proxyUrl", "")
+        proxy_url = await config_service.get("proxyUrl", "")
         if proxy_url:
             async with session_factory() as _s:
-                ms_settings = await crud.get_all_metadata_source_settings(_s)
+                db = get_database_service()
+                ms_settings = await db.metadata_source.get_all_metadata_source_settings()
                 bgm_s = next((s for s in ms_settings if s.get('providerName') == 'bangumi'), None)
                 if bgm_s and bgm_s.get('useProxy', False):
                     proxy = proxy_url

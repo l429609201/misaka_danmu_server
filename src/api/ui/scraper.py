@@ -9,12 +9,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
-from src.db import crud, models, get_db_session, ConfigManager
-from src import security
-from src.services import ScraperManager
+from src.db import orm_models
+from src.schemas.ui_models import ScraperSettingWithConfig, ScraperSetting
+from src.utils.auth import security
+from src.services.scraper_manager import ScraperManager
+from src.services.config_service import ConfigService
+from src.services.service_container import get_database_service
 from src.scrapers.base import COMMON_EPISODE_BLACKLIST_REGEX
 from src._version import APP_VERSION
-from src.api.dependencies import get_scraper_manager, get_config_manager
+from src.api.dependencies import get_scraper_manager, get_config_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -22,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/scrapers/load-check", summary="弹幕源加载兼容性校验结果")
 async def get_scraper_load_check(
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: orm_models.User = Depends(security.get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager),
 ):
     """
@@ -42,21 +45,23 @@ async def get_scraper_load_check(
     }
 
 
-@router.get("/scrapers", response_model=List[models.ScraperSettingWithConfig], summary="获取所有搜索源的设置")
+@router.get("/scrapers", response_model=List[ScraperSettingWithConfig], summary="获取所有搜索源的设置")
 async def get_scraper_settings(
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: orm_models.User = Depends(security.get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """获取所有可用搜索源的列表及其配置(启用状态、顺序、可配置字段)"""
-    all_settings = await crud.get_all_scraper_settings(session)
+    db = get_database_service()
+    async with db.transaction():
+        # 查询仓储由 DatabaseService 的 scraper 数据域统一提供。
+        all_settings = await db.scraper.get_all_scraper_settings()
 
     # 不应在UI中显示 'custom' 源,因为它不是一个真正的刮削器
     settings = [s for s in all_settings if s.get('providerName') != 'custom']
     
     # 获取验证开关的全局状态
-    verification_enabled_str = await config_manager.get("scraper_verification_enabled", "false")
+    verification_enabled_str = await config_service.get("scraper_verification_enabled", "false")
     verification_enabled = verification_enabled_str.lower() == 'true'
 
     result = []
@@ -93,11 +98,11 @@ async def get_scraper_settings(
 
         # 从 config 表读取该源的日志记录开关（DB key 为下划线格式）
         log_resp_key = f"scraper_{provider_name}_log_responses"
-        log_resp_str = await config_manager.get(log_resp_key, "false")
+        log_resp_str = await config_service.get(log_resp_key, "false")
         full_setting_data['logRawResponses'] = str(log_resp_str).lower() == "true"
 
         try:
-            s_with_config = models.ScraperSettingWithConfig.model_validate(full_setting_data)
+            s_with_config = ScraperSettingWithConfig.model_validate(full_setting_data)
             result.append(s_with_config)
         except Exception as e:
             logger.warning(
@@ -109,8 +114,8 @@ async def get_scraper_settings(
 
 @router.put("/scrapers", status_code=status.HTTP_204_NO_CONTENT, summary="更新搜索源的设置")
 async def update_scraper_settings(
-    settings: List[models.ScraperSetting],
-    current_user: models.User = Depends(security.get_current_user),
+    settings: List[ScraperSetting],
+    current_user: orm_models.User = Depends(security.get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager)
 ):
     """批量更新搜索源的启用状态和显示顺序"""
@@ -122,10 +127,9 @@ async def update_scraper_settings(
 @router.get("/scrapers/{providerName}/config", response_model=Dict[str, Any], summary="获取指定搜索源的配置")
 async def get_scraper_config(
     providerName: str,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: orm_models.User = Depends(security.get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """
     获取单个搜索源的详细配置,包括其在 `scrapers` 表中的设置(如 useProxy)
@@ -138,7 +142,10 @@ async def get_scraper_config(
     response_data = {}
 
     # 1. 从 scrapers 表获取 useProxy
-    scraper_setting = await crud.get_scraper_setting_by_name(session, providerName)
+    db = get_database_service()
+    async with db.transaction():
+        # 单源配置同样通过 scraper 数据域查询。
+        scraper_setting = await db.scraper.get_scraper_setting_by_name(providerName)
     if scraper_setting:
         response_data['useProxy'] = scraper_setting.get('useProxy', False)
 
@@ -161,7 +168,7 @@ async def get_scraper_config(
             field_type = "string"
             field_default = ""
 
-        value = await config_manager.get(field_key, field_default)
+        value = await config_service.get(field_key, field_default)
 
         # 布尔类型字段需要转换为布尔值返回给前端
         if field_type == "boolean":
@@ -188,7 +195,7 @@ async def get_scraper_config(
     # 前端期望驼峰命名: gamerEpisodeBlacklistRegex
     blacklist_key_db = f"{providerName}_episode_blacklist_regex"
     blacklist_key_camel = f"{providerName}EpisodeBlacklistRegex"
-    blacklist_value = await config_manager.get(blacklist_key_db, "")
+    blacklist_value = await config_service.get(blacklist_key_db, "")
     response_data[blacklist_key_camel] = blacklist_value
 
     # 4. 添加"记录原始响应"字段(动态添加,每个源都有)
@@ -197,7 +204,7 @@ async def get_scraper_config(
     provider_name_capitalized = providerName[0].upper() + providerName[1:]
     log_responses_key_db = f"scraper_{providerName}_log_responses"
     log_responses_key_camel = f"scraper{provider_name_capitalized}LogResponses"
-    log_responses_value = await config_manager.get(log_responses_key_db, "false")
+    log_responses_value = await config_service.get(log_responses_key_db, "false")
     # 转换为布尔值
     if isinstance(log_responses_value, bool):
         response_data[log_responses_key_camel] = log_responses_value
@@ -206,26 +213,26 @@ async def get_scraper_config(
 
     # 5. 添加"搜索超时"字段(动态添加,每个源都有)
     # why：前端表单字段名与 DB key 同为下划线全名，无需驼峰转换；
-    #      缺了这段 GET 不返回值，前端会兜底成默认 15 秒，表现为"保存后读回默认值"
+    #      缺了这段 GET 不返回值，前端会兜底成默认 30 秒，表现为"保存后读回默认值"
     timeout_key = f"scraper_{providerName}_search_timeout"
     try:
-        response_data[timeout_key] = int(await config_manager.get(timeout_key, "15"))
+        response_data[timeout_key] = int(await config_service.get(timeout_key, "30"))
     except (ValueError, TypeError):
-        response_data[timeout_key] = 15
+        response_data[timeout_key] = 30
 
     # 6. 添加"信息增强"字段(动态添加,每个源都有)
     # 前端字段名与 DB key 一致，无需驼峰转换
     enrich_enabled_key = f"scraper_{providerName}_enrich_enabled"
     enrich_fields_key = f"scraper_{providerName}_enrich_fields"
 
-    enrich_enabled_value = await config_manager.get(enrich_enabled_key, "false")
+    enrich_enabled_value = await config_service.get(enrich_enabled_key, "false")
     # 转换为布尔值
     if isinstance(enrich_enabled_value, bool):
         response_data[enrich_enabled_key] = enrich_enabled_value
     else:
         response_data[enrich_enabled_key] = str(enrich_enabled_value).lower() == 'true'
 
-    response_data[enrich_fields_key] = await config_manager.get(enrich_fields_key, "")
+    response_data[enrich_fields_key] = await config_service.get(enrich_fields_key, "")
 
     # 7. 添加字段渲染顺序配置（前端根据此顺序动态渲染表单）
     # 获取该源的字段顺序配置（子类可覆盖 ui_field_order）
@@ -288,7 +295,7 @@ async def get_scraper_config(
     # 9. bilibili 专属：将存储字段 enableClashProxy 映射为前端的 biliProxyMode 枚举
     # 前端用 radio_group（server/clash）表达，后端存 enableClashProxy(bool)，此处做正向转换
     if providerName == 'bilibili':
-        enable_clash = await config_manager.get("enableClashProxy", "false")
+        enable_clash = await config_service.get("enableClashProxy", "false")
         enable_clash_bool = enable_clash if isinstance(enable_clash, bool) else str(enable_clash).lower() == 'true'
         response_data['biliProxyMode'] = 'clash' if enable_clash_bool else 'server'
 
@@ -299,9 +306,8 @@ async def get_scraper_config(
 async def update_scraper_config(
     providerName: str,
     payload: Dict[str, Any],
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: orm_models.User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service),
     manager: ScraperManager = Depends(get_scraper_manager)
 ):
     """更新指定搜索源的配置,包括代理设置和其他可配置字段"""
@@ -327,8 +333,10 @@ async def update_scraper_config(
         # 1. 单独处理 useProxy 字段,它更新的是 scrapers 表
         if 'useProxy' in payload:
             use_proxy = payload.pop('useProxy')
-            await crud.update_scraper_proxy(session, providerName, use_proxy)
-            await session.commit()
+            db = get_database_service()
+            async with db.transaction():
+                # 代理配置属于写操作，使用服务已注册的 CRUD 仓储而非只读查询仓储。
+                await db.scraper_crud.update_proxy(providerName, use_proxy)
 
         # 2. 处理其他配置字段,它们更新的是 config 表
         # 注意: scraper 类中定义的是 configurable_fields,不是 config_fields
@@ -361,14 +369,14 @@ async def update_scraper_config(
                         # 先转换为标准 boolean，再转为 'true'/'false' 字符串
                         bool_value = bool(value) if not isinstance(value, str) else value.lower() in ('true', '1', 'yes', 'on')
                         value = 'true' if bool_value else 'false'
-                    await config_manager.setValue(field_key, value)
+                        await config_service.set(field_key, value)
                 elif field_key in payload:
                     value = payload[field_key]
                     if field_type == "boolean":
                         # 先转换为标准 boolean，再转为 'true'/'false' 字符串
                         bool_value = bool(value) if not isinstance(value, str) else value.lower() in ('true', '1', 'yes', 'on')
                         value = 'true' if bool_value else 'false'
-                    await config_manager.setValue(field_key, value)
+                        await config_service.set(field_key, value)
             elif field_key in payload:
                 value = payload[field_key]
                 # 布尔类型转换为字符串存储
@@ -376,7 +384,7 @@ async def update_scraper_config(
                     # 先转换为标准 boolean，再转为 'true'/'false' 字符串
                     bool_value = bool(value) if not isinstance(value, str) else value.lower() in ('true', '1', 'yes', 'on')
                     value = 'true' if bool_value else 'false'
-                await config_manager.setValue(field_key, value)
+                    await config_service.set(field_key, value)
 
         # 3. 处理分集黑名单字段(动态字段,每个源都有)
         # 前端发送驼峰命名: gamerEpisodeBlacklistRegex
@@ -384,7 +392,7 @@ async def update_scraper_config(
         blacklist_key_camel = f"{providerName}EpisodeBlacklistRegex"
         blacklist_key_db = f"{providerName}_episode_blacklist_regex"
         if blacklist_key_camel in payload:
-            await config_manager.setValue(blacklist_key_db, payload[blacklist_key_camel])
+            await config_service.set(blacklist_key_db, payload[blacklist_key_camel])
 
         # 4. 处理"记录原始响应"字段(动态字段,每个源都有)
         # 前端发送驼峰命名: scraperGamerLogResponses
@@ -395,7 +403,7 @@ async def update_scraper_config(
         if log_responses_key_camel in payload:
             # 转换布尔值为字符串存储
             value = payload[log_responses_key_camel]
-            await config_manager.setValue(log_responses_key_db, str(value).lower())
+            await config_service.set(log_responses_key_db, str(value).lower())
             logger.info(f"[{providerName}] 记录原始响应设置已更新: {log_responses_key_db} = {str(value).lower()}")
         else:
             logger.warning(f"[{providerName}] payload 中未找到 '{log_responses_key_camel}' 字段，记录原始响应设置未更新。payload keys: {list(payload.keys())}")
@@ -407,8 +415,8 @@ async def update_scraper_config(
             try:
                 timeout_val = max(5, min(100, int(payload[timeout_key])))
             except (ValueError, TypeError):
-                timeout_val = 15
-            await config_manager.setValue(timeout_key, str(timeout_val))
+                timeout_val = 30
+            await config_service.set(timeout_key, str(timeout_val))
             logger.info(f"[{providerName}] 搜索超时设置已更新: {timeout_key} = {timeout_val}")
 
         # 6. 处理"信息增强"字段(动态字段,每个源都有)
@@ -417,13 +425,13 @@ async def update_scraper_config(
         if enrich_enabled_key in payload:
             raw = payload[enrich_enabled_key]
             bool_value = raw.lower() in ('true', '1', 'yes', 'on') if isinstance(raw, str) else bool(raw)
-            await config_manager.setValue(enrich_enabled_key, 'true' if bool_value else 'false')
+            await config_service.set(enrich_enabled_key, 'true' if bool_value else 'false')
             logger.info(f"[{providerName}] 信息增强开关已更新: {enrich_enabled_key} = {bool_value}")
 
         enrich_fields_key = f"scraper_{providerName}_enrich_fields"
         if enrich_fields_key in payload:
             fields_val = payload[enrich_fields_key] or ""
-            await config_manager.setValue(enrich_fields_key, str(fields_val).strip())
+            await config_service.set(enrich_fields_key, str(fields_val).strip())
             logger.info(f"[{providerName}] 信息增强字段已更新: {enrich_fields_key} = '{fields_val}'")
 
         # 6. 重新加载该搜索源
@@ -441,7 +449,7 @@ async def execute_scraper_action(
     providerName: str,
     actionName: str,
     payload: Dict[str, Any] = None,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: orm_models.User = Depends(security.get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager)
 ):
     """
@@ -477,7 +485,7 @@ async def execute_scraper_action(
 @router.get("/scrapers/{providerName}/default-blacklist", summary="获取搜索源的默认分集黑名单")
 async def get_scraper_default_blacklist(
     providerName: str,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: orm_models.User = Depends(security.get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager)
 ):
     """
@@ -494,7 +502,7 @@ async def get_scraper_default_blacklist(
 
 @router.get("/scrapers/common-blacklist", summary="获取通用分集黑名单规则")
 async def get_common_blacklist(
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: orm_models.User = Depends(security.get_current_user)
 ):
     """
     获取通用的分集标题黑名单正则表达式。

@@ -3,6 +3,8 @@
 
 每天凌晨自动重置所有 API Token 的每日调用次数统计。
 """
+from src.db.database import get_session_factory
+from src.services.service_container import get_database_service
 import logging
 from datetime import datetime, time as dt_time
 
@@ -34,9 +36,8 @@ async def _token_reset_handler(app: FastAPI) -> None:
     
     检查当前时间，如果是凌晨 0:00-0:59 之间且今天还未重置过，则执行重置。
     """
-    from src.db import crud
     
-    session_factory = app.state.db_session_factory
+    session_factory = get_session_factory()
     
     # 获取当前时间
     now = datetime.now()
@@ -58,10 +59,11 @@ async def _token_reset_handler(app: FastAPI) -> None:
     
     # 执行重置
     try:
-        async with session_factory() as session:
-            reset_count = await crud.reset_all_token_daily_counts(session)
+        db = get_database_service()
+        async with db.transaction():
+            reset_count = await db.api_token.reset_all_daily_counts()
             logger.info(f"✓ 每日 Token 重置完成：已重置 {reset_count} 个 Token 的调用次数")
-            
+
             # 标记今天已重置
             _token_reset_handler._last_reset_date = today
     except Exception as e:

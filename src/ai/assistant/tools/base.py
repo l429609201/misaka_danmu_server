@@ -13,6 +13,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from src.services.assistant_code_service import code_write_authorized
 from ..api_gateway.contracts import (
     ActionEffect,
     ConfirmationMode,
@@ -21,7 +22,13 @@ from ..api_gateway.contracts import (
     effect_to_permission,
     is_destructive,
 )
-from ..security_gateway import ToolPermission, can_execute, sanitize_output
+from ..api_gateway.policy import resolve_api_operation
+from ..security_gateway import (
+    ToolPermission, can_execute, contains_forbidden_control_content, sanitize_output,
+)
+
+# 日志与任意 SQL 无法按字段可靠隔离流控和凭据，直接关闭入口。
+_DISABLED_TOOLS = frozenset({"list_tokens", "list_log_files", "search_logs", "read_log_file"})
 
 logger = logging.getLogger(__name__)
 
@@ -84,25 +91,33 @@ class ToolRegistry:
         self._tools: Dict[str, Tool] = {}
 
     def register(self, tool: Tool) -> None:
+        if tool.name in _DISABLED_TOOLS:
+            return
         if tool.name in self._tools:
             logger.warning(f"工具重复注册，覆盖：{tool.name}")
         self._tools[tool.name] = tool
 
     def get(self, name: str) -> Optional[Tool]:
+        if name in _DISABLED_TOOLS:
+            return None
         return self._tools.get(name)
 
     def all_tools(self) -> List[Tool]:
-        return list(self._tools.values())
+        return [tool for tool in self._tools.values() if tool.name not in _DISABLED_TOOLS]
 
-    def openai_tools(self, include_write: bool = True) -> List[Dict[str, Any]]:
+    def openai_tools(self, include_write: bool = True, include_code: bool = False) -> List[Dict[str, Any]]:
         """
         导出 OpenAI tools 列表。
         - 危险工具永不导出。
         - include_write=False 时只导出只读工具。
         """
         result = []
-        for tool in self._tools.values():
+        for tool in self.all_tools():
+            if tool.name.startswith('code_') and not include_code:
+                continue
             if tool.permission == ToolPermission.DANGEROUS:
+                continue
+            if not include_write and tool.name == "list_api_operations":
                 continue
             if not include_write and tool.permission == ToolPermission.WRITE:
                 continue
@@ -114,40 +129,50 @@ class ToolRegistry:
     ) -> Dict[str, Any]:
         """
         执行工具（经权限校验）。返回 {ok, data|error}。
-        WRITE 工具在此不做确认拦截——确认由上层 agent 在调用前处理（P3）。
+        写操作默认必须由确认端点领取单次令牌；当前管理员修复请求仅豁免两个代码写工具。
         """
         tool = self.get(name)
         if not tool:
             return {"ok": False, "error": f"未知工具：{name}"}
 
-        allowed, _need_confirm = can_execute(tool.permission)
+        if contains_forbidden_control_content(arguments or {}):
+            return {"ok": False, "error": "流控与配额信息禁止 AI 访问"}
+        permission = tool.permission
+        confirmation = tool.required_confirmation
+        if name == "call_api":
+            operation = resolve_api_operation((arguments or {}).get("operation_id"))
+            if operation is None:
+                return {"ok": False, "error": "操作不在允许清单内"}
+            permission = operation.permission
+            confirmation = operation.required_confirmation
+        allowed, _need_confirm = can_execute(permission)
         if not allowed:
             return {"ok": False, "error": f"工具 {name} 权限不允许执行"}
+        if (permission == ToolPermission.WRITE or confirmation == ConfirmationMode.REQUIRED) and (
+            (context or {}).get("confirmed_action") is not True
+            and not (name in {'code_apply_patch', 'code_rollback_patch'} and code_write_authorized(context or {}))
+        ):
+            return {"ok": False, "error": "操作尚未获得本次确认"}
 
         try:
             data = await tool.executor(arguments or {}, context or {})
-            # 数据出口脱敏：密钥/token 类字段一律 ***，绝不回灌给 AI（最后防线）
+            if contains_forbidden_control_content(data):
+                return {"ok": False, "error": "工具结果包含禁止向 AI 返回的信息"}
+            # 禁止执行器通过豁免字段回填明文，所有凭据始终在出口脱敏。
             sanitized = sanitize_output(data)
-            # 明文豁免：仅当执行器显式声明 __plaintext_exempt__ 时，按其列出的
-            # 顶层字段回填明文。用于「用户主动索取、且本轮刚生成」的凭据交付
-            # （如新建 Token 后需把地址给用户），读取既有密钥的场景不会声明豁免。
-            if isinstance(data, dict) and isinstance(sanitized, dict):
-                exempt = data.get("__plaintext_exempt__")
-                if isinstance(exempt, dict) and exempt:
-                    for key, value in exempt.items():
-                        sanitized[key] = value
-                    logger.info(
-                        "工具 %s 使用明文豁免回填字段：%s",
-                        name, ",".join(sorted(exempt.keys())),
-                    )
+            if isinstance(sanitized, dict):
+                if "error" in sanitized and sanitized.get("ok") is not True:
+                    return {"ok": False, "error": sanitized["error"]}
+                if sanitized.get("ok") is False:
+                    return {"ok": False, "error": sanitized.get("message", "工具执行失败")}
                 sanitized.pop("__plaintext_exempt__", None)
                 # 不可逆操作统一标注，供 AI 复述时明确告知后果无法撤销
                 if tool.irreversible:
                     sanitized.setdefault("irreversible", True)
             return {"ok": True, "data": sanitized}
         except Exception as e:  # noqa: BLE001
-            logger.error(f"工具执行失败 {name}: {e}", exc_info=True)
-            return {"ok": False, "error": f"工具执行出错：{e}"}
+            logger.error("工具执行失败 %s", name, exc_info=True)
+            return {"ok": False, "error": "工具执行失败，请查看服务器日志"}
 
 
 # 全局注册表实例

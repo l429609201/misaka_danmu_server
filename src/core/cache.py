@@ -74,6 +74,23 @@ class AsyncCacheBackend(ABC):
         """
         return []
 
+    async def set_many(self, entries: dict[str, tuple[Any, int]], region: str = "default") -> None:
+        """默认批量接口适用于无网络往返的内存驱动，远端驱动覆盖实现。"""
+        for key, (value, ttl) in entries.items():
+            await self.set(key, value, ttl=ttl, region=region)
+
+
+    async def get_by_prefix(self, prefix: str, region: str = "default") -> dict[str, Any]:
+        """内存驱动默认实现；远端驱动使用批量查询覆盖此方法。"""
+        keys = await self.keys(f"{prefix}*", region=region)
+        values = {}
+        for key in keys:
+            value = await self.get(key, region=region)
+            if value is not None:
+                values[key] = value
+        return values
+
+
     async def close(self) -> None:
         """关闭后端连接（子类按需覆盖）"""
         pass
@@ -240,7 +257,6 @@ class RedisBackend(AsyncCacheBackend):
         if marker == b"J":
             return json.loads(payload.decode("utf-8"))
         elif marker == b"P":
-            import pickle
             return pickle.loads(payload)
         # 兼容无标记的旧数据
         try:
@@ -264,6 +280,34 @@ class RedisBackend(AsyncCacheBackend):
             await client.setex(full_key, ttl, data)
         else:
             await client.set(full_key, data)
+
+    async def set_many(self, entries: dict[str, tuple[Any, int]], region: str = "default") -> None:
+        """通过一次 pipeline 写入整批映射，保留每条记录的 TTL。"""
+        if not entries:
+            return
+        client = await self._get_client()
+        # 先序列化，失败时不发送半批数据。
+        values = [(self._make_key(region, key), self._serialize(value), ttl)
+                  for key, (value, ttl) in entries.items()]
+        async with client.pipeline(transaction=True) as pipe:
+            for key, value, ttl in values:
+                pipe.set(key, value, ex=ttl if ttl > 0 else None)
+            await pipe.execute()
+
+
+    async def get_by_prefix(self, prefix: str, region: str = "default") -> dict[str, Any]:
+        """扫描一次键空间，再分块 MGET，避免逐键网络请求。"""
+        keys = await self.keys(f"{prefix}*", region=region)
+        client = await self._get_client()
+        values = {}
+        for offset in range(0, len(keys), 200):
+            batch = keys[offset:offset + 200]
+            raw_values = await client.mget([self._make_key(region, key) for key in batch])
+            for key, raw in zip(batch, raw_values):
+                if raw is not None:
+                    values[key] = self._deserialize(raw)
+        return values
+
 
     async def delete(self, key: str, region: str = "default") -> bool:
         client = await self._get_client()
@@ -312,297 +356,11 @@ class RedisBackend(AsyncCacheBackend):
             logger.info("Redis 缓存后端已关闭")
 
 
-# ==================== Database 后端 ====================
-
-class DatabaseBackend(AsyncCacheBackend):
-    """
-    基于数据库的缓存后端
-    包装现有的 crud.get_cache / crud.set_cache，零改动复用
-    """
-
-    def __init__(self, session_factory):
-        self._session_factory = session_factory
-
-    async def get(self, key: str, region: str = "default") -> Optional[Any]:
-        from src.db import crud
-        full_key = self._make_key(region, key)
-        async with self._session_factory() as session:
-            return await crud.get_cache(session, full_key)
-
-    async def set(self, key: str, value: Any, ttl: int = 0, region: str = "default") -> None:
-        from src.db import crud
-        full_key = self._make_key(region, key)
-        if ttl <= 0:
-            ttl = 86400 * 365  # 不过期则设为1年
-        async with self._session_factory() as session:
-            await crud.set_cache(session, full_key, value, ttl)
-
-    async def delete(self, key: str, region: str = "default") -> bool:
-        from src.db import crud
-        full_key = self._make_key(region, key)
-        async with self._session_factory() as session:
-            return await crud.delete_cache(session, full_key)
-
-    async def exists(self, key: str, region: str = "default") -> bool:
-        return (await self.get(key, region)) is not None
-
-    async def clear(self, region: Optional[str] = None) -> int:
-        from src.db import crud
-        async with self._session_factory() as session:
-            if region is None:
-                return await crud.clear_all_cache(session)
-            # 按 region 前缀清理
-            pattern = f"{region}:*"
-            keys = await crud.get_cache_keys_by_pattern(session, pattern)
-            for k in keys:
-                await crud.delete_cache(session, k)
-            return len(keys)
-
-    async def keys(self, pattern: str = "*", region: str = "default") -> List[str]:
-        from src.db import crud
-        full_pattern = self._make_key(region, pattern)
-        prefix = f"{region}:"
-        async with self._session_factory() as session:
-            full_keys = await crud.get_cache_keys_by_pattern(session, full_pattern)
-            return [k[len(prefix):] if k.startswith(prefix) else k for k in full_keys]
-
-
-# ==================== Hybrid 后端 ====================
-
-class HybridBackend(AsyncCacheBackend):
-    """
-    混合缓存后端：内存 L1 + 数据库 L2
-    - get: 先查内存，miss 则查数据库并回填内存
-    - set: 同时写入内存和数据库
-    - 重启后内存缓存丢失，但数据库缓存仍在，自动回填
-    """
-
-    def __init__(self, memory: MemoryBackend, database: DatabaseBackend):
-        self._memory = memory
-        self._database = database
-
-    async def get(self, key: str, region: str = "default") -> Optional[Any]:
-        # L1: 内存
-        value = await self._memory.get(key, region)
-        if value is not None:
-            return value
-        # L2: 数据库
-        value = await self._database.get(key, region)
-        if value is not None:
-            # 回填内存（使用默认 TTL，因为不知道原始 TTL）
-            await self._memory.set(key, value, ttl=self._memory._default_ttl, region=region)
-        return value
-
-    async def set(self, key: str, value: Any, ttl: int = 0, region: str = "default") -> None:
-        # L1 内存：同步写入，调用方 await 后立即完成
-        await self._memory.set(key, value, ttl=ttl, region=region)
-
-        # L2 数据库：改为后台 Task 异步写入，不阻塞调用方响应路径。
-        # 语义：DB 是持久化层，写入延迟或失败不影响本次内存命中；
-        # 重启后内存丢失时，DB 仍可回填（get 的 L2 回填逻辑保持不变）。
-        # 注意：asyncio.create_task 要求当前线程有正在运行的事件循环（always true in async context）。
-        async def _write_db():
-            try:
-                await self._database.set(key, value, ttl=ttl, region=region)
-            except Exception as e:
-                # 后台写失败只记录警告，不向上传播——L1 已命中，本次请求不受影响
-                logger.warning(f"[HybridBackend] 后台写数据库缓存失败 key={key!r}: {e}")
-
-        asyncio.create_task(_write_db())
-
-    async def delete(self, key: str, region: str = "default") -> bool:
-        mem_ok = await self._memory.delete(key, region)
-        db_ok = await self._database.delete(key, region)
-        return mem_ok or db_ok
-
-    async def exists(self, key: str, region: str = "default") -> bool:
-        return (await self._memory.exists(key, region)) or (await self._database.exists(key, region))
-
-    async def clear(self, region: Optional[str] = None) -> int:
-        mem_count = await self._memory.clear(region)
-        db_count = await self._database.clear(region)
-        return mem_count + db_count
-
-    async def keys(self, pattern: str = "*", region: str = "default") -> List[str]:
-        # 以数据库为权威来源
-        return await self._database.keys(pattern, region)
-
-    async def close(self) -> None:
-        await self._memory.close()
-        await self._database.close()
-
-
-# ==================== 工厂函数 ====================
-
-def create_cache_backend(
-    backend_type: str = "hybrid",
-    session_factory=None,
-    cache_config=None,
-) -> AsyncCacheBackend:
-    """
-    根据配置创建缓存后端实例
-
-    Args:
-        backend_type: 后端类型 - memory / redis / database / hybrid
-        session_factory: SQLAlchemy 异步会话工厂（database/hybrid 模式必需）
-        cache_config: CacheConfig 实例（可选，用于读取详细配置）
-
-    Returns:
-        AsyncCacheBackend 实例
-    """
-    from src.core.config import CacheConfig
-    if cache_config is None:
-        cache_config = CacheConfig()
-
-    if backend_type == "memory":
-        backend = MemoryBackend(
-            maxsize=cache_config.memory_maxsize,
-            default_ttl=cache_config.memory_default_ttl,
-        )
-        logger.info(f"缓存后端: Memory (maxsize={cache_config.memory_maxsize})")
-
-    elif backend_type == "redis":
-        if not cache_config.redis_url:
-            raise ValueError("Redis 缓存后端需要配置 redis_url")
-        backend = RedisBackend(
-            redis_url=cache_config.redis_url,
-            max_memory=cache_config.redis_max_memory,
-            socket_timeout=cache_config.redis_socket_timeout,
-            socket_connect_timeout=cache_config.redis_socket_connect_timeout,
-        )
-
-    elif backend_type == "database":
-        if session_factory is None:
-            raise ValueError("Database 缓存后端需要 session_factory")
-        backend = DatabaseBackend(session_factory)
-        logger.info("缓存后端: Database")
-
-    elif backend_type == "hybrid":
-        if session_factory is None:
-            raise ValueError("Hybrid 缓存后端需要 session_factory")
-        memory = MemoryBackend(
-            maxsize=cache_config.memory_maxsize,
-            default_ttl=cache_config.memory_default_ttl,
-        )
-        database = DatabaseBackend(session_factory)
-        backend = HybridBackend(memory, database)
-        logger.info(f"缓存后端: Hybrid (Memory L1 + Database L2, maxsize={cache_config.memory_maxsize})")
-
-    else:
-        raise ValueError(f"不支持的缓存后端类型: {backend_type}")
-
-    return backend
-
-
-# ==================== 全局后端实例 ====================
-
-_global_backend: Optional[AsyncCacheBackend] = None
-
-
-def get_cache_backend() -> Optional[AsyncCacheBackend]:
-    """获取全局缓存后端实例。
-
-    契约：未初始化（或初始化失败）时返回 None，而非抛异常。
-    why：全项目约 70 处调用方均按「后端不可用则降级到数据库」处理，
-    写法为 `backend = get_cache_backend(); if backend is not None: ...`。
-    此前实现抛 RuntimeError，导致 `_backend = get_cache_backend()` 这类
-    先赋值后判空的调用点在赋值行就崩溃（如 unified_search / webhook 任务），
-    降级路径永远走不到。改为返回 None 后，所有降级分支即可正常生效，
-    缓存不可用时自动回退数据库，不再中断业务任务。
-    """
-    return _global_backend
-
-
-async def init_cache_backend(session_factory=None, cache_config=None) -> AsyncCacheBackend:
-    """
-    初始化全局缓存后端（应用启动时调用一次）
-
-    - 如果配置了 Redis，会先进行连接健康检查
-    - Redis 不可用时自动降级到 Hybrid 模式（Memory L1 + Database L2）
-    - 构造阶段异常（如 redis 模式却未配置 redis_url）同样自动降级，
-      确保 _global_backend 一定被赋值，避免后续 get_cache_backend() 拿到 None
-
-    Args:
-        session_factory: SQLAlchemy 异步会话工厂
-        cache_config: CacheConfig 实例
-    """
-    global _global_backend
-    from src.core.config import CacheConfig
-    if cache_config is None:
-        cache_config = CacheConfig()
-
-    try:
-        backend = create_cache_backend(
-            backend_type=cache_config.backend,
-            session_factory=session_factory,
-            cache_config=cache_config,
-        )
-    except Exception as e:
-        # why：构造失败（例如 backend=redis 但 redis_url 为空 → ValueError）不应中断
-        # 整个应用启动，也不应让缓存后端保持 None（否则全项目降级判断虽已生效，
-        # 但会失去 L2 数据库缓存）。此处按既定「不可用自动降级」意图兜底：
-        # 有 session_factory 用 Hybrid（内存 L1 + 数据库 L2），否则退到纯内存。
-        logger.warning(
-            f"缓存后端构造失败（backend={cache_config.backend}）：{e}；"
-            "自动降级到 Hybrid/Memory 模式"
-        )
-        if session_factory is not None:
-            backend = create_cache_backend(
-                backend_type="hybrid",
-                session_factory=session_factory,
-                cache_config=cache_config,
-            )
-        else:
-            backend = create_cache_backend(
-                backend_type="memory",
-                cache_config=cache_config,
-            )
-
-    # Redis 后端健康检查
-    if cache_config.backend == "redis" and isinstance(backend, RedisBackend):
-        try:
-            client = await backend._get_client()
-            await client.ping()
-            logger.info(
-                f"缓存后端: Redis ({backend._safe_url})\n"
-                f"  - 连接成功\n"
-                f"  - 健康检查通过"
-            )
-        except Exception as e:
-            logger.warning(f"Redis 连接失败 ({backend._safe_url}): {e}")
-            logger.warning("自动降级到 Hybrid 模式（Memory L1 + Database L2）")
-            # 关闭失败的 Redis 后端
-            try:
-                await backend.close()
-            except Exception:
-                pass
-            # 降级到 hybrid
-            if session_factory is not None:
-                backend = create_cache_backend(
-                    backend_type="hybrid",
-                    session_factory=session_factory,
-                    cache_config=cache_config,
-                )
-            else:
-                backend = create_cache_backend(
-                    backend_type="memory",
-                    cache_config=cache_config,
-                )
-
-    _global_backend = backend
-    return _global_backend
-
-
-async def close_cache_backend() -> None:
-    """关闭全局缓存后端（应用关闭时调用）"""
-    global _global_backend
-    if _global_backend is not None:
-        await _global_backend.close()
-        _global_backend = None
-        logger.info("全局缓存后端已关闭")
-
-
 # ==================== @cached 装饰器 ====================
+# C4 注意：此装饰器依赖已废弃的 _global_backend，实际项目中已无使用。
+# 保留仅为兼容性，建议业务代码改用 CacheService。
+
+_global_backend: Optional[AsyncCacheBackend] = None  # 仅供 @cached 装饰器过渡使用
 
 def cached(
     region: str = "default",

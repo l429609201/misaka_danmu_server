@@ -21,8 +21,9 @@ from sqlalchemy import select
 from fastapi import HTTPException
 
 # 3. 项目内部模块
-from src.db import crud, orm_models
-from src.services import ScraperManager
+from src.db.orm_models import Anime, AnimeSource
+from src.schemas.anime import AnimeResponse
+from src.services.service_container import get_database_service
 ```
 
 #### 导入规则
@@ -35,6 +36,9 @@ from src.db.orm_models import Anime, AnimeSource
 # 推荐：使用别名避免命名冲突
 from src.db import orm_models
 Anime = orm_models.Anime
+
+# 推荐：从 schemas 导入响应模型
+from src.schemas.anime import AnimeResponse, AnimeCreate
 ```
 
 ❌ **禁止的导入**：
@@ -42,8 +46,16 @@ Anime = orm_models.Anime
 # ❌ 禁止：通配符导入
 from src.db.orm_models import *
 
-# ❌ 禁止：循环导入
-# 如果 A 导入 B，B 不能导入 A
+# ❌ 禁止：导入已废弃的 crud
+from src.db import crud
+from src.db.crud.anime import get_anime_by_id
+
+# ❌ 禁止：API/Tasks 直接导入 Repository
+from src.db.repositories.anime import AnimeRepository
+
+# ❌ 禁止：任何函数内延迟导入
+def my_function():
+    from src.services.cache_service import get_cache_service  # ❌
 ```
 
 #### 避免循环导入
@@ -57,16 +69,14 @@ from src.tasks.webhook import webhook_search  # ❌ A 导入 B
 from src.services.search import unified_search  # ❌ B 导入 A
 ```
 
-**解决方案**：
+**解决方案（禁止延迟导入）**：
 ```python
-# 方案 1：延迟导入（在函数内部导入）
-def my_function():
-    from src.tasks.webhook import webhook_search
-    return webhook_search()
-
-# 方案 2：重构依赖（提取到第三个模块）
-# src/core/search_common.py
+# 唯一方案：重构依赖（提取到第三个模块）
+# src/workflows/search_workflow.py
 ```
+
+项目完全禁止 `TYPE_CHECKING`、函数内导入、`importlib` 和 `__import__`。
+所有依赖必须在文件顶部导入；循环依赖必须通过分层、依赖注入或提取共享 Schema 消除。
 
 ---
 

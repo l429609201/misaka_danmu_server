@@ -3,6 +3,8 @@
 
 定期记录数据库和缓存容量快照，供前端展示增长趋势。
 """
+from src.db.database import get_session_factory
+from src.services.config_service import get_config_service
 import json
 import logging
 import os
@@ -37,8 +39,8 @@ async def _capacity_trend_handler(app: FastAPI) -> None:
     from src.db import orm_models
     from src.core import get_now
 
-    session_factory = app.state.db_session_factory
-    config_manager = app.state.config_manager
+    session_factory = get_session_factory()
+    config_service = get_config_service()
     now = get_now()
 
     try:
@@ -64,7 +66,7 @@ async def _capacity_trend_handler(app: FastAPI) -> None:
             db_size = os.path.getsize(db_path)
 
         # 读取现有数据
-        raw = await config_manager.get("capacity_trend_data", "[]")
+        raw = await config_service.get("capacity_trend_data", "[]")
         try:
             trend_data = json.loads(raw) if isinstance(raw, str) else raw
         except (json.JSONDecodeError, TypeError):
@@ -79,7 +81,7 @@ async def _capacity_trend_handler(app: FastAPI) -> None:
         if len(trend_data) > MAX_TREND_POINTS:
             trend_data = trend_data[-MAX_TREND_POINTS:]
 
-        await config_manager.setValue("capacity_trend_data", json.dumps(trend_data))
+        await config_service.set("capacity_trend_data", json.dumps(trend_data))
 
         total = sum(counts.values())
         logger.info(f"✓ 容量趋势已记录: 总记录{total}, DB大小{db_size // 1024}KB")

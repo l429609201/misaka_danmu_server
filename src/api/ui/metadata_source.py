@@ -5,21 +5,26 @@
 import logging
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Body, status
-from pydantic import BaseModel
 
-from src.db import models
-from src import security
-from src.services import MetadataSourceManager, get_bangumi_data_manager, TaskSuccess
-from src.api.dependencies import get_metadata_manager
+from src.schemas.auth import User
+from src.schemas.metadata import MetadataSourceStatusResponse, MetadataDetailsResponse
+from src.schemas.control import MetadataSourceSettingUpdate
+from src.utils.auth import security
+from src.services.metadata_service import MetadataService
+from src.services.task_manager import TaskManager
+from src.services.scraper_manager import ScraperManager
+from src.api.dependencies import get_metadata_service, get_task_manager, get_scraper_manager
+from src.workflows.bangumi_data_tasks import submit_bangumi_data_task
+from src.workflows.bangumi_data_platforms import resolve_bangumi_danmaku_sources
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/metadata-sources", response_model=List[models.MetadataSourceStatusResponse], summary="获取所有元数据源的设置")
+@router.get("/metadata-sources", response_model=List[MetadataSourceStatusResponse], summary="获取所有元数据源的设置")
 async def get_metadata_source_settings(
-    current_user: models.User = Depends(security.get_current_user),
-    manager: MetadataSourceManager = Depends(get_metadata_manager)
+    current_user: User = Depends(security.get_current_user),
+    manager: MetadataService = Depends(get_metadata_service)
 ):
     """获取所有元数据源及其当前状态(配置、连接性等)"""
     return await manager.get_sources_with_status()
@@ -27,9 +32,9 @@ async def get_metadata_source_settings(
 
 @router.put("/metadata-sources", status_code=status.HTTP_204_NO_CONTENT, summary="更新元数据源的设置")
 async def update_metadata_source_settings(
-    settings: List[models.MetadataSourceSettingUpdate],
-    current_user: models.User = Depends(security.get_current_user),
-    manager: MetadataSourceManager = Depends(get_metadata_manager)
+    settings: List[MetadataSourceSettingUpdate],
+    current_user: User = Depends(security.get_current_user),
+    manager: MetadataService = Depends(get_metadata_service)
 ):
     """批量更新元数据源的启用状态、辅助搜索状态和显示顺序"""
     await manager.update_source_settings(settings)
@@ -39,8 +44,8 @@ async def update_metadata_source_settings(
 @router.get("/metadata-sources/{providerName}/config", response_model=Dict[str, Any], summary="获取指定元数据源的配置")
 async def get_metadata_source_config(
     providerName: str,
-    current_user: models.User = Depends(security.get_current_user),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager)
+    current_user: User = Depends(security.get_current_user),
+    metadata_manager: MetadataService = Depends(get_metadata_service)
 ):
     """获取单个元数据源的详细配置"""
     try:
@@ -53,8 +58,8 @@ async def get_metadata_source_config(
 async def update_metadata_source_config(
     providerName: str,
     payload: Dict[str, Any],
-    current_user: models.User = Depends(security.get_current_user),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager)
+    current_user: User = Depends(security.get_current_user),
+    metadata_manager: MetadataService = Depends(get_metadata_service)
 ):
     """更新指定元数据源的配置"""
     try:
@@ -66,25 +71,25 @@ async def update_metadata_source_config(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="更新配置时发生内部错误。")
 
 
-@router.get("/metadata/{provider}/search", response_model=List[models.MetadataDetailsResponse], summary="从元数据源搜索")
+@router.get("/metadata/{provider}/search", response_model=List[MetadataDetailsResponse], summary="从元数据源搜索")
 async def search_metadata(
     provider: str,
     keyword: str,
     mediaType: Optional[str] = Query(None),
-    current_user: models.User = Depends(security.get_current_user),
-    manager: MetadataSourceManager = Depends(get_metadata_manager)
+    current_user: User = Depends(security.get_current_user),
+    manager: MetadataService = Depends(get_metadata_service)
 ):
     """从指定元数据源搜索内容"""
     return await manager.search(provider, keyword, current_user, mediaType=mediaType)
 
 
-@router.get("/metadata/{provider}/details/{item_id}", response_model=models.MetadataDetailsResponse, summary="获取元数据详情")
+@router.get("/metadata/{provider}/details/{item_id}", response_model=MetadataDetailsResponse, summary="获取元数据详情")
 async def get_metadata_details(
     provider: str,
     item_id: str,
     mediaType: Optional[str] = Query(None),
-    current_user: models.User = Depends(security.get_current_user),
-    manager: MetadataSourceManager = Depends(get_metadata_manager)
+    current_user: User = Depends(security.get_current_user),
+    manager: MetadataService = Depends(get_metadata_service)
 ):
     """获取指定元数据源的详情"""
     details = await manager.get_details(provider, item_id, current_user, mediaType=mediaType)
@@ -93,13 +98,13 @@ async def get_metadata_details(
     return details
 
 
-@router.get("/metadata/{provider}/details/{mediaType}/{item_id}", response_model=models.MetadataDetailsResponse, summary="获取元数据详情 (带媒体类型)", include_in_schema=False)
+@router.get("/metadata/{provider}/details/{mediaType}/{item_id}", response_model=MetadataDetailsResponse, summary="获取元数据详情 (带媒体类型)", include_in_schema=False)
 async def get_metadata_details_with_type(
     provider: str,
     mediaType: str,
     item_id: str,
-    current_user: models.User = Depends(security.get_current_user),
-    manager: MetadataSourceManager = Depends(get_metadata_manager)
+    current_user: User = Depends(security.get_current_user),
+    manager: MetadataService = Depends(get_metadata_service)
 ):
     """
     一个兼容性路由,允许将 mediaType 作为路径的一部分
@@ -116,8 +121,8 @@ async def execute_metadata_action(
     action_name: str,
     request: Request,
     payload: Optional[Dict[str, Any]] = Body(None),
-    current_user: models.User = Depends(security.get_current_user),
-    manager: MetadataSourceManager = Depends(get_metadata_manager)
+    current_user: User = Depends(security.get_current_user),
+    manager: MetadataService = Depends(get_metadata_service)
 ):
     """执行指定元数据源的自定义操作"""
     try:
@@ -129,7 +134,8 @@ async def execute_metadata_action(
 @router.get("/bangumi-data/platforms/{bangumi_id}", summary="A3：查询某番在各平台的 id/链接（bangumi-data 离线索引）")
 async def get_bangumi_data_platforms(
     bangumi_id: str,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(security.get_current_user),
+    metadata_service: MetadataService = Depends(get_metadata_service),
 ):
     """根据 bangumiId 从 bangumi-data 离线索引返回该作品在各平台的 id 与可点击链接。
 
@@ -137,129 +143,46 @@ async def get_bangumi_data_platforms(
     注意：URL 由随 data.json 动态下发的 siteMeta.urlTemplate 拼成（不再硬编码），各平台 id 形态不一
     （如 tmdb 为 'tv/123'），是否能直接用于自动导入需逐平台适配，本端点只做映射展示。
     """
-    manager = get_bangumi_data_manager()
-    if manager is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 离线索引未就绪")
-
-    # 复用反向解析器：动态 siteMeta 拼 URL
-    platforms = await manager.build_platform_urls(str(bangumi_id))
+    platforms = await metadata_service.get_bangumi_platform_urls(str(bangumi_id))
     return {"bangumiId": bangumi_id, "platforms": platforms}
 
 
 @router.get("/bangumi-data/status", summary="查询 bangumi-data 离线索引状态（条目数）")
 async def get_bangumi_data_status(
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(security.get_current_user),
+    metadata_service: MetadataService = Depends(get_metadata_service),
 ):
-    """返回当前 bangumi-data 离线索引的条目数，用于判断是否已同步。"""
-    manager = get_bangumi_data_manager()
-    if manager is None:
-        return {"ready": False, "count": 0}
-    count = await manager.count()
-    return {"ready": True, "count": count}
+    """返回当前 bangumi-data 离线索引是否可用及条目数。"""
+    return await metadata_service.get_bangumi_data_status()
 
 
 @router.post("/bangumi-data/sync", summary="手动触发 bangumi-data 离线索引同步")
 async def trigger_bangumi_data_sync(
-    request: Request,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(security.get_current_user),
+    task_manager: TaskManager = Depends(get_task_manager),
 ):
-    """提交一个后台任务，从 CDN 拉取 bangumi-data 并同步到本地索引（不必等定时任务）。
-
-    why：原实现直接 await manager.sync() 会阻塞 HTTP 请求数秒~数十秒且无任务记录，
-    改为走任务管理器，与定时同步(BangumiDataSyncJob)保持一致：有进度、有历史、不阻塞接口。
-    """
-    manager = get_bangumi_data_manager()
-    if manager is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 管理器未就绪")
-
-    task_manager = request.app.state.task_manager
-
-    async def _sync_coro(session, progress_callback):
-        await progress_callback(10, "正在从 CDN 拉取 bangumi-data...")
-        result = await manager.sync()
-        if result.get("success"):
-            raise TaskSuccess(f"bangumi-data 同步完成，共 {result.get('count')} 条。")
-        raise TaskSuccess(f"bangumi-data 同步失败：{result.get('message')}")
-
-    # unique_key 防止重复提交（与定时任务共用语义前缀，便于去重检测）
-    task_id, _ = await task_manager.submit_task(
-        _sync_coro,
-        "bangumi-data 离线索引同步（手动）",
-        unique_key="bangumi-data-sync-manual",
-        task_type="bangumiDataSync",
-        queue_type="management",
-    )
+    """提交后台同步任务并返回任务标识。"""
+    task_id = await submit_bangumi_data_task(task_manager, "sync")
     return {"message": "bangumi-data 同步任务已提交", "taskId": task_id}
 
 
 @router.post("/bangumi-data/clear", summary="清除 bangumi-data 离线索引数据")
 async def trigger_bangumi_data_clear(
-    request: Request,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(security.get_current_user),
+    task_manager: TaskManager = Depends(get_task_manager),
 ):
-    """提交一个后台任务，清空本地 bangumi-data 离线索引表。
-
-    why：与立即同步保持一致走任务管理器，有任务记录、不阻塞接口（清表本身虽快，但统一入口便于审计）。
-    """
-    manager = get_bangumi_data_manager()
-    if manager is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 管理器未就绪")
-
-    task_manager = request.app.state.task_manager
-
-    async def _clear_coro(session, progress_callback):
-        await progress_callback(10, "正在清除 bangumi-data 离线索引...")
-        result = await manager.clear()
-        raise TaskSuccess(f"bangumi-data 离线索引已清除，共 {result.get('count')} 条。")
-
-    task_id, _ = await task_manager.submit_task(
-        _clear_coro,
-        "bangumi-data 离线索引清除",
-        unique_key="bangumi-data-clear-manual",
-        task_type="bangumiDataClear",
-        queue_type="management",
-    )
+    """提交后台离线索引清理任务。"""
+    task_id = await submit_bangumi_data_task(task_manager, "clear")
     return {"message": "bangumi-data 清除任务已提交", "taskId": task_id}
 
 
 @router.get("/bangumi-data/danmaku-sources/{bangumi_id}", summary="反向解析：某番各平台 URL 及是否有对应弹幕源")
 async def get_bangumi_data_danmaku_sources(
     bangumi_id: str,
-    request: Request,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(security.get_current_user),
+    metadata_service: MetadataService = Depends(get_metadata_service),
+    scraper_manager: ScraperManager = Depends(get_scraper_manager),
 ):
-    """把某番在各平台的 id 反向拼成官方 URL，并探测每个 URL 是否有「已实现的弹幕源」可直接抓弹幕。
-
-    工作链路：bangumiId → sites{平台:id} → siteMeta.urlTemplate 拼 URL
-            → scraper_manager.get_scraper_by_domain(url) 判定能否抓弹幕。
-    available=true 的平台可走 /extcomment 直接获取弹幕。
-    """
-    manager = get_bangumi_data_manager()
-    if manager is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="bangumi-data 离线索引未就绪")
-
-    platforms = await manager.build_platform_urls(str(bangumi_id))
-    scraper_manager = getattr(request.app.state, "scraper_manager", None)
-
-    sources = []
-    for p in platforms:
-        url = p.get("url")
-        provider = None
-        available = False
-        # 仅当能拼出 URL 且存在处理该域名的弹幕源时，标记为可抓取
-        if url and scraper_manager is not None:
-            scraper = scraper_manager.get_scraper_by_domain(url)
-            if scraper is not None:
-                provider = scraper.provider_name
-                available = True
-        sources.append({
-            "site": p.get("site"),
-            "id": p.get("id"),
-            "title": p.get("title"),
-            "type": p.get("type"),
-            "url": url,
-            "provider": provider,      # 对应的弹幕源 provider_name（无则 None）
-            "available": available,    # 是否可直接通过该 URL 抓弹幕
-        })
-    return {"bangumiId": bangumi_id, "sources": sources}
+    """返回各平台链接及对应弹幕源可用性。"""
+    return await resolve_bangumi_danmaku_sources(bangumi_id, metadata_service, scraper_manager)
 

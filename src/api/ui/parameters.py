@@ -13,9 +13,9 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 import httpx
 
-from src.db import models, ConfigManager
-from src.security import get_current_user
-from src.api.dependencies import get_config_manager, get_scraper_manager
+from src.schemas import ui_models
+from src.utils.auth import security
+from src.api.dependencies import get_config_service, get_scraper_manager
 from src.core.env import is_docker_environment as _is_docker_environment
 
 logger = logging.getLogger(__name__)
@@ -109,23 +109,23 @@ def _get_scrapers_dir() -> Path:
 
 @router.get("/config/github-token", summary="获取GitHub Token")
 async def get_github_token(
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: ui_models.User = Depends(security.get_current_user),
+    config_service = Depends(get_config_service)
 ):
     """获取GitHub Token配置"""
-    token = await config_manager.get("github_token", "")
+    token = await config_service.get("github_token", "")
     return {"token": token}
 
 
 @router.post("/config/github-token", summary="保存GitHub Token")
 async def save_github_token(
     payload: Dict[str, Any],
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: ui_models.User = Depends(security.get_current_user),
+    config_service = Depends(get_config_service)
 ):
     """保存GitHub Token配置"""
     token = payload.get("token", "")
-    await config_manager.setValue("github_token", token)
+    await config_service.set("github_token", token)
     logger.info(f"用户 '{current_user.username}' 保存了GitHub Token")
     return {"message": "保存成功"}
 
@@ -133,7 +133,7 @@ async def save_github_token(
 @router.post("/config/github-token/verify", summary="验证GitHub Token")
 async def verify_github_token(
     payload: Dict[str, Any],
-    current_user: models.User = Depends(get_current_user)
+    current_user: ui_models.User = Depends(security.get_current_user)
 ):
     """验证GitHub Token有效性"""
     token = payload.get("token", "")
@@ -177,9 +177,9 @@ async def verify_github_token(
 @router.post("/scrapers/upload-package", summary="上传弹幕源离线包")
 async def upload_scraper_package(
     file: UploadFile = File(...),
-    current_user: models.User = Depends(get_current_user),
+    current_user: ui_models.User = Depends(security.get_current_user),
     manager = Depends(get_scraper_manager),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    config_service = Depends(get_config_service)
 ):
     """上传并安装弹幕源离线包
 

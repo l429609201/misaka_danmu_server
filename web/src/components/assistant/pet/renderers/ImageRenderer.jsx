@@ -2,7 +2,7 @@
  * 图片渲染器（ImageRenderer）
  * ------------------------------------------------------------
  * 参考 MoviePilot 的 pet/renderers 思路：渲染器是"可插拔"的。
- * 本渲染器用一张静态 PNG 表现当前情绪，切换状态即切换 src，并带淡入过渡。
+ * 本渲染器用一张静态 WebP 表现当前情绪，切换状态即切换 src，并带淡入过渡。
  *
  * 约定的渲染器接口（以后做 Live2DRenderer 时保持一致即可无缝替换）：
  *   props.state   当前情绪状态字符串
@@ -22,6 +22,7 @@ export function ImageRenderer({ state = 'idle', size = 120, className = '' }) {
   useEffect(() => {
     if (prevState.current === state) return
     prevState.current = state
+    if (src === nextSrc) return
     // 触发一次淡出 -> 换图 -> 淡入
     setVisible(false)
     const t = setTimeout(() => {
@@ -29,7 +30,7 @@ export function ImageRenderer({ state = 'idle', size = 120, className = '' }) {
       setVisible(true)
     }, 120)
     return () => clearTimeout(t)
-  }, [state, nextSrc])
+  }, [state, nextSrc, src])
 
   return (
     <img

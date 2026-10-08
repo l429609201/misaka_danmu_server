@@ -46,6 +46,7 @@ export const Token = ({ domain }) => {
   const [confirmLoading, setConfirmLoading] = useState(false)
   const [form] = Form.useForm()
   const [tokenLogs, setTokenLogs] = useState([])
+  const [expandedLogKeys, setExpandedLogKeys] = useState([])
   const [logsOpen, setLogsOpen] = useState(false)
   const modalApi = useModal()
   const messageApi = useMessage()
@@ -69,6 +70,7 @@ export const Token = ({ domain }) => {
         tokenId: record.id,
       })
       setTokenLogs(res.data)
+      setExpandedLogKeys([])
       setLogsOpen(true)
     } catch (error) {
       messageApi.error(t('bullet.tokenGetLogFailed'))
@@ -669,11 +671,11 @@ export const Token = ({ domain }) => {
       >
         {isMobile ? (
           <div className="space-y-4">
-            {tokenLogs.map((log, index) => {
+            {tokenLogs.map(log => {
               const isAllowed = log.status?.toLowerCase().includes('allowed');
               return (
                 <Card
-                  key={index}
+                  key={log.id}
                   size="small"
                   className="hover:shadow-lg transition-shadow duration-300"
                   bodyStyle={{ padding: '12px' }}
@@ -737,8 +739,11 @@ export const Token = ({ domain }) => {
             size="small"
             dataSource={tokenLogs}
             columns={logsColumns}
-            rowKey={'accessTime'}
+            // 同秒请求的 accessTime 会重复，必须按数据库日志主键独立展开。
+            rowKey="id"
             expandable={{
+              expandedRowKeys: expandedLogKeys,
+              onExpandedRowsChange: setExpandedLogKeys,
               expandedRowRender: (record) => <TokenLogDetailPanel log={record} />,
               rowExpandable: (record) => !!(record.requestHeaders || record.requestBody || record.responseHeaders || record.responseBody),
             }}

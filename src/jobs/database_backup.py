@@ -2,6 +2,7 @@
 数据库备份定时任务
 使用 JSON 格式导出数据，支持跨数据库（MySQL/PostgreSQL）兼容
 """
+from src.services.service_container import get_database_service
 import gzip
 import hashlib
 import json
@@ -19,11 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, inspect
 from sqlalchemy.orm import selectinload
 
-from src.db import crud, orm_models
+from src.db import orm_models
 from src.core import settings, get_now
 from .base import BaseJob
-from src.services import TaskSuccess
-from src.utils.task_profiler import profile_flow, FLOW_DATABASE_BACKUP
+from src.utils.diagnostics.task_exceptions import TaskSuccess
+from src.services.task_profiler import profile_flow, FLOW_DATABASE_BACKUP
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,8 @@ def model_to_dict(obj) -> Dict[str, Any]:
 
 async def get_backup_path(session: AsyncSession) -> Path:
     """获取备份路径"""
-    path_str = await crud.get_config_value(session, "backupPath", DEFAULT_BACKUP_PATH)
+    db = get_database_service()
+    path_str = await db.config.get_value("backupPath", DEFAULT_BACKUP_PATH)
     # 如果配置值为空字符串，使用默认路径
     if not path_str or not path_str.strip():
         path_str = DEFAULT_BACKUP_PATH
@@ -152,7 +154,8 @@ async def get_backup_path(session: AsyncSession) -> Path:
 
 async def get_retention_count(session: AsyncSession) -> int:
     """获取备份保留数量"""
-    count_str = await crud.get_config_value(session, "backupRetentionCount", str(DEFAULT_RETENTION_COUNT))
+    db = get_database_service()
+    count_str = await db.config.get_value("backupRetentionCount", str(DEFAULT_RETENTION_COUNT))
     try:
         return int(count_str)
     except (ValueError, TypeError):

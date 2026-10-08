@@ -9,19 +9,20 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src import security
-from src.db import crud, models, get_db_session, ConfigManager
-from src.services import (
-    ScraperManager, MetadataSourceManager, TitleRecognitionManager,
-    convert_to_chinese_title,
-)
+from src.utils.auth import security
+# 响应模型直接来自 Schema 层，避免依赖已删除的数据库兼容模块。
+from src.schemas import auth as models
+from src.services.config_service import ConfigService
+from src.services.scraper_manager import ScraperManager
+from src.services.metadata_service import MetadataService
+from src.services.title_recognition import TitleRecognitionManager
+from src.utils.data_processing.name_converter import convert_to_chinese_title
 from src.utils import parse_search_keyword
-from src.ai.ai_matcher_manager import AIMatcherManager
+from src.services.ai_service import AIService
 from src.api.dependencies import (
-    get_scraper_manager, get_metadata_manager, get_config_manager,
-    get_title_recognition_manager, get_ai_matcher_manager,
+    get_scraper_manager, get_metadata_service, get_config_service,
+    get_title_recognition_manager, get_ai_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,12 +57,11 @@ class MatchTraceResponse(BaseModel):
 async def match_trace(
     request: MatchTraceRequest,
     current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
-    config_manager: ConfigManager = Depends(get_config_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
+    config_service: ConfigService = Depends(get_config_service),
     title_recognition_manager: TitleRecognitionManager = Depends(get_title_recognition_manager),
-    ai_matcher_manager: AIMatcherManager = Depends(get_ai_matcher_manager),
+    ai_service: AIService = Depends(get_ai_service),
 ):
     """
     执行匹配调试：输入标题等信息，逐步展示匹配链路每一步的结果。
@@ -129,8 +129,8 @@ async def match_trace(
     converted_title = processed_title
     try:
         converted_title, conversion_applied = await convert_to_chinese_title(
-            processed_title, config_manager, metadata_manager,
-            ai_matcher_manager, current_user
+            processed_title, config_service, metadata_manager,
+            ai_service, current_user
         )
         steps.append(TraceStep(
             name="名称转换",

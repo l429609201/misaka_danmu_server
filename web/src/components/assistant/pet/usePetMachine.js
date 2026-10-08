@@ -11,7 +11,7 @@ import { PET_STATES, DEFAULT_STATE, TRANSIENT_STATES } from './petActions'
 /**
  * @param {object} options
  * @param {string} [options.initial] 初始状态，默认 idle
- * @param {number} [options.autoRevertMs] 瞬时状态（happy/surprised 等）自动回落到 idle 的毫秒数，默认 2000
+ * @param {number} [options.autoRevertMs] 瞬时状态播放后恢复当前基态的毫秒数，默认 2000
  */
 export function usePetMachine(options = {}) {
   const { initial = DEFAULT_STATE, autoRevertMs = 2000 } = options
@@ -20,6 +20,9 @@ export function usePetMachine(options = {}) {
   const [state, setState] = useState(initial)
   // 记录定时器，便于清理，避免多次切换导致的竞态
   const revertTimer = useRef(null)
+  const baseState = useRef(initial)
+  const taskState = useRef(initial)
+  const inConversation = useRef(false)
 
   // 清理自动回落定时器
   const clearRevert = useCallback(() => {
@@ -31,25 +34,52 @@ export function usePetMachine(options = {}) {
 
   /**
    * 切换到指定状态。
-   * 若目标是"瞬时状态"（如 happy/surprised），会在 autoRevertMs 后自动回落到 idle。
-   * 持续型状态（idle/thinking/talking）不会自动回落，需显式切换。
+   * 若目标是瞬时状态，autoRevertMs 后恢复当前任务/聊天基态。
+   * 持续型状态不会自动回落，需显式切换。
    */
   const to = useCallback(
     nextState => {
       // 未知状态兜底为默认状态，避免渲染层拿到非法 key
       const target = PET_STATES.includes(nextState) ? nextState : DEFAULT_STATE
       clearRevert()
+      if (!TRANSIENT_STATES.includes(target)) baseState.current = target
       setState(target)
 
       if (TRANSIENT_STATES.includes(target) && autoRevertMs > 0) {
         revertTimer.current = setTimeout(() => {
-          setState(DEFAULT_STATE)
+          setState(baseState.current)
           revertTimer.current = null
         }, autoRevertMs)
       }
     },
     [autoRevertMs, clearRevert]
   )
+
+  const activity = useCallback(nextState => {
+    const target = ['idle', 'queued', 'working', 'paused'].includes(nextState) ? nextState : DEFAULT_STATE
+    taskState.current = target
+    if (inConversation.current) return
+    baseState.current = target
+    setState(current => TRANSIENT_STATES.includes(current) ? current : target)
+  }, [])
+
+  const enterConversation = useCallback(() => {
+    clearRevert()
+    inConversation.current = true
+    baseState.current = DEFAULT_STATE
+    setState(DEFAULT_STATE)
+  }, [clearRevert])
+
+  const leaveConversation = useCallback(() => {
+    clearRevert()
+    inConversation.current = false
+    baseState.current = taskState.current
+    setState(taskState.current)
+  }, [clearRevert])
+
+  const chatTo = useCallback(nextState => {
+    if (inConversation.current) to(nextState)
+  }, [to])
 
   // 语义化快捷方法，业务层调用更直观
   const idle = useCallback(() => to('idle'), [to])
@@ -68,7 +98,7 @@ export function usePetMachine(options = {}) {
   // 气泡因此永不触发。state 变化时对象仍会更新（渲染需要），但
   // 方法引用保持稳定，下游只依赖方法时不会被无谓重建。
   return useMemo(
-    () => ({ state, to, idle, thinking, happy, sad, surprised, talking }),
-    [state, to, idle, thinking, happy, sad, surprised, talking]
+    () => ({ state, to, chatTo, activity, enterConversation, leaveConversation, idle, thinking, happy, sad, surprised, talking }),
+    [state, to, chatTo, activity, enterConversation, leaveConversation, idle, thinking, happy, sad, surprised, talking]
   )
 }

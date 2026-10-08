@@ -9,23 +9,106 @@
  * 一堆竖线纯文本（加粗等基础语法却正常），故必须显式注入。
  * 这也是 personas.py 里 supports_table=True 能成立的前提。
  *
- * 当前为纯 UI 外壳：sendMessage 走"假回复占位"，
- * 真正接 LLM 时只需替换 requestReply 的实现即可（已预留 TODO 口子）。
+ * 对话通过 SSE 接收增量消息，写操作通过服务端令牌确认卡单次执行。
  */
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
-import { Drawer, Input, Button, Avatar, Dropdown, message as antdMessage } from 'antd'
-import { SendOutlined, HistoryOutlined, PlusOutlined, DeleteOutlined, PaperClipOutlined, CopyOutlined, DownloadOutlined } from '@ant-design/icons'
+import { Drawer, Input, Button, Avatar, Dropdown, Collapse, message as antdMessage } from 'antd'
+import { SendOutlined, HistoryOutlined, PlusOutlined, DeleteOutlined, PaperClipOutlined, CopyOutlined, DownloadOutlined, LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, CloseOutlined, ToolOutlined } from '@ant-design/icons'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
+import Cookies from 'js-cookie'
 import { AVATAR_IMG, getPetLabel } from './pet/petActions'
 import { useAssistantChat } from './useAssistantChat'
 import { useAssistantSessions, createSessionId } from './useAssistantSessions'
+import { isSharedLibraryFileName } from './assistantCodePolicy'
 
 const { TextArea } = Input
 
 // 发送给后端的最大历史轮数（控制 token），只取最近 N 条 user/assistant
 const MAX_HISTORY = 20
+
+// 从服务端安全事件重建历史展示；老会话仍使用 content。
+function restoreMessages(messages) {
+  return (messages || []).map(m => {
+    if (m.role !== 'bot' || !Array.isArray(m.events)) return m
+    const timeline = []
+    let thinking
+    let choice
+    let toolCount = 0
+    for (const ev of m.events) {
+      if (ev.type === 'thinking') thinking = { ...thinking, ...ev }
+      if (ev.type === 'choice') choice = { ...ev, selectedOptionId: ev.selectedOptionId ?? null }
+      if (ev.type === 'tool') {
+        const index = timeline.findIndex(part => part.type === 'tool' && part.tool_id === ev.tool_id)
+        if (index >= 0) timeline[index] = { ...timeline[index], ...ev }
+        else timeline.push(ev)
+        toolCount = Math.max(toolCount, ev.count || 0, timeline.filter(part => part.type === 'tool').length)
+      }
+      if (ev.type === 'delta' || ev.type === 'text') {
+        if (timeline.at(-1)?.type === 'text') timeline.at(-1).content += ev.content || ''
+        else timeline.push({ type: 'text', content: ev.content || '' })
+      }
+    }
+    if (!timeline.some(part => part.type === 'text') && m.content) timeline.push({ type: 'text', content: m.content })
+    return { ...m, timeline, thinking, choice, toolCount }
+  })
+}
+
+const elapsedSeconds = ms => `${(Math.max(0, ms || 0) / 1000).toFixed(1)}s`
+
+// 只读取服务端给出的 UTC epoch 毫秒；不解析可能无时区的日期文本。
+const choiceExpired = (choice, now) => choice?.expires_at_ms != null
+  && Number.isFinite(Number(choice.expires_at_ms))
+  && now >= Number(choice.expires_at_ms)
+
+const codePreviewPassed = preview => preview?.validation?.validated === true && preview.validation.status === 'passed'
+
+function AssistantCodePreview({ preview }) {
+  const passed = codePreviewPassed(preview)
+  const status = preview.validation?.status
+  const label = passed ? '隔离验证通过' : status === 'not_run' || status === 'unavailable' ? '尚未完成隔离验证' : '隔离验证未通过'
+  return (
+    <div className="assistant-code-preview">
+      <div className={`assistant-code-status ${passed ? 'is-passed' : 'is-blocked'}`}>
+        {passed ? <CheckCircleOutlined /> : <CloseCircleOutlined />} {label}
+        {preview.validation?.profile && <small>{preview.validation.profile}</small>}
+      </div>
+      <ul className="assistant-code-files">
+        {(preview.files || []).map(file => <li key={file.path}>{file.action === 'add' ? '新增' : '修改'} <code>{file.path}</code></li>)}
+      </ul>
+      <Collapse ghost size="small" items={[{ key: 'diff', label: preview.diffTruncated ? '补丁差异（展示已截断）' : '补丁差异', children: <pre className="assistant-code-diff" tabIndex={0}>{preview.diff || '暂无差异'}</pre> }]} />
+      <small>仅应用源码补丁，不自动部署或重启。语法检查不等同于行为测试。</small>
+    </div>
+  )
+}
+
+function AssistantTimeline({ message, t, now }) {
+  const thinking = message.thinking
+  const elapsed = thinking?.status === 'running'
+    ? now - (Date.parse(thinking.started_at) || now)
+    : thinking?.elapsed_ms
+  return (
+    <>
+      {thinking && <div className={`assistant-thinking ${thinking.status || 'running'}`}>
+        {thinking.status === 'running' ? <LoadingOutlined spin /> : thinking.status === 'error' ? <CloseCircleOutlined /> : <CheckCircleOutlined />}
+        <span>{t('assistant.progressThinking')} · {elapsedSeconds(elapsed)}</span>
+      </div>}
+      {message.toolCount > 0 && <div className="assistant-tool-total">{t('assistant.diagnosticToolTotal')} {message.toolCount}</div>}
+      {(message.timeline?.length ? message.timeline : (message.content ? [{ type: 'text', content: message.content }] : [])).map((part, index) => part.type === 'tool' ? (
+        <div key={`tool-${part.tool_id || index}`} className={`assistant-tool-entry ${part.status || 'running'}`}>
+          {part.status === 'running' ? <LoadingOutlined spin /> : part.status === 'error' ? <CloseCircleOutlined /> : <CheckCircleOutlined />}
+          <span>{part.label || part.name || t('assistant.processingTool')}
+            {part.status === 'error' && part.error_message && <details className="assistant-tool-failure"><summary>失败原因</summary><div>{part.error_message}</div></details>}
+          </span>
+          <small>{part.status === 'running' ? t('assistant.toolRunning', { defaultValue: '运行中' }) : part.status === 'error' ? t('assistant.toolError', { defaultValue: '错误' }) : t('assistant.toolDone', { defaultValue: '完成' })}</small>
+        </div>
+      ) : (
+        <div key={`text-${index}`} className="assistant-timeline-text"><Markdown remarkPlugins={[remarkGfm]}>{part.content || ''}</Markdown></div>
+      ))}
+    </>
+  )
+}
 
 export function AssistantPanel({ open, onClose, machine, isMobile }) {
   const { t } = useTranslation()
@@ -34,13 +117,28 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
   const [messages, setMessages] = useState([WELCOME])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [sessionId, setSessionId] = useState(() => createSessionId())
+  // 授权只保存在当前面板状态，不写入浏览器存储。
+  const [codeRepair, setCodeRepair] = useState(false)
+  const [now, setNow] = useState(Date.now())
+  const ticking = open && messages.some(m => m.thinking?.status === 'running')
+  const pendingChoice = open && messages.some(m => m.choice?.selectedOptionId == null && !m.choice?.invalid
+    && m.choice?.expires_at_ms != null && !choiceExpired(m.choice, now))
+  useEffect(() => {
+    if (open) setNow(Date.now())
+  }, [open])
+  useEffect(() => {
+    if (!ticking && !pendingChoice) return undefined
+    const timer = setInterval(() => setNow(Date.now()), ticking ? 100 : 1000)
+    return () => clearInterval(timer)
+  }, [ticking, pendingChoice])
+  const [sessionId, setSessionId] = useState(() => sessionStorage.getItem('assistantSessionId') || createSessionId())
   const [sessions, setSessions] = useState([])
   const [pendingImages, setPendingImages] = useState([]) // 待发送图片 data URL
   const listRef = useRef(null)
+  const turnRef = useRef(0)
   const fileInputRef = useRef(null)
   const { send: streamChat, abort } = useAssistantChat()
-  const { listSessions, loadSession, saveSession, deleteSession } = useAssistantSessions()
+  const { listSessions, loadSession, deleteSession } = useAssistantSessions()
 
   // 新消息自动滚到底部
   useEffect(() => {
@@ -59,36 +157,52 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
     if (open) refreshSessions()
   }, [open, refreshSessions])
 
+  useEffect(() => {
+    sessionStorage.setItem('assistantSessionId', sessionId)
+  }, [sessionId])
+  useEffect(() => {
+    if (!open) return undefined
+    const sid = sessionStorage.getItem('assistantSessionId')
+    if (!sid) return undefined
+    let cancelled = false
+    loadSession(sid).then(data => {
+      if (!cancelled && turnRef.current === 0 && data.messages?.length) setMessages(restoreMessages(data.messages))
+    }).catch(error => {
+      // 登录用户变化或会话已删除时，不再复用不可访问的旧 ID。
+      if (!cancelled && turnRef.current === 0 && error?.status === 404) {
+        const fresh = createSessionId()
+        setSessionId(fresh)
+        setMessages([WELCOME])
+      }
+    })
+    return () => { cancelled = true }
+  }, [open, loadSession, WELCOME])
+
   // 新建会话：清空消息、生成新 sessionId
   const newSession = useCallback(() => {
+    turnRef.current += 1
     abort()
     setSessionId(createSessionId())
     setMessages([WELCOME])
     setInput('')
     setSending(false)
-  }, [abort])
+  }, [abort, WELCOME])
 
   // 切换到历史会话：加载其消息
   const switchSession = useCallback(async sid => {
     if (sid === sessionId) return
+    const turn = ++turnRef.current
     abort()
+    setSending(false)
     try {
       const data = await loadSession(sid)
+      if (turnRef.current !== turn) return
       setSessionId(data.sessionId)
-      setMessages(data.messages?.length ? data.messages : [WELCOME])
-      setSending(false)
+      setMessages(data.messages?.length ? restoreMessages(data.messages) : [WELCOME])
     } catch {
-      antdMessage.error(t('assistant.loadSessionFailed'))
+      if (turnRef.current === turn) antdMessage.error(t('assistant.loadSessionFailed'))
     }
-  }, [sessionId, abort, loadSession])
-
-  // 保存当前会话（对话结束后调用，只在有真实内容时）
-  const persist = useCallback((msgs) => {
-    const real = msgs.filter(m => m.content && !(m.role === 'bot' && m === WELCOME))
-    if (real.length <= 1) return // 只有欢迎语不保存
-    saveSession(sessionId, real.map(m => ({ role: m.role, content: m.content })))
-      .then(refreshSessions)
-  }, [sessionId, saveSession, refreshSessions])
+  }, [sessionId, abort, loadSession, WELCOME, t])
 
   // 导出当前对话为纯文本文件下载
   const exportChat = useCallback(() => {
@@ -108,6 +222,11 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
   const handleFiles = useCallback(async (fileList) => {
     const files = Array.from(fileList || [])
     for (const f of files) {
+      // 文件名策略先于 MIME 分支，伪装成图片的共享库也不得读取。
+      if (isSharedLibraryFileName(f.name)) {
+        antdMessage.warning(`禁止读取 .so 文件：${f.name}`)
+        continue
+      }
       const isImage = f.type.startsWith('image/')
       if (isImage) {
         if (f.size > 4 * 1024 * 1024) { antdMessage.warning(t('assistant.imgTooLarge', { name: f.name })); continue }
@@ -132,7 +251,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
       }
     }
     if (fileInputRef.current) fileInputRef.current.value = ''
-  }, [pendingImages])
+  }, [pendingImages, t])
 
   const removeImage = useCallback(idx => {
     setPendingImages(prev => prev.filter((_, i) => i !== idx))
@@ -145,13 +264,18 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
+      const file = item.kind === 'file' ? item.getAsFile() : null
+      if (file && isSharedLibraryFileName(file.name)) {
+        e.preventDefault()
+        antdMessage.warning(`禁止读取 .so 文件：${file.name}`)
+        continue
+      }
       if (item.type.startsWith('image/')) {
         e.preventDefault()
         if (pendingImages.length >= 3) {
           antdMessage.warning(t('assistant.imgMax'))
           break
         }
-        const file = item.getAsFile()
         if (!file) continue
         const reader = new FileReader()
         reader.onload = ev => {
@@ -165,15 +289,17 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
 
   // 断流恢复：SSE 意外中断后，后端任务仍会跑完并存快照。
   // 这里带退避轮询会话详情，isProcessing 变 false 后用服务端消息恢复；多次失败则回退到 onFail。
-  const recoverFromServer = useCallback((sid, onFail) => {
+  const recoverFromServer = useCallback((sid, turn, onFail) => {
     let attempts = 0
     const poll = async () => {
+      if (turnRef.current !== turn) return
       attempts += 1
       try {
         const data = await loadSession(sid)
+        if (turnRef.current !== turn) return
         if (!data.isProcessing && data.messages?.length) {
-          setMessages(data.messages) // 用服务端最终快照恢复
-          machine.happy()
+          setMessages(restoreMessages(data.messages)) // 用服务端最终快照恢复
+          machine.chatTo('happy')
           setSending(false)
           refreshSessions()
           return
@@ -181,6 +307,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
       } catch {
         // 快照可能还没写，继续等
       }
+      if (turnRef.current !== turn) return
       if (attempts >= 6) {
         onFail?.()
         return
@@ -190,14 +317,16 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
     setTimeout(poll, 1200)
   }, [loadSession, machine, refreshSessions])
 
-  const send = useCallback(async (overrideText) => {
-    // 允许传入文本（用于确认卡自动回复），否则取输入框内容
+  const send = useCallback(async (overrideText, options = {}) => {
+    // 选项回调只提供服务端返回的后续文本；界面显示选中的安全标签。
     const text = (typeof overrideText === 'string' ? overrideText : input).trim()
-    // 允许"仅图片无文字"发送
-    if ((!text && pendingImages.length === 0) || sending) return
+    if ((!text && pendingImages.length === 0) || (sending && !options.resume)) return
+    const baseMessages = options.baseMessages || messages
+    const turn = ++turnRef.current
+    const active = () => turnRef.current === turn
     setInput('')
     setSending(true)
-    machine.thinking() // 发送即进入思考态
+    machine.chatTo('thinking') // 发送即进入思考态
 
     // 取出本轮图片附件并清空待发区
     const imgs = pendingImages
@@ -205,14 +334,17 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
 
     // 先落用户消息（带图片），再追加一条空的 bot 消息用于流式填充
     let firstDelta = true
-    setMessages(prev => [
-      ...prev,
-      { role: 'user', content: text, images: imgs },
-      { role: 'bot', content: '', streaming: true },
+    const activeTools = new Set()
+    const userMessage = { role: 'user', content: options.displayText || text, images: imgs }
+    setMessages([
+      ...baseMessages,
+      userMessage,
+      // 首个 SSE 事件前也显示思考中的转圈，避免短暂空白。
+      { role: 'bot', content: '', timeline: [], streaming: true, thinking: { status: 'running', started_at: new Date().toISOString() } },
     ])
 
-    // 组装发给后端的历史（含本轮 user，排除正在流式的空 bot；role 映射 bot→assistant）
-    const history = [...messages, { role: 'user', content: text, images: imgs }]
+    // 后续文本由服务端生成；历史里的展示标签不得被模型误认作原始选择值。
+    const history = [...baseMessages, { role: 'user', content: text, images: imgs }]
       .filter(m => m.content || (m.images && m.images.length))
       .slice(-MAX_HISTORY)
       .map(m => ({
@@ -221,44 +353,60 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
         images: m.role === 'user' ? (m.images || []) : [],
       }))
 
-    // 增量写入最后一条 bot 消息
-    const appendToLastBot = (chunk, done = false, isErr = false) => {
-      setMessages(prev => {
-        const next = [...prev]
-        for (let i = next.length - 1; i >= 0; i--) {
-          if (next[i].role === 'bot') {
-            next[i] = {
-              ...next[i],
-              content: isErr ? chunk : next[i].content + chunk,
-              streaming: !done,
-            }
-            break
-          }
-        }
-        return next
-      })
-    }
-
-    // 更新最后一条 bot 消息的工具状态标签（"御坂正在查询…"）
-    const setLastBotTool = (label) => {
-      setMessages(prev => {
-        const next = [...prev]
-        for (let i = next.length - 1; i >= 0; i--) {
-          if (next[i].role === 'bot') {
-            next[i] = { ...next[i], toolLabel: label }
-            break
-          }
-        }
-        return next
-      })
-    }
+    // 工具状态更新原时间线条目，正文只合并相邻的文本段。
+    const updateBot = updater => setMessages(prev => {
+      const next = [...prev]
+      const index = next.findLastIndex(m => m.role === 'bot')
+      if (index >= 0) next[index] = updater(next[index])
+      return next
+    })
+    const appendToLastBot = (chunk, done = false, isErr = false) => updateBot(bot => {
+      const timeline = [...(bot.timeline || [])]
+      if (chunk) {
+        if (!isErr && timeline.at(-1)?.type === 'text') {
+          timeline[timeline.length - 1] = { ...timeline.at(-1), content: timeline.at(-1).content + chunk }
+        } else timeline.push({ type: 'text', content: chunk })
+      }
+      return { ...bot, content: isErr ? chunk : bot.content + chunk, timeline, streaming: !done }
+    })
+    const finishThinking = status => updateBot(bot => bot.thinking?.status === 'running' ? {
+      ...bot,
+      thinking: { ...bot.thinking, status, elapsed_ms: Date.now() - (Date.parse(bot.thinking.started_at) || Date.now()) },
+    } : bot)
 
     await streamChat(history, undefined, {
       onTool: ev => {
-        // running 显示标签，done 清除
-        setLastBotTool(ev.status === 'running' ? (ev.label || t('assistant.processingTool')) : '')
+        if (!active()) return
+        if (ev.status === 'running') {
+          activeTools.add(ev.tool_id)
+          machine.chatTo('tool')
+        } else {
+          activeTools.delete(ev.tool_id)
+          if (activeTools.size === 0) machine.chatTo(firstDelta ? 'thinking' : 'talking')
+        }
+        updateBot(bot => {
+          const timeline = [...(bot.timeline || [])]
+          const index = timeline.findIndex(part => part.type === 'tool' && part.tool_id === ev.tool_id)
+          const entry = { type: 'tool', tool_id: ev.tool_id, name: ev.name, label: ev.label, status: ev.status, count: ev.count, error_code: ev.error_code, error_message: ev.error_message }
+          if (index >= 0) timeline[index] = { ...timeline[index], ...entry }
+          else timeline.push(entry)
+          return { ...bot, timeline, toolCount: Math.max(bot.toolCount || 0, ev.count || 0, timeline.filter(part => part.type === 'tool').length) }
+        })
+      },
+      onThinking: ev => {
+        if (!active()) return
+        updateBot(bot => ({ ...bot, thinking: { ...bot.thinking, status: ev.status, started_at: ev.started_at || bot.thinking?.started_at || new Date().toISOString(), elapsed_ms: ev.elapsed_ms } }))
+      },
+      onChoice: ev => {
+        if (!active()) return
+        finishThinking('done')
+        updateBot(bot => ({ ...bot, streaming: false, choice: { id: ev.id, title: ev.title, prompt: ev.prompt, expires_at_ms: ev.expires_at_ms, options: (ev.options || []).map(option => ({ id: option.id, label: option.label, description: option.description })), selectedOptionId: null } }))
+        machine.chatTo('idle')
+        setSending(false)
+        refreshSessions()
       },
       onConfirm: ev => {
+        if (!active()) return
         // 写类工具需二次确认：把确认卡挂到最后一条 bot 消息
         setMessages(prev => {
           const next = [...prev]
@@ -267,7 +415,6 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
               next[i] = {
                 ...next[i],
                 streaming: false,
-                toolLabel: '',
                 confirm: ev, // {name,label,description,arguments}
                 content: next[i].content || t('assistant.confirmPrompt', { label: ev.label }),
               }
@@ -276,36 +423,49 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
           }
           return next
         })
-        machine.idle?.()
+        machine.chatTo('idle')
         setSending(false)
       },
       onDelta: piece => {
+        if (!active()) return
         if (firstDelta) {
           firstDelta = false
-          machine.talking() // 首个增量到达 → 说话态
+          if (activeTools.size === 0) machine.chatTo('talking') // 首个增量到达后，非工具阶段进入回复态
         }
         appendToLastBot(piece)
       },
       onDone: () => {
+        if (!active()) return
         appendToLastBot('', true)
-        machine.happy() // 完成 → 表演后自动回落 idle
+        finishThinking('done')
+        machine.chatTo('happy') // 完成 → 表演后自动回落 idle
         setSending(false)
-        // 用最新消息快照持久化会话
-        setMessages(cur => { persist(cur); return cur })
+        refreshSessions()
+      },
+      onServerError: msg => {
+        if (!active()) return
+        appendToLastBot(msg || t('assistant.replyError'), true, true)
+        finishThinking('error')
+        machine.chatTo('sad')
+        setSending(false)
       },
       onError: msg => {
-        // 断流恢复：SSE 中断时后端任务仍会跑完并存快照，尝试轮询拉取最终结果
-        recoverFromServer(sessionId, () => {
+        if (!active()) return
+        // 断流恢复只允许该轮更新当前面板。
+        recoverFromServer(sessionId, turn, () => {
+          if (!active()) return
           appendToLastBot(msg || t('assistant.replyError'), true, true)
-          machine.sad()
+          finishThinking('error')
+          machine.chatTo('sad')
           setSending(false)
         })
       },
-    }, sessionId)
-  }, [input, sending, messages, machine, streamChat, persist, sessionId, recoverFromServer, pendingImages])
+    }, sessionId, { codeRepair })
+  }, [input, sending, codeRepair, messages, machine, streamChat, sessionId, recoverFromServer, refreshSessions, pendingImages, t])
 
   // 停止：中断流，把当前流式 bot 消息定格，回落待命
   const handleStop = useCallback(() => {
+    turnRef.current += 1
     abort()
     setSending(false)
     setMessages(prev => {
@@ -315,93 +475,122 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
           next[i] = {
             ...next[i],
             content: next[i].content || t('assistant.stopped'),
+            timeline: next[i].content ? next[i].timeline : [...(next[i].timeline || []), { type: 'text', content: t('assistant.stopped') }],
             streaming: false,
+            thinking: next[i].thinking?.status === 'running' ? {
+              ...next[i].thinking, status: 'done', elapsed_ms: Date.now() - (Date.parse(next[i].thinking.started_at) || Date.now()),
+            } : next[i].thinking,
           }
           break
         }
       }
       return next
     })
-    machine.idle?.()
-  }, [abort, machine])
+    machine.chatTo('idle')
+  }, [abort, machine, t])
 
-  // 用户对写类工具确认卡做出选择
+  // 确认卡只提交服务端签发的单次令牌；动作和参数从不由浏览器指定。
   const respondConfirm = useCallback(async (msgIndex, agree) => {
-    // 取消：发一句拒绝让 LLM 知道并结束话题
-    if (!agree) {
-      setMessages(prev => {
-        const next = [...prev]
-        if (next[msgIndex]) next[msgIndex] = { ...next[msgIndex], confirm: null }
-        return next
-      })
-      const decision = t('assistant.decisionNo')
-      send(decision)
-      return
-    }
-
-    // 确认：直接调执行接口，把结果作为 tool 消息追加到对话，LLM 据此生成自然语言回复
-    const msg = messages[msgIndex]
-    const confirmData = msg?.confirm
-    if (!confirmData) return
-
-    setMessages(prev => {
-      const next = [...prev]
-      if (next[msgIndex]) next[msgIndex] = { ...next[msgIndex], confirm: null }
-      return next
-    })
+    const confirmation = messages[msgIndex]?.confirm
+    if (!confirmation?.confirmationToken || confirmation.sessionId !== sessionId || sending) return
+    if (agree && confirmation.codePreview && !codePreviewPassed(confirmation.codePreview)) return
+    const turn = ++turnRef.current
+    const active = () => turnRef.current === turn
 
     setSending(true)
     try {
       const res = await fetch('/api/ui/assistant/tool/execute', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${Cookies.get('danmu_token') || ''}`,
+        },
         body: JSON.stringify({
-          name: confirmData.name,
-          arguments: confirmData.arguments,
+          sessionId,
+          confirmationToken: confirmation.confirmationToken,
+          approved: agree,
         }),
       })
       const result = await res.json()
+      if (!active()) return
+      if (!res.ok && res.status === 409) {
+        setMessages(prev => {
+          const next = [...prev]
+          if (next[msgIndex]) next[msgIndex] = { ...next[msgIndex], confirm: null }
+          next.push({ role: 'bot', content: t('assistant.confirmExpired'), timestamp: Date.now() })
+          return next
+        })
+        return
+      }
+      if (!res.ok) throw new Error(result.detail || t('assistant.execFailed'))
 
-      // 执行结果文案（同时用于界面展示与回传给 LLM）
-      const resultText = result.ok
-        ? `[系统] 工具 ${confirmData.name} 执行成功：${result.message || '操作已提交'}`
-        : `[系统] 工具 ${confirmData.name} 执行失败：${result.error || '未知错误'}`
-
-      // 界面上追加一条系统提示气泡，让用户看到执行结果
-      setMessages(prev => [...prev, {
-        role: 'system',
-        content: result.ok
-          ? `✅ ${result.message || '操作已提交'}`
-          : `❌ ${result.error || '执行失败'}`,
-        timestamp: Date.now(),
-      }])
-
-      // 回传给 LLM 让它用自然语言复述结果。
-      // 注意：用 user 角色而非 tool —— 后端 _build_messages 只接受 user/assistant，
-      // tool 角色会被静默丢弃，LLM 将看不到执行结果。
-      const historyWithResult = [
-        ...messages
-          .filter(m => m.role === 'user' || m.role === 'bot')
-          .map(m => ({ role: m.role === 'bot' ? 'assistant' : 'user', content: m.content })),
-        { role: 'user', content: resultText },
-      ]
-      await streamChat(historyWithResult, undefined, {
-        onDone: () => { setSending(false); machine.idle?.() },
-        onError: err => { message.error(err); setSending(false); machine.idle?.() },
+      setMessages(prev => {
+        const next = [...prev]
+        if (next[msgIndex]) next[msgIndex] = { ...next[msgIndex], confirm: null }
+        next.push({
+          role: 'bot',
+          content: !agree
+            ? t('assistant.operationCancelled')
+            : result.ok
+              ? (result.message || t('assistant.operationSubmitted'))
+              : t('assistant.operationFailed', { error: result.error || t('assistant.unknownResult') }),
+          timestamp: Date.now(),
+        })
+        return next
       })
     } catch (error) {
-      message.error(t('assistant.execFailed'))
-      setSending(false)
-      machine.idle?.()
+      if (active()) antdMessage.error(error.message || t('assistant.execFailed'))
+    } finally {
+      if (active()) {
+        setSending(false)
+        machine.chatTo('idle')
+      }
     }
-  }, [messages, send, streamChat, machine, t])
+  }, [messages, sessionId, sending, machine, t])
+
+  // 选项只提交服务端签发的标识；原始值与一次性校验均留在服务端。
+  const respondChoice = useCallback(async (msgIndex, optionId) => {
+    const choice = messages[msgIndex]?.choice
+    if (!choice?.id || !optionId || choice.selectedOptionId != null || choice.invalid || choiceExpired(choice, Date.now()) || sending) return
+    const turn = ++turnRef.current
+    setSending(true)
+    try {
+      const res = await fetch('/api/ui/assistant/choice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Cookies.get('danmu_token') || ''}` },
+        body: JSON.stringify({ sessionId, choiceId: choice.id, optionId }),
+      })
+      const result = await res.json()
+      if (turnRef.current !== turn) return
+      if (!res.ok) {
+        if (res.status === 409) setMessages(prev => prev.map((item, index) => index === msgIndex ? {
+          ...item, choice: { ...item.choice, invalid: true },
+        } : item))
+        throw new Error(result.detail || t('assistant.choiceFailed', { defaultValue: '选项已失效，请重新提问' }))
+      }
+      const content = result.message?.content
+      if (!result.ok || typeof content !== 'string' || !content.trim()) throw new Error(t('assistant.choiceFailed', { defaultValue: '选项已失效，请重新提问' }))
+      const next = messages.map((item, index) => index === msgIndex ? {
+        ...item, choice: { ...item.choice, selectedOptionId: optionId },
+      } : item)
+      setMessages(next)
+      await send(content, { resume: true, baseMessages: next })
+    } catch (error) {
+      if (turnRef.current === turn) {
+        setSending(false)
+        antdMessage.error(error.message || t('assistant.choiceFailed', { defaultValue: '选择失败' }))
+      }
+    }
+  }, [messages, sending, sessionId, send, t])
 
   return (
     <Drawer
       open={open}
       onClose={onClose}
       placement="right"
-      width={isMobile ? '100%' : 380}
+      width={isMobile ? '100vw' : 475}
+      rootClassName={isMobile ? 'assistant-panel-mobile' : undefined}
+      closable={!isMobile}
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Avatar className="assistant-title-avatar" src={AVATAR_IMG} size={36} />
@@ -443,22 +632,18 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
           </Dropdown>
           <Button type="text" icon={<PlusOutlined />} title={t('assistant.newChat')} onClick={newSession} />
           <Button type="text" icon={<DownloadOutlined />} title={t('assistant.exportChat')} onClick={exportChat} />
+          {isMobile && <Button type="text" icon={<CloseOutlined />} aria-label={t('common.close')} title={t('common.close')} onClick={onClose} />}
         </div>
       }
-      styles={{ body: { display: 'flex', flexDirection: 'column', padding: 12 } }}
+      styles={{ body: { display: 'flex', flexDirection: 'column', minHeight: 0, padding: isMobile ? '8px 12px max(12px, env(safe-area-inset-bottom))' : 12 } }}
     >
       {/* 消息列表（顶部大立绘展示区已移除，只保留标题栏小头像） */}
       <div ref={listRef} className="assistant-msg-list" style={{ flex: 1, overflowY: 'auto' }}>
         {messages.map((m, i) => (
-          <div key={i} className={`assistant-msg ${m.role === 'user' ? 'user' : 'bot'}`}>
+          <div key={i} className={`assistant-msg ${m.role === 'user' ? 'user' : 'bot'} ${m.choice || m.timeline?.some(part => part.type === 'tool') ? 'structured' : ''}`}>
             {m.role === 'bot' ? (
               <>
-                {/* 工具调用进度卡：御坂正在查询… */}
-                {m.toolLabel && (
-                  <div className="assistant-tool-chip">🔧 {m.toolLabel}…</div>
-                )}
-                {/* remarkGfm：启用表格/删除线/任务列表等 GFM 扩展语法 */}
-                <Markdown remarkPlugins={[remarkGfm]}>{m.content || ''}</Markdown>
+                <AssistantTimeline message={m} t={t} now={now} />
                 {/* 复制按钮：非流式且有内容时显示（hover 出现） */}
                 {!m.streaming && m.content && (
                   <span
@@ -474,24 +659,52 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
                   </span>
                 )}
                 {/* 流式中且暂无内容也无工具时显示"正在输入"三点动画 */}
-                {m.streaming && !m.content && !m.toolLabel && (
+                {m.streaming && !m.content && !m.timeline?.length && !m.thinking && (
                   <span className="assistant-typing-dots" aria-label={t('assistant.typing')}>
                     <i></i><i></i><i></i>
                   </span>
+                )}
+                {/* 用户歧义选项只提交服务端签发的标识。 */}
+                {m.choice && (
+                  <div className="assistant-choice">
+                    <strong>{m.choice.title || t('assistant.choiceTitle', { defaultValue: '请选择' })}</strong>
+                    {m.choice.selectedOptionId == null && (m.choice.invalid || choiceExpired(m.choice, now)) && (
+                      <span className="assistant-choice-expired">{m.choice.invalid
+                        ? t('assistant.choiceInvalid', { defaultValue: '已失效' })
+                        : t('assistant.choiceExpired', { defaultValue: '已过期' })}</span>
+                    )}
+                    {m.choice.prompt && <p>{m.choice.prompt}</p>}
+                    <div className="assistant-choice-options">
+                      {(m.choice.options || []).map((option, optionIndex) => (
+                        <Button key={option.id || optionIndex} size="small" disabled={m.choice.selectedOptionId != null || m.choice.invalid || choiceExpired(m.choice, now) || sending} type={m.choice.selectedOptionId === option.id ? 'primary' : 'default'} title={option.description || option.label} onClick={() => respondChoice(i, option.id)}>
+                          {option.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
                 )}
                 {/* 写类工具二次确认卡 */}
                 {m.confirm && (
                   <div className="assistant-confirm-card">
                     <div className="assistant-confirm-desc">
-                      {t('assistant.operation')}：{m.confirm.label}
+                      {t('assistant.operation')}：{m.confirm.description || m.confirm.label}
+                      {m.confirm.irreversible && <strong className="assistant-confirm-warning">{t('assistant.irreversibleAction')}</strong>}
                       {m.confirm.arguments && Object.keys(m.confirm.arguments).length > 0 && (
                         <span className="assistant-confirm-args">
-                          （{Object.entries(m.confirm.arguments).map(([k, v]) => `${k}=${v}`).join(', ')}）
+                          {Object.entries(m.confirm.arguments).map(([key, value]) => (
+                            <span key={key}>
+                              {key}: {typeof value === 'object' && value !== null
+                                ? Object.entries(value).map(([field, item]) => `${field}=${item}`).join(', ')
+                                : value}
+                              {' '}
+                            </span>
+                          ))}
                         </span>
                       )}
                     </div>
+                    {m.confirm.codePreview && <AssistantCodePreview preview={m.confirm.codePreview} />}
                     <div className="assistant-confirm-btns">
-                      <Button size="small" type="primary" onClick={() => respondConfirm(i, true)}>
+                      <Button size="small" type="primary" disabled={!!m.confirm.codePreview && !codePreviewPassed(m.confirm.codePreview)} onClick={() => respondConfirm(i, true)}>
                         {t('assistant.confirmExec')}
                       </Button>
                       <Button size="small" onClick={() => respondConfirm(i, false)}>
@@ -531,7 +744,21 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
       )}
 
       {/* 输入区 */}
-      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+      <div className="assistant-input-tools">
+        <Button
+          className="assistant-code-repair-toggle"
+          size="small"
+          type={codeRepair ? 'primary' : 'default'}
+          icon={<ToolOutlined />}
+          aria-pressed={codeRepair}
+          disabled={sending}
+          title="启用后，当前请求可自行修改隔离验证通过的源码；.so 文件禁止读取，未部署的容器不可应用；不会自动部署或重启，普通业务写操作仍需确认。"
+          onClick={() => setCodeRepair(prev => !prev)}
+        >
+          代码修复
+        </Button>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
         <input
           ref={fileInputRef}
           type="file"

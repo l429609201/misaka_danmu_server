@@ -3,41 +3,52 @@
 包含: /import/auto, /import/direct, /import/edited, /import/xml, /import/url, /episodes
 """
 
-import logging
-import uuid
 import hashlib
+import logging
+from typing import List, Union
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from thefuzz import fuzz
 
-from src.db import crud, models, orm_models, get_db_session, ConfigManager
-from src import tasks
-from src.utils import common as utils
+from src.services.ai_service import AIService
 from src.core import get_now
-from src.core.cache import get_cache_backend
-from src.services import ScraperManager, TaskManager, MetadataSourceManager, unified_search, convert_to_chinese_title
-from src.utils import (
-    SearchTimer, SEARCH_TYPE_CONTROL_SEARCH, SubStepTiming,
-    ai_type_and_season_mapping_and_correction, is_movie_by_title,
-)
 from src.rate_limiter import RateLimiter
-from src.ai import AIMatcherManager
-
-from .models import (
-    AutoImportSearchType, AutoImportMediaType,
-    ControlTaskResponse, ControlSearchResponse, ControlSearchResultItem,
-    ControlAutoImportRequest, ControlDirectImportRequest,
-    ControlEditedImportRequest, ControlXmlImportRequest, ControlUrlImportRequest,
+from src.schemas.control.import_api import (
+    ControlDirectImportRequest,
+    ControlEditedImportRequest,
+    ControlSearchResponse,
+    ControlTaskResponse,
+    ControlUrlImportRequest,
+    ControlXmlImportRequest,
     EpisodesWithFilteredResponse,
 )
+from src.schemas.import_schemas import (
+    AutoImportMediaType,
+    AutoImportSearchType,
+    ControlAutoImportRequest,
+    EditedImportRequest,
+)
+from src.schemas.search import ProviderEpisodeInfo
+from src.schemas.ui.search import ProviderSearchInfo
+from src.services.metadata_service import MetadataService
+from src.services.scraper_manager import ScraperManager
+from src.services.task_manager import TaskManager
+from src.services.config_service import ConfigService
+from src.services.service_container import get_database_service
+from src.workflows.search.result_cache import read_search_results
+from src.workflows.search.entry_flow import (
+    search_control, SearchBusyError, SearchCacheUnavailableError,
+)
+
 from .dependencies import (
-    verify_api_key, get_scraper_manager, get_metadata_manager,
-    get_task_manager, get_config_manager, get_rate_limiter,
-    get_ai_matcher_manager, get_title_recognition_manager,
-    _normalize_for_filtering,
+    get_ai_service,
+    get_config_service,
+    get_metadata_service,
+    get_rate_limiter,
+    get_scraper_manager,
+    get_task_manager,
+    get_title_recognition_manager,
+    verify_api_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,10 +66,10 @@ async def auto_import(
     mediaType: AutoImportMediaType | None = Query(None, description="媒体类型。当 searchType 为 'keyword' 时必填。如果留空，将根据有无 'season' 参数自动推断。"),
     task_manager: TaskManager = Depends(get_task_manager),
     manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
-    config_manager: ConfigManager = Depends(get_config_manager),
-    ai_matcher_manager: AIMatcherManager = Depends(get_ai_matcher_manager),
+    config_service: ConfigService = Depends(get_config_service),
+    ai_service: AIService = Depends(get_ai_service),
     title_recognition_manager = Depends(get_title_recognition_manager),
     api_key: str = Depends(verify_api_key)
 ):
@@ -122,107 +133,101 @@ async def auto_import(
             detail="已有搜索或自动导入任务正在进行中，请稍后再试。"
         )
 
-    # 修正：将 season、episode 和 mediaType 纳入 unique_key，以允许同一作品不同季/集的导入
-    unique_key_parts = [payload.searchType.value, payload.searchTerm]
-    if payload.season is not None:
-        unique_key_parts.append(f"s{payload.season}")
-    if payload.episode is not None:
-        # 对于多集格式，保留原始字符串作为 unique_key 的一部分
-        unique_key_parts.append(f"e{payload.episode}")
-    # 始终包含 mediaType 以区分同名但不同类型的作品，避免重复任务检测问题
-    if payload.mediaType is not None:
-        unique_key_parts.append(payload.mediaType.value)
-    unique_key = f"auto-import-{'-'.join(unique_key_parts)}"
-
-    # 新增：检查最近是否有重复任务
-    config_manager_local = get_config_manager(request)
-    threshold_hours_str = await config_manager_local.get("externalApiDuplicateTaskThresholdHours", "3")
+    # 锁在提交成功前归请求所有，任何预检异常或取消都必须释放。
+    task_submitted = False
     try:
-        threshold_hours = int(threshold_hours_str)
-    except (ValueError, TypeError):
-        threshold_hours = 3
+        unique_key_parts = [payload.searchType.value, payload.searchTerm]
+        if payload.season is not None:
+            unique_key_parts.append(f"s{payload.season}")
+        if payload.episode is not None:
+            unique_key_parts.append(f"e{payload.episode}")
+        if payload.mediaType is not None:
+            unique_key_parts.append(payload.mediaType.value)
+        unique_key = f"auto-import-{'-'.join(unique_key_parts)}"
 
-    if threshold_hours > 0:
-        session_factory = request.app.state.db_session_factory
-        async with session_factory() as session:
-            recent_task = await crud.find_recent_task_by_unique_key(session, unique_key, threshold_hours)
-            if recent_task:
-                time_since_creation = get_now() - recent_task.createdAt
-                hours_ago = time_since_creation.total_seconds() / 3600
-                # 关键修复：抛出异常前释放搜索锁
-                await manager.release_search_lock(api_key)
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"一个相似的任务在 {hours_ago:.1f} 小时前已被提交 (状态: {recent_task.status})。请在 {threshold_hours} 小时后重试。")
+        threshold_hours_str = await config_service.get("externalApiDuplicateTaskThresholdHours", "3")
+        try:
+            threshold_hours = int(threshold_hours_str)
+        except (ValueError, TypeError):
+            threshold_hours = 3
 
-            # 关键修复：外部API也应该检查库内是否已存在相同作品
-            # 使用与WebUI相同的检查逻辑，通过标题+季度+集数进行检查
-            title_recognition_manager_local = get_title_recognition_manager(request)
+        if threshold_hours > 0:
+            db = get_database_service()
+            async with db.transaction():
+                # task 代理暴露实际查询方法，不能使用不存在的 task_query 域。
+                recent_task = await db.task.find_recent_task_by_unique_key(unique_key, threshold_hours)
+                if recent_task:
+                    # 数据库时间为本地无时区时间，避免与 aware datetime 相减报错。
+                    now = get_now()
+                    if recent_task.createdAt.tzinfo is None:
+                        now = now.replace(tzinfo=None)
+                    hours_ago = (now - recent_task.createdAt).total_seconds() / 3600
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"一个相似的任务在 {hours_ago:.1f} 小时前已被提交 (状态: {recent_task.status})。请在 {threshold_hours} 小时后重试。",
+                    )
 
-            # 检查作品是否已存在于库内
-            existing_anime = await crud.find_anime_by_title_season_year(
-                session, searchTerm, season, None, title_recognition_manager_local, None  # source参数暂时为None，因为这里是查找现有条目
-            )
-
-            if existing_anime and episode is not None:
-                # 对于单集/多集导入，检查具体集数是否已存在（需要考虑识别词转换）
-                # 注意：这里不再拒绝请求，而是在任务执行时跳过已存在的集数
-                pass
-            elif existing_anime and episode is None:
-                # 对于整季导入，如果作品已存在则拒绝
-                # 关键修复：抛出异常前释放搜索锁
-                await manager.release_search_lock(api_key)
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"作品 '{searchTerm}' 已在媒体库中，无需重复导入整季"
+                # 保留识别词查找行为，调用支持 manager/source 参数的完整接口。
+                existing_anime = await db.anime.find_by_title_season_year_with_recognition(
+                    searchTerm, season, None, title_recognition_manager, None
                 )
+                if existing_anime and episode is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"作品 '{searchTerm}' 已在媒体库中，无需重复导入整季",
+                    )
 
-    # 修正：为任务标题添加季/集信息，以确保其唯一性，防止因任务名重复而提交失败。
-    title_parts = [f"外部API自动导入: {payload.searchTerm} (类型: {payload.searchType})"]
-    if payload.season is not None:
-        title_parts.append(f"S{payload.season:02d}")
-    if payload.episode is not None:
-        # 对于多集格式，直接显示原始字符串
-        title_parts.append(f"E{payload.episode}")
-    task_title = " ".join(title_parts)
+        title_parts = [f"外部API自动导入: {payload.searchTerm} (类型: {payload.searchType})"]
+        if payload.season is not None:
+            title_parts.append(f"S{payload.season:02d}")
+        if payload.episode is not None:
+            title_parts.append(f"E{payload.episode}")
+        task_title = " ".join(title_parts)
 
-    try:
-        task_coro = lambda session, cb: tasks.auto_search_and_import_task(
-            payload, cb, session, config_manager, manager, metadata_manager, task_manager,
-            ai_matcher_manager=ai_matcher_manager,
+        task_coro = task_manager.build_task_coro_factory(
+            "auto_import",
+            payload=payload,
+            config_service=config_service,
+            scraper_manager=manager,
+            metadata_manager=metadata_manager,
+            task_manager=task_manager,
+            ai_service=ai_service,
             rate_limiter=rate_limiter,
             title_recognition_manager=title_recognition_manager,
-            api_key=api_key
+            api_key=api_key,
         )
         task_id, _ = await task_manager.submit_task(
             task_coro, task_title, unique_key=unique_key,
             task_type="auto_import",
-            task_parameters=payload.model_dump()
+            task_parameters=payload.model_dump(),
+            # 父任务负责搜索与派发，实际下载子任务仍走下载队列流控。
+            queue_type="search",
         )
-        # 注意: 搜索锁由任务内部的 finally 块负责释放,确保任务完成后才释放
+        # 提交成功后才将锁交给后台任务，由任务 finally 释放。
+        task_submitted = True
         return {"message": "自动导入任务已提交", "taskId": task_id}
-    except HTTPException as e:
-        # 捕获已知的冲突错误并重新抛出
-        # 如果任务提交失败,需要释放锁
-        await manager.release_search_lock(api_key)
-        raise e
+    except HTTPException:
+        raise
     except Exception as e:
-        # 捕获任何在任务提交阶段发生的异常,并确保释放锁
         logger.error(f"提交自动导入任务时发生未知错误: {e}", exc_info=True)
-        await manager.release_search_lock(api_key)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="提交任务时发生内部错误。")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="提交任务时发生内部错误。") from e
+    finally:
+        if not task_submitted:
+            await manager.release_search_lock(api_key)
 
 
 
 
-@router.get("/search", response_model=ControlSearchResponse, summary="搜索媒体")
+@router.get("/search", response_model=ControlSearchResponse, response_model_exclude_defaults=True, summary="搜索媒体")
 async def search_media(
     keyword: str,
     season: int | None = Query(None, description="要搜索的季度 (可选)"),
     episode: int | None = Query(None, description="要搜索的集数 (可选)"),
-    session: AsyncSession = Depends(get_db_session),
     manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
-    config_manager: ConfigManager = Depends(get_config_manager),
-    ai_matcher_manager: AIMatcherManager = Depends(get_ai_matcher_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
+    config_service: ConfigService = Depends(get_config_service),
+    ai_service: AIService = Depends(get_ai_service),
+    title_recognition_manager = Depends(get_title_recognition_manager),
     api_key: str = Depends(verify_api_key)
 ):
     """
@@ -246,183 +251,33 @@ async def search_media(
             detail="指定集数时必须同时提供季度信息。"
         )
 
-    if not await manager.acquire_search_lock(api_key):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="已有搜索或自动导入任务正在进行中，请稍后再试。"
-        )
-
-    # 初始化计时器并开始计时
-    timer = SearchTimer(SEARCH_TYPE_CONTROL_SEARCH, keyword, logger)
-    timer.start()
-
+    # 互斥、搜索策略和会话缓存由编排层管理；与主页一致，不持有请求级数据库会话。
     try:
-        timer.step_start("关键词解析")
-        # --- Start of new logic, copied and adapted from ui_api.py ---
-        parsed_keyword = utils.parse_search_keyword(keyword)
-        search_title = parsed_keyword["title"]
-        original_title = search_title  # 保存原始标题用于日志
-        # Prioritize explicit query params over parsed ones
-        final_season = season if season is not None else parsed_keyword.get("season")
-        final_episode = episode if episode is not None else parsed_keyword.get("episode")
-
-        episode_info = {"season": final_season, "episode": final_episode} if final_season is not None or final_episode is not None else None
-
-        # Create a dummy user for metadata calls, as this API is not user-specific
-        user = models.User(id=0, username="control_api")
-
-        logger.info(f"Control API 正在搜索: '{keyword}' (解析为: title='{search_title}', season={final_season}, episode={final_episode})")
-        timer.step_end()
-
-        # 🚀 名称转换功能 - 检测非中文标题并尝试转换为中文（在所有处理之前执行）
-        timer.step_start("名称转换")
-        converted_title, conversion_applied = await convert_to_chinese_title(
-            search_title,
-            config_manager,
-            metadata_manager,
-            ai_matcher_manager,
-            user
+        payload = await search_control(
+            keyword, season=season, episode=episode, session=None,
+            scraper_manager=manager, metadata_manager=metadata_manager,
+            config_service=config_service, ai_service=ai_service,
+            title_recognition_manager=title_recognition_manager, api_key=api_key,
         )
-        if conversion_applied:
-            logger.info(f"✓ Control API 名称转换: '{original_title}' → '{converted_title}'")
-            search_title = converted_title
-        else:
-            logger.info(f"○ Control API 名称转换未生效: '{original_title}'")
-        timer.step_end()
-
-        if not manager.has_enabled_scrapers:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="没有启用的弹幕搜索源，请在'搜索源'页面中启用至少一个。"
-            )
-
-        # 外部控制搜索 AI映射配置检查
-        external_search_season_mapping_enabled = await config_manager.get("externalSearchEnableTmdbSeasonMapping", "false")
-        if external_search_season_mapping_enabled.lower() != "true":
-            logger.info("○ 外部控制-搜索媒体 统一AI映射: 功能未启用")
-
-        timer.step_start("弹幕源搜索")
-        # 使用统一的搜索函数（不进行排序，后面自己处理）
-        results = await unified_search(
-            search_term=search_title,
-            session=session,
-            scraper_manager=manager,
-            metadata_manager=metadata_manager,
-            use_alias_expansion=True,
-            use_alias_filtering=True,
-            use_title_filtering=True,
-            use_source_priority_sorting=False,  # 不排序，后面自己处理
-            progress_callback=None
-        )
-        # 收集单源搜索耗时信息（分组显示）
-        source_timing_sub_steps = []
-        for name, dur, cnt in manager.last_search_timing:
-            if name.startswith("补充:"):
-                source_timing_sub_steps.append(
-                    SubStepTiming(name=name[3:], duration_ms=dur, result_count=cnt, group="补充源")
-                )
-            else:
-                source_timing_sub_steps.append(
-                    SubStepTiming(name=name, duration_ms=dur, result_count=cnt, group="弹幕源")
-                )
-        timer.step_end(details=f"{len(results)}个结果", sub_steps=source_timing_sub_steps)
-
-        logger.info(f"搜索完成，共 {len(results)} 个结果")
-
-        for item in results:
-            if item.type == 'tv_series' and is_movie_by_title(item.title):
-                item.type = 'movie'
-
-            # 修正：如果用户指定了集数，则设置 currentEpisodeIndex
-            # 这样后续的导入逻辑会自动识别为单集导入
-            if final_episode is not None:
-                item.currentEpisodeIndex = final_episode
-
-        if final_season:
-            original_count = len(results)
-            filtered_by_type = [item for item in results if item.type == 'tv_series']
-            results = [item for item in filtered_by_type if item.season == final_season]
-            logger.info(f"根据指定的季度 ({final_season}) 进行过滤，从 {original_count} 个结果中保留了 {len(results)} 个。")
-
-        source_settings = await crud.get_all_scraper_settings(session)
-        source_order_map = {s['providerName']: s['displayOrder'] for s in source_settings}
-
-        def sort_key(item: models.ProviderSearchInfo):
-            return (source_order_map.get(item.provider, 999), -fuzz.token_set_ratio(keyword, item.title))
-
-        sorted_results = sorted(results, key=sort_key)
-
-        # 使用统一的AI类型和季度映射修正函数
-        if external_search_season_mapping_enabled.lower() == "true":
-            try:
-                timer.step_start("AI映射修正")
-                # 获取AI匹配器（使用依赖注入的实例）
-                ai_matcher = await ai_matcher_manager.get_matcher()
-                if ai_matcher:
-                    logger.info(f"○ 外部控制-搜索媒体 开始统一AI映射修正: '{search_title}' ({len(sorted_results)} 个结果)")
-
-                    # 使用新的统一函数进行类型和季度修正
-                    mapping_result = await ai_type_and_season_mapping_and_correction(
-                        search_title=search_title,
-                        search_results=sorted_results,
-                        metadata_manager=metadata_manager,
-                        ai_matcher=ai_matcher,
-                        logger=logger,
-                        similarity_threshold=60.0
-                    )
-
-                    # 应用修正结果
-                    if mapping_result['total_corrections'] > 0:
-                        logger.info(f"✓ 外部控制-搜索媒体 统一AI映射成功: 总计修正了 {mapping_result['total_corrections']} 个结果")
-                        logger.info(f"  - 类型修正: {len(mapping_result['type_corrections'])} 个")
-                        logger.info(f"  - 季度修正: {len(mapping_result['season_corrections'])} 个")
-
-                        # 更新搜索结果（已经直接修改了sorted_results）
-                        sorted_results = mapping_result['corrected_results']
-                        timer.step_end(details=f"修正{mapping_result['total_corrections']}个")
-                    else:
-                        logger.info(f"○ 外部控制-搜索媒体 统一AI映射: 未找到需要修正的信息")
-                        timer.step_end(details="无修正")
-                else:
-                    logger.warning("○ 外部控制-搜索媒体 AI映射: AI匹配器未启用或初始化失败")
-                    timer.step_end(details="匹配器未启用")
-
-            except Exception as e:
-                logger.warning(f"外部控制-搜索媒体 统一AI映射任务执行失败: {e}")
-                timer.step_end(details=f"失败: {e}")
-        else:
-            logger.info("○ 外部控制-搜索媒体 统一AI映射: 功能未启用")
-
-        timer.step_start("结果缓存")
-        search_id = str(uuid.uuid4())
-        indexed_results = [ControlSearchResultItem(**r.model_dump(), resultIndex=i) for i, r in enumerate(sorted_results)]
-        _cache_data = [r.model_dump() for r in sorted_results]
-        _cache_key = f"control_search_{search_id}"
-        _backend = get_cache_backend()
-        if _backend is not None:
-            try:
-                await _backend.set(_cache_key, _cache_data, ttl=600, region="default")
-            except Exception:
-                await crud.set_cache(session, _cache_key, _cache_data, 600)
-        else:
-            await crud.set_cache(session, _cache_key, _cache_data, 600)
-        timer.step_end()
-
-        timer.finish()  # 打印计时报告
-        return ControlSearchResponse(searchId=search_id, results=indexed_results)
-    finally:
-        await manager.release_search_lock(api_key)
+        return ControlSearchResponse(**payload)
+    except SearchBusyError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except SearchCacheUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail=f"搜索时发生网络错误: {exc}") from exc
 
 
 
 @router.post("/import/direct", status_code=status.HTTP_202_ACCEPTED, summary="直接导入搜索结果", response_model=ControlTaskResponse)
 async def direct_import(
     payload: ControlDirectImportRequest,
-    session: AsyncSession = Depends(get_db_session),
     task_manager: TaskManager = Depends(get_task_manager),
     manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
-    config_manager: ConfigManager = Depends(get_config_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
+    config_service: ConfigService = Depends(get_config_service),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
     title_recognition_manager = Depends(get_title_recognition_manager)
 ):
@@ -434,21 +289,15 @@ async def direct_import(
     这是一个简单、直接的导入方式。它会为选定的媒体创建一个后台导入任务。您也可以在请求中附加元数据ID（如`tmdbId`）来覆盖或补充作品信息。
     """
     cache_key = f"control_search_{payload.searchId}"
-    cached_results_raw = None
-    _backend = get_cache_backend()
-    if _backend is not None:
-        try:
-            cached_results_raw = await _backend.get(cache_key, region="default")
-        except Exception:
-            pass
-    if cached_results_raw is None:
-        cached_results_raw = await crud.get_cache(session, cache_key)
+    # 不指定分页，按原始顺序读取全部会话结果，保持 resultIndex 语义。
+    cached_data = await read_search_results(cache_key, region="default")
+    cached_results_raw = cached_data["results"] if cached_data is not None else None
 
     if cached_results_raw is None:
         raise HTTPException(status_code=404, detail="搜索会话已过期或无效，请重新搜索。")
 
     try:
-        cached_results = [models.ProviderSearchInfo.model_validate(r) for r in cached_results_raw]
+        cached_results = [ProviderSearchInfo.model_validate(r) for r in cached_results_raw]
     except Exception:
         raise HTTPException(status_code=500, detail="无法解析缓存的搜索结果。")
 
@@ -457,20 +306,17 @@ async def direct_import(
 
     item_to_import = cached_results[payload.resultIndex]
 
-    # 关键修复：恢复并完善在任务提交前的重复检查。
-    # 这确保了直接导入的行为与UI导入完全一致。
-    duplicate_reason = await crud.check_duplicate_import(
-        session=session,
-        provider=item_to_import.provider,
-        media_id=item_to_import.mediaId,
-        anime_title=item_to_import.title,
-        media_type=item_to_import.type,
-        season=item_to_import.season,
-        year=item_to_import.year,
-        is_single_episode=item_to_import.currentEpisodeIndex is not None,
-        episode_index=item_to_import.currentEpisodeIndex,
-        title_recognition_manager=title_recognition_manager
-    )
+    # 与主页共用现有精确判重接口，避免调用已移除的数据域和旧参数。
+    db = get_database_service()
+    async with db.transaction():
+        duplicate_reason = await db.episode.check_duplicate_import(
+            provider=item_to_import.provider,
+            media_id=item_to_import.mediaId,
+            anime_title=item_to_import.title,
+            season=item_to_import.season,
+            is_single_episode=item_to_import.currentEpisodeIndex is not None,
+            episode_index=item_to_import.currentEpisodeIndex,
+        )
     if duplicate_reason:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -489,7 +335,8 @@ async def direct_import(
         unique_key += f"-ep{item_to_import.currentEpisodeIndex}"
 
     try:
-        task_coro = lambda session, cb: tasks.generic_import_task(
+        task_coro = task_manager.build_task_coro_factory(
+            "generic_import",
             provider=item_to_import.provider,
             mediaId=item_to_import.mediaId,
             animeTitle=item_to_import.title,
@@ -498,9 +345,10 @@ async def direct_import(
             year=item_to_import.year,
             currentEpisodeIndex=item_to_import.currentEpisodeIndex,
             imageUrl=item_to_import.imageUrl,
-            config_manager=config_manager,
+            config_service=config_service,
             metadata_manager=metadata_manager,
-            progress_callback=cb, session=session, manager=manager, task_manager=task_manager,
+            manager=manager,
+            task_manager=task_manager,
             rate_limiter=rate_limiter, title_recognition_manager=title_recognition_manager,
             doubanId=payload.doubanId, tmdbId=payload.tmdbId, imdbId=payload.imdbId,
             tvdbId=payload.tvdbId, bangumiId=payload.bangumiId,
@@ -529,16 +377,13 @@ async def direct_import(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="提交任务时发生内部错误。")
 
 
-from typing import List, Union
-
 @router.get("/episodes", summary="获取搜索结果的分集列表")
 async def get_episodes(
     searchId: str = Query(..., description="来自/search接口的searchId"),
     result_index: int = Query(..., ge=0, description="要获取分集的结果的索引"),
     includeFiltered: int = Query(0, ge=0, le=1, description="是否返回被过滤的分集：0=否(默认，仅返回保留分集数组)，1=是(返回 {episodes, filteredEpisodes} 对象)"),
-    session: AsyncSession = Depends(get_db_session),
     manager: ScraperManager = Depends(get_scraper_manager),
-) -> Union[List[models.ProviderEpisodeInfo], EpisodesWithFilteredResponse]:
+) -> Union[List[ProviderEpisodeInfo], EpisodesWithFilteredResponse]:
     """
     ### 功能
     在执行`/search`后，获取指定搜索结果的完整分集列表。
@@ -551,21 +396,15 @@ async def get_episodes(
     - **1**: 返回 `EpisodesWithFilteredResponse` 对象，包含 `episodes`（保留分集）和 `filteredEpisodes`（被黑名单/正则过滤掉的分集，如预告、花絮）。可用于判断是否需要通过 `/import/edited` 手动纳入这些被过滤的分集。
     """
     cache_key = f"control_search_{searchId}"
-    cached_results_raw = None
-    _backend = get_cache_backend()
-    if _backend is not None:
-        try:
-            cached_results_raw = await _backend.get(cache_key, region="default")
-        except Exception:
-            pass
-    if cached_results_raw is None:
-        cached_results_raw = await crud.get_cache(session, cache_key)
+    # 不指定分页，保持搜索会话的完整索引顺序。
+    cached_data = await read_search_results(cache_key, region="default")
+    cached_results_raw = cached_data["results"] if cached_data is not None else None
 
     if cached_results_raw is None:
         raise HTTPException(status_code=404, detail="搜索会话已过期或无效，请重新搜索。")
 
     try:
-        cached_results = [models.ProviderSearchInfo.model_validate(r) for r in cached_results_raw]
+        cached_results = [ProviderSearchInfo.model_validate(r) for r in cached_results_raw]
     except Exception:
         raise HTTPException(status_code=500, detail="无法解析缓存的搜索结果。")
 
@@ -595,12 +434,11 @@ async def get_episodes(
 @router.post("/import/edited", status_code=status.HTTP_202_ACCEPTED, summary="导入编辑后的分集列表", response_model=ControlTaskResponse)
 async def edited_import(
     payload: ControlEditedImportRequest,
-    session: AsyncSession = Depends(get_db_session),
     task_manager: TaskManager = Depends(get_task_manager),
     manager: ScraperManager = Depends(get_scraper_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
-    config_manager: ConfigManager = Depends(get_config_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    config_service: ConfigService = Depends(get_config_service),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
     title_recognition_manager = Depends(get_title_recognition_manager)
 ):
     """
@@ -611,21 +449,15 @@ async def edited_import(
     这是最灵活的导入方式。它允许您完全控制要导入的分集，包括标题、顺序等。您可以在请求中覆盖作品标题和附加元数据ID。
     """
     cache_key = f"control_search_{payload.searchId}"
-    cached_results_raw = None
-    _backend = get_cache_backend()
-    if _backend is not None:
-        try:
-            cached_results_raw = await _backend.get(cache_key, region="default")
-        except Exception:
-            pass
-    if cached_results_raw is None:
-        cached_results_raw = await crud.get_cache(session, cache_key)
+    # 编辑导入同样读取全量结果，不能对搜索索引再次分页。
+    cached_data = await read_search_results(cache_key, region="default")
+    cached_results_raw = cached_data["results"] if cached_data is not None else None
 
     if cached_results_raw is None:
         raise HTTPException(status_code=404, detail="搜索会话已过期或无效，请重新搜索。")
 
     try:
-        cached_results = [models.ProviderSearchInfo.model_validate(r) for r in cached_results_raw]
+        cached_results = [ProviderSearchInfo.model_validate(r) for r in cached_results_raw]
     except Exception:
         raise HTTPException(status_code=500, detail="无法解析缓存的搜索结果。")
 
@@ -637,25 +469,22 @@ async def edited_import(
     # 关键修复：恢复并完善在任务提交前的重复检查。
     # 对于编辑后导入，我们需要检查每个单集是否已存在（必须是相同数据源 + 季度）
     # 检查数据源是否已存在
-    source_exists = await crud.check_source_exists_by_media_id(session, item_to_import.provider, item_to_import.mediaId, season=item_to_import.season)
+    db = get_database_service()
+    async with db.transaction():
+        source_exists = await db.source.check_exists_by_media_id(item_to_import.provider, item_to_import.mediaId, season=item_to_import.season)
 
     if source_exists:
-        # 数据源已存在，检查每个要导入的单集是否已有弹幕（必须是相同 provider + media_id）
+        # 数据源已存在时，仅通过 Repository 检查待导入分集，避免 API 层拼装 ORM 查询。
         existing_episodes = []
-        for episode in payload.episodes:
-            # 使用精确检查：provider + media_id + episode_index
-            stmt = select(orm_models.Episode.id).join(
-                orm_models.AnimeSource, orm_models.Episode.sourceId == orm_models.AnimeSource.id
-            ).where(
-                orm_models.AnimeSource.providerName == item_to_import.provider,
-                orm_models.AnimeSource.mediaId == item_to_import.mediaId,
-                orm_models.Episode.episodeIndex == episode.episodeIndex,
-                orm_models.Episode.danmakuFilePath.isnot(None),
-                orm_models.Episode.commentCount > 0
-            ).limit(1)
-            result = await session.execute(stmt)
-            if result.scalar_one_or_none() is not None:
-                existing_episodes.append(episode.episodeIndex)
+        async with db.transaction():
+            for episode in payload.episodes:
+                exists = await db.episode.check_episode_exists_with_danmaku(
+                    provider=item_to_import.provider,
+                    media_id=item_to_import.mediaId,
+                    episode_index=episode.episodeIndex,
+                )
+                if exists:
+                    existing_episodes.append(episode.episodeIndex)
 
         # 如果所有集都已存在，则阻止导入
         if len(existing_episodes) == len(payload.episodes):
@@ -671,14 +500,15 @@ async def edited_import(
 
 
     # 构建编辑导入请求
-    edited_request = models.EditedImportRequest(
+    edited_request = EditedImportRequest(
         provider=item_to_import.provider,
         mediaId=item_to_import.mediaId,
         animeTitle=payload.title or item_to_import.title,
         mediaType=item_to_import.type,
         season=item_to_import.season,
         year=item_to_import.year,
-        episodes=payload.episodes,
+        # 控制层与任务层使用不同分集 DTO，经过字典转换保持字段契约。
+        episodes=[episode.model_dump() for episode in payload.episodes],
         tmdbId=payload.tmdbId,
         imdbId=payload.imdbId,
         tvdbId=payload.tvdbId,
@@ -722,9 +552,10 @@ async def edited_import(
     }
 
     try:
-        task_coro = lambda session, cb: tasks.edited_import_task(
-            request_data=edited_request, progress_callback=cb, session=session,
-            config_manager=config_manager, manager=manager, rate_limiter=rate_limiter,
+        task_coro = task_manager.build_task_coro_factory(
+            "edited_import",
+            request_data=edited_request,
+            config_service=config_service, manager=manager, rate_limiter=rate_limiter,
             metadata_manager=metadata_manager, title_recognition_manager=title_recognition_manager
         )
         task_id, _ = await task_manager.submit_task(
@@ -743,7 +574,6 @@ async def edited_import(
 @router.post("/import/xml", status_code=status.HTTP_202_ACCEPTED, summary="从XML/文本导入弹幕", response_model=ControlTaskResponse)
 async def xml_import(
     payload: ControlXmlImportRequest,
-    session: AsyncSession = Depends(get_db_session),
     task_manager: TaskManager = Depends(get_task_manager),
     manager: ScraperManager = Depends(get_scraper_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter)
@@ -758,7 +588,9 @@ async def xml_import(
 
     此接口非常适合用于对已有的数据源进行单集补全或更新。
     """
-    source_info = await crud.get_anime_source_info(session, payload.sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(payload.sourceId)
     if not source_info:
         raise HTTPException(status_code=404, detail=f"数据源 ID: {payload.sourceId} 未找到。")
 
@@ -773,15 +605,14 @@ async def xml_import(
     unique_key = f"manual-import-{payload.sourceId}-{payload.episodeIndex}"
 
     try:
-        task_coro = lambda s, cb: tasks.manual_import_task(
+        task_coro = task_manager.build_task_coro_factory(
+            "manual_import",
             sourceId=payload.sourceId,
             animeId=anime_id,
             title=payload.title,
             episodeIndex=payload.episodeIndex,
             content=payload.content,
             providerName='custom',
-            progress_callback=cb,
-            session=s,
             manager=manager,
             rate_limiter=rate_limiter
         )
@@ -801,7 +632,6 @@ async def xml_import(
 @router.post("/import/url", status_code=status.HTTP_202_ACCEPTED, summary="从URL导入", response_model=ControlTaskResponse)
 async def url_import(
     payload: ControlUrlImportRequest,
-    session: AsyncSession = Depends(get_db_session),
     task_manager: TaskManager = Depends(get_task_manager),
     manager: ScraperManager = Depends(get_scraper_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter)
@@ -816,7 +646,9 @@ async def url_import(
 
     此接口非常适合用于对已有的数据源进行单集补全或更新。
     """
-    source_info = await crud.get_anime_source_info(session, payload.sourceId)
+    db = get_database_service()
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(payload.sourceId)
     if not source_info:
         raise HTTPException(status_code=404, detail=f"数据源 ID: {payload.sourceId} 未找到。")
 
@@ -832,15 +664,14 @@ async def url_import(
     unique_key = f"manual-import-{payload.sourceId}-{payload.episodeIndex}"
 
     try:
-        task_coro = lambda s, cb: tasks.manual_import_task(
+        task_coro = task_manager.build_task_coro_factory(
+            "manual_import",
             sourceId=payload.sourceId,
             animeId=anime_id,
             title=payload.title,
             episodeIndex=payload.episodeIndex,
             content=payload.url,
             providerName=provider_name,
-            progress_callback=cb,
-            session=s,
             manager=manager,
             rate_limiter=rate_limiter
         )

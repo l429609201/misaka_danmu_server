@@ -1,24 +1,9 @@
-"""
-御坂助手 · API 网关执行器（内部 ASGI 调用）
-------------------------------------------------------------
-把白名单操作转成一次内部 ASGI 请求打进 FastAPI app，从而复用路由层的
-全部业务校验（Pydantic 校验、唯一性检查、HTTPException 语义），
-不必在助手侧重写一遍业务规则。
-
-安全设计：
-1. 请求不出进程：httpx.ASGITransport 直接驱动 app，不经过真实网络端口。
-2. 不伪造 JWT：改用 FastAPI 的 dependency_overrides 临时注入
-   「当前对话用户」作为 get_current_user 的返回值。这样既不需要签发真实令牌，
-   也不会在系统里留下可被复用的凭据。
-3. 方法与路径由白名单决定，AI 只能提交 operation_id 与结构化参数。
-4. 覆盖仅在单次调用内生效，用 try/finally 保证还原，且以锁串行化，
-   避免并发对话互相污染 app 级别的依赖覆盖表。
-"""
+"""通过白名单路由执行助手操作，内部请求按原始用户令牌鉴权。"""
 
 from __future__ import annotations
 
-import asyncio
 import logging
+from urllib.parse import quote
 from typing import Any, Dict, Optional
 
 import httpx
@@ -33,9 +18,6 @@ _REQUEST_TIMEOUT_SECONDS = 30.0
 _MAX_RESPONSE_CHARS = 8000
 # 列表类响应的条目预览上限：超出则截断，但总数由 collection 元数据保留
 _MAX_LIST_PREVIEW_ITEMS = 30
-# dependency_overrides 是 app 级共享状态，必须串行化保护
-_override_lock = asyncio.Lock()
-
 # 分页/计数类响应头 → 结构化字段名（对齐 MoviePilot 的集合元数据投影）
 _COLLECTION_HEADERS = {
     "x-total-count": "total_count",
@@ -65,7 +47,7 @@ def _fill_path(operation: ApiOperation, path_params: Dict[str, Any]) -> str:
         raw = str(path_params[name]).strip()
         if "/" in raw or ".." in raw:
             raise ApiExecutionError(f"路径参数 {name} 含非法字符")
-        path = path.replace(f"{{{name}}}", raw)
+        path = path.replace(f"{{{name}}}", quote(raw, safe=""))
     if "{" in path:
         raise ApiExecutionError(f"路径模板未完全填充：{path}")
     return path
@@ -169,7 +151,7 @@ async def execute_operation(
     operation: ApiOperation,
     *,
     app: Any,
-    current_user: Any,
+    authorization: str,
     path_params: Optional[Dict[str, Any]] = None,
     query: Optional[Dict[str, Any]] = None,
     body: Any = None,
@@ -179,7 +161,7 @@ async def execute_operation(
 
     :param operation: 已解析的白名单操作契约
     :param app: FastAPI 应用实例（从 request.app 传入）
-    :param current_user: 当前对话用户对象，作为鉴权依赖的返回值
+    :param authorization: 当前 Web 请求的 Bearer 鉴权头
     :param path_params: 路径参数
     :param query: 查询参数
     :param body: JSON 请求体
@@ -187,52 +169,36 @@ async def execute_operation(
     """
     if app is None:
         raise ApiExecutionError("运行环境不完整：缺少应用实例")
-    if current_user is None:
-        raise ApiExecutionError("运行环境不完整：无法确认当前用户身份")
-
-    # 延迟导入：避免 src.security 与助手包之间形成模块级循环依赖
-    from src import security
+    scheme, separator, credential = (authorization or "").partition(" ")
+    if (scheme.lower() != "bearer" or not separator or not credential
+            or any(ch.isspace() for ch in credential)):
+        raise ApiExecutionError("当前渠道没有可透传的登录凭据，无法调用站内接口")
 
     url_path = _fill_path(operation, path_params or {})
     clean_query = {
         k: v for k, v in (query or {}).items() if v is not None and v != ""
     }
 
-    async def _override_current_user() -> Any:
-        """把当前对话用户直接作为鉴权结果返回，不签发也不校验令牌。"""
-        return current_user
-
     transport = httpx.ASGITransport(app=app)
-    # 覆盖鉴权依赖期间必须串行，防止并发对话相互污染
-    async with _override_lock:
-        overrides = app.dependency_overrides
-        # 记录原值以便精确还原（可能本来就有覆盖，不能直接 pop）
-        sentinel = object()
-        previous = overrides.get(security.get_current_user, sentinel)
-        overrides[security.get_current_user] = _override_current_user
-        try:
-            async with httpx.AsyncClient(
-                transport=transport,
-                base_url="http://misaka-assistant.internal",
-                timeout=_REQUEST_TIMEOUT_SECONDS,
-            ) as client:
-                response = await client.request(
-                    operation.method,
-                    url_path,
-                    params=clean_query or None,
-                    json=body if body is not None else None,
-                )
-        except httpx.TimeoutException as exc:
-            raise ApiExecutionError(f"接口调用超时（超过 {int(_REQUEST_TIMEOUT_SECONDS)} 秒）") from exc
-        except Exception as exc:  # noqa: BLE001
-            logger.error("御坂助手 API 网关内部调用失败 %s %s: %s",
-                         operation.method, url_path, exc, exc_info=True)
-            raise ApiExecutionError(f"接口调用失败：{exc}") from exc
-        finally:
-            if previous is sentinel:
-                overrides.pop(security.get_current_user, None)
-            else:
-                overrides[security.get_current_user] = previous
+    try:
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://misaka-assistant.internal",
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        ) as client:
+            response = await client.request(
+                operation.method,
+                url_path,
+                params=clean_query or None,
+                json=body if body is not None else None,
+                headers={"Authorization": authorization},
+            )
+    except httpx.TimeoutException as exc:
+        raise ApiExecutionError(f"接口调用超时（超过 {int(_REQUEST_TIMEOUT_SECONDS)} 秒）") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.error("御坂助手 API 网关内部调用失败 %s %s: %s",
+                     operation.method, url_path, exc, exc_info=True)
+        raise ApiExecutionError(f"接口调用失败：{exc}") from exc
 
     payload = _summarize_body(response)
     if response.status_code >= 400:

@@ -14,7 +14,7 @@ import logging
 import shutil
 from typing import Dict
 
-from .skill_manager import get_skills_base_dir, Skill
+from .skill_model import get_skills_base_dir, Skill
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ BUILTIN_SKILLS: Dict[str, Skill] = {
             "search_library", "get_anime_sources", "get_source_episodes",
             "get_global_filter", "get_global_episode_title_filter",
             "get_single_episode_filter", "get_source_episode_blacklist",
-            "list_tasks", "get_task_status"
+            "list_tasks", "get_task_status", "refresh_episode_danmaku"
         ],
         enabled=True,
         content="""
@@ -76,7 +76,11 @@ BUILTIN_SKILLS: Dict[str, Skill] = {
    - 第 3 层（单剧过滤）：`get_single_episode_filter` 看该作品是否有专属过滤规则
    - 作品级过滤（影响搜索）：`get_global_filter` 检查是否在搜索阶段就被过滤掉
 4. **检查导入任务状态**：`list_tasks` 找到相关任务，`get_task_status` 看是否失败/被取消
-5. **给出结论**：
+5. **给出结论并修复**：
+    - 若命中过滤规则，告知用户"这集标题命中了xxx过滤规则，弹幕被有意过滤"，不要擅自改过滤规则
+    - 若任务失败或分集存在但弹幕数量异常少，说明原因并提出刷新该分集
+    - 用户确认后调用 `refresh_episode_danmaku` 提交后台刷新任务，再用 `list_tasks` / `get_task_status` 追踪结果
+    - 若分集根本未导入，建议用户重新搜索或用 URL 导入补全
    - 若命中过滤规则，告知用户"这集标题命中了xxx过滤规则，弹幕被有意过滤"
    - 若任务失败，告知用户失败原因（如超时、源不可用）
    - 若分集根本未导入，建议用户重新搜索或用 URL 导入补全

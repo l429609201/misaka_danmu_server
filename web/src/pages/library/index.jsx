@@ -28,6 +28,8 @@ import {
   getAnimeDetail,
   getAnimeInfoAsSource,
   getAnimeLibrary,
+  getTaskList,
+  getTaskDetail,
   getBgmSearch,
   getDoubanSearch,
   getEgidSearch,
@@ -102,6 +104,13 @@ export const Library = () => {
 
   const [loading, setLoading] = useState(true)
   const [list, setList] = useState([])
+  const [deletingAnimeIds, setDeletingAnimeIds] = useState(() => new Set())
+  const deletingAnimeIdsRef = useRef(new Set())
+  const submittingDeleteIdsRef = useRef(new Set())
+  const pendingDeleteSyncIdsRef = useRef(new Set())
+  const deleteTasksRef = useRef(new Map())
+  const deleteRefreshRequestedRef = useRef(false)
+  const deletePollingCallbacksRef = useRef(null)
   // 从 sessionStorage 恢复上次的搜索关键词
   const [keyword, setKeyword] = useState(() => sessionStorage.getItem('lib_keyword') || '')
   // null 表示未从 DB 初始化，防止初始化前触发 getList
@@ -251,7 +260,7 @@ export const Library = () => {
 
   const modalApi = useModal()
   const messageApi = useMessage()
-  const deleteFilesRef = useRef(true) // 删除时是否同时删除弹幕文件，默认为 true
+  const deletePollingMountedRef = useRef(false)
 
   // 源选择弹窗状态（用于标记和追更操作）
   const [sourceSelectOpen, setSourceSelectOpen] = useState(false)
@@ -270,10 +279,13 @@ export const Library = () => {
         sortBy,
         sortOrder,
       })
+      const total = res.data?.total || 0
+      const lastPage = Math.max(1, Math.ceil(total / pagination.pageSize))
       setList(res.data?.list || [])
       setPagination(prev => ({
         ...prev,
-        total: res.data?.total || 0,
+        current: prev.current === pagination.current && pagination.current > lastPage ? lastPage : prev.current,
+        total,
       }))
     } catch (error) {
       setList([])
@@ -424,6 +436,12 @@ export const Library = () => {
       title: t('libraryPage.colName'),
       dataIndex: 'title',
       key: 'title',
+      render: (value, record) => (
+        <Space wrap>
+          <span>{value}</span>
+          {deletingAnimeIds.has(record.animeId) && <Tag color="processing">{t('libraryPage.deletePending')}</Tag>}
+        </Space>
+      ),
     },
     {
       title: t('libraryPage.colType'),
@@ -451,6 +469,7 @@ export const Library = () => {
         const hasFavorited = record.sources?.some(s => s.isFavorited)
         const hasIncremental = record.sources?.some(s => s.incrementalRefreshEnabled)
         const allFinished = record.sources?.length > 0 && record.sources.every(s => s.isFinished)
+        const isDeleting = deletingAnimeIds.has(record.animeId)
         return (
           <Space>
             <Tooltip title={t('libraryPage.tipEdit')}>
@@ -486,11 +505,11 @@ export const Library = () => {
                 <MyIcon icon="book" size={20} />
               </span>
             </Tooltip>
-            <Tooltip title={t('libraryPage.tipDelete')}>
-              <span className="cursor-pointer hover:text-primary"
-                onClick={(e) => { e.stopPropagation(); handleDelete(record) }}>
-                <MyIcon icon="delete" size={20} />
-              </span>
+            <Tooltip title={t(isDeleting ? 'libraryPage.deletePending' : 'libraryPage.tipDelete')}>
+              <Button type="text" size="small" disabled={isDeleting}
+                aria-label={t(isDeleting ? 'libraryPage.deletePending' : 'libraryPage.tipDelete')}
+                onClick={(e) => { e.stopPropagation(); handleDelete(record) }}
+                icon={<MyIcon icon="delete" size={20} />} />
             </Tooltip>
           </Space>
         )
@@ -612,14 +631,110 @@ export const Library = () => {
     }
   }
 
+  // 轮询始终使用当前搜索、分页和文案，避免挂载时闭包过期。
+  deletePollingCallbacksRef.current = { getList, loadGroups, messageApi, t }
+
+  useEffect(() => {
+    let disposed = false
+    let timer
+    deletePollingMountedRef.current = true
+    const pageSize = 100
+    const terminalStatuses = ['已完成', '失败', '超时', '已取消', 'completed', 'failed', 'cancelled']
+
+    const fetchActiveTasks = async () => {
+      const tasks = []
+      for (let page = 1; !disposed; page += 1) {
+        const res = await getTaskList({ status: 'in_progress', page, pageSize, sortBy: 'createdAt' })
+        if (disposed) return []
+        const items = res.data?.list || []
+        tasks.push(...items)
+        if (!items.length || page * pageSize >= (res.data?.total || 0)) break
+      }
+      return tasks
+    }
+
+    const poll = async () => {
+      let refresh = deleteRefreshRequestedRef.current
+      deleteRefreshRequestedRef.current = false
+      try {
+        // 先保存本轮要检查的任务，提交中的新任务留到下一轮，防止竞态解锁。
+        const trackedTasks = new Map(deleteTasksRef.current)
+        const pendingSyncIds = new Set(pendingDeleteSyncIdsRef.current)
+        const activeTasks = await fetchActiveTasks()
+        if (disposed) return
+        const activeTaskIds = new Set(activeTasks.map(task => task.taskId))
+        const activeAnimeIds = new Set()
+        for (const task of activeTasks) {
+          const match = /^delete-anime-(\d+)$/.exec(task.uniqueKey || '')
+          if (!match) continue
+          const id = Number(match[1])
+          activeAnimeIds.add(id)
+          deleteTasksRef.current.set(task.taskId, id)
+        }
+
+        const missingIds = new Set([...trackedTasks.keys()].filter(id => !activeTaskIds.has(id)))
+        if (missingIds.size) {
+          // 逐个确认已知任务，避免历史分页变化漏掉瞬间完成的任务。
+          const history = []
+          for (const taskId of missingIds) {
+            try {
+              const res = await getTaskDetail(taskId)
+              if (disposed) return
+              history.push({ taskId, task: res.data })
+            } catch (error) {
+              if (disposed) return
+              if (error.code !== 404) throw error
+              history.push({ taskId, task: null })
+            }
+          }
+          for (const { taskId, task } of history) {
+            if (task && !terminalStatuses.includes(task.status)) continue
+            deleteTasksRef.current.delete(taskId)
+            refresh = true
+            if (task && !['已完成', 'completed'].includes(task.status)) {
+              const { messageApi: currentMessage, t: currentT } = deletePollingCallbacksRef.current
+              currentMessage.error(currentT('libraryPage.deleteFailed', { error: task.description || task.status }))
+            }
+          }
+        }
+
+        for (const id of pendingSyncIds) pendingDeleteSyncIdsRef.current.delete(id)
+        const nextIds = new Set([...activeAnimeIds, ...submittingDeleteIdsRef.current, ...pendingDeleteSyncIdsRef.current, ...deleteTasksRef.current.values()])
+        deletingAnimeIdsRef.current = nextIds
+        setDeletingAnimeIds(nextIds)
+        if (refresh) {
+          const callbacks = deletePollingCallbacksRef.current
+          await Promise.all([callbacks.getList(), callbacks.loadGroups()])
+        }
+      } catch (error) {
+        if (refresh) deleteRefreshRequestedRef.current = true
+        // 网络失败不解除锁，下轮继续确认后端状态。
+      } finally {
+        if (!disposed) timer = window.setTimeout(poll, 1500)
+      }
+    }
+    poll()
+    return () => {
+      disposed = true
+      deletePollingMountedRef.current = false
+      window.clearTimeout(timer)
+    }
+  }, [])
+
   const handleDelete = async record => {
-    deleteFilesRef.current = true // 重置为默认值
+    const id = Number(record.animeId)
+    if (deletingAnimeIdsRef.current.has(id)) {
+      messageApi.warning(t('libraryPage.deleteAlreadyRunning'))
+      return
+    }
+    // 每个确认框独立保存文件选项，多个确认框不会互相覆盖。
+    let deleteFiles = true
     modalApi.confirm({
       title: t('libraryPage.deleteTitle'),
       zIndex: 1002,
       content: (
         <div>
-          {t('libraryPage.deleteConfirmMsg', { name: record.name })}
+          {t('libraryPage.deleteConfirmMsg', { name: record.title || record.name })}
           <br />
           {t('libraryPage.deleteHintBg')}
           <div className="flex items-center gap-2 mt-3">
@@ -627,7 +742,7 @@ export const Library = () => {
             <Switch
               defaultChecked={true}
               onChange={checked => {
-                deleteFilesRef.current = checked
+                deleteFiles = checked
               }}
             />
           </div>
@@ -636,11 +751,39 @@ export const Library = () => {
       okText: t('common.confirm'),
       cancelText: t('common.cancel'),
       onOk: async () => {
+        if (!deletePollingMountedRef.current) return
+        if (deletingAnimeIdsRef.current.has(id)) {
+          messageApi.warning(t('libraryPage.deleteAlreadyRunning'))
+          return
+        }
+        // 同步加锁，React 下一次渲染前的连续点击也不能重复提交。
+        deletingAnimeIdsRef.current.add(id)
+        submittingDeleteIdsRef.current.add(id)
+        setDeletingAnimeIds(new Set(deletingAnimeIdsRef.current))
         try {
-          const res = await deleteAnime({ animeId: record.animeId, deleteFiles: deleteFilesRef.current })
-          goTask(res)
+          const res = await deleteAnime({ animeId: id, deleteFiles })
+          if (!deletePollingMountedRef.current) return
+          const task = res.data
+          if (task?.taskId) deleteTasksRef.current.set(task.taskId, id)
+          else {
+            pendingDeleteSyncIdsRef.current.add(id)
+            deleteRefreshRequestedRef.current = true
+          }
+          goTask(task || {})
         } catch (error) {
-          messageApi.error(t('libraryPage.deleteSubmitFailed'))
+          if (!deletePollingMountedRef.current) return
+          if (error.code === 409) {
+            // 保留禁用状态直到下一轮同步后端活跃任务，不能把409当成解锁。
+            pendingDeleteSyncIdsRef.current.add(id)
+            deleteRefreshRequestedRef.current = true
+            messageApi.warning(t('libraryPage.deleteAlreadyRunning'))
+          } else {
+            deletingAnimeIdsRef.current.delete(id)
+            setDeletingAnimeIds(new Set(deletingAnimeIdsRef.current))
+            messageApi.error(t('libraryPage.deleteSubmitFailed'))
+          }
+        } finally {
+          submittingDeleteIdsRef.current.delete(id)
         }
       },
     })
@@ -663,7 +806,7 @@ export const Library = () => {
         navigate(`${RoutePaths.TASK}?status=all`)
       },
       onCancel: () => {
-        getList()
+        if (deletePollingMountedRef.current) deletePollingCallbacksRef.current.getList()
       },
     })
   }
@@ -1510,6 +1653,7 @@ export const Library = () => {
             setEditOpen(true)
           }}
           onDelete={handleDelete}
+          deletingAnimeIds={deletingAnimeIds}
           onNavigate={(record) => navigate(`/anime/${record.animeId}`)}
           onFavorite={(record) => handleFavorite(record)}
           onIncremental={(record) => handleIncremental(record)}

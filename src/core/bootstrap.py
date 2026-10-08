@@ -15,6 +15,9 @@ import sys
 import signal
 import secrets
 import logging
+import time
+import socket
+import subprocess
 from pathlib import Path
 
 from src.core.env import is_docker_environment as _is_docker_environment
@@ -174,9 +177,6 @@ def _wait_port_released(port: int, timeout: float = 3.0) -> None:
     这一秒纯属浪费；热重载模式下预检执行两次，白等两秒。
     改为 50ms 轮询探测，端口一释放立刻返回。
     """
-    import time
-    import socket
-
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -189,7 +189,6 @@ def _wait_port_released(port: int, timeout: float = 3.0) -> None:
 
 def _kill_old_instances(port: int) -> None:
     """检查并杀死占用指定端口的旧后端进程（排除自身）"""
-    import subprocess
     my_pid = os.getpid()
 
     try:
@@ -319,7 +318,6 @@ def preload_config() -> None:
     file_values = {}
     if config_path.is_file():
         try:
-            import yaml
             with open(config_path, "r", encoding="utf-8") as f:
                 raw = yaml.safe_load(f) or {}
             def _flatten(d, prefix=""):

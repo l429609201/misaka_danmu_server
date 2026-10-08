@@ -1,6 +1,6 @@
 """
 NotificationManager — 渠道动态加载与生命周期管理 + 统一通知出口
-参考 MediaServerManager 的多实例管理模式。
+参考 MediaServerService 的多实例管理模式。
 
 新架构职责：
 - notify_event_v2 — 通用事件入口（task_event/system_event）
@@ -11,13 +11,15 @@ NotificationManager — 渠道动态加载与生命周期管理 + 统一通知�
 """
 
 import asyncio
-import importlib
+import json
 import logging
-import pkgutil
 from typing import Callable, Dict, List, Optional, Any
 
-from src.db import crud
 from src.notification.base import BaseNotificationChannel, ChannelCapability, RenderedMessage
+from src.notification.qqbot import QQBotChannel
+from src.notification.serverchan import ServerChanChannel
+from src.notification.telegram import TelegramChannel
+from src.notification.wechat import WeChatChannel
 from src.notification.messages.base import NotificationMessage
 from src.notification.aggregation import NotificationAggregator
 # 新增导入
@@ -27,6 +29,7 @@ from src.notification.events import (
 from src.notification.template_resolver import TemplateResolver
 from src.notification.subscription_matcher import SubscriptionMatcher
 from src.notification.messages.unified import UnifiedTaskMessage, UnifiedSystemMessage
+from src.services.service_container import get_database_service
 
 logger = logging.getLogger(__name__)
 
@@ -36,46 +39,30 @@ class NotificationManager:
 
     def __init__(self, session_factory: Callable, notification_service):
         self._session_factory = session_factory
+        self._db = get_database_service()
         self.notification_service = notification_service
         self.channels: Dict[int, BaseNotificationChannel] = {}  # channel_id -> instance
-        self._channel_classes: Dict[str, type] = {}  # channel_type -> class
-        self._discover_channel_classes()
+        self._channel_classes: Dict[str, type] = {
+            cls.channel_type: cls
+            for cls in (TelegramChannel, QQBotChannel, WeChatChannel, ServerChanChannel)
+        }
 
         # 聚合器（保留用于未来的聚合功能，当前新事件系统不使用）
         self._aggregator = NotificationAggregator(time_window=30.0, max_count=10)
         self._flush_task: Optional[asyncio.Task] = None
 
-    def _discover_channel_classes(self):
-        """自动发现 src/notification/ 下的渠道实现"""
-        import src.notification as pkg
-        for importer, modname, ispkg in pkgutil.iter_modules(pkg.__path__):
-            if modname.startswith("_") or modname == "base":
-                continue
-            try:
-                module = importlib.import_module(f"src.notification.{modname}")
-                for attr_name in dir(module):
-                    attr = getattr(module, attr_name)
-                    if (isinstance(attr, type)
-                            and issubclass(attr, BaseNotificationChannel)
-                            and attr is not BaseNotificationChannel
-                            and getattr(attr, 'channel_type', '')):
-                        self._channel_classes[attr.channel_type] = attr
-            except Exception as e:
-                logger.error(f"加载通知渠道模块 {modname} 失败: {e}", exc_info=True)
-
     async def _get_proxy_url(self) -> str:
         """从数据库读取全局代理 URL（仅 http_socks 模式下有效）"""
         try:
-            async with self._session_factory() as session:
-                from src.db import crud as _crud
-                proxy_mode = await _crud.get_config_value(session, "proxyMode", "none")
+            async with self._db.transaction():
+                proxy_mode = await self._db.config.get_value("proxyMode", "none")
                 if proxy_mode == "http_socks":
-                    return await _crud.get_config_value(session, "proxyUrl", "") or ""
+                    return await self._db.config.get_value("proxyUrl", "") or ""
                 # 兼容旧配置
                 if proxy_mode == "none":
-                    proxy_enabled = await _crud.get_config_value(session, "proxyEnabled", "false")
+                    proxy_enabled = await self._db.config.get_value("proxyEnabled", "false")
                     if str(proxy_enabled).lower() == "true":
-                        return await _crud.get_config_value(session, "proxyUrl", "") or ""
+                        return await self._db.config.get_value("proxyUrl", "") or ""
         except Exception as e:
             logger.warning(f"读取代理配置失败: {e}")
         return ""
@@ -83,9 +70,8 @@ class NotificationManager:
     async def _get_webhook_api_key(self) -> str:
         """从数据库读取 Webhook API Key"""
         try:
-            async with self._session_factory() as session:
-                from src.db import crud as _crud
-                return await _crud.get_config_value(session, "webhookApiKey", "") or ""
+            async with self._db.transaction():
+                return await self._db.config.get_value("webhookApiKey", "") or ""
         except Exception as e:
             logger.warning(f"读取 Webhook API Key 失败: {e}")
         return ""
@@ -98,9 +84,8 @@ class NotificationManager:
         因此在此统一读取并注入各渠道，避免每个渠道各自再配一遍。
         """
         try:
-            async with self._session_factory() as session:
-                from src.db import crud as _crud
-                return await _crud.get_config_value(session, "custom_api_domain", "") or ""
+            async with self._db.transaction():
+                return await self._db.config.get_value("custom_api_domain", "") or ""
         except Exception as e:
             logger.warning(f"读取自定义域名失败: {e}")
         return ""
@@ -111,13 +96,13 @@ class NotificationManager:
         供启动初始化和配置变更后调用。读取失败时保留默认值，不影响通知功能。
         """
         try:
-            async with self._session_factory() as session:
-                enabled_str = await crud.get_config_value(
-                    session, "notificationSurgeAggregationEnabled", "true")
-                window_str = await crud.get_config_value(
-                    session, "notificationSurgeWindowSeconds", "30")
-                threshold_str = await crud.get_config_value(
-                    session, "notificationSurgeThreshold", "5")
+            async with self._db.transaction():
+                enabled_str = await self._db.config.get_value(
+                    "notificationSurgeAggregationEnabled", "true")
+                window_str = await self._db.config.get_value(
+                    "notificationSurgeWindowSeconds", "30")
+                threshold_str = await self._db.config.get_value(
+                    "notificationSurgeThreshold", "5")
             enabled = str(enabled_str).lower() == "true"
             try:
                 window = float(window_str)
@@ -134,10 +119,24 @@ class NotificationManager:
         except Exception as e:
             logger.warning(f"读取通知汇总配置失败，使用默认值: {e}")
 
-    async def initialize(self):
+    @staticmethod
+    def _channel_settings(channel: Any) -> Dict[str, Any]:
+        """在事务内提取渠道加载配置，避免将会话绑定对象带入渠道生命周期。"""
+        return {
+            "id": channel.id,
+            "name": channel.name,
+            "channelType": channel.channelType,
+            "isEnabled": channel.isEnabled,
+            "useProxy": channel.useProxy,
+            "config": json.loads(channel.config) if channel.config else {},
+            "eventsConfig": json.loads(channel.eventsConfig) if channel.eventsConfig else {},
+        }
+
+    async def initialize(self) -> None:
         """从数据库加载所有启用的渠道实例"""
-        async with self._session_factory() as session:
-            all_channels = await crud.get_all_notification_channels(session)
+        async with self._db.transaction():
+            channels = await self._db.notification.get_enabled_channels()
+            all_channels = [self._channel_settings(channel) for channel in channels]
 
         # 预读全局代理 URL、Webhook API Key 和自定义域名
         proxy_url = await self._get_proxy_url()
@@ -249,8 +248,9 @@ class NotificationManager:
                 pass
 
         # 从数据库重新读取
-        async with self._session_factory() as session:
-            ch_data = await crud.get_notification_channel_by_id(session, channel_id)
+        async with self._db.transaction():
+            channel = await self._db.notification.get_by_id(channel_id)
+            ch_data = self._channel_settings(channel) if channel else None
 
         if not ch_data or not ch_data.get("isEnabled"):
             return
@@ -443,6 +443,15 @@ class NotificationManager:
         # 设置消息类型为模板 ID
         message.message_type = template_id
 
+        # 模板图片开关沿用现有 config JSON 存储；旧模板没有该字段时默认带图。
+        try:
+            async with self._db.transaction():
+                template_config = await self._db.notification_template.get_by_id(template_id)
+            if template_config and template_config.get("imageEnabled") is False:
+                message.image_enabled = False
+        except Exception as exc:
+            logger.debug(f"读取模板图片开关失败，按默认带图处理: {exc}")
+
         # 第三步：遍历渠道并判断发送范围
         for ch_id, channel in self.channels.items():
             try:
@@ -528,14 +537,14 @@ class NotificationManager:
             proxy = None
             ssl_verify = True
             try:
-                async with self._session_factory() as session:
-                    enabled = (await crud.get_config_value(
-                        session, "fallbackSearchPosterCollage", "true")).lower() == "true"
-                    proxy_enabled = (await crud.get_config_value(
-                        session, "proxyEnabled", "false")).lower() == "true"
-                    proxy_url = await crud.get_config_value(session, "proxyUrl", "")
-                    ssl_verify = (await crud.get_config_value(
-                        session, "proxySslVerify", "true")).lower() == "true"
+                async with self._db.transaction():
+                    enabled = (await self._db.config.get_value(
+                        "fallbackSearchPosterCollage", "true")).lower() == "true"
+                    proxy_enabled = (await self._db.config.get_value(
+                        "proxyEnabled", "false")).lower() == "true"
+                    proxy_url = await self._db.config.get_value("proxyUrl", "")
+                    ssl_verify = (await self._db.config.get_value(
+                        "proxySslVerify", "true")).lower() == "true"
                     proxy = proxy_url if (proxy_enabled and proxy_url) else None
             except Exception:
                 pass

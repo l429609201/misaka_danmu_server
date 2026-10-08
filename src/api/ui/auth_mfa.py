@@ -8,7 +8,7 @@ import json
 import logging
 import secrets
 import time
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
 from fastapi.responses import JSONResponse
@@ -29,13 +29,12 @@ from webauthn.helpers.structs import (
 )
 from webauthn.helpers import bytes_to_base64url, base64url_to_bytes
 
-from src.db import models, crud, get_db_session, ConfigManager
-from src.db.crud import passkey as passkey_crud
-from src.db.crud import session as session_crud
-from src.db.crud import user as user_crud
-from src import security
-from src.utils.otp import generate_secret, get_totp_uri, verify_otp
-from src.api.dependencies import get_config_manager
+from src.services.service_container import get_database_service
+from src.utils.auth import security
+from src.utils.misc.otp import generate_secret, get_totp_uri, verify_otp
+from src.api.dependencies import get_config_service
+from src.services.config_service import ConfigService
+from src.db import orm_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -147,39 +146,60 @@ def _get_origin(request: Request) -> str:
 
 # ======== MFA 状态查询 ========
 
-@router.get("/status", response_model=models.MfaStatusResponse, summary="获取当前用户的 MFA 状态")
+@router.get("/status", summary="获取当前用户的 MFA 状态")
 async def get_mfa_status(
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: orm_models.User = Depends(security.get_current_user)
 ):
     """获取当前用户的 MFA 配置状态（TOTP 是否开启、PassKey 列表）"""
-    user = await crud.get_user_by_username(session, current_user.username)
+    db = get_database_service()
+
+    async with db.transaction():
+        user = await db.user.get_by_username(current_user.username)
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    passkeys = await passkey_crud.get_passkeys_by_user_id(session, user["id"])
+    async with db.transaction():
+        passkeys = await db.passkey.get_by_user_id(user.id)
+
+    passkey_list = [
+        {
+            "id": pk.id,
+            "credentialId": pk.credentialId,
+            "deviceName": pk.deviceName,
+            "createdAt": pk.createdAt.isoformat() if pk.createdAt else None,
+            "lastUsedAt": pk.lastUsedAt.isoformat() if pk.lastUsedAt else None
+        }
+        for pk in passkeys
+    ]
+
     return {
-        "totpEnabled": user.get("isOtp", False),
+        "totpEnabled": user.isOtp if hasattr(user, 'isOtp') else False,
         "passkeyCount": len(passkeys),
-        "passkeys": passkeys,
+        "passkeys": passkey_list,
     }
 
 
 # ======== TOTP 两步验证 ========
 
-@router.post("/totp/setup", response_model=models.TotpSetupResponse, summary="生成 TOTP 密钥")
+@router.post("/totp/setup", summary="生成 TOTP 密钥")
 async def setup_totp(
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: orm_models.User = Depends(security.get_current_user)
 ):
     """
     生成 TOTP 密钥和二维码 URI。
     用户需要用验证器 App 扫描二维码，然后调用 verify-setup 确认。
     """
-    user = await crud.get_user_by_username(session, current_user.username)
+    db = get_database_service()
+
+    async with db.transaction():
+        user = await db.user.get_by_username(current_user.username)
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    if user.get("isOtp"):
+
+    is_otp_enabled = user.isOtp if hasattr(user, 'isOtp') else False
+    if is_otp_enabled:
         raise HTTPException(status_code=400, detail="TOTP 已启用，请先关闭后再重新设置")
 
     secret = generate_secret()
@@ -193,46 +213,62 @@ async def setup_totp(
 
 @router.post("/totp/verify-setup", status_code=status.HTTP_200_OK, summary="确认 TOTP 设置")
 async def verify_totp_setup(
-    data: models.TotpVerifyRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    data: Dict[str, str],
+    current_user: orm_models.User = Depends(security.get_current_user)
 ):
     """用户扫码后输入验证码，确认 TOTP 设置"""
     secret_bytes = _get_and_consume_challenge(f"totp_setup_{current_user.username}")
     if not secret_bytes:
         raise HTTPException(status_code=400, detail="TOTP 设置已过期，请重新生成")
 
+    code = data.get("code")
+    if not code:
+        raise HTTPException(status_code=400, detail="缺少验证码")
+
     secret = secret_bytes.decode()
-    if not verify_otp(secret, data.code):
+    if not verify_otp(secret, code):
         # 验证失败，重新存回 challenge 让用户重试
         _store_challenge(f"totp_setup_{current_user.username}", secret_bytes)
         raise HTTPException(status_code=400, detail="验证码错误，请重试")
 
     # 验证成功，保存到数据库
-    await crud.enable_user_otp(session, current_user.username, secret)
+    db = get_database_service()
+    async with db.transaction():
+        await db.user.enable_otp(current_user.username, secret)
+
     return {"message": "TOTP 两步验证已启用"}
 
 
 @router.post("/totp/disable", status_code=status.HTTP_200_OK, summary="关闭 TOTP 两步验证")
 async def disable_totp(
-    data: models.TotpDisableRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    data: Dict[str, str],
+    current_user: orm_models.User = Depends(security.get_current_user)
 ):
     """关闭 TOTP 两步验证（需要输入当前密码确认）"""
-    user = await crud.get_user_by_username(session, current_user.username)
+    db = get_database_service()
+
+    async with db.transaction():
+        user = await db.user.get_by_username(current_user.username)
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    if not user.get("isOtp"):
+
+    is_otp_enabled = user.isOtp if hasattr(user, 'isOtp') else False
+    if not is_otp_enabled:
         raise HTTPException(status_code=400, detail="TOTP 未启用")
 
     # 验证密码
-    if not security.verify_password(data.password, user["hashedPassword"]):
+    password = data.get("password")
+    if not password:
+        raise HTTPException(status_code=400, detail="缺少密码")
+
+    if not security.verify_password(password, user.hashedPassword):
         raise HTTPException(status_code=400, detail="密码错误")
 
     # 关闭 TOTP 时连带删除所有 PassKey（TOTP 是 PassKey 的前置条件）
-    passkey_count = await passkey_crud.delete_all_passkeys_by_user_id(session, user["id"])
-    await crud.disable_user_otp(session, current_user.username)
+    async with db.transaction():
+        passkey_count = await db.passkey.delete_all_by_user_id(user.id)
+        await db.user.disable_otp(current_user.username)
 
     msg = "TOTP 两步验证已关闭"
     if passkey_count > 0:
@@ -245,29 +281,35 @@ async def disable_totp(
 @router.post("/passkey/register/options", summary="生成 PassKey 注册选项")
 async def passkey_register_options(
     request: Request,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: orm_models.User = Depends(security.get_current_user)
 ):
     """
     生成 WebAuthn 注册选项，前端调用 navigator.credentials.create() 时使用。
     前提条件：用户必须先启用 TOTP 两步验证，才能注册 PassKey。
     """
-    user = await crud.get_user_by_username(session, current_user.username)
+    db = get_database_service()
+
+    async with db.transaction():
+        user = await db.user.get_by_username(current_user.username)
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     # 必须先启用 TOTP 才能注册 PassKey（防止用户失联）
-    if not user.get("isOtp"):
+    is_otp_enabled = user.isOtp if hasattr(user, 'isOtp') else False
+    if not is_otp_enabled:
         raise HTTPException(status_code=400, detail="请先启用 TOTP 两步验证后再注册 PassKey")
 
     rp_id = _get_rp_id(request)
 
     # 获取用户已有的凭证，用于排除重复注册
-    existing_passkeys = await passkey_crud.get_passkeys_by_user_id(session, user["id"])
+    async with db.transaction():
+        existing_passkeys = await db.passkey.get_by_user_id(user.id)
+
     exclude_credentials = [
         PublicKeyCredentialDescriptor(
-            id=base64url_to_bytes(pk["credentialId"]),
-            transports=pk["transports"].split(",") if pk.get("transports") else [],
+            id=base64url_to_bytes(pk.credentialId),
+            transports=pk.transports.split(",") if pk.transports else [],
         )
         for pk in existing_passkeys
     ]
@@ -275,8 +317,8 @@ async def passkey_register_options(
     options = generate_registration_options(
         rp_id=rp_id,
         rp_name=RP_NAME,
-        user_id=str(user["id"]).encode("utf-8"),
-        user_name=user["username"],
+        user_id=str(user.id).encode("utf-8"),
+        user_name=user.username,
         authenticator_selection=AuthenticatorSelectionCriteria(
             resident_key=ResidentKeyRequirement.PREFERRED,
             user_verification=UserVerificationRequirement.PREFERRED,
@@ -292,13 +334,16 @@ async def passkey_register_options(
 
 @router.post("/passkey/register/verify", summary="验证 PassKey 注册")
 async def passkey_register_verify(
-    data: models.PassKeyRegisterRequest,
+    data: Dict[str, Any],
     request: Request,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: orm_models.User = Depends(security.get_current_user)
 ):
     """验证浏览器返回的 WebAuthn 注册凭证并保存"""
-    user = await crud.get_user_by_username(session, current_user.username)
+    db = get_database_service()
+
+    async with db.transaction():
+        user = await db.user.get_by_username(current_user.username)
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -309,9 +354,12 @@ async def passkey_register_verify(
     rp_id = _get_rp_id(request)
     origin = _get_origin(request)
 
+    credential_data = data.get("credential")
+    device_name = data.get("deviceName", "未命名设备")
+
     try:
         verification = verify_registration_response(
-            credential=data.credential,
+            credential=credential_data,
             expected_challenge=challenge,
             expected_rp_id=rp_id,
             expected_origin=origin,
@@ -330,15 +378,15 @@ async def passkey_register_verify(
         # py_webauthn v2.x
         pass
 
-    passkey_id = await passkey_crud.create_passkey(
-        session=session,
-        user_id=user["id"],
-        credential_id=credential_id_b64,
-        public_key=public_key_b64,
-        sign_count=verification.sign_count,
-        device_name=data.deviceName or "未命名设备",
-        transports=transports_str,
-    )
+    async with db.transaction():
+        passkey_id = await db.passkey.create(
+            user_id=user.id,
+            credential_id=credential_id_b64,
+            public_key=public_key_b64,
+            sign_count=verification.sign_count,
+            device_name=device_name,
+            transports=transports_str,
+        )
 
     return {"message": "PassKey 注册成功", "id": passkey_id}
 
@@ -346,8 +394,7 @@ async def passkey_register_verify(
 @router.post("/passkey/authenticate/options", summary="生成 PassKey 认证选项")
 async def passkey_authenticate_options(
     request: Request,
-    username: str = "",
-    session: AsyncSession = Depends(get_db_session),
+    username: str = ""
 ):
     """
     生成 WebAuthn 认证选项，前端调用 navigator.credentials.get() 时使用。
@@ -357,13 +404,18 @@ async def passkey_authenticate_options(
     allow_credentials = []
 
     if username:
-        user = await crud.get_user_by_username(session, username)
+        db = get_database_service()
+        async with db.transaction():
+            user = await db.user.get_by_username(username)
+
         if user:
-            existing_passkeys = await passkey_crud.get_passkeys_by_user_id(session, user["id"])
+            async with db.transaction():
+                existing_passkeys = await db.passkey.get_by_user_id(user.id)
+
             allow_credentials = [
                 PublicKeyCredentialDescriptor(
-                    id=base64url_to_bytes(pk["credentialId"]),
-                    transports=pk["transports"].split(",") if pk.get("transports") else [],
+                    id=base64url_to_bytes(pk.credentialId),
+                    transports=pk.transports.split(",") if pk.transports else [],
                 )
                 for pk in existing_passkeys
             ]
@@ -383,10 +435,9 @@ async def passkey_authenticate_options(
 
 @router.post("/passkey/authenticate/verify", summary="验证 PassKey 认证")
 async def passkey_authenticate_verify(
-    data: models.PassKeyAuthenticateRequest,
+    data: Dict[str, Any],
     request: Request,
-    username: str = "",
-    session: AsyncSession = Depends(get_db_session),
+    username: str = ""
 ):
     """
     验证 WebAuthn 认证断言。
@@ -402,33 +453,41 @@ async def passkey_authenticate_verify(
     origin = _get_origin(request)
 
     # 解析凭证以获取 credential_id，查找对应的 passkey
+    credential_data = data.get("credential")
+    if not credential_data:
+        raise HTTPException(status_code=400, detail="缺少凭证数据")
+
     try:
-        cred_data = json.loads(data.credential)
+        cred_data = json.loads(credential_data) if isinstance(credential_data, str) else credential_data
         raw_id = cred_data.get("rawId") or cred_data.get("id", "")
     except (json.JSONDecodeError, AttributeError):
         raise HTTPException(status_code=400, detail="无效的凭证数据")
 
-    passkey_record = await passkey_crud.get_passkey_by_credential_id(session, raw_id)
+    db = get_database_service()
+    async with db.transaction():
+        passkey_record = await db.passkey.get_by_credential_id(raw_id)
+
     if not passkey_record:
         raise HTTPException(status_code=400, detail="未找到对应的 PassKey")
 
     try:
         verification = verify_authentication_response(
-            credential=data.credential,
+            credential=credential_data,
             expected_challenge=challenge,
             expected_rp_id=rp_id,
             expected_origin=origin,
-            credential_public_key=base64url_to_bytes(passkey_record["publicKey"]),
-            credential_current_sign_count=passkey_record["signCount"],
+            credential_public_key=base64url_to_bytes(passkey_record.publicKey),
+            credential_current_sign_count=passkey_record.signCount,
         )
     except Exception as e:
         logger.warning(f"PassKey 认证验证失败: {e}")
         raise HTTPException(status_code=400, detail=f"PassKey 认证验证失败: {str(e)}")
 
     # 更新签名计数器
-    await passkey_crud.update_passkey_sign_count(session, raw_id, verification.new_sign_count)
+    async with db.transaction():
+        await db.passkey.update_sign_count(raw_id, verification.new_sign_count)
 
-    return {"verified": True, "userId": passkey_record["userId"]}
+    return {"verified": True, "userId": passkey_record.userId}
 
 
 # ======== PassKey 管理 ========
@@ -436,16 +495,25 @@ async def passkey_authenticate_verify(
 @router.put("/passkey/{passkey_id}/rename", summary="重命名 PassKey")
 async def rename_passkey(
     passkey_id: int,
-    data: models.PassKeyRenameRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    data: Dict[str, str],
+    current_user: orm_models.User = Depends(security.get_current_user)
 ):
     """重命名指定的 PassKey"""
-    user = await crud.get_user_by_username(session, current_user.username)
+    db = get_database_service()
+
+    async with db.transaction():
+        user = await db.user.get_by_username(current_user.username)
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    success = await passkey_crud.rename_passkey(session, passkey_id, user["id"], data.deviceName)
+    device_name = data.get("deviceName")
+    if not device_name:
+        raise HTTPException(status_code=400, detail="缺少设备名称")
+
+    async with db.transaction():
+        success = await db.passkey.rename(passkey_id, user.id, device_name)
+
     if not success:
         raise HTTPException(status_code=404, detail="PassKey not found")
     return {"message": "重命名成功"}
@@ -454,15 +522,20 @@ async def rename_passkey(
 @router.delete("/passkey/{passkey_id}", status_code=status.HTTP_200_OK, summary="删除 PassKey")
 async def delete_passkey(
     passkey_id: int,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: orm_models.User = Depends(security.get_current_user)
 ):
     """删除指定的 PassKey"""
-    user = await crud.get_user_by_username(session, current_user.username)
+    db = get_database_service()
+
+    async with db.transaction():
+        user = await db.user.get_by_username(current_user.username)
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    success = await passkey_crud.delete_passkey(session, passkey_id, user["id"])
+    async with db.transaction():
+        success = await db.passkey.delete(passkey_id, user.id)
+
     if not success:
         raise HTTPException(status_code=404, detail="PassKey not found")
     return {"message": "PassKey 已删除"}
@@ -472,29 +545,30 @@ async def delete_passkey(
 
 async def _issue_jwt_for_user(
     request: Request,
-    session: AsyncSession,
-    config_manager: ConfigManager,
+    config_service: ConfigService,
     username: str,
     user_id: int,
 ):
     """MFA 验证通过后签发 JWT 并创建会话，返回 Token 响应体"""
-    access_token, jti, expire_minutes = await security.create_access_token(
-        data={"sub": username}, session=session
-    )
-    # 更新用户登录信息
-    await user_crud.update_user_login_info(session, username, access_token)
+    db = get_database_service()
 
-    # 创建会话记录
-    client_ip = await security.get_real_client_ip(request, config_manager)
-    user_agent = request.headers.get("user-agent", "")
-    await session_crud.create_user_session(
-        session=session,
-        user_id=user_id,
-        jti=jti,
-        ip_address=client_ip,
-        user_agent=user_agent,
-        expires_minutes=expire_minutes,
-    )
+    async with db.transaction() as session:
+        access_token, jti, expire_minutes = await security.create_access_token(
+            data={"sub": username}, session=session
+        )
+        # 更新用户登录信息
+        await db.user.update_login_info(username, access_token)
+
+        # 使用登录会话数据域，而非数据库连接会话。
+        client_ip = await security.get_real_client_ip(request, config_service)
+        user_agent = request.headers.get("user-agent", "")
+        await db.session_store.create(
+            user_id=user_id,
+            jti=jti,
+            ip_address=client_ip,
+            user_agent=user_agent,
+            expires_minutes=expire_minutes,
+        )
 
     return {"accessToken": access_token, "tokenType": "bearer", "expiresIn": expire_minutes}
 
@@ -505,8 +579,7 @@ async def mfa_verify(
     mfa_token: str = Form(..., description="密码验证后获得的临时 MFA 令牌"),
     otp_code: Optional[str] = Form(None, description="TOTP 验证码（6位）"),
     passkey_credential: Optional[str] = Form(None, description="PassKey WebAuthn 凭证 JSON"),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager),
+    config_service: ConfigService = Depends(get_config_service),
 ):
     """
     统一 MFA 验证接口。密码验证通过后，前端用 mfaToken 调此接口完成二步验证。
@@ -518,15 +591,18 @@ async def mfa_verify(
         raise HTTPException(status_code=401, detail="MFA 令牌无效或已过期")
     username, user_id = result
 
-    user = await crud.get_user_by_username(session, username)
+    db = get_database_service()
+    async with db.transaction():
+        user = await db.user.get_by_username(username)
+
     if not user:
         raise HTTPException(status_code=401, detail="用户不存在")
 
     # 尝试 TOTP 验证
     if otp_code:
-        otp_secret = user.get("otpSecret")
+        otp_secret = user.otpSecret if hasattr(user, 'otpSecret') else None
         if otp_secret and verify_otp(otp_secret, otp_code):
-            return await _issue_jwt_for_user(request, session, config_manager, username, user_id)
+            return await _issue_jwt_for_user(request, config_service, username, user_id)
         raise HTTPException(status_code=401, detail="验证码错误")
 
     # 尝试 PassKey 验证
@@ -546,8 +622,10 @@ async def mfa_verify(
         except (json.JSONDecodeError, AttributeError):
             raise HTTPException(status_code=400, detail="无效的凭证数据")
 
-        passkey_record = await passkey_crud.get_passkey_by_credential_id(session, raw_id)
-        if not passkey_record or passkey_record["userId"] != user_id:
+        async with db.transaction():
+            passkey_record = await db.passkey.get_by_credential_id(raw_id)
+
+        if not passkey_record or passkey_record.userId != user_id:
             raise HTTPException(status_code=400, detail="未找到对应的 PassKey")
 
         try:
@@ -556,15 +634,17 @@ async def mfa_verify(
                 expected_challenge=challenge,
                 expected_rp_id=rp_id,
                 expected_origin=origin,
-                credential_public_key=base64url_to_bytes(passkey_record["publicKey"]),
-                credential_current_sign_count=passkey_record["signCount"],
+                credential_public_key=base64url_to_bytes(passkey_record.publicKey),
+                credential_current_sign_count=passkey_record.signCount,
             )
         except Exception as e:
             logger.warning(f"PassKey MFA 验证失败: {e}")
             raise HTTPException(status_code=400, detail=f"PassKey 验证失败: {str(e)}")
 
-        await passkey_crud.update_passkey_sign_count(session, raw_id, verification.new_sign_count)
-        return await _issue_jwt_for_user(request, session, config_manager, username, user_id)
+        async with db.transaction():
+            await db.passkey.update_sign_count(raw_id, verification.new_sign_count)
+
+        return await _issue_jwt_for_user(request, config_service, username, user_id)
 
     raise HTTPException(status_code=400, detail="请提供 TOTP 验证码或 PassKey 凭证")
 
@@ -598,8 +678,7 @@ async def passkey_login_verify(
     request: Request,
     credential: str = Form(..., description="WebAuthn 凭证 JSON"),
     session_id: str = Form(..., description="获取认证选项时返回的 sessionId"),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager),
+    config_service: ConfigService = Depends(get_config_service),
 ):
     """
     PassKey 无密码登录第二步：验证凭证并直接签发 JWT。
@@ -617,7 +696,10 @@ async def passkey_login_verify(
     except (json.JSONDecodeError, AttributeError):
         raise HTTPException(status_code=400, detail="无效的凭证数据")
 
-    passkey_record = await passkey_crud.get_passkey_by_credential_id(session, raw_id)
+    db = get_database_service()
+    async with db.transaction():
+        passkey_record = await db.passkey.get_by_credential_id(raw_id)
+
     if not passkey_record:
         raise HTTPException(status_code=400, detail="未注册的 PassKey")
 
@@ -627,21 +709,24 @@ async def passkey_login_verify(
             expected_challenge=challenge,
             expected_rp_id=rp_id,
             expected_origin=origin,
-            credential_public_key=base64url_to_bytes(passkey_record["publicKey"]),
-            credential_current_sign_count=passkey_record["signCount"],
+            credential_public_key=base64url_to_bytes(passkey_record.publicKey),
+            credential_current_sign_count=passkey_record.signCount,
         )
     except Exception as e:
         logger.warning(f"PassKey 直接登录验证失败: {e}")
         raise HTTPException(status_code=400, detail=f"PassKey 验证失败: {str(e)}")
 
-    await passkey_crud.update_passkey_sign_count(session, raw_id, verification.new_sign_count)
+    async with db.transaction():
+        await db.passkey.update_sign_count(raw_id, verification.new_sign_count)
 
     # 查找用户
-    user = await crud.user.get_user_by_id(session, passkey_record["userId"])
+    async with db.transaction():
+        user = await db.user.get_by_id(passkey_record.userId)
+
     if not user:
         raise HTTPException(status_code=400, detail="用户不存在")
 
     return await _issue_jwt_for_user(
-        request, session, config_manager,
-        user["username"], user["id"],
+        request, config_service,
+        user.username, user.id,
     )

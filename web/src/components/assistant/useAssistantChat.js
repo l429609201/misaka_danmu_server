@@ -11,7 +11,8 @@ import { useTranslation } from 'react-i18next'
 
 /**
  * @returns {{ send, abort }}
- *   send(messages, persona, handlers)：发起流式对话
+ *   send(messages, persona, handlers, sessionId, options)：发起流式对话
+ *     options: { codeRepair }；仅显式 true 表示本次请求的代码修复授权
  *     messages: [{role, content}]；persona: 人设key
  *     handlers: { onDelta(text), onDone(), onError(msg) }
  *   abort()：中断当前流
@@ -27,8 +28,8 @@ export function useAssistantChat() {
     }
   }, [])
 
-  const send = useCallback(async (messages, persona, handlers = {}, sessionId) => {
-    const { onDelta, onDone, onError, onTool, onConfirm } = handlers
+  const send = useCallback(async (messages, persona, handlers = {}, sessionId, options = {}) => {
+    const { onDelta, onDone, onError, onServerError, onTool, onThinking, onChoice, onConfirm } = handlers
     const token = Cookies.get('danmu_token')
     if (!token) {
       onError?.(t('assistant.errNotLoggedIn'))
@@ -39,6 +40,7 @@ export function useAssistantChat() {
     if (abortRef.current) abortRef.current.abort()
     const controller = new AbortController()
     abortRef.current = controller
+    let terminated = false
 
     try {
       await fetchEventSource('/api/ui/assistant/chat/stream', {
@@ -48,11 +50,12 @@ export function useAssistantChat() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ messages, persona, sessionId }),
+        // 授权仅来自界面显式开关，不从消息或模型输出推断。
+        body: JSON.stringify({ messages, persona, sessionId, codeRepair: options.codeRepair === true }),
         // 避免页面切到后台时自动关闭连接
         openWhenHidden: true,
         onopen: async response => {
-          if (!response.ok) {
+          if (!response.ok || !response.headers.get('content-type')?.toLowerCase().includes('text/event-stream')) {
             throw new Error(t('assistant.errConnFailed', { status: response.status }))
           }
         },
@@ -67,9 +70,14 @@ export function useAssistantChat() {
           }
           if (data.type === 'delta') onDelta?.(data.content || '')
           else if (data.type === 'tool') onTool?.(data)
-          else if (data.type === 'confirm') onConfirm?.(data)
-          else if (data.type === 'done') onDone?.()
-          else if (data.type === 'error') onError?.(data.content || t('assistant.replyError'))
+          else if (data.type === 'thinking') onThinking?.(data)
+          else if (data.type === 'choice') { terminated = true; onChoice?.(data) }
+          else if (data.type === 'confirm') { terminated = true; onConfirm?.(data) }
+          else if (data.type === 'done') { terminated = true; onDone?.() }
+          else if (data.type === 'error') { terminated = true; (onServerError || onError)?.(data.content || t('assistant.replyError')) }
+        },
+        onclose: () => {
+          if (!terminated) throw new Error(t('assistant.errConnInterrupted'))
         },
         onerror: err => {
           // 抛出以停止自动重连，交给外层 catch
@@ -83,7 +91,7 @@ export function useAssistantChat() {
     } finally {
       if (abortRef.current === controller) abortRef.current = null
     }
-  }, [])
+  }, [t])
 
   return { send, abort }
 }

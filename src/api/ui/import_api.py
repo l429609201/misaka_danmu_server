@@ -5,18 +5,17 @@ import hashlib
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from src import security, tasks
-from src.db import crud, models, get_db_session, ConfigManager
-from src.rate_limiter import RateLimiter
-from src.services import TaskManager, ScraperManager, MetadataSourceManager
-
-from src.api.dependencies import (
-    get_scraper_manager, get_task_manager, get_metadata_manager,
-    get_config_manager, get_rate_limiter, get_title_recognition_manager
+from src import tasks
+from src.utils.auth import security
+from src.schemas.auth import User
+from src.schemas.import_schemas import EditedImportRequest
+from src.schemas.ui.search import ImportRequest
+from src.services.config_service import get_config_service
+from src.services.service_container import (
+    get_database_service, get_scraper_manager, get_task_manager,
+    get_metadata_service, get_rate_limiter, get_title_recognition_manager,
 )
-from .models import (
+from src.schemas.ui_models import (
     UITaskResponse, ImportFromUrlRequest, ValidateUrlRequest, ValidateUrlResponse,
     EpisodeOffsetPreviewRequest, EpisodeOffsetPreviewResponse, UrlCollectionInfo
 )
@@ -27,16 +26,17 @@ router = APIRouter()
 
 @router.post("/import", status_code=status.HTTP_202_ACCEPTED, summary="从指定数据源导入弹幕", response_model=UITaskResponse)
 async def import_from_provider(
-    request_data: models.ImportRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    task_manager: TaskManager = Depends(get_task_manager),
-    rate_limiter: RateLimiter = Depends(get_rate_limiter),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
-    config_manager: ConfigManager = Depends(get_config_manager),
-    title_recognition_manager = Depends(get_title_recognition_manager)
-):
+    request_data: ImportRequest,
+    current_user: User = Depends(security.get_current_user),
+) -> dict[str, str]:
+    """校验源与重复分集后提交导入任务。"""
+    # 服务在请求执行时获取，避免模块加载时访问尚未初始化的单例。
+    scraper_manager = get_scraper_manager()
+    task_manager = get_task_manager()
+    rate_limiter = get_rate_limiter()
+    metadata_manager = get_metadata_service()
+    config_service = get_config_service()
+    title_recognition_manager = get_title_recognition_manager()
     logger.info(f"导入请求: 用户={current_user.username}, provider={request_data.provider}, title={request_data.animeTitle}")
     try:
         # 在启动任务前检查provider是否存在
@@ -45,19 +45,18 @@ async def import_from_provider(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    # 替换原有的重复检查逻辑
-    duplicate_reason = await crud.check_duplicate_import(
-        session=session,
-        provider=request_data.provider,
-        media_id=request_data.mediaId,
-        anime_title=request_data.animeTitle,
-        media_type=request_data.type,
-        season=request_data.season,
-        year=request_data.year,
-        is_single_episode=request_data.currentEpisodeIndex is not None,
-        episode_index=request_data.currentEpisodeIndex,
-        title_recognition_manager=title_recognition_manager
-    )
+    # 重复检查仅占用短事务，不在识别词处理或任务提交期间持有连接。
+    db = get_database_service()
+    async with db.transaction():
+        # 分集数据域统一代理查询仓储，不再访问已移除的 episode_query 入口。
+        duplicate_reason = await db.episode.check_duplicate_import(
+            provider=request_data.provider,
+            media_id=request_data.mediaId,
+            anime_title=request_data.animeTitle,
+            season=request_data.season,
+            is_single_episode=request_data.currentEpisodeIndex is not None,
+            episode_index=request_data.currentEpisodeIndex,
+        )
     if duplicate_reason:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -74,7 +73,7 @@ async def import_from_provider(
         year=request_data.year,
         currentEpisodeIndex=request_data.currentEpisodeIndex,
         imageUrl=request_data.imageUrl,
-        config_manager=config_manager,
+        config_service=config_service,
         metadata_manager=metadata_manager,
         progress_callback=callback,
         session=session,
@@ -149,22 +148,22 @@ async def import_from_provider(
         task_type="generic_import", task_parameters=task_parameters
     )
 
-    return {"message": f"'{request_data.animeTitle}' 的导入任务已提交。请在任务管理器中查看进度。", "taskId": task_id}
+    return {"message": f"'{request_data.animeTitle}' 的导入任务已提交，可在当前对话中继续查看进度。", "taskId": task_id}
 
 
 
 @router.post("/import/edited", status_code=status.HTTP_202_ACCEPTED, summary="导入编辑后的分集列表", response_model=UITaskResponse)
 async def import_edited_episodes(
-    request_data: models.EditedImportRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    task_manager: TaskManager = Depends(get_task_manager),
-    scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    rate_limiter: RateLimiter = Depends(get_rate_limiter),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
-    config_manager: ConfigManager = Depends(get_config_manager),
-    title_recognition_manager = Depends(get_title_recognition_manager)
-):
+    request_data: EditedImportRequest,
+    current_user: User = Depends(security.get_current_user),
+) -> dict[str, str]:
     """提交一个后台任务，使用用户在前端编辑过的分集列表进行导入。"""
+    task_manager = get_task_manager()
+    scraper_manager = get_scraper_manager()
+    rate_limiter = get_rate_limiter()
+    metadata_manager = get_metadata_service()
+    config_service = get_config_service()
+    title_recognition_manager = get_title_recognition_manager()
     # 预先应用识别词转换来生成正确的任务标题
     display_title = request_data.animeTitle
     display_season = request_data.season
@@ -187,9 +186,8 @@ async def import_edited_episodes(
         progress_callback=callback,
         session=session,
         manager=scraper_manager,
-        config_manager=config_manager,
+        config_service=config_service,
         rate_limiter=rate_limiter,
-        metadata_manager=metadata_manager,
         title_recognition_manager=title_recognition_manager
     )
     # 修正：为编辑后导入任务添加一个唯一的键，以防止重复提交，同时允许对同一作品的不同分集范围进行排队。
@@ -227,19 +225,19 @@ async def import_edited_episodes(
     except Exception as e:
         logger.error(f"提交编辑后导入任务时发生未知错误: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="提交任务时发生内部错误。")
-    return {"message": f"'{request_data.animeTitle}' 的编辑导入任务已提交。", "taskId": task_id}
+    return {"message": f"'{request_data.animeTitle}' 的编辑导入任务已提交，可在当前对话中继续查看进度。", "taskId": task_id}
 
 
 @router.post("/import/preview-offset", response_model=EpisodeOffsetPreviewResponse, summary="预览集数偏移效果")
 async def preview_episode_offset(
     request_data: EpisodeOffsetPreviewRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    title_recognition_manager = Depends(get_title_recognition_manager)
-):
+    current_user: User = Depends(security.get_current_user),
+) -> EpisodeOffsetPreviewResponse:
     """
     根据自定义识别词规则，预览指定标题和集数列表的偏移效果。
     仅返回有变化的集数映射，用于编辑导入界面的偏移预览提示。
     """
+    title_recognition_manager = get_title_recognition_manager()
     offset_map = {}
     if title_recognition_manager and request_data.episodeIndices:
         for ep_index in request_data.episodeIndices:
@@ -261,21 +259,10 @@ async def preview_episode_offset(
 @router.post("/validate-url", summary="校验并解析导入URL", response_model=ValidateUrlResponse)
 async def validate_import_url(
     request_data: ValidateUrlRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    scraper_manager: ScraperManager = Depends(get_scraper_manager)
-):
-    """
-    动态校验 URL 并返回解析结果。
-
-    - 自动检测 URL 属于哪个平台（基于各 scraper 的 handled_domains）
-    - 调用对应 scraper 的 get_info_from_url() 获取详细信息
-    - 返回解析出的平台、媒体ID、标题、封面等信息
-
-    用途：
-    1. 前端在用户输入URL后调用此接口进行校验
-    2. 返回识别出的平台、媒体ID等信息
-    3. 前端可据此自动填充表单字段
-    """
+    current_user: User = Depends(security.get_current_user),
+) -> ValidateUrlResponse:
+    """动态校验 URL，返回平台、作品信息及可选的合集信息。"""
+    scraper_manager = get_scraper_manager()
     url = request_data.url.strip()
 
     if not url:
@@ -338,22 +325,15 @@ async def validate_import_url(
 @router.post("/import-from-url", status_code=status.HTTP_202_ACCEPTED, summary="从URL导入弹幕", response_model=UITaskResponse)
 async def import_from_url(
     request_data: ImportFromUrlRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    task_manager: TaskManager = Depends(get_task_manager),
-    rate_limiter: RateLimiter = Depends(get_rate_limiter),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
-    config_manager: ConfigManager = Depends(get_config_manager),
-    title_recognition_manager = Depends(get_title_recognition_manager)
-):
-    """
-    从URL导入弹幕（重构版 - 动态解析）。
-
-    - 如果不指定 provider，会自动从URL检测平台
-    - 如果不指定 title，会自动从源获取标题
-    - 调用各 scraper 的 get_info_from_url() 方法进行解析，无需硬编码
-    """
+    current_user: User = Depends(security.get_current_user),
+) -> dict[str, str]:
+    """解析 URL 并提交导入任务，用户指定参数优先于源返回信息。"""
+    scraper_manager = get_scraper_manager()
+    task_manager = get_task_manager()
+    rate_limiter = get_rate_limiter()
+    metadata_manager = get_metadata_service()
+    config_service = get_config_service()
+    title_recognition_manager = get_title_recognition_manager()
     url = request_data.url.strip()
 
     if not url:
@@ -432,7 +412,7 @@ async def import_from_url(
         year=year,
         currentEpisodeIndex=None,
         imageUrl=image_url,
-        config_manager=config_manager,
+        config_service=config_service,
         metadata_manager=metadata_manager,
         progress_callback=callback,
         session=session,

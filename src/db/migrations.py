@@ -1,4 +1,4 @@
-﻿"""
+"""
 数据库迁移模块
 
 此模块用于执行一次性的数据库迁移任务。
@@ -9,7 +9,7 @@
 """
 
 import logging
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 logger = logging.getLogger(__name__)
@@ -813,6 +813,31 @@ async def _reset_notification_subscriptions_v1(conn: AsyncConnection):
     logger.info(f"通知订阅配置重置完成: {reset_count} 个渠道已更新为 V2 全关闭")
 
 
+async def _isolate_assistant_sessions_v1(conn: AsyncConnection):
+    """旧会话不回填归属；为老表补齐 schema sync 不创建的索引和外键。"""
+    await conn.execute(text(
+        "UPDATE assistant_sessions SET is_processing = false WHERE owner_id IS NULL AND is_processing = true"
+    ))
+    indexes = await conn.run_sync(
+        lambda connection: inspect(connection).get_indexes("assistant_sessions")
+    )
+    if not any(index["column_names"] == ["owner_id"] for index in indexes):
+        await conn.execute(text(
+            "CREATE INDEX ix_assistant_sessions_owner_id ON assistant_sessions (owner_id)"
+        ))
+    foreign_keys = await conn.run_sync(
+        lambda connection: inspect(connection).get_foreign_keys("assistant_sessions")
+    )
+    if not any(
+        key["constrained_columns"] == ["owner_id"]
+        and key["referred_table"] == "users" for key in foreign_keys
+    ):
+        await conn.execute(text(
+            "ALTER TABLE assistant_sessions ADD CONSTRAINT fk_assistant_sessions_owner_id "
+            "FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE"
+        ))
+
+
 # 所有迁移任务的 ID 列表（新增迁移时需同步更新此列表）
 ALL_MIGRATION_IDS = [
     "migrate_clear_rate_limit_state_v1",
@@ -829,6 +854,7 @@ ALL_MIGRATION_IDS = [
     "reset_server_instance_id_v1",
     "reset_server_instance_id_v2",
     "reset_notification_subscriptions_v1",
+    "isolate_assistant_sessions_v1",
 ]
 
 
@@ -871,6 +897,7 @@ async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
         ("reset_server_instance_id_v1", _reset_server_instance_id_v1, ()),
         ("reset_server_instance_id_v2", _reset_server_instance_id_v2, ()),  # 重置为带归属标记的可反解格式
         ("reset_notification_subscriptions_v1", _reset_notification_subscriptions_v1, ()),  # 清空旧订阅配置
+        ("isolate_assistant_sessions_v1", _isolate_assistant_sessions_v1, ()),  # 历史会话不自动归属
     ]
 
     for migration_id, migration_func, args in migrations:

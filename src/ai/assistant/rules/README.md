@@ -88,6 +88,13 @@
 | API 接口 | 对应的前端代码（`web/src/apis/`） |
 | 通知事件 | `/api/ui/notification/templates/scopes` 的 `all_scopes` 列表 |
 
+⚠️ **架构约束（关键）**：
+- **数据库访问**：所有层级必须通过 `DatabaseService`（`get_database_service()`），禁止 API/Tasks/Workflows 直接导入 Repository
+- **事务管理**：Repository 只 `flush()`，绝不 `commit()`；事务由调用方通过 `db.transaction()` 管理
+- **废弃层级**：`src/db/crud` 已完全删除，禁止引用
+- **配置访问**：使用 `ConfigService`（`get_config_service()`），不用已废弃的 `ConfigManager`
+- **导入规范**：所有导入必须在文件顶部，禁止函数内延迟导入（除 `TYPE_CHECKING`）
+
 ⚠️ **本项目不使用 Alembic**（无 `alembic.ini`，`migrations/versions/` 为空）。
 迁移采用自研的标志位机制：每个迁移有唯一 `migration_id`，执行后写入 `config` 表，
 确保只跑一次。新增迁移必须同时登记到 `migrations` 列表和 `ALL_MIGRATION_IDS`
@@ -95,4 +102,4 @@
 
 ---
 
-*最后更新：2026-01-08*
+*最后更新：2026-01-09*

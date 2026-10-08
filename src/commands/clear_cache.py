@@ -3,15 +3,12 @@
 提供 @QLHC 指令，清理系统缓存
 """
 import logging
-from typing import List, TYPE_CHECKING
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
 
+from src.schemas.dandan import DandanSearchAnimeResponse
+from src.services.cache_service import get_cache_service
+from src.services.service_container import get_database_service
 from .base import CommandHandler
-from src.db import crud
-from src.core.cache import get_cache_backend
-
-if TYPE_CHECKING:
-    from src.api.dandan import DandanSearchAnimeResponse
 
 logger = logging.getLogger(__name__)
 
@@ -28,23 +25,23 @@ class ClearCacheCommand(CommandHandler):
             examples=["@QLHC", "@qlhc"]
         )
     
-    async def execute(self, token: str, args: List[str], session: AsyncSession,
-                     config_manager, **kwargs) -> "DandanSearchAnimeResponse":
+    async def execute(self, token: str, args: List[str], session: object,
+                     config_service, **kwargs) -> "DandanSearchAnimeResponse":
         """执行清理缓存操作"""
         # 获取图片URL
-        image_url = await self.get_image_url(config_manager)
+        image_url = await self.get_image_url(config_service)
 
         try:
             # 获取cache_manager
             cache_manager = kwargs.get('cache_manager')
 
             # 清理内存缓存（config_manager的缓存）
-            config_manager.clear_cache()
+            config_service.clear_cache()
 
             # 清理缓存后端（Redis / Memory / Hybrid）
             backend_msg = ""
             try:
-                backend = get_cache_backend()
+                backend = get_cache_service()
                 if backend is not None:
                     backend_count = await backend.clear() or 0
                     backend_msg = f"✓ 缓存后端已清理 ({backend_count} 条)\n"
@@ -53,7 +50,9 @@ class ClearCacheCommand(CommandHandler):
                 backend_msg = f"✗ 缓存后端清理失败: {e}\n"
 
             # 清理数据库缓存
-            await crud.clear_all_cache(session)
+            db = get_database_service()
+            async with db.transaction():
+                await db.cache.clear_all()
 
             # 记录执行时间
             await self.record_execution(token, session)

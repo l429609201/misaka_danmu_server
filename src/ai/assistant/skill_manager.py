@@ -34,52 +34,25 @@ Skill 管理器（参考 MoviePilot v3 设计）
 import logging
 import re
 import shutil
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
 
-logger = logging.getLogger(__name__)
+from .builtin_skills import BUILTIN_SKILLS
+from .security_gateway import contains_forbidden_control_content
+from .skill_model import Skill, get_skills_base_dir, set_skills_base_dir_value
 
-# 技能目录基础路径（由 app_lifecycle 初始化）
-SKILLS_BASE_DIR: Optional[Path] = None
+logger = logging.getLogger(__name__)
 
 
 def set_skills_base_dir(base_dir: Path) -> None:
     """设置技能基础目录（由 app_lifecycle 启动时调用）。"""
-    global SKILLS_BASE_DIR
-    SKILLS_BASE_DIR = base_dir / "config" / "skills"
-    SKILLS_BASE_DIR.mkdir(parents=True, exist_ok=True)
-    logger.info(f"技能目录: {SKILLS_BASE_DIR}")
-
-
-def get_skills_base_dir() -> Optional[Path]:
-    """获取技能基础目录。
-
-    必须通过本函数读取而非 `from ... import SKILLS_BASE_DIR`：
-    后者在导入时就拷走了值（那时还是 None），set_skills_base_dir 之后拿不到新值。
-    """
-    return SKILLS_BASE_DIR
-
-
-@dataclass
-class Skill:
-    """单个 Skill 的数据模型。
-
-    正文（content）是懒加载的：注册表里只保留元数据，
-    调用 `SkillManager.get_content(skill_id)` 时才真正取正文。
-    这样常驻内存只有几百字的摘要，而不是全部技能的完整作业指导书。
-    """
-    skill_id: str  # 目录名（小写短横线）
-    name: str  # frontmatter 里的 name
-    version: int = 1
-    description: str = ""  # 触发时机描述（给 LLM 判断）
-    allowed_tools: List[str] = field(default_factory=list)  # 工具白名单（仅提示用）
-    enabled: bool = True  # 是否启用
-    content: str = ""  # 正文。注册表中的实例此字段为空，需用 get_content() 按需取
-    file_path: Optional[Path] = None  # 原始文件路径（内置技能为 None）
-    builtin: bool = False  # 是否为代码内置技能（不落盘、不可增删改）
+    skills_base_dir = base_dir / "config" / "skills"
+    skills_base_dir.mkdir(parents=True, exist_ok=True)
+    set_skills_base_dir_value(skills_base_dir)
+    logger.info(f"技能目录: {skills_base_dir}")
 
 
 class SkillManager:
@@ -136,14 +109,8 @@ class SkillManager:
     def _load_builtin_skills(self) -> None:
         """把 builtin_skills.py 里定义的技能注册到内存。
 
-        延迟导入避免与 builtin_skills 形成循环依赖（后者需要导入本模块的 Skill）。
+        内置技能从模块顶部已加载的 BUILTIN_SKILLS 注册。
         """
-        try:
-            from .builtin_skills import BUILTIN_SKILLS
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"加载内置技能失败: {e}", exc_info=True)
-            return
-
         for skill_id, template in BUILTIN_SKILLS.items():
             self._skills[skill_id] = Skill(
                 skill_id=skill_id,
@@ -231,14 +198,8 @@ class SkillManager:
             return None
 
         if skill.builtin:
-            try:
-                from .builtin_skills import BUILTIN_SKILLS
-
-                template = BUILTIN_SKILLS.get(skill_id)
-                return template.content if template else None
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"读取内置技能 {skill_id} 正文失败: {e}")
-                return None
+            template = BUILTIN_SKILLS.get(skill_id)
+            return template.content if template else None
 
         if not skill.file_path or not skill.file_path.exists():
             logger.warning(f"技能 {skill_id} 的文件不存在: {skill.file_path}")
@@ -257,12 +218,10 @@ class SkillManager:
         """
         skills = self.list_skills(enabled_only=True)
         return [
-            {
-                "skillId": s.skill_id,
-                "name": s.name,
-                "description": s.description or "（无描述）",
-            }
+            {"skillId": s.skill_id, "name": s.name,
+             "description": s.description or "（无描述）"}
             for s in skills
+            if not contains_forbidden_control_content((s.skill_id, s.name, s.description))
         ]
 
     def create_skill(

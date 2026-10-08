@@ -13,10 +13,10 @@ from sqlalchemy import select, func
 
 from src.db import orm_models
 from src.core import get_now
-from src.tasks.delete import delete_danmaku_files_batch
-from src.services import TaskSuccess
+from src.services.file_storage_service import get_file_storage_service
+from src.utils.diagnostics.task_exceptions import TaskSuccess
 from .base import BaseJob
-from src.utils.task_profiler import profile_flow, FLOW_DANMAKU_CLEANUP
+from src.services.task_profiler import profile_flow, FLOW_DANMAKU_CLEANUP
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +97,9 @@ class DanmakuCleanupJob(BaseJob):
             if episode.danmakuFilePath:
                 file_paths.append(episode.danmakuFilePath)
 
-        # 批量删除弹幕文件
+        # 批量删除弹幕文件（服务层提供原生异步版本，内部已走线程池）
         if file_paths:
-            await asyncio.to_thread(delete_danmaku_files_batch, file_paths)
+            await get_file_storage_service().delete_by_web_paths_batch(file_paths)
             self.logger.info(f"[定时删除弹幕] 已删除 {len(file_paths)} 个弹幕文件")
 
         await progress_callback(40, "正在删除数据库中的过期分集记录...")

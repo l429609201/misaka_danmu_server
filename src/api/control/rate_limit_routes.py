@@ -10,13 +10,18 @@ from typing import Union
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import crud, models, get_db_session
+from src.utils.runtime.cancellation import finish_before_cancel
+from src.services.service_container import get_database_service
 from src.core import get_now
-from src.services import ScraperManager
+from src.services.scraper_manager import ScraperManager
 from src.rate_limiter import RateLimiter, RateLimitExceededError
+from src.schemas.control.import_api import (
+    ControlRateLimitProviderStatusResponse,
+    ControlRateLimitStatusApiResponse,
+)
 
+# 路由只依赖服务层事务；普通响应与 SSE 共用相同的只读状态读取函数。
 from .dependencies import get_scraper_manager, get_rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -25,10 +30,9 @@ router = APIRouter()
 
 
 async def _get_rate_limit_status_data(
-    session: AsyncSession,
     scraper_manager: ScraperManager,
     rate_limiter: RateLimiter
-) -> models.ControlRateLimitStatusResponse:
+) -> ControlRateLimitStatusApiResponse:
     """
     获取流控状态数据的核心逻辑（可被普通响应和SSE流复用）
     """
@@ -44,7 +48,9 @@ async def _get_rate_limit_status_data(
     global_limit = rate_limiter.global_limit
     period_seconds = rate_limiter.global_period_seconds
 
-    all_states = await crud.get_all_rate_limit_states(session)
+    db = get_database_service()
+    async with db.transaction():
+        all_states = await db.rate_limit.get_all()
     states_map = {s.providerName: s for s in all_states}
 
     global_state = states_map.get("__global__")
@@ -62,7 +68,8 @@ async def _get_rate_limit_status_data(
     fallback_limit = 50  # 固定50次
 
     provider_items = []
-    all_scrapers_raw = await crud.get_all_scraper_settings(session)
+    async with db.transaction():
+        all_scrapers_raw = await db.scraper.get_all_scraper_settings()
     all_scrapers = [s for s in all_scrapers_raw if s['providerName'] != 'custom']
 
     for scraper_setting in all_scrapers:
@@ -82,7 +89,7 @@ async def _get_rate_limit_status_data(
         except ValueError:
             pass
 
-        provider_items.append(models.ControlRateLimitProviderStatus(
+        provider_items.append(ControlRateLimitProviderStatusResponse(
             providerName=provider_name,
             directCount=direct_count,
             fallbackCount=fallback_count,
@@ -92,7 +99,7 @@ async def _get_rate_limit_status_data(
 
     global_period_str = f"{period_seconds} 秒"
 
-    return models.ControlRateLimitStatusResponse(
+    return ControlRateLimitStatusApiResponse(
         globalEnabled=global_enabled,
         globalRequestCount=global_state.requestCount if global_state else 0,
         globalLimit=global_limit,
@@ -110,7 +117,6 @@ async def _get_rate_limit_status_data(
 async def get_rate_limit_status(
     request: Request,
     stream: bool = Query(False, description="是否使用SSE流式推送(每秒更新)"),
-    session: AsyncSession = Depends(get_db_session),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter)
 ):
@@ -139,11 +145,10 @@ async def get_rate_limit_status(
     - SSE模式: 每秒推送一次相同格式的JSON数据
     """
     if not stream:
-        return await _get_rate_limit_status_data(session, scraper_manager, rate_limiter)
+        return await _get_rate_limit_status_data(scraper_manager, rate_limiter)
 
     async def event_generator():
         """SSE事件生成器，每秒推送一次流控状态"""
-        session_factory = request.app.state.db_session_factory
         try:
             while True:
                 # 主动检测客户端是否断开，优雅退出避免 CancelledError 打断数据库操作
@@ -151,10 +156,12 @@ async def get_rate_limit_status(
                     logger.debug("SSE流控状态推送: 客户端已断开连接，停止推送")
                     break
                 try:
-                    async with session_factory() as loop_session:
-                        status_data = await _get_rate_limit_status_data(loop_session, scraper_manager, rate_limiter)
-                        status_dict = status_data.model_dump(mode='json')
-                        yield f"data: {json.dumps(status_dict, ensure_ascii=False)}\n\n"
+                    status_data = await finish_before_cancel(
+                        _get_rate_limit_status_data(scraper_manager, rate_limiter)
+                    )
+                    status_dict = status_data.model_dump(mode='json')
+                    # 事务由共享状态读取函数管理，发送数据前已释放数据库资源。
+                    yield f"data: {json.dumps(status_dict, ensure_ascii=False)}\n\n"
 
                     await asyncio.sleep(1)
 

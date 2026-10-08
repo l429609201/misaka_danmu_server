@@ -42,7 +42,23 @@
    await progress_callback(50, "正在处理第 10/20 集")
    ```
 
-4. **结果标记**（均定义在 `src/utils/task_exceptions.py`）：
+4. **数据库访问**：任务内通过 DatabaseService 访问数据库
+
+   ```python
+   from src.services.service_container import get_database_service
+
+   async def my_task(session, progress_callback, anime_id: int):
+       db = get_database_service()
+
+       async with db.transaction():
+           anime = await db.anime.get_by_id(anime_id)
+           await progress_callback(50, f"处理中: {anime.title}")
+           # 执行业务逻辑
+
+       return TaskSuccess(message="完成", result={"processed": 1})
+   ```
+
+5. **结果标记**（均定义在 `src/utils/task_exceptions.py`）:
    ```python
    # 成功
    raise TaskSuccess("任务完成，共导入 15 集")
@@ -136,6 +152,8 @@ class BilibiliScraper:
 
 #### 规则
 
+来源API 2使用`__init__(config_service, transport_manager)`，类自身声明`scraper_api_version = 2`和最低服务器版本。公共库/DTO从`.base`显式导入，真实库与公开名字清单直接放在基类模块顶部，不另建库聚合转发文件；来源所需工具由基类从所属职责模块顶部导入并公开原对象，来源同样仅从`.base`选择导入；不另建工具转发文件、不传入数据库会话工厂。管理器通过组装注入必要的业务协作者，元数据版本在模块导入前校验。完整环境下公共库为必装依赖，缺失应明确报错，不能函数内或条件导入回退。
+
 1. **版本管理**：
    - 每次修改数据源，必须更新 `__version__`
    - 格式：`major.minor.patch`
@@ -198,17 +216,23 @@ for episode in episodes:
 
 ### 5. 配置管理模式 (Configuration Pattern)
 
-系统配置必须通过 `ConfigManager` 统一管理。
+系统配置必须通过 `ConfigService` 统一管理。
 
 #### 规则
 
 ```python
-# ✅ 正确：通过 ConfigManager 读取
-config_manager = ConfigManager()
-proxy_enabled = await config_manager.get("proxyEnabled", "false")
+# ✅ 正确：通过 ConfigService 读取
+from src.services.service_container import get_config_service
+
+config = get_config_service()
+proxy_enabled = await config.get("scrapers.bilibili.useProxy", False)
 
 # ❌ 错误：硬编码配置
 PROXY_ENABLED = True  # 不可配置
+
+# ❌ 错误：直接读取环境变量
+import os
+proxy = os.getenv("PROXY_URL")  # 应通过 ConfigService
 ```
 
 #### 配置分类

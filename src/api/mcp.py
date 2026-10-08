@@ -25,11 +25,13 @@ import secrets
 import ipaddress
 
 from fastapi import FastAPI, Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from src.db import crud, get_db_session, ConfigManager
+from src.services.database_service import DatabaseService
+from src.services.service_container import get_database_service
+from src.services.config_service import ConfigService
 from src.api.middleware import normalize_ip
-from src.utils.audit_logging import build_audit_request_headers, capture_audit_request_body
+from src.utils.diagnostics.audit_logging import build_audit_request_headers, capture_audit_request_body
+from src.core.timezone import get_now
+from src.db.orm_models import ExternalApiLog
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +57,7 @@ def _resolve_client_ip(request: Request, trusted_networks: list) -> str:
 
 async def _verify_mcp_api_key(
     request: Request,
-    session: AsyncSession = Depends(get_db_session),
+    db_service: DatabaseService = Depends(get_database_service),
 ) -> None:
     """
     MCP 认证依赖：验证 X-API-KEY 请求头或 apikey 查询参数。
@@ -66,10 +68,10 @@ async def _verify_mcp_api_key(
     1. 请求头: X-API-KEY: <API_TOKEN>
     2. 查询参数: ?apikey=<API_TOKEN>
     """
-    config_manager: ConfigManager = request.app.state.config_manager
+    config_service: ConfigService = request.app.state.config_service
 
     # --- 解析真实客户端 IP ---
-    trusted_proxies_str = await config_manager.get("trustedProxies", "")
+    trusted_proxies_str = await config_service.get("trustedProxies", "")
     trusted_networks = []
     if trusted_proxies_str:
         for proxy_entry in trusted_proxies_str.split(','):
@@ -94,42 +96,59 @@ async def _verify_mcp_api_key(
     # --- 认证逻辑 ---
     api_key = request.headers.get("x-api-key") or request.query_params.get("apikey")
 
-    if not api_key:
-        log_entry = await crud.create_external_api_log(
-            session, client_ip_str, endpoint, status.HTTP_401_UNAUTHORIZED,
-            "MCP: API Key缺失",
-            request_headers=request_headers_str,
-            request_body=request_body_str,
+    # 通过 DatabaseService 获取 session
+    async with db_service.transaction() as session:
+        if not api_key:
+            log_entry = ExternalApiLog(
+                accessTime=get_now(),
+                ipAddress=client_ip_str,
+                endpoint=endpoint,
+                statusCode=status.HTTP_401_UNAUTHORIZED,
+                message="MCP: API Key缺失",
+                requestHeaders=request_headers_str,
+                requestBody=request_body_str,
+            )
+            session.add(log_entry)
+            await session.flush()
+            request.state.external_log_id = log_entry.id
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="MCP 认证失败: 缺少 API Key。请通过 X-API-KEY 请求头或 ?apikey= 查询参数提供。",
+            )
+
+        stored_key = await config_service.get("externalApiKey", "")
+
+        if not stored_key or not secrets.compare_digest(api_key, stored_key):
+            log_entry = ExternalApiLog(
+                accessTime=get_now(),
+                ipAddress=client_ip_str,
+                endpoint=endpoint,
+                statusCode=status.HTTP_401_UNAUTHORIZED,
+                message="MCP: 无效的API密钥",
+                requestHeaders=request_headers_str,
+                requestBody=request_body_str,
+            )
+            session.add(log_entry)
+            await session.flush()
+            request.state.external_log_id = log_entry.id
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="MCP 认证失败: 无效的 API Key。",
+            )
+
+        # 记录成功的认证
+        log_entry = ExternalApiLog(
+            accessTime=get_now(),
+            ipAddress=client_ip_str,
+            endpoint=endpoint,
+            statusCode=status.HTTP_200_OK,
+            message="MCP: API Key验证通过",
+            requestHeaders=request_headers_str,
+            requestBody=request_body_str,
         )
+        session.add(log_entry)
+        await session.flush()
         request.state.external_log_id = log_entry.id
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="MCP 认证失败: 缺少 API Key。请通过 X-API-KEY 请求头或 ?apikey= 查询参数提供。",
-        )
-
-    stored_key = await config_manager.get("externalApiKey", "")
-
-    if not stored_key or not secrets.compare_digest(api_key, stored_key):
-        log_entry = await crud.create_external_api_log(
-            session, client_ip_str, endpoint, status.HTTP_401_UNAUTHORIZED,
-            "MCP: 无效的API密钥",
-            request_headers=request_headers_str,
-            request_body=request_body_str,
-        )
-        request.state.external_log_id = log_entry.id
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="MCP 认证失败: 无效的 API Key。",
-        )
-
-    # 记录成功的认证
-    log_entry = await crud.create_external_api_log(
-        session, client_ip_str, endpoint, status.HTTP_200_OK,
-        "MCP: API Key验证通过",
-        request_headers=request_headers_str,
-        request_body=request_body_str,
-    )
-    request.state.external_log_id = log_entry.id
 
 
 def setup_mcp(app: FastAPI) -> None:

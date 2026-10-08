@@ -9,10 +9,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from src import security
-from src.core.cache import get_cache_backend
-from src.db import models
-from src.utils.cache_listing import count_region_keys, list_cache_page
+from src.utils.auth import security
+from src.services.cache_service import get_cache_service
+from src.schemas import ui_models
+# 缓存列表工具已归入 storage 子包，使用实际路径避免启动时导入失败。
+from src.utils.storage.cache_listing import count_region_keys, list_cache_page
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +40,10 @@ async def _build_cache_preview(backend, region: str, key: str) -> dict:
 
 @router.get("/cache/stats", summary="获取缓存统计信息")
 async def get_cache_stats(
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(security.get_current_user),
 ):
     """获取缓存的统计信息，包括各 region 的条目数量。"""
-    backend = get_cache_backend()
+    backend = get_cache_service()
 
     regions = ["default", "search", "metadata", "episodes", "comments"]
     results = await asyncio.gather(
@@ -76,10 +77,10 @@ async def get_cache_list(
     search: Optional[str] = Query(None, description="搜索关键词"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(security.get_current_user),
 ):
     """获取指定 region 下的缓存条目列表，包含键值预览。"""
-    backend = get_cache_backend()
+    backend = get_cache_service()
 
     pattern = f"*{search}*" if search else "*"
 
@@ -113,10 +114,10 @@ async def get_cache_list(
 @router.delete("/cache/clear", summary="清除缓存")
 async def clear_cache(
     region: Optional[str] = Query(None, description="要清除的区域，不传则清除全部"),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(security.get_current_user),
 ):
     """清除指定区域或全部缓存。"""
-    backend = get_cache_backend()
+    backend = get_cache_service()
 
     count = await backend.clear(region=region)
     scope = f"区域 '{region}'" if region else "全部"
@@ -128,10 +129,10 @@ async def clear_cache(
 async def delete_cache_key(
     key: str = Query(..., description="缓存 key"),
     region: str = Query("search", description="缓存区域"),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(security.get_current_user),
 ):
     """删除指定的单条缓存。"""
-    backend = get_cache_backend()
+    backend = get_cache_service()
 
     deleted = await backend.delete(key, region=region)
     if deleted:
@@ -143,10 +144,10 @@ async def delete_cache_key(
 async def get_cache_detail(
     key: str = Query(..., description="缓存 key"),
     region: str = Query("search", description="缓存区域"),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(security.get_current_user),
 ):
     """获取指定缓存条目的完整值，用于调试和查看详情。"""
-    backend = get_cache_backend()
+    backend = get_cache_service()
 
     raw_value = await backend.get(key, region=region)
     if raw_value is None:

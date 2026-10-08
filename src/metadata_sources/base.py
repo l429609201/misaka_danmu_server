@@ -1,3 +1,5 @@
+from src.schemas.metadata import MetadataDetailsResponse
+from src.schemas.search import ProviderEpisodeInfo, ProviderSearchInfo
 from abc import ABC, abstractmethod
 import logging
 from typing import Any, Dict, List, Optional, Set
@@ -6,8 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker # type: igno
 from fastapi import Request
 from httpx import HTTPStatusError
 
-from src.db import models, ConfigManager, CacheManager
-from src.services import ScraperManager
+from src.schemas import User
+from src.services.config_service import ConfigService
+from src.services.cache_service import get_cache_service
 
 class BaseMetadataSource(ABC):
     """所有元数据源插件的抽象基类。"""
@@ -69,11 +72,20 @@ class BaseMetadataSource(ABC):
         """扫描订阅目标。元数据源订阅(整剧导入)默认返回空列表，由 IncrementalRefreshJob 处理。"""
         return []
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager, scraper_manager: ScraperManager, cache_manager: CacheManager):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_service: ConfigService, scraper_manager: Any):
+        """
+        初始化元数据源基类。
+
+        Args:
+            session_factory: 数据库会话工厂
+            config_service: 配置管理器
+            scraper_manager: 弹幕抓取器管理器
+        """
         self._session_factory = session_factory
-        self.config_manager = config_manager
+        self.config_service = config_service
         self.scraper_manager = scraper_manager
-        self.cache_manager = cache_manager
+        # C3.2 迁移：删除 cache_manager 构造参数，改用全局单例
+        self.cache_service = get_cache_service()
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @classmethod
@@ -91,17 +103,17 @@ class BaseMetadataSource(ABC):
         return result
 
     @abstractmethod
-    async def search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
+    async def search(self, keyword: str, user: User, mediaType: Optional[str] = None) -> List[MetadataDetailsResponse]:
         """根据关键词搜索媒体。"""
         raise NotImplementedError
 
     @abstractmethod
-    async def get_details(self, item_id: str, user: models.User, mediaType: Optional[str] = None) -> Optional[models.MetadataDetailsResponse]:
+    async def get_details(self, item_id: str, user: User, mediaType: Optional[str] = None) -> Optional[MetadataDetailsResponse]:
         """获取指定ID的媒体详情。"""
         raise NotImplementedError
 
     @abstractmethod
-    async def search_aliases(self, keyword: str, user: models.User) -> Set[str]:
+    async def search_aliases(self, keyword: str, user: User) -> Set[str]:
         """根据关键词搜索别名。"""
         raise NotImplementedError
 
@@ -114,27 +126,28 @@ class BaseMetadataSource(ABC):
         raise NotImplementedError
     
     @abstractmethod
-    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: models.User, request: Request) -> Any:
+    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: User, request: Request) -> Any:
         """
         执行一个指定的操作。
         子类可以重写此方法来处理其特定的操作，例如OAuth流程。
         """
         raise NotImplementedError(f"操作 '{action_name}' 在 {self.provider_name} 中未实现。")
 
-    async def get_comments_by_failover(self, title: str, season: int, episode_index: int, user: models.User) -> Optional[List[dict]]:
+    async def get_comments_by_failover(self, title: str, season: int, episode_index: int, user: User) -> Optional[List[dict]]:
         """
         一个故障转移方法，用于从备用源查找并返回特定分集的弹幕。
         当主搜索源找不到分集时使用此方法。
         """
         return None # 默认实现不执行任何操作
 
-    async def get_episode_urls(self, metadata_id: str, target_provider: Optional[str] = None) -> List[tuple]:
+    async def get_episode_urls(self, metadata_id: str, target_provider: Optional[str] = None, *, target_platform: Optional[str] = None) -> List[tuple]:
         """
         获取分集URL列表 (补充源功能)。
 
         Args:
             metadata_id: 元数据源中的条目ID
             target_provider: 目标平台 (tencent/iqiyi/youku/bilibili/mgtv等), 如果为None则返回所有平台
+            target_platform: 补充 ID 保存的源内平台 key，由支持该映射的子类校验并固定使用
 
         Returns:
             List[Tuple[int, str]]: (集数, 播放URL) 的列表
@@ -145,8 +158,8 @@ class BaseMetadataSource(ABC):
         self,
         keyword: str,
         empty_providers: Set[str],
-        user: models.User
-    ) -> List[models.ProviderSearchInfo]:
+        user: User
+    ) -> List[ProviderSearchInfo]:
         """当弹幕源搜索无结果时，为对应平台提供兜底搜索结果。（模板方法）
 
         基类统一处理：
@@ -181,7 +194,7 @@ class BaseMetadataSource(ABC):
 
         # 3. 去重 + 自动填充 supplementSource
         seen_media_ids: Set[str] = set()
-        final_items: List[models.ProviderSearchInfo] = []
+        final_items: List[ProviderSearchInfo] = []
         for item in raw_items:
             if item.mediaId not in seen_media_ids:
                 # 确保 supplementSource 统一设置
@@ -200,8 +213,8 @@ class BaseMetadataSource(ABC):
         keyword: str,
         providers_to_supplement: Set[str],
         provider_platforms_map: Dict[str, List[str]],
-        user: models.User
-    ) -> List[models.ProviderSearchInfo]:
+        user: User
+    ) -> List[ProviderSearchInfo]:
         """子类实现：根据关键词搜索并匹配可补充的条目。
 
         基类已完成 provider 过滤和去重，子类只需关注：
@@ -220,7 +233,7 @@ class BaseMetadataSource(ABC):
         """
         return []
 
-    async def get_calendar(self, user: models.User) -> List[Dict[str, Any]]:
+    async def get_calendar(self, user: User) -> List[Dict[str, Any]]:
         """获取该元数据源的日历/日程数据。
 
         返回条目列表，每个条目至少包含：

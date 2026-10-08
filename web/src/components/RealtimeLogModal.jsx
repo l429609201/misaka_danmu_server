@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Modal, Drawer, Button, Tooltip, message, Empty, Switch, Card, Segmented, Input } from 'antd'
-import { CopyOutlined, ExportOutlined, ClearOutlined, VerticalAlignBottomOutlined, SearchOutlined } from '@ant-design/icons'
+import { Modal, Drawer, Button, Tooltip, message, Empty, Switch, Segmented, Input } from 'antd'
+import { CopyOutlined, ExportOutlined, ClearOutlined, VerticalAlignBottomOutlined, SearchOutlined, PauseOutlined, CaretRightOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import Cookies from 'js-cookie'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
@@ -13,6 +13,9 @@ export default function RealtimeLogModal({ open, onClose }) {
   const [logs, setLogs] = useState([])
   const [connected, setConnected] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
+  const [paused, setPaused] = useState(false)
+  const [unread, setUnread] = useState(0)
+  const followRef = useRef(true)
   const [logLevel, setLogLevel] = useState('INFO')
   const [searchText, setSearchText] = useState('')
   const abortRef = useRef(null)
@@ -21,7 +24,7 @@ export default function RealtimeLogModal({ open, onClose }) {
   const isMobile = useAtomValue(isMobileAtom)
 
   useEffect(() => {
-    if (!open) return
+    if (!open || paused) return
     const token = Cookies.get('danmu_token')
     if (!token) { messageApi.error(t('realtimeLog.notLoggedIn')); return }
 
@@ -35,13 +38,19 @@ export default function RealtimeLogModal({ open, onClose }) {
       onmessage: (event) => {
         const msg = event.data.trim()
         if (!msg) return
-        setLogs(prev => [...prev, msg].slice(-200))
+        setLogs(prev => [...prev, msg].slice(-600))
+        if (!followRef.current) setUnread(prev => prev + 1)
       },
       onerror: (err) => { setConnected(false); throw err },
     }).catch(e => { if (e.name !== 'AbortError') console.error('SSE错误:', e) })
 
-    return () => { ctrl.abort(); setConnected(false) }
-  }, [open])
+    return () => { ctrl.abort(); abortRef.current = null; setConnected(false) }
+  }, [open, paused, messageApi, t])
+
+  useEffect(() => {
+    followRef.current = autoScroll
+    if (autoScroll) setUnread(0)
+  }, [autoScroll])
 
   useEffect(() => {
     if (autoScroll && containerRef.current) {
@@ -53,7 +62,20 @@ export default function RealtimeLogModal({ open, onClose }) {
     abortRef.current?.abort()
     setLogs([])
     setConnected(false)
+    setPaused(false)
+    setUnread(0)
+    setAutoScroll(true)
     onClose()
+  }
+
+  const togglePaused = () => {
+    if (paused) {
+      // SSE 重连会先重放服务器的近期日志，清空旧快照以免重复。
+      setLogs([])
+      setUnread(0)
+      setAutoScroll(true)
+    }
+    setPaused(!paused)
   }
 
   const exportLogs = () => {
@@ -85,18 +107,16 @@ export default function RealtimeLogModal({ open, onClose }) {
 
   // 从一行日志文本中提取级别名称
   const getLineLevelName = (line) => {
-    const m = line.match(/\[(DEBUG|INFO|WARNING|ERROR)\]/)
-    return m ? m[1] : 'INFO'
+    const m = line.match(/^\[\d{4}-\d{2}-\d{2}[^\]]*\]\s*(?:\[[^\]]+\]\s*)?\[(DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL)\]/m)
+      || line.match(/^\[(DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL)\]/m)
+    return m ? (m[1] === 'WARN' ? 'WARNING' : m[1]) : 'INFO'
   }
 
-  // 各筛选级别包含的日志范围
-  // INFO: INFO + ERROR
-  // WARN: INFO + WARNING + ERROR
-  // DEBUG: 全部
+  // INFO 显示常规信息与更严重日志；WARN 仅显示警告及以上。
   const LEVEL_INCLUDES = {
-    INFO:  new Set(['INFO', 'ERROR']),
-    WARN:  new Set(['INFO', 'WARNING', 'ERROR']),
-    DEBUG: new Set(['DEBUG', 'INFO', 'WARNING', 'ERROR']),
+    INFO: new Set(['INFO', 'WARNING', 'ERROR', 'CRITICAL']),
+    WARN: new Set(['WARNING', 'ERROR', 'CRITICAL']),
+    DEBUG: new Set(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']),
   }
 
   // 当前选中级别对应的包含集合
@@ -129,11 +149,11 @@ export default function RealtimeLogModal({ open, onClose }) {
     return contentLines.length > 0 ? filtered.join('\n') : null
   }
 
-  // 按级别返回边框色和背景色（INFO 走 className 默认）
+  // 级别色与历史日志一致，INFO 使用主题粉色。
   const getLevelColors = (line) => {
-    const m = line.match(/\[(DEBUG|INFO|WARNING|ERROR)\]/)
-    if (!m) return {}
-    switch (m[1]) {
+    const level = getLineLevelName(line)
+    switch (level) {
+      case 'CRITICAL':
       case 'ERROR': return { border: '#ef4444', bg: 'rgba(239,68,68,0.06)' }
       case 'WARNING': return { border: '#f59e0b', bg: 'rgba(245,158,11,0.06)' }
       case 'DEBUG': return { border: '#1d4ed8', bg: 'rgba(29,78,216,0.06)' }
@@ -141,145 +161,113 @@ export default function RealtimeLogModal({ open, onClose }) {
     }
   }
 
-  // 隐去日志文本中的级别标签
-  const stripLevelTag = (text) => text.replace(/\s*\[(DEBUG|INFO|WARNING|ERROR)\]\s*/, ' ')
+  const stripLevelTag = (text) => text.split('\n').map(line =>
+    line.replace(/^(\s*(?:\[\d{4}-\d{2}-\d{2}[^\]]*\]\s*)?(?:\[[^\]]+\]\s*)?)\[(?:DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL)\]\s*/, '$1')
+  ).join('\n')
 
-  // 关键词过滤（在级别过滤之上叠加）
   const filteredLogs = useMemo(() => {
-    if (!searchText.trim()) return logs
-    const kw = searchText.toLowerCase()
-    return logs.filter(line => line.toLowerCase().includes(kw))
-  }, [logs, searchText])
+    const keyword = searchText.trim().toLowerCase()
+    return logs.map(line => filterLog(line)).filter(line => line && (!keyword || line.toLowerCase().includes(keyword)))
+    // filterLog 依赖当前级别，切换级别后必须重新计算空态和计数。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logs, searchText, logLevel])
 
-  // Segmented 选中项按级别变色（INFO 用 antd 默认样式）
   const segColor = { WARN: '#f59e0b', DEBUG: '#1d4ed8' }[logLevel]
 
   const titleNode = (
     <div className="flex items-center gap-2">
       <span>{t('realtimeLog.title')}</span>
-      <span className={`inline-block w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-400'}`} />
-      <span className="text-xs text-gray-400">{connected ? t('realtimeLog.connected') : t('realtimeLog.disconnected')}</span>
-      {!isMobile && (
-        <>
-          <span className="text-gray-300 mx-1">|</span>
-          {segColor && <style key={`seg-style-${logLevel}`}>{`.log-seg .ant-segmented-item-selected { background: ${segColor} !important; color: #fff !important; }`}</style>}
-          <div className="log-seg">
-            <Segmented
-              size="small"
-              options={['INFO', 'WARN', 'DEBUG']}
-              value={logLevel}
-              onChange={setLogLevel}
-            />
-          </div>
-          <Input
-            size="small"
-            placeholder={t('realtimeLog.searchPlaceholder')}
-            prefix={<SearchOutlined className="text-gray-400" />}
-            allowClear
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            style={{ width: 180 }}
-          />
-        </>
-      )}
+      <span className={`inline-block w-2 h-2 rounded-full ${paused ? 'bg-gray-400' : connected ? 'bg-green-500' : 'bg-red-400'}`} />
+      <span className="text-xs text-gray-400">{paused ? t('realtimeLog.paused') : connected ? t('realtimeLog.connected') : t('realtimeLog.disconnected')}</span>
     </div>
   )
 
+  const scrollToLatest = () => {
+    setAutoScroll(true)
+    setUnread(0)
+    if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight
+  }
+
   const actionButtons = (
     <div className="flex gap-1">
-      <Tooltip title={t('realtimeLog.clear')}><Button size="small" type="text" icon={<ClearOutlined />} onClick={() => setLogs([])} /></Tooltip>
-      <Tooltip title={t('realtimeLog.export')}><Button size="small" type="text" icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
+      <Tooltip title={paused ? t('realtimeLog.resume') : t('realtimeLog.pause')}>
+        <Button size="small" type="text" icon={paused ? <CaretRightOutlined /> : <PauseOutlined />} onClick={togglePaused} />
+      </Tooltip>
+      <Tooltip title={t('realtimeLog.clear')}><Button size="small" type="text" icon={<ClearOutlined />} onClick={() => { setLogs([]); setUnread(0) }} /></Tooltip>
+      <Tooltip title={t('realtimeLog.copyAll')}><Button size="small" type="text" icon={<CopyOutlined />} disabled={!filteredLogs.length} onClick={() => copyLogLine(filteredLogs.join('\n'))} /></Tooltip>
+      <Tooltip title={t('realtimeLog.export')}><Button size="small" type="text" icon={<ExportOutlined />} disabled={!logs.length} onClick={exportLogs} /></Tooltip>
       <Tooltip title={t('realtimeLog.scrollBottom')}>
-        <Button size="small" type="text" icon={<VerticalAlignBottomOutlined />} onClick={() => {
-          if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight
-        }} />
+        <Button size="small" type="text" icon={<VerticalAlignBottomOutlined />} onClick={scrollToLatest} />
       </Tooltip>
     </div>
   )
 
   const footerNode = (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-400">{t('realtimeLog.autoScroll')}</span>
+    <div className="flex items-center justify-between gap-2">
+      <label className="flex items-center gap-2 text-xs text-gray-500">
+        <span>{t('realtimeLog.autoScroll')}</span>
         <Switch size="small" checked={autoScroll} onChange={setAutoScroll} />
-      </div>
-      {!isMobile && (
-        <div className="flex gap-2">
-          <Tooltip title={t('realtimeLog.clear')}><Button icon={<ClearOutlined />} onClick={() => setLogs([])} /></Tooltip>
-          <Tooltip title={t('realtimeLog.export')}><Button icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
-          <Tooltip title={t('realtimeLog.scrollBottom')}>
-            <Button icon={<VerticalAlignBottomOutlined />} onClick={() => {
-              if (containerRef.current) containerRef.current.scrollTop = containerRef.current.scrollHeight
-            }} />
-          </Tooltip>
-        </div>
-      )}
+      </label>
+      {unread > 0 && <Button size="small" type="link" icon={<VerticalAlignBottomOutlined />} onClick={scrollToLatest}>
+        {t('realtimeLog.unread', { count: unread })}
+      </Button>}
     </div>
   )
 
   const logContent = (
-    <div className={isMobile ? 'flex-1 overflow-hidden flex flex-col gap-2' : 'flex flex-col gap-2'}>
-      {isMobile && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="log-seg">
-            <Segmented
-              size="small"
-              options={['INFO', 'WARN', 'DEBUG']}
-              value={logLevel}
-              onChange={setLogLevel}
-            />
+    <div className={isMobile ? 'flex-1 min-h-0 flex flex-col gap-2' : 'flex flex-col gap-2'}>
+      {segColor && <style>{`.realtime-log-levels .ant-segmented-item-selected { background: ${segColor} !important; color: #fff !important; }`}</style>}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="realtime-log-levels"><Segmented size="small" options={['INFO', 'WARN', 'DEBUG']} value={logLevel} onChange={setLogLevel} /></div>
+        <Input
+          size="small"
+          placeholder={t('realtimeLog.searchPlaceholder')}
+          prefix={<SearchOutlined />}
+          allowClear
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+          className="min-w-[140px] flex-1"
+        />
+        <span className="text-xs text-gray-500 whitespace-nowrap">
+          {t('realtimeLog.count', { total: logs.length, visible: filteredLogs.length })}
+        </span>
+        {!isMobile && actionButtons}
+        {isMobile && <div className="w-full flex justify-end">{actionButtons}</div>}
+      </div>
+      <div
+        ref={containerRef}
+        onScroll={e => {
+          const el = e.currentTarget
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 32
+          if (atBottom !== autoScroll) setAutoScroll(atBottom)
+        }}
+        className={`min-h-0 overflow-y-auto border border-solid border-border rounded bg-base-card p-2 ${isMobile ? 'flex-1' : 'h-[min(60vh,620px)]'}`}
+      >
+        {filteredLogs.length === 0 ? (
+          <div className="flex items-center justify-center h-full min-h-[200px]">
+            <Empty description={logs.length === 0 ? t('realtimeLog.waitingLog') : t('realtimeLog.noMatchLog')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
-          <Input
-            size="small"
-            placeholder={t('realtimeLog.searchPlaceholder')}
-            prefix={<SearchOutlined className="text-gray-400" />}
-            allowClear
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            style={{ flex: 1, minWidth: 120 }}
-          />
-        </div>
-      )}
-      <Card className={isMobile ? 'flex-1 overflow-hidden flex flex-col' : ''} styles={{ body: { padding: isMobile ? 8 : 12, ...(isMobile ? { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } : {}) } }}>
-        <div
-          ref={containerRef}
-          className={`${isMobile ? 'flex-1 overflow-y-auto overflow-x-hidden' : 'max-h-[60vh] overflow-y-auto overflow-x-hidden'}`}
-        >
-          {filteredLogs.length === 0 ? (
-            <div className="flex items-center justify-center" style={{ height: isMobile ? '40vh' : '40vh' }}>
-              <Empty description={<span className="text-gray-400">{logs.length === 0 ? t('realtimeLog.waitingLog') : t('realtimeLog.noMatchLog')}</span>} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : filteredLogs.map((line, i) => {
+          const match = line.match(/^\[(\d{4}-\d\d-\d\d\s+\d\d:\d\d:\d\d)\]\s*(?:\[([^\]]+)\]\s*)?\[(DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL)\]\s*/)
+          const level = match?.[3] || getLineLevelName(line)
+          const [datePart, clockPart] = match ? match[1].split(/\s+/) : ['—', '--:--:--']
+          const source = match?.[2]
+          const text = match ? line.slice(match[0].length) : stripLevelTag(line)
+          const colors = getLevelColors(line)
+          return (
+            <div key={i} className={`group relative flex flex-wrap sm:flex-nowrap gap-x-2 gap-y-1 items-start my-1 pl-2 pr-9 py-2 rounded border-l-2 ${colors.border ? '' : 'border-primary bg-base-hover'} hover:brightness-95 text-xs`} style={colors.border ? { borderLeftColor: colors.border, backgroundColor: colors.bg } : undefined}>
+              <time className="self-center shrink-0 w-[86px] flex flex-col text-center font-mono text-gray-500 leading-4 whitespace-nowrap" dateTime={match?.[1]?.replace(/\s+/, 'T')}>
+                <span>{searchText ? highlightText(datePart, searchText) : datePart}</span>
+                <span>{searchText ? highlightText(clockPart, searchText) : clockPart}</span>
+              </time>
+              <span className="self-center shrink-0 font-mono text-[11px] w-[66px] text-center rounded-sm leading-5" style={colors.border ? { color: colors.border } : undefined}>{searchText ? highlightText(level, searchText) : level}</span>
+              {source && <span className="min-w-0 max-w-[130px] truncate font-mono text-gray-500 leading-5" title={source}>{searchText ? highlightText(source, searchText) : source}</span>}
+              <pre className="m-0 min-w-0 flex-1 basis-full sm:basis-0 whitespace-pre-wrap break-words font-mono leading-5">{searchText ? highlightText(text, searchText) : text}</pre>
+              <Tooltip title={t('realtimeLog.copyLog')}><Button type="text" size="small" icon={<CopyOutlined />} className={`absolute right-1 top-1 ${isMobile ? 'opacity-70' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`} onClick={() => copyLogLine(line)} /></Tooltip>
             </div>
-          ) : (
-            filteredLogs.map((line, i) => {
-              const filtered = filterLog(line)
-              if (!filtered) return null
-              const lc = getLevelColors(filtered)
-              const displayText = stripLevelTag(filtered)
-              return (
-                <div
-                  key={i}
-                  className={`my-1 p-2 rounded group ${isMobile ? 'text-xs' : 'text-sm'} ${lc.border ? '' : 'bg-base-hover'} border-l-2 ${lc.border ? '' : 'border-primary'} hover:bg-base-hover-hover transition-colors`}
-                  style={{ ...(lc.border ? { borderLeftColor: lc.border } : {}), ...(lc.bg ? { backgroundColor: lc.bg } : {}) }}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <pre className="whitespace-pre-wrap break-words m-0 font-mono flex-1 min-w-0">
-                      {searchText ? highlightText(displayText, searchText) : displayText}
-                    </pre>
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<CopyOutlined />}
-                      className={`shrink-0 opacity-0 group-hover:opacity-100 transition-opacity ${isMobile ? 'opacity-60' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); copyLogLine(filtered) }}
-                      title={t('realtimeLog.copyLog')}
-                    />
-                  </div>
-                </div>
-              )
-            })
-          )}
-        </div>
-      </Card>
+          )
+        })}
+      </div>
     </div>
   )
 
@@ -293,7 +281,6 @@ export default function RealtimeLogModal({ open, onClose }) {
           height="85%"
           open={open}
           onClose={handleClose}
-          extra={actionButtons}
           footer={footerNode}
           destroyOnClose
           styles={{ body: { overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 12 } }}

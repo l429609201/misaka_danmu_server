@@ -3,6 +3,7 @@ Jellyfin媒体服务器实现
 """
 
 from typing import List, Dict, Any, Optional
+from urllib.parse import quote
 from .base import BaseMediaServer, MediaLibrary, MediaItem
 
 
@@ -293,9 +294,12 @@ class JellyfinMediaServer(BaseMediaServer):
         return f"{self.url}/Items/{item_id}/Images/{image_type}"
 
     def _get_headers(self) -> Dict[str, str]:
-        """获取请求头"""
+        """使用新旧 Jellyfin 均支持的标准 MediaBrowser 鉴权头。"""
+        # 新版关闭旧鉴权后不再读取 X-Emby-Token；令牌只放请求头，不放 URL。
+        # 服务端按 URL 解码字段，编码引号等字符可避免破坏鉴权头结构。
+        token = quote(self.api_token, safe='')
         return {
-            'X-Emby-Token': self.api_token,  # Jellyfin兼容Emby的Token头
+            'Authorization': f'MediaBrowser Token="{token}"',
             'Accept': 'application/json',
         }
 

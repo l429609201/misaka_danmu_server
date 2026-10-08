@@ -11,15 +11,14 @@ D组（密钥）：写入密钥（WRITE）、验证密钥有效性（只读，�
 - 验证密钥通过源自身的 check_connectivity() 实发请求，只回布尔与说明文字。
 
 context 依赖（由 app.state / 渠道端注入）：
-- context["metadata_manager"]: MetadataSourceManager
+- context["metadata_manager"]: MetadataService
 """
 
 import logging
 from typing import Any, Dict, List
 
-from src.db import models
 from ..api_gateway.contracts import ActionEffect, ConfirmationMode, ResultSensitivity
-from ..security_gateway import ToolPermission
+from ..security_gateway import ToolPermission, is_forbidden_control_identifier
 from .base import Tool, registry
 
 logger = logging.getLogger(__name__)
@@ -27,20 +26,53 @@ logger = logging.getLogger(__name__)
 # 单次返回给模型的最大条数（控制 token）
 _MAX_ITEMS = 15
 
-# 御坂助手代理执行时使用的内部用户身份（元数据源接口需要 user 参数）
-_ASSISTANT_USER = models.User(id=0, username="misaka_assistant")
+# 连接探测只公开固定状态码和固定文案；上游 message 可能包含流控、凭据或任意敏感文本。
+_STATUS_LABELS = {
+    "success": "连接正常",
+    "error": "连接异常",
+    "unconfigured": "未配置",
+    "warning": "连接状态需注意",
+    "disabled": "已禁用",
+}
+_STATUS_CODE_ALIASES = {"ok": "success", **{code: code for code in _STATUS_LABELS if code != "success"}}
 
 
+def _project_source_status(source: Any) -> Dict[str, Any] | None:
+    """将单个元数据源投影为可公开的固定字段，拒绝保护标识和任意上游文本。"""
+    if not isinstance(source, dict):
+        return None
+    provider_name = source.get("providerName")
+    if not isinstance(provider_name, str) or not provider_name.strip():
+        return None
+    if is_forbidden_control_identifier(provider_name):
+        return None
+
+    raw_code = source.get("statusCode")
+    status_code = _STATUS_CODE_ALIASES.get(raw_code) if isinstance(raw_code, str) else None
+    if status_code is None:
+        status_code = "unknown"
+
+    is_enabled = source.get("isEnabled")
+    if not isinstance(is_enabled, bool):
+        is_enabled = False
+    aux_enabled = source.get("isAuxSearchEnabled")
+    if not isinstance(aux_enabled, bool):
+        aux_enabled = False
+    display_order = source.get("displayOrder")
+    if isinstance(display_order, bool) or not isinstance(display_order, int):
+        display_order = 99
+
+    return {
+        "providerName": provider_name.strip(),
+        "isEnabled": is_enabled,
+        "isAuxSearchEnabled": aux_enabled,
+        "displayOrder": display_order,
+        "statusCode": status_code,
+        "status": _STATUS_LABELS.get(status_code, "连接状态未公开"),
+    }
 def _mask_secret(value: Any) -> str:
-    """把密钥掩码成 前4***后4(len=N) 形式，便于用户核对而不泄露明文。"""
-    if not value or not isinstance(value, str):
-        return ""
-    text = value.strip()
-    if not text:
-        return ""
-    if len(text) <= 8:
-        return f"***(len={len(text)})"
-    return f"{text[:4]}***{text[-4:]}(len={len(text)})"
+    """只披露密钥是否配置，不泄漏原值的任何字符。"""
+    return "***" if isinstance(value, str) and value.strip() else ""
 
 
 def _is_secret_config_key(key: str) -> bool:
@@ -50,30 +82,25 @@ def _is_secret_config_key(key: str) -> bool:
 
 
 async def _list_metadata_sources(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-    """列出所有元数据源及其启用状态、连接状态。"""
+    """列出元数据源的安全公开状态，不返回上游任意状态文本。"""
     manager = context.get("metadata_manager")
     if not manager:
         return {"error": "元数据源管理器不可用"}
     sources = await manager.get_sources_with_status()
-    simplified = [
-        {
-            "providerName": s.get("providerName"),
-            "isEnabled": s.get("isEnabled"),
-            "status": s.get("status"),
-            "statusCode": s.get("statusCode"),
-            "isAuxSearchEnabled": s.get("isAuxSearchEnabled"),
-            "displayOrder": s.get("displayOrder"),
-        }
-        for s in sources
-    ]
-    return {"total": len(simplified), "sources": simplified}
+    projected = [_project_source_status(source) for source in (sources or [])]
+    simplified = [source for source in projected if source is not None]
+    return {
+        "total": len(simplified),
+        "sources": simplified,
+        "note": "仅表示元数据源连接探测状态，不代表搜索速度或结果正确性。",
+    }
 
 
 async def _get_metadata_source_config(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """查看某元数据源的配置项（密钥类字段一律掩码，绝不返回明文）。"""
     provider = (arguments.get("provider") or "").strip()
-    if not provider:
-        return {"error": "缺少 provider（元数据源名，如 tmdb/tvdb/bangumi/douban/imdb）"}
+    if not provider or is_forbidden_control_identifier(provider):
+        return {"error": "元数据源不可访问"}
     manager = context.get("metadata_manager")
     if not manager:
         return {"error": "元数据源管理器不可用"}
@@ -84,6 +111,8 @@ async def _get_metadata_source_config(arguments: Dict[str, Any], context: Dict[s
 
     masked: Dict[str, Any] = {}
     for k, v in (raw or {}).items():
+        if is_forbidden_control_identifier(k):
+            continue
         if _is_secret_config_key(k):
             masked[k] = _mask_secret(v) or "(未配置)"
         else:
@@ -99,14 +128,15 @@ async def _search_metadata(arguments: Dict[str, Any], context: Dict[str, Any]) -
     """在指定元数据源搜索作品（TMDB/TVDB/Bangumi/豆瓣/IMDb 等）。"""
     provider = (arguments.get("provider") or "").strip()
     keyword = (arguments.get("keyword") or "").strip()
-    if not provider or not keyword:
-        return {"error": "需要 provider 与 keyword"}
+    if not provider or is_forbidden_control_identifier(provider) or not keyword:
+        return {"error": "需要有效的 provider 与 keyword"}
     media_type = arguments.get("mediaType")
     manager = context.get("metadata_manager")
-    if not manager:
-        return {"error": "元数据源管理器不可用"}
+    user = context.get("current_user")
+    if not manager or user is None:
+        return {"error": "元数据搜索需要已登录的站内用户"}
     try:
-        results = await manager.search(provider, keyword, _ASSISTANT_USER, mediaType=media_type)
+        results = await manager.search(provider, keyword, user, mediaType=media_type)
     except Exception as e:  # noqa: BLE001
         return {"error": f"搜索失败：{e}"}
 
@@ -127,14 +157,15 @@ async def _get_metadata_details(arguments: Dict[str, Any], context: Dict[str, An
     """获取元数据源中某条目的详情（含别名、集数等）。"""
     provider = (arguments.get("provider") or "").strip()
     item_id = str(arguments.get("itemId") or "").strip()
-    if not provider or not item_id:
-        return {"error": "需要 provider 与 itemId"}
+    if not provider or is_forbidden_control_identifier(provider) or not item_id:
+        return {"error": "需要有效的 provider 与 itemId"}
     media_type = arguments.get("mediaType")
     manager = context.get("metadata_manager")
-    if not manager:
-        return {"error": "元数据源管理器不可用"}
+    user = context.get("current_user")
+    if not manager or user is None:
+        return {"error": "元数据详情需要已登录的站内用户"}
     try:
-        detail = await manager.get_details(provider, item_id, _ASSISTANT_USER, mediaType=media_type)
+        detail = await manager.get_details(provider, item_id, user, mediaType=media_type)
     except Exception as e:  # noqa: BLE001
         return {"error": f"获取详情失败：{e}"}
     if not detail:
@@ -150,8 +181,8 @@ async def _get_metadata_details(arguments: Dict[str, Any], context: Dict[str, An
 async def _get_key_status(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """查看某元数据源的密钥配置状态：仅返回「是否已配置 + 掩码」，永不返回明文。"""
     provider = (arguments.get("provider") or "").strip()
-    if not provider:
-        return {"error": "缺少 provider"}
+    if not provider or is_forbidden_control_identifier(provider):
+        return {"error": "元数据源不可访问"}
     manager = context.get("metadata_manager")
     if not manager:
         return {"error": "元数据源管理器不可用"}
@@ -162,7 +193,7 @@ async def _get_key_status(arguments: Dict[str, Any], context: Dict[str, Any]) ->
 
     keys_status = []
     for k, v in (raw or {}).items():
-        if not _is_secret_config_key(k):
+        if is_forbidden_control_identifier(k) or not _is_secret_config_key(k):
             continue
         configured = bool(v and str(v).strip())
         keys_status.append({
@@ -180,8 +211,8 @@ async def _get_key_status(arguments: Dict[str, Any], context: Dict[str, Any]) ->
 async def _verify_metadata_source_key(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """验证某元数据源当前配置的密钥是否有效（实发请求探测连通性与鉴权）。"""
     provider = (arguments.get("provider") or "").strip()
-    if not provider:
-        return {"error": "缺少 provider"}
+    if not provider or is_forbidden_control_identifier(provider):
+        return {"error": "元数据源不可访问"}
     manager = context.get("metadata_manager")
     if not manager:
         return {"error": "元数据源管理器不可用"}
@@ -219,8 +250,8 @@ async def _set_metadata_source_key(arguments: Dict[str, Any], context: Dict[str,
     provider = (arguments.get("provider") or "").strip()
     config_key = (arguments.get("configKey") or "").strip()
     value = arguments.get("value")
-    if not provider or not config_key:
-        return {"error": "需要 provider 与 configKey"}
+    if not provider or not config_key or any(is_forbidden_control_identifier(v) for v in (provider, config_key)):
+        return {"error": "元数据源配置不可访问"}
     if value is None or not str(value).strip():
         return {"error": "value 不能为空"}
     if not _is_secret_config_key(config_key):

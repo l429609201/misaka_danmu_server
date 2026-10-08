@@ -6,16 +6,15 @@
     from src.utils import SearchTimer, SEARCH_TYPE_WEBHOOK
     from src.utils import convert_to_chinese_title, clean_xml_string
 
-注意: unified_search 已移至 src.services 层:
-    from src.services import unified_search
+注意: unified_search 属于搜索编排层，由调用方从 src.workflows.search.engine 显式导入。
 """
 
-# 通用工具
-from .common import sample_comments_evenly, clean_xml_string, handle_danmaku_likes, strip_danmaku_likes
-from .common import restyle_danmaku_likes
+# 通用工具（已重组到 misc 子目录）
+from .misc.common import sample_comments_evenly, clean_xml_string, handle_danmaku_likes, strip_danmaku_likes
+from .misc.common import restyle_danmaku_likes
 
-# 文件名解析 (统一模块)
-from .filename_parser import (
+# 文件名解析 (统一模块，已移至 parsing 子目录)
+from .parsing.filename_parser import (
     ParseResult,
     parse_filename,
     parse_search_keyword,
@@ -34,8 +33,8 @@ from .filename_parser import (
     METADATA_PATTERN,
 )
 
-# 搜索计时器
-from .search_timer import (
+# 搜索计时器（已移至 diagnostics 子目录）
+from .diagnostics.search_timer import (
     SearchTimer,
     SubStepTiming,
     SEARCH_TYPE_WEBHOOK,
@@ -46,63 +45,36 @@ from .search_timer import (
     SEARCH_TYPE_HOME,
 )
 
-# 任务性能计时器
-from .task_profiler import (
-    TaskProfiler,
-    profile_flow,
+# 任务上下文管理（零依赖模块）
+from .diagnostics.task_context import (
     set_task_session_factory,
-    FLOW_GENERIC_IMPORT,
-    FLOW_FULL_REFRESH,
-    FLOW_SINGLE_REFRESH,
-    FLOW_BULK_REFRESH,
-    FLOW_AUTO_IMPORT,
-    FLOW_WEBHOOK_IMPORT,
-    FLOW_INCREMENTAL_REFRESH,
-    FLOW_BANGUMI_DATA_SYNC,
-    FLOW_SUBSCRIPTION_SCAN,
-    FLOW_WATCHLIST_SYNC,
-    FLOW_FILL_MISSING_EPISODES,
-    FLOW_TMDB_AUTO_SCRAPE,
-    FLOW_DANMAKU_CLEANUP,
-    FLOW_DATABASE_BACKUP,
-    FLOW_REFRESH_LATEST_EPISODE,
-    FLOW_DATABASE_MAINTENANCE,
-    FLOW_WEBHOOK_PROCESSOR,
-    FLOW_FALLBACK_MATCH,
-    FLOW_FALLBACK_SEARCH,
-    FLOW_HOME_SEARCH,
+    get_task_session_factory,
 )
 
-# 季度映射
-from .season_mapper import (
-    ai_type_and_season_mapping_and_correction,
+# 季度映射算法（纯算法，无 AI/网络/数据库依赖）
+from .parsing.season_mapper import (
     title_contains_season_name,
 )
 
-# 路径模板
-from .path_template import (
+# AI 季度编排由调用方直接从领域模块导入，不经纯工具包转发。
+
+# 路径模板（实际位于 utils/storage）
+from .storage.path_template import (
     DanmakuPathTemplate,
     create_danmaku_context,
     generate_danmaku_path,
 )
 
-# 图片工具
-from .image_utils import download_image, get_custom_domain, validate_custom_domain_format, probe_public_domain
+# 纯图片处理位于 utils/misc/image_processing；下载与存储协调由 workflows 负责。
+# 工具包不反向导出编排函数，避免跨层依赖。
 
-# 播放历史
-from .play_history import record_play_history
+# 播放历史和运行管理器由业务调用方从所属模块显式导入。
 
-# 内部轮询
-from .internal_polling import InternalPollingManager
+# HTTP Transport 管理（实际位于 utils/runtime）
+from .runtime.transport_manager import TransportManager
 
-# 代理中间件
-from .proxy_middleware import init_proxy_middleware
-
-# HTTP Transport 管理
-from .transport_manager import TransportManager
-
-# 别名语言识别
-from .alias_language import detect_language, classify_aliases
+# 别名语言识别（实际位于 utils/parsing）
+from .parsing.alias_language import detect_language, classify_aliases
 
 __all__ = [
     # 文件名解析
@@ -137,46 +109,12 @@ __all__ = [
     'SEARCH_TYPE_CONTROL_AUTO_IMPORT',
     'SEARCH_TYPE_CONTROL_SEARCH',
     'SEARCH_TYPE_HOME',
-    # 任务性能计时器
-    'TaskProfiler',
-    'profile_flow',
-    'set_task_session_factory',
-    'FLOW_GENERIC_IMPORT',
-    'FLOW_FULL_REFRESH',
-    'FLOW_SINGLE_REFRESH',
-    'FLOW_BULK_REFRESH',
-    'FLOW_AUTO_IMPORT',
-    'FLOW_WEBHOOK_IMPORT',
-    'FLOW_INCREMENTAL_REFRESH',
-    'FLOW_BANGUMI_DATA_SYNC',
-    'FLOW_SUBSCRIPTION_SCAN',
-    'FLOW_WATCHLIST_SYNC',
-    'FLOW_FILL_MISSING_EPISODES',
-    'FLOW_TMDB_AUTO_SCRAPE',
-    'FLOW_DANMAKU_CLEANUP',
-    'FLOW_DATABASE_BACKUP',
-    'FLOW_REFRESH_LATEST_EPISODE',
-    'FLOW_DATABASE_MAINTENANCE',
-    'FLOW_WEBHOOK_PROCESSOR',
-    'FLOW_FALLBACK_MATCH',
-    'FLOW_FALLBACK_SEARCH',
-    'FLOW_HOME_SEARCH',
-    'profile_flow',
     # 季度映射
-    'ai_type_and_season_mapping_and_correction',
     'title_contains_season_name',
     # 路径模板
     'DanmakuPathTemplate',
     'create_danmaku_context',
     'generate_danmaku_path',
-    # 图片工具
-    'download_image',
-    # 播放历史
-    'record_play_history',
-    # 内部轮询
-    'InternalPollingManager',
-    # 代理中间件
-    'init_proxy_middleware',
     # HTTP Transport 管理
     'TransportManager',
     # 别名语言识别

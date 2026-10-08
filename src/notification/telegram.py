@@ -1,15 +1,23 @@
-﻿"""
+"""
 Telegram 通知渠道实现
 使用 pyTelegramBotAPI (telebot) 库，支持 Polling 和 Webhook 两种模式。
 支持 InlineKeyboard、CallbackQuery、多步对话等交互能力。
 """
 
 import asyncio
+import base64
+import io
 import json
 import logging
 import threading
 import time
 from typing import Any, Dict, List, Optional
+
+try:
+    import telebot
+except ImportError:
+    telebot = None
+
 from src._version import APP_VERSION
 
 from src.notification.base import (
@@ -25,12 +33,10 @@ bot_raw_logger = logging.getLogger("bot_raw")
 
 
 def _get_telebot():
-    """延迟导入 telebot，避免未安装时影响启动"""
-    try:
-        import telebot
-        return telebot
-    except ImportError:
+    """获取 Telegram SDK，缺少可选依赖时提供安装提示。"""
+    if telebot is None:
         raise ImportError("请安装 pyTelegramBotAPI: pip install pyTelegramBotAPI")
+    return telebot
 
 
 class TelegramChannel(BaseNotificationChannel):
@@ -516,7 +522,6 @@ class TelegramChannel(BaseNotificationChannel):
             raw = await asyncio.to_thread(self._bot.download_file, info.file_path)
             if not raw or len(raw) > self._VISION_MAX_BYTES:
                 return None
-            import base64
             path = (info.file_path or "").lower()
             if path.endswith(".png"):
                 mime = "image/png"
@@ -861,7 +866,8 @@ class TelegramChannel(BaseNotificationChannel):
             return None
 
     async def _edit_llm_frame(
-        self, chat_id, msg_id: int, content: str, is_final: bool = False
+        self, chat_id, msg_id: int, content: str, is_final: bool = False,
+        reply_markup=None,
     ) -> bool:
         """把一帧 LLM 回复内容写入占位消息。
 
@@ -873,7 +879,7 @@ class TelegramChannel(BaseNotificationChannel):
             静默跳过；最终帧失败要记警告，因为用户会看到不完整的回复。
         :return: 是否成功写入
         """
-        if await self._rich_edit(chat_id, msg_id, content):
+        if await self._rich_edit(chat_id, msg_id, content, markup=reply_markup):
             return True
 
         # 纯文本兜底：剥掉 Markdown 符号，避免用户看到裸露的 ** 和 [文字](URL)。
@@ -887,6 +893,7 @@ class TelegramChannel(BaseNotificationChannel):
                 self._bot.edit_message_text,
                 self._strip_markdown_v2(self._markdown_to_v2(content)),
                 chat_id, msg_id,
+                reply_markup=reply_markup,
             )
             return True
         except Exception as err:
@@ -903,8 +910,6 @@ class TelegramChannel(BaseNotificationChannel):
         images：图片 data URL 列表（贴纸/图片消息经 _normalize_incoming 提取），
         透传给 Agent 交 vision 模型识别。
         """
-        import time as _t
-
         # ① 先发 typing action，让用户看到"正在输入…"状态
         typing_task = None
         typing_active = {"stop": False}
@@ -935,7 +940,7 @@ class TelegramChannel(BaseNotificationChannel):
 
             async def on_stream(partial: str):
                 # 限流：距上次 edit ≥1.3s 才更新，避免触发 Telegram 速率限制
-                now = _t.monotonic()
+                now = time.monotonic()
                 if now - last_edit["t"] < 1.3 or partial == last_edit["shown"]:
                     return
                 last_edit["t"] = now
@@ -955,9 +960,9 @@ class TelegramChannel(BaseNotificationChannel):
                 rich_message=self._use_rich_message(),
             )
             final = (result.text if result else "") or "……"
+            final_markup = self._build_inline_markup(result.reply_markup) if result and result.reply_markup else None
             # 最终定稿：这一帧必须成功，失败会逐级降级并记录日志
-            if final != last_edit["shown"]:
-                await self._edit_llm_frame(chat_id, msg_id, final, is_final=True)
+            await self._edit_llm_frame(chat_id, msg_id, final, is_final=True, reply_markup=final_markup)
         finally:
             # 确保 typing 任务被清理
             typing_active["stop"] = True
@@ -1044,7 +1049,6 @@ class TelegramChannel(BaseNotificationChannel):
         采用「先删旧消息，再发新图」策略，保证每页都能换成对应的九宫格海报。
         caption 长度上限 1024，超出时截断。
         """
-        import io as _io
         caption = result.text or ""
         if len(caption) > 1024:
             caption = caption[:1021] + "..."
@@ -1060,7 +1064,7 @@ class TelegramChannel(BaseNotificationChannel):
 
         sent = None
         try:
-            photo = _io.BytesIO(result.image_bytes)
+            photo = io.BytesIO(result.image_bytes)
             photo.name = "poster.png"
             sent = await asyncio.to_thread(
                 self._bot.send_photo, chat_id, photo,
@@ -1072,7 +1076,7 @@ class TelegramChannel(BaseNotificationChannel):
             if "can't parse entities" in err_str:
                 # caption 解析失败：去掉 parse_mode 重发
                 try:
-                    photo = _io.BytesIO(result.image_bytes)
+                    photo = io.BytesIO(result.image_bytes)
                     photo.name = "poster.png"
                     sent = await asyncio.to_thread(
                         self._bot.send_photo, chat_id, photo,
@@ -1210,9 +1214,8 @@ class TelegramChannel(BaseNotificationChannel):
             return
 
         # 压制 telebot / urllib3 的 SSL 瞬断噪音日志（这类错误 infinity_polling 会自动重试）
-        import logging as _logging
-        _logging.getLogger("urllib3.connectionpool").setLevel(_logging.CRITICAL)
-        _logging.getLogger("telebot").setLevel(_logging.WARNING)
+        logging.getLogger("urllib3.connectionpool").setLevel(logging.CRITICAL)
+        logging.getLogger("telebot").setLevel(logging.WARNING)
 
         def polling_worker():
             self.logger.info("Telegram 轮询已启动")
@@ -1301,8 +1304,7 @@ class TelegramChannel(BaseNotificationChannel):
         if kwargs.get("image_separate") and (image or image_bytes) and not edit_message_id:
             try:
                 if image_bytes:
-                    import io as _sep_io
-                    _photo = _sep_io.BytesIO(image_bytes)
+                    _photo = io.BytesIO(image_bytes)
                     _photo.name = "poster.png"
                     await asyncio.to_thread(self._bot.send_photo, chat_id, _photo)
                 else:
@@ -1350,9 +1352,8 @@ class TelegramChannel(BaseNotificationChannel):
                         )
                     except Exception as del_err:
                         self.logger.debug(f"删除旧进度消息失败（忽略）: {del_err}")
-                import io as _io
                 try:
-                    photo = _io.BytesIO(image_bytes)
+                    photo = io.BytesIO(image_bytes)
                     photo.name = "poster.png"
                     sent = await asyncio.to_thread(
                         self._bot.send_photo, chat_id, photo, caption=caption,
@@ -1362,7 +1363,7 @@ class TelegramChannel(BaseNotificationChannel):
                     photo_err_str = str(photo_err).lower()
                     if "can't parse entities" in photo_err_str:
                         self.logger.warning(f"send_photo(bytes) MarkdownV2 解析失败，降级纯文本caption: {photo_err}")
-                        photo = _io.BytesIO(image_bytes)
+                        photo = io.BytesIO(image_bytes)
                         photo.name = "poster.png"
                         sent = await asyncio.to_thread(
                             self._bot.send_photo, chat_id, photo,

@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Form, Input, Select, Switch, Button, message, Spin, Card, Tabs, Space, Tooltip, Row, Col, Alert, Statistic, AutoComplete, InputNumber, Collapse, Slider } from 'antd'
 const { TextArea } = Input
 const { TabPane } = Tabs
 const { Option } = Select
-import { getConfig, setConfig, getDefaultAIPrompts, getAIBalance, getAIModels } from '@/apis'
+import { getConfig, setConfig, getDefaultAIPrompts, getAIBalance, previewAIModels, saveAIConnection } from '@/apis'
 import api from '@/apis/fetch'
 import { QuestionCircleOutlined, SaveOutlined, ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import AIMetrics from './AIMetrics'
@@ -33,7 +33,6 @@ const AutoMatchSetting = () => {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [matchMode, setMatchMode] = useState('traditional')
-  const [fallbackEnabled, setFallbackEnabled] = useState(false)
   const [recognitionEnabled, setRecognitionEnabled] = useState(false)
   const [aliasExpansionEnabled, setAliasExpansionEnabled] = useState(false)
   const [nameConversionEnabled, setNameConversionEnabled] = useState(false)
@@ -155,7 +154,6 @@ const AutoMatchSetting = () => {
       const thinkingEnabled = thinkingEnabledRes.data.value === 'true'
       const episodeGroup = episodeGroupEnabledRes.data.value === 'true'
       setMatchMode(enabled ? 'ai' : 'traditional')
-      setFallbackEnabled(fallback)
       setRecognitionEnabled(recognition)
       setAliasExpansionEnabled(aliasExpansion)
       setNameConversionEnabled(nameConversion)
@@ -282,6 +280,8 @@ const AutoMatchSetting = () => {
       // fetchBalance() 会在 loadSettings() 中根据提供商配置自动调用
     }
     init()
+    // 初始加载只执行一次；重新绑定函数依赖会覆盖用户正在填写的密钥。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // 更新选中的提供商配置
@@ -320,15 +320,15 @@ const AutoMatchSetting = () => {
       setSaving(true)
       const values = form.getFieldsValue()
 
-      await Promise.all([
-        setConfig('aiProvider', values.aiProvider || ''),
-        setConfig('aiApiKey', values.aiApiKey || ''),
-        setConfig('aiBaseUrl', values.aiBaseUrl || ''),
-        setConfig('aiModel', values.aiModel || ''),
-        setConfig('aiLogRawResponse', values.aiLogRawResponse ? 'true' : 'false'),
-        setConfig('aiThinkingEnabled', values.aiThinkingEnabled ? 'true' : 'false'),
-        setConfig('aiCallTimeout', String(values.aiCallTimeout || 60))
-      ])
+      await saveAIConnection({
+        aiProvider: values.aiProvider || '',
+        aiApiKey: values.aiApiKey || '',
+        aiBaseUrl: values.aiBaseUrl || '',
+        aiModel: values.aiModel || '',
+        aiLogRawResponse: !!values.aiLogRawResponse,
+        aiThinkingEnabled: !!values.aiThinkingEnabled,
+        aiCallTimeout: Number(values.aiCallTimeout || 60),
+      })
 
       message.success(t('autoMatch.saveConnectionSuccess'))
 
@@ -430,6 +430,7 @@ const AutoMatchSetting = () => {
         setConfig('assistantTimeout', String(timeout)),
         setConfig('assistantProxyEnabled', values.assistantProxyEnabled ? 'true' : 'false'),
       ])
+      window.dispatchEvent(new Event('assistant-notify-config-changed'))
       message.success(t('autoMatch.assistantSaveSuccess'))
     } catch (error) {
       console.error(t('autoMatch.logSaveConfigFailed'), error)
@@ -455,7 +456,11 @@ const AutoMatchSetting = () => {
 
     try {
       setRefreshingModels(true)
-      const response = await getAIModels(currentProvider, true)
+      const response = await previewAIModels({
+        provider: currentProvider,
+        apiKey: form.getFieldValue('aiApiKey') || '',
+        baseUrl: form.getFieldValue('aiBaseUrl') || '',
+      })
 
       if (response.data.error) {
         message.warning(response.data.error)
@@ -478,7 +483,7 @@ const AutoMatchSetting = () => {
       }
     } catch (error) {
       console.error(t('autoMatch.logRefreshModelsFailed'), error)
-      message.error(t('autoMatch.refreshModelsFailed', { error: error.response?.data?.detail || error.message }))
+      message.error(t('autoMatch.refreshModelsFailed', { error: error.message || error.detail || t('common.unknown') }))
     } finally {
       setRefreshingModels(false)
     }
@@ -579,9 +584,6 @@ const AutoMatchSetting = () => {
           onValuesChange={(changedValues) => {
             if ('aiMatchEnabled' in changedValues) {
               setMatchMode(changedValues.aiMatchEnabled ? 'ai' : 'traditional')
-            }
-            if ('aiFallbackEnabled' in changedValues) {
-              setFallbackEnabled(changedValues.aiFallbackEnabled)
             }
             if ('aiRecognitionEnabled' in changedValues) {
               setRecognitionEnabled(changedValues.aiRecognitionEnabled)

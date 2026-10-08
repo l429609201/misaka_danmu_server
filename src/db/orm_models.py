@@ -228,23 +228,19 @@ class BangumiDataIndex(Base):
     """
     __tablename__ = "bangumi_data_index"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    # 该番在 bangumi 站点的 subject id（sites 中 site==bangumi 的 id），用于与库内 bangumiId 桥接
     bangumiId: Mapped[Optional[str]] = mapped_column("bangumi_id", String(32), index=True)
     titleMain: Mapped[str] = mapped_column("title_main", String(500), index=True)  # 日文原名（title 字段）
-    # 全语言别名扁平化（换行分隔），供 SQL LIKE 跨语言模糊匹配
     titlesAll: Mapped[Optional[str]] = mapped_column("titles_all", TEXT().with_variant(MEDIUMTEXT, "mysql"))
     titleZh: Mapped[Optional[str]] = mapped_column("title_zh", String(500))   # 首选简体中文译名
     titleEn: Mapped[Optional[str]] = mapped_column("title_en", String(500))   # 首选英文名
     type: Mapped[Optional[str]] = mapped_column("type", String(32))            # tv / movie / ova / ...
     beginYear: Mapped[Optional[int]] = mapped_column("begin_year", Integer)    # 放送开始年份（保留，兼容旧逻辑）
-    # 新增：补全源 data.json 的完整字段，避免信息丢失（why：原仅存年份/精简映射，无法支撑详情展示与反向解析）
     lang: Mapped[Optional[str]] = mapped_column("lang", String(16))            # 原始语言（如 ja）
     officialSite: Mapped[Optional[str]] = mapped_column("official_site", String(500))  # 官方网站
     beginDate: Mapped[Optional[str]] = mapped_column("begin_date", String(40))  # 完整开播时间（ISO 字符串，原样保留）
     endDate: Mapped[Optional[str]] = mapped_column("end_date", String(40))      # 完结时间（ISO 字符串，原样保留）
     broadcast: Mapped[Optional[str]] = mapped_column("broadcast", String(100))  # 放送周期规则（如 R/2022-...P7D）
     comment: Mapped[Optional[str]] = mapped_column("comment", TEXT)             # 备注
-    # sites 改存「原始 sites 数组」JSON（保留每个站点的 begin/broadcast 子字段），不再重组为 {platform:id}
     sites: Mapped[Optional[str]] = mapped_column("sites", TEXT)                # JSON：原始 sites 数组
     updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime, default=get_now, nullable=False)
 
@@ -394,8 +390,20 @@ class TaskHistory(Base):
     # 任务恢复相关字段：在提交时保存，用于重启后恢复排队中的任务
     taskType: Mapped[Optional[str]] = mapped_column("task_type", String(500), nullable=True)
     taskParameters: Mapped[Optional[str]] = mapped_column("task_parameters", TEXT().with_variant(MEDIUMTEXT, "mysql"), nullable=True)
+    # 父任务ID（用于记录任务派发关系，如搜索任务 → 下载任务）
+    parentTaskId: Mapped[Optional[str]] = mapped_column(
+        "parent_task_id",
+        String(500),
+        ForeignKey("task_history.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="父任务ID（如搜索任务ID）"
+    )
 
-    __table_args__ = (Index('idx_task_history_created_at', 'created_at'),)
+    __table_args__ = (
+        Index('idx_task_history_created_at', 'created_at'),
+        Index('idx_parent_task', 'parent_task_id'),
+    )
 
 class TaskStateCache(Base):
     """任务状态缓存表，用于存储正在执行任务的参数，支持服务重启后的任务恢复"""
@@ -407,6 +415,7 @@ class TaskStateCache(Base):
     updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime)
 
     __table_args__ = (Index('idx_task_type', 'task_type'),)
+
 
 class ExternalApiLog(Base):
     __tablename__ = "external_api_logs"
@@ -718,6 +727,10 @@ class AssistantSession(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     # 客户端生成的会话唯一标识（web-xxx）
     sessionId: Mapped[str] = mapped_column("session_id", String(128), unique=True, index=True, nullable=False)
+    # 旧全局会话保持 NULL，不推断归属；所有授权查询均要求匹配用户 id。
+    ownerId: Mapped[Optional[int]] = mapped_column(
+        "owner_id", BigInteger, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True
+    )
     title: Mapped[str] = mapped_column(String(200), default="", nullable=False)
     persona: Mapped[str] = mapped_column(String(64), default="misaka_20001", nullable=False)
     # 是否正在处理中（断流恢复用：SSE 期间为 True，完成置 False）
@@ -747,6 +760,23 @@ class AssistantMessage(Base):
     __table_args__ = (
         Index('idx_assistant_msg_session', 'session_db_id'),
     )
+
+
+class AssistantPendingAction(Base):
+    """助手写工具的一次性确认记录，仅存确认令牌哈希。"""
+    __tablename__ = "assistant_pending_actions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ownerId: Mapped[int] = mapped_column(
+        "owner_id", BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    sessionId: Mapped[str] = mapped_column("session_id", String(128), nullable=False)
+    toolName: Mapped[str] = mapped_column("tool_name", String(128), nullable=False)
+    argumentsJson: Mapped[str] = mapped_column("arguments_json", TEXT, nullable=False)
+    tokenHash: Mapped[str] = mapped_column("token_hash", String(64), unique=True, nullable=False)
+    expiresAt: Mapped[datetime] = mapped_column("expires_at", NaiveDateTime, nullable=False)
+    consumedAt: Mapped[Optional[datetime]] = mapped_column("consumed_at", NaiveDateTime)
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False)
 
 
 class PerformanceMetric(Base):

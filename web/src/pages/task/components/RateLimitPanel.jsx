@@ -38,7 +38,11 @@ export const RateLimitPanel = () => {
             {t('rateLimitPanel.desc')}
           </Paragraph>
         </Typography>
-        {status && (
+        {/* 错误事件不是流控快照，单独展示，避免空字段造成面板渲染异常。 */}
+        {status?.error && (
+          <Alert message={status.error} type="error" showIcon className="!mb-4" />
+        )}
+        {status && !status.error && (
           <>
             {status.verificationFailed && (
               <Alert
@@ -73,11 +77,22 @@ export const RateLimitPanel = () => {
                   />
                 </Col>
                 <Col xs={24} sm={12}>
-                  <Statistic.Countdown
-                    title={t('rateLimitPanel.resetCountdown')}
-                    value={Date.now() + status.secondsUntilReset * 1000}
-                    format="HH:mm:ss"
-                  />
+                  {/* 周期由实际下载占额开启，零秒时说明等待状态，不伪造循环倒计时。 */}
+                  {status.secondsUntilReset > 0 ? (
+                    <Statistic.Countdown
+                      title={t('rateLimitPanel.resetCountdown')}
+                      value={Date.now() + status.secondsUntilReset * 1000}
+                      format="HH:mm:ss"
+                    />
+                  ) : (
+                    <Statistic
+                      title={t('rateLimitPanel.resetCountdown')}
+                      value={t('rateLimitPanel.waitingForNextPeriod', {
+                        defaultValue: '等待下一次请求开启新周期',
+                      })}
+                      valueStyle={{ fontSize: 16 }}
+                    />
+                  )}
                 </Col>
               </Row>
             </Card>

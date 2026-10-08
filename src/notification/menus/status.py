@@ -1,11 +1,13 @@
 """
 /status 菜单 Mixin — 系统状态概览
+C8：crud 层已废弃，改用 DatabaseService
 """
 import time
 import logging
 
 from src.notification.base import CommandResult
 from src._version import APP_VERSION
+from src.services.service_container import get_database_service
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +19,7 @@ class StatusMenuMixin:
     """处理 /status 命令"""
 
     async def cmd_status(self, args: str, user_id: str, channel, **kw) -> CommandResult:
-        """系统状态概览"""
+        """系统状态概览 - C8：使用 DatabaseService"""
         try:
             lines = [f"📊 *系统状态*\n"]
 
@@ -35,14 +37,14 @@ class StatusMenuMixin:
             lines.append(f"• 版本: v{APP_VERSION}")
             lines.append(f"• 运行: {uptime_str}")
 
-            # 弹幕库统计
-            from src.db import crud
-            async with self._session_factory() as session:
-                lib_result = await crud.get_library_anime(session, page=1, page_size=1)
+            # 弹幕库统计 + 定时任务统计
+            db = get_database_service()
+            async with db.transaction():
+                lib_result = await db.anime.get_library_anime(page=1, page_size=1)
                 total_anime = lib_result.get("total", 0)
 
                 # 定时任务统计
-                tasks = await crud.get_scheduled_tasks(session)
+                tasks = await db.scheduled_task.get_scheduled_tasks()
                 enabled_tasks = sum(1 for t in tasks if t.get("isEnabled"))
                 total_tasks = len(tasks)
 

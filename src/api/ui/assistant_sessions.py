@@ -1,32 +1,20 @@
-"""
-御坂助手 · 会话历史 API（P4）
-------------------------------------------------------------
-- GET    /ui/assistant/sessions            会话列表（摘要）
-- GET    /ui/assistant/sessions/{sid}      会话详情（含消息）
-- PUT    /ui/assistant/sessions/{sid}      保存/更新会话展示快照
-- DELETE /ui/assistant/sessions/{sid}      删除会话
-- PUT    /ui/assistant/sessions/{sid}/processing  标记处理中（断流恢复用）
-
-会话数据只属于当前登录用户视角（本项目单管理员，暂不做多用户隔离）。
-"""
+"""御坂助手会话历史 API；流式回调使用独立短事务。"""
 
 import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, delete as sa_delete
-from sqlalchemy.orm import selectinload
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src import security
-from src.db import models, get_db_session, orm_models
-from src.core.timezone import get_now
+from src.schemas import ui_models as models
+from src.services.database_service import DatabaseService
+from src.services.service_container import get_database_service
+from src.utils.auth import security
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-_MAX_PERSIST_MESSAGES = 40  # 每会话最多持久化的消息数
+_MAX_PERSIST_MESSAGES = 40
 
 
 class SessionMessage(BaseModel):
@@ -42,164 +30,111 @@ class SessionSaveRequest(BaseModel):
 
 def _title_from_messages(messages: List[SessionMessage]) -> str:
     """取第一条用户消息前 30 字作标题。"""
-    for m in messages:
-        if m.role == "user" and m.content.strip():
-            t = m.content.strip().replace("\n", " ")
-            return t[:30] + ("…" if len(t) > 30 else "")
+    for message in messages:
+        if message.role == "user" and message.content.strip():
+            title = message.content.strip().replace("\n", " ")
+            return title[:30] + ("…" if len(title) > 30 else "")
     return "新对话"
 
 
-async def mark_session_processing(session_factory, sid: str, processing: bool):
-    """标记会话处理状态（断流恢复用）。会话不存在时按需创建占位。"""
-    if not sid or not session_factory:
+async def mark_session_processing(sid: str, processing: bool, owner_id: int) -> None:
+    """按用户标记会话处理状态；写入失败不打断流式响应。"""
+    if not sid:
         return
     try:
-        async with session_factory() as session:
-            row = (await session.execute(
-                select(orm_models.AssistantSession).where(
-                    orm_models.AssistantSession.sessionId == sid)
-            )).scalar_one_or_none()
-            if not row:
-                row = orm_models.AssistantSession(sessionId=sid, title="新对话")
-                session.add(row)
-            row.isProcessing = processing
-            row.updatedAt = get_now()
-            await session.commit()
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"标记会话处理状态失败: {e}")
+        db = get_database_service()
+        async with db.transaction():
+            await db.assistant_sessions.mark_processing(sid, processing, owner_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("标记会话处理状态失败: %s", exc)
 
 
-async def save_session_snapshot(session_factory, sid: str, messages: List[dict], persona: str = None):
-    """流式结束后保存会话展示快照（整体覆盖，供断流恢复拉取）。"""
-    if not sid or not session_factory:
-        return
-    real = [m for m in messages if m.get("content")]
+async def save_session_snapshot(
+    sid: str, messages: List[dict], persona: Optional[str] = None, *, owner_id: int,
+    run_hash: Optional[str] = None,
+) -> bool:
+    """流式结束后保存会话快照，供断流恢复拉取。"""
+    if not sid:
+        return False
+    real = [message for message in messages if message.get("content") or message.get("events")]
     if len(real) <= 1:
-        return
+        return False
     try:
-        async with session_factory() as session:
-            row = (await session.execute(
-                select(orm_models.AssistantSession).where(
-                    orm_models.AssistantSession.sessionId == sid)
-            )).scalar_one_or_none()
-            title = _title_from_messages([SessionMessage(**m) for m in real])
-            if not row:
-                row = orm_models.AssistantSession(sessionId=sid, title=title,
-                                                  persona=persona or "misaka_20001")
-                session.add(row)
-                await session.flush()
+        title = _title_from_messages([SessionMessage(**message) for message in real])
+        db = get_database_service()
+        async with db.transaction():
+            if run_hash is not None:
+                saved = await db.assistant_sessions.save_stream_snapshot(
+                    sid, title, real[-_MAX_PERSIST_MESSAGES:], persona,
+                    owner_id, run_hash,
+                )
             else:
-                row.title = title
-                if persona:
-                    row.persona = persona
-                row.updatedAt = get_now()
-                await session.execute(sa_delete(orm_models.AssistantMessage).where(
-                    orm_models.AssistantMessage.sessionDbId == row.id))
-            for m in real[-_MAX_PERSIST_MESSAGES:]:
-                session.add(orm_models.AssistantMessage(
-                    sessionDbId=row.id, role=m["role"], content=m["content"]))
-            row.isProcessing = False
-            await session.commit()
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"保存会话快照失败: {e}")
+                await db.assistant_sessions.save_snapshot(
+                    sid, title, real[-_MAX_PERSIST_MESSAGES:], persona, processing=False,
+                    owner_id=owner_id,
+                )
+                saved = True
+        return saved
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("保存会话快照失败: %s", exc)
+        return False
 
 
 @router.get("/assistant/sessions", summary="御坂助手会话列表", include_in_schema=False)
 async def list_sessions(
     limit: int = Query(50, ge=1, le=200),
-    session: AsyncSession = Depends(get_db_session),
+    db_service: DatabaseService = Depends(get_database_service),
     current_user: models.User = Depends(security.get_current_user),
-):
-    stmt = (
-        select(orm_models.AssistantSession)
-        .order_by(orm_models.AssistantSession.updatedAt.desc())
-        .limit(limit)
-    )
-    rows = (await session.execute(stmt)).scalars().all()
-    return [
-        {
-            "sessionId": r.sessionId,
-            "title": r.title or "新对话",
-            "persona": r.persona,
-            "isProcessing": r.isProcessing,
-            "updatedAt": r.updatedAt.isoformat() if r.updatedAt else "",
-        }
-        for r in rows
-    ]
+) -> List[dict]:
+    """列出最近更新的会话摘要。"""
+    async with db_service.transaction():
+        return await db_service.assistant_sessions.list_summaries(limit, current_user.id)
 
 
 @router.get("/assistant/sessions/{sid}", summary="御坂助手会话详情", include_in_schema=False)
 async def get_session(
     sid: str,
-    session: AsyncSession = Depends(get_db_session),
+    db_service: DatabaseService = Depends(get_database_service),
     current_user: models.User = Depends(security.get_current_user),
-):
-    stmt = (
-        select(orm_models.AssistantSession)
-        .where(orm_models.AssistantSession.sessionId == sid)
-        .options(selectinload(orm_models.AssistantSession.messages))
-    )
-    row = (await session.execute(stmt)).scalar_one_or_none()
-    if not row:
+) -> dict:
+    """读取指定会话及其消息。"""
+    async with db_service.transaction():
+        detail = await db_service.assistant_sessions.get_detail(sid, current_user.id)
+    if detail is None:
         raise HTTPException(404, "会话不存在")
-    msgs = sorted(row.messages, key=lambda m: m.id)
-    return {
-        "sessionId": row.sessionId,
-        "title": row.title,
-        "persona": row.persona,
-        "isProcessing": row.isProcessing,
-        "messages": [{"role": m.role, "content": m.content} for m in msgs],
-    }
+    return detail
 
 
 @router.put("/assistant/sessions/{sid}", summary="保存御坂助手会话", include_in_schema=False)
 async def save_session(
     sid: str,
     payload: SessionSaveRequest,
-    session: AsyncSession = Depends(get_db_session),
+    db_service: DatabaseService = Depends(get_database_service),
     current_user: models.User = Depends(security.get_current_user),
-):
-    stmt = select(orm_models.AssistantSession).where(orm_models.AssistantSession.sessionId == sid)
-    row = (await session.execute(stmt)).scalar_one_or_none()
+) -> dict:
+    """保存或整体更新会话展示快照。"""
     title = payload.title or _title_from_messages(payload.messages)
-
-    if not row:
-        row = orm_models.AssistantSession(
-            sessionId=sid, title=title, persona=payload.persona or "misaka_20001",
-        )
-        session.add(row)
-        await session.flush()
-    else:
-        row.title = title
-        if payload.persona:
-            row.persona = payload.persona
-        row.updatedAt = get_now()
-        # 先清旧消息再写新快照（整体覆盖，简单可靠）
-        await session.execute(
-            sa_delete(orm_models.AssistantMessage).where(
-                orm_models.AssistantMessage.sessionDbId == row.id
+    kept = [
+        {"role": message.role, "content": message.content}
+        for message in payload.messages[-_MAX_PERSIST_MESSAGES:]
+    ]
+    try:
+        async with db_service.transaction():
+            await db_service.assistant_sessions.save_snapshot(
+                sid, title, kept, payload.persona, owner_id=current_user.id,
             )
-        )
-
-    kept = payload.messages[-_MAX_PERSIST_MESSAGES:]
-    for m in kept:
-        if m.content:
-            session.add(orm_models.AssistantMessage(
-                sessionDbId=row.id, role=m.role, content=m.content
-            ))
-    await session.commit()
+    except PermissionError as exc:
+        raise HTTPException(404, "会话不存在") from exc
     return {"status": "ok", "sessionId": sid}
 
 
 @router.delete("/assistant/sessions/{sid}", summary="删除御坂助手会话", include_in_schema=False)
 async def delete_session(
     sid: str,
-    session: AsyncSession = Depends(get_db_session),
+    db_service: DatabaseService = Depends(get_database_service),
     current_user: models.User = Depends(security.get_current_user),
-):
-    stmt = select(orm_models.AssistantSession).where(orm_models.AssistantSession.sessionId == sid)
-    row = (await session.execute(stmt)).scalar_one_or_none()
-    if row:
-        await session.delete(row)
-        await session.commit()
+) -> dict:
+    """删除会话，不存在也返回成功。"""
+    async with db_service.transaction():
+        await db_service.assistant_sessions.delete_by_sid(sid, current_user.id)
     return {"status": "ok"}

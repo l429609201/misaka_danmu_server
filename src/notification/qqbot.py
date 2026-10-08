@@ -5,9 +5,22 @@ QQ 官方 Bot 通知渠道实现（WebSocket Gateway）
 官方文档：https://bot.q.qq.com/wiki/
 """
 
+import base64
+import json
 import logging
 import threading
 from typing import Any, Dict, List, Optional
+
+import aiohttp
+
+try:
+    import botpy
+except ImportError:
+    botpy = None
+try:
+    from botpy.types.message import MarkdownPayload
+except ImportError:
+    MarkdownPayload = None
 
 from src.notification.base import (
     BaseNotificationChannel, CommandResult,
@@ -20,22 +33,17 @@ bot_raw_logger = logging.getLogger("bot_raw")
 
 
 def _get_botpy():
-    """延迟导入 botpy，避免未安装时影响启动"""
-    try:
-        import botpy
-        return botpy
-    except ImportError:
+    """获取 QQ Bot SDK，缺少可选依赖时提供安装提示。"""
+    if botpy is None:
         raise ImportError("请安装 qq-botpy: pip install qq-botpy")
+    return botpy
 
 
 def _get_markdown_payload():
-    """延迟导入 MarkdownPayload"""
-    try:
-        from botpy.types.message import MarkdownPayload
-        return MarkdownPayload
-    except ImportError:
+    """获取 MarkdownPayload，可选依赖缺失时降级为纯文本。"""
+    if MarkdownPayload is None:
         logger.warning("无法导入 MarkdownPayload，将使用纯文本格式")
-        return None
+    return MarkdownPayload
 
 
 class QQBotChannel(BaseNotificationChannel):
@@ -86,7 +94,6 @@ class QQBotChannel(BaseNotificationChannel):
     def _log_raw(self, direction: str, data):
         """记录原始交互日志"""
         if self._is_log_raw():
-            import json
             bot_raw_logger.info(
                 f"[QQ Bot #{self.channel_id}] {direction}\n"
                 f"{json.dumps(data, ensure_ascii=False, indent=2) if isinstance(data, (dict, list)) else data}\n"
@@ -792,7 +799,6 @@ class QQBotChannel(BaseNotificationChannel):
             file_url = file_info["url"]
 
             # 下载图片
-            import aiohttp
             async with aiohttp.ClientSession() as session:
                 async with session.get(file_url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status != 200:
@@ -805,7 +811,6 @@ class QQBotChannel(BaseNotificationChannel):
                         return None
 
                     # 转换为 base64 data URL
-                    import base64
                     content_type = resp.headers.get('Content-Type', 'image/jpeg')
                     if 'png' in content_type.lower():
                         mime = 'image/png'
@@ -926,6 +931,7 @@ class QQBotChannel(BaseNotificationChannel):
             await self._send_c2c_message(
                 user_openid=user_openid,
                 content=response,
+                keyboard=result.reply_markup if hasattr(result, "reply_markup") else None,
                 msg_id=reply_msg_id,
             )
 
@@ -993,6 +999,7 @@ class QQBotChannel(BaseNotificationChannel):
             await self._send_group_message(
                 group_openid=group_openid,
                 content=response,
+                keyboard=result.reply_markup if hasattr(result, "reply_markup") else None,
                 msg_id=reply_msg_id,
             )
 

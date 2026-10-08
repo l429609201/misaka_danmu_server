@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  Form, Input, Button, message, Select, Space, Alert, Card, Typography,
+  Form, Input, Button, message, Space, Alert, Card, Typography, Switch,
 } from 'antd'
 import { ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
@@ -20,10 +20,9 @@ const { Text } = Typography
  * 通知模板编辑器 - 通用编辑组件
  * 支持 5 个模板场景的编辑、变量插入、实时预览
  */
-export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSaved }) => {
+export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSaved, channelTypes = [] }) => {
   const { t } = useTranslation()
   const [form] = Form.useForm()
-  const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [validationError, setValidationError] = useState(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -39,39 +38,13 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
 
   // 防抖预览
   const previewTimerRef = useRef(null)
-
-  // 加载模板数据
-  const loadTemplate = useCallback(async () => {
-    if (!templateId) return
-    setLoading(true)
-    try {
-      const res = await getNotificationTemplate(templateId)
-      const data = res.data
-      setTemplateData(data)
-      form.setFieldsValue({
-        title: data.title || '',
-        body: data.body || '',
-      })
-      setValidationError(null)
-      setHasUnsavedChanges(false)
-      // 初始预览
-      triggerPreview(data.title || '', data.body || '', 'telegram', 'success')
-    } catch (e) {
-      message.error(t('notificationTemplate.loadFailed'))
-      console.error('加载模板失败:', e)
-    } finally {
-      setLoading(false)
-    }
-  }, [templateId, form, t])
-
-  useEffect(() => {
-    if (visible && templateId) {
-      loadTemplate()
-    }
-  }, [visible, templateId, loadTemplate])
+  const previewSelectionRef = useRef({ channel: '', status: 'success' })
 
   // 防抖预览请求
   const triggerPreview = useCallback((title, body, channel, status) => {
+    const selectedChannel = channel || previewSelectionRef.current.channel || channelTypes[0]?.channelType
+    const selectedStatus = status || previewSelectionRef.current.status
+    previewSelectionRef.current = { channel: selectedChannel, status: selectedStatus }
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current)
     previewTimerRef.current = setTimeout(async () => {
       if (!templateId) return
@@ -81,8 +54,9 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
           templateId,
           title,
           body,
-          channel: channel || 'telegram',
-          exampleStatus: status || 'success',
+          channel: selectedChannel,
+          exampleStatus: selectedStatus,
+          imageEnabled: form.getFieldValue('imageEnabled') !== false,
         })
         setPreviewData(res.data)
         setValidationError(res.data.error || null)
@@ -93,12 +67,37 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
         setPreviewLoading(false)
       }
     }, 300)
-  }, [templateId, t])
+  }, [templateId, t, form, channelTypes])
+
+  // 加载模板数据
+  const loadTemplate = useCallback(async () => {
+    if (!templateId) return
+    try {
+      const res = await getNotificationTemplate(templateId)
+      const data = res.data
+      setTemplateData(data)
+      form.setFieldsValue({
+        title: data.title || '',
+        body: data.body || '',
+        imageEnabled: data.imageEnabled !== false,
+      })
+      setValidationError(null)
+      setHasUnsavedChanges(false)
+      triggerPreview(data.title || '', data.body || '', channelTypes[0]?.channelType, 'success')
+    } catch (e) {
+      message.error(t('notificationTemplate.loadFailed'))
+      console.error('加载模板失败:', e)
+    }
+  }, [templateId, form, t, channelTypes, triggerPreview])
+
+  useEffect(() => {
+    if (visible && templateId) loadTemplate()
+  }, [visible, templateId, loadTemplate])
 
   // 表单值变化时触发预览
   const handleValuesChange = useCallback((_, allValues) => {
     setHasUnsavedChanges(true)
-    triggerPreview(allValues.title, allValues.body, 'telegram', 'success')
+    triggerPreview(allValues.title, allValues.body)
   }, [triggerPreview])
 
   // 跟踪光标位置
@@ -153,9 +152,7 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
     // 触发预览
     triggerPreview(
       activeField === 'title' ? newText : values.title,
-      activeField === 'body' ? newText : values.body,
-      'telegram',
-      'success'
+      activeField === 'body' ? newText : values.body
     )
   }, [activeField, cursorPosition, form, triggerPreview])
 
@@ -170,7 +167,7 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
       body: templateData.defaultBody,
     })
     setHasUnsavedChanges(true)
-    triggerPreview(templateData.defaultTitle, templateData.defaultBody, 'telegram', 'success')
+    triggerPreview(templateData.defaultTitle, templateData.defaultBody)
     message.info(t('notificationTemplate.resetSuccess'))
   }, [templateData, form, triggerPreview, t])
 
@@ -188,6 +185,7 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
       await updateNotificationTemplate(templateId, {
         title: values.title,
         body: values.body,
+        imageEnabled: values.imageEnabled !== false,
       })
 
       message.success(t('notificationTemplate.saveSuccess'))
@@ -238,6 +236,14 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
           {/* 编辑表单 */}
           <Card>
             <Form form={form} layout="vertical" onValuesChange={handleValuesChange}>
+              <Form.Item
+                label="通知图片"
+                name="imageEnabled"
+                valuePropName="checked"
+                extra="开启后，渠道会按各自的图片发送模式附加海报；关闭后仅发送文字。"
+              >
+                <Switch checkedChildren="带图" unCheckedChildren="纯文字" />
+              </Form.Item>
               {/* 标题模板 */}
               <Form.Item
                 label={
@@ -339,8 +345,9 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
           <NotificationPreview
             previewData={previewData}
             loading={previewLoading}
-            onChannelChange={(channel) => handlePreviewChange(channel, 'success')}
-            onStatusChange={(status) => handlePreviewChange('telegram', status)}
+             channelTypes={channelTypes}
+            onChannelChange={(channel) => handlePreviewChange(channel, previewSelectionRef.current.status)}
+            onStatusChange={(status, channel) => handlePreviewChange(channel || channelTypes[0]?.channelType, status)}
           />
         </div>
       </div>

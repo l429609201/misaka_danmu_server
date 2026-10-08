@@ -1,116 +1,88 @@
-import logging
+"""搜索源基类与公共依赖门面；平台协议及纯工具不在此实现。"""
+
 import asyncio
+import base64
+import hashlib
+import hmac
+import html
+import ipaddress
+import json
+import logging
+import math
+import os
+import random
 import re
+import secrets
+import socket
+import string
+import struct
 import time
+import urllib.request
+import uuid
+import xml.etree.ElementTree as ET
+import zlib
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Type, Tuple, TYPE_CHECKING
-from typing import Union
-from functools import wraps
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from html import unescape
+from html.parser import HTMLParser
+from typing import Any, Callable, ClassVar, Dict, List, Mapping, Optional, Tuple, Union
+from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse, urlsplit
+
+import aiohttp
+import brotli
+import chardet
 import httpx
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+import wasmtime
+from bs4 import BeautifulSoup
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
+from gmssl import func, sm3
+from google.protobuf.descriptor_pb2 import FileDescriptorProto
+from lxml import etree
+from opencc import OpenCC
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from thefuzz import fuzz
 
-from src.db import crud
-from src.db import models
-from src.core.cache import get_cache_backend
+from src.rate_limiter import RateLimitExceededError
+from src.schemas.auth import User
+from src.schemas.common import SCRAPER_API_VERSION
+from src.schemas.ui.search import ProviderEpisodeInfo, ProviderSearchInfo
+from src.security_core import require_download_permission
+from src.services.service_container import get_database_service, get_rate_limiter
+from src.services.cache_service import get_cache_service
+from src.services.config_service import ConfigService
+from src.utils.danmaku.p_fields import normalize_p_attr
+from src.utils.diagnostics.performance_tracker import track_performance
+from src.utils.parsing.danmaku_parser import parse_dandan_xml_to_comments
+from src.utils.parsing.episode_filter import COMMON_EPISODE_BLACKLIST_REGEX
+from src.utils.parsing.filename_parser import (
+    get_season_from_title, is_movie_by_title, normalize_title, parse_search_keyword,
+)
+from src.utils.parsing.protobuf import build_protobuf_message_classes
+from src.utils.runtime.server_instance_id import generate_server_instance_id
+from src.utils.runtime.transport_manager import TransportManager
 
-from src.utils import TransportManager
-
-if TYPE_CHECKING:
-    from src.db import ConfigManager
-
-def _roman_to_int(s: str) -> int:
-    """将罗马数字字符串转换为整数。"""
-    roman_map = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
-    s = s.upper()
-    result = 0
-    i = 0
-    while i < len(s):
-        # 处理减法规则 (e.g., IV, IX)
-        if i + 1 < len(s) and roman_map[s[i]] < roman_map[s[i+1]]:
-            result += roman_map[s[i+1]] - roman_map[s[i]]
-            i += 2
-        else:
-            result += roman_map[s[i]]
-            i += 1
-    return result
-
-def get_season_from_title(title: str) -> int:
-    """从标题中解析季度信息，返回季度数。"""
-    if not title:
-        return 1
-
-    # A map for Chinese numerals, including formal and simple.
-    chinese_num_map = {
-        '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
-        '壹': 1, '贰': 2, '叁': 3, '肆': 4, '伍': 5, '陆': 6, '柒': 7, '捌': 8, '玖': 9, '拾': 10
-    }
-
-    # 模式的顺序很重要
-    patterns = [
-        # 格式: S01, Season 1
-        (re.compile(r"(?:S|Season)\s*(\d+)", re.I), lambda m: int(m.group(1))),
-        # 格式: 第 X 季/部/幕 (支持中文和阿拉伯数字)
-        (re.compile(r"第\s*([一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾\d])\s*[季部幕]", re.I),
-         lambda m: chinese_num_map.get(m.group(1)) if not m.group(1).isdigit() else int(m.group(1))),
-        # 格式: X之章 (支持简繁中文数字)
-        (re.compile(r"([一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾])\s*之\s*章", re.I),
-         lambda m: chinese_num_map.get(m.group(1))),
-        # 格式: Unicode 罗马数字, e.g., Ⅲ
-        (re.compile(r"\s+([Ⅰ-Ⅻ])(?=\s|$)", re.I),
-         lambda m: {'Ⅰ': 1, 'Ⅱ': 2, 'Ⅲ': 3, 'Ⅳ': 4, 'Ⅴ': 5, 'Ⅵ': 6, 'Ⅶ': 7, 'Ⅷ': 8, 'Ⅸ': 9, 'Ⅹ': 10, 'Ⅺ': 11, 'Ⅻ': 12}.get(m.group(1).upper())),
-        # 格式: ASCII 罗马数字, e.g., III
-        (re.compile(r"\s+([IVXLCDM]+)\b", re.I), lambda m: _roman_to_int(m.group(1))),
-        # 格式: 标题末尾的阿拉伯数字, e.g., 刀剑神域2, 模范出租车3
-        # 匹配非数字字符后跟1-2位数字结尾，排除年份(4位数字)
-        (re.compile(r"[^\d](\d{1,2})\s*$"), lambda m: int(m.group(1)) if 1 <= int(m.group(1)) <= 20 else None),
-    ]
-
-    for pattern, handler in patterns:
-        match = pattern.search(title)
-        if match:
-            try:
-                season = handler(match)
-                if season is not None: return season
-            except (ValueError, KeyError, IndexError):
-                continue
-    return 1 # Default to season 1
-
-
-def track_performance(func):
-    """
-    装饰器: 跟踪异步方法的执行时间,不影响并发性能。
-    记录到 INFO 级别,方便查看性能统计。
-    使用任务ID作为键存储耗时，确保并发安全，供 scraper_manager 读取。
-    """
-    @wraps(func)
-    async def wrapper(self, *args, **kwargs):
-        start_time = time.perf_counter()
-        task_id = id(asyncio.current_task())  # 获取当前任务ID，确保并发安全
-        try:
-            result = await func(self, *args, **kwargs)
-            elapsed = time.perf_counter() - start_time
-            elapsed_ms = elapsed * 1000
-            # 使用任务ID作为键存储耗时，确保并发安全
-            if not hasattr(self, '_task_timings'):
-                self._task_timings = {}
-            self._task_timings[task_id] = elapsed_ms
-            # 记录到 INFO 级别,显示搜索源名称和耗时
-            self.logger.info(f"[{self.provider_name}] {func.__name__} 耗时: {elapsed:.3f}s")
-            return result
-        except Exception as e:
-            elapsed = time.perf_counter() - start_time
-            elapsed_ms = elapsed * 1000
-            # 即使失败也存储耗时
-            if not hasattr(self, '_task_timings'):
-                self._task_timings = {}
-            self._task_timings[task_id] = elapsed_ms
-            self.logger.warning(f"[{self.provider_name}] {func.__name__} 失败耗时: {elapsed:.3f}s")
-            raise
-    return wrapper
-
-
-# 通用分集过滤规则（硬编码），用于前端"填充通用规则"按钮
-COMMON_EPISODE_BLACKLIST_REGEX = r'^(.*?)((.+?版)|(特(别|典))|((导|演)员|嘉宾|角色)访谈|福利|彩蛋|花絮|预告|特辑|专访|访谈|幕后|周边|资讯|看点|速看|回顾|盘点|合集|PV|MV|CM|OST|ED|OP|BD|特典|SP|NCOP|NCED|MENU|Web-DL|rip|x264|x265|aac|flac)(.*?)$'
+# 库和工具均由本模块公开原对象，来源仅从.base选择所需名字。
+__all__ = [
+    "BaseScraper", "ProviderEpisodeInfo", "ProviderSearchInfo", "User",
+    "ConfigService", "TransportManager", "RateLimitExceededError",
+    "require_download_permission", "get_season_from_title", "track_performance",
+    "COMMON_EPISODE_BLACKLIST_REGEX", "parse_search_keyword", "normalize_title",
+    "is_movie_by_title", "normalize_p_attr", "parse_dandan_xml_to_comments",
+    "build_protobuf_message_classes", "generate_server_instance_id",
+    "asyncio", "base64", "hashlib", "hmac", "html", "ipaddress", "json",
+    "logging", "math", "os", "random", "re", "secrets", "socket", "string",
+    "struct", "time", "urllib", "uuid", "ET", "defaultdict", "dataclass",
+    "datetime", "timezone", "unescape", "HTMLParser", "Any", "Callable",
+    "ClassVar", "Dict", "List", "Mapping", "Optional", "Tuple", "Union",
+    "parse_qs", "quote", "unquote", "urlencode", "urljoin", "urlparse", "urlsplit",
+    "aiohttp", "brotli", "chardet", "httpx", "wasmtime", "BeautifulSoup",
+    "AES", "pad", "unpad", "func", "sm3", "FileDescriptorProto", "etree",
+    "OpenCC", "BaseModel", "ConfigDict", "Field", "ValidationError",
+    "field_validator", "model_validator", "fuzz", "zlib",
+]
 
 
 class BaseScraper(ABC):
@@ -124,17 +96,21 @@ class BaseScraper(ABC):
     如果键存在但值为空，则不进行过滤。
     """
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: "ConfigManager", transport_manager: TransportManager):
-        self._session_factory = session_factory
-        self.config_manager = config_manager
+    scraper_api_version = SCRAPER_API_VERSION
+
+    def __init__(self, config_service: ConfigService, transport_manager: TransportManager):
+        self.config_service = config_service
         self.transport_manager = transport_manager
+        # 管理器组装时注入既有离线服务，来源不导入业务服务包。
+        self._bangumi_data: Optional[Any] = None
         self.logger = logging.getLogger(self.__class__.__name__)
-        # 用于跟踪当前客户端实例所使用的代理配置
-        # 搜索超时（秒），由 scraper_manager 从 config 注入，默认15秒
-        self._search_timeout: float = 15.0
+        self._search_timeout: float = 30.0
         self._current_proxy_config: Optional[str] = None
-        # 缓存 scraper_manager 引用,用于访问预加载的 scraper 设置
         self._scraper_manager_ref: Optional[Any] = None
+        self._api_lock = asyncio.Lock()
+        self._last_request_time: float = 0.0
+        self._min_interval: float = 0.0
+        self._client: Optional[httpx.AsyncClient] = None
 
     async def _get_proxy_for_provider(self) -> Optional[str]:
         """
@@ -147,11 +123,11 @@ class BaseScraper(ABC):
         - accelerate: 加速代理（URL 重写模式，不返回代理 URL）
         """
         # 获取代理模式
-        proxy_mode = await self.config_manager.get("proxyMode", "none")
+        proxy_mode = await self.config_service.get("proxyMode", "none")
 
         # 兼容旧配置：如果 proxyMode 为 none 但 proxyEnabled 为 true，则使用 http_socks 模式
         if proxy_mode == "none":
-            proxy_enabled_globally = (await self.config_manager.get("proxyEnabled", "false")).lower() == 'true'
+            proxy_enabled_globally = (await self.config_service.get("proxyEnabled", "false")).lower() == 'true'
             if proxy_enabled_globally:
                 proxy_mode = "http_socks"
 
@@ -160,7 +136,7 @@ class BaseScraper(ABC):
         if proxy_mode != "http_socks":
             return None
 
-        proxy_url = await self.config_manager.get("proxyUrl", "")
+        proxy_url = await self.config_service.get("proxyUrl", "")
         if not proxy_url:
             return None
 
@@ -170,9 +146,9 @@ class BaseScraper(ABC):
             # 使用预加载的缓存（快速路径）
             provider_setting = self._scraper_manager_ref._cached_scraper_settings.get(self.provider_name)
         else:
-            # 降级到数据库查询（仅在缓存未初始化时，如测试环境）
-            async with self._session_factory() as session:
-                scraper_settings = await crud.get_all_scraper_settings(session)
+            db = get_database_service()
+            async with db.transaction():
+                scraper_settings = await db.scraper.get_all_scraper_settings()
             provider_setting = next((s for s in scraper_settings if s['providerName'] == self.provider_name), None)
 
         use_proxy_for_this_provider = provider_setting.get('useProxy', False) if provider_setting else False
@@ -181,12 +157,12 @@ class BaseScraper(ABC):
 
     async def _should_use_accelerate_proxy(self) -> bool:
         """检查是否应该使用加速代理模式"""
-        proxy_mode = await self.config_manager.get("proxyMode", "none")
+        proxy_mode = await self.config_service.get("proxyMode", "none")
         return proxy_mode == "accelerate"
 
     async def _get_accelerate_proxy_url(self) -> str:
         """获取加速代理地址"""
-        return await self.config_manager.get("accelerateProxyUrl", "")
+        return await self.config_service.get("accelerateProxyUrl", "")
 
     def _transform_url_for_accelerate(self, original_url: str, proxy_base: str) -> str:
         """
@@ -219,8 +195,9 @@ class BaseScraper(ABC):
         if self._scraper_manager_ref and hasattr(self._scraper_manager_ref, '_cached_scraper_settings'):
             provider_setting = self._scraper_manager_ref._cached_scraper_settings.get(self.provider_name)
         else:
-            async with self._session_factory() as session:
-                scraper_settings = await crud.get_all_scraper_settings(session)
+            db = get_database_service()
+            async with db.transaction():
+                scraper_settings = await db.scraper.get_all_scraper_settings()
             provider_setting = next((s for s in scraper_settings if s['providerName'] == self.provider_name), None)
 
         use_proxy_for_this_provider = provider_setting.get('useProxy', False) if provider_setting else False
@@ -233,7 +210,22 @@ class BaseScraper(ABC):
             return self._transform_url_for_accelerate(url, proxy_base)
 
         return url
-    
+
+    def _format_search_result_log(self, result: Any) -> str:
+        """统一搜索结果日志字段，省略海报链接以减少噪音，缺失值显示为 null。"""
+        def display(value: Any) -> Any:
+            return value if value is not None and value != "" else "null"
+
+        return (
+            f"  - {display(getattr(result, 'title', None))} "
+            f"(ID: {display(getattr(result, 'mediaId', None))}, "
+            f"类型: {display(getattr(result, 'type', None))}, "
+            f"季: {display(getattr(result, 'season', None))}, "
+            f"年份: {display(getattr(result, 'year', None))}, "
+            f"集数: {display(getattr(result, 'episodeCount', None))})"
+        )
+
+
     async def _log_proxy_usage(self, proxy_url: Optional[str]):
         if proxy_url:
             self.logger.debug(f"通过代理 '{proxy_url}' 发起请求...")
@@ -254,6 +246,88 @@ class BaseScraper(ABC):
         client_kwargs = {"proxy": proxy_to_use, "timeout": self._search_timeout, "follow_redirects": True, **kwargs}
         return httpx.AsyncClient(**client_kwargs)
 
+    def _client_defaults(self) -> Dict[str, Any]:
+        """
+        提供本源发起请求时的默认 client 参数（headers / cookies 等）。
+
+        子类覆盖此方法即可让统一出口带上自己的请求头，
+        无需各自重写 _request_with_rate_limit。
+        """
+        return {}
+
+    async def _acquire_client(self, **kwargs) -> httpx.AsyncClient:
+        """
+        基于 TransportManager 的共享连接池创建轻量 client。
+
+        与 _create_client 的区别：
+        - _create_client 走 proxy= 参数，httpx 会为每个 client 自建 transport（连接池不复用）
+        - 本方法走 transport= 参数，连接池由 TransportManager 全局持有并复用
+
+        超时同样统一由 _search_timeout 控制，忽略调用方传入的 timeout。
+        """
+        proxy_to_use = await self._get_proxy_for_provider()
+        await self._log_proxy_usage(proxy_to_use)
+        self._current_proxy_config = proxy_to_use
+
+        transport = (
+            await self.transport_manager.get_proxy_transport(proxy_to_use)
+            if proxy_to_use
+            else await self.transport_manager.get_shared_transport()
+        )
+
+        kwargs.pop("timeout", None)
+        return httpx.AsyncClient(
+            transport=transport,
+            timeout=self._search_timeout,
+            follow_redirects=True,
+            **kwargs,
+        )
+
+    async def _ensure_client(self) -> httpx.AsyncClient:
+        """
+        获取本源的长驻 client，不存在时创建。
+
+        子类如需在建立会话时做额外初始化（加载 Cookie、换取鉴权票据等），
+        覆盖本方法即可，无需重写 _request_with_rate_limit。
+        """
+        if self._client is None:
+            self._client = await self._acquire_client(**self._client_defaults())
+        return self._client
+
+    async def _request_with_rate_limit(
+        self, method: str, url: str, **kwargs
+    ) -> httpx.Response:
+        """
+        所有搜索源发起 HTTP 请求的统一出口。
+        """
+        client = await self._ensure_client()
+
+        async with self._api_lock:
+            if self._min_interval > 0:
+                elapsed = time.time() - self._last_request_time
+                if elapsed < self._min_interval:
+                    await asyncio.sleep(self._min_interval - elapsed)
+
+            response = await client.request(method, url, **kwargs)
+            self._last_request_time = time.time()
+
+        await self._log_raw_response(response, f"{method} Request", url=url)
+        return response
+
+    async def close(self):
+        """
+        关闭本源持有的长驻 client。
+
+        仅关闭 client 外壳，底层 transport（连接池）由 TransportManager 统一管理，
+        在应用关闭时通过 close_all() 释放。
+        """
+        if self._client is not None:
+            try:
+                await self._client.aclose()
+            except Exception as e:
+                self.logger.warning(f"关闭 {self.provider_name} 的 client 时出错: {e}")
+            self._client = None
+
     async def _get_from_cache(self, key: str) -> Optional[Any]:
         """
         从缓存中获取数据。
@@ -270,41 +344,23 @@ class BaseScraper(ABC):
                     # 批量查询已执行，但缓存不存在
                     self.logger.debug(f"{self.provider_name}: 使用预取缓存 (未命中) - {key}")
                     return None
-        
-        # 降级到单独数据库查询（仅在批量查询未执行时）
+
         self.logger.debug(f"{self.provider_name}: 缓存未预取，进行单独查询 - {key}")
-        async with self._session_factory() as session:
-            try:
-                _backend = get_cache_backend()
-                if _backend is not None:
-                    try:
-                        result = await _backend.get(key, region="default")
-                        if result is not None:
-                            return result
-                    except Exception:
-                        pass
-                return await crud.get_cache(session, key)
-            finally:
-                await session.close()
+        try:
+            return await get_cache_service().get(key=key, region="default")
+        except Exception:
+            self.logger.debug(f"{self.provider_name}: 缓存读取失败 - {key}", exc_info=True)
+            return None
 
     async def _set_to_cache(self, key: str, value: Any, config_key: str, default_ttl: int):
-        """将数据存入数据库缓存，TTL从配置中读取。"""
-        ttl_str = await self.config_manager.get(config_key, str(default_ttl))
+        """将数据存入缓存，TTL从配置中读取。"""
+        ttl_str = await self.config_service.get(config_key, str(default_ttl))
         ttl = int(ttl_str)
         if ttl > 0:
-            async with self._session_factory() as session:
-                try:
-                    _backend = get_cache_backend()
-                    if _backend is not None:
-                        try:
-                            await _backend.set(key, value, ttl=ttl, region="default")
-                        except Exception:
-                            await crud.set_cache(session, key, value, ttl, provider=self.provider_name)
-                    else:
-                        await crud.set_cache(session, key, value, ttl, provider=self.provider_name)
-                    await session.commit()
-                finally:
-                    await session.close()
+            try:
+                await get_cache_service().set(key=key, value=value, ttl=ttl, region="default")
+            except Exception:
+                self.logger.debug(f"{self.provider_name}: 缓存写入失败 - {key}", exc_info=True)
 
     # 每个子类都必须覆盖这个类属性
     provider_name: str
@@ -375,7 +431,7 @@ class BaseScraper(ABC):
 
     rate_limit_quota: Optional[int] = None # 新增：特定源的配额
 
-    # 点赞火焰阈值：l >= 此值显示 🔥，否则显示 ❤️（各源可在内部覆盖）
+    # 点赞火焰阈值：l >= 此值显示 ??，否则显示 ??（各源可在内部覆盖）
     likes_fire_threshold: int = 1000
 
     def build_media_url(self, media_id: str) -> Optional[str]:
@@ -390,7 +446,7 @@ class BaseScraper(ABC):
             平台播放页面URL，如果无法构造则返回None
         """
         return None
-    
+
     async def _should_log_responses(self) -> bool:
         """动态检查是否应记录原始响应，确保配置实时生效。"""
         if not self.is_loggable:
@@ -398,7 +454,7 @@ class BaseScraper(ABC):
 
         # 修正：使用特定于提供商的配置键，例如 'scraper_tencent_log_responses'
         config_key = f"scraper_{self.provider_name}_log_responses"
-        is_enabled_str = await self.config_manager.get(config_key, "false")
+        is_enabled_str = await self.config_service.get(config_key, "false")
         # 健壮性检查：同时处理布尔值和字符串 "true"，以防配置值类型不确定。
         if isinstance(is_enabled_str, bool):
             return is_enabled_str
@@ -448,7 +504,7 @@ class BaseScraper(ABC):
         # 获取特定于提供商的黑名单
         provider_key = f"{self.provider_name}_episode_blacklist_regex"
         # 不提供默认值，如果数据库中没有则返回空字符串
-        provider_pattern_str = await self.config_manager.get(provider_key, "")
+        provider_pattern_str = await self.config_service.get(provider_key, "")
 
         # 打印实际读取到的过滤规则，便于排查
         self.logger.info(f"读取到分集黑名单（正则）：{provider_pattern_str if provider_pattern_str else '(空)'}")
@@ -472,7 +528,7 @@ class BaseScraper(ABC):
         raise NotImplementedError(f"操作 '{action_name}' 在 {self.provider_name} 中未实现。")
 
     @abstractmethod
-    async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[models.ProviderSearchInfo]:
+    async def search(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[ProviderSearchInfo]:
         """
         根据关键词搜索媒体。
         episode_info: 可选字典，包含 'season' 和 'episode'。
@@ -489,7 +545,7 @@ class BaseScraper(ABC):
         return [keywords[0]] if keywords else []
 
     @abstractmethod
-    async def get_info_from_url(self, url: str) -> Optional[models.ProviderSearchInfo]:
+    async def get_info_from_url(self, url: str) -> Optional[ProviderSearchInfo]:
         """
         (新增) 从一个作品的URL中提取信息，并返回一个 ProviderSearchInfo 对象。
         这用于支持从URL直接导入整个作品。
@@ -505,7 +561,7 @@ class BaseScraper(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[models.ProviderEpisodeInfo]:
+    async def get_episodes(self, media_id: str, target_episode_index: Optional[int] = None, db_media_type: Optional[str] = None) -> List[ProviderEpisodeInfo]:
         """
         获取给定媒体ID的所有分集。
         如果提供了 target_episode_index，则可以优化为只获取到该分集为止。
@@ -515,9 +571,9 @@ class BaseScraper(ABC):
 
     async def enrich_result(
         self,
-        result: models.ProviderSearchInfo,
+        result: ProviderSearchInfo,
         fields: List[str]
-    ) -> models.ProviderSearchInfo:
+    ) -> ProviderSearchInfo:
         """
         补全单条搜索结果的缺失字段（通用信息增强接口）。
 
@@ -564,12 +620,20 @@ class BaseScraper(ABC):
         """
         return None
 
+    async def get_comments(
+        self, episode_id: str, progress_callback: Optional[Callable] = None,
+        *, pool: str = "global",
+    ) -> Optional[List[dict]]:
+        """统一业务下载入口，委托流控核心占额后执行源内下载。"""
+        # 基类只负责转发，避免与流控核心重复占额或递归调用。
+        return await get_rate_limiter().download_comments(
+            self.provider_name, episode_id, progress_callback=progress_callback,
+            pool=pool,
+        )
+
     @abstractmethod
-    async def get_comments(self, episode_id: str, progress_callback: Optional[Callable] = None) -> List[dict]:
-        """
-        获取给定分集ID的所有弹幕。
-        返回的字典列表应与 crud.save_danmaku_for_episode 的期望格式兼容。
-        """
+    async def fetch_comments(self, episode_id: str, progress_callback: Optional[Callable] = None) -> Optional[List[dict]]:
+        """源内下载实现；须先校验下载许可，业务统一调用 get_comments。"""
         raise NotImplementedError
 
     def format_episode_id_for_comments(self, provider_episode_id: Any) -> str:
@@ -581,7 +645,7 @@ class BaseScraper(ABC):
 
     async def _filter_junk_episodes(
         self,
-        episodes: List["models.ProviderEpisodeInfo"],
+        episodes: List["ProviderEpisodeInfo"],
         return_filtered: bool = False,
     ):
         """
@@ -625,8 +689,8 @@ class BaseScraper(ABC):
 
     def _log_episodes_result(
         self,
-        kept_episodes: List["models.ProviderEpisodeInfo"],
-        filtered_out: List[Tuple["models.ProviderEpisodeInfo", str]],
+        kept_episodes: List["ProviderEpisodeInfo"],
+        filtered_out: List[Tuple["ProviderEpisodeInfo", str]],
         elapsed_ms: int,
         target_episode_index: Optional[int] = None,
     ) -> None:
@@ -652,7 +716,7 @@ class BaseScraper(ABC):
         if filtered_out:
             log_lines.append(f"  已过滤 {len(filtered_out)} 集:")
             for ep, rule in filtered_out:
-                log_lines.append(f"    ✗ {ep.title} （黑名单正则匹配：{rule}）")
+                log_lines.append(f"    ? {ep.title} （黑名单正则匹配：{rule}）")
 
         # 保留本次过滤明细，供编辑导入接口展示“不导入”列表；普通导入仍只使用 kept_episodes。
         self._last_logged_filtered_out = list(filtered_out)

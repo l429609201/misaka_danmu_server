@@ -2,38 +2,46 @@ import asyncio
 import logging
 from typing import Callable, Optional
 from datetime import timedelta
-from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy import text, select
 
-from src.db import crud, orm_models, _get_db_url
+from src.db import orm_models, _get_db_url
 from src.core import settings, get_now
 from .base import BaseJob
-from src.services import TaskSuccess
-from src.utils.task_profiler import profile_flow, FLOW_DATABASE_MAINTENANCE
+from src.utils.diagnostics.task_exceptions import TaskSuccess
+from src.services.file_storage_service import CONFIG_DIR, get_file_storage_service
+from src.services.service_container import get_database_service
+from src.services.task_profiler import profile_flow, FLOW_DATABASE_MAINTENANCE
 
 logger = logging.getLogger(__name__)
 
-# 图片存储目录
-IMAGE_DIR = Path("/app/config/image")
+# 与图片存储共用配置根目录，兼容源码运行环境和 Docker，避免硬编码 /app。
+IMAGE_DIR = CONFIG_DIR / "image"
 
 async def _clean_orphaned_images(session: AsyncSession) -> str:
     """清理数据库中不存在的图片文件"""
     if not IMAGE_DIR.exists():
-        return "图片目录不存在，跳过清理。"
+        return f"图片目录不存在（{IMAGE_DIR.resolve()}），跳过清理。"
 
     # 获取数据库中所有的图片路径
     stmt = select(orm_models.Anime.localImagePath).where(orm_models.Anime.localImagePath.isnot(None))
     result = await session.execute(stmt)
     db_image_paths = set()
 
-    for row in result.scalars().all():
-        if row and row.startswith('/data/images/'):
-            # 提取文件名
-            filename = row.split('/')[-1]
-            db_image_paths.add(filename)
+
+    # 统一解析历史路径格式，避免只识别 /data/images/ 导致引用集合误判。
+    storage = get_file_storage_service()
+    for stored_path in result.scalars().all():
+        resolved_path = storage.resolve_fs_path(stored_path)
+        if resolved_path is None:
+            continue
+        try:
+            if resolved_path.resolve().parent == IMAGE_DIR.resolve():
+                db_image_paths.add(resolved_path.name)
+        except OSError:
+            logger.warning("图片引用路径解析失败，跳过: %s", stored_path)
 
     # 获取文件系统中的所有图片文件
     fs_image_files = set()
@@ -122,9 +130,11 @@ class DatabaseMaintenanceJob(BaseJob):
         # --- 1. 应用日志清理 ---
         await progress_callback(10, "正在清理旧日志...")
 
+        db = get_database_service()
         try:
-            # 日志保留天数，默认为30天。
-            retention_days_str = await crud.get_config_value(session, "logRetentionDays", "30")
+            # 配置读取使用短事务，避免连接被后续维护操作长期占用。
+            async with db.transaction():
+                retention_days_str = await db.config.get_value("logRetentionDays", "30")
             retention_days = int(retention_days_str)
         except (ValueError, TypeError):
             retention_days = 30
@@ -141,16 +151,13 @@ class DatabaseMaintenanceJob(BaseJob):
 
             total_deleted = 0
             for name, (model, date_column) in tables_to_prune.items():
-                deleted_count: Optional[int] = await crud.prune_logs(session, model, date_column, cutoff_date)
+                # 每张表独立提交并释放行锁，避免阻塞任务进度更新和新任务创建。
+                async with db.transaction():
+                    deleted_count: Optional[int] = await db.utility.prune_logs(model, date_column, cutoff_date)
 
-                # 修正：增加对 deleted_count 的 None 值检查，以提高代码的健壮性。
-                # 这可以防止当底层数据库操作（如某些驱动下的DELETE）不返回行数时，任务意外失败。
+                # 某些驱动的 DELETE 不返回行数，此时按零计数。
                 if deleted_count is None:
                     deleted_count = 0
-
-                # 关键修复：每个表 DELETE 后立即 commit，释放行锁。
-                # 避免批量 DELETE task_history 的行锁长时间持有，阻塞其他任务的进度更新和新任务创建。
-                await session.commit()
 
                 if deleted_count > 0:
                     self.logger.info(f"从 {name} 表中删除了 {deleted_count} 条旧记录。")
@@ -165,8 +172,9 @@ class DatabaseMaintenanceJob(BaseJob):
         if db_type == "mysql":
             await progress_callback(50, "正在清理 MySQL Binlog...")
             try:
-                # 新增：从配置中读取binlog保留天数
-                binlog_retention_days_str = await crud.get_config_value(session, "mysqlBinlogRetentionDays", "3")
+                # 配置访问必须绑定事务，读取结束后再执行独立的 Binlog 维护。
+                async with db.transaction():
+                    binlog_retention_days_str = await db.config.get_value("mysqlBinlogRetentionDays", "3")
                 binlog_retention_days = int(binlog_retention_days_str)
 
                 if binlog_retention_days > 0:

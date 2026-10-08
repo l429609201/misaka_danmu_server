@@ -3,16 +3,14 @@ bangumi-data 离线索引同步定时任务（cron 调度）
 
 由 BGM 元数据源特殊配置中的「启用定时同步 + cron」驱动（方案甲）：
 保存配置时后端自动在 scheduled_tasks 表创建/更新本任务实例，按 cron 周期执行。
-执行时读取全局开关 bangumiDataSyncEnabled，关闭则跳过；开启则调 BangumiDataManager.sync()。
+执行时读取全局开关 bangumiDataSyncEnabled，开启后使用 MetadataService 的离线组件同步。
 """
 import logging
-from typing import Callable
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any, Callable
 
 from src.jobs.base import BaseJob
-from src.services import TaskSuccess
-from src.utils.task_profiler import profile_flow, FLOW_BANGUMI_DATA_SYNC
+from src.utils.diagnostics.task_exceptions import TaskSuccess, TaskFailed
+from src.services.task_profiler import profile_flow, FLOW_BANGUMI_DATA_SYNC
 
 logger = logging.getLogger(__name__)
 
@@ -30,22 +28,13 @@ class BangumiDataSyncJob(BaseJob):
     config_schema = []  # 配置集中在 Bangumi 源特殊配置，这里不暴露额外项
 
     @profile_flow(FLOW_BANGUMI_DATA_SYNC)
-    async def run(self, session: AsyncSession, progress_callback: Callable):
-        from src.services import get_bangumi_data_manager
-
-        # 读取 Bangumi 源配置中的开关；关闭则跳过（方案甲：开关在 BGM 配置里）
-        enabled = (await self.config_manager.get("bangumiDataSyncEnabled", "false")).lower() == "true"
+    async def run(self, session: Any, progress_callback: Callable):
+        enabled = (await self.config_service.get("bangumiDataSyncEnabled", "false")).lower() == "true"
         if not enabled:
             raise TaskSuccess("bangumi-data 定时同步未启用，已跳过。")
 
-        manager = get_bangumi_data_manager()
-        if manager is None:
-            raise TaskSuccess("bangumi-data 管理器未就绪，已跳过。")
-
         await progress_callback(10, "正在从 CDN 拉取 bangumi-data...")
-        # 透传 progress_callback：下载阶段实时展示已下载字节数与速度
-        result = await manager.sync(progress_callback=progress_callback)
+        result = await self.metadata_manager.sync_bangumi_data(progress_callback=progress_callback)
         if result.get("success"):
             raise TaskSuccess(f"bangumi-data 同步完成，共 {result.get('count')} 条。")
-        else:
-            raise TaskSuccess(f"bangumi-data 同步失败：{result.get('message')}")
+        raise TaskFailed(f"bangumi-data 同步失败：{result.get('message')}")

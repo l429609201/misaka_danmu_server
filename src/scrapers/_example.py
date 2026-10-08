@@ -17,21 +17,32 @@
   - 所有抽象方法都必须实现，否则实例化时会报错
   - HTTP 请求推荐使用 self._create_client() 创建 httpx.AsyncClient
   - 缓存操作使用 self._get_from_cache() 和 self._set_to_cache()
-
 =================================================================
 """
 
 # 版本号：scraper_manager 会读取此变量并存入数据库
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
-import logging
-import re
-import time
-from typing import Optional, List
+# 公共库和工具函数统一由 .base 公开，来源仅按需导入。
+from .base import (
+    logging,
+    re,
+    time,
+    List,
+    Optional,
+    ProviderEpisodeInfo,
+    ProviderSearchInfo,
+    ConfigService,
+    TransportManager,
+    require_download_permission,
+    get_season_from_title,
+    track_performance,
+    parse_search_keyword,
+    BaseScraper,
+)
 
-from src.db.models import ProviderSearchInfo, ProviderEpisodeInfo
-from src.scrapers.base import BaseScraper, get_season_from_title, track_performance
-from src.utils import parse_search_keyword
+
+
 
 # 模块级 logger（一般不直接使用，基类已提供 self.logger）
 logger = logging.getLogger(__name__)
@@ -54,6 +65,8 @@ class ExampleScraper(BaseScraper):
 
     # 源的唯一标识符，全局唯一，用于数据库存储和匹配
     provider_name = "example"
+    scraper_api_version = 2
+    min_server_version = "2.9.1"
 
     # ─────────────────── 2. 类属性（可选，按需覆盖） ───────────────────
 
@@ -101,14 +114,13 @@ class ExampleScraper(BaseScraper):
 
     # ─────────────────── 3. 初始化 ───────────────────
 
-    def __init__(self, session_factory, config_manager, transport_manager):
+    def __init__(self, config_service: ConfigService, transport_manager: TransportManager):
         """
-        构造函数。scraper_manager 会传入三个参数：
-        - session_factory  : SQLAlchemy async_sessionmaker，用于数据库操作
-        - config_manager   : ConfigManager 实例，用于读取/写入配置
+        构造函数。scraper_manager 会传入两个参数：
+        - config_service  : ConfigService 实例，用于读取/写入配置
         - transport_manager: TransportManager 实例，用于代理支持
         """
-        super().__init__(session_factory, config_manager, transport_manager)
+        super().__init__(config_service, transport_manager)
         self._client = None  # httpx.AsyncClient 实例（懒初始化）
 
     # ─────────────────── 4. 必须实现的抽象方法 ───────────────────
@@ -254,21 +266,13 @@ class ExampleScraper(BaseScraper):
         return episodes
 
     @track_performance
-    async def get_comments(self, episode_id: str, progress_callback=None) -> List[dict]:
+    async def fetch_comments(self, episode_id: str, progress_callback=None) -> List[dict]:
         """
-        获取指定分集的弹幕列表。
+        由统一流控入口调用，获取指定分集的弹幕列表。
 
-        Args:
-            episode_id: get_episodes() 返回的 episodeId
-            progress_callback: 可选的进度回调函数，用于报告下载进度
-
-        Returns:
-            弹幕列表，每个元素是一个 dict，包含以下字段：
-            - time   : float, 弹幕出现的时间（秒）
-            - mode   : int, 弹幕模式（1=滚动, 4=底部, 5=顶部）
-            - color  : int, 颜色值（十进制 RGB, 例如 16777215=白色）
-            - content: str, 弹幕文本内容
+        示例源也必须先核对许可，避免成为绕过正式源流控的参考实现。
         """
+        require_download_permission(self, episode_id)
         comments = []
         try:
             self.logger.info(f"开始获取弹幕: episode_id={episode_id}")

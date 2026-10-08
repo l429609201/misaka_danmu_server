@@ -10,12 +10,12 @@
 
 import asyncio
 import logging
+import socket
 import psutil
 from typing import Optional
 from datetime import datetime
 
-from src.db.crud import performance as perf_crud
-from src.db.database import get_session_factory
+from src.services.service_container import get_database_service
 
 logger = logging.getLogger(__name__)
 
@@ -23,19 +23,26 @@ logger = logging.getLogger(__name__)
 class PerformanceCollector:
     """性能指标采集器"""
     
-    def __init__(self, db_engine, task_manager=None, cache_manager=None):
+    def __init__(self, db_engine, task_manager=None):
+        """
+        初始化性能采集器
+
+        Args:
+            db_engine: 数据库引擎
+            task_manager: 任务管理器（可选）
+        """
         self.db_engine = db_engine
         self.task_manager = task_manager
-        self.cache_manager = cache_manager
-        self.session_factory = get_session_factory()  # 不需要传递参数，使用全局 session factory
-        
+        # C3.3 迁移：删除 cache_manager 参数，缓存指标采集已在 C2 废弃（HybridBackend 删除后无统一接口）
+        self._db = get_database_service()
+
         # 采集配置
         self.collect_interval = 60  # 采集间隔（秒）
         self.is_running = False
         self._task = None
-        
+
         # 实例标识
-        import socket
+        # 主机标识复用模块级 socket，初始化不再延迟导入。
         self.server_instance = socket.gethostname()
     
     async def start(self):
@@ -70,9 +77,8 @@ class PerformanceCollector:
             try:
                 written = await self.collect_all_metrics()
                 loop_count += 1
-                # 每轮成功都打 INFO：让运维能从日志直接确认采集器活着、写了多少条。
-                # 采集成功却看不到任何日志会让人误以为「没在采集」。
-                logger.info(
+                # 每轮成功都打 DEBUG：避免日志过于冗余，仅在需要时查看
+                logger.debug(
                     f"性能采集完成（第 {loop_count} 轮）：本轮写入 {written} 条指标，"
                     f"下次采集在 {self.collect_interval} 秒后"
                 )
@@ -84,34 +90,29 @@ class PerformanceCollector:
 
     async def collect_all_metrics(self) -> int:
         """采集所有指标，返回本轮成功写入的指标条数。"""
-        async with self.session_factory() as session:
+        async with self._db.transaction():
             # 1. 数据库连接池状态
-            await self._collect_db_pool_metrics(session)
+            await self._collect_db_pool_metrics()
 
             # 2. 任务队列状态
             if self.task_manager:
-                await self._collect_task_queue_metrics(session)
+                await self._collect_task_queue_metrics()
 
-            # 3. 缓存状态
-            if self.cache_manager:
-                await self._collect_cache_metrics(session)
-
-            # 4. 系统资源
-            await self._collect_system_metrics(session)
+            # 3. 系统资源（C3.3：缓存指标采集已删除，CacheManager 废弃后无统一接口）
+            await self._collect_system_metrics()
 
             # 统计本轮新增的指标条数（commit 前 session.new 里都是待插入的 SystemMetric）
             written = sum(
-                1 for obj in session.new
+                1 for obj in self._db._session.new
                 if obj.__class__.__name__ == "SystemMetric"
             )
-            await session.commit()
             return written
     
-    async def _collect_db_pool_metrics(self, session):
+    async def _collect_db_pool_metrics(self):
         """采集数据库连接池指标"""
         try:
             pool = self.db_engine.pool
-            
+
             # 连接池大小
             pool_size = pool.size()
             # 已签出连接数
@@ -120,13 +121,12 @@ class PerformanceCollector:
             checked_in = pool.checkedin()
             # 溢出连接数
             overflow = pool.overflow()
-            
+
             # 连接池使用率（四舍五入到4位小数，匹配数据库DECIMAL(20,4)精度）
             usage_rate = round((checked_out / pool_size * 100), 4) if pool_size > 0 else 0.0
-            
+
             # 记录连接池大小
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="database",
                 subcategory="pool",
                 metric_name="db_pool_size",
@@ -135,10 +135,9 @@ class PerformanceCollector:
                 unit="count",
                 server_instance=self.server_instance,
             )
-            
+
             # 记录已使用连接数
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="database",
                 subcategory="pool",
                 metric_name="db_pool_checked_out",
@@ -149,10 +148,9 @@ class PerformanceCollector:
                 threshold_critical=round(pool_size * 0.95, 4),
                 server_instance=self.server_instance,
             )
-            
+
             # 记录空闲连接数
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="database",
                 subcategory="pool",
                 metric_name="db_pool_checked_in",
@@ -161,10 +159,9 @@ class PerformanceCollector:
                 unit="count",
                 server_instance=self.server_instance,
             )
-            
+
             # 记录溢出连接数
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="database",
                 subcategory="pool",
                 metric_name="db_pool_overflow",
@@ -175,10 +172,9 @@ class PerformanceCollector:
                 threshold_critical=10.0,
                 server_instance=self.server_instance,
             )
-            
+
             # 记录使用率
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="database",
                 subcategory="pool",
                 metric_name="db_pool_usage_rate",
@@ -189,16 +185,20 @@ class PerformanceCollector:
                 threshold_critical=95.0,
                 server_instance=self.server_instance,
             )
-            
+
         except Exception as e:
             logger.error(f"采集数据库连接池指标失败: {e}")
 
-    async def _collect_task_queue_metrics(self, session):
+    async def _collect_task_queue_metrics(self):
         """采集任务队列指标"""
         try:
             # 下载队列状态
             download_queue_size = self.task_manager._download_queue.qsize() if hasattr(self.task_manager, '_download_queue') else 0
             download_running = len(self.task_manager._current_download_tasks) if hasattr(self.task_manager, '_current_download_tasks') else 0
+
+            # 搜索队列状态
+            search_queue_size = self.task_manager._search_queue.qsize() if hasattr(self.task_manager, '_search_queue') else 0
+            search_running = len(self.task_manager._current_search_tasks) if hasattr(self.task_manager, '_current_search_tasks') else 0
 
             # 管理队列状态
             management_queue_size = self.task_manager._management_queue.qsize() if hasattr(self.task_manager, '_management_queue') else 0
@@ -207,10 +207,10 @@ class PerformanceCollector:
 
             # 最大并发数
             max_concurrent = self.task_manager._max_concurrent_tasks if hasattr(self.task_manager, '_max_concurrent_tasks') else 10
+            max_search_concurrent = self.task_manager._max_search_workers if hasattr(self.task_manager, '_max_search_workers') else 3
 
             # 记录下载队列排队数
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="task",
                 subcategory="queue",
                 metric_name="download_queue_pending",
@@ -224,8 +224,7 @@ class PerformanceCollector:
             )
 
             # 记录下载队列运行数
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="task",
                 subcategory="queue",
                 metric_name="download_queue_running",
@@ -237,8 +236,7 @@ class PerformanceCollector:
             )
 
             # 记录管理队列排队数
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="task",
                 subcategory="queue",
                 metric_name="management_queue_pending",
@@ -247,26 +245,51 @@ class PerformanceCollector:
                 unit="count",
                 threshold_warning=10.0,
                 threshold_critical=20.0,
+                description=f"当前有 {management_queue_size} 个管理任务在等待",
                 server_instance=self.server_instance,
             )
 
-            # 记录管理队列运行任务数
-            await perf_crud.record_metric(
-                session=session,
+            # 记录管理队列运行数
+            await self._db.performance.record_metric(
                 category="task",
                 subcategory="queue",
                 metric_name="management_queue_running",
                 display_name="管理队列运行任务数",
                 value_int=management_running,
                 unit="count",
-                description=f"当前管理队列运行状态: {'运行中' if management_running else '空闲'}",
+                description=f"管理队列{'正在' if management_running else '未'}运行任务",
+                server_instance=self.server_instance,
+            )
+
+            # 记录搜索队列排队数
+            await self._db.performance.record_metric(
+                category="task",
+                subcategory="queue",
+                metric_name="search_queue_pending",
+                display_name="搜索队列排队任务数",
+                value_int=search_queue_size,
+                unit="count",
+                threshold_warning=20.0,
+                threshold_critical=50.0,
+                description=f"当前有 {search_queue_size} 个任务在搜索队列中等待",
+                server_instance=self.server_instance,
+            )
+
+            # 记录搜索队列运行数
+            await self._db.performance.record_metric(
+                category="task",
+                subcategory="queue",
+                metric_name="search_queue_running",
+                display_name="搜索队列运行任务数",
+                value_int=search_running,
+                unit="count",
+                description=f"当前有 {search_running}/{max_search_concurrent} 个搜索 worker 在运行",
                 server_instance=self.server_instance,
             )
 
             # 队列利用率（四舍五入到4位小数，匹配数据库DECIMAL(20,4)精度）
             utilization = round((download_running / max_concurrent * 100), 4) if max_concurrent > 0 else 0.0
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="task",
                 subcategory="queue",
                 metric_name="download_queue_utilization",
@@ -281,12 +304,14 @@ class PerformanceCollector:
         except Exception as e:
             logger.error(f"采集任务队列指标失败: {e}")
 
-    async def _collect_cache_metrics(self, session):
+    async def _collect_cache_metrics(self):
         """采集缓存指标"""
         try:
             # 尝试获取缓存后端信息
-            from src.core.cache import get_cache_backend
-            cache_backend = get_cache_backend()
+            # C4 注意：避免循环导入，cache_service 改为延迟导入（在函数内部 import）
+            from src.services.cache_service import get_cache_service
+
+            cache_backend = get_cache_service()
 
             if not cache_backend:
                 return
@@ -294,8 +319,7 @@ class PerformanceCollector:
             backend_type = cache_backend.__class__.__name__
 
             # 记录缓存后端类型
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="cache",
                 subcategory="backend",
                 metric_name="cache_backend_type",
@@ -315,8 +339,7 @@ class PerformanceCollector:
                     memory_used = info.get('used_memory', 0)
                     memory_used_mb = round(memory_used / (1024 * 1024), 4)
 
-                    await perf_crud.record_metric(
-                        session=session,
+                    await self._db.performance.record_metric(
                         category="cache",
                         subcategory="redis",
                         metric_name="redis_memory_used",
@@ -328,8 +351,7 @@ class PerformanceCollector:
 
                     # Redis 连接数
                     connected_clients = info.get('connected_clients', 0)
-                    await perf_crud.record_metric(
-                        session=session,
+                    await self._db.performance.record_metric(
                         category="cache",
                         subcategory="redis",
                         metric_name="redis_connected_clients",
@@ -343,8 +365,7 @@ class PerformanceCollector:
 
                     # Redis 键总数
                     total_keys = sum(info.get(f'db{i}', {}).get('keys', 0) for i in range(16))
-                    await perf_crud.record_metric(
-                        session=session,
+                    await self._db.performance.record_metric(
                         category="cache",
                         subcategory="redis",
                         metric_name="redis_total_keys",
@@ -360,13 +381,12 @@ class PerformanceCollector:
         except Exception as e:
             logger.error(f"采集缓存指标失败: {e}")
 
-    async def _collect_system_metrics(self, session):
+    async def _collect_system_metrics(self):
         """采集系统资源指标"""
         try:
             # CPU 使用率
             cpu_percent = round(psutil.cpu_percent(interval=0.1), 4)
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="system",
                 subcategory="cpu",
                 metric_name="cpu_usage",
@@ -380,8 +400,7 @@ class PerformanceCollector:
 
             # 内存使用率
             memory = psutil.virtual_memory()
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="system",
                 subcategory="memory",
                 metric_name="memory_usage",
@@ -396,8 +415,7 @@ class PerformanceCollector:
 
             # 磁盘使用率
             disk = psutil.disk_usage('/')
-            await perf_crud.record_metric(
-                session=session,
+            await self._db.performance.record_metric(
                 category="system",
                 subcategory="disk",
                 metric_name="disk_usage",
@@ -423,14 +441,13 @@ def get_performance_collector() -> Optional[PerformanceCollector]:
     return _global_collector
 
 
-async def init_performance_collector(db_engine, task_manager=None, cache_manager=None, auto_start: bool = True):
+async def init_performance_collector(db_engine, task_manager=None, auto_start: bool = True):
     """
     初始化性能采集器
 
     Args:
         db_engine: 数据库引擎
-        task_manager: 任务管理器
-        cache_manager: 缓存管理器
+        task_manager: 任务管理器（可选）
         auto_start: 是否自动启动采集
     """
     global _global_collector
@@ -439,10 +456,10 @@ async def init_performance_collector(db_engine, task_manager=None, cache_manager
         logger.warning("性能采集器已存在，先停止旧实例")
         await _global_collector.stop()
 
+    # C3.3 迁移：删除 cache_manager 参数，PerformanceCollector 已不再采集缓存指标
     _global_collector = PerformanceCollector(
         db_engine=db_engine,
         task_manager=task_manager,
-        cache_manager=cache_manager,
     )
 
     if auto_start:

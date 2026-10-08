@@ -2,7 +2,7 @@
 通知渠道管理 API 路由
 """
 
-import base64
+import json
 import logging
 import secrets
 from typing import Any, Dict, List, Optional
@@ -13,13 +13,15 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import crud, get_db_session
-from src import security
+from src.services.service_container import get_database_service
+from src.utils.auth import security
 from src.core import settings as _settings
-from src.services import apply_tunnel_from_notification_manager
-from src.utils.image_utils import IMAGE_DIR, validate_custom_domain_format, probe_public_domain
+from src.services.tunnel_service import apply_tunnel_from_notification_manager
+from src.services.config_service import get_config_service
+from src.utils.misc.public_url import validate_custom_domain_format
+# 探针文件与 HTTP 探测由编排层协调，路由不直接写文件。
+from src.workflows.image_public_url import probe_public_domain
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -49,6 +51,21 @@ class ChannelUpdate(BaseModel):
 
 # ==================== Helper ====================
 
+def _channel_to_response(channel: Any) -> Dict[str, Any]:
+    """转换通知渠道响应，避免仅为序列化而依赖管理器服务。"""
+    return {
+        "id": channel.id,
+        "name": channel.name,
+        "channelType": channel.channelType,
+        "isEnabled": channel.isEnabled,
+        "useProxy": channel.useProxy,
+        "config": json.loads(channel.config) if channel.config else {},
+        "eventsConfig": json.loads(channel.eventsConfig) if channel.eventsConfig else {},
+        "createdAt": channel.createdAt,
+        "updatedAt": channel.updatedAt,
+    }
+
+
 def _get_notification_manager(request: Request):
     manager = getattr(request.app.state, "notification_manager", None)
     if not manager:
@@ -60,28 +77,25 @@ async def _reevaluate_tunnel(request: Request):
     """渠道配置变更后重新评估 VPS 隧道是否需要启停"""
     tunnel_service = getattr(request.app.state, "tunnel_service", None)
     notification_manager = getattr(request.app.state, "notification_manager", None)
-    config_manager = getattr(request.app.state, "config_manager", None)
-    if not tunnel_service or not notification_manager or not config_manager:
+    config_service = getattr(request.app.state, "config_service", None)
+    if not tunnel_service or not notification_manager or not config_service:
         return
     await apply_tunnel_from_notification_manager(
         tunnel_service=tunnel_service,
         notification_manager=notification_manager,
-        config_manager=config_manager,
+        config_service=config_service,
         local_port=_settings.server.port,
     )
 
 
-async def _verify_webhook_api_key(api_key: str, session: AsyncSession):
+async def _verify_webhook_api_key(api_key: str):
     """验证 Webhook API Key，与 /api/webhook/* 端点保持一致"""
-    stored_key = await crud.get_config_value(session, "webhookApiKey", "")
+    db = get_database_service()
+    async with db.transaction():
+        # 使用仓储真实接口，保持配置读取默认值语义。
+        stored_key = await db.config.get_value("webhookApiKey", "")
     if not stored_key or not secrets.compare_digest(api_key, stored_key):
         raise HTTPException(status_code=401, detail="无效的 API Key")
-
-
-_PUBLIC_URL_PROBE_NAME = "notification_public_url_probe.png"
-_PUBLIC_URL_PROBE_BYTES = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-)
 
 
 def _validate_public_domain_format(raw_domain: str) -> str:
@@ -94,21 +108,16 @@ def _validate_public_domain_format(raw_domain: str) -> str:
     return domain
 
 
-async def _probe_public_domain(session: AsyncSession) -> Dict[str, Any]:
+async def _probe_public_domain() -> Dict[str, Any]:
     """验证自定义域名能通过真实外网地址读取本服务的图片静态路由。"""
-    raw = await crud.get_config_value(session, "custom_api_domain", "")
-    domain = _validate_public_domain_format(raw)
-
-    probe_path = IMAGE_DIR / _PUBLIC_URL_PROBE_NAME
     try:
-        IMAGE_DIR.mkdir(parents=True, exist_ok=True)
-        if not probe_path.is_file():
-            probe_path.write_bytes(_PUBLIC_URL_PROBE_BYTES)
+        # 仅映射协议错误；配置读取及探针落盘分别交给服务和编排层。
+        raw = await get_config_service().get("custom_api_domain", "")
+        domain = _validate_public_domain_format(raw)
+        result = await probe_public_domain(domain)
     except OSError as e:
         logger.error(f"创建外链模式探测图片失败: {e}")
-        raise HTTPException(status_code=500, detail="无法创建图片探测文件，请检查 config/image 目录权限")
-
-    result = await probe_public_domain(domain)
+        raise HTTPException(status_code=500, detail="无法创建图片探测文件，请检查 config/image 目录权限") from e
     if not result["ok"]:
         raise HTTPException(status_code=400, detail=result["detail"])
     return result
@@ -116,11 +125,10 @@ async def _probe_public_domain(session: AsyncSession) -> Dict[str, Any]:
 
 @router.get("/notification/public-domain/validate", summary="校验外链模式自定义域名")
 async def validate_public_domain(
-    session: AsyncSession = Depends(get_db_session),
     current_user=Depends(security.get_current_user),
 ):
     """验证 Token 管理的自定义域名能否公开访问本服务的图片静态路由。"""
-    return await _probe_public_domain(session)
+    return await _probe_public_domain()
 
 
 # ==================== Routes ====================
@@ -149,10 +157,13 @@ async def get_channel_schema(
 
 @router.get("/notification/channels", summary="获取所有通知渠道")
 async def list_channels(
-    session: AsyncSession = Depends(get_db_session),
     current_user=Depends(security.get_current_user),
 ):
-    channels = await crud.get_all_notification_channels(session)
+    db = get_database_service()
+    async with db.transaction():
+        channels = await db.notification.get_all()
+        # 在事务内转换响应，保持前端 JSON 配置结构。
+        channels = [_channel_to_response(channel) for channel in channels]
     return channels
 
 
@@ -160,29 +171,32 @@ async def list_channels(
 async def create_channel(
     payload: ChannelCreate,
     request: Request,
-    session: AsyncSession = Depends(get_db_session),
     current_user=Depends(security.get_current_user),
 ):
     # why：外链模式依赖全局域名和真实图片静态路由，校验失败时禁止落库。
     if payload.config.get("image_mode") == "public_url":
-        await _probe_public_domain(session)
-    channel_id = await crud.create_notification_channel(
-        session,
-        name=payload.name,
-        channel_type=payload.channelType,
-        is_enabled=payload.isEnabled,
-        use_proxy=payload.useProxy,
-        config=payload.config,
-        events_config=payload.eventsConfig,
-    )
-    await session.commit()
+        await _probe_public_domain()
+
+    db = get_database_service()
+    async with db.transaction():
+        channel = await db.notification.create(
+            name=payload.name,
+            channel_type=payload.channelType,
+            is_enabled=payload.isEnabled,
+            use_proxy=payload.useProxy,
+            config=json.dumps(payload.config, ensure_ascii=False),
+            events_config=json.dumps(payload.eventsConfig, ensure_ascii=False),
+        )
+        channel_id = channel.id
 
     # 如果启用，加载到管理器
     if payload.isEnabled:
         manager = _get_notification_manager(request)
         await manager.reload_channel(channel_id)
 
-    channel = await crud.get_notification_channel_by_id(session, channel_id)
+    async with db.transaction():
+        channel = await db.notification.get_by_id(channel_id)
+        channel = _channel_to_response(channel) if channel else None
     return channel
 
 
@@ -191,24 +205,25 @@ async def update_channel(
     channel_id: int,
     payload: ChannelUpdate,
     request: Request,
-    session: AsyncSession = Depends(get_db_session),
     current_user=Depends(security.get_current_user),
 ):
     # config 未提交时保持原值；只有明确保存外链模式才触发验证。
     if payload.config and payload.config.get("image_mode") == "public_url":
-        await _probe_public_domain(session)
-    success = await crud.update_notification_channel(
-        session, channel_id,
-        name=payload.name,
-        channel_type=payload.channelType,
-        is_enabled=payload.isEnabled,
-        use_proxy=payload.useProxy,
-        config=payload.config,
-        events_config=payload.eventsConfig,
-    )
+        await _probe_public_domain()
+
+    db = get_database_service()
+    async with db.transaction():
+        success = await db.notification.update(
+            channel_id,
+            name=payload.name,
+            channel_type=payload.channelType,
+            is_enabled=payload.isEnabled,
+            use_proxy=payload.useProxy,
+            config=json.dumps(payload.config, ensure_ascii=False) if payload.config is not None else None,
+            events_config=json.dumps(payload.eventsConfig, ensure_ascii=False) if payload.eventsConfig is not None else None,
+        )
     if not success:
         raise HTTPException(status_code=404, detail="通知渠道不存在")
-    await session.commit()
 
     manager = _get_notification_manager(request)
     await manager.reload_channel(channel_id)
@@ -216,7 +231,9 @@ async def update_channel(
     # 渠道配置变更后重新评估 VPS 隧道
     await _reevaluate_tunnel(request)
 
-    channel = await crud.get_notification_channel_by_id(session, channel_id)
+    async with db.transaction():
+        channel = await db.notification.get_by_id(channel_id)
+        channel = _channel_to_response(channel) if channel else None
     return channel
 
 
@@ -224,13 +241,13 @@ async def update_channel(
 async def delete_channel(
     channel_id: int,
     request: Request,
-    session: AsyncSession = Depends(get_db_session),
     current_user=Depends(security.get_current_user),
 ):
-    success = await crud.delete_notification_channel(session, channel_id)
+    db = get_database_service()
+    async with db.transaction():
+        success = await db.notification.delete(channel_id)
     if not success:
         raise HTTPException(status_code=404, detail="通知渠道不存在")
-    await session.commit()
 
     manager = _get_notification_manager(request)
     await manager.remove_channel(channel_id)
@@ -242,10 +259,12 @@ async def delete_channel(
 async def test_channel(
     channel_id: int,
     request: Request,
-    session: AsyncSession = Depends(get_db_session),
     current_user=Depends(security.get_current_user),
 ):
-    ch_data = await crud.get_notification_channel_by_id(session, channel_id)
+    db = get_database_service()
+    async with db.transaction():
+        channel = await db.notification.get_by_id(channel_id)
+        ch_data = _channel_to_response(channel) if channel else None
     if not ch_data:
         raise HTTPException(status_code=404, detail="通知渠道不存在")
 
@@ -275,14 +294,13 @@ async def channel_webhook_verify(
     channel_id: int,
     request: Request,
     api_key: str = Query(..., description="Webhook API Key"),
-    session: AsyncSession = Depends(get_db_session),
 ):
     """
     企业微信等渠道首次接入时的 GET 验证请求（需携带 ?api_key=）。
     - 有 echostr 参数：走企业微信签名验证，成功则返回明文 echostr
     - 无 echostr 参数：连通性探测，直接返回 200 OK（说明路由可达、api_key 有效）
     """
-    await _verify_webhook_api_key(api_key, session)
+    await _verify_webhook_api_key(api_key)
 
     # 无 echostr：连通性探测，直接告知路由可达
     if not request.query_params.get("echostr"):
@@ -306,10 +324,9 @@ async def channel_webhook(
     channel_id: int,
     request: Request,
     api_key: str = Query(..., description="Webhook API Key"),
-    session: AsyncSession = Depends(get_db_session),
 ):
     """通用 Webhook 回调入口，按 channel_id 路由到对应渠道实例（需携带 ?api_key=）"""
-    await _verify_webhook_api_key(api_key, session)
+    await _verify_webhook_api_key(api_key)
 
     manager = _get_notification_manager(request)
     channel = manager.get_channel(channel_id)
@@ -323,12 +340,13 @@ async def channel_webhook(
     except Exception:
         body_str = ""
 
-    # 尝试 JSON 解析（Telegram 等），否则传原始字符串（企业微信 XML）
+    # 仅在 JSON 解码失败时回退 XML，处理器异常不能触发第二次执行。
     try:
-        update_json = await request.json()
-        handled = channel.process_webhook_update(update_json)
-    except Exception:
+        update_json = json.loads(body_str)
+    except json.JSONDecodeError:
         handled = channel.process_webhook_update({"method": "POST", "params": params, "body": body_str})
+    else:
+        handled = channel.process_webhook_update(update_json)
 
     if handled:
         return {"ok": True}

@@ -12,13 +12,13 @@
 
 context 依赖：
 - context["session_factory"]: DB 会话工厂
-- context["config_manager"]: ConfigManager
+- context["config_service"]: ConfigService
 """
 
 import logging
 from typing import Any, Dict
 
-from ..security_gateway import ToolPermission
+from ..security_gateway import ToolPermission, is_forbidden_control_identifier
 from .base import Tool, registry
 
 logger = logging.getLogger(__name__)
@@ -285,7 +285,7 @@ def _validate_and_cast(key: str, value_str: str, meta: Dict[str, Any]) -> Any:
         meta: 白名单中的元数据（type/min/max/values）
 
     Returns:
-        转换后的值（保持字符串类型，供 ConfigManager.setValue 使用）
+转换后的值（保持字符串类型，供 ConfigService.set 使用）
 
     Raises:
         ValueError: 校验失败
@@ -342,29 +342,27 @@ async def _get_config(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dic
     keys = arguments.get("keys") or []
     if not keys:
         keys = list(ASSISTANT_CONFIG_WHITELIST.keys())
-    if not isinstance(keys, list):
+    if not isinstance(keys, list) or any(not isinstance(k, str) for k in keys):
         return {"error": "keys 参数必须为字符串数组"}
+    if any(is_forbidden_control_identifier(k) for k in keys):
+        return {"error": "流控与配额配置禁止 AI 访问"}
 
     unknown = [k for k in keys if k not in ASSISTANT_CONFIG_WHITELIST]
     if unknown:
-        return {
-            "error": f"以下配置键不在白名单中: {unknown}",
-            "available": list(ASSISTANT_CONFIG_WHITELIST.keys()),
-        }
+        return {"error": "配置键不在 AI 可访问的白名单中；请按工具参数中的枚举选键。过滤规则使用专用 get_* 工具。",
+                "availableKeys": sorted(ASSISTANT_CONFIG_WHITELIST)}
 
-    config_manager = context.get("config_manager")
-    if not config_manager:
-        return {"error": "ConfigManager 未初始化"}
+    config_service = context.get("config_service")
+    if not config_service:
+        return {"error": "ConfigService 未初始化"}
 
+    keys = [k for k in keys if not is_forbidden_control_identifier(k)]
     results = []
     for key in keys:
-        raw_value = await config_manager.get(key)
+        raw_value = await config_service.get(key)
         # 脱敏处理
         if key in SENSITIVE_KEYS and raw_value:
-            if len(raw_value) > 4:
-                display_value = f"***{raw_value[-4:]}"
-            else:
-                display_value = "***"
+            display_value = "***"
         else:
             display_value = raw_value if raw_value is not None else ""
 
@@ -382,7 +380,7 @@ async def _get_config(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dic
             item["requires_any"] = requires_any
             satisfied = False
             for dep_key in requires_any:
-                dep_val = await config_manager.get(dep_key)
+                dep_val = await config_service.get(dep_key)
                 if str(dep_val).lower() == "true":
                     satisfied = True
                     break
@@ -412,14 +410,13 @@ async def _set_config(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dic
     value_str = arguments.get("value")
     if not key:
         return {"error": "缺少 key 参数"}
+    if is_forbidden_control_identifier(key):
+        return {"error": "流控与配额配置禁止 AI 访问"}
     if value_str is None:
         return {"error": "缺少 value 参数"}
 
     if key not in ASSISTANT_CONFIG_WHITELIST:
-        return {
-            "error": f"配置键 {key} 不在白名单中",
-            "available": list(ASSISTANT_CONFIG_WHITELIST.keys()),
-        }
+        return {"error": "配置键不在 AI 可访问的白名单中"}
 
     meta = ASSISTANT_CONFIG_WHITELIST[key]
     try:
@@ -427,19 +424,19 @@ async def _set_config(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dic
     except ValueError as e:
         return {"error": str(e)}
 
-    config_manager = context.get("config_manager")
-    if not config_manager:
-        return {"error": "ConfigManager 未初始化"}
+    config_service = context.get("config_service")
+    if not config_service:
+        return {"error": "ConfigService 未初始化"}
 
-    old_value = await config_manager.get(key)
-    await config_manager.setValue(key, validated_value)
-    logger.info(f"AI助手修改配置: {key} = {validated_value!r}（旧值 {old_value!r}）")
+    old_value = await config_service.get(key)
+    await config_service.set(key, validated_value)
+    logger.info("AI助手修改配置: %s", key)
 
     result = {
         "ok": True,
         "key": key,
-        "oldValue": old_value if old_value is not None else "",
-        "newValue": validated_value,
+        "oldValue": "***" if key in SENSITIVE_KEYS and old_value else (old_value or ""),
+        "newValue": "***" if key in SENSITIVE_KEYS else validated_value,
     }
 
     # 写入成功但前置条件未满足时给出警告：值已落库，功能却不会生效
@@ -448,7 +445,7 @@ async def _set_config(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dic
         unmet = []
         satisfied = False
         for dep_key in requires_any:
-            dep_val = await config_manager.get(dep_key)
+            dep_val = await config_service.get(dep_key)
             if str(dep_val).lower() == "true":
                 satisfied = True
             else:
@@ -481,7 +478,7 @@ def register_general_config_tools() -> None:
                 "properties": {
                     "keys": {
                         "type": "array",
-                        "items": {"type": "string"},
+                        "items": {"type": "string", "enum": sorted(ASSISTANT_CONFIG_WHITELIST)},
                         "description": (
                             "配置键名列表。不传或空数组则返回全部可读配置。"
                             "示例: ['danmakuOutputLimitPerSource', 'assistantTemperature']"
@@ -510,6 +507,7 @@ def register_general_config_tools() -> None:
                     "key": {
                         "type": "string",
                         "description": "配置键名，如 danmakuOutputLimitPerSource",
+                        "enum": sorted(ASSISTANT_CONFIG_WHITELIST),
                     },
                     "value": {
                         "type": "string",

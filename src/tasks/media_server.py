@@ -3,20 +3,16 @@ import asyncio
 import logging
 from typing import Callable, Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
-from src.db import crud, ConfigManager
-from src.db.orm_models import MediaItem, MediaServer
-from src.services import TaskManager, TaskSuccess, ScraperManager, MetadataSourceManager, TitleRecognitionManager, get_media_server_manager
-from src.rate_limiter import RateLimiter
+from src.workflows.media_import_preparation import (
+    prepare_media_import, mark_media_submitted, collect_unimported_media_items,
+)
+from src.services.task_manager import TaskSuccess, TaskManager
+from src.services.service_container import get_scraper_manager, get_metadata_service
+from src.tasks.webhook import webhook_search_and_dispatch_task
+from src.workflows.media_library_scan import scan_media_library
 
 logger = logging.getLogger(__name__)
-
-
-# 延迟导入辅助函数
-def _get_webhook_search_and_dispatch_task():
-    from .webhook import webhook_search_and_dispatch_task
-    return webhook_search_and_dispatch_task
 
 
 async def scan_media_server_library(
@@ -27,101 +23,21 @@ async def scan_media_server_library(
 ):
     """扫描媒体服务器的媒体库"""
 
-    await progress_callback(0, "开始扫描媒体库...")
-
-    manager = get_media_server_manager()
-    server = manager.servers.get(server_id)
-    if not server:
-        raise ValueError(f"媒体服务器 {server_id} 不存在或未启用")
-
-    # 获取服务器配置
-    server_config = await crud.get_media_server_by_id(session, server_id)
-    if not server_config:
-        raise ValueError(f"媒体服务器配置 {server_id} 不存在")
-
-    # 确定要扫描的媒体库
-    selected_libraries = server_config.get("selectedLibraries", [])
-    if library_ids:
-        # 使用指定的媒体库
-        scan_libraries = library_ids
-    elif selected_libraries:
-        # 使用配置中选中的媒体库
-        scan_libraries = selected_libraries
-    else:
-        # 扫描所有媒体库
-        all_libraries = await server.get_libraries()
-        scan_libraries = [lib.id for lib in all_libraries]
-
-    logger.info(f"开始扫描 {len(scan_libraries)} 个媒体库")
-
-    total_items = 0
-    for idx, library_id in enumerate(scan_libraries):
-        library_progress_base = int((idx / len(scan_libraries)) * 100)
-        library_progress_range = int(100 / len(scan_libraries))
-
-        await progress_callback(
-            library_progress_base,
-            f"正在扫描媒体库 {idx + 1}/{len(scan_libraries)}..."
-        )
-
-        try:
-            # 获取媒体库中的所有项目
-            items = await server.get_library_items(library_id)
-
-            logger.info(f"媒体库 {library_id} 获取到 {len(items)} 个项目,开始保存...")
-
-            # 保存到数据库,并显示进度
-            for item_idx, item in enumerate(items):
-                # 每10个项目更新一次进度
-                if item_idx % 10 == 0:
-                    item_progress = int((item_idx / len(items)) * library_progress_range)
-                    await progress_callback(
-                        library_progress_base + item_progress,
-                        f"正在保存媒体库 {idx + 1}/{len(scan_libraries)} 的项目 {item_idx}/{len(items)}..."
-                    )
-
-                await crud.create_media_item(
-                    session,
-                    server_id=server_id,
-                    media_id=item.media_id,
-                    library_id=library_id,
-                    series_id=getattr(item, 'series_id', None),
-                    season_id=getattr(item, 'season_id', None),
-                    episode_id=getattr(item, 'episode_id', None),
-                    title=item.title,
-                    media_type=item.media_type,
-                    season=item.season,
-                    episode=item.episode,
-                    year=item.year,
-                    tmdb_id=item.tmdb_id,
-                    tvdb_id=item.tvdb_id,
-                    imdb_id=item.imdb_id,
-                    poster_url=item.poster_url
-                )
-                total_items += 1
-
-            await session.commit()
-            logger.info(f"媒体库 {library_id} 扫描完成,共 {len(items)} 个项目")
-
-        except Exception as e:
-            logger.error(f"扫描媒体库 {library_id} 失败: {e}", exc_info=True)
-            await session.rollback()
-            continue
-
-    await progress_callback(100, f"扫描完成,共 {total_items} 个媒体项")
-    raise TaskSuccess(f"媒体库扫描完成,共扫描到 {total_items} 个媒体项")
+    # 扫描及保存由 Workflow 管理，任务只转换完成状态。
+    message = await scan_media_library(server_id, library_ids, progress_callback)
+    raise TaskSuccess(message)
 
 
 async def import_all_unimported_media_items(
     server_id: int,
     media_type: Optional[str],
     session: AsyncSession,
-    task_manager: TaskManager,
+    task_manager: "TaskManager",
     progress_callback: Callable,
     scraper_manager=None,
     metadata_manager=None,
-    config_manager=None,
-    ai_matcher_manager=None,
+    config_service=None,
+    ai_service=None,
     rate_limiter=None,
     title_recognition_manager=None
 ):
@@ -135,7 +51,8 @@ async def import_all_unimported_media_items(
     """
     await progress_callback(0, "正在统计未导入的媒体项...")
 
-    item_ids = await crud.get_unimported_item_ids(session, server_id, media_type)
+    # 待导入判定自持短事务，任务会话不跨后续批量派发占用连接。
+    item_ids = await collect_unimported_media_items(server_id, media_type)
     if not item_ids:
         raise TaskSuccess("没有未导入的媒体项")
 
@@ -153,8 +70,8 @@ async def import_all_unimported_media_items(
         _scaled_callback,
         scraper_manager=scraper_manager,
         metadata_manager=metadata_manager,
-        config_manager=config_manager,
-        ai_matcher_manager=ai_matcher_manager,
+        config_service=config_service,
+        ai_service=ai_service,
         rate_limiter=rate_limiter,
         title_recognition_manager=title_recognition_manager
     )
@@ -163,30 +80,32 @@ async def import_all_unimported_media_items(
 async def import_media_items(
     item_ids: List[int],
     session: AsyncSession,
-    task_manager: TaskManager,
+    task_manager: "TaskManager",
     progress_callback: Callable,
     scraper_manager=None,
     metadata_manager=None,
-    config_manager=None,
-    ai_matcher_manager=None,
+    config_service=None,
+    ai_service=None,
     rate_limiter=None,
-    title_recognition_manager=None
+    title_recognition_manager=None,
+    batch_size: int = 15,  # 有界批量提交：每批任务数
 ):
-    """导入媒体项(按季度导入电视剧,电影直接导入)"""
+    """
+    导入媒体项(按季度导入电视剧,电影直接导入)
 
-    webhook_search_and_dispatch_task = _get_webhook_search_and_dispatch_task()
+    Args:
+        batch_size: 批量提交大小，默认15个任务/批（阶段4优化：避免瞬时负载激增）
+    """
 
-    # 如果没有传入manager,从全局获取
+    # 依赖统一从服务容器获取，禁止任务反向导入应用启动模块。
     if scraper_manager is None:
-        from src.main import scraper_manager as global_scraper_manager
-        scraper_manager = global_scraper_manager
+        scraper_manager = get_scraper_manager()
     if metadata_manager is None:
-        from src.main import metadata_manager as global_metadata_manager
-        metadata_manager = global_metadata_manager
-    if config_manager is None:
-        raise ValueError("config_manager is required")
-    if ai_matcher_manager is None:
-        raise ValueError("ai_matcher_manager is required")
+        metadata_manager = get_metadata_service()
+    if config_service is None:
+        raise ValueError("config_service is required")
+    if ai_service is None:
+        raise ValueError("必须提供共享 AI 服务 ai_service")
     if rate_limiter is None:
         raise ValueError("rate_limiter is required")
     if title_recognition_manager is None:
@@ -194,55 +113,8 @@ async def import_media_items(
 
     await progress_callback(0, "开始导入媒体项...")
 
-    # 获取所有媒体项（分批查询，避免 asyncpg 的 32767 参数限制）
-    BATCH_SIZE = 30000
-    items = []
-    for i in range(0, len(item_ids), BATCH_SIZE):
-        batch_ids = item_ids[i:i + BATCH_SIZE]
-        items_stmt = select(MediaItem).where(MediaItem.id.in_(batch_ids))
-        result = await session.execute(items_stmt)
-        items.extend(result.scalars().all())
-
-    if not items:
-        raise ValueError("未找到要导入的媒体项")
-
-    # 获取媒体服务器类型（用于写入 mediaServerType，支持删除联动）
-    media_server_type = None
-    if items:
-        server_stmt = select(MediaServer.providerName).where(MediaServer.id == items[0].serverId).limit(1)
-        server_result = await session.execute(server_stmt)
-        media_server_type = server_result.scalar_one_or_none()
-
-    # 按类型分组，同时提取所有需要的属性值，避免后续懒加载
-    movies = []
-    tv_shows = {}  # {(title, season): [items]}
-
-    for item in items:
-        # 立即提取所有需要的属性，避免后续在不同 session 上下文中懒加载
-        item_data = {
-            'id': item.id,
-            'title': item.title,
-            'mediaType': item.mediaType,
-            'season': item.season,
-            'episode': item.episode,
-            'year': item.year,
-            'tmdbId': item.tmdbId,
-            'tvdbId': item.tvdbId,
-            'imdbId': item.imdbId,
-            'posterUrl': item.posterUrl,
-            'mediaId': item.mediaId,
-            'seriesId': item.seriesId,
-            'seasonId': item.seasonId,
-            'episodeId': item.episodeId,
-        }
-
-        if item.mediaType == 'movie':
-            movies.append(item_data)
-        elif item.mediaType == 'tv_series':
-            key = (item_data['title'], item_data['season'])
-            if key not in tv_shows:
-                tv_shows[key] = []
-            tv_shows[key].append(item_data)
+    # 查询与分组一次性生成值快照，排队期间不持有数据库连接。
+    movies, tv_shows, media_server_type = await prepare_media_import(item_ids)
 
     # 计算任务数: 电影数 + 电视剧集数(每集单独计算)
     # 统计任务数量: 电影按部, 电视按季度
@@ -280,8 +152,8 @@ async def import_media_items(
                     manager=scraper_manager,
                     task_manager=task_manager,
                     metadata_manager=metadata_manager,
-                    config_manager=config_manager,
-                    ai_matcher_manager=ai_matcher_manager,
+                    config_service=config_service,
+                    ai_service=ai_service,
                     rate_limiter=rate_limiter,
                     title_recognition_manager=title_recognition_manager,
                     # 媒体服务三级 ID（删除联动用）
@@ -311,42 +183,51 @@ async def import_media_items(
                     "bangumiId": None,
                     "webhookSource": "media_server",
                     "imageUrl": movie['posterUrl'],
+                    # 恢复时保留首次提交的媒体库关联信息。
+                    "mediaServerType": media_server_type,
+                    "mediaServerSeriesId": str(movie['seriesId'] or movie['mediaId']) if (movie['seriesId'] or movie['mediaId']) is not None else None,
+                    "mediaServerSeasonId": str(movie['seasonId']) if movie['seasonId'] is not None else None,
+                    "mediaServerEpisodeId": str(movie['episodeId'] or movie['mediaId']) if (movie['episodeId'] or movie['mediaId']) is not None else None,
                 },
             )
             movie_tasks.append((task_coro, movie))
-            movie_ids_to_mark.append(movie['id'])
 
         except Exception as e:
             logger.error(f"准备电影 {movie['title']} 导入任务失败: {e}", exc_info=True)
 
-    # 批量并发提交所有电影任务
+    # 分批提交，只有排队成功后才记录待标记的电影。
     if movie_tasks:
-        logger.info(f"批量提交 {len(movie_tasks)} 个电影导入任务...")
-        results = await asyncio.gather(*[task for task, _ in movie_tasks], return_exceptions=True)
+        logger.info(f"准备分批提交 {len(movie_tasks)} 个电影导入任务（每批 {batch_size} 个）...")
 
-        # 处理提交结果
-        for result, (_, movie) in zip(results, movie_tasks):
-            if isinstance(result, Exception):
-                logger.error(f"电影 {movie['title']} 导入任务提交失败: {result}")
-            else:
-                task_id, _ = result
-                logger.info(f"电影 {movie['title']} 导入任务已提交: {task_id}")
+        for batch_start in range(0, len(movie_tasks), batch_size):
+            batch_end = min(batch_start + batch_size, len(movie_tasks))
+            batch = movie_tasks[batch_start:batch_end]
 
-            # 更新进度
-            completed += 1
-            await progress_callback(
-                int((completed / total_tasks) * 100),
-                f"已提交 {completed}/{total_tasks} 个导入任务..."
-            )
+            logger.info(f"提交电影批次 {batch_start//batch_size + 1}/{(len(movie_tasks) + batch_size - 1)//batch_size}：{len(batch)} 个任务")
 
-        # 批量标记为已导入
+            results = await asyncio.gather(*[task for task, _ in batch], return_exceptions=True)
+
+            for result, (_, movie) in zip(results, batch):
+                if isinstance(result, Exception):
+                    logger.error(f"电影 {movie['title']} 导入任务提交失败: {result}")
+                else:
+                    task_id, _ = result
+                    movie_ids_to_mark.append(movie['id'])
+                    logger.info(f"电影 {movie['title']} 导入任务已提交: {task_id}")
+
+                # 更新进度
+                completed += 1
+                await progress_callback(
+                    int((completed / total_tasks) * 100),
+                    f"已提交 {completed}/{total_tasks} 个导入任务..."
+                )
+
+        # 排队标记由 Workflow 独立提交，失败时由事务上下文回滚。
         try:
-            await crud.mark_media_items_imported(session, movie_ids_to_mark)
-            await session.commit()
+            await mark_media_submitted(movie_ids_to_mark)
             logger.info(f"已批量标记 {len(movie_ids_to_mark)} 部电影为已导入")
         except Exception as e:
             logger.error(f"批量标记电影导入状态失败: {e}", exc_info=True)
-            await session.rollback()
 
     # 优化：批量提交电视剧导入任务
     tv_tasks = []
@@ -384,8 +265,8 @@ async def import_media_items(
                     manager=scraper_manager,
                     task_manager=task_manager,
                     metadata_manager=metadata_manager,
-                    config_manager=config_manager,
-                    ai_matcher_manager=ai_matcher_manager,
+                    config_service=config_service,
+                    ai_service=ai_service,
                     rate_limiter=rate_limiter,
                     title_recognition_manager=title_recognition_manager,
                     selectedEpisodes=selected_eps,
@@ -394,10 +275,9 @@ async def import_media_items(
                     mediaServerSeasonId=str(item['seasonId']) if item['seasonId'] is not None else None,
                     mediaServerEpisodeId=str(item['episodeId'] or item['mediaId']) if (item['episodeId'] or item['mediaId']) is not None else None,
                 ),
-                title=f"自动导入 (库内): {title} S{season:02d} (共 {len(season_items)} 集)",
+                title=f"自动导入 (库内): {title} {season_str} (共 {len(season_items)} 集)",
                 queue_type="download",
-                # 关键修复(任务重启恢复)：补 task_type=webhook_search + task_parameters，
-                # 使 _run_task_wrapper 能写 TaskStateCache，程序重启后可经 _rebuild_coro_factory 恢复。
+                # 恢复参数与首次派发保持一致，避免重启后丢失媒体库关联。
                 task_type="webhook_search",
                 task_parameters={
                     "animeTitle": representative_item['title'],
@@ -414,42 +294,49 @@ async def import_media_items(
                     "webhookSource": "media_server",
                     "selectedEpisodes": selected_episodes,
                     "imageUrl": representative_item['posterUrl'],
+                    "mediaServerType": media_server_type,
+                    "mediaServerSeriesId": str(representative_item['seriesId'] or representative_item['mediaId']) if (representative_item['seriesId'] or representative_item['mediaId']) is not None else None,
+                    "mediaServerSeasonId": str(representative_item['seasonId']) if representative_item['seasonId'] is not None else None,
+                    "mediaServerEpisodeId": str(representative_item['episodeId'] or representative_item['mediaId']) if (representative_item['episodeId'] or representative_item['mediaId']) is not None else None,
                 },
             )
             tv_tasks.append((task_coro, title, season, season_items))
-            tv_ids_to_mark.extend([item['id'] for item in season_items])
 
         except Exception as e:
             logger.error(f"准备电视节目 {title} {season_str} 导入任务失败: {e}", exc_info=True)
 
-    # 批量并发提交所有电视剧任务
+    # 分批提交避免瞬时负载激增，仅标记实际提交成功的媒体项。
     if tv_tasks:
-        logger.info(f"批量提交 {len(tv_tasks)} 个电视剧季度导入任务...")
-        results = await asyncio.gather(*[task for task, _, _, _ in tv_tasks], return_exceptions=True)
+        logger.info(f"准备分批提交 {len(tv_tasks)} 个电视剧季度导入任务（每批 {batch_size} 个）...")
 
-        # 处理提交结果
-        for result, (_, title, season, season_items) in zip(results, tv_tasks):
-            if isinstance(result, Exception):
-                logger.error(f"电视节目 {title} S{season:02d} 导入任务提交失败: {result}")
-            else:
-                task_id, _ = result
-                logger.info(f"电视节目 {title} S{season:02d} (共 {len(season_items)} 集) 导入任务已提交: {task_id}")
+        for batch_start in range(0, len(tv_tasks), batch_size):
+            batch_end = min(batch_start + batch_size, len(tv_tasks))
+            batch = tv_tasks[batch_start:batch_end]
 
-            # 更新进度
-            completed += 1
-            await progress_callback(
-                int((completed / total_tasks) * 100),
-                f"已提交 {completed}/{total_tasks} 个导入任务..."
-            )
+            logger.info(f"提交电视剧批次 {batch_start//batch_size + 1}/{(len(tv_tasks) + batch_size - 1)//batch_size}：{len(batch)} 个任务")
+            results = await asyncio.gather(*[task for task, _, _, _ in batch], return_exceptions=True)
 
-        # 批量标记为已导入
+            for result, (_, title, season, season_items) in zip(results, batch):
+                season_str = f"S{season:02d}" if season is not None else "S??"
+                if isinstance(result, Exception):
+                    logger.error(f"电视节目 {title} {season_str} 导入任务提交失败: {result}")
+                else:
+                    task_id, _ = result
+                    tv_ids_to_mark.extend(item['id'] for item in season_items)
+                    logger.info(f"电视节目 {title} {season_str} (共 {len(season_items)} 集) 导入任务已提交: {task_id}")
+
+                completed += 1
+                await progress_callback(
+                    int((completed / total_tasks) * 100),
+                    f"已处理 {completed}/{total_tasks} 个导入任务..."
+                )
+
+        # Workflow 负责提交与失败回滚，不再操作任务注入会话。
         try:
-            await crud.mark_media_items_imported(session, tv_ids_to_mark)
-            await session.commit()
+            await mark_media_submitted(tv_ids_to_mark)
             logger.info(f"已批量标记 {len(tv_ids_to_mark)} 个电视剧集为已导入")
         except Exception as e:
             logger.error(f"批量标记电视剧导入状态失败: {e}", exc_info=True)
-            await session.rollback()
 
     await progress_callback(100, f"导入完成,共提交 {total_tasks} 个任务")
     raise TaskSuccess(f"媒体项导入完成,共提交 {total_tasks} 个任务")

@@ -9,11 +9,10 @@ apscheduler
 pydantic-settings
 # httpx 0.26+ 才支持 AsyncClient(proxy=...) 参数（旧版为 proxies=），代码使用 proxy= 故锁 >=0.26
 httpx[socks]>=0.26.0
-# 使用固定的 passlib 和 bcrypt 版本以避免兼容性问题
-# passlib 未适配 bcrypt>=4.1 的 API 变更（__about__ 移除、72字节密码限制）
-# 锁定 bcrypt<4.1 直到 passlib 发布兼容版本
-passlib>=1.7.4
-bcrypt>=4.0.1,<4.1
+# 固定认证依赖组合，避免 Passlib 读取新版 bcrypt 已移除的 __about__ 属性。
+# bcrypt 5.0 另有超过 72 字节输入抛出异常的行为变化，升级需统一验证认证入口。
+passlib==1.7.4
+bcrypt==4.0.1
 python-jose[cryptography]
 python-multipart
 # protobuf v5.x 与 Python 3.12 兼容

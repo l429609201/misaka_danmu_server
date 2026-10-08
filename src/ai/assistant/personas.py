@@ -14,6 +14,7 @@
 """
 
 from .prompt_loader import get_system_knowledge
+from .skill_manager import get_skill_manager
 
 # 御坂 20001 号（最后之作）system 提示词
 # 注意：排版格式要求不写在这里，由 _FORMAT_RICH / _FORMAT_PLAIN 按渠道能力追加。
@@ -191,7 +192,6 @@ _SKILLS_FOOTER = """
 def _build_skills_section() -> str:
     """构建技能摘要段落。无技能时返回空串，避免污染 prompt。"""
     try:
-        from .skill_manager import get_skill_manager
         summaries = get_skill_manager().get_skills_summary()
     except Exception:  # noqa: BLE001
         # 技能系统未初始化或异常时静默降级，不影响对话

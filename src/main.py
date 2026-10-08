@@ -1,4 +1,5 @@
 import warnings
+import socket
 warnings.filterwarnings("ignore", message="urllib3.*doesn't match a supported version")
 import uvicorn
 import httpx
@@ -36,7 +37,7 @@ from src.api.dandan import dandan_router
 from src.api.mcp import setup_mcp
 from src.routes.notification_template import router as notification_template_router
 from src.frontend import register_pwa_routes
-from src.utils.asgi_middleware import NotFoundGuardMiddleware, CaptureApiResponseMiddleware
+from src.utils.runtime.asgi_middleware import NotFoundGuardMiddleware, CaptureApiResponseMiddleware
 from src.api.control.openapi_docs import register_control_api_docs
 from src.core.env import is_docker_environment as _is_docker_environment
 from src.core.app_lifecycle import run_startup, run_shutdown
@@ -132,14 +133,14 @@ app.include_router(notification_template_router)
 setup_mcp(app)
 
 # --- 挂载 Swagger UI 的静态文件目录 ---
-def _get_static_dir():
+def _get_static_dir() -> Path:
     """获取静态文件目录，根据运行环境自动调整"""
     if _is_docker_environment():
         # 容器环境
         return Path("/app/static/swagger-ui")
     else:
-        # 源码运行环境
-        return Path("static/swagger-ui")
+        # 包内只读资源按源码位置定位，不随独立弹幕落盘目录变化。
+        return Path(__file__).resolve().parent.parent / "static/swagger-ui"
 
 STATIC_DIR = _get_static_dir()
 app.mount("/static/swagger-ui", StaticFiles(directory=STATIC_DIR), name="swagger-ui-static")
@@ -147,8 +148,6 @@ app.mount("/static/swagger-ui", StaticFiles(directory=STATIC_DIR), name="swagger
 # 添加一个运行入口，以便直接从配置启动
 # 这样就可以通过 `python -m src.main` 来运行，并自动使用 config.yml 中的端口和主机
 if __name__ == "__main__":
-    import socket
-
     port = settings.server.port
     ipv6_enabled = getattr(settings.server, 'ipv6', True)
     is_reload = settings.environment == "development"

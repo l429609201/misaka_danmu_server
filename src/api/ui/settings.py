@@ -11,15 +11,15 @@ except ImportError:
     _regex_module = re
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src import security
-from src.db import models, orm_models, get_db_session, ConfigManager
+from src.utils.auth import security
+from src.schemas import auth as models
+from src.services.config_service import ConfigService
+from src.services.service_container import get_database_service
 from src.core.default_configs import get_default_configs
 
-from src.api.dependencies import get_config_manager, get_title_recognition_manager
-from .models import (
+from src.api.dependencies import get_config_service, get_title_recognition_manager
+from src.schemas.ui_models import (
     TitleRecognitionContent, TitleRecognitionUpdateResponse,
     TitleRecognitionTestRequest, TitleRecognitionTestResponse,
     GlobalFilterSettings, SingleEpisodeFilterSettings,
@@ -34,22 +34,16 @@ router = APIRouter()
 @router.get("/settings/title-recognition", response_model=TitleRecognitionContent, summary="获取识别词配置内容")
 async def get_title_recognition_content(
     current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
-):
-    """
-    获取识别词配置内容
-
-    Returns:
-        TitleRecognitionContent: 包含识别词配置内容的响应
-    """
+) -> TitleRecognitionContent:
+    """获取识别词配置；未配置时返回默认示例。"""
     try:
-        # 查询识别词配置（只有一条记录）
-        result = await session.execute(
-            select(orm_models.TitleRecognition).limit(1)
-        )
-        title_recognition = result.scalar_one_or_none()
+        db = get_database_service()
+        # 在短事务内读取内容，区分未配置和用户主动保存的空字符串。
+        async with db.transaction():
+            recognition = await db.title_recognition.get_current()
+            content = recognition.content if recognition is not None else None
 
-        if title_recognition is None:
+        if content is None:
             # 如果没有配置记录，返回默认内容
             default_content = """# 自定义识别词配置 - 参考MoviePilot格式
 # 支持以下几种配置格式（注意连接符号左右的空格）：
@@ -103,7 +97,7 @@ async def get_title_recognition_content(
 """
             return TitleRecognitionContent(content=default_content)
 
-        return TitleRecognitionContent(content=title_recognition.content)
+        return TitleRecognitionContent(content=content)
 
     except Exception as e:
         logger.error(f"获取识别词配置时发生错误: {e}")
@@ -116,9 +110,8 @@ async def get_title_recognition_content(
 async def update_title_recognition_content(
     payload: TitleRecognitionContent,
     current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
     title_recognition_manager = Depends(get_title_recognition_manager)
-):
+) -> TitleRecognitionUpdateResponse:
     """
     更新识别词配置内容，使用全量替换模式
 
@@ -221,7 +214,7 @@ async def test_title_recognition_rules(
 
 @router.get("/settings/global-filter", response_model=GlobalFilterSettings, summary="获取全局标题过滤规则")
 async def get_global_filter_settings(
-    config: ConfigManager = Depends(get_config_manager),
+    config: ConfigService = Depends(get_config_service),
     current_user: models.User = Depends(security.get_current_user)
 ):
     """获取用于过滤搜索结果的全局中文和英文黑名单正则表达式。"""
@@ -293,18 +286,18 @@ async def get_danmaku_blacklist_defaults(
 @router.put("/settings/global-filter", summary="更新全局标题过滤规则")
 async def update_global_filter_settings(
     payload: GlobalFilterSettings,
-    config: ConfigManager = Depends(get_config_manager),
+    config: ConfigService = Depends(get_config_service),
     current_user: models.User = Depends(security.get_current_user)
 ):
     """更新全局的中文和英文标题过滤黑名单。"""
-    await config.setValue("search_result_global_blacklist_cn", payload.cn)
-    await config.setValue("search_result_global_blacklist_eng", payload.eng)
+    await config.set("search_result_global_blacklist_cn", payload.cn)
+    await config.set("search_result_global_blacklist_eng", payload.eng)
     return {"message": "全局过滤规则已更新。"}
 
 
 @router.get("/settings/single-episode-filter", response_model=SingleEpisodeFilterSettings, summary="获取单剧分集过滤规则")
 async def get_single_episode_filter_settings(
-    config: ConfigManager = Depends(get_config_manager),
+    config: ConfigService = Depends(get_config_service),
     current_user: models.User = Depends(security.get_current_user)
 ):
     """获取单剧分集过滤文本配置。"""
@@ -315,11 +308,11 @@ async def get_single_episode_filter_settings(
 @router.put("/settings/single-episode-filter", summary="更新单剧分集过滤规则")
 async def update_single_episode_filter_settings(
     payload: SingleEpisodeFilterSettings,
-    config: ConfigManager = Depends(get_config_manager),
+    config: ConfigService = Depends(get_config_service),
     current_user: models.User = Depends(security.get_current_user)
 ):
     """更新单剧分集过滤文本配置。"""
-    await config.setValue("singleEpisodeFilterRules", payload.content)
+    await config.set("singleEpisodeFilterRules", payload.content)
     return {"message": "单剧分集过滤规则已更新。"}
 
 
@@ -329,7 +322,7 @@ DEFAULT_EPISODE_TITLE_FILTER_REGEX = r"""(特别|惊喜|纳凉)?企划(?!(书|�
 
 @router.get("/settings/global-episode-title-filter", response_model=GlobalEpisodeTitleFilterSettings, summary="获取兜底全局分集标题过滤配置")
 async def get_global_episode_title_filter(
-    config: ConfigManager = Depends(get_config_manager),
+    config: ConfigService = Depends(get_config_service),
     current_user: models.User = Depends(security.get_current_user)
 ):
     """获取兜底全局分集标题过滤的开关和正则。"""
@@ -349,18 +342,18 @@ async def get_global_episode_title_filter_defaults(
 @router.put("/settings/global-episode-title-filter", summary="更新兜底全局分集标题过滤配置")
 async def update_global_episode_title_filter(
     payload: GlobalEpisodeTitleFilterSettings,
-    config: ConfigManager = Depends(get_config_manager),
+    config: ConfigService = Depends(get_config_service),
     current_user: models.User = Depends(security.get_current_user)
 ):
     """更新兜底全局分集标题过滤的开关和正则。"""
-    await config.setValue("globalEpisodeTitleFilterEnabled", "true" if payload.enabled else "false")
-    await config.setValue("globalEpisodeTitleFilterRegex", payload.regex)
+    await config.set("globalEpisodeTitleFilterEnabled", "true" if payload.enabled else "false")
+    await config.set("globalEpisodeTitleFilterRegex", payload.regex)
     return {"message": "兜底全局分集标题过滤配置已更新。"}
 
 
 @router.get("/settings/webhook", response_model=WebhookSettings, summary="获取Webhook设置")
 async def get_webhook_settings(
-    config: ConfigManager = Depends(get_config_manager),
+    config: ConfigService = Depends(get_config_service),
     current_user: models.User = Depends(security.get_current_user)
 ):
     # 使用 asyncio.gather 并发获取所有配置项
@@ -398,21 +391,21 @@ async def get_webhook_settings(
 @router.put("/settings/webhook", status_code=status.HTTP_204_NO_CONTENT, summary="更新Webhook设置")
 async def update_webhook_settings(
     payload: WebhookSettings,
-    config: ConfigManager = Depends(get_config_manager),
+    config: ConfigService = Depends(get_config_service),
     current_user: models.User = Depends(security.get_current_user)
 ):
     # 使用 asyncio.gather 并发保存所有配置项
     await asyncio.gather(
-        config.setValue("webhookEnabled", str(payload.webhookEnabled).lower()),
-        config.setValue("webhookDelayedImportEnabled", str(payload.webhookDelayedImportEnabled).lower()),
-        config.setValue("webhookDelayedImportHours", str(payload.webhookDelayedImportHours)),
-        config.setValue("webhookCustomDomain", payload.webhookCustomDomain),
-        config.setValue("webhookFilterMode", payload.webhookFilterMode),
-        config.setValue("webhookFilterRegex", payload.webhookFilterRegex),
-        config.setValue("webhookLogRawRequest", str(payload.webhookLogRawRequest).lower()),
-        config.setValue("webhookFallbackEnabled", str(payload.webhookFallbackEnabled).lower()),
-        config.setValue("webhookEnableTmdbSeasonMapping", str(payload.webhookEnableTmdbSeasonMapping).lower()),
-        config.setValue("webhookDeleteSyncEnabled", str(payload.webhookDeleteSyncEnabled).lower())
+        config.set("webhookEnabled", str(payload.webhookEnabled).lower()),
+        config.set("webhookDelayedImportEnabled", str(payload.webhookDelayedImportEnabled).lower()),
+        config.set("webhookDelayedImportHours", str(payload.webhookDelayedImportHours)),
+        config.set("webhookCustomDomain", payload.webhookCustomDomain),
+        config.set("webhookFilterMode", payload.webhookFilterMode),
+        config.set("webhookFilterRegex", payload.webhookFilterRegex),
+        config.set("webhookLogRawRequest", str(payload.webhookLogRawRequest).lower()),
+        config.set("webhookFallbackEnabled", str(payload.webhookFallbackEnabled).lower()),
+        config.set("webhookEnableTmdbSeasonMapping", str(payload.webhookEnableTmdbSeasonMapping).lower()),
+        config.set("webhookDeleteSyncEnabled", str(payload.webhookDeleteSyncEnabled).lower())
     )
     return
 

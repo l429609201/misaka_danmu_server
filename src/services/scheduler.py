@@ -1,11 +1,8 @@
 import asyncio
-import importlib
-import pkgutil
 import inspect
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Sequence, Type
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -13,15 +10,14 @@ from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR, JobExecution
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from src.db import crud, ConfigManager
+from src.services.ai_service import AIService
 from src.core import get_app_timezone
-from src.core.env import is_docker_environment
+# 任务基类与所有具体作业由生命周期组装层注入。
 from src.rate_limiter import RateLimiter
-from src.jobs import BaseJob, WebhookProcessorJob
-from src.ai import AIMatcherManager
+from .database_service import DatabaseService
 from .task_manager import TaskManager
 from .scraper_manager import ScraperManager
-from .metadata_manager import MetadataSourceManager
+from .metadata_service import MetadataService
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +33,7 @@ def cron_is_valid(cron: str, min_hours: int) -> bool:
             return True
 
         hour_part = parts[1]
-        
+
         # Case 1: '*/X' - every X hours
         if hour_part.startswith('*/'):
             interval = int(hour_part[2:])
@@ -51,45 +47,30 @@ def cron_is_valid(cron: str, min_hours: int) -> bool:
 # --- Scheduler Manager ---
 
 class SchedulerManager:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: TaskManager, scraper_manager: ScraperManager, rate_limiter: RateLimiter, metadata_manager: MetadataSourceManager, config_manager: ConfigManager, ai_matcher_manager: AIMatcherManager, title_recognition_manager=None):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: TaskManager, scraper_manager: ScraperManager, rate_limiter: RateLimiter, metadata_manager: MetadataService, config_service, ai_service: AIService, title_recognition_manager=None, *, job_base_class: Type[Any], job_classes: Sequence[Type[Any]]) -> None:
         self._session_factory = session_factory
+        self._db = DatabaseService(session_factory)
         self.task_manager = task_manager
         self.scraper_manager = scraper_manager
         self.rate_limiter = rate_limiter
         self.metadata_manager = metadata_manager
-        self.config_manager = config_manager
-        self.ai_matcher_manager = ai_matcher_manager
+        self.config_service = config_service
+        self.ai_service = ai_service
         self.title_recognition_manager = title_recognition_manager
         self.scheduler = AsyncIOScheduler(timezone=str(get_app_timezone()))
-        self._job_classes: Dict[str, Type[BaseJob]] = {}
+        self._job_classes: Dict[str, Type[Any]] = {}
+        for job_class in job_classes:
+            if not isinstance(job_class, type) or not issubclass(job_class, job_base_class) or job_class is job_base_class:
+                raise TypeError(f"无效的定时任务类: {job_class!r}")
+            if not job_class.job_type or job_class.job_type in self._job_classes:
+                raise ValueError(f"重复或为空的定时任务类型: {job_class.job_type!r}")
+            self._job_classes[job_class.job_type] = job_class
 
-    def _load_jobs(self):
-        """
-        动态发现并加载 'jobs' 目录下的所有任务类。
-        """
-        if is_docker_environment():
-            jobs_package_path = [str(Path("/app/src/jobs"))]
-        else:
-            jobs_package_path = [str(Path("src/jobs"))]
-        for finder, name, ispkg in pkgutil.iter_modules(jobs_package_path):
-            if name.startswith("_") or name == "base":
-                continue
-
-            try:
-                module_name = f"src.jobs.{name}"
-                module = importlib.import_module(module_name)
-                for class_name, obj in inspect.getmembers(module, inspect.isclass):
-                    if issubclass(obj, BaseJob) and obj is not BaseJob:
-                        if obj.job_type in self._job_classes:
-                            logger.warning(f"发现重复的定时任务类型 '{obj.job_type}'。将被覆盖。")
-                        self._job_classes[obj.job_type] = obj
-            except Exception as e:
-                logger.error(f"从模块 {name} 加载定时任务失败: {e}")
-
-        # 汇总输出
+    def _log_registered_jobs(self) -> None:
+        """记录组装层显式注入的可调度作业。"""
         _P = "  - "
-        log_lines = [f"已加载 {len(self._job_classes)} 个定时任务类型"]
-        for job_type in sorted(self._job_classes.keys()):
+        log_lines = [f"已注册 {len(self._job_classes)} 个定时任务类型"]
+        for job_type in sorted(self._job_classes):
             log_lines.append(f"{_P}{job_type}")
         logger.info("\n".join(log_lines))
 
@@ -117,8 +98,8 @@ class SchedulerManager:
         async def runner():
             # 从数据库读取任务实例级配置（taskConfig JSON）
             task_config = {}
-            async with self._session_factory() as session:
-                task_info = await crud.get_scheduled_task(session, scheduled_task_id)
+            async with self._db.transaction():
+                task_info = await self._db.scheduled_task.get_scheduled_task(scheduled_task_id)
                 if task_info:
                     task_config = task_info.get('taskConfig', {})
             logger.info(f"定时任务 '{scheduled_task_id}' (类型: {job_type}) 读取到 taskConfig: {task_config}")
@@ -133,8 +114,8 @@ class SchedulerManager:
                 "scraper_manager": self.scraper_manager,
                 "rate_limiter": self.rate_limiter,
                 "metadata_manager": self.metadata_manager,
-                "config_manager": self.config_manager,
-                "ai_matcher_manager": self.ai_matcher_manager,
+                "config_service": self.config_service,
+                "ai_service": self.ai_service,
                 "title_recognition_manager": self.title_recognition_manager,
             }
 
@@ -180,12 +161,12 @@ class SchedulerManager:
             # 并且能确保手动触发的任务也能正确记录运行时间。并将其转换为 naive datetime。
             last_run_time = event.scheduled_run_time.replace(tzinfo=None) if event.scheduled_run_time else None
             next_run_time = job.next_run_time.replace(tzinfo=None) if job.next_run_time else None
-            async with self._session_factory() as session:
-                await crud.update_scheduled_task_run_times(session, job.id, last_run_time, next_run_time)
+            async with self._db.transaction():
+                await self._db.scheduled_task.update_scheduled_task_run_times(job.id, last_run_time, next_run_time)
             logger.info(f"已更新定时任务 '{job.name}' (ID: {job.id}) 的运行时间。")
 
     async def start(self):
-        self._load_jobs()
+        self._log_registered_jobs()
         # 修正：使用同步的包装器作为监听器
         self.scheduler.add_listener(self._event_handler_wrapper, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
         self.scheduler.start()
@@ -196,8 +177,8 @@ class SchedulerManager:
         self.scheduler.shutdown()
 
     async def load_jobs_from_db(self):
-        async with self._session_factory() as session:
-            tasks = await crud.get_scheduled_tasks(session)
+        async with self._db.transaction():
+            tasks = await self._db.scheduled_task.get_scheduled_tasks()
             for task in tasks:
                 if task['jobType'] in self._job_classes:
                     try:
@@ -205,14 +186,14 @@ class SchedulerManager:
                         job = self.scheduler.add_job(runner, CronTrigger.from_crontab(task['cronExpression']), id=task['taskId'], name=task['name'], replace_existing=True)
                         if not task['isEnabled']: self.scheduler.pause_job(task['taskId'])
                         next_run_time = job.next_run_time.replace(tzinfo=None) if job.next_run_time else None
-                        await crud.update_scheduled_task_run_times(session, job.id, task['lastRunAt'], next_run_time)
+                        await self._db.scheduled_task.update_scheduled_task_run_times(job.id, task['lastRunAt'], next_run_time)
                     except Exception as e:
                         logger.error(f"加载定时任务 '{task['name']}' (ID: {task['taskId']}) 失败: {e}")
 
     async def get_all_tasks(self) -> List[Dict[str, Any]]:
         """从数据库获取所有定时任务的列表。"""
-        async with self._session_factory() as session:
-            return await crud.get_scheduled_tasks(session)
+        async with self._db.transaction():
+            return await self._db.scheduled_task.get_scheduled_tasks()
 
     async def add_task(self, name: str, job_type: str, cron: str, is_enabled: bool, task_config: dict = None) -> Dict[str, Any]:
         if job_type not in self._job_classes:
@@ -227,40 +208,40 @@ class SchedulerManager:
             raise ValueError("刷新最新集弹幕任务的轮询间隔不得低于3小时。请使用如 '0 */3 * * *' (每3小时) 或更长的间隔。")
 
         # 确保某些任务类型只能创建一个
-        async with self._session_factory() as session:
+        async with self._db.transaction():
             if job_type == "incrementalRefresh":
-                exists = await crud.check_scheduled_task_exists_by_type(session, "incrementalRefresh")
+                exists = await self._db.scheduled_task.check_scheduled_task_exists_by_type("incrementalRefresh")
                 if exists:
                     raise ValueError("定时追更任务已存在，无法重复创建。")
             elif job_type == "refreshLatestEpisode":
-                exists = await crud.check_scheduled_task_exists_by_type(session, "refreshLatestEpisode")
+                exists = await self._db.scheduled_task.check_scheduled_task_exists_by_type("refreshLatestEpisode")
                 if exists:
                     raise ValueError("刷新最新集弹幕任务已存在，无法重复创建。")
             elif job_type == "tmdbAutoMap":
-                exists = await crud.check_scheduled_task_exists_by_type(session, "tmdbAutoMap")
+                exists = await self._db.scheduled_task.check_scheduled_task_exists_by_type("tmdbAutoMap")
                 if exists:
                     raise ValueError("TMDB自动映射与更新任务已存在，无法重复创建。")
             elif job_type == "webhookProcessor":
-                exists = await crud.check_scheduled_task_exists_by_type(session, "webhookProcessor")
+                exists = await self._db.scheduled_task.check_scheduled_task_exists_by_type("webhookProcessor")
                 if exists:
                     raise ValueError("Webhook 延时任务处理器已存在，无法重复创建。")
             elif job_type == "autoFinish":
-                exists = await crud.check_scheduled_task_exists_by_type(session, "autoFinish")
+                exists = await self._db.scheduled_task.check_scheduled_task_exists_by_type("autoFinish")
                 if exists:
                     raise ValueError("追更自动完结任务已存在，无法重复创建。")
 
             task_id = str(uuid4())
-            await crud.create_scheduled_task(session, task_id, name, job_type, cron, is_enabled, task_config)
+            await self._db.scheduled_task.create_scheduled_task(task_id, name, job_type, cron, is_enabled, task_config)
             runner = self._create_job_runner(job_type, task_id)
             job = self.scheduler.add_job(runner, CronTrigger.from_crontab(cron), id=task_id, name=name)
             if not is_enabled: job.pause()
             next_run_time = job.next_run_time.replace(tzinfo=None) if job.next_run_time else None
-            await crud.update_scheduled_task_run_times(session, task_id, None, next_run_time)
-            return await crud.get_scheduled_task(session, task_id)
+            await self._db.scheduled_task.update_scheduled_task_run_times(task_id, None, next_run_time)
+            return await self._db.scheduled_task.get_scheduled_task(task_id)
 
     async def update_task(self, task_id: str, name: str, cron: str, is_enabled: bool, task_config: dict = None) -> Optional[Dict[str, Any]]:
-        async with self._session_factory() as session:
-            task_info = await crud.get_scheduled_task(session, task_id)
+        async with self._db.transaction():
+            task_info = await self._db.scheduled_task.get_scheduled_task(task_id)
             if not task_info: return None
 
             # 确保增量更新任务的轮询间隔不低于3小时
@@ -280,9 +261,9 @@ class SchedulerManager:
             else:
                 next_run_time = None
 
-            await crud.update_scheduled_task(session, task_id, name, cron, is_enabled, task_config)
-            await crud.update_scheduled_task_run_times(session, task_id, task_info['lastRunAt'], next_run_time)
-            return await crud.get_scheduled_task(session, task_id)
+            await self._db.scheduled_task.update_scheduled_task(task_id, name, cron, is_enabled, task_config)
+            await self._db.scheduled_task.update_scheduled_task_run_times(task_id, task_info['lastRunAt'], next_run_time)
+            return await self._db.scheduled_task.get_scheduled_task(task_id)
 
     async def sync_bangumi_data_schedule(self, enabled: bool, cron: str) -> None:
         """方案甲：根据 Bangumi 源配置中的「开关 + cron」，自动维护 bangumiDataSync 调度任务。
@@ -294,8 +275,8 @@ class SchedulerManager:
         job_type = "bangumiDataSync"
         name = "bangumi-data 离线索引同步"
         cron = (cron or "").strip() or "0 4 * * *"  # 默认每天 4:00
-        async with self._session_factory() as session:
-            existing_id = await crud.get_scheduled_task_id_by_type(session, job_type)
+        async with self._db.transaction():
+            existing_id = await self._db.scheduled_task.get_scheduled_task_id_by_type(job_type)
 
         if existing_id:
             await self.update_task(existing_id, name, cron, enabled)
@@ -305,18 +286,18 @@ class SchedulerManager:
             logger.info(f"已创建 bangumi-data 同步调度任务: cron='{cron}'")
 
     async def delete_task(self, task_id: str) -> bool:
-        async with self._session_factory() as session:
-            task_info = await crud.get_scheduled_task(session, task_id)
+        async with self._db.transaction():
+            task_info = await self._db.scheduled_task.get_scheduled_task(task_id)
             if not task_info: return False
 
             if self.scheduler.get_job(task_id): self.scheduler.remove_job(task_id)
-            await crud.delete_scheduled_task(session, task_id)
+            await self._db.scheduled_task.delete_scheduled_task(task_id)
             return True
 
     async def run_task_now(self, task_id: str):
         """立即运行指定的定时任务"""
-        async with self._session_factory() as session:
-            task_info = await crud.get_scheduled_task(session, task_id)
+        async with self._db.transaction():
+            task_info = await self._db.scheduled_task.get_scheduled_task(task_id)
             if not task_info:
                 raise ValueError(f"找不到ID为 '{task_id}' 的定时任务")
 
@@ -331,19 +312,19 @@ class SchedulerManager:
         # 手动运行后更新运行时间
         last_run_time = datetime.now()
         next_run_time = job.next_run_time.replace(tzinfo=None) if job.next_run_time else None
-        async with self._session_factory() as session:
-            await crud.update_scheduled_task_run_times(session, task_id, last_run_time, next_run_time)
+        async with self._db.transaction():
+            await self._db.scheduled_task.update_scheduled_task_run_times(task_id, last_run_time, next_run_time)
         logger.info(f"手动运行定时任务 '{task_info['name']}' (ID: {task_id}) 后已更新运行时间。")
 
     async def run_task_now_by_type(self, job_type: str):
         """根据任务类型查找任务并立即运行它。"""
-        async with self._session_factory() as session:
-            task_id = await crud.get_scheduled_task_id_by_type(session, job_type)
-        
+        async with self._db.transaction():
+            task_id = await self._db.scheduled_task.get_scheduled_task_id_by_type(job_type)
+
         if not task_id:
             raise ValueError(f"找不到类型为 '{job_type}' 的定时任务")
 
-        await self.run_task_now(task_id)    
+        await self.run_task_now(task_id)
 
 
 

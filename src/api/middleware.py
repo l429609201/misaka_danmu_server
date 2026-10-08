@@ -9,19 +9,8 @@
 """
 
 import logging
-import ipaddress
 
+from src.utils.runtime.ip_address import normalize_ip
 
 logger = logging.getLogger(__name__)
-
-
-def normalize_ip(ip_str: str) -> str:
-    """标准化 IP 地址：将 IPv4-mapped IPv6（::ffff:x.x.x.x）还原为纯 IPv4"""
-    try:
-        addr = ipaddress.ip_address(ip_str)
-        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
-            return str(addr.ipv4_mapped)
-    except ValueError:
-        pass
-    return ip_str
 

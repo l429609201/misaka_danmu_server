@@ -6,14 +6,10 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import get_db_session, crud
-from src.api.dependencies import get_config_manager
-from src.db import ConfigManager
-from src.services.title_recognition import TitleRecognitionManager
+from src.services.service_container import get_database_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -36,18 +32,18 @@ class RuleTestResult(BaseModel):
 
 
 @router.get("/recognition-check/conflicts", summary="识别词规则冲突检测")
-async def check_rule_conflicts(
-    session: AsyncSession = Depends(get_db_session),
-):
-    """扫描识别词规则，检测空规则、重复、过短关键词、潜在冲突"""
-    recognition = await crud.get_title_recognition(session)
-    if not recognition or not recognition.content:
+async def check_rule_conflicts() -> List[RuleConflictItem]:
+    """扫描识别词规则，读取快照后释放数据库事务。"""
+    db = get_database_service()
+    async with db.transaction():
+        content = await db.title_recognition.get_content()
+    if not content:
         return []
 
-    lines = recognition.content.strip().split("\n")
+    lines = content.strip().split("\n")
     results = []
     seen_rules = {}
-    
+
     for i, line in enumerate(lines):
         line = line.strip()
         if not line or line.startswith("#"):
@@ -101,20 +97,19 @@ async def check_rule_conflicts(
 
 
 @router.post("/recognition-check/test", summary="识别词规则测试")
-async def test_recognition_rule(
-    body: dict,
-    session: AsyncSession = Depends(get_db_session),
-):
-    """输入样例标题，展示命中的规则链路"""
+async def test_recognition_rule(body: dict) -> RuleTestResult | Dict[str, Any]:
+    """输入样例标题，基于仓储提供的文本快照展示命中规则。"""
     title = body.get("title", "")
     if not title:
         return {"matchedRules": [], "transformedTitle": title}
 
-    recognition = await crud.get_title_recognition(session)
-    if not recognition or not recognition.content:
+    db = get_database_service()
+    async with db.transaction():
+        content = await db.title_recognition.get_content()
+    if not content:
         return {"matchedRules": [], "transformedTitle": title}
 
-    lines = recognition.content.strip().split("\n")
+    lines = content.strip().split("\n")
     matched = []
     current = title
 

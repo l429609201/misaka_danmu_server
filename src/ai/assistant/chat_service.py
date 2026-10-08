@@ -15,7 +15,8 @@ from typing import AsyncGenerator, Dict, List, Optional
 
 import httpx
 
-from src.db import ConfigManager
+from src.services.config_service import ConfigService
+
 from .personas import get_persona_prompt, DEFAULT_PERSONA
 from ..ai_providers import get_provider_config
 
@@ -29,25 +30,25 @@ _DEFAULT_TIMEOUT = 120.0
 class AssistantChatService:
     """御坂助手流式对话服务（复用现有 AI provider 配置）"""
 
-    def __init__(self, config_manager: ConfigManager):
-        self.config_manager = config_manager
+    def __init__(self, config_service: "ConfigService"):
+        self.config_service = config_service
         self.logger = logging.getLogger(self.__class__.__name__)
 
     async def _load_ai_config(self) -> Dict[str, str]:
         """读取 AI 配置（包含御坂助手专属的高级参数）。"""
-        provider = await self.config_manager.get("aiProvider", "deepseek")
-        api_key = await self.config_manager.get("aiApiKey", "")
-        base_url = await self.config_manager.get("aiBaseUrl", "")
-        model = await self.config_manager.get("aiModel", "")
+        provider = await self.config_service.get("aiProvider", "deepseek")
+        api_key = await self.config_service.get("aiApiKey", "")
+        base_url = await self.config_service.get("aiBaseUrl", "")
+        model = await self.config_service.get("aiModel", "")
 
         # 御坂助手高级 LLM 参数
-        temperature = float(await self.config_manager.get("assistantTemperature", "0.7"))
-        max_tokens = int(await self.config_manager.get("assistantMaxTokens", "2000"))
-        top_p = float(await self.config_manager.get("assistantTopP", "0.9"))
-        presence_penalty = float(await self.config_manager.get("assistantPresencePenalty", "0.0"))
-        frequency_penalty = float(await self.config_manager.get("assistantFrequencyPenalty", "0.0"))
-        timeout = int(await self.config_manager.get("assistantTimeout", "120"))
-        proxy_enabled = (await self.config_manager.get("assistantProxyEnabled", "false")).lower() == "true"
+        temperature = float(await self.config_service.get("assistantTemperature", "0.7"))
+        max_tokens = int(await self.config_service.get("assistantMaxTokens", "2000"))
+        top_p = float(await self.config_service.get("assistantTopP", "0.9"))
+        presence_penalty = float(await self.config_service.get("assistantPresencePenalty", "0.0"))
+        frequency_penalty = float(await self.config_service.get("assistantFrequencyPenalty", "0.0"))
+        timeout = int(await self.config_service.get("assistantTimeout", "120"))
+        proxy_enabled = (await self.config_service.get("assistantProxyEnabled", "false")).lower() == "true"
 
         # base_url 缺省时回退到 provider 默认值
         if not base_url:
@@ -57,9 +58,9 @@ class AssistantChatService:
         # 代理配置（复用全局 proxyUrl）
         proxy_url = ""
         if proxy_enabled:
-            proxy_url = await self.config_manager.get("proxyUrl", "")
+            proxy_url = await self.config_service.get("proxyUrl", "")
 
-        log_raw = (await self.config_manager.get("aiLogRawResponse", "false")).lower() == "true"
+        log_raw = (await self.config_service.get("aiLogRawResponse", "false")).lower() == "true"
 
         return {
             "provider": provider,

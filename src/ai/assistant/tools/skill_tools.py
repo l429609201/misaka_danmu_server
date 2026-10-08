@@ -6,7 +6,7 @@
 - LLM 判断需要某技能时，调 read_skill 取全文作业指导书
 
 只读工具：list_skills / read_skill
-写工具（WRITE 权限，agent 在对话中先说明再执行）：
+写工具（WRITE 权限，需 Web 确认卡与服务端单次令牌）：
     create_skill / update_skill / delete_skill / toggle_skill
 
 技能存储在持久化目录 config/skills/<skill_id>/SKILL.md，

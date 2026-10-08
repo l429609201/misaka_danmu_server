@@ -2,8 +2,13 @@
 通用辅助 Mixin — _submit_auto_import / _submit_edited_import
 被 SearchMenuMixin 和 AutoMenuMixin 共用
 """
+import hashlib
 import logging
+
 from src.notification.base import CommandResult
+from src.schemas import EditImportRequest as EditedImportRequest, ProviderEpisodeInfo
+from src.schemas.control import ControlAutoImportRequest, AutoImportSearchType, AutoImportMediaType
+from src.tasks import auto_search_and_import_task, edited_import_task
 
 logger = logging.getLogger(__name__)
 
@@ -19,16 +24,12 @@ class ImportBaseMixin:
         if not self.task_manager:
             return CommandResult(success=False, text="任务管理器未就绪。")
         try:
-            from src.api.control.models import (
-                ControlAutoImportRequest, AutoImportSearchType, AutoImportMediaType,
-            )
             st = AutoImportSearchType(search_type)
             mt = AutoImportMediaType(media_type) if media_type else None
             payload = ControlAutoImportRequest(
                 searchType=st, searchTerm=search_term,
                 season=season, episode=episode, mediaType=mt,
             )
-            from src.tasks import auto_search_and_import_task
             title_parts = [f"TG导入: {search_term} ({search_type})"]
             if season is not None:
                 title_parts.append(f"S{season:02d}")
@@ -38,9 +39,9 @@ class ImportBaseMixin:
 
             task_coro = lambda session, cb: auto_search_and_import_task(
                 payload, cb, session,
-                self.config_manager, self.scraper_manager,
+                self.config_service, self.scraper_manager,
                 self.metadata_manager, self.task_manager,
-                ai_matcher_manager=self.ai_matcher_manager,
+                ai_service=self.ai_service,
                 rate_limiter=self.rate_limiter,
                 title_recognition_manager=self.title_recognition_manager,
             )
@@ -82,10 +83,6 @@ class ImportBaseMixin:
         if not self.task_manager:
             return CommandResult(success=False, text="任务管理器未就绪。")
         try:
-            import hashlib
-            from src.db.models import EditedImportRequest, ProviderEpisodeInfo
-            from src.tasks import edited_import_task
-
             ep_models = []
             for ep in (episodes or []):
                 ep_models.append(ProviderEpisodeInfo(
@@ -113,10 +110,9 @@ class ImportBaseMixin:
                 request_data=request_data,
                 progress_callback=cb,
                 session=session,
-                config_manager=self.config_manager,
+                config_service=self.config_service,
                 manager=self.scraper_manager,
                 rate_limiter=self.rate_limiter,
-                metadata_manager=self.metadata_manager,
                 title_recognition_manager=self.title_recognition_manager,
             )
 

@@ -51,11 +51,22 @@ class LogConfig(BaseModel):
 # 任务管理器配置
 class TaskManagerConfig(BaseModel):
     max_concurrent_tasks: int = 10  # 下载队列最大并发任务数（范围 1-10）
+    max_search_workers: int = 10    # 搜索队列最大并发 worker 数（范围 1-10）
 
     @field_validator('max_concurrent_tasks')
     @classmethod
     def validate_concurrent_tasks(cls, v: int) -> int:
         """验证并发任务数在合理范围内"""
+        if v < 1:
+            return 1
+        if v > 10:
+            return 10
+        return v
+
+    @field_validator('max_search_workers')
+    @classmethod
+    def validate_search_workers(cls, v: int) -> int:
+        """验证搜索 worker 数在合理范围内"""
         if v < 1:
             return 1
         if v > 10:
@@ -116,6 +127,7 @@ log:
 # 任务管理器配置
 task_manager:
   max_concurrent_tasks: 10  # 下载队列最大并发数（范围 1-10，根据 CPU 和网络调整）
+  max_search_workers: 3     # 搜索队列并发 worker 数（范围 1-5，搜索不消耗下载配额）
 
 # 缓存配置
 cache:

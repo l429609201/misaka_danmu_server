@@ -111,6 +111,11 @@ def get_prompt_loader() -> PromptLoader:
     return _loader
 
 
+def get_coding_prompt() -> str:
+    """按需读取受控编码规则，避免向无此能力的渠道承诺代码修复。"""
+    return _load_body(PROMPTS_DIR / 'coding.md')
+
+
 def get_system_knowledge() -> str:
     """获取系统领域知识 + 行为准则 + 工具地图的拼接文本。
 

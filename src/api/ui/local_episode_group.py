@@ -12,9 +12,14 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
 from pydantic import BaseModel
 
-from src import security
-from src.db import crud, models, get_db_session
-from sqlalchemy.ext.asyncio import AsyncSession
+from src.utils.auth import security
+from src.services.database_service import DatabaseService
+from src.services.service_container import get_database_service
+from src.schemas import (
+    TMDBEpisodeGroupDetails,
+    TMDBGroupInGroupDetail,
+    TMDBEpisodeInGroupDetail,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,7 +37,7 @@ class ApplyLocalEpisodeGroupRequest(BaseModel):
 @router.post("/local-episode-group/fetch", summary="获取本地剧集组JSON（支持URL和本地路径）")
 async def fetch_local_episode_group(
     payload: FetchUrlRequest,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user = Depends(security.get_current_user),
 ):
     """
     获取 episodegroup.json 内容。
@@ -76,8 +81,8 @@ async def fetch_local_episode_group(
 @router.post("/local-episode-group/apply", summary="应用本地剧集组映射")
 async def apply_local_episode_group(
     payload: ApplyLocalEpisodeGroupRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user = Depends(security.get_current_user),
+    db_service: DatabaseService = Depends(get_database_service),
 ):
     """
     解析 StrmAssistant 格式的本地剧集组 JSON，转换为分集映射并保存到数据库。
@@ -101,21 +106,21 @@ async def apply_local_episode_group(
             episode_counter += 1
             season_num = ep.get("season_number", 0)
             episode_num = ep.get("episode_number", 0)
-            episodes.append(models.TMDBEpisodeInGroupDetail(
+            episodes.append(TMDBEpisodeInGroupDetail(
                 id=episode_counter,  # 合成唯一ID
                 name="",
                 episodeNumber=episode_num,
                 seasonNumber=season_num,
                 order=ep.get("order", 0),
             ))
-        groups.append(models.TMDBGroupInGroupDetail(
+        groups.append(TMDBGroupInGroupDetail(
             id="",
             name=g.get("name", ""),
             order=g.get("order", 0),
             episodes=episodes,
         ))
 
-    group_details = models.TMDBEpisodeGroupDetails(
+    group_details = TMDBEpisodeGroupDetails(
         id=group_id,
         name=local_data.get("description", "") or "本地剧集组",
         description=local_data.get("description", ""),
@@ -125,12 +130,13 @@ async def apply_local_episode_group(
         type=0,
     )
 
-    await crud.save_tmdb_episode_group_mappings(
-        session=session,
-        tmdb_tv_id=tmdb_tv_id,
-        group_id=group_id,
-        group_details=group_details,
-    )
+    db_service = get_database_service()
+    async with db_service.transaction():
+        await db_service.tmdb.save_episode_group_mappings(
+            tmdb_tv_id=tmdb_tv_id,
+            group_id=group_id,
+            group_details=group_details,
+        )
 
     logger.info(f"已为 TMDB TV ID {tmdb_tv_id} 应用本地剧集组映射，共 {episode_counter} 条。")
     return {"message": "本地剧集组映射更新成功", "groupId": group_id, "episodeCount": episode_counter}
@@ -140,14 +146,16 @@ async def apply_local_episode_group(
 @router.get("/local-episode-group/detail", summary="获取已保存的剧集组详情（从数据库读取）")
 async def get_episode_group_detail(
     groupId: str = Query(..., description="剧集组ID，如 local-12345 或 TMDB 剧集组ID"),
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user = Depends(security.get_current_user),
+    db_service: DatabaseService = Depends(get_database_service),
 ):
     """
     从数据库中读取已保存的剧集组映射，重建为分组结构返回。
     支持本地剧集组（local-xxx）和 TMDB 剧集组。
     """
-    data = await crud.get_episode_group_mappings(session, groupId)
+    async with db_service.transaction():
+        data = await db_service.tmdb.get_episode_group_mappings(groupId)
+
     if not data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

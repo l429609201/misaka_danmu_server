@@ -7,17 +7,11 @@
  * @param {object} opts
  *   enabled     总开关（面板关闭时才播报，避免打扰）
  *   onNotify    (text, kind) => void  播报回调（kind: done|failed|start）
+ *   onActivity  (phase) => void       持续任务姿态（idle|queued|working|paused）
  */
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import Cookies from 'js-cookie'
-
-// 状态值必须与后端 TaskStatus 枚举一致（src/services/task_manager.py）：
-// 排队中 / 运行中 / 已完成 / 失败 / 已暂停。
-// 另有中止场景产出「已取消」（见 src/api/control/models.py 字段描述）。
-// 原代码中的「成功」「已中止」后端从不产出，属死值，已移除。
-const RUNNING_STATES = ['排队中', '运行中', '已暂停']
-const DONE_STATES = ['已完成']
-const FAIL_STATES = ['失败', '已取消']
+import { serverTimestamp, taskEvents, mergeTaskSnapshot } from './taskNotifierState'
 
 function authHeaders() {
   return { Authorization: `Bearer ${Cookies.get('danmu_token')}` }
@@ -63,10 +57,27 @@ async function loadNotifyConfig() {
   }
 }
 
-export function useTaskNotifier({ enabled, onNotify, t }) {
+export function useTaskNotifier({ enabled, onNotify, onActivity, t }) {
   const timerRef = useRef(null)
+  const inFlightRef = useRef(null)
+  const requestRef = useRef(null)
+  const generationRef = useRef(0)
+  const enabledRef = useRef(enabled)
+  enabledRef.current = enabled
+  const activityRef = useRef(onActivity)
+  activityRef.current = onActivity
+  const activityStateRef = useRef(null)
   const snapshotRef = useRef(null) // 上次任务状态快照 {taskId: status}
+  const snapshotAtRef = useRef(NaN)
+  const pendingRef = useRef(new Map())
   const cfgRef = useRef(null)
+  const [configVersion, setConfigVersion] = useState(0)
+
+  useEffect(() => {
+    const reload = () => setConfigVersion(version => version + 1)
+    window.addEventListener('assistant-notify-config-changed', reload)
+    return () => window.removeEventListener('assistant-notify-config-changed', reload)
+  }, [])
 
   // why：t / onNotify 都用 ref 持有，不进 poll 的依赖数组。
   // i18n 的 t 函数每次渲染都是新引用，若直接依赖会让 poll 反复重建，
@@ -83,74 +94,129 @@ export function useTaskNotifier({ enabled, onNotify, t }) {
     return fn ? fn(k, opts) : k
   }, [])
 
-  const poll = useCallback(async () => {
-    try {
-      const res = await fetch('/api/ui/tasks?status=all&pageSize=30', { headers: authHeaders() })
-      if (!res.ok) return
-      const data = await res.json()
-      const list = data.list || []
-      const cfg = cfgRef.current || {}
-
-      const prev = snapshotRef.current
-      const curr = {}
-      list.forEach(t => { curr[t.taskId] = { status: t.status, title: t.title, description: t.description } })
-
-      // 首次轮询只记录快照，不播报（避免刷屏历史任务）
-      if (prev !== null) {
-        for (const [id, info] of Object.entries(curr)) {
-          const old = prev[id]
-          const shortTitle = (info.title || '任务').replace(/^(外部API|御坂助手|Webhook)/, '').trim().slice(0, 24)
-          // 新任务开始
-          if (!old && RUNNING_STATES.includes(info.status)) {
-            if (cfg.assistantNotifyOnStart === 'true') {
-              notifyRef.current?.(tr('assistant.notifyStart', { title: shortTitle }), 'start')
-            }
-          } else if (old && old.status !== info.status) {
-            // 状态变化 → 完成/失败
-            if (DONE_STATES.includes(info.status) && cfg.assistantNotifyOnComplete === 'true') {
-              const text = tr('assistant.notifyDone', { title: shortTitle })
-              notifyRef.current?.(text, 'done')
-              pushDesktop(tr('assistant.notifyDoneTitle'), text)
-            } else if (FAIL_STATES.includes(info.status) && cfg.assistantNotifyOnFailed === 'true') {
-              // 失败：附带原因摘要 + 简单建议
-              const reason = (info.description || '').replace(/\s+/g, ' ').trim().slice(0, 60)
-              const tip = reason ? tr('assistant.notifyFailReason', { reason }) : tr('assistant.notifyFailNoReason')
-              const text = tr('assistant.notifyFailed', { title: shortTitle, tip })
-              notifyRef.current?.(text, 'failed')
-              pushDesktop(tr('assistant.notifyFailTitle'), text)
-            }
-          }
-        }
+  const flushPending = useCallback(() => {
+    if (!enabledRef.current) return
+    const cfg = cfgRef.current || {}
+    if (cfg.assistantNotifyEnabled === 'false') return
+    for (const { task, kind } of pendingRef.current.values()) {
+      const title = (task.title || '任务').replace(/^(外部API|御坂助手|Webhook)/, '').trim().slice(0, 24)
+      const statusKey = kind === 'done' ? 'Done' : kind === 'failed' ? 'Failed' : 'Start'
+      const detail = {
+        title: `【${tr(`assistant.notifyStatus${statusKey}`)}】${title}`,
+        body: (task.description || '').replace(/\s+/g, ' ').trim().slice(0, 240),
       }
-      snapshotRef.current = curr
-    } catch {
-      // 轮询失败忽略，下次再试
+      if (kind === 'start' && cfg.assistantNotifyOnStart === 'true') {
+        notifyRef.current?.(tr('assistant.notifyStart', { title }), kind, detail)
+      } else if (kind === 'done' && cfg.assistantNotifyOnComplete !== 'false') {
+        const text = tr('assistant.notifyDone', { title })
+        notifyRef.current?.(text, kind, detail)
+        pushDesktop(tr('assistant.notifyDoneTitle'), text)
+      } else if (kind === 'failed' && cfg.assistantNotifyOnFailed !== 'false') {
+        const reason = (task.description || '').replace(/\s+/g, ' ').trim().slice(0, 60)
+        const tip = reason ? tr('assistant.notifyFailReason', { reason }) : tr('assistant.notifyFailNoReason')
+        const text = tr('assistant.notifyFailed', { title, tip })
+        notifyRef.current?.(text, kind, detail)
+        pushDesktop(tr('assistant.notifyFailTitle'), text)
+      }
     }
-    // 依赖仅 tr（已 useCallback 空依赖，引用永久稳定），
-    // onNotify 走 notifyRef，确保 poll 引用稳定、定时器不被重建
+    pendingRef.current.clear()
   }, [tr])
+
+  const poll = useCallback(async (generation = generationRef.current) => {
+    if (generation !== generationRef.current || inFlightRef.current
+      || !cfgRef.current || cfgRef.current.assistantNotifyEnabled === 'false') return
+    const controller = new AbortController()
+    inFlightRef.current = controller
+    requestRef.current = controller
+    try {
+      const tasks = new Map()
+      let page = 1
+      let serverTime = NaN
+      while (generation === generationRef.current) {
+        const res = await fetch(`/api/ui/tasks?status=all&pageSize=100&sortBy=updatedAt&page=${page}`, {
+          headers: authHeaders(), signal: controller.signal,
+        })
+        if (!res.ok || generation !== generationRef.current) return
+        const data = await res.json()
+        if (generation !== generationRef.current) return
+        const list = data.list || []
+        if (page === 1) serverTime = serverTimestamp(data.serverTime)
+        list.forEach(task => tasks.set(task.taskId, task))
+        const lastUpdate = serverTimestamp(list.at(-1)?.updatedAt)
+        // 扫过整个本轮更新窗口；不能因为大量批量导入只取第一页而漏报。
+        if (!Number.isFinite(snapshotAtRef.current) || !list.length
+          || !Number.isFinite(lastUpdate) || lastUpdate < snapshotAtRef.current - 2000
+          || page * 100 >= data.total) break
+        page += 1
+      }
+      const list = [...tasks.values()]
+      const prev = snapshotRef.current
+      for (const event of taskEvents(prev, list, snapshotAtRef.current)) {
+        // 同一个任务的终态覆盖尚未播报的开始事件，避免打开面板时积压过时提示。
+        pendingRef.current.set(event.task.taskId, event)
+      }
+      const curr = mergeTaskSnapshot(prev, list)
+      snapshotRef.current = curr
+      snapshotAtRef.current = serverTime
+      flushPending()
+      // 姿态依据本次实际返回记录，不从去重缓存恢复已删除任务的旧运行态。
+      const statuses = list.map(item => item.status)
+      const phase = statuses.includes('运行中') ? 'working'
+        : statuses.includes('排队中') ? 'queued'
+          : statuses.includes('已暂停') ? 'paused' : 'idle'
+      if (activityStateRef.current !== phase) {
+        activityStateRef.current = phase
+        activityRef.current?.(phase)
+      }
+    } catch {
+      // 请求失败保留上次快照和服务器基线，下轮继续补齐事件。
+    } finally {
+      if (inFlightRef.current === controller) inFlightRef.current = null
+      if (requestRef.current === controller) requestRef.current = null
+    }
+  }, [flushPending])
+
+  // 面板打开只暂停展示，不停止检测；关闭时立即补播期间积累的完成事件。
+  useEffect(() => {
+    if (enabled) flushPending()
+  }, [enabled, flushPending])
 
   useEffect(() => {
     let alive = true
+    const generation = ++generationRef.current
     async function boot() {
-      const cfg = await loadNotifyConfig()
+      // 配置与首次快照并行启动，缩小页面刚打开时的漏报窗口。
+      const cfgPromise = loadNotifyConfig()
+      if (snapshotRef.current === null) {
+        cfgRef.current = {}
+        await poll(generation)
+      }
+      const cfg = await cfgPromise
       if (!alive) return
-      cfgRef.current = cfg
+      cfgRef.current = cfg || {}
       const master = cfg?.assistantNotifyEnabled !== 'false'
-      if (!enabled || !master) {
-        // 未启用：清理计时器
+      if (!master) {
+        snapshotRef.current = null
+        snapshotAtRef.current = NaN
+        pendingRef.current.clear()
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
         return
       }
       ensureNotifyPermission() // 启用播报时请求一次桌面通知权限
       const sec = Math.min(60, Math.max(10, parseInt(cfg?.assistantNotifyInterval || '15', 10) || 15))
-      await poll() // 立即建立首次快照
-      timerRef.current = setInterval(poll, sec * 1000)
+      await poll(generation) // 立即建立首次快照
+      if (!alive) return
+      timerRef.current = setInterval(() => poll(generation), sec * 1000)
     }
     boot()
     return () => {
       alive = false
+      generationRef.current += 1
+      requestRef.current?.abort()
+      requestRef.current = null
+      inFlightRef.current = null
+      activityStateRef.current = null
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
     }
-  }, [enabled, poll])
+  }, [poll, configVersion])
 }

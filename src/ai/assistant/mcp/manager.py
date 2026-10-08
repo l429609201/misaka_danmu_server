@@ -16,7 +16,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from src.db import ConfigManager
+from src.services.config_service import ConfigService
 
 from ..security_gateway import ToolPermission, sanitize_output
 from .protocol import build_initialize_params
@@ -39,8 +39,8 @@ _DISCOVERY_TTL = 300
 class McpManager:
     """MCP 服务器与工具的统一管理入口。"""
 
-    def __init__(self, config_manager: ConfigManager) -> None:
-        self.config_manager = config_manager
+    def __init__(self, config_service: "ConfigService") -> None:
+        self.config_service = config_service
         self.logger = logging.getLogger(self.__class__.__name__)
         # 工具发现缓存：{server_name: (过期时间戳, [McpToolSpec])}
         self._cache: Dict[str, tuple[float, List[McpToolSpec]]] = {}
@@ -52,7 +52,7 @@ class McpManager:
 
     async def get_servers(self) -> List[McpServerConfig]:
         """读取全部 MCP 服务器配置。解析失败返回空列表，不影响主流程。"""
-        raw = await self.config_manager.get(MCP_SERVERS_CONFIG_KEY, "[]")
+        raw = await self.config_service.get(MCP_SERVERS_CONFIG_KEY, "[]")
         try:
             items = json.loads(raw or "[]")
         except (TypeError, ValueError):
@@ -75,7 +75,7 @@ class McpManager:
         payload = json.dumps(
             [s.model_dump() for s in servers], ensure_ascii=False
         )
-        await self.config_manager.setValue(MCP_SERVERS_CONFIG_KEY, payload)
+        await self.config_service.set(MCP_SERVERS_CONFIG_KEY, payload)
         await self.invalidate_cache()
 
     async def get_server(self, name: str) -> Optional[McpServerConfig]:

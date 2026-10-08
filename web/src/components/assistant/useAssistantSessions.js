@@ -31,7 +31,11 @@ export function useAssistantSessions() {
   // 会话详情（含消息）
   const loadSession = useCallback(async sid => {
     const res = await fetch(`${BASE}/${encodeURIComponent(sid)}`, { headers: authHeaders() })
-    if (!res.ok) throw new Error('加载会话失败')
+    if (!res.ok) {
+      const error = new Error('加载会话失败')
+      error.status = res.status
+      throw error
+    }
     return await res.json()
   }, [])
 

@@ -3,16 +3,24 @@
 """
 import logging
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.database import get_db_session
-from src.db.crud import notification_template as template_crud
-from src.services.template_renderer import get_template_renderer
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from src.notification.subscription_matcher import ScopeKey, SubscriptionMatcher
 from src.notification.template_resolver import TemplateResolver
+from src.services.service_container import get_database_service
+from src.services.template_renderer import get_template_renderer
 
 logger = logging.getLogger(__name__)
+
+# 编辑器使用内置 SVG 示例图，避免预览依赖外网图片或暴露真实媒体地址。
+_PREVIEW_IMAGE_URL = (
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360'"
+    "%3E%3Crect width='100%25' height='100%25' fill='%231f2937'/%3E"
+    "%3Ctext x='50%25' y='50%25' fill='white' font-size='32' text-anchor='middle'"
+    "%3EPoster Preview%3C/text%3E%3C/svg%3E"
+)
 
 router = APIRouter(prefix="/api/ui/notification/templates", tags=["notification_templates"])
 
@@ -20,6 +28,7 @@ router = APIRouter(prefix="/api/ui/notification/templates", tags=["notification_
 class TemplateUpdateRequest(BaseModel):
     title: str
     body: str
+    imageEnabled: bool = True
 
 
 class TemplatePreviewRequest(BaseModel):
@@ -30,6 +39,7 @@ class TemplatePreviewRequest(BaseModel):
     # 兼容前端历史字段名 exampleStatus，二者任一均可
     sampleStatus: Optional[str] = None  # success/failed/no_change
     exampleStatus: Optional[str] = None
+    imageEnabled: bool = True
 
     @property
     def resolved_status(self) -> str:
@@ -38,11 +48,8 @@ class TemplatePreviewRequest(BaseModel):
 
 
 @router.get("/scopes")
-async def get_available_scopes(
-    session: AsyncSession = Depends(get_db_session)
-) -> Dict[str, Any]:
+async def get_available_scopes() -> Dict[str, Any]:
     """获取所有可用的发送范围（scopes）"""
-    from src.notification.subscription_matcher import ScopeKey, SubscriptionMatcher
 
     # 精简后的核心事件：只保留用户真正需要的通知场景
     all_scopes = [
@@ -81,11 +88,12 @@ async def get_available_scopes(
 
 
 @router.get("")
-async def get_templates(
-    session: AsyncSession = Depends(get_db_session)
-) -> List[Dict[str, Any]]:
+async def get_templates() -> List[Dict[str, Any]]:
     """获取所有模板摘要"""
-    templates = await template_crud.get_all_notification_templates(session)
+    # 模板读取同样通过统一事务访问，避免遗留 CRUD 变量悬空。
+    db = get_database_service()
+    async with db.transaction():
+        templates = await db.notification_template.get_all()
 
     # 添加显示名称
     for tmpl in templates:
@@ -98,12 +106,11 @@ async def get_templates(
 
 
 @router.get("/{template_id}")
-async def get_template(
-    template_id: str,
-    session: AsyncSession = Depends(get_db_session)
-) -> Dict[str, Any]:
+async def get_template(template_id: str) -> Dict[str, Any]:
     """获取单个模板详情"""
-    template = await template_crud.get_notification_template(session, template_id)
+    db = get_database_service()
+    async with db.transaction():
+        template = await db.notification_template.get_by_id(template_id)
     
     if not template:
         raise HTTPException(status_code=404, detail="模板不存在")
@@ -119,7 +126,6 @@ async def get_template(
 async def update_template(
     template_id: str,
     req: TemplateUpdateRequest,
-    session: AsyncSession = Depends(get_db_session)
 ) -> Dict[str, Any]:
     """更新模板"""
     # 验证模板语法
@@ -130,12 +136,11 @@ async def update_template(
         raise HTTPException(status_code=400, detail=f"模板语法错误: {error}")
     
     # 更新模板
-    success = await template_crud.update_notification_template(
-        session,
-        template_id,
-        req.title,
-        req.body
-    )
+    db = get_database_service()
+    async with db.transaction():
+        success = await db.notification_template.upsert(
+            template_id, req.title, req.body, req.imageEnabled
+        )
     
     if not success:
         raise HTTPException(status_code=500, detail="更新失败")
@@ -146,13 +151,14 @@ async def update_template(
 @router.post("/preview")
 async def preview_template(
     req: TemplatePreviewRequest,
-    session: AsyncSession = Depends(get_db_session)
 ) -> Dict[str, Any]:
     """预览模板渲染结果"""
     renderer = get_template_renderer()
     
     # 获取示例变量（状态字段已做新旧字段名归一化）
     sample_vars = _get_sample_variables(req.templateId, req.resolved_status)
+    if not req.imageEnabled:
+        sample_vars["image_url"] = ""
     
     # 渲染
     success, title, body, error = renderer.render(req.title, req.body, sample_vars)
@@ -171,45 +177,82 @@ async def preview_template(
         "title": adapted_title,
         "body": adapted_body,
         "channel": req.channel,
+        "imageUrl": sample_vars.get("image_url", ""),
+        "exampleData": sample_vars,
     }
 
 
 def _get_template_variables(template_id: str) -> List[Dict[str, Any]]:
-    """获取模板可用变量（简化版本）"""
-    common_vars = [
+    """返回所有通知流程共享的变量合同，模板编辑器与预览共用这份定义。"""
+    return [
+        # 通用状态字段
         {"name": "status_icon", "label": "状态图标", "example": "✅", "category": "通用"},
         {"name": "status_name", "label": "状态名称", "example": "成功", "category": "通用"},
-        {"name": "action_name", "label": "操作名称", "example": "导入", "category": "通用"},
+        {"name": "action_name", "label": "操作名称", "example": "刷新", "category": "通用"},
+        {"name": "task_id", "label": "任务 ID", "example": "task-123", "category": "通用"},
+        # 媒体主体字段
         {"name": "anime_title", "label": "作品标题", "example": "某动画", "category": "媒体"},
         {"name": "season", "label": "季度", "example": "1", "category": "媒体"},
         {"name": "episode", "label": "集数", "example": "1", "category": "媒体"},
+        {"name": "episode_range", "label": "集数范围", "example": "1-3, 5", "category": "媒体"},
+        {"name": "episode_count", "label": "分集数量", "example": "12", "category": "媒体"},
+        {"name": "media_type", "label": "媒体类型", "example": "电视剧", "category": "媒体"},
+        {"name": "year", "label": "年份", "example": "2026", "category": "媒体"},
+        {"name": "media_id", "label": "媒体 ID", "example": "media-123", "category": "媒体"},
+        {"name": "tmdb_id", "label": "TMDB ID", "example": "12345", "category": "媒体"},
+        # 来源与刷新字段
         {"name": "provider", "label": "来源", "example": "bilibili", "category": "来源"},
+        {"name": "source", "label": "来源标识", "example": "bilibili", "category": "来源"},
+        {"name": "trigger_name", "label": "触发方式", "example": "自动追更", "category": "刷新"},
+        {"name": "search_term", "label": "搜索词", "example": "某动画", "category": "刷新"},
+        {"name": "search_type", "label": "搜索类型", "example": "标题", "category": "刷新"},
+        # 结果与诊断字段
         {"name": "comment_count", "label": "弹幕数", "example": "1000", "category": "结果"},
         {"name": "added_count", "label": "新增数", "example": "50", "category": "结果"},
+        {"name": "success_count", "label": "成功数", "example": "12", "category": "结果"},
+        {"name": "failed_count", "label": "失败数", "example": "1", "category": "结果"},
+        {"name": "message", "label": "说明", "example": "任务已完成", "category": "结果"},
         {"name": "duration", "label": "耗时", "example": "5", "category": "结果"},
         {"name": "error", "label": "错误信息", "example": "网络超时", "category": "结果"},
+        # 系统与扩展上下文
+        {"name": "finished_at", "label": "完成时间", "example": "2026-10-02 21:00:00", "category": "系统"},
+        {"name": "webhook_source", "label": "Webhook 来源", "example": "Emby", "category": "系统"},
+        {"name": "image_url", "label": "图片地址", "example": "海报图片 URL", "category": "媒体"},
     ]
-    return common_vars
 
 
 def _get_sample_variables(template_id: str, status: str) -> Dict[str, Any]:
-    """获取示例变量值"""
+    """返回覆盖所有模板流程的预览上下文，未使用字段使用空值。"""
     base_vars = {
-        "status_icon": "✅" if status == "success" else "❌",
-        "status_name": "成功" if status == "success" else "失败",
-        "action_name": "导入",
+        "status_icon": "✅" if status == "success" else ("ℹ️" if status == "no_change" else "❌"),
+        "status_name": {"success": "成功", "failed": "失败", "no_change": "无变化"}.get(status, "成功"),
+        "action_name": "刷新",
+        "task_id": "task-preview-123",
         "anime_title": "某部动画作品",
         "season": 1,
         "episode": 1,
+        "episode_range": "1-3, 5",
+        "episode_count": 12,
+        "media_type": "电视剧",
+        "year": 2026,
+        "media_id": "media-preview-123",
+        "tmdb_id": "12345",
         "provider": "bilibili",
+        "source": "bilibili",
+        "trigger_name": "自动追更",
+        "search_term": "某部动画作品",
+        "search_type": "标题",
         "comment_count": 1234,
         "added_count": 56,
+        "success_count": 12,
+        "failed_count": 1,
+        "message": "任务已完成",
         "duration": 5,
+        "error": "网络连接超时" if status == "failed" else "",
+        "finished_at": "2026-10-02 21:00:00",
+        "webhook_source": "",
+        "image_url": _PREVIEW_IMAGE_URL,
     }
-    
-    if status == "failed":
-        base_vars["error"] = "网络连接超时"
-    
     return base_vars
 
 

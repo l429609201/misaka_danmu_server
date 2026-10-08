@@ -242,7 +242,7 @@ class TunnelService:
 async def apply_tunnel_from_notification_manager(
     tunnel_service: "TunnelService",
     notification_manager,
-    config_manager,
+    config_service,
     local_port: int,
 ) -> None:
     """
@@ -275,7 +275,7 @@ async def apply_tunnel_from_notification_manager(
             tunnel_enabled = True
             break
 
-    webhook_key = await config_manager.get("webhookApiKey", "")
+    webhook_key = await config_service.get("webhookApiKey", "")
     changed = tunnel_service.configure(
         enabled=tunnel_enabled,
         vps_proxy_url=vps_proxy_url,

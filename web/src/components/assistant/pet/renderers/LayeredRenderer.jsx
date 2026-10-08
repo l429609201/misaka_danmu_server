@@ -26,7 +26,7 @@ export function LayeredRenderer({ size = 120, className = '' }) {
     const eyes = eyesRef.current
     if (!stage || !eyes) return
     const sw = stage.clientWidth
-    const sh = stage.clientHeight || sw * (1852 / 1537)
+    const sh = stage.clientHeight || sw * (617 / 512)
     const ew = sw * eyeWidthRatio
     const eh = ew * eyeAspect
     eyes.style.width = `${ew}px`
@@ -39,7 +39,26 @@ export function LayeredRenderer({ size = 120, className = '' }) {
     const onResize = () => layout()
     window.addEventListener('resize', onResize)
 
-    // 鼠标跟随：相对舞台中心的方向，限幅到 followAmp
+    // 鼠标停止后结束补间，不再让待命角色常驻每帧刷新。
+    let raf = 0
+    const applyEyes = () => {
+      if (eyesRef.current) {
+        eyesRef.current.style.transform =
+          `translate(${cur.current.x}px, ${cur.current.y}px) scaleY(${blink.current})`
+      }
+    }
+    const tick = () => {
+      cur.current.x += (target.current.x - cur.current.x) * 0.12
+      cur.current.y += (target.current.y - cur.current.y) * 0.12
+      applyEyes()
+      if (Math.abs(target.current.x - cur.current.x) > 0.02 ||
+          Math.abs(target.current.y - cur.current.y) > 0.02) {
+        raf = requestAnimationFrame(tick)
+      } else {
+        raf = 0
+      }
+    }
+
     const onMove = e => {
       const stage = stageRef.current
       if (!stage) return
@@ -50,29 +69,20 @@ export function LayeredRenderer({ size = 120, className = '' }) {
       const dy = (e.clientY - centerY) / window.innerHeight
       target.current.x = Math.max(-1, Math.min(1, dx * 2)) * followAmp
       target.current.y = Math.max(-1, Math.min(1, dy * 2)) * followAmp
+      if (!raf) raf = requestAnimationFrame(tick)
     }
     window.addEventListener('mousemove', onMove)
 
-    // rAF：位移平滑逼近 + 应用眨眼缩放
-    let raf = 0
-    const tick = () => {
-      cur.current.x += (target.current.x - cur.current.x) * 0.12
-      cur.current.y += (target.current.y - cur.current.y) * 0.12
-      const eyes = eyesRef.current
-      if (eyes) {
-        eyes.style.transform =
-          `translate(${cur.current.x}px, ${cur.current.y}px) scaleY(${blink.current})`
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-
-    // 眨眼：随机间隔压扁一下
     let blinkTimer = 0
+    let blinkResetTimer = 0
     const scheduleBlink = () => {
       blinkTimer = setTimeout(() => {
         blink.current = 0.1
-        setTimeout(() => { blink.current = 1 }, 110)
+        applyEyes()
+        blinkResetTimer = setTimeout(() => {
+          blink.current = 1
+          applyEyes()
+        }, 110)
         scheduleBlink()
       }, 2500 + Math.random() * 2500)
     }
@@ -83,6 +93,7 @@ export function LayeredRenderer({ size = 120, className = '' }) {
       window.removeEventListener('mousemove', onMove)
       cancelAnimationFrame(raf)
       clearTimeout(blinkTimer)
+      clearTimeout(blinkResetTimer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

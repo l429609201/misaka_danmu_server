@@ -2,68 +2,35 @@
 指令系统模块
 提供命令的自动加载和注册功能
 """
-import os
-import importlib
-import inspect
 import logging
-from typing import Dict, Optional, Tuple, List, TYPE_CHECKING
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Dict, Optional, List, Any
 
-from .base import CommandHandler, parse_command
-from src.utils.image_utils import get_custom_domain
-
-if TYPE_CHECKING:
-    from src.api.dandan import DandanSearchAnimeResponse
+from src.schemas.dandan import DandanSearchAnimeResponse, DandanSearchAnimeItem
+from src.workflows.image_public_url import get_custom_domain
+from .base import CommandHandler, COMMAND_HANDLERS, parse_command
+from .clear_cache import ClearCacheCommand
+from .help import HelpCommand
+from .rate_limit_status import RateLimitStatusCommand
+from .refresh_danmaku import RefreshDanmakuCommand
+from .task_status import TaskStatusCommand
 
 logger = logging.getLogger(__name__)
 
-# 全局指令注册表
-_COMMAND_HANDLERS: Dict[str, CommandHandler] = {}
+_COMMAND_HANDLERS = COMMAND_HANDLERS
 
 
-def _get_commands_path():
-    """获取 commands 目录的绝对路径"""
-    return os.path.dirname(os.path.abspath(__file__))
-
-
-def _load_commands():
-    """
-    自动加载所有命令处理器
-    扫描 commands 目录下的所有 Python 模块，查找 CommandHandler 子类并注册
-    """
-    global _COMMAND_HANDLERS
-    
+def _load_commands() -> None:
+    """注册内建播放器指令。"""
     if _COMMAND_HANDLERS:
-        # 已加载，避免重复
         return
-    
-    commands_path = _get_commands_path()
-    
-    # 遍历 commands 目录中的所有 .py 文件
-    for filename in os.listdir(commands_path):
-        # 跳过特殊文件
-        if filename.startswith('_') or filename == 'base.py' or not filename.endswith('.py'):
-            continue
-        
-        module_name = filename[:-3]  # 去掉 .py 后缀
-        
-        try:
-            # 动态导入模块
-            module = importlib.import_module(f'.{module_name}', package='src.commands')
-            
-            # 查找模块中的 CommandHandler 子类
-            for name, obj in inspect.getmembers(module, inspect.isclass):
-                # 检查是否是 CommandHandler 的子类（但不是 CommandHandler 本身）
-                if issubclass(obj, CommandHandler) and obj is not CommandHandler:
-                    # 实例化并注册
-                    handler = obj()
-                    _COMMAND_HANDLERS[handler.name] = handler
-                    logger.info(f"已加载命令处理器: @{handler.name} (来自模块 {module_name})")
-                    
-        except Exception as e:
-            logger.error(f"加载命令模块 {module_name} 失败: {e}", exc_info=True)
-    
-    logger.info(f"命令系统初始化完成，共加载 {len(_COMMAND_HANDLERS)} 个命令")
+    for handler_class in (
+        ClearCacheCommand, HelpCommand, RateLimitStatusCommand,
+        RefreshDanmakuCommand, TaskStatusCommand,
+    ):
+        handler = handler_class()
+        _COMMAND_HANDLERS[handler.name] = handler
+        logger.info("已加载命令处理器: @%s", handler.name)
+    logger.info("命令系统初始化完成，共加载 %d 个命令", len(_COMMAND_HANDLERS))
 
 
 def get_all_handlers() -> Dict[str, CommandHandler]:
@@ -93,24 +60,21 @@ def get_handler(command_name: str) -> Optional[CommandHandler]:
     return handlers.get(command_name.upper())
 
 
-async def handle_command(search_term: str, token: str, session: AsyncSession,
-                        config_manager, cache_manager, **kwargs) -> Optional["DandanSearchAnimeResponse"]:
+async def handle_command(search_term: str, token: str, session: object,
+                        config_service, **kwargs) -> Optional["DandanSearchAnimeResponse"]:
     """
     处理指令
-    
+
     Args:
         search_term: 搜索词
         token: 用户token
-        session: 数据库会话
-        config_manager: 配置管理器
-        cache_manager: 缓存管理器
+        session: 保留的兼容参数，命令通过服务管理事务
+        config_service: 配置管理器
         **kwargs: 其他依赖
-        
+
     Returns:
         指令响应 或 None（不是指令）
     """
-    from src.api.dandan import DandanSearchAnimeResponse, DandanSearchAnimeItem
-    
     # 解析指令
     parsed = parse_command(search_term)
     if not parsed:
@@ -123,7 +87,7 @@ async def handle_command(search_term: str, token: str, session: AsyncSession,
     handler = handlers.get(command_name)
     
     # 获取自定义域名和图片URL（http/https 均支持，格式不合规时降级）
-    custom_domain = await get_custom_domain(config_manager)
+    custom_domain = await get_custom_domain(config_service)
     image_url = f"{custom_domain}/static/logo.png" if custom_domain else "/static/logo.png"
     
     if not handler:
@@ -168,7 +132,7 @@ async def handle_command(search_term: str, token: str, session: AsyncSession,
         ])
     
     # 执行指令
-    return await handler.execute(token, args, session, config_manager, cache_manager=cache_manager, **kwargs)
+    return await handler.execute(token, args, session, config_service, **kwargs)
 
 
 # 导出公共接口

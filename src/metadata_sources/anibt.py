@@ -10,7 +10,8 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from fastapi import Request
 
-from src.db import crud, models
+from src.schemas import MetadataDetailsResponse, User
+from src.services.service_container import get_database_service
 from src._version import APP_VERSION
 from .base import BaseMetadataSource
 
@@ -59,18 +60,19 @@ class AniBTMetadataSource(BaseMetadataSource):
     }]
 
     async def _base_url(self) -> str:
-        return (await self.config_manager.get("anibtApiBaseUrl", "https://anibt.net")).rstrip("/")
+        return (await self.config_service.get("anibtApiBaseUrl", "https://anibt.net")).rstrip("/")
 
     async def _client(self) -> httpx.AsyncClient:
         proxy = None
-        proxy_mode = await self.config_manager.get("proxyMode", "none")
-        if proxy_mode == "none" and (await self.config_manager.get("proxyEnabled", "false")).lower() == "true":
+        proxy_mode = await self.config_service.get("proxyMode", "none")
+        if proxy_mode == "none" and (await self.config_service.get("proxyEnabled", "false")).lower() == "true":
             proxy_mode = "http_socks"
         if proxy_mode == "http_socks":
-            async with self._session_factory() as session:
-                setting = await crud.get_metadata_source_setting_by_name(session, self.provider_name)
+            # 已迁移：改走 Repository 层（DatabaseService.metadata_source）
+            db = get_database_service()
+            setting = await db.metadata_source.get_metadata_source_setting_by_name(self.provider_name)
             if setting and setting.get("useProxy"):
-                proxy = await self.config_manager.get("proxyUrl", "") or None
+                proxy = await self.config_service.get("proxyUrl", "") or None
         return httpx.AsyncClient(
             base_url=await self._base_url(), timeout=15.0, proxy=proxy,
             headers={"User-Agent": _ANIBT_UA},
@@ -81,7 +83,7 @@ class AniBTMetadataSource(BaseMetadataSource):
             return None
         if value.startswith(("http://", "https://")):
             return value
-        image_base = await self.config_manager.get("anibtImageBaseUrl", "")
+        image_base = await self.config_service.get("anibtImageBaseUrl", "")
         return urljoin((image_base or await self._base_url()).rstrip("/") + "/", value.lstrip("/"))
 
     async def _pick_image(self, item: Dict[str, Any]) -> Optional[str]:
@@ -101,7 +103,7 @@ class AniBTMetadataSource(BaseMetadataSource):
             return "tv_series"
         return "other"
 
-    async def _to_result(self, item: Dict[str, Any]) -> models.MetadataDetailsResponse:
+    async def _to_result(self, item: Dict[str, Any]) -> MetadataDetailsResponse:
         titles = item.get("title") if isinstance(item.get("title"), dict) else {}
         bgm_id = item.get("bgmId")
         title = (titles.get("chinese") or titles.get("primary") or item.get("nameCn")
@@ -139,7 +141,7 @@ class AniBTMetadataSource(BaseMetadataSource):
             f"评分{item.get('averageScore') or item.get('rating')}" if item.get("averageScore") or item.get("rating") else "",
             "、".join(str(genre) for genre in genres[:5]) if genres else "",
         ]))
-        return models.MetadataDetailsResponse(
+        return MetadataDetailsResponse(
             id=str(bgm_id or item.get("_id") or item.get("animeId")), provider=self.provider_name,
             title=title, type=self._media_type(item), bangumiId=str(bgm_id) if bgm_id else None,
             nameEn=titles.get("english"), nameJp=name_jp,
@@ -155,7 +157,7 @@ class AniBTMetadataSource(BaseMetadataSource):
         )
 
     @staticmethod
-    def _merge_result(base: models.MetadataDetailsResponse, detail: models.MetadataDetailsResponse) -> None:
+    def _merge_result(base: MetadataDetailsResponse, detail: MetadataDetailsResponse) -> None:
         """把 AniBT 详情字段合并回搜索结果，保持插件内部自行补全。"""
         base.aliasesCn = list(dict.fromkeys((base.aliasesCn or []) + (detail.aliasesCn or [])))
         base.aliasesJp = list(dict.fromkeys((base.aliasesJp or []) + (detail.aliasesJp or [])))
@@ -168,7 +170,7 @@ class AniBTMetadataSource(BaseMetadataSource):
             base.type = detail.type
         base.extra = {**(base.extra or {}), **(detail.extra or {})}
 
-    async def _search_endpoint(self, keyword: str, user: models.User) -> List[models.MetadataDetailsResponse]:
+    async def _search_endpoint(self, keyword: str, user: User) -> List[MetadataDetailsResponse]:
         # why：季度接口的 query 是 AniBT 官方统一标题索引，会跨季度匹配全部标题字段。
         async with await self._client() as client:
             response = await client.get("/api/seasons/anime", params={"query": keyword[:120]})
@@ -182,18 +184,18 @@ class AniBTMetadataSource(BaseMetadataSource):
         if detail_tasks:
             details = await asyncio.gather(*detail_tasks, return_exceptions=True)
             for base, detail in zip(results[:3], details):
-                if isinstance(detail, models.MetadataDetailsResponse):
+                if isinstance(detail, MetadataDetailsResponse):
                     self._merge_result(base, detail)
         return results
 
-    async def search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
+    async def search(self, keyword: str, user: User, mediaType: Optional[str] = None) -> List[MetadataDetailsResponse]:
         keyword = (keyword or "").strip()
         if not keyword:
             return []
         cache_key = f"season_query_v2:{mediaType or 'all'}:{keyword[:120]}"
         cached = await self.cache_manager.get("anibt_search", cache_key)
         if isinstance(cached, list):
-            return [models.MetadataDetailsResponse(**row) for row in cached]
+            return [MetadataDetailsResponse(**row) for row in cached]
         results = await self._search_endpoint(keyword, user)
         if mediaType:
             results = [item for item in results if item.type == mediaType]
@@ -203,14 +205,14 @@ class AniBTMetadataSource(BaseMetadataSource):
         )
         return results
 
-    async def get_details(self, item_id: str, user: models.User, mediaType: Optional[str] = None) -> Optional[models.MetadataDetailsResponse]:
+    async def get_details(self, item_id: str, user: User, mediaType: Optional[str] = None) -> Optional[MetadataDetailsResponse]:
         bgm_id = str(item_id).removeprefix("bgm:").strip()
         if not bgm_id.isdigit():
             return None
         cache_key = f"v2:{bgm_id}"
         cached = await self.cache_manager.get("anibt_details", cache_key)
         if isinstance(cached, dict):
-            return models.MetadataDetailsResponse(**cached)
+            return MetadataDetailsResponse(**cached)
         async with await self._client() as client:
             response = await client.get("/api/anime/lookup", params={"source": "bgm", "id": bgm_id})
             if response.status_code == 404:
@@ -223,7 +225,7 @@ class AniBTMetadataSource(BaseMetadataSource):
         await self.cache_manager.set("anibt_details", cache_key, result.model_dump(), ttl_seconds=21600)
         return result
 
-    async def search_aliases(self, keyword: str, user: models.User) -> Set[str]:
+    async def search_aliases(self, keyword: str, user: User) -> Set[str]:
         aliases: Set[str] = set()
         for item in (await self.search(keyword, user))[:5]:
             aliases.update(filter(None, [item.title, item.nameEn, item.nameJp, item.nameRomaji]))
@@ -240,7 +242,7 @@ class AniBTMetadataSource(BaseMetadataSource):
         except Exception as exc:
             return {"code": "error", "message": f"AniBT 连接失败: {exc}"}
 
-    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: models.User, request: Request) -> Any:
+    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: User, request: Request) -> Any:
         if action_name != "discoverSeason":
             raise NotImplementedError(f"AniBT 未实现操作: {action_name}")
         # why：探索只查询一个季度；不再向前端暴露多季度列表或做多月聚合。
@@ -265,7 +267,7 @@ class AniBTMetadataSource(BaseMetadataSource):
 
     async def check_subscription_capability(self, user=None) -> Dict[str, Any]:
         # why：入口改到源配置页填写私有 RSS，订阅由 sync_config_subscriptions 保存时自动创建。
-        rss_url = (await self.config_manager.get("anibtRssUrl", "") or "").strip()
+        rss_url = (await self.config_service.get("anibtRssUrl", "") or "").strip()
         if not rss_url:
             return {
                 "available": False, "authRequired": True, "authStatus": "user_url",
@@ -277,49 +279,37 @@ class AniBTMetadataSource(BaseMetadataSource):
             "reason": None, "subscriptionTypes": self.subscription_types,
         }
 
-    async def sync_config_subscriptions(self, session) -> None:
-        """源配置保存后回调：按当前 anibtRssUrl 配置增量维护 RSS 订阅目标。
+    async def sync_config_subscriptions(self) -> None:
+        """配置保存后，原子更新当前 AniBT 私有 RSS 订阅目标。"""
+        rss_url = (await self.config_service.get("anibtRssUrl", "") or "").strip()
+        new_external_id = None
+        if rss_url:
+            parsed = urlparse(rss_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("请输入有效的 AniBT RSS 地址")
+            if parsed.hostname != "anibt.net" and not (parsed.hostname or "").endswith(".anibt.net"):
+                raise ValueError("RSS 地址必须来自 anibt.net")
+            # 订阅标识只保存摘要，避免 URL 中的私有鉴权参数泄露。
+            new_external_id = f"rss-{hashlib.sha256(rss_url.encode('utf-8')).hexdigest()[:20]}"
 
-        why：私有 RSS 属于源级配置。填写后自动 upsert 一条订阅目标（供 SubscriptionScanJob 扫描），
-        清空则取消对应订阅，避免用户还要去订阅页重复操作。
-        """
-        from src.db.crud import external_calendar as ext_cal_crud
-
-        rss_url = (await self.config_manager.get("anibtRssUrl", "") or "").strip()
-        # 找出当前 anibt 已有的 RSS 订阅目标（externalId 以 rss- 开头）
-        existing = await ext_cal_crud.list_subscription_targets(
-            session, provider=self.provider_name, subscription_type="anibt_rss_feed",
-            page=1, page_size=200,
-        )
-        existing_targets = existing.get("items", []) if isinstance(existing, dict) else (existing or [])
-
-        if not rss_url:
-            # 配置清空：取消所有 anibt RSS 订阅目标
-            for target in existing_targets:
-                await ext_cal_crud.unsubscribe(session, self.provider_name, target.get("externalId"))
-            return
-
-        parsed = urlparse(rss_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("请输入有效的 AniBT RSS 地址")
-        if parsed.hostname != "anibt.net" and not (parsed.hostname or "").endswith(".anibt.net"):
-            raise ValueError("RSS 地址必须来自 anibt.net")
-
-        # why：externalId 只存摘要，避免列表/日志泄露私有鉴权参数。
-        feed_id = hashlib.sha256(rss_url.encode("utf-8")).hexdigest()[:20]
-        new_external_id = f"rss-{feed_id}"
-
-        # 清理指向旧 RSS 地址的历史订阅目标（换地址时避免遗留）
-        for target in existing_targets:
-            if target.get("externalId") != new_external_id:
-                await ext_cal_crud.unsubscribe(session, self.provider_name, target.get("externalId"))
-
-        await ext_cal_crud.upsert_subscription_target(
-            session, provider=self.provider_name, external_id=new_external_id,
-            title="AniBT 私有 RSS", subscription_type="anibt_rss_feed",
-            extra={"animeType": "subscription_feed", "rssUrl": rss_url},
-            status="pending", commit=False,
-        )
+        db = get_database_service()
+        async with db.transaction():
+            existing = await db.external_calendar.list_subscription_targets(
+                provider=self.provider_name, subscription_type="anibt_rss_feed",
+                page=1, page_size=200,
+            )
+            targets = existing.get("list", []) if isinstance(existing, dict) else (existing or [])
+            for target in targets:
+                old_id = target.get("externalId")
+                if old_id and old_id != new_external_id:
+                    await db.external_calendar.unsubscribe(self.provider_name, old_id)
+            if new_external_id:
+                await db.external_calendar.upsert_subscription_target(
+                    provider=self.provider_name, external_id=new_external_id,
+                    title="AniBT 私有 RSS", subscription_type="anibt_rss_feed",
+                    extra={"animeType": "subscription_feed", "rssUrl": rss_url},
+                    status="pending",
+                )
 
     async def validate_subscription_payload(self, subscription_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         if subscription_type != "anibt_rss_feed":
@@ -369,7 +359,7 @@ class AniBTMetadataSource(BaseMetadataSource):
                 continue
             bgm_id = match.group(1)
             seen.add(bgm_id)
-            detail = await self.get_details(bgm_id, models.User(id=0, username="__anibt_rss__"))
+            detail = await self.get_details(bgm_id, User(id=0, username="__anibt_rss__"))
             items.append({
                 "provider": self.provider_name, "externalId": f"bgm-{bgm_id}",
                 "title": detail.title if detail else title, "animeType": detail.type if detail else "tv_series",

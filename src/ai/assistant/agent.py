@@ -5,25 +5,33 @@
   模型 →(要调工具)→ 执行工具 → 结果回灌 → 再问模型 →…→ 最终回答（流式）
 
 事件（yield dict）：
-  {"type":"tool","name","label","status":"running|done"}  工具调用进度
-  {"type":"delta","content"}   最终回答增量
-  {"type":"done"}
-  {"type":"error","content"}
+  {"type":"thinking","status":"running|done","started_at","elapsed_ms"}
+  {"type":"tool","tool_id","label","count","status":"running|done|error"}
+  {"type":"choice","title","prompt","options"} 终止本轮等待用户选择
+  {"type":"delta","content"} 最终回答增量
+  {"type":"done"} / {"type":"error","content"}
 
-P2 只启用只读工具（include_write=False），写类工具留到 P3。
+普通写工具只发确认事件；管理员本轮已授权的代码修复可自主执行。
 依赖导入置于文件头部，避免循环依赖。
 """
 
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+import re
+import time
+from uuid import uuid4
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, List, Optional
 from datetime import datetime
 
 import httpx
 
-from src.db import ConfigManager
+from src.services.config_service import ConfigService
+from src.services.assistant_code_service import code_authorized, code_write_authorized
+from .prompt_loader import get_coding_prompt
 from .personas import get_persona_prompt, DEFAULT_PERSONA
 from ..ai_providers import get_provider_config
+from .api_gateway import ConfirmationMode, resolve_api_operation
+from .security_gateway import contains_forbidden_control_content
 from .mcp import McpManager, McpToolSpec
 from .tools import registry
 from ..ai_metrics import AIMetricsCollector, AICallMetrics
@@ -33,35 +41,59 @@ ai_responses_logger = logging.getLogger("ai_responses")  # 专用日志器，用
 
 _TIMEOUT = 120.0
 _MAX_TOOL_ROUNDS = 8  # 最多工具调用轮数，防止无限循环（三段式导入需 搜索→查分集→导入 多步只读调用）
+_CHOICE_SECRET = re.compile(r"api[_\s-]?key|access[_\s-]?token|authorization|password|passwd|secret|cookie|密钥|令牌|密码", re.I)
+_CHOICE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "ask_user_choice",
+        "description": "需要用户在几个明确选项间选择时终止本轮并等待选择；不是写操作确认。",
+        "parameters": {
+            "type": "object", "required": ["title", "prompt", "options"],
+            "properties": {
+                "title": {"type": "string"}, "prompt": {"type": "string"},
+                "options": {"type": "array", "minItems": 2, "maxItems": 8, "items": {
+                    "type": "object", "required": ["id", "label"],
+                    "properties": {"id": {"type": "string"}, "label": {"type": "string"},
+                                   "description": {"type": "string"}},
+                }},
+            },
+        },
+    },
+}
 
 
 class AssistantAgent:
     """支持工具调用的御坂助手 Agent。"""
 
-    def __init__(self, config_manager: ConfigManager, session_factory=None):
-        self.config_manager = config_manager
+    def __init__(
+        self,
+        config_service: ConfigService,
+        session_factory=None,
+        on_metric_record: Optional[Callable[[AICallMetrics], Awaitable[None]]] = None,
+    ) -> None:
+        self.config_service = config_service
         self.session_factory = session_factory
         self.logger = logging.getLogger(self.__class__.__name__)
         # 外部 MCP 服务器工具管理器（工具不入静态 registry，按前缀路由）
-        self.mcp = McpManager(config_manager)
-        # AI 调用指标收集器（用于统计 LLM 工具调用的 token 消耗）
-        self.metrics = AIMetricsCollector(db_session_factory=session_factory)
+        self.mcp = McpManager(config_service)
+        # 指标只通过事件回调交给上层服务持久化，Agent 不直接接触数据库。
+        self.metrics = AIMetricsCollector(on_record=on_metric_record)
 
     async def _load_ai_config(self) -> Dict[str, str]:
-        provider = await self.config_manager.get("aiProvider", "deepseek")
-        api_key = await self.config_manager.get("aiApiKey", "")
-        base_url = await self.config_manager.get("aiBaseUrl", "")
-        model = await self.config_manager.get("aiModel", "")
+        provider = await self.config_service.get("aiProvider", "deepseek")
+        api_key = await self.config_service.get("aiApiKey", "")
+        base_url = await self.config_service.get("aiBaseUrl", "")
+        model = await self.config_service.get("aiModel", "")
 
         # 御坂助手高级 LLM 参数
-        temperature = float(await self.config_manager.get("assistantTemperature", "0.7"))
-        max_tokens = int(await self.config_manager.get("assistantMaxTokens", "2000"))
-        top_p = float(await self.config_manager.get("assistantTopP", "0.9"))
-        presence_penalty = float(await self.config_manager.get("assistantPresencePenalty", "0.0"))
-        frequency_penalty = float(await self.config_manager.get("assistantFrequencyPenalty", "0.0"))
-        timeout = int(await self.config_manager.get("assistantTimeout", "120"))
-        proxy_enabled = (await self.config_manager.get("assistantProxyEnabled", "false")).lower() == "true"
-        log_raw = (await self.config_manager.get("aiLogRawResponse", "false")).lower() == "true"
+        temperature = float(await self.config_service.get("assistantTemperature", "0.7"))
+        max_tokens = int(await self.config_service.get("assistantMaxTokens", "2000"))
+        top_p = float(await self.config_service.get("assistantTopP", "0.9"))
+        presence_penalty = float(await self.config_service.get("assistantPresencePenalty", "0.0"))
+        frequency_penalty = float(await self.config_service.get("assistantFrequencyPenalty", "0.0"))
+        timeout = int(await self.config_service.get("assistantTimeout", "120"))
+        proxy_enabled = (await self.config_service.get("assistantProxyEnabled", "false")).lower() == "true"
+        log_raw = (await self.config_service.get("aiLogRawResponse", "false")).lower() == "true"
 
         if not base_url:
             cfg = get_provider_config(provider) or {}
@@ -70,7 +102,7 @@ class AssistantAgent:
         # 代理配置
         proxy_url = ""
         if proxy_enabled:
-            proxy_url = await self.config_manager.get("proxyUrl", "")
+            proxy_url = await self.config_service.get("proxyUrl", "")
 
         return {
             "provider": provider,
@@ -171,11 +203,9 @@ class AssistantAgent:
         rich_message: bool = False,
         include_write_tools: bool = True,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """ReAct 主循环：先用非流式判断工具调用，最终回答用流式输出。
+        """非流式选择工具，最终回答流式输出；写操作只发确认事件。
 
-        写类工具的风险确认在对话中自然完成（模型先说明意图再执行），
-        不产出独立的 confirm 事件，调用方无需维护挂起状态机。
-        工具名带 mcp__ 前缀的路由到外部 MCP 服务器，其余走内部注册表。
+        外部 MCP 当前不进入模型工具目录，避免绕过站内流控与密钥边界。
 
         :param rich_text: 目标渠道是否支持 Markdown 渲染（决定 system prompt 里的排版约束）。
             默认 True 兼容 Web 端；纯文本渠道（企业微信/Server酱）需显式传 False。
@@ -184,8 +214,7 @@ class AssistantAgent:
             时生效；无表格语法的发送方式需传 False。
         :param rich_message: 是否走结构化富消息（Telegram sendRichMessage，GFM 兼容）。
             True 时开放表格/标题/任务列表/公式等完整排版能力。
-        :param include_write_tools: 是否向 LLM 暴露写类工具（含 MCP 的写权限工具）。
-            默认 True，Web 端与通知渠道均为全功能；传 False 则只暴露只读工具。
+        :param include_write_tools: 仅 Web 确认卡渠道允许写工具；通知渠道必须传 False。
         """
         cfg = await self._load_ai_config()
         if not (cfg["api_key"] and cfg["model"] and cfg["base_url"]):
@@ -197,35 +226,51 @@ class AssistantAgent:
             is_channel=is_channel, supports_table=supports_table,
             rich_message=rich_message,
         )
-        tools = registry.openai_tools(include_write=include_write_tools)
-        # 合并外部 MCP 工具：发现失败只少几个工具，不影响内部工具可用性
-        mcp_specs = await self.mcp.list_enabled_tool_specs(
-            include_write=include_write_tools
-        )
-        if mcp_specs:
-            tools += [spec.to_openai_schema() for spec in mcp_specs]
-            self.logger.debug(f"已接入 {len(mcp_specs)} 个外部 MCP 工具")
+        if not include_write_tools:
+            messages[0]["content"] += "\n\n当前渠道只有只读工具，不支持确认卡或代办写操作；需要修改数据时请引导用户到 Web 界面。"
+        # 提示词、目录和执行阶段必须复用同一份已初始化的可信上下文。
         context = {"session_factory": self.session_factory}
         if context_extra:
             context.update(context_extra)
+        allow_code = include_write_tools and code_authorized(context)
+        allow_code_write = allow_code and code_write_authorized(context)
+        if allow_code:
+            messages[0]['content'] += '\n\n' + get_coding_prompt()
+            messages[0]['content'] += ('\n本轮管理员已明确授权自主代码修复，可应用通过验证的补丁而不重复弹卡；不授权其他业务写操作或部署。'
+                                       if allow_code_write else
+                                       '\n本轮仅诊断，真实源码应用仍需管理员确认卡，不能将用户聊天中的同意当作程序授权。')
+        tools = [*registry.openai_tools(include_write=include_write_tools, include_code=allow_code), _CHOICE_TOOL]
+        # 外部 MCP 的“只读”标签不可证明服务端不会读取流控配置；目前不向模型开放。
+        mcp_specs: List[McpToolSpec] = []
 
         log_raw = cfg.get("log_raw_response", False)
+        tool_count = 0
 
         try:
-            for _round in range(_MAX_TOOL_ROUNDS):
+            for _round in range(20 if allow_code_write else _MAX_TOOL_ROUNDS):
+                started_at = datetime.now().astimezone().isoformat()
+                thinking_start = time.monotonic()
+                yield {"type": "thinking", "status": "running", "started_at": started_at, "elapsed_ms": 0}
                 self._log_raw(log_raw, f"第 {_round + 1} 轮请求 messages", messages)
 
                 start_time = datetime.now()
-                resp = await self._post(cfg, {
-                    "model": cfg["model"],
-                    "messages": messages,
-                    "tools": tools,
-                    "tool_choice": "auto",
-                    "stream": False,
-                    "temperature": cfg["temperature"],
-                    "top_p": cfg["top_p"],
-                })
+                try:
+                    resp = await self._post(cfg, {
+                        "model": cfg["model"],
+                        "messages": messages,
+                        "tools": tools,
+                        "tool_choice": "auto",
+                        "stream": False,
+                        "temperature": cfg["temperature"],
+                        "top_p": cfg["top_p"],
+                    })
+                except Exception:
+                    yield {"type": "thinking", "status": "done", "started_at": started_at,
+                           "elapsed_ms": max(0, int((time.monotonic() - thinking_start) * 1000))}
+                    raise
                 duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+                yield {"type": "thinking", "status": "done", "started_at": started_at,
+                       "elapsed_ms": max(0, int((time.monotonic() - thinking_start) * 1000))}
 
                 if resp.status_code != 200:
                     detail = resp.text[:300]
@@ -273,8 +318,6 @@ class AssistantAgent:
                         yield ev
                     return
 
-                # 写操作确认已改为自然对话方式：由 persona 提示词约束 AI
-                # 先说明意图并等用户同意，不再产出 confirm 事件打断前端
                 messages.append({
                     "role": "assistant",
                     "content": msg.get("content") or "",
@@ -284,20 +327,68 @@ class AssistantAgent:
                     fn = tc.get("function") or {}
                     name = fn.get("name") or ""
                     label = self._tool_label(name, mcp_specs)
-                    yield {"type": "tool", "name": name, "label": label, "status": "running"}
                     try:
                         args = json.loads(fn.get("arguments") or "{}")
+                        if not isinstance(args, dict):
+                            args = {}
                     except json.JSONDecodeError:
                         args = {}
-                    self._log_raw(log_raw, f"工具调用 {name} 入参", args)
-                    # 按 mcp__ 前缀路由：外部 MCP 工具走管理器，其余走内部注册表
-                    if McpManager.is_mcp_tool_name(name):
-                        # 复用本轮已发现的规格，避免缓存过期时重连所有服务器
-                        result = await self.mcp.call_tool(name, args, mcp_specs)
+                    if name == "ask_user_choice":
+                        choice = self._validated_choice(args)
+                        if choice is None:
+                            yield {"type": "error", "content": "模型返回的选择选项无效，请重试。"}
+                        else:
+                            yield {"type": "choice", **choice}
+                        return
+                    if name.startswith('code_') and not allow_code:
+                        result = {'ok': False, 'error': '当前请求未开放代码工具'}
+                    elif McpManager.is_mcp_tool_name(name):
+                        result = {"ok": False, "error": "外部 MCP 工具当前不可用"}
                     else:
-                        result = await registry.execute(name, args, context)
+                        tool = registry.get(name)
+                        operation = resolve_api_operation(args.get("operation_id")) if name == "call_api" else None
+                        needs_confirmation = (
+                            operation.required_confirmation is ConfirmationMode.REQUIRED
+                            if operation is not None else
+                            tool.required_confirmation is ConfirmationMode.REQUIRED if tool else False
+                        )
+                        if name in {'code_apply_patch', 'code_rollback_patch'} and allow_code_write:
+                            needs_confirmation = False
+                        preview_error = None
+                        if needs_confirmation and include_write_tools and name in {'code_apply_patch', 'code_rollback_patch'}:
+                            preview_result = await registry.execute('code_patch_status', {'draft_id': args.get('draft_id')}, context)
+                            if not preview_result.get('ok', False):
+                                preview_error = preview_result
+                        if preview_error is not None:
+                            result = preview_error
+                        elif needs_confirmation:
+                            if not include_write_tools:
+                                result = {"ok": False, "error": "当前渠道不允许写操作"}
+                            else:
+                                yield {
+                                    "type": "confirm", "name": name, "label": label,
+                                    "description": (operation.summary if operation else tool.description),
+                                    "arguments": args,
+                                    "irreversible": (operation.effect.value == "destructive_write" if operation else tool.irreversible),
+                                }
+                                return
+                        else:
+                            tool_id = uuid4().hex
+                            tool_count += 1
+                            count = tool_count
+                            yield {"type": "tool", "tool_id": tool_id, "name": name,
+                                   "label": label, "count": count, "status": "running"}
+                            try:
+                                result = await registry.execute(name, args, context)
+                            except Exception:
+                                yield {"type": "tool", "tool_id": tool_id, "name": name,
+                                       "label": label, "count": count, "status": "error"}
+                                raise
+                            failure = {} if result.get('ok', False) else self._tool_failure_summary(result)
+                            yield {"type": "tool", "tool_id": tool_id, "name": name,
+                                   "label": label, "count": count,
+                                   "status": "done" if result.get("ok", False) else "error", **failure}
                     self._log_raw(log_raw, f"工具调用 {name} 返回", result)
-                    yield {"type": "tool", "name": name, "label": label, "status": "done"}
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.get("id"),
@@ -312,6 +403,45 @@ class AssistantAgent:
         except Exception as e:  # noqa: BLE001
             self.logger.error(f"御坂 Agent 异常: {e}", exc_info=True)
             yield {"type": "error", "content": "对话出错了，请稍后重试。"}
+
+    @staticmethod
+    def _tool_failure_summary(result: Dict[str, Any]) -> Dict[str, str]:
+        """只公开固定错误分类，不暴露工具返回的任意异常或运行数据。"""
+        error = result.get('error')
+        error = error if isinstance(error, str) else ''
+        if '白名单' in error:
+            return {'error_code': 'unsupported_config', 'error_message': '配置键不在可用清单，请按工具参数选择'}
+        if '禁止' in error or '不允许' in error or '不可访问' in error:
+            return {'error_code': 'access_denied', 'error_message': '该查询不在助手允许访问的范围'}
+        if '未初始化' in error or '管理器不可用' in error:
+            return {'error_code': 'service_unavailable', 'error_message': '所需服务尚不可用'}
+        if '参数' in error or '缺少' in error or '必须' in error:
+            return {'error_code': 'invalid_arguments', 'error_message': '查询参数不符合工具要求'}
+        return {'error_code': 'tool_failed', 'error_message': '查询未完成，当前信息未能核实'}
+
+    @staticmethod
+    def _validated_choice(args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """仅允许有限长度的展示字段进入选择事件。"""
+        if contains_forbidden_control_content(args) or _CHOICE_SECRET.search(json.dumps(args, ensure_ascii=False)):
+            return None
+        title, prompt, options = args.get("title"), args.get("prompt"), args.get("options")
+        if not isinstance(title, str) or not isinstance(prompt, str) or not isinstance(options, list):
+            return None
+        if not (title.strip() and prompt.strip() and 2 <= len(options) <= 8):
+            return None
+        clean = []
+        seen = set()
+        for option in options:
+            if not isinstance(option, dict):
+                return None
+            oid, label = option.get("id"), option.get("label")
+            if (not isinstance(oid, str) or not isinstance(label, str) or
+                    not oid.strip() or not label.strip() or len(oid) > 64 or oid in seen):
+                return None
+            seen.add(oid)
+            clean.append({"id": oid, "label": label[:120],
+                          "description": str(option.get("description") or "")[:300]})
+        return {"title": title[:120], "prompt": prompt[:1000], "options": clean}
 
     @staticmethod
     def _tool_label(name: str, mcp_specs: Optional[List[McpToolSpec]] = None) -> str:
@@ -329,6 +459,21 @@ class AssistantAgent:
         self, cfg: Dict[str, str], messages: List[Dict[str, Any]]
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """最终回答用流式输出（不再带 tools，纯生成文本）。"""
+        incomplete = False
+        for message in messages:
+            if message.get('role') != 'tool':
+                continue
+            try:
+                result = json.loads(message.get('content') or '{}')
+            except (ValueError, TypeError):
+                incomplete = True
+                continue
+            if not isinstance(result, dict) or result.get('ok') is not True:
+                incomplete = True
+        if incomplete:
+            messages = [*messages, {'role': 'system', 'content':
+                        '本轮存在工具查询失败，证据不完整。最终汇报必须说明未能核实的部分，'
+                        '分开已核实事实与待验证建议，不得宣称已完整排查或已测量搜索速度。'}]
         url = f"{cfg['base_url']}/chat/completions"
         headers = {
             "Authorization": f"Bearer {cfg['api_key']}",
@@ -350,6 +495,7 @@ class AssistantAgent:
 
         start_time = datetime.now()
         total_tokens = 0  # 累计 token 使用量
+        completed = False
 
         timeout = httpx.Timeout(cfg.get("timeout", _TIMEOUT), connect=10.0)
         try:
@@ -379,11 +525,12 @@ class AssistantAgent:
                             continue
                         data = line[len("data:"):].strip()
                         if data == "[DONE]":
+                            completed = True
                             break
                         try:
                             chunk = json.loads(data)
-                        except json.JSONDecodeError:
-                            continue
+                        except json.JSONDecodeError as exc:
+                            raise ValueError("上游 AI 返回无效的流式数据") from exc
                         choices = chunk.get("choices") or []
                         if not choices:
                             continue
@@ -398,6 +545,8 @@ class AssistantAgent:
                             collected.append(piece)
                             yield {"type": "delta", "content": piece}
 
+            if not completed:
+                raise ValueError("上游 AI 流式回答未完整结束")
             duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
 
             # 记录成功的最终回答调用

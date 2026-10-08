@@ -316,8 +316,7 @@ class ServerChanChannel(BaseNotificationChannel):
 
         # 按钮降级为纯文本列表，并保存编号→callback_data 映射
         if result.reply_markup:
-            from src.services.notification_service import NotificationService
-            text = NotificationService._buttons_to_text_fallback(text, result.reply_markup)
+            text = self.service._buttons_to_text_fallback(text, result.reply_markup)
             # 提取 callback_data 列表，顺序与 _buttons_to_text_fallback 编号一致
             mapping = []
             for row in result.reply_markup:

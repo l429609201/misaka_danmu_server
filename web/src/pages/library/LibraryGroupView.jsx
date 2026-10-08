@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 弹幕库分组 + 拖拽容器
  * - 列表模式：单个 antd Table，dataSource 包含"分组头行"和"普通条目行"，保持列宽一致
  * - 卡片模式：平铺 grid，分组头是宽行，组内是卡片
@@ -143,8 +143,9 @@ const typeIconMap = {
   other: 'tv',
 }
 
-const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished, isDragging, isMobile }) => {
+const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished, isDragging, isMobile, deletingAnimeIds }) => {
   const { t } = useTranslation()
+  const isDeleting = deletingAnimeIds?.has(record.animeId)
   const imageSrc = getImageSrc(record)
   const hasFav = record.sources?.some(s => s.isFavorited)
   const hasInc = record.sources?.some(s => s.incrementalRefreshEnabled)
@@ -197,12 +198,17 @@ const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncreme
             <Dropdown menu={{ items: menuItems }} trigger={['click']}>
               <span className={`${isMobile ? 'w-8 h-8' : 'w-6 h-6'} bg-white/90 dark:bg-gray-600/90 rounded flex items-center justify-center cursor-pointer hover:bg-white dark:hover:bg-gray-500`}><MenuOutlined style={{ fontSize: isMobile ? 15 : 11 }} /></span>
             </Dropdown>
-            <span className={`${isMobile ? 'w-8 h-8' : 'w-6 h-6'} bg-white/90 dark:bg-gray-600/90 rounded flex items-center justify-center cursor-pointer hover:bg-white dark:hover:bg-gray-500 hover:text-red-500`} onClick={() => onDelete?.(record)}><MyIcon icon="delete" size={isMobile ? 16 : 12} /></span>
+            <Tooltip title={isDeleting ? t('libraryPage.deleteAlreadyRunning') : t('libraryGroup.btnDelete')}>
+              <button type="button" disabled={isDeleting} aria-label={t('libraryGroup.btnDelete')}
+                className={`${isMobile ? 'w-8 h-8' : 'w-6 h-6'} border-0 bg-white/90 dark:bg-gray-600/90 rounded flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:text-red-500`}
+                onClick={() => onDelete?.(record)}><MyIcon icon="delete" size={isMobile ? 16 : 12} /></button>
+            </Tooltip>
           </Space>
         </div>
       </div>
       {/* 信息区 */}
       <div className="p-1.5 flex flex-col gap-1">
+        {isDeleting && <Tag color="processing" className="self-start">{t('libraryPage.deletePending')}</Tag>}
         <Tooltip title={record.title}>
           <div className="text-xs font-medium leading-tight line-clamp-2" style={{ minHeight: '2.2em' }}>{record.title}</div>
         </Tooltip>
@@ -243,8 +249,9 @@ const DroppableCardItem = ({ record, children }) => {
 }
 
 // ---- 移动端列表模式：大卡片样式（复原旧版 renderCard 风格，集成拖拽）----
-const MobileLibraryCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished }) => {
+const MobileLibraryCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished, deletingAnimeIds }) => {
   const { t } = useTranslation()
+  const isDeleting = deletingAnimeIds?.has(record.animeId)
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `anime-${record.animeId}`,
     data: { type: 'anime', animeId: record.animeId, groupId: record.groupId ?? null },
@@ -308,8 +315,8 @@ const MobileLibraryCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, o
         ]}} trigger={['click']}>
           <Button size="small" type="text" icon={<MenuOutlined />}>{t('libraryGroup.btnMore')}</Button>
         </Dropdown>
-        <Button size="small" type="text" danger icon={<MyIcon icon="delete" size={16} />}
-          onClick={() => onDelete?.(record)}>{t('libraryGroup.btnDelete')}</Button>
+        <Button size="small" type="text" danger disabled={isDeleting} icon={<MyIcon icon="delete" size={16} />}
+          onClick={() => onDelete?.(record)}>{isDeleting ? t('libraryPage.deletePending') : t('libraryGroup.btnDelete')}</Button>
       </div>
     </div>
   )
@@ -580,7 +587,7 @@ const CollapsedGroupCard = ({ group, items, onClick, onDelete }) => {
 }
 
 const LibraryGroupView = ({
-  list, groups, viewMode,
+  list, groups, viewMode, deletingAnimeIds,
   columns,           // antd Table columns（列表模式）
   onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished,
   onSetGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onDeleteGroupSilent,
@@ -731,7 +738,7 @@ const LibraryGroupView = ({
   // 分组按代表排序位置排序（而非固定 sortOrder），让分组参与全局排序
   const sortedGroups = [...groups].sort((a, b) => groupSortIndex[a.id] - groupSortIndex[b.id])
 
-  const handlers = { onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished, isMobile }
+  const handlers = { onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished, isMobile, deletingAnimeIds }
 
   // ---- 列表模式渲染 ----
   const renderListMode = () => {

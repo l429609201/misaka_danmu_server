@@ -15,12 +15,13 @@ LLM 内部性能监测工具
     alerts = await perf_tools.get_active_alerts()
 """
 
+from src.services.service_container import get_database_service
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 
-from src.db.crud import performance as perf_crud
 from src.db import get_db_session_factory
+from src.services.service_container import get_database_service
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +66,12 @@ class PerformanceTools:
                 print(f"{m['metric_name']}: {m['value_float']} {m['unit']} [{m['status']}]")
         """
         try:
-            async with self.session_factory() as session:
-                metrics = await perf_crud.query_metrics(
-                    session,
-                    category=category,
-                    limit=limit
-                )
-                return [self._format_metric(m) for m in metrics]
+            db = get_database_service()
+            metrics = await db.performance_query.query_metrics(
+                category=category,
+                limit=limit
+            )
+            return [self._format_metric(m) for m in metrics]
         except Exception as e:
             logger.error(f"获取性能指标失败: {e}", exc_info=True)
             return []
@@ -97,13 +97,12 @@ class PerformanceTools:
                 print(f"连接池大小: {metric['value_int']}")
         """
         try:
-            async with self.session_factory() as session:
-                metric = await perf_crud.get_latest_metric(
-                    session,
-                    category=category,
-                    metric_name=metric_name
-                )
-                return self._format_metric(metric) if metric else None
+            db = get_database_service()
+            metric = await db.performance_query.get_latest_metric(
+                category=category,
+                metric_name=metric_name
+            )
+            return self._format_metric(metric) if metric else None
         except Exception as e:
             logger.error(f"获取指标值失败: {e}", exc_info=True)
             return None
@@ -134,7 +133,7 @@ class PerformanceTools:
             start_time = datetime.now() - timedelta(hours=hours)
 
             async with self.session_factory() as session:
-                metrics = await perf_crud.query_metrics(
+                metrics = await perfdb_service.query_metrics(
                     session,
                     category=category,
                     metric_name=metric_name,
@@ -175,15 +174,14 @@ class PerformanceTools:
         """
         try:
             start_time = datetime.now() - timedelta(hours=hours)
-            
-            async with self.session_factory() as session:
-                agg = await perf_crud.get_metric_aggregation(
-                    session,
-                    category=category,
-                    metric_name=metric_name,
-                    start_time=start_time
-                )
-                return agg
+
+            db = get_database_service()
+            agg = await db.performance_query.get_metric_aggregation(
+                category=category,
+                metric_name=metric_name,
+                start_time=start_time
+            )
+            return agg
         except Exception as e:
             logger.error(f"获取指标聚合统计失败: {e}", exc_info=True)
             return None
@@ -213,38 +211,36 @@ class PerformanceTools:
                 print(f"[{alert['alert_level']}] {alert['alert_message']}")
         """
         try:
-            async with self.session_factory() as session:
-                alerts = await perf_crud.query_alerts(
-                    session,
-                    is_resolved=False,
-                    limit=limit
-                )
-                return [self._format_alert(a) for a in alerts]
+            db = get_database_service()
+            alerts = await db.performance_query.query_alerts(
+                is_resolved=False,
+                limit=limit
+            )
+            return [self._format_alert(a) for a in alerts]
         except Exception as e:
             logger.error(f"获取告警列表失败: {e}", exc_info=True)
             return []
-    
+
     async def get_critical_alerts(self) -> List[Dict[str, Any]]:
         """
         获取严重级别的未解决告警
-        
+
         返回:
             严重告警列表
-        
+
         示例:
             critical = await perf_tools.get_critical_alerts()
             if critical:
                 print(f"⚠️ 发现 {len(critical)} 个严重告警！")
         """
         try:
-            async with self.session_factory() as session:
-                alerts = await perf_crud.query_alerts(
-                    session,
-                    is_resolved=False,
-                    alert_level="critical",
-                    limit=100
-                )
-                return [self._format_alert(a) for a in alerts]
+            db = get_database_service()
+            alerts = await db.performance_query.query_alerts(
+                is_resolved=False,
+                alert_level="critical",
+                limit=100
+            )
+            return [self._format_alert(a) for a in alerts]
         except Exception as e:
             logger.error(f"获取严重告警失败: {e}", exc_info=True)
             return []

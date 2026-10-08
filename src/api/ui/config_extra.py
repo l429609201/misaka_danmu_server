@@ -13,13 +13,19 @@ from urllib.parse import urlparse, quote, unquote
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 
-from src import security
-from src.db import crud, models, get_db_session, ConfigManager
-from src.db.crud.ai_metrics import get_ai_metrics_stats, get_ai_metrics_summary
+from src.utils.auth import security
+from src.services.database_service import DatabaseService
+from src.services.service_container import get_database_service
+from src.services.config_service import ConfigService
+from src.api.dependencies import get_config_service
+from src.schemas.auth import User
+from src.schemas.control.settings import ProxySettingsResponse, ProxySettingsUpdate
 from src.core import get_config_schema
-from src.services import ScraperManager, MetadataSourceManager, SchedulerManager
+from src.services.scraper_manager import ScraperManager
+from src.services.metadata_service import MetadataService
+from src.services.scheduler import SchedulerManager
 from src.ai.ai_prompts import (
     DEFAULT_AI_MATCH_PROMPT,
     DEFAULT_AI_SEASON_MAPPING_PROMPT,
@@ -33,10 +39,10 @@ from src.ai.ai_providers import get_all_providers, supports_balance_query, get_p
 from src.utils import DanmakuPathTemplate
 
 from src.api.dependencies import (
-    get_scraper_manager, get_metadata_manager, get_config_manager,
-    get_ai_matcher_manager, get_scheduler_manager
+    get_scraper_manager, get_metadata_service, get_config_service,
+    get_ai_service, get_scheduler_manager
 )
-from .models import (
+from src.schemas.ui_models import (
     ProxyTestResult, ProxyTestRequest, FullProxyTestResponse,
     SingleTargetTestRequest, SingleTargetTestResponse,
     CustomDanmakuPathRequest, CustomDanmakuPathResponse,
@@ -52,7 +58,7 @@ router = APIRouter()
 
 @router.get("/config/schema/parameters", summary="获取参数配置的 Schema")
 async def get_parameters_schema(
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """
     获取参数配置页面的 Schema 定义。
@@ -61,21 +67,18 @@ async def get_parameters_schema(
     return get_config_schema()
 
 
-@router.get("/config/proxy", response_model=models.ProxySettingsResponse, summary="获取代理配置")
+@router.get("/config/proxy", response_model=ProxySettingsResponse, summary="获取代理配置")
 async def get_proxy_settings(
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service)
 ):
     """获取全局代理配置。"""
-    # 并行获取所有代理配置
-    proxy_mode_task = crud.get_config_value(session, "proxyMode", "none")
-    proxy_url_task = crud.get_config_value(session, "proxyUrl", "")
-    proxy_enabled_task = crud.get_config_value(session, "proxyEnabled", "false")
-    accelerate_proxy_url_task = crud.get_config_value(session, "accelerateProxyUrl", "")
-
-    proxy_mode, proxy_url, proxy_enabled_str, accelerate_proxy_url = await asyncio.gather(
-        proxy_mode_task, proxy_url_task, proxy_enabled_task, accelerate_proxy_url_task
-    )
+    # 同一事务内串行读取，避免多个协程共享 AsyncSession。
+    async with db.transaction():
+        proxy_mode = await db.config.get_value("proxyMode", "none")
+        proxy_url = await db.config.get_value("proxyUrl", "")
+        proxy_enabled_str = await db.config.get_value("proxyEnabled", "false")
+        accelerate_proxy_url = await db.config.get_value("accelerateProxyUrl", "")
 
     proxy_enabled = proxy_enabled_str.lower() == 'true'
 
@@ -96,7 +99,7 @@ async def get_proxy_settings(
         except Exception as e:
             logger.error(f"解析存储的代理URL '{proxy_url}' 失败: {e}")
 
-    return models.ProxySettingsResponse(
+    return ProxySettingsResponse(
         proxyMode=proxy_mode,
         proxyProtocol=protocol,
         proxyHost=host,
@@ -111,10 +114,10 @@ async def get_proxy_settings(
 
 @router.put("/config/proxy", status_code=status.HTTP_204_NO_CONTENT, summary="更新代理配置")
 async def update_proxy_settings(
-    payload: models.ProxySettingsUpdate,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    payload: ProxySettingsUpdate,
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """更新全局代理配置。"""
     # 构建 HTTP/SOCKS 代理 URL
@@ -139,9 +142,10 @@ async def update_proxy_settings(
         "proxySslVerify": str(payload.proxySslVerify).lower(),
         "accelerateProxyUrl": payload.accelerateProxyUrl or "",
     }
-    await crud.update_config_values_atomic(session, config_values)
+    async with db.transaction():
+        await db.config.upsert_batch(config_values)
     for key in config_values:
-        config_manager.invalidate(key)
+        config_service.invalidate(key)
 
     logger.info(f"用户 '{current_user.username}' 更新了代理配置 (mode={payload.proxyMode})。")
 
@@ -191,10 +195,10 @@ async def _resolve_dns(host: str, timeout: float = 5.0) -> Dict[str, Any]:
 @router.post("/proxy/test", response_model=FullProxyTestResponse, summary="测试代理连接和延迟")
 async def test_proxy_latency(
     request: ProxyTestRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager)
+    metadata_manager: MetadataService = Depends(get_metadata_service)
 ):
     """
     测试代理连接和到各源的延迟。
@@ -265,8 +269,9 @@ async def test_proxy_latency(
     domain_source_map: Dict[str, Dict[str, str]] = {}
 
     # 统一获取所有源的设置
-    enabled_metadata_settings = await crud.get_all_metadata_source_settings(session)
-    scraper_settings = await crud.get_all_scraper_settings(session)
+    async with db.transaction():
+        enabled_metadata_settings = await db.metadata_source.get_all_metadata_source_settings()
+        scraper_settings = await db.scraper.get_all_scraper_settings()
 
     # 合并所有源的设置，并添加一个获取实例的函数
     all_sources_settings = [
@@ -399,7 +404,7 @@ async def test_proxy_latency(
 @router.post("/proxy/test-single", response_model=SingleTargetTestResponse, summary="单独测试某个域名的速度 / DNS 解析")
 async def test_single_target(
     request: SingleTargetTestRequest,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(security.get_current_user),
 ):
     """对用户指定的单个域名/URL 进行 DNS 解析与 HTTP 连通性测试。
 
@@ -469,11 +474,12 @@ async def test_single_target(
 
 @router.get("/config/customDanmakuPath", response_model=CustomDanmakuPathResponse, summary="获取自定义弹幕路径配置")
 async def get_custom_danmaku_path(
-    session: AsyncSession = Depends(get_db_session)
+    db: DatabaseService = Depends(get_database_service)
 ):
     """获取自定义弹幕路径配置"""
-    enabled = await crud.get_config_value(session, "customDanmakuPathEnabled", "false")
-    template = await crud.get_config_value(session, "customDanmakuPathTemplate", "/app/config/danmaku/${animeId}/${episodeId}")
+    async with db.transaction():
+        enabled = await db.config.get_value("customDanmakuPathEnabled", "false")
+        template = await db.config.get_value("customDanmakuPathTemplate", "/app/config/danmaku/${animeId}/${episodeId}")
     return CustomDanmakuPathResponse(enabled=enabled, template=template)
 
 
@@ -481,9 +487,9 @@ async def get_custom_danmaku_path(
 @router.put("/config/customDanmakuPath", response_model=CustomDanmakuPathResponse, summary="设置自定义弹幕路径配置")
 async def set_custom_danmaku_path(
     request: CustomDanmakuPathRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """设置自定义弹幕路径配置"""
     logger.info(f"收到自定义弹幕路径配置请求: enabled={request.enabled}, template={request.template}")
@@ -502,9 +508,10 @@ async def set_custom_danmaku_path(
         "customDanmakuPathEnabled": request.enabled,
         "customDanmakuPathTemplate": request.template,
     }
-    await crud.update_config_values_atomic(session, config_values)
+    async with db.transaction():
+        await db.config.upsert_batch(config_values)
     for key in config_values:
-        config_manager.invalidate(key)
+        config_service.invalidate(key)
     logger.info(f"自定义弹幕路径配置已保存")
     return CustomDanmakuPathResponse(enabled=request.enabled, template=request.template)
 
@@ -514,11 +521,12 @@ async def set_custom_danmaku_path(
 
 @router.get("/config/matchFallbackTokens", response_model=MatchFallbackTokensResponse, summary="获取匹配后备允许的Token列表")
 async def get_match_fallback_tokens(
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service)
 ):
     """获取匹配后备允许的Token列表（JSON格式的token ID数组）"""
-    value = await crud.get_config_value(session, "matchFallbackTokens", "[]")
+    async with db.transaction():
+        value = await db.config.get_value("matchFallbackTokens", "[]")
     return MatchFallbackTokensResponse(value=value)
 
 
@@ -526,13 +534,14 @@ async def get_match_fallback_tokens(
 @router.put("/config/matchFallbackTokens", status_code=status.HTTP_204_NO_CONTENT, summary="设置匹配后备允许的Token列表")
 async def set_match_fallback_tokens(
     request: MatchFallbackTokensResponse,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """设置匹配后备允许的Token列表（JSON格式的token ID数组）"""
-    await crud.update_config_value(session, "matchFallbackTokens", request.value)
-    config_manager.invalidate("matchFallbackTokens")
+    async with db.transaction():
+        await db.config.upsert("matchFallbackTokens", request.value)
+    config_service.invalidate("matchFallbackTokens")
     logger.info(f"匹配后备Token配置已保存: {request.value}")
     return
 
@@ -542,12 +551,13 @@ async def set_match_fallback_tokens(
 
 @router.get("/config/posterProxyTokens", response_model=MatchFallbackTokensResponse, summary="获取外联海报模式允许的Token列表")
 async def get_poster_proxy_tokens(
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service)
 ):
     """获取允许使用外联海报模式的Token列表（JSON格式的token ID数组）。
     列表为空时表示所有Token均可使用外联海报模式（若后备搜索已启用）。"""
-    value = await crud.get_config_value(session, "posterProxyTokens", "[]")
+    async with db.transaction():
+        value = await db.config.get_value("posterProxyTokens", "[]")
     return MatchFallbackTokensResponse(value=value)
 
 
@@ -555,13 +565,14 @@ async def get_poster_proxy_tokens(
 @router.put("/config/posterProxyTokens", status_code=status.HTTP_204_NO_CONTENT, summary="设置外联海报模式允许的Token列表")
 async def set_poster_proxy_tokens(
     request: MatchFallbackTokensResponse,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """设置允许使用外联海报模式的Token列表（JSON格式的token ID数组）。"""
-    await crud.update_config_value(session, "posterProxyTokens", request.value)
-    config_manager.invalidate("posterProxyTokens")
+    async with db.transaction():
+        await db.config.upsert("posterProxyTokens", request.value)
+    config_service.invalidate("posterProxyTokens")
     logger.info(f"外联海报模式Token配置已保存: {request.value}")
     return
 
@@ -571,11 +582,12 @@ async def set_poster_proxy_tokens(
 
 @router.get("/config/searchFallbackEnabled", response_model=ConfigValueResponse, summary="获取后备搜索状态")
 async def get_search_fallback(
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service)
 ):
     """获取后备搜索功能的启用状态"""
-    value = await crud.get_config_value(session, "searchFallbackEnabled", "false")
+    async with db.transaction():
+        value = await db.config.get_value("searchFallbackEnabled", "false")
     return ConfigValueResponse(value=value)
 
 
@@ -583,13 +595,14 @@ async def get_search_fallback(
 @router.put("/config/searchFallbackEnabled", status_code=status.HTTP_204_NO_CONTENT, summary="设置后备搜索状态")
 async def set_search_fallback(
     request: ConfigValueRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """设置后备搜索功能的启用状态"""
-    await crud.update_config_value(session, "searchFallbackEnabled", request.value)
-    config_manager.invalidate("searchFallbackEnabled")
+    async with db.transaction():
+        await db.config.upsert("searchFallbackEnabled", request.value)
+    config_service.invalidate("searchFallbackEnabled")
     logger.info(f"后备搜索状态已保存: {request.value}")
     return
 
@@ -601,12 +614,13 @@ async def set_search_fallback(
 
 @router.get("/config/tmdbReverseLookup", response_model=TmdbReverseLookupConfig, summary="获取TMDB反查配置")
 async def get_tmdb_reverse_lookup_config(
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service)
 ):
     """获取TMDB反查配置"""
-    enabled = await crud.get_config_value(session, "tmdbReverseLookupEnabled", "false")
-    sources_json = await crud.get_config_value(session, "tmdbReverseLookupSources", '["imdb", "tvdb"]')
+    async with db.transaction():
+        enabled = await db.config.get_value("tmdbReverseLookupEnabled", "false")
+        sources_json = await db.config.get_value("tmdbReverseLookupSources", '["imdb", "tvdb"]')
 
     try:
         sources = json.loads(sources_json)
@@ -623,14 +637,14 @@ async def get_tmdb_reverse_lookup_config(
 @router.post("/config/tmdbReverseLookup", summary="保存TMDB反查配置")
 async def save_tmdb_reverse_lookup_config(
     request: TmdbReverseLookupConfigRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """保存TMDB反查配置"""
-    # 修正：使用 config_manager.setValue 来确保在同一个事务中更新两个配置项
+# 修正：使用 ConfigService.set 更新两个配置项
     # 这样可以避免多次 commit 导致的问题
-    await config_manager.setValue("tmdbReverseLookupEnabled", str(request.enabled).lower())
-    await config_manager.setValue("tmdbReverseLookupSources", json.dumps(request.sources))
+    await config_service.set("tmdbReverseLookupEnabled", str(request.enabled).lower())
+    await config_service.set("tmdbReverseLookupSources", json.dumps(request.sources))
 
     logger.info(f"用户 '{current_user.username}' 更新了TMDB反查配置: enabled={request.enabled}, sources={request.sources}")
     return {"message": "TMDB反查配置已保存"}
@@ -640,11 +654,12 @@ async def save_tmdb_reverse_lookup_config(
 @router.get("/config/{config_key}", response_model=Dict[str, str], summary="获取指定配置项的值")
 async def get_config_item(
     config_key: str,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service)
 ):
     """获取数据库中单个配置项的值。"""
-    value = await crud.get_config_value(session, config_key, "") # 默认为空字符串
+    async with db.transaction():
+        value = await db.config.get_value(config_key, "")
     return {"key": config_key, "value": value}
 
 
@@ -653,9 +668,9 @@ async def get_config_item(
 async def update_config_item(
     config_key: str,
     payload: Dict[str, Any],  # 修正：允许任意类型的值,避免前端传递undefined时报错
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """更新数据库中单个配置项的值。"""
     value = payload.get("value")
@@ -674,8 +689,9 @@ async def update_config_item(
     # 确保value是字符串类型
     value_str = str(value) if value is not None else ""
 
-    await crud.update_config_value(session, config_key, value_str)
-    config_manager.invalidate(config_key)
+    async with db.transaction():
+        await db.config.upsert(config_key, value_str)
+    config_service.invalidate(config_key)
 
     # JWT 有效期变更时，清空白名单会话缓存以实现热加载
     if config_key == "jwtExpireMinutes":
@@ -687,15 +703,16 @@ async def update_config_item(
 
 @router.post("/config/webhookApiKey/regenerate", response_model=Dict[str, str], summary="重新生成Webhook API Key")
 async def regenerate_webhook_api_key(
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """生成一个新的、随机的Webhook API Key并保存到数据库。"""
     alphabet = string.ascii_letters + string.digits
     new_key = ''.join(secrets.choice(alphabet) for _ in range(20))
-    await crud.update_config_value(session, "webhookApiKey", new_key)
-    config_manager.invalidate("webhookApiKey")
+    async with db.transaction():
+        await db.config.upsert("webhookApiKey", new_key)
+    config_service.invalidate("webhookApiKey")
     logger.info(f"用户 '{current_user.username}' 重新生成了 Webhook API Key。")
     return {"key": "webhookApiKey", "value": new_key}
 
@@ -703,15 +720,16 @@ async def regenerate_webhook_api_key(
 
 @router.post("/config/externalApiKey/regenerate", response_model=Dict[str, str], summary="重新生成外部API Key")
 async def regenerate_external_api_key(
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """生成一个新的、随机的外部API Key并保存到数据库。"""
     alphabet = string.ascii_letters + string.digits
     new_key = ''.join(secrets.choice(alphabet) for _ in range(32)) # 增加长度以提高安全性
-    await crud.update_config_value(session, "externalApiKey", new_key)
-    config_manager.invalidate("externalApiKey")
+    async with db.transaction():
+        await db.config.upsert("externalApiKey", new_key)
+    config_service.invalidate("externalApiKey")
     logger.info(f"用户 '{current_user.username}' 重新生成了外部 API Key。")
     return {"key": "externalApiKey", "value": new_key}
 
@@ -720,8 +738,8 @@ async def regenerate_external_api_key(
 @router.get("/config/provider/{providerName}", response_model=Dict[str, Any], summary="获取指定元数据源的配置")
 async def get_provider_settings(
     providerName: str,
-    current_user: models.User = Depends(security.get_current_user),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager)
+    current_user: User = Depends(security.get_current_user),
+    metadata_manager: MetadataService = Depends(get_metadata_service)
 ):
     """获取指定元数据源的所有相关配置。"""
     try:
@@ -735,19 +753,17 @@ async def get_provider_settings(
 async def set_provider_settings(
     providerName: str,
     settings: Dict[str, Any],
-    current_user: models.User = Depends(security.get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    current_user: User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
     scheduler_manager: SchedulerManager = Depends(get_scheduler_manager)
 ):
     """批量更新指定元数据源的相关配置。config keys 从源类自动获取，无需硬编码。"""
     keys_to_update = metadata_manager.get_config_keys(providerName)
-    tasks = [
-        config_manager.setValue(configKey=key, configValue=settings[key])
-        for key in keys_to_update if key in settings
-    ]
-    if tasks:
-        await asyncio.gather(*tasks)
+    # config_service.set 本身就是异步写入；此处直接逐项等待，避免把其返回的 None 误传给 gather。
+    for key in keys_to_update:
+        if key in settings:
+            await config_service.set(key, settings[key])
     logger.info(f"用户 '{current_user.username}' 更新了元数据源 '{providerName}' 的配置。")
 
     # 方案甲：保存 Bangumi 配置时，按「开关 + cron」自动维护 bangumi-data 同步调度任务
@@ -759,8 +775,8 @@ async def set_provider_settings(
             elif enabled_raw is not None:
                 enabled = str(enabled_raw).lower() == "true"
             else:
-                enabled = (await config_manager.get("bangumiDataSyncEnabled", "false")).lower() == "true"
-            cron = settings.get("bangumiDataSyncCron") or await config_manager.get("bangumiDataSyncCron", "0 4 * * *")
+                enabled = (await config_service.get("bangumiDataSyncEnabled", "false")).lower() == "true"
+            cron = settings.get("bangumiDataSyncCron") or await config_service.get("bangumiDataSyncCron", "0 4 * * *")
             await scheduler_manager.sync_bangumi_data_schedule(enabled, cron)
         except Exception as e:
             logger.error(f"维护 bangumi-data 同步调度任务失败: {e}", exc_info=True)
@@ -770,8 +786,8 @@ async def set_provider_settings(
 @router.post("/config/ai/test", response_model=AITestResponse, summary="测试AI连接可用性")
 async def test_ai_connection(
     request: AITestRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """测试AI连接配置是否可用"""
     try:
@@ -835,7 +851,7 @@ async def test_ai_connection(
             base_url = request.baseUrl.rstrip('/')
         else:
             # 1. 先从数据库读取用户保存的配置
-            saved_base_url = await config_manager.get("aiBaseUrl")
+            saved_base_url = await config_service.get("aiBaseUrl")
 
             if saved_base_url:
                 base_url = saved_base_url.rstrip('/')
@@ -924,7 +940,7 @@ async def test_ai_connection(
 
 @router.get("/config/ai/default-prompts", response_model=Dict[str, str], summary="获取AI默认提示词")
 async def get_default_ai_prompts(
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """
     获取所有AI提示词的硬编码默认值
@@ -945,11 +961,12 @@ async def get_default_ai_prompts(
 
 @router.get("/config/ai/metrics", summary="获取AI调用统计")
 async def get_ai_metrics(
-    hours: int = 24,
-    source: str = "db",  # db: 从数据库读取, memory: 从内存读取
-    current_user: models.User = Depends(security.get_current_user),
-    ai_matcher_manager = Depends(get_ai_matcher_manager),
-    session: AsyncSession = Depends(get_db_session)
+    # 在请求边界限制统计范围和来源，避免无效分支及过大的查询窗口。
+    hours: int = Query(default=24, ge=1, le=720, description="统计最近多少小时的数据"),
+    source: str = Query(default="db", pattern="^(db|memory)$", description="数据来源：db=数据库，memory=内存"),
+    current_user: User = Depends(security.get_current_user),
+    ai_service = Depends(get_ai_service),
+    db: DatabaseService = Depends(get_database_service)
 ):
     """
     获取AI调用的统计信息
@@ -964,27 +981,28 @@ async def get_ai_metrics(
     # 优先从数据库读取（持久化数据）
     if source == "db":
         try:
-            stats = await get_ai_metrics_stats(session, hours)
-            summary = await get_ai_metrics_summary(session)
+            # 统计通过服务绑定会话，避免引用已删除的旧数据库函数。
+            async with db.transaction():
+                stats = await db.ai_metrics.get_stats(hours)
+                summary = await db.ai_metrics.get_summary()
             stats["summary"] = summary
         except Exception as e:
             logger.warning(f"从数据库读取 AI 统计失败，回退到内存: {e}")
             source = "memory"  # 回退到内存
 
-    # 从内存读取（实时数据）
+    # 管理操作只读取已有实例，不因查看统计而初始化 AI 客户端。
+    matcher = ai_service.get_initialized_matcher()
     if source == "memory":
-        matcher = await ai_matcher_manager.get_matcher()
         if not matcher:
             return {
-                "error": "AI匹配器未初始化或未启用",
+                "error": "AI匹配器尚未初始化",
                 "ai_stats": None,
                 "cache_stats": None
             }
         stats = matcher.metrics.get_stats(hours)
 
-    # 添加缓存统计
+    # 添加已有实例的缓存统计。
     cache_stats = None
-    matcher = await ai_matcher_manager.get_matcher()
     if matcher and matcher.cache:
         cache_stats = matcher.cache.get_stats()
 
@@ -997,8 +1015,8 @@ async def get_ai_metrics(
 
 @router.post("/config/ai/cache/clear", summary="清空AI缓存")
 async def clear_ai_cache(
-    current_user: models.User = Depends(security.get_current_user),
-    ai_matcher_manager = Depends(get_ai_matcher_manager)
+    current_user: User = Depends(security.get_current_user),
+    ai_service = Depends(get_ai_service)
 ):
     """
     清空AI响应缓存
@@ -1006,7 +1024,8 @@ async def clear_ai_cache(
     Returns:
         操作结果
     """
-    matcher = await ai_matcher_manager.get_matcher()
+    # 即使 AI 已关闭，也允许清理此前初始化实例的缓存。
+    matcher = ai_service.get_initialized_matcher()
     if not matcher:
         raise HTTPException(status_code=400, detail="AI匹配器未初始化或未启用")
 
@@ -1023,8 +1042,8 @@ async def clear_ai_cache(
 
 @router.get("/config/ai/balance", summary="获取AI账户余额")
 async def get_ai_balance(
-    current_user: models.User = Depends(security.get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """
     获取AI账户余额 (通用接口,根据 aiProvider 自动选择)
@@ -1045,7 +1064,7 @@ async def get_ai_balance(
         }
     """
     # 获取当前 AI 提供商
-    provider = await config_manager.get("aiProvider", "deepseek")
+    provider = await config_service.get("aiProvider", "deepseek")
 
     # 检查是否支持余额查询
     if not supports_balance_query(provider):
@@ -1057,8 +1076,8 @@ async def get_ai_balance(
         }
 
     # 获取 API 配置
-    api_key = await config_manager.get("aiApiKey", "")
-    base_url = await config_manager.get("aiBaseUrl", "")
+    api_key = await config_service.get("aiApiKey", "")
+    base_url = await config_service.get("aiBaseUrl", "")
 
     if not api_key:
         return {
@@ -1162,7 +1181,7 @@ def _parse_balance_response(data: Dict[str, Any], parser_type: str) -> Dict[str,
 
 @router.get("/config/ai/providers", summary="获取AI提供商列表")
 async def get_ai_providers(
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """
     获取所有可用的AI提供商配置列表
@@ -1261,9 +1280,12 @@ async def _fetch_models_from_provider(
                     })
 
             return models
-    except Exception as e:
-        logger.warning(f"从 {provider_id} 获取模型列表失败: {e}")
-        return []
+    except httpx.HTTPStatusError as exc:
+        logger.warning("从 %s 获取模型列表失败: HTTP %s", provider_id, exc.response.status_code)
+        raise HTTPException(502, f"模型服务返回 HTTP {exc.response.status_code}，请检查密钥和地址") from exc
+    except (httpx.RequestError, ValueError, TypeError) as exc:
+        logger.warning("从 %s 获取模型列表失败: %s", provider_id, type(exc).__name__)
+        raise HTTPException(502, "连接模型服务失败，请检查网络和 Base URL") from exc
 
 
 def _merge_model_lists(
@@ -1300,12 +1322,77 @@ def _merge_model_lists(
     return hardcoded_models + new_models
 
 
+class AIConnectionRequest(BaseModel):
+    aiProvider: str
+    aiApiKey: str
+    aiBaseUrl: str = ""
+    aiModel: str = ""
+    aiLogRawResponse: bool = False
+    aiThinkingEnabled: bool = False
+    aiCallTimeout: int = 60
+
+
+@router.put("/config/ai/connection", status_code=status.HTTP_204_NO_CONTENT, summary="保存AI连接配置")
+async def save_ai_connection(
+    payload: AIConnectionRequest,
+    current_user: User = Depends(security.get_current_user),
+    db: DatabaseService = Depends(get_database_service),
+    config_service: ConfigService = Depends(get_config_service),
+) -> None:
+    """原子保存连接配置；成功后才失效各项缓存。"""
+    if not get_provider_config(payload.aiProvider):
+        raise HTTPException(400, "未知的AI提供商")
+    if not 1 <= payload.aiCallTimeout <= 300:
+        raise HTTPException(400, "AI调用超时必须在1至300秒之间")
+    values = {
+        "aiProvider": payload.aiProvider,
+        "aiApiKey": payload.aiApiKey.strip(),
+        "aiBaseUrl": payload.aiBaseUrl.strip(),
+        "aiModel": payload.aiModel.strip(),
+        "aiLogRawResponse": str(payload.aiLogRawResponse).lower(),
+        "aiThinkingEnabled": str(payload.aiThinkingEnabled).lower(),
+        "aiCallTimeout": str(payload.aiCallTimeout),
+    }
+    async with db.transaction():
+        for key, value in values.items():
+            await db.config.upsert(key, value)
+    for key in values:
+        config_service.invalidate(key)
+    logger.info("用户 '%s' 更新了 AI 连接配置。", current_user.username)
+
+
+class AIModelsPreviewRequest(BaseModel):
+    provider: str
+    apiKey: str = ""
+    baseUrl: str = ""
+
+
+@router.post("/config/ai/models/preview", summary="使用当前表单配置查询AI模型")
+async def preview_ai_models(
+    payload: AIModelsPreviewRequest,
+    current_user: User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service),
+) -> Dict[str, Any]:
+    """查询未保存的连接配置，不将密钥写入数据库或URL。"""
+    provider_config = get_provider_config(payload.provider)
+    if provider_config is None:
+        raise HTTPException(404, "未找到提供商")
+    api_key = payload.apiKey.strip() or await config_service.get("aiApiKey", "")
+    if not api_key:
+        raise HTTPException(400, "请先填写API Key")
+    dynamic = await _fetch_models_from_provider(payload.provider, api_key, payload.baseUrl.strip())
+    hardcoded = provider_config.get("availableModels", [])
+    merged = _merge_model_lists(hardcoded, dynamic)
+    return {"models": merged, "source": "merged", "dynamicCount": len(dynamic),
+            "newCount": len(merged) - len(hardcoded)}
+
+
 @router.get("/config/ai/models", summary="获取AI模型列表")
 async def get_ai_models(
     provider: str = Query(..., description="AI提供商ID"),
     refresh: bool = Query(False, description="是否刷新动态模型列表"),
-    current_user: models.User = Depends(security.get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """
     获取指定AI提供商的模型列表
@@ -1349,7 +1436,7 @@ async def get_ai_models(
         }
 
     # 获取API配置
-    api_key = await config_manager.get("aiApiKey", "")
+    api_key = await config_service.get("aiApiKey", "")
     if not api_key:
         # 没有API Key，返回硬编码列表
         return {
@@ -1358,7 +1445,7 @@ async def get_ai_models(
             "error": "未配置API Key"
         }
 
-    base_url = await config_manager.get("aiBaseUrl", "")
+    base_url = await config_service.get("aiBaseUrl", "")
 
     # 从API获取动态模型列表
     dynamic_models = await _fetch_models_from_provider(provider, api_key, base_url)
@@ -1377,11 +1464,11 @@ async def get_ai_models(
 @router.post("/config/ai/generate-regex", summary="AI 生成正则表达式")
 async def generate_regex(
     payload: Dict[str, Any],
-    current_user: models.User = Depends(security.get_current_user),
-    ai_matcher_manager=Depends(get_ai_matcher_manager)
+    current_user: User = Depends(security.get_current_user),
+    ai_service=Depends(get_ai_service)
 ):
     """
-    使用 AI 根据自然语言描述生成正则表达式。
+    使用共享 AI 服务根据自然语言描述生成正则表达式。
     支持增量模式：传入已有正则时，AI 只生成新增部分。
 
     Body:
@@ -1395,7 +1482,10 @@ async def generate_regex(
     existing_regex = payload.get("existingRegex", "")
     context = payload.get("context", "")
 
-    result = await ai_matcher_manager.generate_regex(description, existing_regex, context)
+    if not await ai_service.is_available():
+        raise HTTPException(status_code=503, detail="AI API密钥未配置或 AI 服务不可用")
+
+    result = await ai_service.generate_regex(description, existing_regex, context)
     if result is None:
         raise HTTPException(status_code=500, detail="AI 正则生成失败，请检查 AI 配置是否正确")
 

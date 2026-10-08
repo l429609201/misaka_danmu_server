@@ -2,22 +2,21 @@
 御坂助手 · 首批只读工具（P2）
 ------------------------------------------------------------
 均为 READ_ONLY：查询媒体库、查询任务列表、查询单个任务状态。
-全部走现有 crud，只读不改数据，最安全。
+数据库访问统一走 DatabaseService 仓储层，只读不改数据，最安全。
 
-context 约定：
-- context["session_factory"]: async_sessionmaker，用于开 DB 会话
+context 约定：搜索候选经 CacheService 缓存，普通查询经 DatabaseService 仓储。
 执行函数返回可 JSON 序列化的 dict，供回灌给模型。
 """
 
 import logging
 from typing import Any, Dict
 
-from src.db import crud, models
 # 直接从子模块导入，绕过 src.services.__init__（它会加载 notification_service，
 # 进而 → llm_menu → src.ai.assistant，形成循环）。
 # 这样依赖精确指向真正需要的 search 模块，不牵连整个 services 包。
-from src.services.search import unified_search
-from ..security_gateway import ToolPermission
+from src.services.service_container import get_database_service
+from src.workflows.search import unified_search
+from ..security_gateway import ToolPermission, is_forbidden_control_identifier
 from .base import Tool, registry
 from .search_session import save_search_results, get_result_item
 
@@ -30,11 +29,9 @@ _MAX_ITEMS = 15
 async def _search_library(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """按关键词查询已收录的弹幕库作品。"""
     keyword = (arguments.get("keyword") or "").strip()
-    session_factory = context.get("session_factory")
-    if not session_factory:
-        return {"error": "会话不可用"}
-    async with session_factory() as session:
-        result = await crud.get_library_anime(session, keyword=keyword or None)
+    db = get_database_service()
+    async with db.transaction():
+        result = await db.anime.get_library_list(keyword=keyword or None)
     items = result.get("list", [])[:_MAX_ITEMS]
     simplified = [
         {
@@ -54,16 +51,20 @@ async def _list_tasks(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dic
     """查询后台任务列表，可按状态过滤（all/in_progress/completed）。"""
     status = (arguments.get("status") or "all").strip()
     search = (arguments.get("search") or "").strip() or None
+    if is_forbidden_control_identifier(search):
+        return {"error": "流控与配额信息禁止 AI 访问"}
     if status not in ("all", "in_progress", "completed"):
         status = "all"
-    session_factory = context.get("session_factory")
-    if not session_factory:
-        return {"error": "会话不可用"}
-    async with session_factory() as session:
-        result = await crud.get_tasks_from_history(
-            session, search, status, "all", 1, _MAX_ITEMS
+    db = get_database_service()
+    async with db.transaction():
+        # 使用分页契约，保留总数并避免旧位置参数与列表接口错配。
+        result = await db.task.get_paginated_tasks(
+            search=search, status_filter=status, queue_type="all",
+            page=1, page_size=_MAX_ITEMS,
         )
-    items = result.get("list", [])[:_MAX_ITEMS]
+    items = [it for it in result.get("list", [])[:_MAX_ITEMS]
+             if not any(is_forbidden_control_identifier(it.get(key))
+                        for key in ("title", "description", "taskType", "statusMessage"))]
     simplified = [
         {
             "taskId": it.get("taskId"),
@@ -74,7 +75,7 @@ async def _list_tasks(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dic
         }
         for it in items
     ]
-    return {"total": result.get("total", len(simplified)), "items": simplified}
+    return {"total": len(simplified), "items": simplified}
 
 
 async def _get_task_status(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -82,13 +83,12 @@ async def _get_task_status(arguments: Dict[str, Any], context: Dict[str, Any]) -
     task_id = (arguments.get("taskId") or "").strip()
     if not task_id:
         return {"error": "缺少 taskId"}
-    session_factory = context.get("session_factory")
-    if not session_factory:
-        return {"error": "会话不可用"}
-    async with session_factory() as session:
-        detail = await crud.get_task_details_from_history(session, task_id)
-    if not detail:
-        return {"error": "任务不存在或已被清理"}
+    db = get_database_service()
+    async with db.transaction():
+        detail = await db.task.get_task_details_from_history(task_id)
+    if not detail or any(is_forbidden_control_identifier(detail.get(key))
+                         for key in ("title", "description", "taskType", "statusMessage")):
+        return {"error": "任务不存在或不可访问"}
     return {
         "taskId": detail.get("taskId"),
         "title": detail.get("title"),
@@ -103,11 +103,9 @@ async def _get_anime_sources(arguments: Dict[str, Any], context: Dict[str, Any])
     anime_id = arguments.get("animeId")
     if not anime_id:
         return {"error": "缺少 animeId"}
-    session_factory = context.get("session_factory")
-    if not session_factory:
-        return {"error": "会话不可用"}
-    async with session_factory() as session:
-        sources = await crud.get_anime_sources(session, int(anime_id))
+    db = get_database_service()
+    async with db.transaction():
+        sources = await db.source.get_anime_sources(int(anime_id))
     simplified = [
         {
             "sourceId": s.get("sourceId"),
@@ -125,11 +123,9 @@ async def _get_source_episodes(arguments: Dict[str, Any], context: Dict[str, Any
     source_id = arguments.get("sourceId")
     if not source_id:
         return {"error": "缺少 sourceId"}
-    session_factory = context.get("session_factory")
-    if not session_factory:
-        return {"error": "会话不可用"}
-    async with session_factory() as session:
-        result = await crud.get_episodes_for_source(session, int(source_id), 1, _MAX_ITEMS)
+    db = get_database_service()
+    async with db.transaction():
+        result = await db.episode.get_episodes_by_source(int(source_id), 1, _MAX_ITEMS)
     items = result.get("list", [])[:_MAX_ITEMS]
     simplified = [
         {
@@ -148,48 +144,15 @@ async def _get_anime_detail(arguments: Dict[str, Any], context: Dict[str, Any]) 
     anime_id = arguments.get("animeId")
     if not anime_id:
         return {"error": "缺少 animeId"}
-    session_factory = context.get("session_factory")
-    if not session_factory:
-        return {"error": "会话不可用"}
-    async with session_factory() as session:
-        detail = await crud.get_anime_full_details(session, int(anime_id))
+    db = get_database_service()
+    async with db.transaction():
+        detail = await db.anime.get_full_details(int(anime_id))
     if not detail:
         return {"error": "作品不存在"}
     # 只回灌关键字段，控制 token
     keys = ("title", "type", "season", "year", "episodeCount",
             "tmdbId", "bangumiId", "imdbId", "tvdbId", "doubanId")
     return {k: detail.get(k) for k in keys if detail.get(k) is not None}
-
-
-async def _list_tokens(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-    """查询对外弹幕 API 的 Token 列表（不含完整密钥，仅 id、名称与状态）。
-
-    必须返回 id：后续的启用/禁用、更新、删除等操作都要用 token_id 定位，
-    只给名称会导致 AI 无法执行这些操作（早期版本漏了 id，实际用时才发现）。
-    """
-    session_factory = context.get("session_factory")
-    if not session_factory:
-        return {"error": "会话不可用"}
-    async with session_factory() as session:
-        tokens = await crud.get_all_api_tokens(session)
-    simplified = [
-        {
-            "id": t.get("id"),
-            "name": t.get("name"),
-            "isEnabled": t.get("isEnabled"),
-            "dailyCallCount": t.get("dailyCallCount"),
-            "dailyCallLimit": t.get("dailyCallLimit"),
-        }
-        for t in (tokens or [])[:_MAX_ITEMS]
-    ]
-    return {
-        "total": len(tokens or []),
-        "tokens": simplified,
-        "hint": (
-            "需要新建/启停/改限额/删除 Token 时，用 call_api 配合 token.create / "
-            "token.toggle / token.update / token.delete，token_id 取上面的 id。"
-        ),
-    }
 
 
 async def _search_media(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -204,32 +167,30 @@ async def _search_media(arguments: Dict[str, Any], context: Dict[str, Any]) -> D
         return {"error": "缺少 keyword（要搜索的作品名）"}
     season = arguments.get("season")
 
-    session_factory = context.get("session_factory")
     scraper_manager = context.get("scraper_manager")
     metadata_manager = context.get("metadata_manager")
-    if not all([session_factory, scraper_manager]):
+    if not scraper_manager:
         return {"error": "运行环境不完整，无法执行搜索"}
     if not getattr(scraper_manager, "has_enabled_scrapers", False):
         return {"error": "没有启用的弹幕搜索源，请先在“搜索源”页面启用至少一个。"}
 
-    async with session_factory() as session:
-        results = await unified_search(
-            search_term=keyword,
-            session=session,
-            scraper_manager=scraper_manager,
-            metadata_manager=metadata_manager,
-            use_alias_expansion=True,
-            use_alias_filtering=True,
-            use_title_filtering=True,
-            use_source_priority_sorting=True,
-        )
-        # 若指定季度，仅保留电视剧且季度匹配的结果
-        if season is not None:
-            results = [
-                r for r in results
-                if getattr(r, "type", None) == "tv_series" and getattr(r, "season", None) == season
-            ]
-        search_id = await save_search_results(session, results)
+    results = await unified_search(
+        search_term=keyword,
+        session=None,
+        scraper_manager=scraper_manager,
+        metadata_manager=metadata_manager,
+        use_alias_expansion=True,
+        use_alias_filtering=True,
+        use_title_filtering=True,
+        use_source_priority_sorting=True,
+    )
+    # 若指定季度，仅保留电视剧且季度匹配的结果
+    if season is not None:
+        results = [
+            r for r in results
+            if getattr(r, "type", None) == "tv_series" and getattr(r, "season", None) == season
+        ]
+    search_id = await save_search_results(results)
 
     simplified = [
         {
@@ -262,13 +223,11 @@ async def _get_provider_episodes(arguments: Dict[str, Any], context: Dict[str, A
     result_index = arguments.get("resultIndex")
     include_filtered = arguments.get("includeFiltered", 0) in (1, "1", True)
 
-    session_factory = context.get("session_factory")
     scraper_manager = context.get("scraper_manager")
-    if not all([session_factory, scraper_manager]):
+    if not scraper_manager:
         return {"error": "运行环境不完整，无法获取分集"}
 
-    async with session_factory() as session:
-        item, err = await get_result_item(session, search_id, result_index)
+    item, err = await get_result_item(search_id, result_index)
     if err:
         return {"error": err}
 
@@ -385,14 +344,6 @@ def register_readonly_tools() -> None:
         permission=ToolPermission.READ_ONLY,
         executor=_get_anime_detail,
         running_label="正在查询作品详情",
-    ))
-    registry.register(Tool(
-        name="list_tokens",
-        description="查询对外提供弹幕 API 的 Token 列表（仅名称、启用状态、今日调用量，不含完整密钥）。",
-        parameters={"type": "object", "properties": {}},
-        permission=ToolPermission.READ_ONLY,
-        executor=_list_tokens,
-        running_label="正在查询 Token",
     ))
     registry.register(Tool(
         name="search_media",

@@ -16,7 +16,7 @@ import logging
 from typing import Any, Dict
 
 from ..knowledge_base import get_knowledge_base
-from ..security_gateway import ToolPermission
+from ..security_gateway import ToolPermission, contains_forbidden_control_content
 from .base import Tool, registry
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,8 @@ async def _search_docs(arguments: Dict[str, Any], context: Dict[str, Any]) -> Di
     query = (arguments.get("query") or "").strip()
     if not query:
         return {"error": "缺少 query，请传入用户想了解的功能名称或问题关键词"}
+    if contains_forbidden_control_content(query):
+        return {"error": "流控与配额信息禁止 AI 访问"}
 
     try:
         limit = int(arguments.get("limit") or 3)
@@ -38,7 +40,12 @@ async def _search_docs(arguments: Dict[str, Any], context: Dict[str, Any]) -> Di
     limit = max(1, min(limit, 5))
 
     kb = get_knowledge_base()
-    hits = kb.search(query, limit=limit)
+    hits = [
+        (section, score) for section, score in kb.search(query, limit=limit)
+        if not contains_forbidden_control_content(
+            (section.title, section.aliases, section.body)
+        )
+    ]
     if not hits:
         return {
             "query": query,
@@ -74,7 +81,8 @@ async def _search_docs(arguments: Dict[str, Any], context: Dict[str, Any]) -> Di
 async def _list_doc_sections(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """列出手册全部章节标题与别名，用于判断某个话题是否有文档覆盖。"""
     kb = get_knowledge_base()
-    titles = kb.list_titles()
+    titles = [title for title in kb.list_titles()
+              if not contains_forbidden_control_content(title)]
     return {
         "total": len(titles),
         "sections": titles,

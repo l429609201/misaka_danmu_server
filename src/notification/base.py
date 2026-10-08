@@ -12,6 +12,8 @@ import logging
 import time
 
 from src.notification.messages.base import NotificationMessage, RenderedMessage
+# 通知和工作流复用同一图片资源服务，保持缓存路径一致。
+from src.services.image_resource_service import save_public_thumbnail
 
 
 # ═══════════════════════════════════════════
@@ -344,7 +346,6 @@ class BaseNotificationChannel(ABC):
             return ""
 
         try:
-            from src.utils.image_utils import save_public_thumbnail
             web_path = await save_public_thumbnail(source)
         except Exception as e:
             self.logger.warning(f"生成对外分享缩略图失败: {e}")

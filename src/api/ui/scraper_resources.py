@@ -17,15 +17,21 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 
-from src.db import models, get_db_session, ConfigManager
-from src import security
-from src.security import get_current_user
-from src.services import get_download_task_manager
+from src.db import get_db_session
+from src.db import orm_models
+from src.utils.auth import security
+from src.services.download_task_manager import get_download_task_manager
 from src.services.download_task_manager import TaskStatus
-from src.api.dependencies import get_scraper_manager, get_config_manager
+from src.services.config_service import ConfigService
+from src.api.dependencies import get_scraper_manager, get_config_service
 from src._version import APP_VERSION
 from src.core.env import is_docker_environment as _is_docker_environment
-from src.utils.scraper_version_manager import ScraperVersionManager, is_semantic_version
+from src.utils.scraper_ops.scraper_version_manager import ScraperVersionManager, is_semantic_version
+# 使用迁移后的工具模块，统一在文件顶部导入以避免请求时导入失败。
+from src.utils.scraper_ops.remote_manifest_fetcher import fetch_remote_manifest_info
+
+# 别名以保持兼容性
+models = orm_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -262,21 +268,21 @@ def parse_github_url(url: str) -> Dict[str, str]:
 
 @router.get("/scrapers/resource-repo", summary="获取资源仓库配置")
 async def get_resource_repo(
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: models.User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """获取当前配置的资源仓库链接"""
-    repo_url = await config_manager.get("scraper_resource_repo", "")
+    repo_url = await config_service.get("scraper_resource_repo", "")
     return {"repoUrl": repo_url}
 
 
 @router.get("/scrapers/repo-refs", summary="获取资源仓库的分支和标签列表")
 async def get_repo_refs(
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: models.User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """从 GitHub/Gitee API 获取仓库的分支列表和最近的标签"""
-    repo_url = await config_manager.get("scraper_resource_repo", "")
+    repo_url = await config_service.get("scraper_resource_repo", "")
     if not repo_url:
         return {"branches": [], "tags": [], "appVersion": APP_VERSION, "minServerVersion": _get_local_min_server_version()}
 
@@ -295,13 +301,13 @@ async def get_repo_refs(
     # 构建请求头
     headers = {}
     if repo_info:
-        github_token = await config_manager.get("github_token", "")
+        github_token = await config_service.get("github_token", "")
         if github_token:
             headers["Authorization"] = f"Bearer {github_token}"
 
     # 获取代理
-    proxy_url = await config_manager.get("proxyUrl", "")
-    proxy_enabled = (await config_manager.get("proxyEnabled", "false")).lower() == "true"
+    proxy_url = await config_service.get("proxyUrl", "")
+    proxy_enabled = (await config_service.get("proxyEnabled", "false")).lower() == "true"
     proxy = proxy_url if proxy_enabled and proxy_url else None
 
     branches = []
@@ -385,8 +391,6 @@ async def _fetch_manifest_info_with_retry(manifest_url: str, headers: Dict[str, 
 
     为保持向后兼容，保留此函数作为适配器。
     """
-    from src.utils.remote_manifest_fetcher import fetch_remote_manifest_info
-
     # 从完整 URL 中提取 base_url
     base_url = manifest_url.rsplit('/', 1)[0]
 
@@ -402,8 +406,8 @@ async def _fetch_manifest_info_with_retry(manifest_url: str, headers: Dict[str, 
 
 @router.get("/scrapers/versions", summary="获取资源包版本信息")
 async def get_versions(
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service),
     force_refresh: bool = False  # 新增参数：强制刷新缓存
 ):
     """获取本地和远程资源包版本号（带缓存机制）"""
@@ -422,15 +426,15 @@ async def get_versions(
         local_version = ScraperVersionManager.get_local_version(_get_scrapers_dir())
 
         # 获取代理配置
-        proxy_url = await config_manager.get("proxyUrl", "")
-        proxy_enabled_str = await config_manager.get("proxyEnabled", "false")
+        proxy_url = await config_service.get("proxyUrl", "")
+        proxy_enabled_str = await config_service.get("proxyEnabled", "false")
         proxy_enabled = proxy_enabled_str.lower() == 'true'
         proxy_to_use = proxy_url if proxy_enabled and proxy_url else None
 
         # 获取远程版本（当前配置的资源仓库）
         remote_version = None
         remote_min_server_version = None
-        repo_url = await config_manager.get("scraper_resource_repo", "")
+        repo_url = await config_service.get("scraper_resource_repo", "")
 
         if repo_url:
             headers = {}
@@ -448,7 +452,7 @@ async def get_versions(
 
             # 如果是GitHub仓库,添加Token（Gitee不需要Token）
             if repo_info:
-                github_token = await config_manager.get("github_token", "")
+                github_token = await config_service.get("github_token", "")
                 if github_token:
                     headers["Authorization"] = f"Bearer {github_token}"
 
@@ -472,7 +476,7 @@ async def get_versions(
             try:
                 official_repo_info = parse_github_url("https://github.com/l429609201/Misaka-Scraper-Resources")
 
-                github_token = await config_manager.get("github_token", "")
+                github_token = await config_service.get("github_token", "")
                 headers_official = {}
                 if github_token:
                     headers_official["Authorization"] = f"Bearer {github_token}"
@@ -513,8 +517,8 @@ async def get_versions(
 @router.put("/scrapers/resource-repo", status_code=status.HTTP_204_NO_CONTENT, summary="保存资源仓库配置")
 async def save_resource_repo(
     payload: Dict[str, str],
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: models.User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """保存资源仓库链接"""
     repo_url = payload.get("repoUrl", "").strip()
@@ -523,13 +527,13 @@ async def save_resource_repo(
         if not (repo_url.startswith("http://") or repo_url.startswith("https://")):
             raise HTTPException(status_code=400, detail="资源仓库链接必须以 http:// 或 https:// 开头")
 
-    await config_manager.setValue("scraper_resource_repo", repo_url)
+    await config_service.set("scraper_resource_repo", repo_url)
     logger.info(f"用户 '{current_user.username}' 更新了资源仓库配置: {repo_url}")
 
 
 @router.post("/scrapers/backup", summary="备份当前弹幕源")
 async def backup_scrapers(
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(security.get_current_user),
     new_versions_data: Optional[Dict[str, str]] = None,
     new_hashes_data: Optional[Dict[str, str]] = None,
     package_data: Optional[Dict[str, Any]] = None,
@@ -616,7 +620,7 @@ async def backup_scrapers(
 
 @router.get("/scrapers/backup-info", summary="获取备份信息")
 async def get_backup_info(
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(security.get_current_user)
 ):
     """获取当前备份的详细信息"""
     try:
@@ -653,7 +657,7 @@ async def get_backup_info(
 
 @router.post("/scrapers/restore", summary="从备份还原弹幕源")
 async def restore_scrapers(
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(security.get_current_user),
     manager = Depends(get_scraper_manager)
 ):
     """从持久化备份目录还原弹幕源文件"""
@@ -715,7 +719,7 @@ async def restore_scrapers(
 
 @router.post("/scrapers/reload", summary="重载弹幕源")
 async def reload_scrapers(
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(security.get_current_user),
     manager = Depends(get_scraper_manager)
 ):
     """重新加载所有弹幕源"""
@@ -743,8 +747,8 @@ async def reload_scrapers(
 @router.post("/scrapers/load-resources-stream", summary="从资源仓库加载弹幕源(SSE流式)")
 async def load_resources_stream(
     payload: Dict[str, Any],
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service),
     manager = Depends(get_scraper_manager)
 ):
     """从资源仓库下载并加载弹幕源文件,通过SSE推送进度"""
@@ -776,7 +780,7 @@ async def load_resources_stream(
                     # 获取仓库链接
                     repo_url = payload.get("repoUrl")
                     if not repo_url:
-                        repo_url = await config_manager.get("scraper_resource_repo", "")
+                        repo_url = await config_service.get("scraper_resource_repo", "")
 
                     if not repo_url:
                         yield f"data: {json.dumps({'type': 'error', 'message': '未配置资源仓库链接'}, ensure_ascii=False)}\n\n"
@@ -808,15 +812,15 @@ async def load_resources_stream(
 
                     # 如果是GitHub仓库,添加Token（Gitee不需要Token）
                     if repo_info:
-                        github_token = await config_manager.get("github_token", "")
+                        github_token = await config_service.get("github_token", "")
                         if github_token:
                             headers["Authorization"] = f"Bearer {github_token}"
 
                     base_url = _build_base_url(repo_info, repo_url, gitee_info, branch)  # 传递 branch 参数
 
                     # 获取代理配置
-                    proxy_url = await config_manager.get("proxyUrl", "")
-                    proxy_enabled_str = await config_manager.get("proxyEnabled", "false")
+                    proxy_url = await config_service.get("proxyUrl", "")
+                    proxy_enabled_str = await config_service.get("proxyEnabled", "false")
                     proxy_enabled = proxy_enabled_str.lower() == 'true'
                     proxy_to_use = proxy_url if proxy_enabled and proxy_url else None
 
@@ -825,7 +829,7 @@ async def load_resources_stream(
                         yield f"data: {json.dumps({'type': 'info', 'message': f'使用代理: {proxy_to_use}'}, ensure_ascii=False)}\n\n"
 
                     # 检查是否启用全量替换模式
-                    full_replace_enabled = await config_manager.get("scraperFullReplaceEnabled", "false")
+                    full_replace_enabled = await config_service.get("scraperFullReplaceEnabled", "false")
                     use_full_replace = full_replace_enabled.lower() == "true"
 
                     # ========== 全量替换模式 ==========
@@ -1462,7 +1466,7 @@ async def load_resources_stream(
                                 # 等待日志写入完成
                                 await asyncio.sleep(1.0)
 
-                                container_name = await config_manager.get("containerName", "misaka_danmu_server")
+                                container_name = await config_service.get("containerName", "misaka_danmu_server")
                                 result = await restart_container(container_name)
                                 if result.get("success"):
                                     logger.info(f"已向容器 '{container_name}' 发送重启指令")
@@ -1511,8 +1515,8 @@ async def load_resources_stream(
 @router.post("/scrapers/download/start", summary="启动下载任务")
 async def start_download(
     payload: Dict[str, Any],
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager),
+    current_user: models.User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service),
     manager = Depends(get_scraper_manager)
 ):
     """启动弹幕源下载任务（后台运行，不依赖 SSE 连接）"""
@@ -1539,7 +1543,7 @@ async def start_download(
             repo_url=repo_url,
             use_full_replace=use_full_replace,
             branch=branch,  # 传递分支参数
-            config_manager=config_manager,
+            config_service=config_service,
             scraper_manager=manager,
             current_user=current_user,
         )
@@ -1559,7 +1563,7 @@ async def start_download(
 @router.get("/scrapers/download/status/{task_id}", summary="获取下载任务状态")
 async def get_download_status(
     task_id: str,
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(security.get_current_user),
 ):
     """获取下载任务的当前状态和进度"""
     task_manager = get_download_task_manager()
@@ -1573,7 +1577,7 @@ async def get_download_status(
 
 @router.get("/scrapers/download/current", summary="获取当前下载任务")
 async def get_current_download(
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(security.get_current_user),
 ):
     """获取当前正在运行的下载任务（如果有）"""
     task_manager = get_download_task_manager()
@@ -1588,7 +1592,7 @@ async def get_current_download(
 @router.post("/scrapers/download/cancel/{task_id}", summary="取消下载任务")
 async def cancel_download(
     task_id: str,
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(security.get_current_user),
 ):
     """取消正在运行的下载任务"""
     task_manager = get_download_task_manager()
@@ -1603,7 +1607,7 @@ async def cancel_download(
 @router.get("/scrapers/download/progress/{task_id}", summary="SSE 进度流")
 async def download_progress_stream(
     task_id: str,
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(security.get_current_user),
 ):
     """通过 SSE 实时推送下载进度（可选，用于前端实时显示）"""
     task_manager = get_download_task_manager()
@@ -1694,7 +1698,7 @@ async def download_progress_stream(
 @router.get("/scrapers/download/cached-status/{task_id}", summary="查询缓存的任务状态")
 async def get_cached_task_status(
     task_id: str,
-    current_user: models.User = Depends(get_current_user),  # noqa: ARG001
+    current_user: models.User = Depends(security.get_current_user),  # noqa: ARG001
     session: AsyncSession = Depends(get_db_session),
 ):
     """
@@ -1726,12 +1730,12 @@ async def get_cached_task_status(
 
 @router.get("/scrapers/auto-update", summary="获取自动更新配置")
 async def get_auto_update_config(
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: models.User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """获取弹幕源自动更新配置"""
-    enabled = await config_manager.get("scraperAutoUpdateEnabled", "false")
-    interval = await config_manager.get("scraperAutoUpdateInterval", "30")
+    enabled = await config_service.get("scraperAutoUpdateEnabled", "false")
+    interval = await config_service.get("scraperAutoUpdateInterval", "30")
     return {
         "enabled": enabled.lower() == "true",
         "interval": int(interval)
@@ -1741,30 +1745,30 @@ async def get_auto_update_config(
 @router.put("/scrapers/auto-update", status_code=status.HTTP_204_NO_CONTENT, summary="保存自动更新配置")
 async def save_auto_update_config(
     payload: Dict[str, Any],
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: models.User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """保存弹幕源自动更新配置"""
     enabled = payload.get("enabled", False)
     interval = payload.get("interval", 15)
 
-    await config_manager.setValue("scraperAutoUpdateEnabled", str(enabled).lower())
-    await config_manager.setValue("scraperAutoUpdateInterval", str(interval))
+    await config_service.set("scraperAutoUpdateEnabled", str(enabled).lower())
+    await config_service.set("scraperAutoUpdateInterval", str(interval))
 
     logger.info(f"用户 '{current_user.username}' 更新了自动更新配置: enabled={enabled}, interval={interval}分钟")
 
 
 @router.get("/scrapers/full-replace", summary="获取全量替换配置")
 async def get_full_replace_config(
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: models.User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """获取弹幕源全量替换配置
 
     全量替换模式：从 GitHub Releases 下载压缩包进行全量替换，
     而不是逐个文件对比哈希值下载。适用于 .so 文件更新不生效的情况。
     """
-    enabled = await config_manager.get("scraperFullReplaceEnabled", "false")
+    enabled = await config_service.get("scraperFullReplaceEnabled", "false")
     return {
         "enabled": enabled.lower() == "true"
     }
@@ -1773,12 +1777,12 @@ async def get_full_replace_config(
 @router.put("/scrapers/full-replace", status_code=status.HTTP_204_NO_CONTENT, summary="保存全量替换配置")
 async def save_full_replace_config(
     payload: Dict[str, Any],
-    current_user: models.User = Depends(get_current_user),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: models.User = Depends(security.get_current_user),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """保存弹幕源全量替换配置"""
     enabled = payload.get("enabled", False)
-    await config_manager.setValue("scraperFullReplaceEnabled", str(enabled).lower())
+    await config_service.set("scraperFullReplaceEnabled", str(enabled).lower())
     logger.info(f"用户 '{current_user.username}' 更新了全量替换配置: enabled={enabled}")
 
 
@@ -2548,7 +2552,7 @@ async def _download_and_extract_release(
 
 @router.delete("/scrapers/backup", summary="删除弹幕源备份")
 async def delete_backup(
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(security.get_current_user)
 ):
     """删除持久化备份目录中的所有备份文件"""
     try:
@@ -2580,7 +2584,7 @@ async def delete_backup(
 
 @router.delete("/scrapers/current", summary="删除当前弹幕源")
 async def delete_current_scrapers(
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(security.get_current_user),
     manager = Depends(get_scraper_manager)
 ):
     """删除当前 scrapers 目录下的所有编译文件（.so/.pyd）"""
@@ -2634,7 +2638,7 @@ async def delete_current_scrapers(
 
 @router.delete("/scrapers/all", summary="删除当前源和备份源")
 async def delete_all_scrapers(
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(security.get_current_user),
     manager = Depends(get_scraper_manager)
 ):
     """删除当前弹幕源和备份目录中的所有文件"""

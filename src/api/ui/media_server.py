@@ -3,34 +3,32 @@
 """
 
 import logging
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 
-from src.db import crud, models, get_db_session, ConfigManager
-from src.db.crud.media_server import get_episode_ids_by_show, get_episode_ids_by_season
-from src.db.models import AnimeDetailUpdate
-from src.db.orm_models import MediaItem, Anime as AnimeORM
-from src import security, tasks
-from src.services import TaskManager, ScraperManager, MetadataSourceManager, get_media_server_manager
-from src.ai.ai_matcher_manager import AIMatcherManager
+from src.schemas.auth import User
+from src.workflows.media_server_binding import bind_media_server_to_anime as bind_media_server_to_anime_workflow
+from src.workflows.media_import_preparation import build_media_import_title
+from src.services.service_container import get_database_service
+from src.utils.auth import security
+from src.services.task_manager import TaskManager
+from src.services.scraper_manager import ScraperManager
+from src.services.metadata_service import MetadataService
+from src.services.service_container import get_media_server_service
+from src.services.config_service import ConfigService
+from src.services.ai_service import AIService
 from src.rate_limiter import RateLimiter
-from src.media_servers import EmbyMediaServer, JellyfinMediaServer, PlexMediaServer
 from src.api.dependencies import (
     get_task_manager,
     get_scraper_manager,
-    get_metadata_manager,
-    get_config_manager,
-    get_ai_matcher_manager,
+    get_metadata_service,
+    get_config_service,
+    get_ai_service,
     get_rate_limiter,
     get_title_recognition_manager
 )
-
-# 从 crud 导入需要的子模块
-media_server_crud = crud.media_server
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -129,77 +127,80 @@ class MediaServerScanRequest(BaseModel):
 
 @router.get("/media-servers", response_model=List[MediaServerResponse], summary="获取所有媒体服务器")
 async def get_media_servers(
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """获取所有媒体服务器配置"""
-    servers = await crud.get_all_media_servers(session)
+    db = get_database_service()
+    async with db.transaction():
+        servers = await db.media_server.get_all_media_servers()
     return servers
 
 
 @router.post("/media-servers", response_model=MediaServerResponse, status_code=201, summary="添加媒体服务器")
 async def create_media_server(
     payload: MediaServerCreate,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """创建新的媒体服务器配置"""
-    server_id = await crud.create_media_server(
-        session,
-        name=payload.name,
-        provider_name=payload.providerName,
-        url=payload.url,
-        api_token=payload.apiToken,
-        is_enabled=payload.isEnabled,
-        selected_libraries=payload.selectedLibraries,
-        filter_rules=payload.filterRules
-    )
-    await session.commit()
+    db = get_database_service()
+    async with db.transaction():
+        server = await db.media_server_crud.create(
+            name=payload.name,
+            provider_name=payload.providerName,
+            url=payload.url,
+            api_token=payload.apiToken,
+            is_enabled=payload.isEnabled,
+            selected_libraries=payload.selectedLibraries,
+            filter_rules=payload.filterRules
+        )
+        server_id = server.id
 
     # 如果服务器启用，加载到管理器中
     if payload.isEnabled:
-        manager = get_media_server_manager()
+        manager = get_media_server_service()
         await manager.reload_server(server_id)
 
     # 返回创建的服务器
-    server = await crud.get_media_server_by_id(session, server_id)
-    if not server:
+    async with db.transaction():
+        server_dict = await db.media_server.get_media_server_by_id(server_id)
+
+    if not server_dict:
         raise HTTPException(status_code=500, detail="创建媒体服务器后无法获取")
 
-    return server
+    return server_dict
 
 
 @router.put("/media-servers/{server_id}", response_model=MediaServerResponse, summary="更新媒体服务器")
 async def update_media_server(
     server_id: int,
     payload: MediaServerUpdate,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """更新媒体服务器配置"""
-    success = await crud.update_media_server(
-        session,
-        server_id,
-        name=payload.name,
-        provider_name=payload.providerName,
-        url=payload.url,
-        api_token=payload.apiToken,
-        is_enabled=payload.isEnabled,
-        selected_libraries=payload.selectedLibraries,
-        filter_rules=payload.filterRules
-    )
+    db = get_database_service()
+    async with db.transaction():
+        success = await db.media_server_crud.update(
+            server_id,
+            name=payload.name,
+            provider_name=payload.providerName,
+            url=payload.url,
+            api_token=payload.apiToken,
+            is_enabled=payload.isEnabled,
+            selected_libraries=payload.selectedLibraries,
+            filter_rules=payload.filterRules
+        )
 
     if not success:
         raise HTTPException(status_code=404, detail="媒体服务器不存在")
 
-    await session.commit()
-
     # 重新加载服务器实例，确保配置变更立即生效
-    manager = get_media_server_manager()
+    manager = get_media_server_service()
     await manager.reload_server(server_id)
 
     # 返回更新后的服务器
-    server = await crud.get_media_server_by_id(session, server_id)
+    async with db.transaction():
+        server = await db.media_server.get_media_server_by_id(server_id)
+
     if not server:
         raise HTTPException(status_code=500, detail="更新媒体服务器后无法获取")
 
@@ -209,139 +210,88 @@ async def update_media_server(
 @router.delete("/media-servers/{server_id}", status_code=204, summary="删除媒体服务器")
 async def delete_media_server(
     server_id: int,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """删除媒体服务器配置(级联删除关联的媒体项)"""
-    success = await crud.delete_media_server(session, server_id)
+    db = get_database_service()
+    async with db.transaction():
+        success = await db.media_server_crud.delete(server_id)
+
     if not success:
         raise HTTPException(status_code=404, detail="媒体服务器不存在")
-    await session.commit()
+    await get_media_server_service().remove_server(server_id)
 
 
 @router.post("/media-servers/{server_id}/test", response_model=MediaServerTestResponse, summary="测试媒体服务器连接")
 async def test_media_server_connection(
     server_id: int,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """测试媒体服务器连接"""
-    manager = get_media_server_manager()
-
+    service = get_media_server_service()
     try:
-        # 先尝试从manager中获取已加载的服务器实例
-        server = manager.servers.get(server_id)
-
-        # 如果没有找到(可能是禁用的服务器),从数据库读取配置并临时创建实例
-        if not server:
-            config = await crud.get_media_server_by_id(session, server_id)
-            if not config:
-                raise HTTPException(status_code=404, detail="媒体服务器不存在")
-
-            # 根据类型创建临时实例
-            SERVER_CLASSES = {
-                'emby': EmbyMediaServer,
-                'jellyfin': JellyfinMediaServer,
-                'plex': PlexMediaServer,
-            }
-
-            provider_name = config['providerName']
-            if provider_name not in SERVER_CLASSES:
-                raise HTTPException(status_code=400, detail=f"不支持的服务器类型: {provider_name}")
-
-            server_class = SERVER_CLASSES[provider_name]
-            server = server_class(
-                url=config['url'],
-                api_token=config['apiToken']
-            )
-
-        server_info = await server.test_connection()
+        server_info = await service.test_connection(server_id)
         return MediaServerTestResponse(success=True, message="连接成功", serverInfo=server_info)
-    except HTTPException:
-        raise
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.error(f"测试媒体服务器连接失败: {e}")
+        logger.error(f"测试媒体服务器连接失败: {e}", exc_info=True)
         return MediaServerTestResponse(success=False, message=str(e))
 
 
 @router.get("/media-servers/{server_id}/libraries", response_model=List[MediaLibraryInfo], summary="获取媒体库列表")
 async def get_media_server_libraries(
     server_id: int,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """获取媒体服务器的媒体库列表"""
-    manager = get_media_server_manager()
-
-    # 先尝试从manager中获取已加载的服务器实例
-    server = manager.servers.get(server_id)
-
-    # 如果没有找到,从数据库读取配置并临时创建实例
-    if not server:
-        config = await crud.get_media_server_by_id(session, server_id)
-        if not config:
-            raise HTTPException(status_code=404, detail="媒体服务器不存在")
-
-        # 根据类型创建临时实例
-        SERVER_CLASSES = {
-            'emby': EmbyMediaServer,
-            'jellyfin': JellyfinMediaServer,
-            'plex': PlexMediaServer,
-        }
-
-        provider_name = config['providerName']
-        if provider_name not in SERVER_CLASSES:
-            raise HTTPException(status_code=400, detail=f"不支持的服务器类型: {provider_name}")
-
-        server_class = SERVER_CLASSES[provider_name]
-        server = server_class(
-            url=config['url'],
-            api_token=config['apiToken']
-        )
-
+    service = get_media_server_service()
     try:
-        libraries = await server.get_libraries()
-        return libraries
+        return await service.get_libraries(server_id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"获取媒体库列表失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"获取媒体库列表失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取媒体库列表失败: {str(e)}") from e
 
 
 @router.post("/media-servers/{server_id}/scan", status_code=202, summary="扫描媒体库")
 async def scan_media_server_library(
     server_id: int,
     payload: MediaServerScanRequest,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(security.get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     """扫描媒体服务器的媒体库"""
-    manager = get_media_server_manager()
+    manager = get_media_server_service()
 
-    server_instance = manager.servers.get(server_id)
+    server_instance = manager.get_server(server_id)
     if not server_instance:
         raise HTTPException(status_code=404, detail="媒体服务器不存在")
 
     # 从数据库获取服务器配置以获取名称
-    server_config = await crud.get_media_server_by_id(session, server_id)
-    server_name = server_config.get('name', f'服务器{server_id}') if server_config else f'服务器{server_id}'
+    db = get_database_service()
+    async with db.transaction():
+        server_config = await db.media_server.get_media_server_by_id(server_id)
 
-    # 创建协程工厂函数
-    def create_scan_task(s: AsyncSession, cb: Callable):
-        return tasks.scan_media_server_library(
-            server_id=server_id,
-            library_ids=payload.library_ids,
-            session=s,
-            progress_callback=cb
-        )
+    server_name = server_config["name"] if server_config else f"服务器{server_id}"
 
-    # 提交扫描任务到管理队列,使用unique_key确保同一时间只能执行一个扫描任务
+    task_coro = task_manager.build_task_coro_factory(
+        "media_scan", server_id=server_id, library_ids=payload.library_ids,
+    )
+
     unique_key = f"scan-media-server-{server_id}"
     task_id, _ = await task_manager.submit_task(
-        create_scan_task,
+        task_coro,
         title=f"扫描媒体服务器: {server_name}",
         queue_type="management",
-        unique_key=unique_key
+        unique_key=unique_key,
+        task_type="media_scan",
+        task_parameters={"serverId": server_id, "libraryIds": payload.library_ids},
     )
 
     return {"message": "扫描任务已提交", "taskId": task_id}
@@ -356,18 +306,18 @@ async def get_media_items(
     media_type: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """获取媒体项列表,支持过滤和分页"""
-    result = await crud.get_media_items(
-        session,
-        server_id=server_id,
-        is_imported=is_imported,
-        media_type=media_type,
-        page=page,
-        page_size=page_size
-    )
+    db = get_database_service()
+    async with db.transaction():
+        result = await db.media_server.get_media_items(
+            server_id=server_id,
+            is_imported=is_imported,
+            media_type=media_type,
+            page=page,
+            page_size=page_size
+        )
     return result
 
 
@@ -381,21 +331,21 @@ async def get_media_works(
     year_to: Optional[int] = Query(None, description="结束年份，闭区间"),
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """获取作品列表(电影+电视剧组),按作品计数"""
-    result = await crud.get_media_works(
-        session,
-        server_id=server_id,
-        is_imported=is_imported,
-        media_type=media_type,
-        search=search,
-        year_from=year_from,
-        year_to=year_to,
-        page=page,
-        page_size=page_size
-    )
+    db = get_database_service()
+    async with db.transaction():
+        result = await db.media_server.get_media_works(
+            server_id=server_id,
+            is_imported=is_imported,
+            media_type=media_type,
+            search=search,
+            year_from=year_from,
+            year_to=year_to,
+            page=page,
+            page_size=page_size
+        )
     return result
 
 
@@ -403,11 +353,12 @@ async def get_media_works(
 async def get_show_seasons(
     title: str,
     server_id: int = Query(...),
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """获取某部剧集的所有季度信息"""
-    result = await crud.get_show_seasons(session, server_id, title)
+    db = get_database_service()
+    async with db.transaction():
+        result = await db.media_server.get_show_seasons(server_id, title)
     return result
 
 
@@ -418,18 +369,18 @@ async def get_season_episodes(
     server_id: int = Query(...),
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """获取某一季的所有集"""
-    result = await crud.get_season_episodes(
-        session,
-        server_id,
-        title,
-        season,
-        page,
-        page_size
-    )
+    db = get_database_service()
+    async with db.transaction():
+        result = await db.media_server.get_season_episodes(
+            server_id,
+            title,
+            season,
+            page,
+            page_size
+        )
     return result
 
 
@@ -437,56 +388,58 @@ async def get_season_episodes(
 async def update_media_item(
     item_id: int,
     payload: MediaItemUpdate,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """更新媒体项信息"""
-    success = await crud.update_media_item(
-        session,
-        item_id,
-        title=payload.title,
-        media_type=payload.mediaType,
-        season=payload.season,
-        episode=payload.episode,
-        year=payload.year,
-        tmdb_id=payload.tmdbId,
-        tvdb_id=payload.tvdbId,
-        imdb_id=payload.imdbId,
-        poster_url=payload.posterUrl
-    )
+    db = get_database_service()
+    async with db.transaction():
+        updated_item = await db.media_item.update(
+            item_id, **payload.model_dump(exclude_none=True)
+        )
 
-    if not success:
-        raise HTTPException(status_code=404, detail="媒体项不存在")
+        if not updated_item:
+            raise HTTPException(status_code=404, detail="媒体项不存在")
 
-    await session.commit()
-
-    # 返回更新后的媒体项
-    result = await crud.get_media_items(session, page=1, page_size=1)
-    items = result.get('items', [])
-    if not items:
-        raise HTTPException(status_code=500, detail="更新媒体项后无法获取")
-
-    return items[0]
+        # ORM 实体仍在事务内，将其转换为完整的响应值快照。
+        return {
+            "id": updated_item.id,
+            "serverId": updated_item.serverId,
+            "mediaId": updated_item.mediaId,
+            "libraryId": updated_item.libraryId,
+            "seriesId": updated_item.seriesId,
+            "seasonId": updated_item.seasonId,
+            "episodeId": updated_item.episodeId,
+            "mediaType": updated_item.mediaType,
+            "title": updated_item.title,
+            "season": updated_item.season,
+            "episode": updated_item.episode,
+            "year": updated_item.year,
+            "tmdbId": updated_item.tmdbId,
+            "tvdbId": updated_item.tvdbId,
+            "imdbId": updated_item.imdbId,
+            "posterUrl": updated_item.posterUrl,
+            "isImported": updated_item.isImported,
+            "createdAt": updated_item.createdAt,
+        }
 
 
 @router.delete("/media-items/{item_id}", status_code=204, summary="删除媒体项")
 async def delete_media_item(
     item_id: int,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """删除单个媒体项"""
-    success = await crud.delete_media_item(session, item_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="媒体项不存在")
-    await session.commit()
+    db = get_database_service()
+    async with db.transaction():
+        success = await db.media_item.delete(item_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="媒体项不存在")
 
 
 @router.post("/media-items/batch-delete", status_code=200, summary="批量删除媒体项")
 async def batch_delete_media_items(
     payload: Dict[str, Any],
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """批量删除媒体项
 
@@ -506,6 +459,8 @@ async def batch_delete_media_items(
             except (TypeError, ValueError):
                 continue
 
+    db = get_database_service()
+
     # 收集剧集组的所有episode IDs
     shows = payload.get("shows") or []
     if isinstance(shows, list):
@@ -516,11 +471,11 @@ async def batch_delete_media_items(
             title = show.get("title")
             if server_id is None or not title:
                 continue
-            episode_ids = await get_episode_ids_by_show(
-                session,
-                int(server_id),
-                title
-            )
+            async with db.transaction():
+                episode_ids = await db.media_server.get_episode_ids_by_show(
+                    int(server_id),
+                    title
+                )
             all_item_ids.update(episode_ids)
 
     # 收集季度的所有episode IDs
@@ -534,19 +489,20 @@ async def batch_delete_media_items(
             season_no = season.get("season")
             if server_id is None or not title or season_no is None:
                 continue
-            episode_ids = await get_episode_ids_by_season(
-                session,
-                int(server_id),
-                title,
-                int(season_no)
-            )
+            async with db.transaction():
+                episode_ids = await db.media_server.get_episode_ids_by_season(
+                    int(server_id),
+                    title,
+                    int(season_no)
+                )
             all_item_ids.update(episode_ids)
 
     if not all_item_ids:
         return {"message": "没有要删除的项目"}
 
-    count = await crud.delete_media_items_batch(session, list(all_item_ids))
-    await session.commit()
+    async with db.transaction():
+        count = await db.media_item.delete_batch(list(all_item_ids))
+
     return {"message": f"成功删除 {count} 个媒体项"}
 
 
@@ -559,13 +515,12 @@ class MediaItemsImportRequest(BaseModel):
 @router.post("/media-items/import", status_code=202, summary="导入选中的媒体项")
 async def import_media_items(
     payload: MediaItemsImportRequest,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(security.get_current_user),
     task_manager: TaskManager = Depends(get_task_manager),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
-    config_manager: ConfigManager = Depends(get_config_manager),
-    ai_matcher_manager: AIMatcherManager = Depends(get_ai_matcher_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
+    config_service: ConfigService = Depends(get_config_service),
+    ai_service: AIService = Depends(get_ai_service),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
     title_recognition_manager = Depends(get_title_recognition_manager)
 ):
@@ -576,25 +531,27 @@ async def import_media_items(
     if payload.itemIds:
         all_item_ids.update(payload.itemIds)
 
+    db = get_database_service()
+
     # 收集剧集组的所有episode IDs
     if payload.shows:
         for show in payload.shows:
-            episode_ids = await get_episode_ids_by_show(
-                session,
-                show['serverId'],
-                show['title']
-            )
+            async with db.transaction():
+                episode_ids = await db.media_server.get_episode_ids_by_show(
+                    show['serverId'],
+                    show['title']
+                )
             all_item_ids.update(episode_ids)
 
     # 收集季度的所有episode IDs
     if payload.seasons:
         for season in payload.seasons:
-            episode_ids = await get_episode_ids_by_season(
-                session,
-                season['serverId'],
-                season['title'],
-                season['season']
-            )
+            async with db.transaction():
+                episode_ids = await db.media_server.get_episode_ids_by_season(
+                    season['serverId'],
+                    season['title'],
+                    season['season']
+                )
             all_item_ids.update(episode_ids)
 
     if not all_item_ids:
@@ -606,39 +563,18 @@ async def import_media_items(
     sorted_ids = sorted(item_ids_list)
     unique_key = f"media-import-{hash(tuple(sorted_ids))}"
 
-    # 查询媒体项标题，用于生成可读的任务标题（分批查询，避免 asyncpg 的 32767 参数限制）
-    PG_BATCH = 30000
-    title_groups = []
-    for i in range(0, len(item_ids_list), PG_BATCH):
-        batch = item_ids_list[i:i + PG_BATCH]
-        title_stmt = select(MediaItem.title, func.count(MediaItem.id).label('cnt')).where(
-            MediaItem.id.in_(batch)
-        ).group_by(MediaItem.title)
-        title_result = await session.execute(title_stmt)
-        title_groups.extend(title_result.all())
+    task_title = await build_media_import_title(item_ids_list)
 
-    if len(title_groups) == 1:
-        name, cnt = title_groups[0]
-        task_title = f"导入媒体项: {name}" if cnt == 1 else f"导入媒体项: {name} ({cnt}集)"
-    elif len(title_groups) <= 3:
-        task_title = f"导入媒体项: {', '.join(t.title for t in title_groups)}"
-    else:
-        first_titles = ', '.join(t.title for t in title_groups[:2])
-        task_title = f"导入媒体项: {first_titles} 等{len(title_groups)}部"
-
+    task_coro = task_manager.build_task_coro_factory(
+        "import_media_items",
+        item_ids=item_ids_list, task_manager=task_manager,
+        scraper_manager=scraper_manager, metadata_manager=metadata_manager,
+        config_service=config_service, ai_service=ai_service,
+        rate_limiter=rate_limiter,
+        title_recognition_manager=title_recognition_manager,
+    )
     task_id, _ = await task_manager.submit_task(
-        lambda session, progress_callback: tasks.import_media_items(
-            item_ids_list,
-            session,
-            task_manager,
-            progress_callback,
-            scraper_manager=scraper_manager,
-            metadata_manager=metadata_manager,
-            config_manager=config_manager,
-            ai_matcher_manager=ai_matcher_manager,
-            rate_limiter=rate_limiter,
-            title_recognition_manager=title_recognition_manager
-        ),
+        task_coro,
         title=task_title,
         queue_type="download",
         unique_key=unique_key,
@@ -654,24 +590,24 @@ async def import_media_items(
 async def get_unimported_media_count(
     server_id: int = Query(..., description="媒体服务器ID"),
     media_type: Optional[str] = Query(None, description="媒体类型过滤"),
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """获取指定服务器下未导入的媒体项数量"""
-    count = await crud.get_unimported_count(session, server_id, media_type)
+    db = get_database_service()
+    async with db.transaction():
+        count = await db.media_server.get_unimported_count(server_id, media_type)
     return {"count": count}
 
 
 @router.post("/media-items/import-all-unimported", status_code=202, summary="一键导入全部未导入的媒体项")
 async def import_all_unimported_media_items(
     payload: Dict[str, Any],
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(security.get_current_user),
     task_manager: TaskManager = Depends(get_task_manager),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
-    config_manager: ConfigManager = Depends(get_config_manager),
-    ai_matcher_manager: AIMatcherManager = Depends(get_ai_matcher_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
+    config_service: ConfigService = Depends(get_config_service),
+    ai_service: AIService = Depends(get_ai_service),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
     title_recognition_manager = Depends(get_title_recognition_manager)
 ):
@@ -693,20 +629,16 @@ async def import_all_unimported_media_items(
     # 改为按 服务器+类型 维度去重，重复提交会明确返回 409。
     unique_key = f"media-import-all-{server_id}-{media_type or 'all'}"
 
+    task_coro = task_manager.build_task_coro_factory(
+        "import_all_unimported",
+        server_id=server_id, media_type=media_type, task_manager=task_manager,
+        scraper_manager=scraper_manager, metadata_manager=metadata_manager,
+        config_service=config_service, ai_service=ai_service,
+        rate_limiter=rate_limiter,
+        title_recognition_manager=title_recognition_manager,
+    )
     task_id, _ = await task_manager.submit_task(
-        lambda session, progress_callback: tasks.import_all_unimported_media_items(
-            server_id,
-            media_type,
-            session,
-            task_manager,
-            progress_callback,
-            scraper_manager=scraper_manager,
-            metadata_manager=metadata_manager,
-            config_manager=config_manager,
-            ai_matcher_manager=ai_matcher_manager,
-            rate_limiter=rate_limiter,
-            title_recognition_manager=title_recognition_manager
-        ),
+        task_coro,
         title="一键导入全部未导入",
         queue_type="download",
         unique_key=unique_key,
@@ -749,43 +681,30 @@ class MediaServerBindRequest(BaseModel):
     seasonId: Optional[str] = Field(None, description="Season 级 ID，剧集分季时提供")
 
 
-async def _resolve_server_instance(session: AsyncSession, server_id: int):
+async def _resolve_server_instance(server_id: int):
     """取得媒体服务器客户端实例。优先复用 manager 中已加载的，否则按配置临时创建。"""
-    manager = get_media_server_manager()
-    server = manager.servers.get(server_id)
-    if server:
-        return server, None  # 复用实例，调用方不负责关闭
-
-    config = await crud.get_media_server_by_id(session, server_id)
-    if not config:
-        raise HTTPException(status_code=404, detail="媒体服务器不存在")
-
-    server_classes = {
-        'emby': EmbyMediaServer,
-        'jellyfin': JellyfinMediaServer,
-        'plex': PlexMediaServer,
-    }
-    provider_name = config['providerName']
-    if provider_name not in server_classes:
-        raise HTTPException(status_code=400, detail=f"不支持的服务器类型: {provider_name}")
-
-    temp_server = server_classes[provider_name](url=config['url'], api_token=config['apiToken'])
-    return temp_server, temp_server  # 第二个返回值表示需由调用方关闭
+    service = get_media_server_service()
+    try:
+        server, temporary = await service.resolve_server(server_id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return server, server if temporary else None
 
 
 @router.post("/media-server/{serverId}/lookup", summary="反查媒体服务器条目")
 async def lookup_media_server_items(
     serverId: int,
     payload: MediaServerLookupRequest,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ) -> List[MediaServerLookupItem]:
     """按关键词搜索媒体服务器中的条目，返回候选列表供用户选择绑定。
 
     走媒体服务器原生搜索接口（Emby/Jellyfin 的 SearchTerm、Plex 的 /search），
     单次请求即可返回顶层条目，不拉全库、不展开分集，媒体库规模再大也不影响速度。
     """
-    server, temp_server = await _resolve_server_instance(session, serverId)
+    server, temp_server = await _resolve_server_instance(serverId)
     try:
         # 1. 测试连接（失败会抛异常，统一转成 503）
         try:
@@ -846,37 +765,18 @@ async def lookup_media_server_items(
 async def bind_media_server_to_anime(
     animeId: int,
     payload: MediaServerBindRequest,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(security.get_current_user)
 ):
     """将反查得到的媒体服务器条目绑定到指定作品，写入 anime_metadata 表。
 
     绑定后，webhook 删除事件可通过这些 ID 自动清理对应弹幕库条目。
     """
-    # 1. 验证作品存在
-    anime = await session.get(AnimeORM, animeId)
-    if not anime:
-        raise HTTPException(status_code=404, detail="作品不存在")
-
-    # 2. 获取服务器配置，提取类型
-    config = await crud.get_media_server_by_id(session, payload.serverId)
-    if not config:
-        raise HTTPException(status_code=404, detail="媒体服务器不存在")
-
-    server_type = config['providerName']  # emby/jellyfin/plex
-
-    # 3. 写入绑定（通过 update_anime_details 复用逻辑）
-    update_payload = AnimeDetailUpdate(
-        title=anime.title,  # 保持原有字段不变
-        type=anime.type,
-        season=anime.season,
-        mediaServerType=server_type,
-        mediaServerSeriesId=payload.seriesId,
-        mediaServerSeasonId=payload.seasonId,
-    )
-    success = await crud.update_anime_details(session, animeId, update_payload)
-    if not success:
-        raise HTTPException(status_code=500, detail="绑定失败")
+    try:
+        server_type = await bind_media_server_to_anime_workflow(
+            animeId, payload.serverId, payload.seriesId, payload.seasonId,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
     logger.info(f"用户 '{current_user.username}' 将作品 {animeId} 绑定到媒体服务器 {server_type} (SeriesId={payload.seriesId})")
     return {"message": "绑定成功"}

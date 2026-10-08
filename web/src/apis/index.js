@@ -274,6 +274,8 @@ export const getImdbSearch = data =>
 /** ---------------------------------------------------任务相关开始------------------------------------------------ */
 /** 任务列表 */
 export const getTaskList = data => api.get('/api/ui/tasks', data)
+/** 任务详情 */
+export const getTaskDetail = taskId => api.get(`/api/ui/tasks/${encodeURIComponent(taskId)}`)
 /** 暂停任务 */
 export const pauseTask = data => api.post(`/api/ui/tasks/${data.taskId}/pause`)
 /** 继续任务 */
@@ -914,6 +916,10 @@ export const getAIMetrics = (hours = 24, source = 'db') => api.get(`/api/ui/conf
 /** 清空 AI 缓存 */
 export const clearAICache = () => api.post('/api/ui/config/ai/cache/clear')
 
+/** AI 连接配置与未保存参数的模型预览 */
+export const saveAIConnection = data => api.put('/api/ui/config/ai/connection', data)
+export const previewAIModels = data => api.post('/api/ui/config/ai/models/preview', data)
+
 /** 获取 AI 模型列表 */
 export const getAIModels = (provider, refresh = false) => api.get(`/api/ui/config/ai/models?provider=${provider}&refresh=${refresh}`)
 
@@ -1225,14 +1231,12 @@ export const deleteSubscriptionTarget = (id) => api.delete(`/api/ui/subscription
 /** 立即扫描订阅目标 */
 export const scanSubscriptionTarget = (id) => api.post(`/api/ui/subscriptions/targets/${id}/scan`)
 
-/** 查询订阅候选项 */
-export const getSubscriptionItems = (params) => api.get('/api/ui/subscriptions/items', params)
+/** 查询订阅候选项（须传 parentId，返回含 isImported 的候选分集列表） */
+export const getSubscriptionItems = (parentId) =>
+  api.get('/api/ui/subscriptions/items', { parentId })
 
-/** 重试订阅候选项 */
-export const retrySubscriptionItem = (id) => api.post(`/api/ui/subscriptions/items/${id}/retry`)
-
-/** 忽略订阅候选项 */
-export const ignoreSubscriptionItem = (id) => api.post(`/api/ui/subscriptions/items/${id}/ignore`)
+/** 移除订阅候选项（候选池无 ignored 状态，「忽略」即从池中删除） */
+export const removeSubscriptionItem = (id) => api.delete(`/api/ui/subscriptions/items/${id}`)
 
 
 // ========== 通知渠道 ==========

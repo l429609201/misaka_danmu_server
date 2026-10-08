@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 from src.notification.base import (
     CommandResult, ConversationState, ChannelCapabilities,
 )
+from src.notification.subscription_matcher import SubscriptionMatcher
 from src.notification.menus import (
     ImportBaseMixin,
     MessagesMixin,
@@ -57,10 +58,11 @@ class NotificationService(
         self.metadata_manager = None
         self.task_manager = None
         self.scheduler_manager = None
-        self.config_manager = None
+        self.config_service = None
         self.rate_limiter = None
         self.title_recognition_manager = None
-        self.ai_matcher_manager = None
+        # 通知菜单与任务使用同一个 AI 服务。
+        self.ai_service = None
         # 渠道管理器引用（由 NotificationManager 设置）
         self.notification_manager = None
         # 对话状态: user_id -> ConversationState
@@ -276,6 +278,10 @@ class NotificationService(
             "task_detail": self.cb_task_detail,
             # help inline buttons
             "help_cmd": self.cb_help_cmd,
+            # 渠道 Agent 选项
+            "llm_choice": self.cb_llm_choice,
+            "llm_confirm": self.cb_llm_confirm,
+            "llm_task": self.cb_llm_task,
             # noop
             "noop": self.cb_noop,
         }
@@ -400,16 +406,21 @@ class NotificationService(
         channels = self.notification_manager.get_all_channels()
         cached_channels = set(self._task_progress_tg_msg.get(task_id, {}).keys())
 
+        event_ctx = self.notification_manager._build_legacy_event_ctx(event_type, data)
         for ch_id, channel_instance in channels.items():
             try:
                 events_cfg = channel_instance.config.get("__events_config", {})
-                check_key = self._FALLBACK_COMPLETE_EVENTS.get(event_type, event_type)
-                subscribed = events_cfg.get(check_key)
-
                 has_cached_progress = ch_id in cached_channels
-
-                if not subscribed and not has_cached_progress:
-                    continue
+                if not has_cached_progress:
+                    if event_ctx is None:
+                        continue
+                    scopes = (
+                        events_cfg.get("scopes", {})
+                        if isinstance(events_cfg, dict) and events_cfg.get("version") == 2
+                        else SubscriptionMatcher.get_default_scopes()
+                    )
+                    if not SubscriptionMatcher.should_send(event_ctx, scopes):
+                        continue
 
                 # 统一使用新消息类渲染（registry + render_for_channel），不再用旧 _format_event_message
                 rendered = self.notification_manager.render_event_for_channel(
@@ -457,20 +468,9 @@ class NotificationService(
                 # 因此这里按能力而非渠道类型判断，新增渠道无需再改这里。
                 if not channel_instance.get_capabilities().supports_editing:
                     continue
-                # 统一使用新 TaskProgressMessage 渲染（合法 MarkdownV2），避免 edit 解析失败刷屏
-                progress_payload = {
-                    "task_title": task_title,
-                    "progress": progress,
-                    "description": description,
-                    "check_event_key": check_event_key,
-                }
-                rendered = self.notification_manager.render_event_for_channel(
-                    "task_progress", progress_payload, channel_instance
-                )
-                if rendered is None:
-                    continue
-                # body 已自带标题行，title 传空避免 send_message 二次拼接重复
-                text = rendered.body
+                # 进度事件没有通用模板；使用普通文本供支持编辑的渠道复用消息。
+                percent = max(0, min(100, int(progress)))
+                text = f"{task_title}\n[{('█' * (percent // 5)).ljust(20, '░')}] {percent}%\n{description}"
                 edit_mid = self._task_progress_tg_msg.get(task_id, {}).get(ch_id)
                 msg_id_out: List[int] = []
                 logger.debug(f"[进度通知] task_id={task_id[:8]} ch={ch_id} edit_mid={edit_mid} progress={progress}%")

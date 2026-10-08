@@ -7,10 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
-from src.db import crud, models, ConfigManager
+from src.schemas import MetadataDetailsResponse, TMDBEpisodeGroupDetails, TMDBSeasonInfo, User
+from src.services.service_container import get_database_service
 from src.utils import parse_search_keyword as utils_parse_search_keyword
 from src.utils import clean_movie_title as _clean_movie_title
-from src.utils.common import convert_keys_to_camel
+from src.utils.misc.common import convert_keys_to_camel
 from .base import BaseMetadataSource
 
 from fastapi import HTTPException, status
@@ -45,7 +46,7 @@ def _is_romaji_candidate(value: Optional[str], *, original_title: Optional[str] 
     return True
 
 
-async def _get_proxy_for_tmdb(config_manager: ConfigManager, session_factory: async_sessionmaker[AsyncSession]) -> Optional[str]:
+async def _get_proxy_for_tmdb(config_service, session_factory: async_sessionmaker[AsyncSession]) -> Optional[str]:
     """
     Helper to determine if a proxy should be used for TMDB.
 
@@ -55,11 +56,11 @@ async def _get_proxy_for_tmdb(config_manager: ConfigManager, session_factory: as
     - accelerate: 加速代理（URL 重写模式，不返回代理 URL）
     """
     # 获取代理模式
-    proxy_mode = await config_manager.get("proxyMode", "none")
+    proxy_mode = await config_service.get("proxyMode", "none")
 
     # 兼容旧配置：如果 proxyMode 为 none 但 proxyEnabled 为 true，则使用 http_socks 模式
     if proxy_mode == "none":
-        proxy_enabled_globally = (await config_manager.get("proxyEnabled", "false")).lower() == 'true'
+        proxy_enabled_globally = (await config_service.get("proxyEnabled", "false")).lower() == 'true'
         if proxy_enabled_globally:
             proxy_mode = "http_socks"
 
@@ -68,12 +69,13 @@ async def _get_proxy_for_tmdb(config_manager: ConfigManager, session_factory: as
     if proxy_mode != "http_socks":
         return None
 
-    proxy_url = await config_manager.get("proxyUrl", "")
+    proxy_url = await config_service.get("proxyUrl", "")
     if not proxy_url:
         return None
 
-    async with session_factory() as session:
-        metadata_settings = await crud.get_all_metadata_source_settings(session)
+    db = get_database_service()
+    async with db.transaction():
+        metadata_settings = await db.metadata_source.get_all_metadata_source_settings()
 
     provider_setting = next((s for s in metadata_settings if s['providerName'] == 'tmdb'), None)
     use_proxy = provider_setting.get('useProxy', False) if provider_setting else False
@@ -90,7 +92,7 @@ class TmdbMetadataSource(BaseMetadataSource):
         动态地从配置中获取测试URL。
         这确保了代理测试和连接性检查使用的是用户配置的域名。
         """
-        base_url_from_config = await self.config_manager.get("tmdbApiBaseUrl", "https://api.themoviedb.org/3")
+        base_url_from_config = await self.config_service.get("tmdbApiBaseUrl", "https://api.themoviedb.org/3")
         # 测试URL应该是基础域名，不应包含 /3 这样的API路径
         cleaned_domain = base_url_from_config.rstrip('/')
         return re.sub(r'/3/?$', '', cleaned_domain)
@@ -100,7 +102,7 @@ class TmdbMetadataSource(BaseMetadataSource):
         获取TMDB图片基础URL，并对其进行健壮性处理。
         如果用户只配置了域名，则自动附加默认的尺寸路径。
         """
-        image_base_url_config = await self.config_manager.get("tmdbImageBaseUrl", "https://image.tmdb.org/t/p/w500")
+        image_base_url_config = await self.config_service.get("tmdbImageBaseUrl", "https://image.tmdb.org/t/p/w500")
 
         # 如果配置中不包含 /t/p/ 路径，说明用户可能只填写了域名
         if '/t/p/' not in image_base_url_config:
@@ -110,17 +112,17 @@ class TmdbMetadataSource(BaseMetadataSource):
         return image_base_url_config.rstrip('/')
 
     async def _create_client(self) -> httpx.AsyncClient:
-        api_key = await self.config_manager.get("tmdbApiKey")
+        api_key = await self.config_service.get("tmdbApiKey")
         if not api_key:
             raise ValueError("TMDB API Key not configured.")
 
         # 修正：确保基础URL总是以 /3 结尾，以兼容用户可能输入的各种域名格式
-        base_url_from_config = await self.config_manager.get("tmdbApiBaseUrl", "https://api.themoviedb.org/3")
+        base_url_from_config = await self.config_service.get("tmdbApiBaseUrl", "https://api.themoviedb.org/3")
         cleaned_domain = base_url_from_config.rstrip('/')
         base_url = cleaned_domain if cleaned_domain.endswith('/3') else f"{cleaned_domain}/3"
 
         params = {"api_key": api_key, "language": "zh-CN"}
-        proxy_to_use = await _get_proxy_for_tmdb(self.config_manager, self._session_factory)
+        proxy_to_use = await _get_proxy_for_tmdb(self.config_service, self._session_factory)
         if proxy_to_use:
             self.logger.debug(f"TMDB: 将使用代理: {proxy_to_use}")
         return httpx.AsyncClient(base_url=base_url, params=params, timeout=20.0, follow_redirects=True, proxy=proxy_to_use)
@@ -188,7 +190,7 @@ class TmdbMetadataSource(BaseMetadataSource):
             self.logger.debug(f"TMDB 标题获取失败 (tmdb_id={tmdb_id}): {e}")
         return None
 
-    async def search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
+    async def search(self, keyword: str, user: User, mediaType: Optional[str] = None) -> List[MetadataDetailsResponse]:
         if not mediaType:
             raise ValueError("TMDB search requires a mediaType ('tv', 'movie', or 'multi').")
 
@@ -221,7 +223,7 @@ class TmdbMetadataSource(BaseMetadataSource):
                         except (ValueError, TypeError):
                             pass
 
-                    results.append(models.MetadataDetailsResponse(
+                    results.append(MetadataDetailsResponse(
                         id=str(item['id']),
                         tmdbId=str(item['id']),
                         title=title,
@@ -235,7 +237,7 @@ class TmdbMetadataSource(BaseMetadataSource):
             # 捕获 _create_client 中的 API Key 未配置错误
             raise HTTPException(status_code=status.HTTP_412_PRECONDITION_FAILED, detail=str(e))
 
-    async def get_details(self, item_id: str, user: models.User, mediaType: Optional[str] = None) -> Optional[models.MetadataDetailsResponse]:
+    async def get_details(self, item_id: str, user: User, mediaType: Optional[str] = None) -> Optional[MetadataDetailsResponse]:
         if not mediaType:
             raise ValueError("TMDB get_details requires a mediaType ('tv' or 'movie').")
 
@@ -246,7 +248,7 @@ class TmdbMetadataSource(BaseMetadataSource):
             cached = await self.cache_manager.get(cache_prefix, cache_key)
             if cached and isinstance(cached, dict):
                 self.logger.debug(f"TMDB 别名获取: 缓存命中 ({mediaType}/{item_id})")
-                return models.MetadataDetailsResponse(**cached)
+                return MetadataDetailsResponse(**cached)
         except Exception:
             pass
 
@@ -282,7 +284,7 @@ class TmdbMetadataSource(BaseMetadataSource):
                     seasons_data = []
                     for season in details.get('seasons', []):
                         try:
-                            seasons_data.append(models.TMDBSeasonInfo(
+                            seasons_data.append(TMDBSeasonInfo(
                                 airDate=season.get('air_date'),
                                 episodeCount=season.get('episode_count', 0),
                                 id=season.get('id'),
@@ -296,7 +298,7 @@ class TmdbMetadataSource(BaseMetadataSource):
                             continue
 
                 # 5. Construct the response
-                result = models.MetadataDetailsResponse(
+                result = MetadataDetailsResponse(
                     id=str(details['id']),
                     tmdbId=str(details['id']),
                     title=details.get('name') or details.get('title'),
@@ -470,7 +472,7 @@ class TmdbMetadataSource(BaseMetadataSource):
             "aliases_jp": list(dict.fromkeys([_clean_movie_title(a) for a in aliases_jp if a]))
         }
 
-    async def search_aliases(self, keyword: str, user: models.User) -> Set[str]:
+    async def search_aliases(self, keyword: str, user: User) -> Set[str]:
         aliases: Set[str] = set()
         try:
             async with await self._create_client() as client:
@@ -504,7 +506,7 @@ class TmdbMetadataSource(BaseMetadataSource):
         """检查TMDB源配置状态"""
         try:
             # 检查API Key配置
-            api_key = await self.config_manager.get("tmdbApiKey", "")
+            api_key = await self.config_service.get("tmdbApiKey", "")
             if not api_key or api_key.strip() == "":
                 return {"code": "unconfigured", "message": "未配置 (缺少TMDB API Key)"}
 
@@ -516,7 +518,7 @@ class TmdbMetadataSource(BaseMetadataSource):
         except Exception as e:
             return {"code": "error", "message": f"配置检查失败: {e}"}
 
-    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: models.User, request: Any) -> Any:
+    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: User, request: Any) -> Any:
         try:
             async with await self._create_client() as client:
                 if action_name == "get_episode_groups":
@@ -560,7 +562,7 @@ class TmdbMetadataSource(BaseMetadataSource):
             # 捕获 _create_client 中的 API Key 未配置错误
             raise HTTPException(status_code=status.HTTP_412_PRECONDITION_FAILED, detail=str(e))
 
-    async def get_all_episode_groups(self, tmdb_id: int, user: models.User) -> List[Dict[str, Any]]:
+    async def get_all_episode_groups(self, tmdb_id: int, user: User) -> List[Dict[str, Any]]:
         """
         获取指定TMDB TV ID的所有剧集组信息。
         返回剧集组列表，每个剧集组包含id、name、type等信息。
@@ -588,7 +590,7 @@ class TmdbMetadataSource(BaseMetadataSource):
             self.logger.error(f"获取剧集组失败 (TMDB ID: {tmdb_id}): {e}")
             return []
 
-    async def update_tmdb_mappings(self, tmdb_tv_id: int, group_id: str, user: models.User):
+    async def update_tmdb_mappings(self, tmdb_tv_id: int, group_id: str, user: User):
         """
         Fetches episode group details from TMDB and saves the mappings to the database.
         This method is specific to the TMDB source and is called by the manager.
@@ -600,15 +602,15 @@ class TmdbMetadataSource(BaseMetadataSource):
             response.raise_for_status()
             api_data = response.json()
             camel_case_data = convert_keys_to_camel(api_data)
-            group_details = models.TMDBEpisodeGroupDetails.model_validate(camel_case_data)
+            group_details = TMDBEpisodeGroupDetails.model_validate(camel_case_data)
 
             # 2. (可选) 丰富分集信息，例如获取日文标题和图片
             # This part can be extended if needed. For now, we focus on mapping.
 
             # 3. 保存映射到数据库
-            async with self._session_factory() as session:
-                await crud.save_tmdb_episode_group_mappings(
-                    session=session,
+            db = get_database_service()
+            async with db.transaction():
+                await db.tmdb.save_episode_group_mappings(
                     tmdb_tv_id=tmdb_tv_id,
                     group_id=group_id,
                     group_details=group_details

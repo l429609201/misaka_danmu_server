@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 
-from ..security_gateway import ToolPermission
+from ..security_gateway import ToolPermission, is_forbidden_control_identifier
 from .contracts import (
     ActionEffect,
     ConfirmationMode,
@@ -50,12 +50,6 @@ class ApiOperation:
     body_fields: Dict[str, str] = field(default_factory=dict)
     # 执行成功后给用户的中文提示模板
     success_hint: str = ""
-    # ── 明文回传豁免（默认关闭，逐操作显式声明） ──
-    # 出口脱敏 sanitize_output 会把 token/secret 类字段一律打码，这是既有安全防线。
-    # 少数操作（如新建 Token）必须把明文交付给用户才有意义，才在此显式登记豁免字段。
-    # ⚠️ 豁免意味着该字段明文会进入对话历史，并随后续每轮请求发送给大模型提供商，
-    #    因此只允许用于「用户主动索取、且本轮刚生成」的凭据，绝不可用于读取既有密钥。
-    plaintext_exempt_fields: Tuple[str, ...] = ()
 
     @property
     def full_path(self) -> str:
@@ -73,88 +67,7 @@ class ApiOperation:
         return self.confirmation or default_confirmation(self.effect)
 
 
-# ── 白名单：Token 管理组 ──────────────────────────────────
-# 后端实现见 src/api/ui/token.py，路由已挂在 prefix="/ui"
-#
-# 注意：列表查询不在此登记 —— 已有只读工具 list_tokens 承担该职责，
-# 两处都做会让 AI 面对两个等价入口而摇摆。此处只登记 list_tokens 无法完成的写操作，
-# 以及需要额外路径参数的日志查询。
-_TOKEN_OPERATIONS: Tuple[ApiOperation, ...] = (
-    ApiOperation(
-        operation_id="token.create",
-        method="POST",
-        path="/ui/tokens",
-        summary="创建一个新的弹幕 API Token（供第三方播放器使用）；已配置自定义域名时会返回可直接复制的完整地址",
-        # 新增记录，删掉即可还原，属可逆写
-        effect=ActionEffect.REVERSIBLE_WRITE,
-        result_sensitivity=ResultSensitivity.SECRET,
-        body_fields={
-            "name": "Token 名称，必填，如「我的播放器」",
-            "validityPeriod": "有效期，可选值 permanent / 1d / 7d / 30d / 180d / 365d，默认 permanent",
-            "dailyCallLimit": "每日调用上限，整数；-1 表示不限制，默认 500",
-            "customToken": "自定义 Token 字符串（可选）；不填则自动生成 20 位随机串。"
-                           "仅允许字母数字下划线短横线，长度 5~100",
-        },
-        # 新建的 Token 明文必须交付给用户才有使用价值，故对 token 字段开豁免。
-        # 注意：token.list / token.access_logs 等读取类操作不开豁免，既有密钥仍全程打码。
-        plaintext_exempt_fields=("token",),
-        success_hint="Token 已创建。此凭据仅本次展示，请提醒用户立即保存，具体交付方式见返回的 hint。",
-    ),
-    ApiOperation(
-        operation_id="token.toggle",
-        method="PUT",
-        path="/ui/tokens/{token_id}/toggle",
-        summary="切换指定 Token 的启用/禁用状态",
-        # 再切一次即可还原
-        effect=ActionEffect.REVERSIBLE_WRITE,
-        path_params={"token_id": "Token 的数字 ID，可先用 token.list 获取"},
-        success_hint="Token 启用状态已切换。",
-    ),
-    ApiOperation(
-        operation_id="token.update",
-        method="PUT",
-        path="/ui/tokens/{token_id}",
-        summary="更新 Token 的名称、每日调用上限等信息",
-        # 旧值会被覆盖，但可再次改回
-        effect=ActionEffect.REVERSIBLE_WRITE,
-        path_params={"token_id": "Token 的数字 ID"},
-        body_fields={
-            "name": "新的 Token 名称",
-            "dailyCallLimit": "新的每日调用上限；-1 表示不限制",
-        },
-        success_hint="Token 信息已更新。",
-    ),
-    ApiOperation(
-        operation_id="token.reset_counter",
-        method="POST",
-        path="/ui/tokens/{token_id}/reset",
-        summary="重置指定 Token 的今日调用次数计数",
-        # 计数一旦清零无法恢复原值，但影响面仅限统计，不涉及数据丢失
-        effect=ActionEffect.REVERSIBLE_WRITE,
-        path_params={"token_id": "Token 的数字 ID"},
-        success_hint="Token 调用次数已重置。",
-    ),
-    ApiOperation(
-        operation_id="token.delete",
-        method="DELETE",
-        path="/ui/tokens/{token_id}",
-        summary="删除指定 Token（删除后使用该 Token 的播放器将立即失效）",
-        # 不可逆：删除后原 Token 字符串无法找回，依赖它的播放器会立刻断连
-        effect=ActionEffect.DESTRUCTIVE_WRITE,
-        path_params={"token_id": "Token 的数字 ID"},
-        success_hint="Token 已删除。",
-    ),
-    ApiOperation(
-        operation_id="token.access_logs",
-        method="GET",
-        path="/ui/tokens/{tokenId}/logs",
-        summary="查看指定 Token 的访问日志（请求方法、路径、状态码、来源 IP）",
-        # 日志含来源 IP，属个人可识别信息
-        effect=ActionEffect.SAFE_READ,
-        result_sensitivity=ResultSensitivity.PRIVATE,
-        path_params={"tokenId": "Token 的数字 ID"},
-    ),
-)
+# Token 管理与调用配额不进入 AI operation 策略表。
 
 
 # ── 白名单：通知渠道组 ────────────────────────────────────
@@ -433,24 +346,24 @@ _SUBSCRIPTION_OPERATIONS: Tuple[ApiOperation, ...] = (
         effect=ActionEffect.SAFE_READ,
         confirmation=ConfirmationMode.NONE,
     ),
-    ApiOperation(
-        operation_id="subscription.retry_item",
-        method="POST",
-        path="/ui/subscriptions/items/{item_id}/retry",
-        summary="重试一个失败的订阅候选项",
-        effect=ActionEffect.EXTERNAL_SIDE_EFFECT,
-        path_params={"item_id": "候选项数字 ID，取自 subscription.list_items"},
-        success_hint="已重新提交该候选项。",
-    ),
-    ApiOperation(
-        operation_id="subscription.ignore_item",
-        method="POST",
-        path="/ui/subscriptions/items/{item_id}/ignore",
-        summary="忽略一个订阅候选项（不再重试该条）",
-        effect=ActionEffect.REVERSIBLE_WRITE,
-        path_params={"item_id": "候选项数字 ID"},
-        success_hint="该候选项已忽略。",
-    ),
+    # ApiOperation(
+    #     operation_id="subscription.retry_item",
+    #     method="POST",
+    #     path="/ui/subscriptions/items/{item_id}/retry",
+    #     summary="重试一个失败的订阅候选项",
+    #     effect=ActionEffect.EXTERNAL_SIDE_EFFECT,
+    #     path_params={"item_id": "候选项数字 ID，取自 subscription.list_items"},
+    #     success_hint="已重新提交该候选项。",
+    # ),
+    # ApiOperation(
+    #     operation_id="subscription.ignore_item",
+    #     method="POST",
+    #     path="/ui/subscriptions/items/{item_id}/ignore",
+    #     summary="忽略一个订阅候选项（不再重试该条）",
+    #     effect=ActionEffect.REVERSIBLE_WRITE,
+    #     path_params={"item_id": "候选项数字 ID"},
+    #     success_hint="该候选项已忽略。",
+    # ),
 )
 
 
@@ -541,11 +454,9 @@ _CALENDAR_OPERATIONS: Tuple[ApiOperation, ...] = (
 )
 
 
-# ── 白名单：弹幕存储整理组 ────────────────────────────────
-# 后端实现见 src/api/ui/danmaku_storage.py（prefix="/ui/danmaku-storage"）
-#
-# ⚠️ 这组会批量移动/重命名磁盘上的弹幕文件，是当前风险最高的一组。
-# 每个执行类操作都有配套的 preview_* 只读接口，务必先预览再执行。
+# ── 弹幕存储整理候选操作（当前只启用无副作用的模板变量查询） ──
+# 文件迁移/重命名路由尚未修复服务边界，且目标目录涉及宿主文件系统；
+# 未部署隔离运行时前不得把这些契约加入 _ALL_OPERATIONS。
 _DANMAKU_STORAGE_OPERATIONS: Tuple[ApiOperation, ...] = (
     ApiOperation(
         operation_id="storage.template_variables",
@@ -677,7 +588,7 @@ _MEDIA_ITEM_OPERATIONS: Tuple[ApiOperation, ...] = (
             "shows": "按剧集维度导入的描述数组（可选）",
             "seasons": "按季度维度导入的描述数组（可选）",
         },
-        success_hint="导入任务已提交，可用 list_tasks 查看进度。",
+        success_hint="导入任务已提交并返回 taskId。不要让用户去任务管理器；必须在当前对话提供查看进度或等待完成的选项，用户选择后用 get_task_status 继续处理。",
     ),
     ApiOperation(
         operation_id="mediaitem.import_all_unimported",
@@ -736,17 +647,23 @@ _MEDIA_ITEM_OPERATIONS: Tuple[ApiOperation, ...] = (
 
 # 全部已加白操作（后续按需追加其他业务组）
 _ALL_OPERATIONS: Tuple[ApiOperation, ...] = (
-    _TOKEN_OPERATIONS
-    + _NOTIFICATION_OPERATIONS
+    _NOTIFICATION_OPERATIONS
     + _MEDIA_SERVER_OPERATIONS
     + _SUBSCRIPTION_OPERATIONS
     + _CALENDAR_OPERATIONS
-    + _DANMAKU_STORAGE_OPERATIONS
+    + tuple(op for op in _DANMAKU_STORAGE_OPERATIONS
+            if op.operation_id == "storage.template_variables")
     + _MEDIA_ITEM_OPERATIONS
 )
 
 EXPOSED_OPERATIONS: Dict[str, ApiOperation] = {
     op.operation_id: op for op in _ALL_OPERATIONS
+    if op.result_sensitivity != ResultSensitivity.SECRET
+    and op.effect != ActionEffect.SENSITIVE_READ
+    and not is_forbidden_control_identifier(op.path)
+    and not is_forbidden_control_identifier(op.operation_id)
+    and not any(is_forbidden_control_identifier(key)
+                for key in (*op.body_fields, *op.query_params, *op.path_params))
 }
 
 
@@ -756,6 +673,9 @@ FORBIDDEN_PATH_PREFIXES: Tuple[str, ...] = (
     "/ui/auth",          # 登录、改密、MFA —— 认证面禁止代理
     "/ui/backup",        # 备份恢复 —— 可覆盖全库
     "/ui/debug",         # 调试端点 —— 可能暴露内部状态
+    "/ui/tokens",        # Token 明文、限额和调用计数
+    "/ui/rate-limit",    # 流控与配额
+    "/ui/rate_limit",
     "/webhook",          # 外部回调入口 —— 不应由 AI 主动触发
 )
 
@@ -773,7 +693,13 @@ def resolve_api_operation(operation_id: str) -> Optional[ApiOperation]:
     if op is None:
         return None
     # 双保险：即便被误加白，命中禁止前缀也一律拒绝
-    if any(op.path.startswith(prefix) for prefix in FORBIDDEN_PATH_PREFIXES):
+    if (op.result_sensitivity == ResultSensitivity.SECRET
+            or op.effect == ActionEffect.SENSITIVE_READ
+            or any(op.path.startswith(prefix) for prefix in FORBIDDEN_PATH_PREFIXES)
+            or is_forbidden_control_identifier(op.path)
+            or is_forbidden_control_identifier(op.operation_id)
+            or any(is_forbidden_control_identifier(key)
+                   for key in (*op.body_fields, *op.query_params, *op.path_params))):
         return None
     return op
 
@@ -793,7 +719,13 @@ def list_exposed_operations(
             continue
         if not include_write and op.permission == ToolPermission.WRITE:
             continue
-        if any(op.path.startswith(p) for p in FORBIDDEN_PATH_PREFIXES):
+        if (op.result_sensitivity == ResultSensitivity.SECRET
+                or op.effect == ActionEffect.SENSITIVE_READ
+                or any(op.path.startswith(p) for p in FORBIDDEN_PATH_PREFIXES)
+                or is_forbidden_control_identifier(op.path)
+                or is_forbidden_control_identifier(op.operation_id)
+                or any(is_forbidden_control_identifier(key)
+                       for key in (*op.body_fields, *op.query_params, *op.path_params))):
             continue
         result.append(op)
     return tuple(result)

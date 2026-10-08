@@ -3,16 +3,12 @@
 提供 @CXLK 指令,查询流控使用情况和剩余时间
 """
 import logging
-from typing import List, TYPE_CHECKING
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
 
-from .base import CommandHandler
-from src.db import crud
-from src.rate_limiter import RateLimiter
 from src.core.timezone import get_now
-
-if TYPE_CHECKING:
-    from src.api.dandan import DandanSearchAnimeResponse
+from src.schemas.dandan import DandanSearchAnimeResponse
+from src.services.service_container import get_database_service
+from .base import CommandHandler
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +25,14 @@ class RateLimitStatusCommand(CommandHandler):
             examples=["@CXLK", "@cxlk"]
         )
     
-    async def execute(self, token: str, args: List[str], session: AsyncSession,
-                     config_manager, **kwargs) -> "DandanSearchAnimeResponse":
+    async def execute(self, token: str, args: List[str], session: object,
+                     config_service, **kwargs) -> "DandanSearchAnimeResponse":
         """执行流控查询"""
         # 获取图片URL
-        image_url = await self.get_image_url(config_manager)
+        image_url = await self.get_image_url(config_service)
         
         # 获取 rate_limiter
-        rate_limiter: RateLimiter = kwargs.get('rate_limiter')
+        rate_limiter = kwargs.get('rate_limiter')
         if not rate_limiter:
             return self.error_response(
                 title="流控查询失败",
@@ -51,8 +47,9 @@ class RateLimitStatusCommand(CommandHandler):
         enabled = rate_limiter.enabled
         verification_failed = rate_limiter._verification_failed
         
-        # 获取所有流控状态
-        all_states = await crud.get_all_rate_limit_states(session)
+        db = get_database_service()
+        async with db.transaction():
+            all_states = await db.rate_limit.get_all_snapshots()
         states_map = {s.providerName: s for s in all_states}
         
         # 计算剩余重置时间

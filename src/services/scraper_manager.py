@@ -6,26 +6,33 @@ import logging
 import pkgutil
 import re
 import shutil
+import time
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Type, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, Type
 from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src._version import APP_VERSION, MIN_SCRAPER_VERSION
 from src.core.env import is_docker_environment
-from src.db import ConfigManager, crud, models, orm_models
+from src.core.timezone import get_now
+from src.services.config_service import ConfigService
+from src.schemas.search import ProviderSearchInfo, ProviderEpisodeInfo
+from src.schemas.ui_models import ScraperSetting
+from src.schemas.common import SCRAPER_API_VERSION
 from src.scrapers.base import BaseScraper
-from src.utils import TransportManager
-from src.utils.buffered_logging import BufferedLogHandler, create_buffered_logger, flush_buffered_logs
-from src.utils.scraper_version_manager import ScraperVersionManager
-
-# 从 models 导入需要的类
-ProviderSearchInfo = models.ProviderSearchInfo
-ScraperSetting = models.ScraperSetting
-
-if TYPE_CHECKING:
-    from .metadata_manager import MetadataSourceManager
+from src.services.service_container import get_database_service, get_task_manager
+from src.utils.diagnostics.task_exceptions import TaskFailed, TaskSuccess
+from src.utils.runtime.transport_manager import TransportManager
+from src.utils.diagnostics.buffered_logging import (
+    BufferedLogHandler,
+    create_buffered_logger,
+    flush_buffered_logs,
+)
+from src.utils.parsing.episode_filter import apply_global_episode_title_filter
+from src.utils.scraper_ops.scraper_version_manager import ScraperVersionManager
 
 
 @dataclass
@@ -57,17 +64,21 @@ class ModuleDiscoveryResult:
 
 
 def _version_satisfies(current: str, minimum: str) -> bool:
-    """比较语义版本号，返回 current >= minimum。解析失败时默认放行。"""
-    try:
-        cur = tuple(int(x) for x in current.strip().split('.')[:3])
-        min_ = tuple(int(x) for x in minimum.strip().split('.')[:3])
-        return cur >= min_
-    except Exception:
-        return True
+    """比较严格的三段数字版本号，非法值明确不兼容。"""
+    version_pattern = re.compile(r"^\d+\.\d+\.\d+$")
+    if not isinstance(current, str) or not isinstance(minimum, str):
+        logging.getLogger(__name__).warning("非法版本类型: current=%r minimum=%r", current, minimum)
+        return False
+    current = current.strip()
+    minimum = minimum.strip()
+    if not version_pattern.fullmatch(current) or not version_pattern.fullmatch(minimum):
+        logging.getLogger(__name__).warning("非法版本格式: current=%r minimum=%r", current, minimum)
+        return False
+    return tuple(int(x) for x in current.split('.')) >= tuple(int(x) for x in minimum.split('.'))
 
 
 class ScraperManager:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_manager: ConfigManager, metadata_manager: "MetadataSourceManager", transport_manager: TransportManager):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_service: ConfigService, metadata_manager: Any, transport_manager: TransportManager):
         self.scrapers: Dict[str, BaseScraper] = {}
         self._scraper_classes: Dict[str, Type[BaseScraper]] = {}
         self._scraper_versions: Dict[str, str] = {}  # 存储每个源的版本号
@@ -82,11 +93,12 @@ class ScraperManager:
         self._search_locks: set[str] = set()
         # 存储最后一次 search_all 的单源耗时信息: [(provider_name, duration_ms, result_count), ...]
         self.last_search_timing: List[Tuple[str, float, int]] = []
+        self.last_search_errors: List[str] = []
         # 编辑导入展示用：分集列表命中源缓存时，仍保留最近一次黑名单过滤明细。
         self._episode_filtered_details: Dict[Tuple[str, str], list] = {}
         self._webhook_search_locks: set[str] = set()  # Webhook 搜索锁（基于 animeTitle-season）
         self._lock = asyncio.Lock()
-        self.config_manager = config_manager
+        self.config_service = config_service
         self.metadata_manager = metadata_manager
         self.transport_manager = transport_manager
 
@@ -376,16 +388,16 @@ class ScraperManager:
             old_key = f"scraper_{provider_name}_fetch_episode_count"
             new_key = f"scraper_{provider_name}_enrich_enabled"
 
-            old_value = await self.config_manager.get(old_key, None)
-            existing = await self.config_manager.get(new_key, None)
+            old_value = await self.config_service.get(old_key, None)
+            existing = await self.config_service.get(new_key, None)
 
             if existing is None:
                 # 如果旧配置存在，迁移过来；否则默认 false
                 if old_value is not None:
-                    await self.config_manager.setValue(new_key, old_value)
-                    logger.info(f"已将 {provider_name} 的旧配置 {old_key}={old_value} 迁移到 {new_key}")
-                else:
-                    await self.config_manager.setValue(new_key, "false")
+                    await self.config_service.set(new_key, old_value)
+                logger.info(f"已将 {provider_name} 的旧配置 {old_key}={old_value} 迁移到 {new_key}")
+            else:
+                await self.config_service.set(new_key, "false")
 
         logger.info(f"已为 {len(self.scrapers)} 个源初始化信息增强配置默认值（false）")
 
@@ -404,7 +416,6 @@ class ScraperManager:
         if not global_min_version:
             return True
 
-        from src._version import APP_VERSION
         if not _version_satisfies(APP_VERSION, global_min_version):
             logging.getLogger(__name__).warning(
                 f"弹幕源包要求服务器版本 >= {global_min_version}，"
@@ -418,7 +429,7 @@ class ScraperManager:
     async def _register_default_configs(self, default_configs: Dict[str, Tuple[Any, str]]):
         """注册爬虫的默认配置"""
         try:
-            await self.config_manager.register_defaults(default_configs)
+            await self.config_service.register_defaults(default_configs)
             logging.getLogger(__name__).info(
                 f"已为 {len(default_configs)} 个搜索源注册默认配置。"
             )
@@ -429,20 +440,26 @@ class ScraperManager:
 
     async def _sync_to_database(self, discovered_providers: List[str], failed_providers: List[str]):
         """将发现的爬虫同步到数据库"""
-        async with self._session_factory() as session:
-            # 清理数据库中不再存在的源（只保留成功加载的 + custom）
+        # why: 清理、同步、重排三步必须原子完成，中途失败会留下不一致的源列表。
+        db = get_database_service()
+        async with db.transaction():
+            # 失败/不兼容的来源仍保留数据库设置，避免临时加载失败被误判为删除。
+            existing_settings = await db.scraper.get_all_scraper_settings()
+            existing_providers = [s.get('providerName') for s in existing_settings if s.get('providerName')]
             providers_to_keep = discovered_providers + ['custom']
-            await crud.remove_stale_scrapers(session, providers_to_keep)
+            if failed_providers:
+                providers_to_keep.extend(existing_providers)
+            await db.scraper.remove_stale_scrapers(providers_to_keep)
 
             # 确保所有发现的搜索源和 'custom' 源都存在于数据库中
             providers_to_sync = discovered_providers + ['custom']
-            await crud.sync_scrapers_to_db(session, providers_to_sync)
+            await db.scraper.sync_scrapers_to_db(providers_to_sync)
 
             # 按用户保存的顺序快照重排 display_order
-            await crud.apply_scraper_order_from_snapshot(session)
+            await db.scraper.apply_scraper_order_from_snapshot()
 
             # 重新加载所有设置
-            settings_list = await crud.get_all_scraper_settings(session)
+            settings_list = await db.scraper.get_all_scraper_settings()
 
         self.scraper_settings = {s['providerName']: s for s in settings_list}
 
@@ -454,13 +471,7 @@ class ScraperManager:
 
         for provider_name, scraper_class in list(self._scraper_classes.items()):
             try:
-                scraper_instance = scraper_class(
-                    self._session_factory,
-                    self.config_manager,
-                    self.transport_manager
-                )
-                # 设置 scraper_manager 引用，以便使用缓存的配置
-                scraper_instance._scraper_manager_ref = self
+                scraper_instance = self._create_scraper_instance(scraper_class)
             except Exception as e:
                 logging.getLogger(__name__).error(
                     f"实例化搜索源 '{provider_name}' 失败，已跳过该源: {e}", exc_info=True
@@ -499,6 +510,17 @@ class ScraperManager:
         for order, name in scraper_items:
             log_lines.append(f"  - (顺序: {order:02d}) {name}")
         logging.getLogger(__name__).info("\n".join(log_lines))
+
+    def _create_scraper_instance(self, scraper_class: Type[BaseScraper]) -> BaseScraper:
+        """按新来源契约创建实例，统一首次加载与 reload 的构造路径。"""
+        # 来源只接收基础设施服务；旧的三参数构造不再兼容，也不捕获 TypeError 重试。
+        instance = scraper_class(self.config_service, self.transport_manager)
+        instance._scraper_manager_ref = self
+        instance._bangumi_data = (
+            self.metadata_manager.get_offline_bangumi_service()
+            if self.metadata_manager is not None else None
+        )
+        return instance
 
     async def _discover_and_load_modules(self, scrapers_dir: Path) -> ModuleDiscoveryResult:
         """
@@ -547,15 +569,14 @@ class ScraperManager:
             default_configs=default_configs
         )
 
-    def _load_versions_from_manifest(self, scrapers_dir: Path) -> Dict[str, str]:
+    def _load_versions_from_manifest(self, scrapers_dir: Path) -> Dict[str, Dict[str, Any]]:
         """从 manifest 读取版本信息"""
         versions = {}
         manifest = ScraperVersionManager.load_manifest(scrapers_dir)
         if manifest:
             for provider, info in manifest.get("sources", {}).items():
-                ver = info.get("version")
-                if ver:
-                    versions[provider] = ver
+                if isinstance(info, dict):
+                    versions[provider] = info
             logging.getLogger(__name__).debug(
                 f"从 manifest 读取到 {len(versions)} 个源的版本信息"
             )
@@ -588,7 +609,7 @@ class ScraperManager:
     async def _load_single_module(
         self,
         module_name_stem: str,
-        versions_from_file: Dict[str, str],
+        versions_from_file: Dict[str, Dict[str, Any]],
         default_configs: Dict[str, Tuple[Any, str]]
     ) -> Optional[str]:
         """
@@ -600,6 +621,21 @@ class ScraperManager:
         module_name = f"src.scrapers.{module_name_stem}"
 
         try:
+            manifest_info = versions_from_file.get(module_name_stem, {})
+            if not isinstance(manifest_info, dict):
+                raise ValueError(f"manifest 来源信息必须为对象，实际为 {type(manifest_info).__name__}")
+            manifest_min_version = manifest_info.get("min_server_version")
+            if "min_server_version" in manifest_info:
+                if not isinstance(manifest_min_version, str) or not manifest_min_version.strip():
+                    raise ValueError("manifest min_server_version 必须为非空字符串")
+                if not _version_satisfies(APP_VERSION, manifest_min_version):
+                    self._version_skipped[module_name_stem] = f"要求服务器 >= {manifest_min_version}"
+                    logging.getLogger(__name__).warning(
+                        "跳过 %s：manifest 要求服务器版本 >= %s，当前 %s",
+                        module_name_stem, manifest_min_version, APP_VERSION,
+                    )
+                    return None
+
             module = importlib.import_module(module_name)
             module_version = getattr(module, '__version__', None)
             package_version = getattr(module, 'PACKAGE_VERSION', None)
@@ -613,8 +649,20 @@ class ScraperManager:
                 if not provider_name:
                     continue
 
+                if vars(obj).get("scraper_api_version") != SCRAPER_API_VERSION:
+                    self._version_skipped[provider_name] = (
+                        f"来源 API 契约不匹配 (当前 {vars(obj).get('scraper_api_version')!r}, 要求 {SCRAPER_API_VERSION})"
+                    )
+                    logging.getLogger(__name__).warning(
+                        "跳过 %s：来源 API 契约不匹配（需要 %s）",
+                        provider_name, SCRAPER_API_VERSION,
+                    )
+                    return None
+
                 # 版本兼容性检查
-                if not self._check_version_compatibility(provider_name, package_version, obj):
+                if not self._check_version_compatibility(
+                    provider_name, package_version, obj, versions_from_file.get(provider_name, {})
+                ):
                     return None
 
                 # 注册提供者
@@ -650,7 +698,8 @@ class ScraperManager:
         self,
         provider_name: str,
         package_version: Optional[str],
-        scraper_class: Type
+        scraper_class: Type,
+        manifest_info: Dict[str, Any],
     ) -> bool:
         """
         检查版本兼容性（双向检查）。
@@ -658,25 +707,29 @@ class ScraperManager:
         Returns:
             bool: True 表示兼容，False 表示不兼容需要跳过
         """
-        from src._version import APP_VERSION, MIN_SCRAPER_VERSION
 
-        # 1. 单源要求最低服务器版本（弹幕源 → 服务器）
-        source_min_ver = getattr(scraper_class, 'min_server_version', None) or ''
-        if source_min_ver:
-            if _version_satisfies(APP_VERSION, source_min_ver):
-                logging.getLogger(__name__).info(
-                    f"✓ {provider_name} 服务器版本检查通过 "
-                    f"(要求 >= {source_min_ver}, 当前 {APP_VERSION})"
-                )
-            else:
-                logging.getLogger(__name__).warning(
-                    f"✗ 跳过 {provider_name}: "
-                    f"要求服务器版本 >= {source_min_ver}，当前 {APP_VERSION}"
-                )
-                self._version_skipped[provider_name] = f"要求服务器 >= {source_min_ver}"
+        if not isinstance(manifest_info, dict):
+            self._version_skipped[provider_name] = "manifest 来源信息非法"
+            return False
+
+        # manifest 缺失该字段时兼容历史包；字段存在则必须是非空字符串。
+        manifest_min_ver = manifest_info.get("min_server_version")
+        if manifest_min_ver is not None:
+            if not isinstance(manifest_min_ver, str) or not manifest_min_ver.strip():
+                self._version_skipped[provider_name] = "manifest min_server_version 非法"
+                return False
+            if not _version_satisfies(APP_VERSION, manifest_min_ver):
+                self._version_skipped[provider_name] = f"要求服务器 >= {manifest_min_ver}"
                 return False
 
-        # 2. 服务器要求最低弹幕源总版本号（服务器 → 弹幕源）
+        # 来源类声明同样单独校验，不能被 manifest 的较低门槛覆盖。
+        class_min_ver = getattr(scraper_class, "min_server_version", None)
+        if class_min_ver:
+            if not isinstance(class_min_ver, str) or not _version_satisfies(APP_VERSION, class_min_ver):
+                self._version_skipped[provider_name] = f"要求服务器 >= {class_min_ver}"
+                return False
+
+        # 服务器要求最低弹幕源总版本号（服务器 → 弹幕源）
         if package_version:
             if not _version_satisfies(package_version, MIN_SCRAPER_VERSION):
                 logging.getLogger(__name__).warning(
@@ -700,7 +753,7 @@ class ScraperManager:
         provider_name: str,
         scraper_class: Type,
         module_version: Optional[str],
-        versions_from_file: Dict[str, str],
+        versions_from_file: Dict[str, Dict[str, Any]],
         default_configs: Dict[str, Tuple[Any, str]]
     ):
         """注册一个已验证的爬虫提供者"""
@@ -715,7 +768,7 @@ class ScraperManager:
 
         # 版本号优先从 manifest 读取（因为 .so 模块无法热更新）
         if provider_name in versions_from_file:
-            self._scraper_versions[provider_name] = versions_from_file[provider_name]
+            self._scraper_versions[provider_name] = versions_from_file[provider_name].get("version")
         elif module_version:
             self._scraper_versions[provider_name] = module_version
 
@@ -810,9 +863,9 @@ class ScraperManager:
         更新多个搜索源的设置，并立即重新加载以使更改生效。
         这是更新设置的正确方式，因为它能确保内存中的缓存失效。
         """
-        async with self._session_factory() as session:
-            # CRUD函数负责处理更新逻辑并提交事务。
-            await crud.update_scrapers_settings(session, settings)
+        db = get_database_service()
+        async with db.transaction():
+            await db.scraper.update_scrapers_settings(settings)
 
         # 更新数据库后，重新加载所有搜索源以应用新设置。
         # 这能确保启用/禁用、代理设置等立即生效。
@@ -835,7 +888,7 @@ class ScraperManager:
         # 重新创建实例
         if provider_name in self._scraper_classes:
             scraper_class = self._scraper_classes[provider_name]
-            self.scrapers[provider_name] = scraper_class(self._session_factory, self.config_manager, self.transport_manager)
+            self.scrapers[provider_name] = self._create_scraper_instance(scraper_class)
             logging.getLogger(__name__).info(f"搜索源 '{provider_name}' 已重新加载。")
         else:
             logging.getLogger(__name__).warning(f"未找到搜索源类 '{provider_name}'，无法重新加载。")
@@ -865,15 +918,17 @@ class ScraperManager:
 
         if not enabled_scrapers:
             self.last_search_timing = []
+            self.last_search_errors = []
             return []
 
+        self.last_search_errors = []
         # 包装搜索任务，从 @track_performance 装饰器存储的 _task_timings 中读取耗时
         # 使用缓冲 logger 避免并发搜索日志交叉
 
         # 预加载所有启用源的超时配置并注入到 scraper 实例
         timeout_tasks = {
-            scraper.provider_name: self.config_manager.get(
-                f"scraper_{scraper.provider_name}_search_timeout", "15"
+            scraper.provider_name: self.config_service.get(
+                f"scraper_{scraper.provider_name}_search_timeout", "30"
             )
             for scraper in enabled_scrapers
         }
@@ -883,7 +938,7 @@ class ScraperManager:
             try:
                 scraper._search_timeout = max(5.0, min(100.0, float(raw_val)))
             except (ValueError, TypeError):
-                scraper._search_timeout = 15.0
+                scraper._search_timeout = 30.0
 
         async def timed_search(scraper, keyword):
             task_id = id(asyncio.current_task())  # 获取当前任务ID
@@ -896,25 +951,28 @@ class ScraperManager:
             # 单源总搜索超时熔断：「搜索超时」配置语义为单个源的整体搜索时长上限，
             # 而非单次 HTTP 请求超时。源内部可能并行多请求/降级/限流，任一源卡住
             # 都会拖垮 gather 等待所有源完成，故在此用 wait_for 按配置值强制熔断。
-            source_total_timeout = getattr(scraper, "_search_timeout", 15.0) or 15.0
+            source_total_timeout = getattr(scraper, "_search_timeout", 30.0) or 30.0
+            source_started = time.monotonic()
+            source_task = None
             try:
-                result = await asyncio.wait_for(
-                    scraper.search(keyword, episode_info=episode_info),
-                    timeout=source_total_timeout,
-                )
-                # 从装饰器存储的 _task_timings 中读取耗时（并发安全）
-                duration_ms = scraper._task_timings.pop(task_id, 0) if hasattr(scraper, '_task_timings') else 0
+                source_task = asyncio.create_task(scraper.search(keyword, episode_info=episode_info))
+                result = await asyncio.wait_for(source_task, timeout=source_total_timeout)
+                # 装饰器运行于源搜索子任务，不是 timed_search 外层任务；缺失时用实际耗时兜底。
+                duration_ms = scraper._task_timings.pop(id(source_task), 0) if hasattr(scraper, '_task_timings') else 0
+                duration_ms = duration_ms or (time.monotonic() - source_started) * 1000
                 return (scraper.provider_name, result, duration_ms, None, buffer_handler)
             except asyncio.TimeoutError:
                 # 源整体搜索超时：熔断该源，返回空结果，不拖垮其它源
-                duration_ms = scraper._task_timings.pop(task_id, 0) if hasattr(scraper, '_task_timings') else 0
+                duration_ms = scraper._task_timings.pop(id(source_task), 0) if hasattr(scraper, '_task_timings') else 0
+                duration_ms = duration_ms or (time.monotonic() - source_started) * 1000
                 scraper.logger.warning(
                     f"{scraper.provider_name}: 搜索超过单源总超时 {source_total_timeout:.0f}s，已熔断跳过"
                 )
                 return (scraper.provider_name, None, duration_ms,
                         TimeoutError(f"单源搜索超时 ({source_total_timeout:.0f}s)"), buffer_handler)
             except Exception as e:
-                duration_ms = scraper._task_timings.pop(task_id, 0) if hasattr(scraper, '_task_timings') else 0
+                duration_ms = scraper._task_timings.pop(id(source_task), 0) if hasattr(scraper, '_task_timings') else 0
+                duration_ms = duration_ms or (time.monotonic() - source_started) * 1000
                 return (scraper.provider_name, None, duration_ms, e, buffer_handler)
             finally:
                 # 恢复原始 logger
@@ -922,6 +980,13 @@ class ScraperManager:
 
         # 分发策略：每个源自行决定要搜哪些关键词（BaseScraper 默认只用主搜索词 keywords[0]，
         # gamer 等源覆写 select_search_keywords 按语言挑别名），不再「全量别名 × 全部源」笛卡尔积。
+        # 各阶段从同一启动时刻扣减预算，单源既有超时配置不变。
+        search_started = time.monotonic()
+        supplement_deadline = search_started + 30.0
+        provider_deadlines = {
+            scraper.provider_name: search_started + scraper._search_timeout
+            for scraper in enabled_scrapers
+        }
         tasks = []
         for scraper in enabled_scrapers:
             try:
@@ -941,26 +1006,35 @@ class ScraperManager:
             if all_possible_empty:
                 primary_keyword = keywords[0] if keywords else ""
 
-                async def _run_supplement():
-                    import time as _time
-                    _start = _time.monotonic()
-                    results = await self.metadata_manager.supplement_empty_search_results(
-                        primary_keyword, all_possible_empty
+                async def _run_supplement() -> Tuple[List[Any], float]:
+                    """并行启动元数据补充，耗时与总等待预算使用同一单调时钟。"""
+                    _start = time.monotonic()
+                    results = await asyncio.wait_for(
+                        self.metadata_manager.supplement_empty_search_results(primary_keyword, all_possible_empty),
+                        timeout=max(0.0, supplement_deadline - time.monotonic()),
                     )
-                    _dur = (_time.monotonic() - _start) * 1000
+                    _dur = (time.monotonic() - _start) * 1000
                     return results, _dur
 
                 supplement_task = asyncio.create_task(_run_supplement())
 
         # 预加载全局过滤配置（与弹幕源搜索并行，避免搜索完成后串行读取）
         async def _preload_filter_config():
-            cn = await self.config_manager.get("search_result_global_blacklist_cn", "")
-            eng = await self.config_manager.get("search_result_global_blacklist_eng", "")
+            cn = await self.config_service.get("search_result_global_blacklist_cn", "")
+            eng = await self.config_service.get("search_result_global_blacklist_eng", "")
             return cn, eng
 
         filter_config_task = asyncio.create_task(_preload_filter_config())
 
-        timed_results = await asyncio.gather(*tasks)
+        try:
+            timed_results = await asyncio.gather(*tasks)
+        except BaseException:
+            for pending in (supplement_task, filter_config_task):
+                if pending is not None and not pending.done():
+                    pending.cancel()
+            await asyncio.gather(*[task for task in (supplement_task, filter_config_task) if task is not None],
+                                 return_exceptions=True)
+            raise
 
         # 聚合每个源的耗时和结果数（同一个源可能搜索多个关键词）
         provider_timing: Dict[str, Tuple[float, int]] = {}  # {provider: (max_duration, total_count)}
@@ -973,6 +1047,7 @@ class ScraperManager:
         for provider_name, result, duration_ms, error, buffer_handler in timed_results:
             result_count = 0
             if error:
+                self.last_search_errors.append(f"{provider_name}: {error}")
                 # 记录失败的耗时
                 if provider_name not in provider_timing:
                     provider_timing[provider_name] = (duration_ms, 0)
@@ -1040,7 +1115,20 @@ class ScraperManager:
         # 收集补充源结果（已在弹幕源搜索开始时并行启动，现在 await 获取结果）
         try:
             if supplement_task:
-                supplement_results, _supp_dur = await supplement_task
+                # 补充源只负责改善空结果；主搜索已完成时不能因补充源卡住而阻塞 API 响应。
+                try:
+                    if supplement_task.done():
+                        supplement_results, _supp_dur = supplement_task.result()
+                    else:
+                        supplement_results, _supp_dur = await asyncio.wait_for(
+                            supplement_task, timeout=max(0.0, supplement_deadline - time.monotonic()),
+                        )
+                except asyncio.TimeoutError:
+                    supplement_task.cancel()
+                    await asyncio.gather(supplement_task, return_exceptions=True)
+                    mgr_logger.warning("元数据补充搜索超过30秒，使用当前已收集的搜索结果")
+                    self.last_search_errors.append("元数据补充搜索超过30秒，已使用当前已收集的结果")
+                    supplement_results = []
 
                 # 完全无结果的弹幕源（含被禁用的），这些源的补充项无条件合并（零结果兜底）
                 empty_providers = {
@@ -1109,6 +1197,13 @@ class ScraperManager:
                         self.last_search_timing.append((f"补充:{s_name}", s_dur, s_cnt))
                 else:
                     self.last_search_timing.append(("搜索补充源", _supp_dur, added_count))
+        except asyncio.CancelledError:
+            pending_tasks = [task for task in (supplement_task, filter_config_task) if task is not None]
+            for task in pending_tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+            raise
         except Exception as e:
             mgr_logger.warning(f"搜索补充源调用失败: {e}", exc_info=True)
 
@@ -1117,18 +1212,17 @@ class ScraperManager:
 
         # ========== 通用信息增强逻辑（补全缺失字段：年份、集数等）==========
         # 在应用全局过滤前补全，保证过滤时信息完整
-        global_enrich_enabled = (await self.config_manager.get("searchEnrichResults", "false")).lower() == "true"
+        global_enrich_enabled = (await self.config_service.get("searchEnrichResults", "false")).lower() == "true"
         if global_enrich_enabled and all_results:
-            enrich_limit = int(await self.config_manager.get("searchEnrichLimit", "10"))
-            enrich_timeout = float(await self.config_manager.get("searchEnrichTimeout", "5"))
-            enrich_fields_str = await self.config_manager.get("searchEnrichFields", "year,episodeCount")
+            enrich_limit = int(await self.config_service.get("searchEnrichLimit", "10"))
+            enrich_timeout = float(await self.config_service.get("searchEnrichTimeout", "5"))
+            enrich_fields_str = await self.config_service.get("searchEnrichFields", "year,episodeCount")
             global_fields = [f.strip() for f in enrich_fields_str.split(",") if f.strip()]
 
             if not global_fields:
                 mgr_logger.debug("[信息增强] 全局字段配置为空，跳过增强")
             else:
                 # 按源分组
-                from collections import defaultdict
                 results_by_provider = defaultdict(list)
                 for item in all_results:
                     results_by_provider[item.provider].append(item)
@@ -1136,9 +1230,13 @@ class ScraperManager:
                 mgr_logger.info(f"[信息增强] 全局开关已开启，待增强字段: {', '.join(global_fields)}")
 
                 # 并行处理各源（每源独立超时）
-                async def enrich_provider(provider: str, results: list):
+                async def enrich_provider(provider: str, results: list) -> None:
+                    """仅在该源整体搜索预算剩余时间内补齐字段。"""
+                    deadline = provider_deadlines.get(provider, search_started + 30.0)
+                    if deadline <= time.monotonic():
+                        return
                     # 读取该源的开关
-                    source_enabled = (await self.config_manager.get(f"scraper_{provider}_enrich_enabled", "false")).lower() == "true"
+                    source_enabled = (await self.config_service.get(f"scraper_{provider}_enrich_enabled", "false")).lower() == "true"
                     if not source_enabled:
                         mgr_logger.debug(f"[信息增强] 源 {provider} 未开启增强，跳过")
                         return
@@ -1181,18 +1279,32 @@ class ScraperManager:
 
                     # 逐条增强（每条独立超时）
                     for result, missing_fields in need_enrich:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            mgr_logger.debug("[信息增强] %s 整体预算已耗尽，保留已有结果", provider)
+                            break
                         try:
                             await asyncio.wait_for(
                                 scraper.enrich_result(result, missing_fields),
-                                timeout=enrich_timeout
+                                timeout=min(enrich_timeout, remaining)
                             )
                         except asyncio.TimeoutError:
                             mgr_logger.warning(f"[信息增强] {provider}/{result.mediaId} 超时({enrich_timeout}s)")
                         except Exception as e:
                             mgr_logger.warning(f"[信息增强] {provider}/{result.mediaId} 失败: {e}")
 
-                # 并行增强各源
-                await asyncio.gather(*[enrich_provider(p, items) for p, items in results_by_provider.items()], return_exceptions=True)
+                async def bounded_enrich_provider(provider: str, results: list) -> None:
+                    """将整段增强约束于同一剩余预算，包括配置与每条请求。"""
+                    remaining = provider_deadlines.get(provider, search_started + 30.0) - time.monotonic()
+                    if remaining <= 0:
+                        return
+                    try:
+                        await asyncio.wait_for(enrich_provider(provider, results), timeout=remaining)
+                    except asyncio.TimeoutError:
+                        mgr_logger.debug("[信息增强] %s 整体预算耗尽，保留已有结果", provider)
+
+                # 各源仍并行，但不为增强阶段重新启动完整搜索超时。
+                await asyncio.gather(*[bounded_enrich_provider(p, items) for p, items in results_by_provider.items()], return_exceptions=True)
 
                 mgr_logger.info(f"[信息增强] 完成，共处理 {len(all_results)} 条结果")
         # ========== 信息增强逻辑结束 ==========
@@ -1200,9 +1312,7 @@ class ScraperManager:
         cn_pattern = re.compile(cn_pattern_str, re.IGNORECASE) if cn_pattern_str else None
         eng_pattern = re.compile(r'(\[|\【|\b)(' + eng_pattern_str + r')(\d{1,2})?(\s|_ALL)?(\]|\】|\b)', re.IGNORECASE) if eng_pattern_str else None
 
-        if not cn_pattern and not eng_pattern:
-            return all_results
-
+        # 无黑名单时全部保留，但仍完成日志收尾与托管健康统计。
         filtered_results = []
         for item in all_results:
             is_junk = False
@@ -1222,38 +1332,34 @@ class ScraperManager:
         await flush_task
 
         # 异步更新弹幕源健康度统计
-        asyncio.create_task(self._update_health_stats(timed_results))
+        try:
+            async def update_health(_session: Any, progress_callback: Any) -> None:
+                """管理任务只经服务事务写统计，不使用任务附带的原始会话。"""
+                await progress_callback(5, "正在更新搜索源健康统计")
+                if not await self._update_health_stats(timed_results):
+                    raise TaskFailed("搜索源健康统计更新失败")
+                raise TaskSuccess("搜索源健康统计更新完成")
+
+            await get_task_manager().submit_task(
+                update_health, f"更新搜索源健康统计 {id(timed_results)}",
+                task_type="search_health_update", queue_type="management",
+            )
+        except Exception as exc:
+            mgr_logger.debug("健康统计任务提交失败，不影响搜索结果: %s", exc)
+
 
         return filtered_results
 
-    async def _update_health_stats(self, timed_results):
-        """异步更新弹幕源健康度统计到 scrapers 表"""
-        from src.core import get_now
-        now = get_now()
-
+    async def _update_health_stats(self, timed_results: List[tuple]) -> bool:
+        """通过统一服务事务更新统计，返回成败以避免托管任务误报成功。"""
         try:
-            async with self._session_factory() as session:
-                for provider_name, result, duration_ms, error, _ in timed_results:
-                    scraper_row = await session.get(orm_models.Scraper, provider_name)
-                    if not scraper_row:
-                        continue
-                    scraper_row.totalSearches = (scraper_row.totalSearches or 0) + 1
-                    scraper_row.totalDurationMs = (scraper_row.totalDurationMs or 0) + duration_ms
-                    if error:
-                        scraper_row.failCount = (scraper_row.failCount or 0) + 1
-                        err_str = str(error)[:500]
-                        scraper_row.lastError = err_str
-                        if "timeout" in err_str.lower() or "timed out" in err_str.lower():
-                            scraper_row.timeoutCount = (scraper_row.timeoutCount or 0) + 1
-                    elif result:
-                        scraper_row.successCount = (scraper_row.successCount or 0) + 1
-                        scraper_row.totalResultCount = (scraper_row.totalResultCount or 0) + len(result)
-                    else:
-                        scraper_row.emptyCount = (scraper_row.emptyCount or 0) + 1
-                    scraper_row.lastSearchAt = now
-                await session.commit()
-        except Exception as e:
-            logging.getLogger(__name__).debug(f"更新弹幕源健康统计失败: {e}")
+            db = get_database_service()
+            async with db.transaction():
+                await db.scraper_crud.record_search_health(timed_results, get_now())
+            return True
+        except Exception as exc:
+            logging.getLogger(__name__).debug("更新弹幕源健康统计失败: %s", exc)
+            return False
 
     @staticmethod
     def parse_supplement_media_id(media_id: str) -> Optional[tuple]:
@@ -1264,9 +1370,11 @@ class ScraperManager:
         """
         if not media_id or not media_id.startswith("sup_"):
             return None
-        parts = media_id.split("_", 3)
-        if len(parts) >= 4:
-            return (parts[1], parts[2], parts[3])
+        # 媒体 ID 可能包含下划线，只拆固定前缀和末尾平台键。
+        supplement_name, separator, remainder = media_id[4:].partition("_")
+        original_media_id, platform_separator, platform_key = remainder.rpartition("_")
+        if separator and platform_separator and supplement_name and original_media_id and platform_key:
+            return (supplement_name, original_media_id, platform_key)
         return None
 
     async def get_episodes_routed(
@@ -1285,31 +1393,39 @@ class ScraperManager:
         logger = logging.getLogger(__name__)
         parsed = self.parse_supplement_media_id(media_id)
 
-        if parsed and self.metadata_manager:
+        if media_id.startswith("sup_") and not parsed:
+            raise ValueError(f"补充源媒体 ID 格式无效: {media_id}")
+        if parsed:
+            if not self.metadata_manager:
+                raise ValueError("补充源管理器不可用，无法重新解析补充源分集")
             supplement_source_name, original_media_id, platform_key = parsed
             logger.info(f"补充源路由: {media_id} -> 补充源={supplement_source_name}, 媒体ID={original_media_id}, 平台={platform_key}")
 
             source = self.metadata_manager.sources.get(supplement_source_name)
+            # 包含过滤明细时，即使提前结束也保持二元组契约，避免调用方解包失败。
             if not source:
                 logger.warning(f"补充源 '{supplement_source_name}' 不可用")
-                return []
+                return ([], []) if return_filtered else []
 
             # 调用补充源获取分集URL
-            episode_urls = await source.get_episode_urls(original_media_id, target_provider=provider)
+            episode_urls = await source.get_episode_urls(
+                original_media_id, target_provider=provider, target_platform=platform_key,
+            )
             if not episode_urls:
                 logger.warning(f"补充源 '{supplement_source_name}' 未返回分集URL")
-                return []
+                return ([], []) if return_filtered else []
 
             logger.info(f"补充源 '{supplement_source_name}' 返回 {len(episode_urls)} 个分集URL")
 
             # 尝试用弹幕源解析URL为分集信息
-            from src.db.models import ProviderEpisodeInfo
             scraper = self.get_scraper(provider)
             if not scraper:
                 logger.warning(f"补充源路由: 弹幕源 '{provider}' 不可用，无法将分集URL解析为原生ID")
-                return []
+                return ([], []) if return_filtered else []
             episodes = []
             for idx, url in episode_urls:
+                if target_episode_index is not None and idx != target_episode_index:
+                    continue
                 try:
                     raw_id = await scraper.get_id_from_url(url)
                 except Exception as e:
@@ -1336,9 +1452,8 @@ class ScraperManager:
             # 汇总日志（单条解析细节已降级为 DEBUG，此处统一打印一条 INFO 汇总，避免刷屏）
             logger.info(f"补充源URL解析完成: {provider} 成功解析 {len(episodes)}/{len(episode_urls)} 个分集为原生ID")
             # 兜底全局分集标题过滤（统一收口，对所有调用路径生效）
-            from src.utils.episode_filter import apply_global_episode_title_filter
             return await apply_global_episode_title_filter(
-                episodes, self.config_manager, provider, media_id,
+                episodes, self.config_service, provider, media_id,
                 return_filtered=return_filtered,
             )
         else:
@@ -1360,9 +1475,8 @@ class ScraperManager:
             elif return_filtered:
                 source_filtered = list(self._episode_filtered_details.get(filtered_key, []))
             # 兜底全局分集标题过滤（统一收口，对所有调用路径生效）
-            from src.utils.episode_filter import apply_global_episode_title_filter
             global_result = await apply_global_episode_title_filter(
-                episodes, self.config_manager, provider, media_id,
+                episodes, self.config_service, provider, media_id,
                 return_filtered=return_filtered,
             )
             if not return_filtered:

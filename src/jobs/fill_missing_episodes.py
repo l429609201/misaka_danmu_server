@@ -1,14 +1,14 @@
 import asyncio
-import logging
-from typing import Callable, List
+from typing import Callable, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
-from src.db import crud, orm_models
 from .base import BaseJob
-from src.services import TaskManager, TaskSuccess
-from src.utils.task_profiler import profile_flow, FLOW_FILL_MISSING_EPISODES
+from src.services.service_container import get_database_service
+# 任务成功信号需在运行时 raise，必须真实导入
+from src.services.task_manager import TaskSuccess
+from src.services.task_profiler import profile_flow, FLOW_FILL_MISSING_EPISODES
+from src.tasks.refresh import fill_missing_task
 
 
 class FillMissingEpisodesJob(BaseJob):
@@ -66,7 +66,11 @@ class FillMissingEpisodesJob(BaseJob):
     ]
 
     @profile_flow(FLOW_FILL_MISSING_EPISODES)
-    async def run(self, session: AsyncSession, progress_callback: Callable, task_config: dict = None):
+    async def run(
+        self, session: AsyncSession, progress_callback: Callable,
+        task_config: Optional[dict] = None,
+    ) -> None:
+        """扫描源的缺集情况并逐源调用补全任务，低质量检测只统计。"""
         if task_config is None:
             task_config = {}
         max_fill_count = int(task_config.get("maxFillCount", 10))
@@ -76,34 +80,10 @@ class FillMissingEpisodesJob(BaseJob):
         self.logger.info(f"开始执行 [{self.job_name}]... (最大补全: {max_fill_count}, 跳过已完结: {skip_finished}, 低质量阈值: {low_quality_threshold})")
         await progress_callback(0, "正在扫描库内条目...")
 
-        # 步骤1: 查询所有源及其实际分集数
-        stmt = (
-            select(
-                orm_models.AnimeSource.id.label("source_id"),
-                orm_models.AnimeSource.animeId.label("anime_id"),
-                orm_models.AnimeSource.providerName.label("provider_name"),
-                orm_models.AnimeSource.mediaId.label("media_id"),
-                orm_models.AnimeSource.isFinished.label("is_finished"),
-                orm_models.Anime.title.label("title"),
-                func.count(orm_models.Episode.id).label("db_episode_count"),
-            )
-            .join(orm_models.Anime, orm_models.AnimeSource.animeId == orm_models.Anime.id)
-            .outerjoin(orm_models.Episode, orm_models.AnimeSource.id == orm_models.Episode.sourceId)
-            .group_by(
-                orm_models.AnimeSource.id,
-                orm_models.AnimeSource.animeId,
-                orm_models.AnimeSource.providerName,
-                orm_models.AnimeSource.mediaId,
-                orm_models.AnimeSource.isFinished,
-                orm_models.Anime.title,
-            )
-        )
-
-        if skip_finished:
-            stmt = stmt.where(orm_models.AnimeSource.isFinished == False)  # noqa: E712
-
-        result = await session.execute(stmt)
-        all_sources = [dict(row) for row in result.mappings()]
+        # 聚合查询经统一服务入口执行，扫描远程目录前结束读事务。
+        db = get_database_service()
+        async with db.transaction():
+            all_sources = await db.source.get_sources_with_episode_counts(skip_finished)
         total_sources = len(all_sources)
 
         self.logger.info(f"共扫描到 {total_sources} 个源")
@@ -130,8 +110,8 @@ class FillMissingEpisodesJob(BaseJob):
                 if not scraper:
                     continue
 
-                # 获取源站分集列表
-                remote_episodes = await scraper.get_episodes(media_id)
+                # 已存储的补充源标识也必须经过统一路由，不能当成原生媒体 ID。
+                remote_episodes = await self.scraper_manager.get_episodes_routed(provider_name, media_id)
                 if not remote_episodes:
                     continue
 
@@ -155,35 +135,15 @@ class FillMissingEpisodesJob(BaseJob):
 
         self.logger.info(f"扫描完成: 检查 {checked_count} 个源, 发现 {len(missing_sources)} 个缺集源, {error_count} 个错误")
 
-        # 步骤2.5: 低质量弹幕检测（弹幕数低于阈值的分集标记为需要重抓）
+        # 步骤2.5: 低质量弹幕检测（仅统计，不刷新已收录分集）
         low_quality_count = 0
         if low_quality_threshold > 0:
             await progress_callback(72, "正在检测低质量弹幕分集...")
-            # 查询弹幕数低于阈值的分集（按源分组统计）
-            lq_stmt = (
-                select(
-                    orm_models.Episode.sourceId.label("source_id"),
-                    orm_models.Anime.title.label("title"),
-                    orm_models.AnimeSource.providerName.label("provider_name"),
-                    func.count(orm_models.Episode.id).label("episode_count"),
-                    func.avg(orm_models.Episode.commentCount).label("avg_comments"),
+            # 低质量检测仍只报告统计，不触发已有分集刷新。
+            async with db.transaction():
+                lq_sources = await db.source.get_low_quality_episode_sources(
+                    low_quality_threshold, skip_finished,
                 )
-                .join(orm_models.AnimeSource, orm_models.Episode.sourceId == orm_models.AnimeSource.id)
-                .join(orm_models.Anime, orm_models.AnimeSource.animeId == orm_models.Anime.id)
-                .where(orm_models.Episode.commentCount < low_quality_threshold)
-                .where(orm_models.Episode.commentCount >= 0)
-                .group_by(
-                    orm_models.Episode.sourceId,
-                    orm_models.Anime.title,
-                    orm_models.AnimeSource.providerName,
-                )
-            )
-
-            if skip_finished:
-                lq_stmt = lq_stmt.where(orm_models.AnimeSource.isFinished == False)  # noqa: E712
-
-            lq_result = await session.execute(lq_stmt)
-            lq_sources = [dict(row) for row in lq_result.mappings()]
             low_quality_count = sum(row["episode_count"] for row in lq_sources)
 
             if lq_sources:
@@ -227,10 +187,8 @@ class FillMissingEpisodesJob(BaseJob):
             try:
                 # 使用独立 session，每个源的补全互不影响
                 async with self._session_factory() as fill_session:
-                    from src.tasks.refresh import fill_missing_task
-
                     # 创建一个静默的进度回调（不覆盖主任务进度）
-                    async def _noop_progress(p, d):
+                    async def _noop_progress(p: int, d: str) -> None:
                         pass
 
                     await fill_missing_task(
@@ -238,7 +196,7 @@ class FillMissingEpisodesJob(BaseJob):
                         session=fill_session,
                         manager=self.scraper_manager,
                         task_manager=self.task_manager,
-                        config_manager=self.config_manager,
+                        config_service=self.config_service,
                         rate_limiter=self.rate_limiter,
                         metadata_manager=self.metadata_manager,
                         progress_callback=_noop_progress,

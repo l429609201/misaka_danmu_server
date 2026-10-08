@@ -6,10 +6,9 @@
 而不是压成单一的权限档位。
 
 为什么需要三个维度而非一个权限枚举：
-- `token.update` 与 `token.delete` 都是写操作，但前者可逆、后者不可逆，
-  需要的确认强度完全不同。只有 READ_ONLY/WRITE 两档时无法区分。
-- `token.list` 与 `token.create` 都要返回 token 字段，但前者是读既有密钥
-  （必须打码），后者是交付本轮新生成的凭据（需明文给用户）。
+- 可逆配置修改与删除操作都属于写操作，但后者不可逆，确认卡必须展示风险。
+- 敏感读取与普通读取同为无副作用操作，却需要不同的结果保护策略；
+  当前助手不开放凭据明文或流控信息读取。
 
 未引入 MP 的 origin 四维准入（interactive/machine/background/subagent_allowed）
 与 migration_state：本项目助手只有 Web 单一入口，也没有渐进迁移的历史包袱，
@@ -45,7 +44,7 @@ class ResultSensitivity(str, Enum):
 
     NORMAL = "normal"    # 普通业务数据
     PRIVATE = "private"  # 含个人可识别信息，不宜复述
-    SECRET = "secret"    # 含凭据；除显式豁免字段外一律打码
+    SECRET = "secret"    # 含凭据；当前一律不向助手开放
 
 
 # 副作用类别 → 默认确认强度。

@@ -1,4 +1,4 @@
-﻿# AGENTS.md
+# AGENTS.md
 
 This file is the primary instruction set for all AI agents and LLMs working in this repository. Local documentation takes precedence over general training data. You must follow this file and the rule documents it references.
 
@@ -25,6 +25,13 @@ You are NOT an advisor. You are an AUTONOMOUS coding agent that DOES the work, n
 ✅ [immediately reads and verifies B]
 
 ---
+
+## 🏛️ 强制架构遵循与违规优先修复
+
+- **开始任务前必须阅读并严格遵循 [最终架构规范](docs/最终架构规范.md)**。这是本项目唯一权威架构文档；其他提示词、历史示例与之冲突时，以该文档为准。
+- **读取、排查或修改代码时发现违反架构的情况，必须先修复已发现的违规，再继续原任务**。不得以“历史代码”“不是本次新增”或“先让功能跑起来”为由跳过。
+- 数据库操作必须遵循 `调用方 → DatabaseService → Repository / QueryRepository → ORM`；调用方通过服务层声明事务，禁止绕过统一服务入口直接实例化仓储或操作 ORM/Session。Repository 只 `flush()`，不得 `commit()`，不得反向依赖 Service。
+- 修复必须覆盖相关调用链并检查循环依赖；不得用函数内导入、动态导入或新增平行数据库入口掩盖架构问题。架构修复验证通过后，继续完成原任务。
 
 ## 📋 Pre-Flight Check (MANDATORY)
 
@@ -67,11 +74,14 @@ For work that changes repository behavior, identify domains and load applicable 
 
 ### Architecture and Module Boundaries
 * **Primary Reference:** `src/ai/assistant/rules/01-architecture.md`
-* **Required Constraints:** 
+* **Required Constraints:**
   - Respect layer boundaries and dependency flow
   - Do not introduce circular dependencies
-  - Database access MUST go through `db/crud/*.py`
-  - Tasks MUST be submitted via `TaskManager`
+  - Database access MUST go through `DatabaseService` (via `get_database_service()`)
+  - `src/db/crud/*` is DEPRECATED and has been deleted — never reference it
+  - Tasks MUST be submitted via `TaskManager.submit_task()`
+  - All imports at file top; no delayed imports except TYPE_CHECKING
+  - Repository only `flush()`, never `commit()`
 
 ### Design Patterns and Business Logic
 * **Primary Reference:** `src/ai/assistant/rules/02-design-patterns.md`
@@ -97,6 +107,33 @@ For work that changes repository behavior, identify domains and load applicable 
   - Use `alembic revision` for database schema changes
   - Use documented commands for testing and deployment
 
+### 🖥️ 本机运行环境（NAS / Ubuntu 24.04 / Linux）
+
+> 本节描述**当前开发机**的实际环境，优先于文档里的 Windows 示例（`start.bat` 等）。
+
+* **没有 `python` 命令**：Ubuntu 24.04 只提供 `python3`（PEP 394）。项目依赖装在**仓库内 venv**，
+  所以请用它自带的解释器：`venv/bin/python`（等价 `venv/bin/python3`）。
+* **启动后端**（模块形式，不是 `main.py`）：
+  ```bash
+  cd ~/项目/DanmuApi/misaka_danmu_server
+  venv/bin/python -m src.main            # 或：source venv/bin/activate && python -m src.main
+  ```
+  ⚠️ `python src.main` 是错的（会被当成文件名）；`python -m src.main` 才对。
+* **启动/构建前端**（`web/`，锁文件是 `package-lock.json` ⇒ 用 npm）：
+  ```bash
+  cd web && npm run dev                  # 开发（vite）
+  cd web && npm run build                # 产物 web/dist，由 src/frontend.py 挂载
+  ```
+* **数据库/缓存不在本机**：MySQL 8.1 与 Redis 都在 `192.168.10.220`（见 `config/config.yml`），
+  本机**不需要**安装数据库；表结构由应用启动时的 `create_all` + `src/db/migrations.py` 自动同步。
+* **安装依赖**：只在 venv 内安装（`venv/bin/pip install -r requirements.txt`）；
+  **禁止** `--break-system-packages` 等破坏系统 Python 的做法。`venv/` 已在 `.gitignore` 中，不要删除。
+* **后台任务务必用 PTY 启动**：需要看实时日志的后台任务（常驻服务、构建、pytest）请使用
+  `run_pty` 工具，而不是 `bash` + `run_in_background`。
+  原因：`bash` 作业通过管道捕获输出，被子进程缓冲（Python 默认块缓冲约 8KB）时**面板和
+  `job_output` 都看不到任何日志**；PTY 下子进程行缓冲，日志逐行实时可见。
+  `run_pty` 返回普通作业 id，用 `job_output` 读取、`job_kill` 停止。
+
 ---
 
 ## 🔄 Coupled Update Rules
@@ -121,7 +158,7 @@ Avoid generic boilerplate. If `02-design-patterns.md` defines a project-level pa
 
 Examples:
 - Task submission → Use `TaskManager.submit_task()`
-- Database access → Use `db/crud/*.py` functions
+- Database access → Use `DatabaseService` + `db/repositories/*.py` (NOT `db/crud/*.py`, which is deprecated)
 - Configuration → Use `ConfigManager.get()`
 - Webhook → Inherit `BaseWebhookHandler`
 
@@ -199,15 +236,25 @@ Agent: [loads src/ai/assistant/rules/02-design-patterns.md]
 ❌ Wrong:
 ```python
 # In api/control/import_routes.py
-from src.db.orm_models import Anime
-anime = await session.execute(select(Anime).where(...))  # ❌ API 直接查询数据库
+from src.db.repositories.anime import AnimeRepository  # ❌ API 直接导入 Repository
+
+@router.get("/anime/{id}")
+async def get_anime(id: int):
+    repo = AnimeRepository()  # ❌ 绕过 DatabaseService
+    return await repo.get_by_id(id)
 ```
 
 ✅ Correct:
 ```python
 # In api/control/import_routes.py
-from src.db import crud
-anime = await crud.get_anime_by_title(session, title)  # ✅ 通过 CRUD 访问
+from src.services.service_container import get_database_service
+
+@router.get("/anime/{id}")
+async def get_anime(id: int):
+    db = get_database_service()
+    async with db.transaction():
+        anime = await db.anime.get_by_id(id)  # ✅ 经 DatabaseService → Repository 访问
+    return anime
 ```
 
 ---
@@ -399,11 +446,14 @@ db_health = await perf_tools.get_database_health()
 
 For the full documentation map and cross-references, refer to:
 
-**[Documentation Hub Index](./src/ai/assistant/rules/README.md)**
+**核心架构文档**:
+- [`docs/最终架构规范.md`](./docs/最终架构规范.md) - **权威架构规范**，包含完整分层设计、导入规范、调用示例
+- [`docs/架构规范-快速参考.md`](./docs/架构规范-快速参考.md) - **3秒决策指南**，快速查找代码应该放在哪里
+- [`docs/架构违规修复报告.md`](./docs/架构违规修复报告.md) - 实际修复案例，展示如何纠正架构违规
 
-For performance system analysis and improvement plan, refer to:
-
-**[Performance System Analysis](./docs/performance_system_analysis.md)**
+**详细规则文档**:
+- [Documentation Hub Index](./src/ai/assistant/rules/README.md) - AI 助手规则索引
+- [Performance System Analysis](./docs/performance_system_analysis.md) - 性能系统分析
 
 ---
 

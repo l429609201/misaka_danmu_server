@@ -12,7 +12,7 @@ C组 过滤：全局标题过滤、兜底分集标题过滤、单剧过滤、单
 
 context 依赖：
 - context["session_factory"]: DB 会话工厂
-- context["config_manager"]: ConfigManager
+- context["config_service"]: ConfigService
 - context["title_recognition_manager"]: TitleRecognitionManager
 - context["scraper_manager"]: ScraperManager（单源黑名单用）
 """
@@ -20,10 +20,11 @@ context 依赖：
 import logging
 from typing import Any, Dict, List
 
+from src.services.service_container import get_database_service
+
 import regex as _regex_module
 
-from src.db import crud
-from ..security_gateway import ToolPermission
+from ..security_gateway import ToolPermission, is_forbidden_control_identifier
 from .base import Tool, registry
 
 logger = logging.getLogger(__name__)
@@ -80,11 +81,9 @@ def _merge_regex(old: str, new: str, mode: str) -> str:
 
 async def _get_recognition_rules(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """读取当前识别词配置全文。"""
-    session_factory = context.get("session_factory")
-    if not session_factory:
-        return {"error": "会话不可用"}
-    async with session_factory() as session:
-        recognition = await crud.get_title_recognition(session)
+    db = get_database_service()
+    async with db.transaction():
+        recognition = await db.title_recognition.get_current()
     content = getattr(recognition, "content", "") if recognition else ""
     result = _truncate(content)
     lines = [ln for ln in content.split("\n") if ln.strip() and not ln.strip().startswith("#")]
@@ -149,11 +148,9 @@ async def _test_recognition(arguments: Dict[str, Any], context: Dict[str, Any]) 
 
 async def _check_recognition_conflicts(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """扫描识别词规则，检测空规则、重复、过短关键词、潜在冲突（只读，不修改数据）。"""
-    session_factory = context.get("session_factory")
-    if not session_factory:
-        return {"error": "会话不可用"}
-    async with session_factory() as session:
-        recognition = await crud.get_title_recognition(session)
+    db = get_database_service()
+    async with db.transaction():
+        recognition = await db.title_recognition.get_current()
     if not recognition or not recognition.content:
         return {"conflicts": [], "message": "识别词未配置或为空"}
 
@@ -205,14 +202,14 @@ async def _set_recognition_rules(arguments: Dict[str, Any], context: Dict[str, A
     if mode not in ("append", "replace"):
         return {"error": "mode 必须为 append 或 replace"}
 
-    session_factory = context.get("session_factory")
     manager = context.get("title_recognition_manager")
-    if not session_factory or not manager:
-        return {"error": "会话或识别词管理器不可用"}
+    if not manager:
+        return {"error": "识别词管理器不可用"}
 
     # 先读旧配置
-    async with session_factory() as session:
-        recognition = await crud.get_title_recognition(session)
+    db = get_database_service()
+    async with db.transaction():
+        recognition = await db.title_recognition.get_current()
     old_content = getattr(recognition, "content", "") if recognition else ""
     new_content = _merge_text(old_content, content, mode)
 
@@ -245,7 +242,7 @@ async def _set_recognition_rules(arguments: Dict[str, Any], context: Dict[str, A
 
 async def _get_global_filter(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """读取全局搜索结果标题过滤规则（中文关键词 + 英文独立词）。"""
-    config = context.get("config_manager")
+    config = context.get("config_service")
     if not config:
         return {"error": "配置管理器不可用"}
     cn = await config.get(_CFG_GLOBAL_CN, "")
@@ -267,7 +264,7 @@ async def _set_global_filter(arguments: Dict[str, Any], context: Dict[str, Any])
     if mode not in ("append", "replace"):
         return {"error": "mode 必须为 append 或 replace"}
 
-    config = context.get("config_manager")
+    config = context.get("config_service")
     if not config:
         return {"error": "配置管理器不可用"}
 
@@ -277,11 +274,11 @@ async def _set_global_filter(arguments: Dict[str, Any], context: Dict[str, Any])
 
     if cn is not None:
         new_cn = _merge_regex(old_cn, str(cn), mode)
-        await config.setValue(_CFG_GLOBAL_CN, new_cn)
+        await config.set(_CFG_GLOBAL_CN, new_cn)
         changes["cn"] = {"oldChars": len(old_cn), "newChars": len(new_cn)}
     if eng is not None:
         new_eng = _merge_regex(old_eng, str(eng), mode)
-        await config.setValue(_CFG_GLOBAL_ENG, new_eng)
+        await config.set(_CFG_GLOBAL_ENG, new_eng)
         changes["eng"] = {"oldChars": len(old_eng), "newChars": len(new_eng)}
 
     return {"ok": True, "mode": mode, "changes": changes, "message": "全局标题过滤规则已更新"}
@@ -289,7 +286,7 @@ async def _set_global_filter(arguments: Dict[str, Any], context: Dict[str, Any])
 
 async def _get_global_episode_title_filter(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """读取兜底全局分集标题过滤配置（开关 + 正则）。"""
-    config = context.get("config_manager")
+    config = context.get("config_service")
     if not config:
         return {"error": "配置管理器不可用"}
     enabled = (await config.get(_CFG_EPISODE_FILTER_ENABLED, "false")).lower() == "true"
@@ -310,13 +307,13 @@ async def _set_global_episode_title_filter(arguments: Dict[str, Any], context: D
     if mode not in ("append", "replace"):
         return {"error": "mode 必须为 append 或 replace"}
 
-    config = context.get("config_manager")
+    config = context.get("config_service")
     if not config:
         return {"error": "配置管理器不可用"}
 
     result: Dict[str, Any] = {"ok": True, "mode": mode}
     if enabled is not None:
-        await config.setValue(_CFG_EPISODE_FILTER_ENABLED, "true" if enabled else "false")
+        await config.set(_CFG_EPISODE_FILTER_ENABLED, "true" if enabled else "false")
         result["enabled"] = bool(enabled)
     if regex is not None:
         old_regex = await config.get(_CFG_EPISODE_FILTER_REGEX, "")
@@ -326,7 +323,7 @@ async def _set_global_episode_title_filter(arguments: Dict[str, Any], context: D
             _regex_module.compile(new_regex, _regex_module.IGNORECASE)
         except Exception as e:  # noqa: BLE001
             return {"error": f"正则非法，已中止写入：{e}"}
-        await config.setValue(_CFG_EPISODE_FILTER_REGEX, new_regex)
+        await config.set(_CFG_EPISODE_FILTER_REGEX, new_regex)
         result["regexChars"] = {"old": len(old_regex), "new": len(new_regex)}
     result["message"] = "兜底分集标题过滤配置已更新"
     return result
@@ -334,7 +331,7 @@ async def _set_global_episode_title_filter(arguments: Dict[str, Any], context: D
 
 async def _get_single_episode_filter(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """读取单剧过滤规则（针对特定作品的分集过滤，第3层）。"""
-    config = context.get("config_manager")
+    config = context.get("config_service")
     if not config:
         return {"error": "配置管理器不可用"}
     content = await config.get(_CFG_SINGLE_EPISODE_RULES, "")
@@ -354,13 +351,13 @@ async def _set_single_episode_filter(arguments: Dict[str, Any], context: Dict[st
     if mode not in ("append", "replace"):
         return {"error": "mode 必须为 append 或 replace"}
 
-    config = context.get("config_manager")
+    config = context.get("config_service")
     if not config:
         return {"error": "配置管理器不可用"}
 
     old = await config.get(_CFG_SINGLE_EPISODE_RULES, "")
     new = _merge_text(old, content, mode)
-    await config.setValue(_CFG_SINGLE_EPISODE_RULES, new)
+    await config.set(_CFG_SINGLE_EPISODE_RULES, new)
 
     old_rules = [ln for ln in old.split("\n") if ln.strip() and not ln.strip().startswith("#")]
     new_rules = [ln for ln in new.split("\n") if ln.strip() and not ln.strip().startswith("#")]
@@ -377,7 +374,9 @@ async def _get_source_episode_blacklist(arguments: Dict[str, Any], context: Dict
     provider = (arguments.get("provider") or "").strip()
     if not provider:
         return {"error": "缺少 provider（弹幕源名，如 tencent/bilibili/iqiyi）"}
-    config = context.get("config_manager")
+    if is_forbidden_control_identifier(provider):
+        return {"error": "流控与配额配置禁止 AI 访问"}
+    config = context.get("config_service")
     if not config:
         return {"error": "配置管理器不可用"}
     regex = await config.get(f"{provider}EpisodeBlacklistRegex", "")
@@ -394,10 +393,12 @@ async def _set_source_episode_blacklist(arguments: Dict[str, Any], context: Dict
     mode = (arguments.get("mode") or "append").strip().lower()
     if not provider or regex is None:
         return {"error": "需要 provider 与 regex"}
+    if is_forbidden_control_identifier(provider):
+        return {"error": "流控与配额配置禁止 AI 访问"}
     if mode not in ("append", "replace"):
         return {"error": "mode 必须为 append 或 replace"}
 
-    config = context.get("config_manager")
+    config = context.get("config_service")
     if not config:
         return {"error": "配置管理器不可用"}
 
@@ -408,7 +409,7 @@ async def _set_source_episode_blacklist(arguments: Dict[str, Any], context: Dict
         _regex_module.compile(new, _regex_module.IGNORECASE)
     except Exception as e:  # noqa: BLE001
         return {"error": f"正则非法，已中止写入：{e}"}
-    await config.setValue(key, new)
+    await config.set(key, new)
     return {
         "ok": True,
         "provider": provider,

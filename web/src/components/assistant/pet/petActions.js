@@ -10,38 +10,38 @@
  */
 
 // 已就绪的图片（存在于 assets/assistant/ 下）
-import idleImg from '@/assets/assistant/misaka-idle.png'
-import happyImg from '@/assets/assistant/misaka-happy.png'
-import sadImg from '@/assets/assistant/misaka-sad.png'
-import surprisedImg from '@/assets/assistant/misaka-surprised.png'
-import thinkingImg from '@/assets/assistant/misaka-thinking.png'
-import talkingImg from '@/assets/assistant/misaka-talking.png'
-import avatarImg from '@/assets/assistant/misaka-avatar.png'
+import idleImg from '@/assets/assistant/misaka-idle.webp'
+import happyImg from '@/assets/assistant/misaka-happy.webp'
+import sadImg from '@/assets/assistant/misaka-sad.webp'
+import surprisedImg from '@/assets/assistant/misaka-surprised.webp'
+import thinkingImg from '@/assets/assistant/misaka-thinking.webp'
+import talkingImg from '@/assets/assistant/misaka-talking.webp'
+import avatarImg from '@/assets/assistant/misaka-avatar.webp'
 
 // idle 的分层素材：本体（已把眼珠涂成眼白）+ 独立眼睛层，用于"眼睛跟随鼠标 + 眨眼"
-import idleBodyImg from '@/assets/assistant/parts/人物本体.png'
-import idleEyesImg from '@/assets/assistant/parts/眼睛.png'
+import idleBodyImg from '@/assets/assistant/parts/人物本体.webp'
+import idleEyesImg from '@/assets/assistant/parts/眼睛.webp'
 
 /**
  * idle 分层配置（在 eye-demo.html 中实测标定）
  * bodyImg/eyesImg：两张分层素材
- * eyeWidthRatio：眼睛小图宽 / 本体图宽 = 510 / 1537，用于按舞台尺寸等比换算眼睛渲染宽
- * eyeAspect：眼睛小图 高/宽 = 148 / 510
+ * eyeWidthRatio：眼睛小图宽 / 本体图宽 = 170 / 512，用于按舞台尺寸等比换算眼睛渲染宽
+ * eyeAspect：眼睛小图 高/宽 = 49 / 170
  * cx/cy：眼睛中心相对舞台的百分比定位（demo 实测：34.5 / 34.5）
  * followAmp：跟随鼠标的最大位移（px）。Q版小尺寸下 4 太夸张，降到 1.5 只微微瞟
  */
 export const IDLE_LAYERS = {
   bodyImg: idleBodyImg,
   eyesImg: idleEyesImg,
-  eyeWidthRatio: 510 / 1537,
-  eyeAspect: 148 / 510,
+  eyeWidthRatio: 170 / 512,
+  eyeAspect: 49 / 170,
   cx: 34.5,
   cy: 34.5,
   followAmp: 1.5,
 }
 
 /** 所有合法情绪状态（渲染器/状态机的唯一真源） */
-export const PET_STATES = ['idle', 'thinking', 'happy', 'sad', 'surprised', 'talking']
+export const PET_STATES = ['idle', 'queued', 'working', 'paused', 'thinking', 'tool', 'happy', 'sad', 'surprised', 'talking', 'greeting']
 
 /** 默认状态 */
 export const DEFAULT_STATE = 'idle'
@@ -50,7 +50,7 @@ export const DEFAULT_STATE = 'idle'
  * 瞬时状态：切到这些状态后会在一段时间后自动回落到 idle。
  * happy（成功）、surprised（报错/惊讶）、sad（失败）都是"表演完就恢复"的表情。
  */
-export const TRANSIENT_STATES = ['happy', 'sad', 'surprised']
+export const TRANSIENT_STATES = ['happy', 'sad', 'surprised', 'greeting']
 
 /**
  * 状态 -> 视觉/文案配置
@@ -59,10 +59,15 @@ export const TRANSIENT_STATES = ['happy', 'sad', 'surprised']
 // label/bubble 改为 i18n key，运行时用 t() 取；无 t 时回退中文默认值
 export const PET_ACTIONS = {
   idle: { img: idleImg, bubbleKey: 'petIdleBubble', labelKey: 'petIdle', label: '待命中' },
+  queued: { img: thinkingImg, bubbleKey: '', labelKey: 'petQueued', label: '等待任务' },
+  working: { img: thinkingImg, bubbleKey: '', labelKey: 'petWorking', label: '执行任务中' },
+  paused: { img: idleImg, bubbleKey: '', labelKey: 'petPaused', label: '任务已暂停' },
   thinking: { img: thinkingImg, bubbleKey: 'petThinkingBubble', labelKey: 'petThinking', label: '思考中' },
+  tool: { img: thinkingImg, bubbleKey: '', labelKey: 'petTool', label: '处理工具中' },
   happy: { img: happyImg, bubbleKey: 'petHappyBubble', labelKey: 'petHappy', label: '完成' },
   sad: { img: sadImg, bubbleKey: 'petSadBubble', labelKey: 'petSad', label: '失败' },
   surprised: { img: surprisedImg, bubbleKey: 'petSurprisedBubble', labelKey: 'petSurprised', label: '异常' },
+  greeting: { img: talkingImg, bubbleKey: '', labelKey: 'petGreeting', label: '开始任务' },
   talking: { img: talkingImg, bubbleKey: '', labelKey: 'petTalking', label: '回复中' },
 }
 

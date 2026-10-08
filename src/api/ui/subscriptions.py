@@ -13,15 +13,14 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import get_db_session
-from src.db.crud import external_calendar as ext_cal_crud
-from src import security
-from src.db import models
-from src.api.dependencies import get_metadata_manager, get_scraper_manager
-from src.services import MetadataSourceManager, ScraperManager
+from src.api.dependencies import get_metadata_service, get_scraper_manager
+from src.schemas.auth import User
+from src.services.metadata_service import MetadataService
+from src.services.scraper_manager import ScraperManager
+from src.services.service_container import get_database_service
 from src.services.subscription_manager import SubscriptionManager
+from src.utils.auth import security
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/subscriptions", tags=["Subscriptions"])
@@ -87,9 +86,9 @@ async def _probe_source(provider: str, source: Any, source_type: str, user: Opti
 
 @router.get("/available-sources", summary="探测当前可用订阅源")
 async def get_available_sources(
-    user: models.User = Depends(security.get_current_user),
+    user: User = Depends(security.get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
     """聚合弹幕源 / 元数据源中声明并自检通过的订阅源。
 
@@ -109,7 +108,7 @@ async def get_available_sources(
         if entry is not None:
             danmaku_sources.append(entry)
 
-    # 元数据源：走 MetadataSourceManager
+    # 元数据源：走 MetadataService
     for provider, source in metadata_manager.sources.items():
         setting = metadata_manager.source_settings.get(provider, {})
         if not setting.get("isEnabled", True):
@@ -135,7 +134,7 @@ async def get_available_sources(
 def _resolve_source(
     provider: str,
     scraper_manager: ScraperManager,
-    metadata_manager: MetadataSourceManager,
+    metadata_manager: MetadataService,
 ) -> Optional[Any]:
     """按 provider 找出对应的源实例（优先弹幕源，再元数据源）。"""
     source = scraper_manager.scrapers.get(provider)
@@ -151,9 +150,9 @@ async def discover_targets(
     provider: str = Query(..., description="订阅源标识，如 bilibili"),
     query: str = Query(..., description="关键词或视频/合集 URL"),
     type: Optional[str] = Query(None, description="可选：限制订阅类型（如 bilibili_up / bilibili_bangumi）"),
-    user: models.User = Depends(security.get_current_user),
+    user: User = Depends(security.get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
     """通用入口：调用源 discover_subscription_targets，返回候选列表供前端挑选。
 
@@ -183,9 +182,9 @@ async def discover_targets(
 async def discover_offline(
     query: str = Query(..., description="关键词（支持任意语言译名）"),
     onlineProvider: Optional[str] = Query(None, description="可选：辅助在线探索源，如 bangumi / trakt"),
-    user: models.User = Depends(security.get_current_user),
+    user: User = Depends(security.get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
     """以 bangumi-data 离线库为主探索源（秒搜+多语言+带平台映射），在线 API 为辅。
 
@@ -193,14 +192,11 @@ async def discover_offline(
     - 辅：若指定 onlineProvider，并行调其 discover 补充（在线源结果排在离线结果之后）。
     返回 {list:[...]}，结构与 /discover 对齐，供前端统一渲染。
     """
-    from src.services import get_bangumi_data_manager
     offline_items: List[Dict[str, Any]] = []
-    bgm_mgr = get_bangumi_data_manager()
-    if bgm_mgr is not None:
-        try:
-            offline_items = await bgm_mgr.discover_offline(query)
-        except Exception as e:
-            logger.warning(f"bangumi-data 离线探索失败: {type(e).__name__}: {e}")
+    try:
+        offline_items = await metadata_manager.discover_offline_subjects(query)
+    except Exception as e:
+        logger.warning(f"bangumi-data 离线探索失败: {type(e).__name__}: {e}")
 
     # 辅助在线探索（可选）
     online_items: List[Dict[str, Any]] = []
@@ -217,11 +213,12 @@ async def discover_offline(
 
     return {"list": (offline_items or []) + (online_items or [])}
 
+@router.post("/sync-explore", summary="同步订阅探索榜单")
+
 async def sync_explore(
-    user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(security.get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
     """汇总各订阅源的探索榜单（弹幕源 fetch_subscription_calendar）写入 external_calendar_item。
 
@@ -243,7 +240,9 @@ async def sync_explore(
             logger.warning(f"探索同步：源 '{provider}' 拉取失败: {e}")
             continue
         if items:
-            count = await ext_cal_crud.upsert_items(session, provider, items)
+            db = get_database_service()
+            async with db.transaction():
+                count = await db.external_calendar.upsert_items(provider, items)
             synced[provider] = count
     return {"synced": synced, "message": f"探索榜单同步完成：{synced}"}
 
@@ -255,14 +254,15 @@ async def list_explore(
     keyword: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     pageSize: int = Query(30, ge=1, le=100),
-    user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(security.get_current_user),
 ):
     """读取已落库的探索榜单条目（airWeekday 为空的外部条目），供探索发现网格分页展示。"""
-    return await ext_cal_crud.list_explore_items(
-        session, provider=provider, category=category,
-        keyword=keyword, page=page, page_size=pageSize,
-    )
+    db = get_database_service()
+    async with db.transaction():
+        return await db.external_calendar.list_explore_items(
+            provider=provider, category=category,
+            keyword=keyword, page=page, page_size=pageSize,
+        )
 
 
 @router.get("/targets", summary="查询订阅目标")
@@ -273,28 +273,27 @@ async def list_targets(
     keyword: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=200),
-    user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(security.get_current_user),
 ):
     """分页查询订阅目标。type 对应 extraData.subscriptionType。"""
-    return await ext_cal_crud.list_subscription_targets(
-        session,
-        provider=provider,
-        subscription_type=type,
-        status=status_,
-        keyword=keyword,
-        page=page,
-        page_size=pageSize,
-    )
+    db = get_database_service()
+    async with db.transaction():
+        return await db.external_calendar.list_subscription_targets(
+            provider=provider,
+            subscription_type=type,
+            status=status_,
+            keyword=keyword,
+            page=page,
+            page_size=pageSize,
+        )
 
 
 @router.post("/targets", summary="创建订阅目标", status_code=status.HTTP_201_CREATED)
 async def create_target(
     body: CreateTargetRequest,
-    user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(security.get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
     """创建订阅目标：由对应源 validate_subscription_payload 标准化后写库。"""
     source = _resolve_source(body.provider, scraper_manager, metadata_manager)
@@ -313,15 +312,16 @@ async def create_target(
         logger.error(f"校验订阅参数失败: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"校验订阅参数失败: {e}")
 
-    target = await ext_cal_crud.upsert_subscription_target(
-        session,
-        provider=normalized["provider"],
-        external_id=normalized["externalId"],
-        title=normalized.get("title") or "",
-        subscription_type=normalized.get("subscriptionType") or body.type,
-        extra={**(normalized.get("extraData") or {}), "animeType": normalized.get("animeType", "subscription")},
-        status="pending",
-    )
+    db = get_database_service()
+    async with db.transaction():
+        target = await db.external_calendar.upsert_subscription_target(
+            provider=normalized["provider"],
+            external_id=normalized["externalId"],
+            title=normalized.get("title") or "",
+            subscription_type=normalized.get("subscriptionType") or body.type,
+            extra={**(normalized.get("extraData") or {}), "animeType": normalized.get("animeType", "subscription")},
+            status="pending",
+        )
     return {
         "id": target.get("id"),
         "provider": target.get("provider"),
@@ -337,51 +337,55 @@ async def create_target(
 async def update_target(
     target_id: int,
     body: UpdateTargetRequest,
-    user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(security.get_current_user),
 ):
     """修改启用状态 / 状态 / 通用 extraData 字段。"""
-    target = await ext_cal_crud.get_by_id(session, target_id)
+    db = get_database_service()
+    async with db.transaction():
+        target = await db.external_calendar.get_by_id_as_dict(target_id)
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订阅目标不存在")
-    ok = await ext_cal_crud.update_subscription_target(
-        session,
-        provider=target["provider"],
-        external_id=target["externalId"],
-        enabled=body.enabled,
-        extra_patch=body.extraPatch,
-        status=body.status,
-    )
+    async with db.transaction():
+        ok = await db.external_calendar.update_subscription_target(
+            provider=target["provider"],
+            external_id=target["externalId"],
+            enabled=body.enabled,
+            extra_patch=body.extraPatch,
+            status=body.status,
+        )
     return {"success": ok}
 
 
 @router.delete("/targets/{target_id}", summary="取消订阅目标")
 async def delete_target(
     target_id: int,
-    user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(security.get_current_user),
 ):
     """取消订阅（重置订阅意向字段）。"""
-    target = await ext_cal_crud.get_by_id(session, target_id)
+    db = get_database_service()
+    async with db.transaction():
+        target = await db.external_calendar.get_by_id_as_dict(target_id)
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订阅目标不存在")
-    ok = await ext_cal_crud.unsubscribe(session, target["provider"], target["externalId"])
+    async with db.transaction():
+        ok = await db.external_calendar.unsubscribe(target["provider"], target["externalId"])
     return {"success": ok}
 
 
 @router.post("/targets/{target_id}/scan", summary="立即扫描订阅目标")
 async def scan_target(
     target_id: int,
-    user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(security.get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
     """立即扫描一个订阅目标，把发现的候选项写入 external_calendar_item。
 
     扫描逻辑由对应源的 scan_subscription_target 提供；写库统一走 CRUD。
     """
-    target = await ext_cal_crud.get_by_id(session, target_id)
+    db = get_database_service()
+    async with db.transaction():
+        target = await db.external_calendar.get_by_id_as_dict(target_id)
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="订阅目标不存在")
 
@@ -394,38 +398,41 @@ async def scan_target(
 
     manager = SubscriptionManager(scraper_manager, metadata_manager)
     try:
-        scan_result = await manager.scan_target(target, session=session)
+        scan_result = await manager.scan_target(target)
         # why：元数据源可返回“展开为订阅目标”，不能把结果字典误当候选列表遍历。
-        written = await manager.persist_scan_result(session, target, scan_result)
+        written = await manager.persist_scan_result(target, scan_result)
     except NotImplementedError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"'{target['provider']}' 未实现扫描能力")
     except Exception as e:
         logger.error(f"扫描订阅目标失败: {e}", exc_info=True)
-        await ext_cal_crud.update_subscription_next_scan(
-            session, target["provider"], target["externalId"], last_error=str(e)
-        )
+        async with db.transaction():
+            await db.external_calendar.update_subscription_next_scan(
+                target["provider"], target["externalId"], last_error=str(e)
+            )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"扫描失败: {e}")
 
     try:
-        if scan_result.get("mode") == "candidates":
+        async with db.transaction():
+            candidate_items = []
             for item in scan_result.get("items") or []:
-                await ext_cal_crud.upsert_subscription_item(
-                    session,
-                    provider=item.get("provider", target["provider"]),
-                    external_id=item["externalId"],
-                    title=item.get("title") or "",
-                    subscription_type=item.get("subscriptionType") or "",
-                    parent_external_id=item.get("extraData", {}).get("parentExternalId") or target["externalId"],
-                    extra={k: v for k, v in (item.get("extraData") or {}).items()},
-                    status=item.get("status", "waiting"),
-                    commit=False,
+                extra = dict(item.get("extraData") or {})
+                extra["subscriptionType"] = item.get("subscriptionType") or ""
+                extra["status"] = item.get("status", "waiting")
+                candidate_items.append({
+                    "externalId": item["externalId"],
+                    "title": item.get("title") or "",
+                    "extraData": extra,
+                })
+            if scan_result.get("mode") == "candidates":
+                written += await db.subscription_candidate.upsert_candidates(
+                    parent_id=target["id"],
+                    provider=target["provider"],
+                    items=candidate_items,
                 )
-                written += 1
-
-        # why：候选项与本次扫描时间属于同一结果，最后一次提交可避免部分候选落库。
-        await ext_cal_crud.update_subscription_next_scan(session, target["provider"], target["externalId"])
+            await db.external_calendar.update_subscription_next_scan(
+                target["provider"], target["externalId"]
+            )
     except BaseException:
-        await session.rollback()
         raise
     target_label = "订阅目标" if scan_result.get("mode") == "subscriptions" else "候选项"
     return {"scanned": written, "message": f"扫描完成，写入 {written} 个{target_label}"}
@@ -442,47 +449,47 @@ async def list_items(
     keyword: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=200),
-    user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(security.get_current_user),
 ):
     """分页查询订阅目标产生的候选项（视频候选 / 分集候选）。"""
-    return await ext_cal_crud.list_subscription_items(
-        session,
-        parent_external_id=parentExternalId,
-        provider=provider,
-        subscription_type=type,
-        status=status_,
-        keyword=keyword,
-        page=page,
-        page_size=pageSize,
-    )
+    db = get_database_service()
+    async with db.transaction():
+        return await db.subscription_candidate.list_subscription_items(
+            parent_external_id=parentExternalId,
+            provider=provider,
+            subscription_type=type,
+            status=status_,
+            keyword=keyword,
+            page=page,
+            page_size=pageSize,
+        )
 
 
 @router.post("/items/{item_id}/retry", summary="重试订阅候选项")
 async def retry_item(
     item_id: int,
-    user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(security.get_current_user),
 ):
     """把候选项重置为 waiting，等待下一轮扫描重新处理。"""
-    item = await ext_cal_crud.get_by_id(session, item_id)
-    if not item:
+    db = get_database_service()
+    async with db.transaction():
+        ok = await db.subscription_candidate.update_status(item_id, "waiting")
+    if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="候选项不存在")
-    ok = await ext_cal_crud.retry_subscription_item(session, item["provider"], item["externalId"])
     return {"success": ok}
 
 
 @router.post("/items/{item_id}/ignore", summary="忽略订阅候选项")
 async def ignore_item(
     item_id: int,
-    user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(security.get_current_user),
 ):
     """标记候选项为 ignored。"""
-    item = await ext_cal_crud.get_by_id(session, item_id)
-    if not item:
+    db = get_database_service()
+    async with db.transaction():
+        ok = await db.subscription_candidate.update_status(item_id, "ignored")
+    if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="候选项不存在")
-    ok = await ext_cal_crud.ignore_subscription_item(session, item["provider"], item["externalId"])
     return {"success": ok}
 
 
@@ -494,16 +501,16 @@ class ResolveUrlRequest(BaseModel):
 @router.post("/resolve-url", summary="按 URL 自动定位订阅源并发现候选")
 async def resolve_url(
     body: ResolveUrlRequest,
-    user: models.User = Depends(security.get_current_user),
+    user: User = Depends(security.get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-    metadata_manager: MetadataSourceManager = Depends(get_metadata_manager),
+    metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
     """通用 URL 入口：
     - 遍历所有 supports_subscription=True 的源（弹幕源 + 元数据源）
     - 按源自身声明的 handled_domains 匹配
     - 命中后直接调 discover_subscription_targets(url)
     - 返回 {provider, list}；未命中返回 400
-    
+
     这样新增/移除订阅源时前端无需任何改动。
     """
     url = (body.url or "").strip()

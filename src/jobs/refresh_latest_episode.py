@@ -2,18 +2,19 @@
 刷新最新集弹幕定时任务
 自动检测已启用追更的作品,对最新一集弹幕数未达到阈值的进行刷新
 """
+from src.services.service_container import get_database_service
 import logging
 from typing import Callable
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
 from datetime import datetime, timedelta
 
-from src.db import crud, orm_models
+from src.db import orm_models
 from .base import BaseJob
-from src.services import TaskSuccess
+from src.utils.diagnostics.task_exceptions import TaskSuccess
 from src.tasks import refresh_episode_task
 from src.core import get_now
-from src.utils.task_profiler import profile_flow, FLOW_REFRESH_LATEST_EPISODE
+from src.services.task_profiler import profile_flow, FLOW_REFRESH_LATEST_EPISODE
 
 
 class RefreshLatestEpisodeJob(BaseJob):
@@ -64,7 +65,10 @@ class RefreshLatestEpisodeJob(BaseJob):
         await progress_callback(0, "正在获取所有启用追更的源...")
 
         # 获取所有启用追更的源
-        source_ids = await crud.get_sources_with_incremental_refresh_enabled(session)
+        db = get_database_service()
+        # 列表读取使用短事务，不在任务调度期间持有该事务。
+        async with db.transaction():
+            source_ids = await db.source.get_sources_with_incremental_refresh_enabled()
         total_sources = len(source_ids)
 
         if not total_sources:
@@ -78,8 +82,9 @@ class RefreshLatestEpisodeJob(BaseJob):
 
         for i, source_id in enumerate(source_ids):
             try:
-                # 获取源信息
-                source_info = await crud.get_anime_source_info(session, source_id)
+                # 查询方法统一由 source 数据域暴露，并显式绑定短事务。
+                async with db.transaction():
+                    source_info = await db.source.get_anime_source_info(source_id)
                 if not source_info:
                     self.logger.warning(f"无法找到数据源(id={source_id})的信息，跳过。")
                     skipped_count += 1
@@ -104,7 +109,9 @@ class RefreshLatestEpisodeJob(BaseJob):
                 if task_threshold is not None:
                     threshold = task_threshold
                 else:
-                    threshold_str = await crud.get_config_value(session, "latestEpisodeCommentThreshold", "20000")
+                    # 配置读取也需要独立的 DatabaseService 事务上下文。
+                    async with db.transaction():
+                        threshold_str = await db.config.get_value("latestEpisodeCommentThreshold", "20000")
                     try:
                         threshold = int(threshold_str)
                     except (ValueError, TypeError):
@@ -131,7 +138,7 @@ class RefreshLatestEpisodeJob(BaseJob):
                         manager=self.scraper_manager,
                         rate_limiter=self.rate_limiter,
                         progress_callback=cb,
-                        config_manager=self.config_manager
+                        config_service=self.config_service
                     )
 
                 try:

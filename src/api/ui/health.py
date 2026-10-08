@@ -13,13 +13,13 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import get_db_session, orm_models, ConfigManager
+from src.services.service_container import get_database_service
+from src.services.config_service import ConfigService
+from src.api.dependencies import get_config_service
 from src.core import get_now
-from src.api.dependencies import get_scraper_manager, get_config_manager
-from src.services import ScraperManager
+from src.api.dependencies import get_scraper_manager
+from src.services.scraper_manager import ScraperManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -93,58 +93,45 @@ def _calc_health(stats: dict) -> tuple:
 
 @router.get("/system-health/scraper-stats", summary="获取弹幕源健康度统计")
 async def get_scraper_health_stats(
-    session: AsyncSession = Depends(get_db_session),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
-):
-    stmt = select(orm_models.Scraper).order_by(orm_models.Scraper.displayOrder)
-    rows = (await session.execute(stmt)).scalars().all()
-
-    result = []
-    for row in rows:
-        total = row.totalSearches or 0
-        avg_dur = round(row.totalDurationMs / total, 1) if total > 0 else 0
-        avg_res = round((row.totalResultCount or 0) / max(1, row.successCount or 1), 1)
-        score, level = _calc_health({
-            "totalSearches": total,
-            "successCount": row.successCount or 0,
-            "failCount": row.failCount or 0,
-            "timeoutCount": row.timeoutCount or 0,
-            "emptyCount": row.emptyCount or 0,
-            "avgDurationMs": avg_dur,
-        })
-        scraper = scraper_manager.scrapers.get(row.providerName)
-        display = getattr(scraper, 'display_name', '') or row.providerName if scraper else row.providerName
-        result.append(ScraperHealthItem(
-            providerName=row.providerName,
-            displayName=display,
-            isEnabled=row.isEnabled,
-            totalSearches=total,
-            successCount=row.successCount or 0,
-            failCount=row.failCount or 0,
-            timeoutCount=row.timeoutCount or 0,
-            emptyCount=row.emptyCount or 0,
-            avgDurationMs=avg_dur,
-            avgResultCount=avg_res,
-            healthScore=score,
-            healthLevel=level,
-            lastSearchAt=row.lastSearchAt.isoformat() if row.lastSearchAt else None,
-            lastError=row.lastError,
-        ))
+) -> List[ScraperHealthItem]:
+    """经服务层读取源统计，在事务结束前完成响应快照。"""
+    db = get_database_service()
+    async with db.transaction():
+        rows = await db.scraper_crud.get_all()
+        result = []
+        for row in rows:
+            total = row.totalSearches or 0
+            avg_dur = round((row.totalDurationMs or 0) / total, 1) if total > 0 else 0
+            avg_res = round((row.totalResultCount or 0) / max(1, row.successCount or 1), 1)
+            score, level = _calc_health({
+                "totalSearches": total,
+                "successCount": row.successCount or 0,
+                "timeoutCount": row.timeoutCount or 0,
+                "avgDurationMs": avg_dur,
+            })
+            scraper = scraper_manager.scrapers.get(row.providerName)
+            display = getattr(scraper, 'display_name', '') or row.providerName
+            result.append(ScraperHealthItem(
+                providerName=row.providerName, displayName=display,
+                isEnabled=row.isEnabled, totalSearches=total,
+                successCount=row.successCount or 0, failCount=row.failCount or 0,
+                timeoutCount=row.timeoutCount or 0, emptyCount=row.emptyCount or 0,
+                avgDurationMs=avg_dur, avgResultCount=avg_res,
+                healthScore=score, healthLevel=level,
+                lastSearchAt=row.lastSearchAt.isoformat() if row.lastSearchAt else None,
+                lastError=row.lastError,
+            ))
     result.sort(key=lambda x: x.healthScore)
     return result
 
 
 @router.post("/system-health/scraper-stats/reset", summary="重置弹幕源健康度统计")
-async def reset_scraper_health_stats(
-    session: AsyncSession = Depends(get_db_session),
-):
-    from sqlalchemy import update
-    await session.execute(update(orm_models.Scraper).values(
-        totalSearches=0, successCount=0, failCount=0, timeoutCount=0,
-        emptyCount=0, totalDurationMs=0, totalResultCount=0,
-        lastSearchAt=None, lastError=None,
-    ))
-    await session.commit()
+async def reset_scraper_health_stats() -> Dict[str, str]:
+    """在独立短事务中重置健康统计，避免 API 直接提交会话。"""
+    db = get_database_service()
+    async with db.transaction():
+        await db.scraper_crud.reset_health_stats()
     return {"message": "ok"}
 
 
@@ -152,38 +139,31 @@ async def reset_scraper_health_stats(
 
 @router.get("/system-health/summary", summary="首页系统健康总览")
 async def get_system_health_summary(
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager),
-):
+    config_service: ConfigService = Depends(get_config_service),
+) -> SystemHealthSummary:
+    """聚合健康状态，数据库短事务不跨越文件访问与配置服务调用。"""
     now = get_now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    # 弹幕源健康摘要
-    scraper_q = select(orm_models.Scraper)
-    scraper_rows = (await session.execute(scraper_q)).scalars().all()
-    enabled_count = sum(1 for r in scraper_rows if r.isEnabled)
-    unhealthy = 0
-    for row in scraper_rows:
-        total = row.totalSearches or 0
-        avg_dur = round(row.totalDurationMs / total, 1) if total > 0 else 0
-        score, _ = _calc_health({
-            "totalSearches": total,
-            "successCount": row.successCount or 0,
-            "timeoutCount": row.timeoutCount or 0,
-            "avgDurationMs": avg_dur,
-        })
-        if score < 60:
-            unhealthy += 1
-    scraper_summary = {"enabled": enabled_count, "total": len(scraper_rows), "unhealthy": unhealthy}
-
-    # 任务摘要（最近24h）
-    yesterday = now - timedelta(hours=24)
-    task_q = select(
-        orm_models.TaskHistory.status,
-        func.count(orm_models.TaskHistory.taskId)
-    ).where(orm_models.TaskHistory.createdAt >= yesterday).group_by(orm_models.TaskHistory.status)
-    task_rows = (await session.execute(task_q)).all()
-    task_summary = {row[0]: row[1] for row in task_rows}
+    db = get_database_service()
+    async with db.transaction():
+        scraper_rows = await db.scraper_crud.get_all()
+        enabled_count = sum(1 for r in scraper_rows if r.isEnabled)
+        unhealthy = 0
+        for row in scraper_rows:
+            total = row.totalSearches or 0
+            avg_dur = round((row.totalDurationMs or 0) / total, 1) if total > 0 else 0
+            score, _ = _calc_health({
+                "totalSearches": total,
+                "successCount": row.successCount or 0,
+                "timeoutCount": row.timeoutCount or 0,
+                "avgDurationMs": avg_dur,
+            })
+            if score < 60:
+                unhealthy += 1
+        scraper_summary = {"enabled": enabled_count, "total": len(scraper_rows), "unhealthy": unhealthy}
+        task_summary = await db.health_query.get_task_counts_since(now - timedelta(hours=24))
+        episode_counts = await db.health_query.get_episode_counts(today_start)
+        config_counts = await db.health_query.get_config_counts()
 
     # 最近备份
     backup_status = {}
@@ -201,38 +181,25 @@ async def get_system_health_summary(
     except Exception:
         pass
 
-    # 今日新增弹幕
-    danmaku_q = select(func.count(orm_models.Episode.id)).where(
-        orm_models.Episode.fetchedAt >= today_start
-    )
-    today_new = (await session.execute(danmaku_q)).scalar() or 0
-
-    # 缺失分集（弹幕数为0的分集）
-    missing_q = select(func.count(orm_models.Episode.id)).where(
-        orm_models.Episode.commentCount == 0
-    )
-    missing_count = (await session.execute(missing_q)).scalar() or 0
-
-    # 配置完整性评分
-    config_score = await _calc_config_score(config_manager, session)
-
+    # 沿用原接口口径：todayNewDanmaku 实际表示今日抓取的分集数。
+    config_score = await _calc_config_score(config_service, config_counts)
     return SystemHealthSummary(
         scraperSummary=scraper_summary,
         taskSummary=task_summary,
         backupStatus=backup_status,
-        todayNewDanmaku=today_new,
-        missingEpisodes=missing_count,
+        todayNewDanmaku=episode_counts["today_new"],
+        missingEpisodes=episode_counts["missing"],
         configScore=config_score["percentage"],
     )
 
 
 # ==================== 配置完整性评分 ====================
 
-async def _calc_config_score(config_manager: ConfigManager, session: AsyncSession) -> dict:
+async def _calc_config_score(config_service: ConfigService, counts: Dict[str, int]) -> dict:
+    """根据仓储计数和配置服务计算评分，不持有数据库会话。"""
     items = []
     total = 0
     max_score = 0
-
     checks = [
         ("proxy", "proxyUrl", "代理配置", 10),
         ("ai", "aiMatcherEnabled", "AI匹配", 10),
@@ -241,74 +208,50 @@ async def _calc_config_score(config_manager: ConfigManager, session: AsyncSessio
     ]
     for key, config_key, label, weight in checks:
         max_score += weight
-        val = await config_manager.get(config_key, "")
+        val = await config_service.get(config_key, "")
         configured = bool(val and str(val).strip())
         score = weight if configured else 0
         total += score
         items.append({"key": key, "label": label, "configured": configured, "score": score, "maxScore": weight})
 
-    # 媒体服务器
-    max_score += 15
-    ms_q = select(func.count(orm_models.MediaServer.id)).where(orm_models.MediaServer.isEnabled == True)
-    ms_count = (await session.execute(ms_q)).scalar() or 0
-    ms_score = 15 if ms_count > 0 else 0
-    total += ms_score
-    items.append({"key": "media_server", "label": "媒体服务器", "configured": ms_count > 0, "score": ms_score, "maxScore": 15, "detail": f"{ms_count}个"})
-
-    # 弹幕源
-    max_score += 15
-    sc_q = select(func.count(orm_models.Scraper.providerName)).where(orm_models.Scraper.isEnabled == True)
-    enabled_scrapers = (await session.execute(sc_q)).scalar() or 0
-    sc_score = 15 if enabled_scrapers >= 2 else (8 if enabled_scrapers >= 1 else 0)
-    total += sc_score
-    items.append({"key": "scrapers", "label": "弹幕源", "configured": enabled_scrapers > 0, "score": sc_score, "maxScore": 15, "detail": f"{enabled_scrapers}个启用"})
-
-    # 通知渠道
-    max_score += 10
-    nc_q = select(func.count(orm_models.NotificationChannel.id)).where(orm_models.NotificationChannel.isEnabled == True)
-    nc_count = (await session.execute(nc_q)).scalar() or 0
-    nc_score = 10 if nc_count > 0 else 0
-    total += nc_score
-    items.append({"key": "notification", "label": "通知渠道", "configured": nc_count > 0, "score": nc_score, "maxScore": 10, "detail": f"{nc_count}个"})
-
-    # 备份任务
-    max_score += 10
-    bk_q = select(func.count(orm_models.ScheduledTask.taskId)).where(
-        orm_models.ScheduledTask.jobType == "databaseBackup",
-        orm_models.ScheduledTask.isEnabled == True,
-    )
-    bk_count = (await session.execute(bk_q)).scalar() or 0
-    bk_score = 10 if bk_count > 0 else 0
-    total += bk_score
-    items.append({"key": "backup", "label": "定期备份", "configured": bk_count > 0, "score": bk_score, "maxScore": 10})
-
-    # 元数据源
-    max_score += 15
-    md_q = select(func.count(orm_models.MetadataSource.providerName)).where(orm_models.MetadataSource.isEnabled == True)
-    md_count = (await session.execute(md_q)).scalar() or 0
-    md_score = 15 if md_count >= 2 else (8 if md_count >= 1 else 0)
-    total += md_score
-    items.append({"key": "metadata", "label": "元数据源", "configured": md_count > 0, "score": md_score, "maxScore": 15, "detail": f"{md_count}个启用"})
-
+    # 保留原评分权重和返回字段，计数由查询仓储统一提供。
+    for key, label, weight, tiered, detail_suffix in [
+        ("media_server", "媒体服务器", 15, False, "个"),
+        ("scrapers", "弹幕源", 15, True, "个启用"),
+        ("notification", "通知渠道", 10, False, "个"),
+        ("backup", "定期备份", 10, False, None),
+        ("metadata", "元数据源", 15, True, "个启用"),
+    ]:
+        count = counts[key]
+        score = (weight if count >= 2 else 8 if count == 1 else 0) if tiered else (weight if count > 0 else 0)
+        max_score += weight
+        total += score
+        item = {"key": key, "label": label, "configured": count > 0, "score": score, "maxScore": weight}
+        if detail_suffix is not None:
+            item["detail"] = f"{count}{detail_suffix}"
+        items.append(item)
     pct = int(total / max_score * 100) if max_score > 0 else 0
     return {"totalScore": total, "maxScore": max_score, "percentage": pct, "items": items}
 
 
 @router.get("/system-health/config-score", response_model=ConfigScoreResult, summary="配置完整性评分")
 async def get_config_score(
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager),
-):
-    return await _calc_config_score(config_manager, session)
+    config_service: ConfigService = Depends(get_config_service),
+) -> dict:
+    """先读取统计快照，再通过配置服务计算评分，避免嵌套事务。"""
+    db = get_database_service()
+    async with db.transaction():
+        counts = await db.health_query.get_config_counts()
+    return await _calc_config_score(config_service, counts)
 
 
 # ==================== 番剧关注/优先级 ====================
 
 @router.get("/system-health/anime-priority", summary="获取番剧优先级配置")
 async def get_anime_priority(
-    config_manager: ConfigManager = Depends(get_config_manager),
+    config_service: ConfigService = Depends(get_config_service),
 ):
-    raw = await config_manager.get("anime_priority_map", "{}")
+    raw = await config_service.get("anime_priority_map", "{}")
     try:
         data = json.loads(raw) if isinstance(raw, str) else raw
     except (json.JSONDecodeError, TypeError):
@@ -324,9 +267,10 @@ class AnimePriorityUpdate(BaseModel):
 @router.post("/system-health/anime-priority", summary="设置番剧优先级")
 async def set_anime_priority(
     body: AnimePriorityUpdate,
-    config_manager: ConfigManager = Depends(get_config_manager),
-):
-    raw = await config_manager.get("anime_priority_map", "{}")
+    config_service: ConfigService = Depends(get_config_service),
+) -> Dict[str, str]:
+    """通过配置服务保存单项优先级，由服务管理事务和缓存失效。"""
+    raw = await config_service.get("anime_priority_map", "{}")
     try:
         data = json.loads(raw) if isinstance(raw, str) else raw
     except (json.JSONDecodeError, TypeError):
@@ -335,18 +279,19 @@ async def set_anime_priority(
         data.pop(str(body.animeId), None)
     else:
         data[str(body.animeId)] = body.priority
-    await config_manager.setValue("anime_priority_map", json.dumps(data))
+    await config_service.set("anime_priority_map", json.dumps(data))
     return {"message": "ok"}
 
 
 @router.post("/system-health/anime-priority/batch", summary="批量设置番剧优先级")
 async def batch_set_anime_priority(
     body: dict,
-    config_manager: ConfigManager = Depends(get_config_manager),
-):
+    config_service: ConfigService = Depends(get_config_service),
+) -> Dict[str, Any]:
+    """通过配置服务一次保存批量优先级，统一处理事务和缓存失效。"""
     anime_ids = body.get("animeIds", [])
     priority = body.get("priority", "normal")
-    raw = await config_manager.get("anime_priority_map", "{}")
+    raw = await config_service.get("anime_priority_map", "{}")
     try:
         data = json.loads(raw) if isinstance(raw, str) else raw
     except (json.JSONDecodeError, TypeError):
@@ -356,5 +301,5 @@ async def batch_set_anime_priority(
             data.pop(str(aid), None)
         else:
             data[str(aid)] = priority
-    await config_manager.setValue("anime_priority_map", json.dumps(data))
+    await config_service.set("anime_priority_map", json.dumps(data))
     return {"message": "ok", "count": len(anime_ids)}

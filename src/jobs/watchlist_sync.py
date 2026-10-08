@@ -13,10 +13,10 @@ from typing import Callable
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from src.db import crud, orm_models
+from src.db import orm_models
 from src.jobs.base import BaseJob
-from src.services import TaskSuccess
-from src.utils.task_profiler import profile_flow, FLOW_WATCHLIST_SYNC
+from src.utils.diagnostics.task_exceptions import TaskSuccess
+from src.services.task_profiler import profile_flow, FLOW_WATCHLIST_SYNC
 
 logger = logging.getLogger(__name__)
 

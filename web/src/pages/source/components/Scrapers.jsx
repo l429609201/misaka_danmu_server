@@ -1366,7 +1366,7 @@ export const Scrapers = () => {
         res.data?.[`${item.providerName}EpisodeBlacklistRegex`] || '',
       useProxy: res.data?.useProxy ?? false,
       [`scraper_${item.providerName}_search_timeout`]:
-        parseInt(res.data?.[`scraper_${item.providerName}_search_timeout`]) || 15,
+        parseInt(res.data?.[`scraper_${item.providerName}_search_timeout`]) || 30,
       // 信息增强：开关为布尔（后端存字符串 'true'/'false'），字段列表为字符串
       [`scraper_${item.providerName}_enrich_enabled`]:
         res.data?.[`scraper_${item.providerName}_enrich_enabled`] === true

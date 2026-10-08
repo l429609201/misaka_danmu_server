@@ -11,7 +11,7 @@ from typing import Optional, Tuple
 from src.notification.messages.base import (
     NotificationMessage, MessageCategory, MessageSeverity, AggregationPolicy
 )
-from src.notification.events import EventContext, TaskStatus, SystemEventType
+from src.notification.events import EventContext, TaskOperation, TaskSource, TaskStatus, SystemEventType
 
 logger = logging.getLogger(__name__)
 
@@ -119,8 +119,6 @@ class UnifiedTaskMessage(NotificationMessage):
     
     def _get_action_name(self, operation, source) -> str:
         """获取操作名称"""
-        from src.notification.events import TaskOperation, TaskSource
-        
         if operation == TaskOperation.IMPORT:
             if source == TaskSource.WEBHOOK:
                 return "Webhook 导入"

@@ -685,6 +685,7 @@ export const Notification = () => {
       <NotificationTemplateEditor
         visible={templateEditorVisible}
         templateId={editingTemplateId}
+        channelTypes={channelTypes}
         onClose={() => setTemplateEditorVisible(false)}
         onSaved={handleTemplateSaved}
       />

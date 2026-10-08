@@ -15,26 +15,11 @@ import logging
 from enum import Enum
 from typing import Any, List, Optional, Tuple
 
+from src.utils.model_content_policy import (
+    contains_forbidden_control_content, is_forbidden_control_identifier,
+)
+
 logger = logging.getLogger(__name__)
-
-# 单个文件读取上限（字节）：512KB
-MAX_FILE_READ_BYTES = 512 * 1024
-
-# 敏感文件名/后缀黑名单（禁止读取）——命中即拒绝
-_SENSITIVE_NAME_KEYWORDS = (
-    ".env", "credential", "secret", "token", "password", "passwd",
-    "private", "id_rsa", ".pem", ".key", ".pfx", ".p12", ".htpasswd",
-)
-# 敏感目录片段（路径中出现即拒绝）
-_SENSITIVE_DIR_KEYWORDS = (".git", "__pycache__", "node_modules", ".ssh")
-
-# 二进制/非文本扩展名黑名单（禁止读取）
-_BINARY_EXTENSIONS = (
-    ".db", ".sqlite", ".sqlite3", ".so", ".pyd", ".dll", ".exe", ".bin",
-    ".zip", ".gz", ".tar", ".rar", ".7z", ".jpg", ".jpeg", ".png", ".gif",
-    ".webp", ".bmp", ".ico", ".mp4", ".mkv", ".avi", ".mov", ".mp3", ".wav",
-    ".flac", ".pdf", ".woff", ".woff2", ".ttf", ".otf", ".pyc",
-)
 
 
 class ToolPermission(str, Enum):
@@ -68,65 +53,13 @@ def is_within_allowed_dirs(target_path: str, allowed_dirs: List[str]) -> bool:
     return False
 
 
-def _looks_binary(sample: bytes) -> bool:
-    """内容嗅探：含 NUL 字节视为二进制。"""
-    return b"\x00" in sample
-
-
 def check_file_readable(
     target_path: str, allowed_dirs: List[str]
 ) -> Tuple[bool, Optional[str]]:
     """
-    综合校验文件是否允许读取。返回 (是否允许, 拒绝原因)。
-    顺序：存在性 → 白名单 → 敏感名 → 二进制扩展名 → 大小 → 内容嗅探。
+    AI 暂不提供任意文件读取；内容级过滤无法保证流控与凭据不被绕过。
     """
-    if not target_path:
-        return False, "路径为空"
-
-    # 1. 白名单目录（最先，防穿越）
-    if not is_within_allowed_dirs(target_path, allowed_dirs):
-        return False, "该路径不在允许访问的目录白名单内"
-
-    norm = _normalize(target_path)
-    lower = norm.lower()
-
-    # 2. 敏感目录片段
-    for kw in _SENSITIVE_DIR_KEYWORDS:
-        if kw in lower:
-            return False, f"命中敏感目录（{kw}），禁止访问"
-
-    # 3. 敏感文件名/后缀
-    base_lower = os.path.basename(lower)
-    for kw in _SENSITIVE_NAME_KEYWORDS:
-        if kw in base_lower:
-            return False, "命中敏感文件（可能含密钥/凭据），禁止读取"
-
-    # 4. 二进制扩展名
-    _, ext = os.path.splitext(lower)
-    if ext in _BINARY_EXTENSIONS:
-        return False, f"二进制文件（{ext}）禁止读取"
-
-    # 5. 存在性与类型
-    if not os.path.isfile(norm):
-        return False, "文件不存在或不是常规文件"
-
-    # 6. 大小上限
-    try:
-        if os.path.getsize(norm) > MAX_FILE_READ_BYTES:
-            return False, f"文件过大（超过 {MAX_FILE_READ_BYTES // 1024}KB）"
-    except OSError as e:
-        return False, f"无法获取文件信息：{e}"
-
-    # 7. 内容嗅探（读前 4KB 判断是否二进制）
-    try:
-        with open(norm, "rb") as f:
-            head = f.read(4096)
-        if _looks_binary(head):
-            return False, "文件内容疑似二进制，禁止读取"
-    except OSError as e:
-        return False, f"无法读取文件：{e}"
-
-    return True, None
+    return False, "AI 任意文件读取已禁用"
 
 
 # ── 数据出口脱敏 ──────────────────────────────────────────
@@ -181,6 +114,11 @@ def _is_secret_key(key: Any) -> bool:
 def sanitize_output(data: Any) -> Any:
     """递归脱敏工具返回值：命中敏感键名的值替换为 ***。防止密钥回灌给 AI。"""
     if isinstance(data, dict):
+        if any(is_forbidden_control_identifier(k) for k in data):
+            return {"error": "流控与配额信息禁止 AI 访问"}
+        if any(is_forbidden_control_identifier(data.get(k))
+               for k in ("key", "configKey", "operationId", "name")):
+            return {"error": "流控与配额信息禁止 AI 访问"}
         return {
             k: ("***" if _is_secret_key(k) and v not in (None, "", 0)
                 else sanitize_output(v))
@@ -188,6 +126,8 @@ def sanitize_output(data: Any) -> Any:
         }
     if isinstance(data, (list, tuple)):
         return [sanitize_output(x) for x in data]
+    if is_forbidden_control_identifier(data):
+        return "***"
     return data
 
 

@@ -8,6 +8,7 @@
 import asyncio
 import base64
 import hashlib
+import json
 import mimetypes
 import struct
 import time
@@ -29,7 +30,8 @@ from src.notification.base import (
     ChannelCapability, ChannelCapabilities, CommandResult, IMAGE_MODE_FIELD,
 )
 from src._version import APP_VERSION
-from src.utils.image_utils import load_image_bytes
+# 图片来源选择和加载由共享服务完成，渠道只处理平台发送协议。
+from src.services.image_resource_service import load_image_bytes
 
 logger = logging.getLogger(__name__)
 bot_raw_logger = logging.getLogger("bot_raw")
@@ -174,10 +176,9 @@ class WeChatChannel(BaseNotificationChannel):
 
     def _log_raw(self, direction: str, data):
         if self._is_log_raw():
-            import json as _json
             bot_raw_logger.info(
                 f"[WeCom #{self.channel_id}] {direction}\n"
-                f"{_json.dumps(data, ensure_ascii=False, indent=2) if isinstance(data, (dict, list)) else data}\n"
+                f"{json.dumps(data, ensure_ascii=False, indent=2) if isinstance(data, (dict, list)) else data}\n"
                 f"{'─' * 60}"
             )
 
@@ -605,8 +606,7 @@ class WeChatChannel(BaseNotificationChannel):
 
         # 按钮降级为纯文本列表，并保存编号→callback_data 映射
         if result.reply_markup:
-            from src.services.notification_service import NotificationService
-            text = NotificationService._buttons_to_text_fallback(text, result.reply_markup)
+            text = self.service._buttons_to_text_fallback(text, result.reply_markup)
             # 提取 callback_data 列表，顺序与编号一致
             mapping = []
             for row in result.reply_markup:

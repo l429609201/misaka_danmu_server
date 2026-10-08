@@ -1,11 +1,13 @@
 """
 /tasks 菜单 Mixin — 定时任务列表 + 任务详情
 （文件名 tasks_menu.py 避免与 src/tasks 包冲突）
+C8：crud 层已废弃，改用 DatabaseService
 """
-import re
+import asyncio
 import logging
-from src.db import crud
+import re
 from src.notification.base import CommandResult
+from src.services.service_container import get_database_service
 
 logger = logging.getLogger(__name__)
 
@@ -123,8 +125,10 @@ class TasksMenuMixin:
         if not task_id:
             return CommandResult(text="", answer_callback_text="缺少任务ID")
         try:
-            async with self._session_factory() as session:
-                detail = await crud.get_task_details_from_history(session, task_id)
+            # C8：使用 DatabaseService + TaskQueryRepository
+            db = get_database_service()
+            async with db.transaction():
+                detail = await db.task.get_task_details_from_history(task_id)
             if not detail:
                 return CommandResult(text="", answer_callback_text="任务不存在或已被清理")
 
@@ -156,8 +160,8 @@ class TasksMenuMixin:
                     exec_task_id = m.group(1)
 
             if exec_task_id:
-                async with self._session_factory() as session:
-                    exec_detail = await crud.get_task_details_from_history(session, exec_task_id)
+                async with db.transaction():
+                    exec_detail = await db.task.get_task_details_from_history(exec_task_id)
                 if exec_detail:
                     exec_status = exec_detail.get("status", "未知")
                     exec_progress = exec_detail.get("progress", 0)
@@ -190,13 +194,14 @@ class TasksMenuMixin:
     # ── 定时任务操作按钮 ──
 
     async def cb_task_toggle(self, params, user_id, channel, **kw):
-        """启用/禁用定时任务"""
+        """启用/禁用定时任务 - C8：使用 DatabaseService"""
         task_id = params[0] if params else ""
         if not task_id or not self.scheduler_manager:
             return CommandResult(text="", answer_callback_text="操作失败")
         try:
-            async with self._session_factory() as session:
-                task_info = await crud.get_scheduled_task(session, task_id)
+            db = get_database_service()
+            async with db.transaction():
+                task_info = await db.scheduled_task.get_scheduled_task(task_id)
             if not task_info:
                 return CommandResult(text="", answer_callback_text="任务不存在")
             new_enabled = not task_info.get("isEnabled", False)
@@ -215,30 +220,31 @@ class TasksMenuMixin:
             return CommandResult(text="", answer_callback_text=f"操作失败: {e}")
 
     async def cb_task_run(self, params, user_id, channel, **kw):
-        """立即执行定时任务"""
+        """立即执行定时任务 - C8：使用 DatabaseService"""
         task_id = params[0] if params else ""
         if not task_id or not self.scheduler_manager:
             return CommandResult(text="", answer_callback_text="操作失败")
         try:
-            async with self._session_factory() as session:
-                task_info = await crud.get_scheduled_task(session, task_id)
+            db = get_database_service()
+            async with db.transaction():
+                task_info = await db.scheduled_task.get_scheduled_task(task_id)
             if not task_info:
                 return CommandResult(text="", answer_callback_text="任务不存在")
             # 异步执行，不等待完成
-            import asyncio
             asyncio.create_task(self.scheduler_manager.run_task_now(task_id))
             return CommandResult(text="", answer_callback_text=f"▶️ {self._get_job_name(task_info['jobType'])} 已触发执行")
         except Exception as e:
             return CommandResult(text="", answer_callback_text=f"执行失败: {e}")
 
     async def cb_task_del(self, params, user_id, channel, **kw):
-        """删除定时任务 — 先确认"""
+        """删除定时任务 — 先确认 - C8：使用 DatabaseService"""
         task_id = params[0] if params else ""
         if not task_id or not self.scheduler_manager:
             return CommandResult(text="", answer_callback_text="操作失败")
         try:
-            async with self._session_factory() as session:
-                task_info = await crud.get_scheduled_task(session, task_id)
+            db = get_database_service()
+            async with db.transaction():
+                task_info = await db.scheduled_task.get_scheduled_task(task_id)
             if not task_info:
                 return CommandResult(text="", answer_callback_text="任务不存在")
             name = self._get_job_name(task_info['jobType'])
