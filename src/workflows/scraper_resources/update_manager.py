@@ -5,10 +5,9 @@
 """
 import asyncio
 import hashlib
+import io
 import json
 import logging
-import shutil
-import tempfile
 import zipfile
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable
@@ -65,7 +64,7 @@ class ScraperUpdateManager:
         if progress_callback:
             progress_callback("开始下载资源包...")
 
-        temp_file = Path(tempfile.mktemp(suffix=".zip"))
+        temp_file = get_file_storage_service().resource_temp_path(suffix=".zip")
 
         try:
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
@@ -75,14 +74,13 @@ class ScraperUpdateManager:
                     total_size = int(response.headers.get("content-length", 0))
                     downloaded = 0
 
-                    with temp_file.open("wb") as f:
-                        async for chunk in response.aiter_bytes(chunk_size=8192):
-                            f.write(chunk)
-                            downloaded += len(chunk)
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        get_file_storage_service().resource_append_bytes(temp_file, chunk)
+                        downloaded += len(chunk)
 
-                            if progress_callback and total_size > 0:
-                                percent = (downloaded / total_size) * 100
-                                progress_callback(f"下载中: {percent:.1f}% ({downloaded}/{total_size})")
+                        if progress_callback and total_size > 0:
+                            percent = (downloaded / total_size) * 100
+                            progress_callback(f"下载中: {percent:.1f}% ({downloaded}/{total_size})")
 
             if progress_callback:
                 progress_callback("下载完成")
@@ -116,13 +114,24 @@ class ScraperUpdateManager:
         if progress_callback:
             progress_callback("开始解压资源包...")
 
-        temp_dir = Path(tempfile.mkdtemp())
+        temp_dir = get_file_storage_service().resource_temp_dir()
         installed_count = 0
 
         try:
-            # 解压到临时目录
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_dir)
+            # 压缩协议解析留在编排层，文件读写统一交给基础设施。
+            archive_content = get_file_storage_service().resource_read_bytes(zip_path)
+            with zipfile.ZipFile(io.BytesIO(archive_content), 'r') as zip_ref:
+                for member in zip_ref.infolist():
+                    target = temp_dir / member.filename
+                    try:
+                        target.resolve().relative_to(temp_dir.resolve())
+                    except ValueError as exc:
+                        raise ValueError(f"压缩包成员越界: {member.filename}") from exc
+                    if member.is_dir():
+                        get_file_storage_service().resource_mkdir(target, parents=True, exist_ok=True)
+                    else:
+                        get_file_storage_service().resource_mkdir(target.parent, parents=True, exist_ok=True)
+                        get_file_storage_service().resource_write_bytes(target, zip_ref.read(member))
 
             if progress_callback:
                 progress_callback("解压完成，开始安装...")
@@ -131,7 +140,7 @@ class ScraperUpdateManager:
             get_file_storage_service().resource_mkdir(self.scrapers_dir, parents=True, exist_ok=True)
 
             # 复制 .so/.pyd 文件
-            for file_path in temp_dir.rglob("*"):
+            for file_path in get_file_storage_service().resource_rglob(temp_dir, "*"):
                 if file_path.suffix in ['.so', '.pyd']:
                     target_path = self.scrapers_dir / file_path.name
                     get_file_storage_service().resource_copy2(file_path, target_path)

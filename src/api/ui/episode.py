@@ -74,7 +74,7 @@ async def delete_episode_from_source(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
 
     provider_name = episode_info.get('providerName', '未知源')
-    task_title = f"删除分集: {episode_info['title']} - [{provider_name}]"
+    task_title = f"删除分集: {episode_info['episodeTitle']} - [{provider_name}]"
     if not deleteFiles:
         task_title += " (保留文件)"
     unique_key = f"delete-episode-{episodeId}"
@@ -82,7 +82,7 @@ async def delete_episode_from_source(
     task_id, _ = await task_manager.submit_task(task_coro, task_title, unique_key=unique_key, run_immediately=True)
 
     logger.info(f"用户 '{current_user.username}' 提交了删除分集 ID: {episodeId} 的任务 (Task ID: {task_id})，deleteFiles={deleteFiles}。")
-    return {"message": f"删除分集 '{episode_info['title']}' 的任务已提交。", "taskId": task_id}
+    return {"message": f"删除分集 '{episode_info['episodeTitle']}' 的任务已提交。", "taskId": task_id}
 
 
 
@@ -103,11 +103,11 @@ async def refresh_single_episode(
     if not episode:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
 
-    logger.info(f"用户 '{current_user.username}' 请求刷新分集 ID: {episodeId} ({episode['title']})")
+    logger.info(f"用户 '{current_user.username}' 请求刷新分集 ID: {episodeId} ({episode['episodeTitle']})")
 
     provider_name = episode.get('providerName', '未知源')
     media_id = episode.get('mediaId', '?')
-    task_title = f"刷新分集: {episode['title']} - [{provider_name}] (mediaId={media_id})"
+    task_title = f"刷新分集: {episode['episodeTitle']} - [{provider_name}] (mediaId={media_id})"
     task_coro = lambda session, callback: tasks.refresh_episode_task(episodeId, session, scraper_manager, rate_limiter, callback, config_service)
     # 传入 unique_key，使任务完成后 _determine_event_type 能正确归类为 refresh 通知。
     # 否则空 unique_key 会导致通知事件类型判定为 None，刷新完成后不发任何通知。
@@ -115,7 +115,7 @@ async def refresh_single_episode(
         task_coro, task_title, unique_key=f"refresh-episode-{episodeId}"
     )
 
-    return {"message": f"分集 '{episode['title']}' 的刷新任务已提交。", "taskId": task_id}
+    return {"message": f"分集 '{episode['episodeTitle']}' 的刷新任务已提交。", "taskId": task_id}
 
 
 

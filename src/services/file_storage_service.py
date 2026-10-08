@@ -185,6 +185,29 @@ class FileStorageService:
         return path.write_bytes(content)
 
     @staticmethod
+    def resource_append_bytes(path: Path, content: bytes) -> None:
+        """追加网络流片段，避免编排层直接持有文件句柄。"""
+        with path.open("ab") as stream:
+            stream.write(content)
+
+    @staticmethod
+    def resource_temp_path(suffix: str = "") -> Path:
+        """原子创建临时文件，避免先生成名称再写入的竞争。"""
+        descriptor, name = tempfile.mkstemp(suffix=suffix)
+        os.close(descriptor)
+        return Path(name)
+
+    @staticmethod
+    def resource_temp_dir() -> Path:
+        """创建独立临时目录。"""
+        return Path(tempfile.mkdtemp())
+
+    @staticmethod
+    def resource_rglob(path: Path, pattern: str) -> List[Path]:
+        """递归枚举目录内容。"""
+        return list(path.rglob(pattern))
+
+    @staticmethod
     def resource_mkdir(path: Path, *args: object, **kwargs: object) -> None:
         """创建资源目录。"""
         path.mkdir(*args, **kwargs)

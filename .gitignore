@@ -47,6 +47,10 @@ venv/*
 !tests/test_fill_missing_episodes.py
 !tests/test_supplement_episode_routing.py
 !tests/test_jellyfin_auth_compatibility.py
+!tests/test_scraper_resource_download.py
+!tests/test_scraper_load_preparation.py
+!tests/test_offline_upload.py
+!tests/test_episode_ui_contract.py
 .pids/
 docs/*
 web/scripts/*
