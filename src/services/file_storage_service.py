@@ -32,6 +32,7 @@ FileStorageService - 文件存储服务
 
 import asyncio
 import logging
+import hashlib
 import os
 import shutil
 import stat
@@ -91,6 +92,122 @@ DANMAKU_BASE_DIR = CONFIG_DIR / "danmaku"
 
 class FileStorageService:
     """统一文件 I/O 与变更互斥；业务事务和补偿决策仍由编排层负责。"""
+
+    @staticmethod
+    def detect_binary_arch(file_path: Path) -> Optional[str]:
+        """读取 .so/.pyd 文件头，返回其真实架构名；无法识别返回 None。
+
+        支持 ELF（Linux）与 PE（Windows）。
+        why：文件名和目录结构都可以伪造或错挂，只有二进制文件头是事实。
+        arm 包落到 x86 机器上时 import 才会失败，那时已经完成部署，代价太大。
+        """
+        try:
+            with open(file_path, "rb") as f:
+                head = f.read(64)
+                if len(head) < 24:
+                    return None
+
+                # ELF: \x7fELF
+                if head[:4] == b"\x7fELF":
+                    e_machine = int.from_bytes(head[18:20], "little")
+                    return {0x3E: "x86_64", 0xB7: "aarch64", 0x28: "arm", 0x03: "i386"}.get(e_machine)
+
+                # PE: MZ ... e_lfanew(0x3C) → PE\0\0 → Machine
+                if head[:2] == b"MZ":
+                    e_lfanew = int.from_bytes(head[60:64], "little")
+                    f.seek(e_lfanew)
+                    pe_sig = f.read(6)
+                    if len(pe_sig) < 6 or pe_sig[:4] != b"PE\x00\x00":
+                        return None
+                    machine = int.from_bytes(pe_sig[4:6], "little")
+                    return {0x8664: "x86_64", 0xAA64: "aarch64", 0x01C0: "arm", 0x014C: "i386"}.get(machine)
+        except Exception as e:
+            logger.debug(f"读取 {file_path.name} 架构失败: {e}")
+        return None
+
+    @staticmethod
+    def calculate_file_hash(file_path: Path) -> str:
+        """分块计算文件 sha256（避免大文件一次性读入内存）。"""
+        h = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    @staticmethod
+    def resource_exists(path: Path) -> bool:
+        """检查路径存在性。"""
+        return path.exists()
+
+    @staticmethod
+    def resource_is_file(path: Path) -> bool:
+        """检查普通文件。"""
+        return path.is_file()
+
+    @staticmethod
+    def resource_is_dir(path: Path) -> bool:
+        """检查目录。"""
+        return path.is_dir()
+
+    @staticmethod
+    def resource_iterdir(path: Path) -> List[Path]:
+        """枚举目录内容。"""
+        return list(path.iterdir())
+
+    @staticmethod
+    def resource_glob(path: Path, pattern: str) -> List[Path]:
+        """按模式枚举文件。"""
+        return list(path.glob(pattern))
+
+    @staticmethod
+    def resource_stat(path: Path) -> object:
+        """读取文件元数据。"""
+        return path.stat()
+
+    @staticmethod
+    def resource_read_text(path: Path, *args: object, **kwargs: object) -> str:
+        """读取文本，保留原编码参数。"""
+        return path.read_text(*args, **kwargs)
+
+    @staticmethod
+    def resource_read_bytes(path: Path) -> bytes:
+        """读取二进制文件。"""
+        return path.read_bytes()
+
+    @staticmethod
+    def resource_write_text(path: Path, *args: object, **kwargs: object) -> int:
+        """写入文本，保留原编码参数。"""
+        return path.write_text(*args, **kwargs)
+
+    @staticmethod
+    def resource_write_bytes(path: Path, content: bytes) -> int:
+        """写入二进制文件。"""
+        return path.write_bytes(content)
+
+    @staticmethod
+    def resource_mkdir(path: Path, *args: object, **kwargs: object) -> None:
+        """创建资源目录。"""
+        path.mkdir(*args, **kwargs)
+
+    @staticmethod
+    def resource_unlink(path: Path, *args: object, **kwargs: object) -> None:
+        """删除资源文件。"""
+        path.unlink(*args, **kwargs)
+
+    @staticmethod
+    def resource_rmdir(path: Path) -> None:
+        """删除空资源目录。"""
+        path.rmdir()
+
+    @staticmethod
+    def resource_copy2(source: Path, target: Path) -> str:
+        """复制文件并保留元数据。"""
+        return shutil.copy2(source, target)
+
+    @staticmethod
+    def resource_rmtree(path: Path, *args: object, **kwargs: object) -> None:
+        """清理资源临时目录。"""
+        shutil.rmtree(path, *args, **kwargs)
 
     def __init__(self, base_dir: Optional[Path] = None) -> None:
         """
@@ -980,3 +1097,4 @@ def get_file_storage_service() -> FileStorageService:
     if _file_storage_service is None:
         _file_storage_service = FileStorageService()
     return _file_storage_service
+

@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from src.services.file_storage_service import get_file_storage_service
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,11 +23,11 @@ def has_scraper_files(directory: Path) -> bool:
     Returns:
         True 如果目录中存在 .so 或 .pyd 文件
     """
-    if not directory.exists():
+    if not get_file_storage_service().resource_exists(directory):
         return False
     
-    for file_path in directory.glob("*"):
-        if file_path.is_file() and file_path.suffix in ['.so', '.pyd']:
+    for file_path in get_file_storage_service().resource_glob(directory, "*"):
+        if get_file_storage_service().resource_is_file(file_path) and file_path.suffix in ['.so', '.pyd']:
             return True
     
     return False
@@ -122,12 +124,12 @@ def count_scraper_files(directory: Path) -> int:
     Returns:
         弹幕源文件数量
     """
-    if not directory.exists():
+    if not get_file_storage_service().resource_exists(directory):
         return 0
     
     count = 0
-    for file_path in directory.iterdir():
-        if file_path.is_file() and file_path.suffix in ['.so', '.pyd']:
+    for file_path in get_file_storage_service().resource_iterdir(directory):
+        if get_file_storage_service().resource_is_file(file_path) and file_path.suffix in ['.so', '.pyd']:
             count += 1
     
     return count

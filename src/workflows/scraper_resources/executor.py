@@ -10,7 +10,6 @@ import hashlib
 import json
 import logging
 import re
-import shutil
 import sys
 import traceback
 from datetime import datetime
@@ -19,10 +18,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+from src.services.file_storage_service import get_file_storage_service
+
 from src._version import APP_VERSION
-from src.services.scraper_resource_service import (
+from src.workflows.scraper_resources.resources import (
     BACKUP_DIR,
-    _build_base_url as build_url,
+    _build_base_url,
     _download_and_extract_release,
     _fetch_github_release_asset,
     _fetch_gitee_release_asset,
@@ -31,10 +32,10 @@ from src.services.scraper_resource_service import (
     _is_docker_environment,
     apply_deferred_overlay,
     backup_scrapers,
-    get_platform_info as get_info,
-    get_platform_key as get_key,
-    parse_gitee_url as parse_gt,
-    parse_github_url as parse_gh,
+    get_platform_info,
+    get_platform_key,
+    parse_gitee_url,
+    parse_github_url,
     restore_scrapers,
 )
 from src.services.cache_service import get_cache_service
@@ -50,10 +51,11 @@ from src.utils.runtime.docker_utils import (
     is_running_in_docker,
     restart_container,
 )
-from src.utils.scraper_ops.scraper_version_manager import ScraperVersionManager, is_semantic_version
-from src.utils.scraper_ops.version_comparator import VersionComparator
+from src.workflows.scraper_resources.version_manager import ScraperVersionManager
+from src.utils.parsing.versions import is_semantic_version
+from src.workflows.scraper_resources.version_comparator import VersionComparator
 
-from src.services.scraper_resource_service import (
+from src.workflows.scraper_resources.resources import (
     SCRAPER_DOWNLOAD_TASK_CACHE_PREFIX, SCRAPER_DOWNLOAD_TASK_CACHE_TTL,
     check_scraper_compat_in_dir, ensure_manifest_in_dir, verify_scraper_package,
     resource_version_cache,
@@ -81,31 +83,6 @@ def _get_temp_download_base_dir() -> Path:
         return Path("/app/config/temp_downloads")
     else:
         return Path("config/temp_downloads")
-
-
-def get_platform_key() -> str:
-    """获取平台标识"""
-    return get_key()
-
-
-def get_platform_info() -> Dict[str, str]:
-    """获取平台信息"""
-    return get_info()
-
-
-def parse_github_url(url: str):
-    """解析 GitHub URL"""
-    return parse_gh(url)
-
-
-def parse_gitee_url(url: str):
-    """解析 Gitee URL"""
-    return parse_gt(url)
-
-
-def _build_base_url(repo_info, repo_url: str, gitee_info, branch: str = "main") -> str:
-    """构建基础 URL"""
-    return build_url(repo_info, repo_url, gitee_info, branch)
 
 
 class ScraperDownloadExecutor:
@@ -184,21 +161,21 @@ class ScraperDownloadExecutor:
 
         try:
             temp_base_dir = _get_temp_download_base_dir()
-            temp_base_dir.mkdir(parents=True, exist_ok=True)
+            get_file_storage_service().resource_mkdir(temp_base_dir, parents=True, exist_ok=True)
 
             # 创建以任务ID命名的临时目录
             temp_dir = temp_base_dir / f"{TEMP_DOWNLOAD_DIR_PREFIX}{self.task.task_id}"
-            temp_dir.mkdir(parents=True, exist_ok=True)
+            get_file_storage_service().resource_mkdir(temp_dir, parents=True, exist_ok=True)
 
             scrapers_dir = _get_scrapers_dir()
 
             # 复制已下载成功的文件到临时目录
             for scraper_name in downloaded_files:
                 # 查找该 scraper 的所有相关文件
-                for file_path in scrapers_dir.iterdir():
+                for file_path in get_file_storage_service().resource_iterdir(scrapers_dir):
                     if file_path.stem == scraper_name or file_path.name.startswith(f"{scraper_name}."):
                         dest_path = temp_dir / file_path.name
-                        await asyncio.to_thread(shutil.copy2, file_path, dest_path)
+                        await asyncio.to_thread(get_file_storage_service().resource_copy2, file_path, dest_path)
                         logger.debug(f"已复制 {file_path.name} 到临时目录")
 
             # 在缓存中记录临时目录信息（用于后续清理和查找）
@@ -239,7 +216,7 @@ class ScraperDownloadExecutor:
             cache_service = get_cache_service()
             temp_base_dir = _get_temp_download_base_dir()
 
-            if not temp_base_dir.exists():
+            if not get_file_storage_service().resource_exists(temp_base_dir):
                 return to_download
 
             # 查找所有有效的临时目录缓存
@@ -253,8 +230,8 @@ class ScraperDownloadExecutor:
                 reused = False
 
                 # 遍历临时目录查找可复用的文件
-                for temp_dir in temp_base_dir.iterdir():
-                    if not temp_dir.is_dir() or not temp_dir.name.startswith(TEMP_DOWNLOAD_DIR_PREFIX):
+                for temp_dir in get_file_storage_service().resource_iterdir(temp_base_dir):
+                    if not get_file_storage_service().resource_is_dir(temp_dir) or not temp_dir.name.startswith(TEMP_DOWNLOAD_DIR_PREFIX):
                         continue
 
                     task_id = temp_dir.name[len(TEMP_DOWNLOAD_DIR_PREFIX):]
@@ -264,7 +241,7 @@ class ScraperDownloadExecutor:
                     if not temp_info:
                         # 缓存已过期，清理目录
                         try:
-                            await asyncio.to_thread(shutil.rmtree, temp_dir)
+                            await asyncio.to_thread(get_file_storage_service().resource_rmtree, temp_dir)
                             logger.debug(f"清理过期临时目录: {temp_dir}")
                         except Exception:
                             pass
@@ -273,14 +250,14 @@ class ScraperDownloadExecutor:
                     # 检查是否有该文件
                     if scraper_name in temp_info.get("downloaded_files", []):
                         # 查找临时目录中的文件
-                        for temp_file in temp_dir.iterdir():
+                        for temp_file in get_file_storage_service().resource_iterdir(temp_dir):
                             if temp_file.stem == scraper_name:
                                 # 验证哈希值
                                 file_hash = await self._calculate_file_hash(temp_file)
                                 if file_hash == remote_hash:
                                     # 哈希匹配，复制到 scrapers 目录
                                     dest_path = scrapers_dir / temp_file.name
-                                    await asyncio.to_thread(shutil.copy2, temp_file, dest_path)
+                                    await asyncio.to_thread(get_file_storage_service().resource_copy2, temp_file, dest_path)
                                     self.task.progress.downloaded.append(scraper_name)
                                     reused = True
                                     reused_count += 1
@@ -303,13 +280,7 @@ class ScraperDownloadExecutor:
 
     async def _calculate_file_hash(self, file_path: Path) -> str:
         """计算文件的 SHA256 哈希值"""
-        def _hash():
-            sha256 = hashlib.sha256()
-            with open(file_path, "rb") as f:
-                for chunk in iter(lambda: f.read(8192), b""):
-                    sha256.update(chunk)
-            return sha256.hexdigest()
-        return await asyncio.to_thread(_hash)
+        return await asyncio.to_thread(get_file_storage_service().calculate_file_hash, file_path)
 
     async def _cleanup_temp_dir(self, task_id: str):
         """清理指定任务的临时目录"""
@@ -318,8 +289,8 @@ class ScraperDownloadExecutor:
             temp_base_dir = _get_temp_download_base_dir()
             temp_dir = temp_base_dir / f"{TEMP_DOWNLOAD_DIR_PREFIX}{task_id}"
 
-            if temp_dir.exists():
-                await asyncio.to_thread(shutil.rmtree, temp_dir)
+            if get_file_storage_service().resource_exists(temp_dir):
+                await asyncio.to_thread(get_file_storage_service().resource_rmtree, temp_dir)
                 logger.info(f"已清理临时目录: {temp_dir}")
 
             # 删除缓存记录
@@ -524,7 +495,7 @@ class ScraperDownloadExecutor:
                 )
                 self._log(f"⚠️ {msg}", "warning")
                 # 运行目录的 .so 还没被覆盖，只需丢弃临时目录并还原备份中的版本信息
-                await asyncio.to_thread(shutil.rmtree, pending_dir, True)
+                await asyncio.to_thread(get_file_storage_service().resource_rmtree, pending_dir, True)
                 await restore_scrapers(self.current_user, self.scraper_manager)
                 self._log("已还原备份，请先升级服务器版本")
                 raise ValueError(msg)
@@ -548,7 +519,7 @@ class ScraperDownloadExecutor:
                 "已取消部署，请先升级服务器"
             )
             self._log(f"⚠️ {msg}", "warning")
-            await asyncio.to_thread(shutil.rmtree, pending_dir, True)
+            await asyncio.to_thread(get_file_storage_service().resource_rmtree, pending_dir, True)
             await restore_scrapers(self.current_user, self.scraper_manager)
             self._log("已还原备份")
             raise ValueError(msg)
@@ -579,7 +550,7 @@ class ScraperDownloadExecutor:
             if not should_update:
                 self._log(f"✓ 最终版本验证: {reason}，跳过部署")
                 # 清理临时目录
-                await asyncio.to_thread(shutil.rmtree, pending_dir, True)
+                await asyncio.to_thread(get_file_storage_service().resource_rmtree, pending_dir, True)
                 self._log("✓ 已清理临时目录")
 
                 # 清除版本缓存
@@ -791,7 +762,7 @@ class ScraperDownloadExecutor:
 
         # 创建临时下载目录
         temp_dir = _get_temp_download_base_dir() / f"download_{self.task.task_id}"
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        get_file_storage_service().resource_mkdir(temp_dir, parents=True, exist_ok=True)
         self._log(f"创建临时下载目录: {temp_dir}")
 
         try:
@@ -882,8 +853,8 @@ class ScraperDownloadExecutor:
             if not should_update:
                 self._log(f"✓ 最终版本验证: {reason}，跳过部署")
                 # 清理临时目录
-                if temp_dir.exists():
-                    shutil.rmtree(temp_dir)
+                if get_file_storage_service().resource_exists(temp_dir):
+                    get_file_storage_service().resource_rmtree(temp_dir)
                     self._log("✓ 已清理临时目录")
 
                 # 清除版本缓存
@@ -962,9 +933,9 @@ class ScraperDownloadExecutor:
                 self._log(f"✓ 成功加载了 {deploy_count} 个弹幕源")
 
                 # 先清理临时目录（在设置 COMPLETED 之前，确保 SSE 发送的最后消息是完成消息）
-                if temp_dir.exists():
+                if get_file_storage_service().resource_exists(temp_dir):
                     try:
-                        shutil.rmtree(temp_dir)
+                        get_file_storage_service().resource_rmtree(temp_dir)
                         self._log("✓ 已清理临时下载目录")
                     except Exception as e:
                         logger.warning(f"清理临时目录失败: {e}")
@@ -1106,9 +1077,9 @@ class ScraperDownloadExecutor:
         finally:
             # 清理临时下载目录（如果还存在的话）
             # 注意：热加载场景下，临时目录已在设置 COMPLETED 之前清理，这里不会重复清理
-            if temp_dir.exists():
+            if get_file_storage_service().resource_exists(temp_dir):
                 try:
-                    shutil.rmtree(temp_dir)
+                    get_file_storage_service().resource_rmtree(temp_dir)
                     # 不发送日志消息，避免在 COMPLETED 状态后添加新消息影响 SSE 流
                     logger.info(f"[任务 {self.task.task_id}] 已清理临时下载目录")
                 except Exception as e:
@@ -1166,11 +1137,11 @@ class ScraperDownloadExecutor:
 
         # 选择更新的 versions.json 文件
         versions_file = None
-        if backup_versions_file.exists() and scrapers_versions_file.exists():
+        if get_file_storage_service().resource_exists(backup_versions_file) and get_file_storage_service().resource_exists(scrapers_versions_file):
             # 两个都存在，比较 updated_at 时间戳，选择更新的
             try:
-                backup_data = json.loads(await asyncio.to_thread(backup_versions_file.read_text))
-                scrapers_data = json.loads(await asyncio.to_thread(scrapers_versions_file.read_text))
+                backup_data = json.loads(await asyncio.to_thread(lambda *args, **kwargs: get_file_storage_service().resource_read_text(backup_versions_file, *args, **kwargs)))
+                scrapers_data = json.loads(await asyncio.to_thread(lambda *args, **kwargs: get_file_storage_service().resource_read_text(scrapers_versions_file, *args, **kwargs)))
                 backup_time = backup_data.get('updated_at', '')
                 scrapers_time = scrapers_data.get('updated_at', '')
                 if backup_time >= scrapers_time:
@@ -1180,18 +1151,18 @@ class ScraperDownloadExecutor:
                     versions_file = scrapers_versions_file
                     self._log("使用 scrapers 目录的版本信息")
             except Exception:
-                versions_file = backup_versions_file if backup_versions_file.exists() else scrapers_versions_file
-        elif backup_versions_file.exists():
+                versions_file = backup_versions_file if get_file_storage_service().resource_exists(backup_versions_file) else scrapers_versions_file
+        elif get_file_storage_service().resource_exists(backup_versions_file):
             versions_file = backup_versions_file
             self._log("使用备份目录的版本信息")
-        elif scrapers_versions_file.exists():
+        elif get_file_storage_service().resource_exists(scrapers_versions_file):
             versions_file = scrapers_versions_file
 
         # 检查分支是否匹配
         branch_mismatch = False
-        if versions_file and versions_file.exists():
+        if versions_file and get_file_storage_service().resource_exists(versions_file):
             try:
-                local_versions = json.loads(await asyncio.to_thread(versions_file.read_text))
+                local_versions = json.loads(await asyncio.to_thread(lambda *args, **kwargs: get_file_storage_service().resource_read_text(versions_file, *args, **kwargs)))
                 local_branch = local_versions.get('branch', 'main')
 
                 # 检查分支是否一致
@@ -1274,7 +1245,7 @@ class ScraperDownloadExecutor:
                         hashes_data[scraper_name] = remote_hash
 
                     # 写入临时目录
-                    await asyncio.to_thread(target_path.write_bytes, file_content)
+                    await asyncio.to_thread(lambda *args, **kwargs: get_file_storage_service().resource_write_bytes(target_path, *args, **kwargs), file_content)
 
                     version = scraper_info.get('version', 'unknown')
                     versions_data[scraper_name] = version
@@ -1293,10 +1264,10 @@ class ScraperDownloadExecutor:
 
     async def _verify_file_hash(self, file_path: Path, expected_hash: str) -> bool:
         """校验文件哈希值"""
-        if not file_path.exists():
+        if not get_file_storage_service().resource_exists(file_path):
             return False
         try:
-            content = await asyncio.to_thread(file_path.read_bytes)
+            content = await asyncio.to_thread(lambda *args, **kwargs: get_file_storage_service().resource_read_bytes(file_path, *args, **kwargs))
             actual_hash = hashlib.sha256(content).hexdigest()
             return actual_hash == expected_hash
         except Exception as e:
@@ -1311,14 +1282,14 @@ class ScraperDownloadExecutor:
         """复制文件并校验哈希值"""
         try:
             # 复制文件
-            await asyncio.to_thread(shutil.copy2, src_path, dst_path)
+            await asyncio.to_thread(get_file_storage_service().resource_copy2, src_path, dst_path)
 
             # 校验哈希
             if not await self._verify_file_hash(dst_path, expected_hash):
                 self._log(f"复制后校验失败: {scraper_name} -> {dst_path}", "error")
                 # 删除损坏的文件
-                if dst_path.exists():
-                    dst_path.unlink()
+                if get_file_storage_service().resource_exists(dst_path):
+                    get_file_storage_service().resource_unlink(dst_path)
                 return False
             return True
         except Exception as e:
@@ -1344,12 +1315,12 @@ class ScraperDownloadExecutor:
         failed = []
 
         # 确保目录存在
-        scrapers_dir.mkdir(parents=True, exist_ok=True)
-        backup_dir.mkdir(parents=True, exist_ok=True)
+        get_file_storage_service().resource_mkdir(scrapers_dir, parents=True, exist_ok=True)
+        get_file_storage_service().resource_mkdir(backup_dir, parents=True, exist_ok=True)
 
         for scraper_name in downloaded_scrapers:
             # 查找临时目录中的文件
-            temp_files = list(temp_dir.glob(f"{scraper_name}.*"))
+            temp_files = list(get_file_storage_service().resource_glob(temp_dir, f"{scraper_name}.*"))
             if not temp_files:
                 self._log(f"临时目录中未找到 {scraper_name} 的文件", "warning")
                 failed.append(scraper_name)
@@ -1380,8 +1351,8 @@ class ScraperDownloadExecutor:
             backup_target = backup_dir / filename
             if not await self._copy_and_verify(temp_file, backup_target, expected_hash, scraper_name):
                 # 回滚 scrapers 目录的文件
-                if scrapers_target.exists():
-                    scrapers_target.unlink()
+                if get_file_storage_service().resource_exists(scrapers_target):
+                    get_file_storage_service().resource_unlink(scrapers_target)
                 failed.append(scraper_name)
                 continue
 
@@ -1414,11 +1385,11 @@ class ScraperDownloadExecutor:
         failed = []
 
         # 确保目录存在
-        backup_dir.mkdir(parents=True, exist_ok=True)
+        get_file_storage_service().resource_mkdir(backup_dir, parents=True, exist_ok=True)
 
         for scraper_name in downloaded_scrapers:
             # 查找临时目录中的文件
-            temp_files = list(temp_dir.glob(f"{scraper_name}.*"))
+            temp_files = list(get_file_storage_service().resource_glob(temp_dir, f"{scraper_name}.*"))
             if not temp_files:
                 self._log(f"临时目录中未找到 {scraper_name} 的文件", "warning")
                 failed.append(scraper_name)
@@ -1474,7 +1445,7 @@ class ScraperDownloadExecutor:
         backup_versions_file = backup_dir / "versions.json"
 
         package_json_str = json.dumps(package_data, indent=2, ensure_ascii=False)
-        await asyncio.to_thread(backup_package_file.write_text, package_json_str)
+        await asyncio.to_thread(lambda *args, **kwargs: get_file_storage_service().resource_write_text(backup_package_file, *args, **kwargs), package_json_str)
 
         # 保存 versions.json 到 backup
         await self._save_versions(versions_data, hashes_data, platform_info, package_data, [])
@@ -1512,12 +1483,12 @@ class ScraperDownloadExecutor:
         self._log("正在更新备份目录的版本信息...")
 
         # 确保目录存在
-        backup_dir.mkdir(parents=True, exist_ok=True)
+        get_file_storage_service().resource_mkdir(backup_dir, parents=True, exist_ok=True)
 
         # 1. 保存 package.json 到 backup 目录
         backup_package_file = backup_dir / "package.json"
         package_json_str = json.dumps(package_data, indent=2, ensure_ascii=False)
-        await asyncio.to_thread(backup_package_file.write_text, package_json_str)
+        await asyncio.to_thread(lambda *args, **kwargs: get_file_storage_service().resource_write_text(backup_package_file, *args, **kwargs), package_json_str)
 
         # 2. 构建并保存 versions.json 到 backup 目录
         backup_versions_file = backup_dir / "versions.json"
@@ -1525,9 +1496,9 @@ class ScraperDownloadExecutor:
         # 读取现有的 versions.json（如果存在）
         existing_scrapers = {}
         existing_hashes = {}
-        if backup_versions_file.exists():
+        if get_file_storage_service().resource_exists(backup_versions_file):
             try:
-                existing_data = json.loads(await asyncio.to_thread(backup_versions_file.read_text))
+                existing_data = json.loads(await asyncio.to_thread(lambda *args, **kwargs: get_file_storage_service().resource_read_text(backup_versions_file, *args, **kwargs)))
                 existing_scrapers = existing_data.get("scrapers", {})
                 existing_hashes = existing_data.get("hashes", {})
             except Exception:
@@ -1553,7 +1524,7 @@ class ScraperDownloadExecutor:
             versions_json['min_server_version'] = min_server_version
 
         versions_json_str = json.dumps(versions_json, indent=2, ensure_ascii=False)
-        await asyncio.to_thread(backup_versions_file.write_text, versions_json_str)
+        await asyncio.to_thread(lambda *args, **kwargs: get_file_storage_service().resource_write_text(backup_versions_file, *args, **kwargs), versions_json_str)
 
         self._log("✓ 备份目录版本信息已更新")
 
@@ -1612,9 +1583,9 @@ class ScraperDownloadExecutor:
             # 合并旧版本信息
             existing_scrapers = {}
             existing_hashes = {}
-            if failed_downloads and versions_file.exists():
+            if failed_downloads and get_file_storage_service().resource_exists(versions_file):
                 try:
-                    existing_versions = json.loads(await asyncio.to_thread(versions_file.read_text))
+                    existing_versions = json.loads(await asyncio.to_thread(lambda *args, **kwargs: get_file_storage_service().resource_read_text(versions_file, *args, **kwargs)))
                     existing_scrapers = existing_versions.get('scrapers', {})
                     existing_hashes = existing_versions.get('hashes', {})
                 except Exception:
@@ -1641,7 +1612,7 @@ class ScraperDownloadExecutor:
                 full_versions_data['min_server_version'] = min_server_version
 
             versions_json_str = json.dumps(full_versions_data, indent=2, ensure_ascii=False)
-            await asyncio.to_thread(versions_file.write_text, versions_json_str)
+            await asyncio.to_thread(lambda *args, **kwargs: get_file_storage_service().resource_write_text(versions_file, *args, **kwargs), versions_json_str)
             self._log(f"已保存 {len(merged_scrapers)} 个弹幕源的版本信息到 backup 目录")
 
         except Exception as e:

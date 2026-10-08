@@ -70,6 +70,7 @@ from src._version import APP_VERSION
 from src.frontend import mount_frontend
 from src.tasks.registry import register_import_task_handlers
 from src.workflows.bangumi_data_tasks import execute_bangumi_data_sync, execute_bangumi_data_clear
+from src.workflows.scraper_resources.load_preparation import ScraperLoadPreparation
 # 定时作业只在组装层显式接线，SchedulerService 不导入具体 Jobs。
 from src.jobs.base import BaseJob
 from src.jobs.auto_finish import AutoFinishJob
@@ -242,7 +243,12 @@ async def run_startup(app: FastAPI):
         session_factory, app.state.config_service, None,
         source_classes=METADATA_SOURCE_CLASSES,
     )
-    app.state.scraper_manager = ScraperManager(session_factory, app.state.config_service, app.state.metadata_service, app.state.transport_manager)
+    # 资源复合流程由组合根接线，管理器只消费准备完成的 manifest 快照。
+    scraper_load_preparation = ScraperLoadPreparation()
+    app.state.scraper_manager = ScraperManager(
+        session_factory, app.state.config_service, app.state.metadata_service,
+        app.state.transport_manager, prepare_load=scraper_load_preparation.prepare,
+    )
     app.state.metadata_service.scraper_manager = app.state.scraper_manager
 
     init_metadata_service(app.state.metadata_service)

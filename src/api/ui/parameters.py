@@ -1,7 +1,10 @@
 """
 参数配置相关的API端点
 """
+import asyncio
 import logging
+import platform
+import sys
 import json
 import tempfile
 import zipfile
@@ -13,10 +16,15 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 import httpx
 
+from src._version import APP_VERSION
+from src.services.scraper_manager import _version_satisfies
+from src.workflows.scraper_resources.resources import BACKUP_DIR
 from src.schemas import ui_models
 from src.utils.auth import security
 from src.api.dependencies import get_config_service, get_scraper_manager
 from src.core.env import is_docker_environment as _is_docker_environment
+from src.workflows.scraper_resources.deployment import should_restart_for_deployment, count_scraper_files
+from src.workflows.scraper_resources.version_manager import ScraperVersionManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -233,8 +241,6 @@ async def upload_scraper_package(
             if not min_server_version:
                 min_server_version = versions_data.get('min_server_version')
             if min_server_version:
-                from src._version import APP_VERSION
-                from src.services.scraper_manager import _version_satisfies
                 if not _version_satisfies(APP_VERSION, min_server_version):
                     raise HTTPException(
                         status_code=400,
@@ -243,8 +249,6 @@ async def upload_scraper_package(
                 logger.info(f"离线包版本检查通过: 服务器 {APP_VERSION} >= 弹幕源包要求 {min_server_version}")
 
             # 验证平台和架构
-            import platform
-            import sys
 
             current_platform = platform.system().lower()
             current_arch = platform.machine().lower()
@@ -284,10 +288,8 @@ async def upload_scraper_package(
 
             # 获取目录路径
             scrapers_dir = _get_scrapers_dir()
-            from .scraper_resources import BACKUP_DIR
 
             # 统计要上传的文件数和判断部署策略
-            from src.utils.scraper_deployment_checker import should_restart_for_deployment, count_scraper_files
 
             file_count = count_scraper_files(extract_dir)
 
@@ -318,7 +320,6 @@ async def upload_scraper_package(
 
             # 在临时目录生成 manifest
             try:
-                from src.utils.scraper_version_manager import ScraperVersionManager
                 manifest = ScraperVersionManager.extract_manifest_from_legacy(
                     temp_package_file,
                     temp_versions_file,
@@ -378,14 +379,12 @@ async def upload_scraper_package(
                 # 在后台异步热加载弹幕源
                 async def reload_scrapers_background():
                     try:
-                        import asyncio
                         await asyncio.sleep(0.5)  # 延迟0.5秒,确保响应已发送
                         await manager.load_and_sync_scrapers()
                         logger.info("弹幕源热加载完成")
                     except Exception as e:
                         logger.error(f"后台热加载弹幕源失败: {e}", exc_info=True)
 
-                import asyncio
                 asyncio.create_task(reload_scrapers_background())
 
                 return {

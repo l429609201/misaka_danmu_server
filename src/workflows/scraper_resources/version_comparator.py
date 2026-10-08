@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Tuple
 
-from src.utils.scraper_ops.scraper_version_manager import ScraperVersionManager
+from src.workflows.scraper_resources.version_manager import ScraperVersionManager
 
 logger = logging.getLogger(__name__)
 

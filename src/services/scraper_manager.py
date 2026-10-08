@@ -3,14 +3,12 @@ import importlib
 import inspect
 import json
 import logging
-import pkgutil
 import re
-import shutil
 import time
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Type
 from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -32,7 +30,7 @@ from src.utils.diagnostics.buffered_logging import (
     flush_buffered_logs,
 )
 from src.utils.parsing.episode_filter import apply_global_episode_title_filter
-from src.utils.scraper_ops.scraper_version_manager import ScraperVersionManager
+from src.services.file_storage_service import get_file_storage_service
 
 
 @dataclass
@@ -78,7 +76,15 @@ def _version_satisfies(current: str, minimum: str) -> bool:
 
 
 class ScraperManager:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], config_service: ConfigService, metadata_manager: Any, transport_manager: TransportManager):
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        config_service: ConfigService,
+        metadata_manager: Any,
+        transport_manager: TransportManager,
+        *,
+        prepare_load: Optional[Callable[[ScraperPaths, bool], Awaitable[Optional[Dict[str, Any]]]]] = None,
+    ) -> None:
         self.scrapers: Dict[str, BaseScraper] = {}
         self._scraper_classes: Dict[str, Type[BaseScraper]] = {}
         self._scraper_versions: Dict[str, str] = {}  # 存储每个源的版本号
@@ -101,6 +107,9 @@ class ScraperManager:
         self.config_service = config_service
         self.metadata_manager = metadata_manager
         self.transport_manager = transport_manager
+        # 组合根注入资源准备流程，服务层不反向依赖 workflow。
+        self._prepare_load = prepare_load
+        self._load_manifest: Optional[Dict[str, Any]] = None
 
     async def acquire_search_lock(self, api_key: str) -> bool:
         """Acquires a search lock for a given API key. Returns False if already locked."""
@@ -128,42 +137,6 @@ class ScraperManager:
             logging.getLogger(__name__).info(f"Webhook 搜索锁已获取: '{lock_key}'。")
             return True
 
-    def _check_version_file_integrity(self, scrapers_dir: Path):
-        """检查 manifest 文件完整性
-
-        使用统一的 scraper_manifest.json 进行版本检查。
-
-        Args:
-            scrapers_dir: scrapers 目录路径
-        """
-        logger = logging.getLogger(__name__)
-
-        # 检查 manifest 是否存在
-        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
-        if manifest is None:
-            logger.warning(
-                "启动检查: scraper_manifest.json 不存在。"
-                "将在后续步骤中自动生成。"
-            )
-            return
-
-        # 验证 manifest 格式
-        if not ScraperVersionManager.validate_manifest(manifest):
-            logger.warning("启动检查: scraper_manifest.json 格式不完整或不正确")
-            return
-
-        # 完整性检查通过
-        version = manifest.get("version", "unknown")
-        updated_at = manifest.get("updated_at", "N/A")
-        source_count = len(manifest.get("sources", {}))
-
-        logger.info(
-            f"启动检查: 版本文件完整性正常\n"
-            f"  全局版本: {version}\n"
-            f"  更新时间: {updated_at}\n"
-            f"  弹幕源数量: {source_count}"
-        )
-
     async def release_webhook_search_lock(self, lock_key: str):
         """释放 Webhook 搜索锁。"""
         async with self._lock:
@@ -183,147 +156,7 @@ class ScraperManager:
         """获取爬虫目录路径配置"""
         return ScraperPaths.from_environment()
 
-    async def _restore_from_backup_if_needed(self, paths: ScraperPaths):
-        """检查并从备份恢复爬虫文件（如果需要）"""
-        scrapers_dir = paths.scrapers_dir
-        backup_dir = paths.backup_dir
-
-        # 检查 scrapers 目录是否为空(没有 .so/.pyd 文件)
-        has_scrapers = any(
-            f.suffix in ['.so', '.pyd']
-            for f in scrapers_dir.iterdir()
-            if f.is_file()
-        )
-
-        # 判断是否需要恢复
-        should_restore = False
-        restore_reason = ""
-
-        if not has_scrapers and backup_dir.exists():
-            # 情况1: scrapers 目录为空但有备份
-            backup_files = list(backup_dir.glob("*.so")) + list(backup_dir.glob("*.pyd"))
-            if backup_files:
-                should_restore = True
-                restore_reason = f"scrapers 目录为空但存在备份 ({len(backup_files)} 个文件)"
-        elif has_scrapers and backup_dir.exists():
-            # 情况2: 备份目录有更新的版本（通过比较 manifest）
-            scrapers_manifest = ScraperVersionManager.load_manifest(scrapers_dir)
-            backup_manifest = ScraperVersionManager.load_manifest(backup_dir)
-
-            if backup_manifest and scrapers_manifest:
-                result, reason = ScraperVersionManager.compare_manifests(
-                    scrapers_manifest,
-                    backup_manifest
-                )
-                if result < 0:  # 备份更新
-                    should_restore = True
-                    restore_reason = f"备份目录版本更新: {reason}"
-
-        if should_restore:
-            await self._perform_backup_restore(backup_dir, scrapers_dir, restore_reason)
-
-    async def _perform_backup_restore(self, backup_dir: Path, scrapers_dir: Path, reason: str):
-        """执行备份恢复操作
-
-        使用 ScraperVersionManager.copy_scraper_files 统一搬运，**只搬 manifest + *.so/.pyd**。
-        不再搬 legacy 文件（package.json / versions.json），也不再反向修改备份目录的 manifest。
-        """
-        # 预检：备份目录必须有二进制文件
-        backup_binaries = [
-            f for f in backup_dir.iterdir()
-            if f.is_file() and f.suffix in ScraperVersionManager._BINARY_SUFFIXES
-        ] if backup_dir.exists() else []
-        if not backup_binaries:
-            return
-
-        logger = logging.getLogger(__name__)
-
-        # 从 manifest 读取版本号用于日志对比
-        backup_version = ScraperVersionManager.get_version_from_manifest(
-            ScraperVersionManager.load_manifest(backup_dir)
-        )
-        scrapers_version = ScraperVersionManager.get_version_from_manifest(
-            ScraperVersionManager.load_manifest(scrapers_dir)
-        )
-
-        logger.info(f"检测到需要从备份恢复: {reason}")
-        logger.info(
-            f"备份恢复详情:\n"
-            f"  备份版本: {backup_version}\n"
-            f"  运行版本: {scrapers_version}\n"
-            f"  备份二进制数: {len(backup_binaries)}"
-        )
-
-        # 使用统一搬运工具：只搬 manifest + 二进制，不搬 legacy 文件，不反向写源目录
-        copied = ScraperVersionManager.copy_scraper_files(backup_dir, scrapers_dir)
-
-        logger.info(f"备份恢复完成 - 已复制 {copied} 个文件，当前版本: {backup_version}")
-
-    def _ensure_manifest_exists(self, scrapers_dir: Path):
-        """确保 manifest 文件存在且格式正确，如不存在或格式错误则从 legacy 文件提取生成"""
-        logger = logging.getLogger(__name__)
-        manifest_path = scrapers_dir / ScraperVersionManager.MANIFEST_FILENAME
-
-        # 空目录不生成 manifest
-        # why：删除源接口会先删掉 .so 与 manifest，随后调用 load_and_sync_scrapers。
-        # 若此处无条件重建，会在空目录上产出一份没有 sources 的空壳 manifest，
-        # 表现为"源已删除但 scraper_manifest.json 还在、本地版本显示 unknown"。
-        has_binary = scrapers_dir.exists() and any(
-            ScraperVersionManager.is_scraper_binary(p) for p in scrapers_dir.iterdir()
-        )
-        if not has_binary:
-            if manifest_path.exists():
-                logger.debug("运行目录无弹幕源二进制，跳过 manifest 重建")
-            return
-
-        # 检查是否存在且格式正确
-        need_regenerate = False
-        if manifest_path.exists():
-            manifest = ScraperVersionManager.load_manifest(scrapers_dir)
-            if not manifest or not ScraperVersionManager.validate_manifest(manifest):
-                logger.warning("现有 manifest 格式不正确，将重新生成")
-                need_regenerate = True
-        else:
-            need_regenerate = True
-
-        if not need_regenerate:
-            return
-
-        try:
-            manifest = ScraperVersionManager.extract_manifest_from_legacy(
-                scrapers_dir / "package.json",
-                scrapers_dir / "versions.json",
-                scrapers_dir
-            )
-            ScraperVersionManager.save_manifest(manifest, scrapers_dir)
-
-            # 不同步到备份目录
-            # why：备份目录的 manifest 必须与其自身的 .so 保持一致。运行目录重建出的
-            # manifest 反映的是运行目录状态，写进备份会造成"备份 .so 与 manifest 错配"，
-            # 之后从备份还原会拿到错误的版本与哈希信息。
-            logger.info("已生成/更新 scraper_manifest.json")
-        except Exception as e:
-            logger.warning(f"生成 manifest 失败: {e}")
-
-    def _cleanup_legacy_version_files(self, scrapers_dir: Path):
-        """
-        清理 scrapers 目录中的 legacy 版本文件（package.json 和 versions.json）
-
-        这些文件已被 scraper_manifest.json 取代，不再需要保留在运行目录中。
-        """
-        logger = logging.getLogger(__name__)
-        legacy_files = ["package.json", "versions.json"]
-
-        for filename in legacy_files:
-            file_path = scrapers_dir / filename
-            if file_path.exists():
-                try:
-                    file_path.unlink()
-                    logger.info(f"✓ 已清理 legacy 文件: {filename}")
-                except Exception as e:
-                    logger.warning(f"清理 {filename} 失败: {e}")
-
-    async def load_and_sync_scrapers(self, skip_backup_restore: bool = False):
+    async def load_and_sync_scrapers(self, skip_backup_restore: bool = False) -> None:
         """
         动态发现、同步到数据库并根据数据库设置加载搜索源。
         此方法可以被再次调用以重新加载搜索源。
@@ -339,20 +172,18 @@ class ScraperManager:
         # 获取路径配置
         paths = self._get_scraper_paths()
 
-        # 检查是否需要从备份恢复
-        if not skip_backup_restore:
-            await self._restore_from_backup_if_needed(paths)
+        # 每轮获取独立快照，避免热加载继续读取上次的版本信息。
+        if self._prepare_load is not None:
+            self._load_manifest = await self._prepare_load(paths, skip_backup_restore)
         else:
-            logging.getLogger(__name__).debug("跳过备份恢复检查（热加载模式）")
-
-        # 确保 manifest 文件存在
-        self._ensure_manifest_exists(paths.scrapers_dir)
-
-        # 清理 legacy 版本文件（package.json 和 versions.json）
-        self._cleanup_legacy_version_files(paths.scrapers_dir)
-
-        # 版本文件完整性检查
-        self._check_version_file_integrity(paths.scrapers_dir)
+            # 未组装资源流程的独立调用方只读取现有清单，不执行迁移或恢复。
+            content = await get_file_storage_service().read_text(paths.scrapers_dir / "scraper_manifest.json")
+            try:
+                manifest = json.loads(content) if content else None
+                self._load_manifest = manifest if isinstance(manifest, dict) else None
+            except (TypeError, ValueError):
+                logging.getLogger(__name__).warning("加载 manifest 失败，清单不是合法 JSON")
+                self._load_manifest = None
 
         # 全局版本检查
         if not await self._check_global_version_compatibility(paths.scrapers_dir):
@@ -408,7 +239,7 @@ class ScraperManager:
         Returns:
             bool: True 表示版本兼容可以继续，False 表示版本不兼容需要跳过加载
         """
-        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        manifest = self._load_manifest
         if not manifest:
             return True
 
@@ -538,7 +369,7 @@ class ScraperManager:
         versions_from_file = self._load_versions_from_manifest(scrapers_dir)
 
         # 遍历所有模块文件
-        for file_path in sorted(scrapers_dir.iterdir()):
+        for file_path in sorted(get_file_storage_service().resource_iterdir(scrapers_dir)):
             if not self._is_valid_module_file(file_path):
                 continue
 
@@ -572,7 +403,7 @@ class ScraperManager:
     def _load_versions_from_manifest(self, scrapers_dir: Path) -> Dict[str, Dict[str, Any]]:
         """从 manifest 读取版本信息"""
         versions = {}
-        manifest = ScraperVersionManager.load_manifest(scrapers_dir)
+        manifest = self._load_manifest
         if manifest:
             for provider, info in manifest.get("sources", {}).items():
                 if isinstance(info, dict):
@@ -593,7 +424,7 @@ class ScraperManager:
     def _check_binary_file_integrity(self, file_path: Path, failed_providers: List[str]) -> bool:
         """检查二进制文件完整性，返回 True 表示文件正常"""
         try:
-            fsize = file_path.stat().st_size
+            fsize = get_file_storage_service().resource_stat(file_path).st_size
             if fsize == 0:
                 logging.getLogger(__name__).warning(
                     f"跳过 0 字节文件: {file_path.name}（文件损坏或下载不完整）"

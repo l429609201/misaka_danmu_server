@@ -1,4 +1,4 @@
-"""弹幕源资源下载、文件部署与包校验的共享服务。"""
+"""弹幕源资源下载、文件部署与包校验流程编排。"""
 from __future__ import annotations
 
 import asyncio
@@ -9,7 +9,6 @@ import json
 import logging
 import platform
 import re
-import shutil
 import sys
 import tarfile
 import zipfile
@@ -19,34 +18,21 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+from src.services.file_storage_service import get_file_storage_service
+
 from src._version import APP_VERSION
 from src.core.env import is_docker_environment as _is_docker_environment
 from src.scrapers.base import BaseScraper
 from src.services.scraper_manager import _version_satisfies
-from src.utils.scraper_ops.scraper_version_manager import ScraperVersionManager, is_semantic_version
+from src.workflows.scraper_resources.version_manager import ScraperVersionManager
+from src.utils.parsing.versions import is_semantic_version
+
+from src.workflows.scraper_resources.state import (
+    SCRAPER_DOWNLOAD_TASK_CACHE_PREFIX, SCRAPER_DOWNLOAD_TASK_CACHE_TTL,
+    _download_lock, resource_version_cache,
+)
 
 logger = logging.getLogger(__name__)
-
-# 下载状态区域由读写双方共享，不再从执行器反向取常量。
-SCRAPER_DOWNLOAD_TASK_CACHE_PREFIX = "scraper_download_task_"
-SCRAPER_DOWNLOAD_TASK_CACHE_TTL = 3600
-_download_lock = asyncio.Lock()
-
-
-class ResourceVersionCache:
-    """共享版本缓存状态，避免执行器依赖 HTTP 模块。"""
-
-    def __init__(self) -> None:
-        self.value: Optional[Dict[str, Any]] = None
-        self.updated_at: Optional[datetime] = None
-
-    def clear(self) -> None:
-        """使下载后的版本查询重新读取文件。"""
-        self.value = None
-        self.updated_at = None
-
-
-resource_version_cache = ResourceVersionCache()
 
 
 def _get_scrapers_dir() -> Path:
@@ -295,13 +281,13 @@ async def check_scraper_compat_in_dir(check_dir: Path) -> dict:
         return None
 
     incompatible: dict = {}
-    for file_path in sorted(check_dir.iterdir()):
+    for file_path in sorted(get_file_storage_service().resource_iterdir(check_dir)):
         if not (file_path.name.endswith(".so") or file_path.name.endswith(".pyd")):
             continue
         module_stem = file_path.stem.split('.')[0]
         if module_stem.startswith("_") or module_stem == "base":
             continue
-        if file_path.stat().st_size == 0:
+        if get_file_storage_service().resource_stat(file_path).st_size == 0:
             continue
         try:
             result = await asyncio.to_thread(_probe_single, file_path)
@@ -352,7 +338,7 @@ async def verify_scraper_package(
     """
     errors: List[str] = []
 
-    if not check_dir.exists():
+    if not get_file_storage_service().resource_exists(check_dir):
         return False, [f"目录不存在: {check_dir}"]
 
     manifest = await ensure_manifest_in_dir(check_dir)
@@ -386,7 +372,7 @@ async def verify_scraper_package(
             f"服务器版本不足：当前 {APP_VERSION}，包要求 >= {min_server}"
         )
 
-    binaries = [p for p in sorted(check_dir.iterdir())
+    binaries = [p for p in sorted(get_file_storage_service().resource_iterdir(check_dir))
                 if ScraperVersionManager.is_scraper_binary(p)]
     if not binaries:
         return False, ["目录内无弹幕源二进制文件"]
@@ -398,7 +384,7 @@ async def verify_scraper_package(
             name = file_path.name.split('.')[0]
             entry = sources.get(name) or {}
 
-            actual_arch = ScraperVersionManager.detect_binary_arch(file_path)
+            actual_arch = get_file_storage_service().detect_binary_arch(file_path)
             if actual_arch and expected_arch:
                 if ScraperVersionManager.normalize_arch(actual_arch) != expected_arch:
                     problems.append(
@@ -414,7 +400,7 @@ async def verify_scraper_package(
                 expected_hash = entry.get("hash")
 
             if expected_hash:
-                actual_hash = ScraperVersionManager.calculate_file_hash(file_path)
+                actual_hash = get_file_storage_service().calculate_file_hash(file_path)
                 if actual_hash != expected_hash:
                     problems.append(
                         f"{name} 哈希不符：期望 {expected_hash[:12]}…，实际 {actual_hash[:12]}…"
@@ -454,7 +440,7 @@ async def backup_scrapers(
         scrapers_dir = _get_scrapers_dir()
 
         # 创建备份目录
-        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        get_file_storage_service().resource_mkdir(BACKUP_DIR, parents=True, exist_ok=True)
 
         # 读取版本信息（使用 ScraperVersionManager 统一管理）
         manifest = ScraperVersionManager.load_manifest(_get_scrapers_dir())
@@ -470,8 +456,8 @@ async def backup_scrapers(
         # 收集已备份二进制的元数据（供接口返回）
         backed_files = []
         sources = manifest.get("sources", {})
-        for file in BACKUP_DIR.iterdir():
-            if not file.is_file() or file.suffix not in ['.so', '.pyd']:
+        for file in get_file_storage_service().resource_iterdir(BACKUP_DIR):
+            if not get_file_storage_service().resource_is_file(file) or file.suffix not in ['.so', '.pyd']:
                 continue
 
             # 从文件名提取弹幕源名称
@@ -480,8 +466,8 @@ async def backup_scrapers(
             file_info = {
                 "name": file.name,
                 "scraper": scraper_name,
-                "size": file.stat().st_size,
-                "modified": datetime.fromtimestamp(file.stat().st_mtime).isoformat()
+                "size": get_file_storage_service().resource_stat(file).st_size,
+                "modified": datetime.fromtimestamp(get_file_storage_service().resource_stat(file).st_mtime).isoformat()
             }
 
             # 添加版本号（从 manifest 的 sources 中查找）
@@ -526,16 +512,16 @@ async def restore_scrapers(
     try:
         scrapers_dir = _get_scrapers_dir()
 
-        if not BACKUP_DIR.exists():
+        if not get_file_storage_service().resource_exists(BACKUP_DIR):
             raise FileNotFoundError("未找到备份目录")
 
         # 检查备份的 manifest 文件
         backup_manifest_file = BACKUP_DIR / "scraper_manifest.json"
-        if not backup_manifest_file.exists():
+        if not get_file_storage_service().resource_exists(backup_manifest_file):
             raise FileNotFoundError("备份目录中未找到 scraper_manifest.json")
 
         # 读取备份的 manifest
-        manifest = json.loads(backup_manifest_file.read_text(encoding="utf-8"))
+        manifest = json.loads(get_file_storage_service().resource_read_text(backup_manifest_file, encoding="utf-8"))
         logger.info(f"备份信息: 版本 {manifest.get('version')}, 平台 {manifest.get('platform')}, {len(manifest.get('sources', {}))} 个源")
 
         # 还原文件（使用统一搬运工具）
@@ -807,9 +793,9 @@ def _purge_legacy_version_files(target_dir: Path) -> None:
     """
     for name in ("package.json", "versions.json"):
         stale = target_dir / name
-        if stale.exists():
+        if get_file_storage_service().resource_exists(stale):
             try:
-                stale.unlink()
+                get_file_storage_service().resource_unlink(stale)
                 logger.info(f"已清除备份目录的 legacy 文件: {name}")
             except OSError as e:
                 logger.warning(f"清除 legacy 文件 {name} 失败: {e}")
@@ -836,7 +822,7 @@ def _persist_new_version_to_backup(
             此时 scrapers_versions/scrapers_hashes 全为空，_verify_backup_version
             校验失败 → 循环重启。用远端数据兜底可确保写出完整的 backup/scraper_manifest.json。
     """
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    get_file_storage_service().resource_mkdir(BACKUP_DIR, parents=True, exist_ok=True)
 
     # 1) 从临时目录的 package.json/versions.json 生成 scraper_manifest.json
     # why: 新架构下，只保留 scraper_manifest.json 作为唯一权威文件
@@ -893,11 +879,11 @@ def _persist_new_version_to_backup(
 
         # 删除临时目录中的 legacy 文件
         # why: 新架构只保留 scraper_manifest.json，package.json 和 versions.json 仅用于生成 manifest
-        if tmp_package_file.exists():
-            tmp_package_file.unlink()
+        if get_file_storage_service().resource_exists(tmp_package_file):
+            get_file_storage_service().resource_unlink(tmp_package_file)
             logger.info("已删除临时目录的 package.json")
-        if tmp_versions_file.exists():
-            tmp_versions_file.unlink()
+        if get_file_storage_service().resource_exists(tmp_versions_file):
+            get_file_storage_service().resource_unlink(tmp_versions_file)
             logger.info("已删除临时目录的 versions.json")
 
     except Exception as e:
@@ -949,7 +935,7 @@ def _overlay_extract_dir_to_scrapers(
         stale_files = old_files - (new_files or set())
         for stale_name in stale_files:
             try:
-                (scrapers_dir / stale_name).unlink(missing_ok=True)
+                get_file_storage_service().resource_unlink(scrapers_dir / stale_name, missing_ok=True)
                 logger.info(f"清理旧文件: {stale_name}")
             except Exception as e:
                 logger.warning(f"清理旧文件 {stale_name} 失败: {e}")
@@ -960,14 +946,14 @@ def _overlay_extract_dir_to_scrapers(
         legacy_files = ["package.json", "versions.json"]
         for legacy_file in legacy_files:
             legacy_path = scrapers_dir / legacy_file
-            if legacy_path.exists():
-                legacy_path.unlink()
+            if get_file_storage_service().resource_exists(legacy_path):
+                get_file_storage_service().resource_unlink(legacy_path)
                 logger.info(f"已删除运行目录的 legacy 文件: {legacy_file}")
     except Exception as e:
         logger.warning(f"清理运行目录 legacy 文件失败: {e}")
 
     # 清理临时目录
-    shutil.rmtree(extract_dir, ignore_errors=True)
+    get_file_storage_service().resource_rmtree(extract_dir, ignore_errors=True)
     return overlay_count
 
 
@@ -979,18 +965,18 @@ def apply_deferred_overlay(scrapers_dir: Optional[Path] = None) -> int:
     """
     target_dir = scrapers_dir if scrapers_dir is not None else _get_scrapers_dir()
     extract_dir = _get_deferred_overlay_dir(target_dir)
-    if not extract_dir.is_dir():
+    if not get_file_storage_service().resource_is_dir(extract_dir):
         logger.warning("没有待应用的更新（临时目录不存在），跳过覆盖")
         return 0
 
     # 运行目录里现存的 .so/.pyd，用于覆盖后清理已从新包中移除的旧文件
     old_files = {
-        f.name for f in target_dir.glob("*")
-        if f.is_file() and f.suffix in ['.so', '.pyd']
+        f.name for f in get_file_storage_service().resource_glob(target_dir, "*")
+        if get_file_storage_service().resource_is_file(f) and f.suffix in ['.so', '.pyd']
     }
     new_files = {
-        f.name for f in extract_dir.glob("*")
-        if f.is_file() and f.suffix in ['.so', '.pyd']
+        f.name for f in get_file_storage_service().resource_glob(extract_dir, "*")
+        if get_file_storage_service().resource_is_file(f) and f.suffix in ['.so', '.pyd']
     }
     overlay_count = _overlay_extract_dir_to_scrapers(extract_dir, target_dir, old_files, new_files)
     logger.info(f"已应用推迟的更新: {overlay_count} 个文件")
@@ -1146,7 +1132,7 @@ async def _download_and_extract_release(
 
         # 记录旧文件列表（解压完成后清理多余的旧文件）
         old_files = {
-            file.name for file in scrapers_dir.glob("*")
+            file.name for file in get_file_storage_service().resource_glob(scrapers_dir, "*")
             if file.suffix in ['.so', '.pyd']
         }
 
@@ -1159,9 +1145,9 @@ async def _download_and_extract_release(
         # backup 已是新版，恢复的就是新版，循环终结。
         extract_dir = _get_deferred_overlay_dir(scrapers_dir)
         try:
-            if extract_dir.exists():
-                shutil.rmtree(extract_dir, ignore_errors=True)
-            extract_dir.mkdir(parents=True, exist_ok=True)
+            if get_file_storage_service().resource_exists(extract_dir):
+                get_file_storage_service().resource_rmtree(extract_dir, ignore_errors=True)
+            get_file_storage_service().resource_mkdir(extract_dir, parents=True, exist_ok=True)
         except Exception as e:
             logger.error(f"创建临时解压目录失败: {e}")
             return False
@@ -1204,7 +1190,7 @@ async def _download_and_extract_release(
                             if len(file_content) == 0 and base_name.endswith(('.so', '.pyd')):
                                 logger.warning(f"跳过 0 字节文件: {base_name}")
                                 continue
-                            target_path.write_bytes(file_content)
+                            get_file_storage_service().resource_write_bytes(target_path, file_content)
                             extracted_count += 1
                             if base_name.endswith(('.so', '.pyd')):
                                 new_files.add(base_name)
@@ -1236,7 +1222,7 @@ async def _download_and_extract_release(
                         if len(file_content) == 0 and base_name.endswith(('.so', '.pyd')):
                             logger.warning(f"跳过 0 字节文件: {base_name}")
                             continue
-                        target_path.write_bytes(file_content)
+                        get_file_storage_service().resource_write_bytes(target_path, file_content)
                         extracted_count += 1
                         if base_name.endswith(('.so', '.pyd')):
                             new_files.add(base_name)
@@ -1245,7 +1231,7 @@ async def _download_and_extract_release(
         logger.info(f"解压完成（临时目录）: 共 {extracted_count} 个文件")
 
         if extracted_count <= 0:
-            shutil.rmtree(extract_dir, ignore_errors=True)
+            get_file_storage_service().resource_rmtree(extract_dir, ignore_errors=True)
             logger.error("解压结果为空，取消更新")
             return False
 
@@ -1269,7 +1255,7 @@ async def _download_and_extract_release(
             logger.error(f"新版本文件校验失败，取消更新以避免污染备份目录：{detail}")
             if progress_callback:
                 await progress_callback(f"校验失败: {detail}")
-            shutil.rmtree(extract_dir, ignore_errors=True)
+            get_file_storage_service().resource_rmtree(extract_dir, ignore_errors=True)
             return False
 
         logger.info(f"✓ 新版本文件校验通过（{extracted_count} 个文件，版本 {expected_version or '未知'}）")
@@ -1287,7 +1273,7 @@ async def _download_and_extract_release(
             )
         except Exception as persist_err:
             logger.error(f"持久化新版到备份目录失败，取消覆盖运行目录以避免版本回退循环: {persist_err}", exc_info=True)
-            shutil.rmtree(extract_dir, ignore_errors=True)
+            get_file_storage_service().resource_rmtree(extract_dir, ignore_errors=True)
             return False
 
         # defer_overlay: 不在此处覆盖运行目录，交由调用方在「SSE 终态已发送 + 即将重启」时执行。
@@ -1305,7 +1291,7 @@ async def _download_and_extract_release(
         overlay_count = _overlay_extract_dir_to_scrapers(extract_dir, scrapers_dir, old_files, new_files)
 
         # 清理临时目录
-        shutil.rmtree(extract_dir, ignore_errors=True)
+        get_file_storage_service().resource_rmtree(extract_dir, ignore_errors=True)
 
         logger.info(f"更新已应用到运行目录: {overlay_count} 个文件")
         if progress_callback:

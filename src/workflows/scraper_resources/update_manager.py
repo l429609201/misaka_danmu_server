@@ -16,7 +16,9 @@ from datetime import datetime
 
 import httpx
 
-from .scraper_version_manager import ScraperVersionManager
+from src.workflows.scraper_resources.version_manager import ScraperVersionManager
+
+from src.services.file_storage_service import get_file_storage_service
 
 logger = logging.getLogger(__name__)
 
@@ -85,12 +87,12 @@ class ScraperUpdateManager:
             if progress_callback:
                 progress_callback("下载完成")
 
-            logger.info(f"资源包下载完成: {temp_file}, 大小: {temp_file.stat().st_size} bytes")
+            logger.info(f"资源包下载完成: {temp_file}, 大小: {get_file_storage_service().resource_stat(temp_file).st_size} bytes")
             return temp_file
 
         except Exception as e:
-            if temp_file.exists():
-                temp_file.unlink()
+            if get_file_storage_service().resource_exists(temp_file):
+                get_file_storage_service().resource_unlink(temp_file)
             logger.error(f"下载资源包失败: {e}")
             raise
 
@@ -126,32 +128,32 @@ class ScraperUpdateManager:
                 progress_callback("解压完成，开始安装...")
 
             # 确保目标目录存在
-            self.scrapers_dir.mkdir(parents=True, exist_ok=True)
+            get_file_storage_service().resource_mkdir(self.scrapers_dir, parents=True, exist_ok=True)
 
             # 复制 .so/.pyd 文件
             for file_path in temp_dir.rglob("*"):
                 if file_path.suffix in ['.so', '.pyd']:
                     target_path = self.scrapers_dir / file_path.name
-                    shutil.copy2(file_path, target_path)
+                    get_file_storage_service().resource_copy2(file_path, target_path)
                     installed_count += 1
                     logger.debug(f"已安装: {file_path.name}")
 
             # 复制 package.json
             package_json = temp_dir / "package.json"
-            if package_json.exists():
-                shutil.copy2(package_json, self.scrapers_dir / "package.json")
+            if get_file_storage_service().resource_exists(package_json):
+                get_file_storage_service().resource_copy2(package_json, self.scrapers_dir / "package.json")
                 logger.info("已安装 package.json")
 
             # 复制 versions.json
             versions_json = temp_dir / "versions.json"
-            if versions_json.exists():
-                shutil.copy2(versions_json, self.scrapers_dir / "versions.json")
+            if get_file_storage_service().resource_exists(versions_json):
+                get_file_storage_service().resource_copy2(versions_json, self.scrapers_dir / "versions.json")
                 logger.info("已安装 versions.json")
 
             # 复制 manifest（如果存在）
             manifest_json = temp_dir / ScraperVersionManager.MANIFEST_FILENAME
-            if manifest_json.exists():
-                shutil.copy2(manifest_json, self.scrapers_dir / ScraperVersionManager.MANIFEST_FILENAME)
+            if get_file_storage_service().resource_exists(manifest_json):
+                get_file_storage_service().resource_copy2(manifest_json, self.scrapers_dir / ScraperVersionManager.MANIFEST_FILENAME)
                 logger.info("已安装 scraper_manifest.json")
             else:
                 # 如果 ZIP 中没有 manifest，生成一个
@@ -171,13 +173,13 @@ class ScraperUpdateManager:
 
             return {
                 "installed_count": installed_count,
-                "has_package_json": package_json.exists(),
-                "has_versions_json": versions_json.exists()
+                "has_package_json": get_file_storage_service().resource_exists(package_json),
+                "has_versions_json": get_file_storage_service().resource_exists(versions_json)
             }
 
         finally:
             # 清理临时目录
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            get_file_storage_service().resource_rmtree(temp_dir, ignore_errors=True)
 
     async def download_single_file(
         self,
@@ -219,7 +221,7 @@ class ScraperUpdateManager:
 
                 # 写入文件
                 target_path = self.scrapers_dir / target_filename
-                target_path.write_bytes(content)
+                get_file_storage_service().resource_write_bytes(target_path, content)
 
                 logger.info(f"已下载: {target_filename} ({len(content)} bytes)")
                 return True

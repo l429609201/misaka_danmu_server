@@ -1,39 +1,14 @@
-"""
-弹幕源版本管理统一工具
-
-负责管理唯一权威版本文件 scraper_manifest.json，从现有 package.json 和 versions.json 提取信息。
-"""
-import hashlib
+"""弹幕源版本清单整合、校验与文件部署编排。"""
 import json
 import logging
 import platform as plat
-import re
-import sys
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from src.services.file_storage_service import get_file_storage_service
 
 logger = logging.getLogger(__name__)
-
-
-# 语义版本形态：1.2 / 1.2.3 / v1.2.3 / 1.2.3-beta1
-_SEMVER_LIKE_PATTERN = re.compile(r"^v?\d+(\.\d+)+([.\-+].*)?$")
-
-
-def is_semantic_version(value: Optional[str]) -> bool:
-    """判断字符串是否为语义版本号形态。
-
-    why：测试通道的 Release 使用固定标签（如 test / nightly），标签名会被当成
-    "远程声明版本"在下载链路中流转。用此判定把标签名与真实版本区分开，避免
-    1) 校验时误判为"包版本不符"而拒绝部署；
-    2) 写入权威文件时把标签名当版本号，覆盖掉包内真实版本。
-
-    定义在本模块（最底层的版本管理工具）以便 api 层与 utils 层共用，
-    避免 scraper_resources 反向导入 scraper_download_executor 造成循环导入。
-    """
-    if not value:
-        return False
-    return bool(_SEMVER_LIKE_PATTERN.match(str(value).strip()))
 
 
 class ScraperVersionManager:
@@ -156,50 +131,9 @@ class ScraperVersionManager:
         return ScraperVersionManager._ARCH_ALIASES.get(token, token)
 
     @staticmethod
-    def detect_binary_arch(file_path: Path) -> Optional[str]:
-        """读取 .so/.pyd 文件头，返回其真实架构名；无法识别返回 None。
-
-        支持 ELF（Linux）与 PE（Windows）。
-        why：文件名和目录结构都可以伪造或错挂，只有二进制文件头是事实。
-        arm 包落到 x86 机器上时 import 才会失败，那时已经完成部署，代价太大。
-        """
-        try:
-            with open(file_path, "rb") as f:
-                head = f.read(64)
-                if len(head) < 24:
-                    return None
-
-                # ELF: \x7fELF
-                if head[:4] == b"\x7fELF":
-                    e_machine = int.from_bytes(head[18:20], "little")
-                    return ScraperVersionManager._ELF_MACHINE_MAP.get(e_machine)
-
-                # PE: MZ ... e_lfanew(0x3C) → PE\0\0 → Machine
-                if head[:2] == b"MZ":
-                    e_lfanew = int.from_bytes(head[60:64], "little")
-                    f.seek(e_lfanew)
-                    pe_sig = f.read(6)
-                    if len(pe_sig) < 6 or pe_sig[:4] != b"PE\x00\x00":
-                        return None
-                    machine = int.from_bytes(pe_sig[4:6], "little")
-                    return ScraperVersionManager._PE_MACHINE_MAP.get(machine)
-        except Exception as e:
-            logger.debug(f"读取 {file_path.name} 架构失败: {e}")
-        return None
-
-    @staticmethod
-    def calculate_file_hash(file_path: Path) -> str:
-        """分块计算文件 sha256（避免大文件一次性读入内存）。"""
-        h = hashlib.sha256()
-        with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                h.update(chunk)
-        return h.hexdigest()
-
-    @staticmethod
     def is_scraper_binary(file_path: Path) -> bool:
         """是否为需要纳管的弹幕源二进制（排除 _ 前缀与 base）。"""
-        if not file_path.is_file():
+        if not get_file_storage_service().resource_is_file(file_path):
             return False
         if file_path.suffix not in ScraperVersionManager._BINARY_SUFFIXES:
             return False
@@ -241,9 +175,9 @@ class ScraperVersionManager:
         }
 
         # 从 package.json 提取全局版本号和各源的完整信息
-        if package_json_path.exists():
+        if get_file_storage_service().resource_exists(package_json_path):
             try:
-                package_data = json.loads(package_json_path.read_text(encoding='utf-8'))
+                package_data = json.loads(get_file_storage_service().resource_read_text(package_json_path, encoding='utf-8'))
                 manifest["version"] = package_data.get("version", "unknown")
                 manifest["min_server_version"] = package_data.get("min_server_version") or package_data.get("min_fetchable_version")
 
@@ -272,9 +206,9 @@ class ScraperVersionManager:
                 logger.warning(f"从 package.json 提取信息失败: {e}")
 
         # 从 versions.json 提取分支信息和当前平台的哈希值
-        if versions_json_path.exists():
+        if get_file_storage_service().resource_exists(versions_json_path):
             try:
-                versions_data = json.loads(versions_json_path.read_text(encoding='utf-8'))
+                versions_data = json.loads(get_file_storage_service().resource_read_text(versions_json_path, encoding='utf-8'))
 
                 # 全局版本号：package.json 缺失时用 versions.json 兜底
                 if manifest["version"] == "unknown":
@@ -334,8 +268,8 @@ class ScraperVersionManager:
         # 扫描实际 .so/.pyd 文件，一次性补齐文件名/大小/架构/哈希。
         # why：生成时即整合完整数据，不留"事后补"。legacy 文件随后会被清理，
         # 之后所有校验与决策都只读 manifest，不再回头查 legacy。
-        if scrapers_dir.exists():
-            for file_path in sorted(scrapers_dir.iterdir()):
+        if get_file_storage_service().resource_exists(scrapers_dir):
+            for file_path in sorted(get_file_storage_service().resource_iterdir(scrapers_dir)):
                 if not ScraperVersionManager.is_scraper_binary(file_path):
                     continue
 
@@ -347,10 +281,10 @@ class ScraperVersionManager:
 
                 entry = manifest["sources"][scraper_name]
                 entry["filename"] = file_path.name
-                entry["size"] = file_path.stat().st_size
+                entry["size"] = get_file_storage_service().resource_stat(file_path).st_size
 
                 # 记录二进制真实架构（来自文件头，不可伪造）
-                detected_arch = ScraperVersionManager.detect_binary_arch(file_path)
+                detected_arch = get_file_storage_service().detect_binary_arch(file_path)
                 if detected_arch:
                     entry["arch"] = detected_arch
 
@@ -359,7 +293,7 @@ class ScraperVersionManager:
                     entry["hashes"] = {}
                 if not entry["hashes"].get(platform_key):
                     try:
-                        entry["hashes"][platform_key] = ScraperVersionManager.calculate_file_hash(file_path)
+                        entry["hashes"][platform_key] = get_file_storage_service().calculate_file_hash(file_path)
                     except Exception as e:
                         logger.warning(f"计算 {file_path.name} 哈希失败: {e}")
 
@@ -377,10 +311,10 @@ class ScraperVersionManager:
             是否保存成功
         """
         try:
-            target_dir.mkdir(parents=True, exist_ok=True)
+            get_file_storage_service().resource_mkdir(target_dir, parents=True, exist_ok=True)
             manifest_file = target_dir / ScraperVersionManager.MANIFEST_FILENAME
 
-            manifest_file.write_text(
+            get_file_storage_service().resource_write_text(manifest_file,
                 json.dumps(manifest, indent=2, ensure_ascii=False),
                 encoding='utf-8'
             )
@@ -404,11 +338,11 @@ class ScraperVersionManager:
         """
         manifest_file = source_dir / ScraperVersionManager.MANIFEST_FILENAME
 
-        if not manifest_file.exists():
+        if not get_file_storage_service().resource_exists(manifest_file):
             return None
 
         try:
-            manifest = json.loads(manifest_file.read_text(encoding='utf-8'))
+            manifest = json.loads(get_file_storage_service().resource_read_text(manifest_file, encoding='utf-8'))
             return manifest
         except Exception as e:
             logger.warning(f"加载 manifest 失败: {e}")
@@ -600,10 +534,10 @@ class ScraperVersionManager:
         Returns:
             是否包含 .so 或 .pyd 文件
         """
-        if not directory.exists():
+        if not get_file_storage_service().resource_exists(directory):
             return False
 
-        for file_path in directory.iterdir():
+        for file_path in get_file_storage_service().resource_iterdir(directory):
             if file_path.suffix in ['.so', '.pyd']:
                 # 跳过内部文件
                 if not file_path.name.startswith('_') and file_path.name.split('.')[0] != 'base':
@@ -792,26 +726,25 @@ class ScraperVersionManager:
         Returns:
             实际复制的文件数
         """
-        import shutil as _shutil
 
-        dst_dir.mkdir(parents=True, exist_ok=True)
+        get_file_storage_service().resource_mkdir(dst_dir, parents=True, exist_ok=True)
 
         manifest_name = ScraperVersionManager.MANIFEST_FILENAME
 
         if clear_dst:
-            for f in dst_dir.iterdir():
-                if f.is_file() and (
+            for f in get_file_storage_service().resource_iterdir(dst_dir):
+                if get_file_storage_service().resource_is_file(f) and (
                     f.name == manifest_name
                     or f.suffix in ScraperVersionManager._BINARY_SUFFIXES
                 ):
-                    f.unlink(missing_ok=True)
+                    get_file_storage_service().resource_unlink(f, missing_ok=True)
 
         copied = 0
-        for f in src_dir.iterdir():
-            if not f.is_file():
+        for f in get_file_storage_service().resource_iterdir(src_dir):
+            if not get_file_storage_service().resource_is_file(f):
                 continue
             if f.name == manifest_name or f.suffix in ScraperVersionManager._BINARY_SUFFIXES:
-                _shutil.copy2(f, dst_dir / f.name)
+                get_file_storage_service().resource_copy2(f, dst_dir / f.name)
                 copied += 1
 
         return copied
