@@ -2,7 +2,7 @@
 APP_VERSION = "2.9.0"
 
 # 弹幕源最低可用版本：服务器拒绝加载低于此版本的弹幕源
-MIN_SCRAPER_VERSION = "2.3.0"
+MIN_SCRAPER_VERSION = "3.0.0"
 
 # 文档信息
 DOCS_URL = "https://docs.misaka10876.top/"
