@@ -1,4 +1,4 @@
-﻿"""
+"""
 弹幕源下载执行器
 
 将下载逻辑从 SSE 连接中解耦，实现后台独立运行
@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import importlib.util
-import inspect
 import json
 import logging
 import re
@@ -17,12 +15,12 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
 from src._version import APP_VERSION
-from src.api.ui.scraper_resources import (
+from src.services.scraper_resource_service import (
     BACKUP_DIR,
     _build_base_url as build_url,
     _download_and_extract_release,
@@ -39,14 +37,12 @@ from src.api.ui.scraper_resources import (
     parse_github_url as parse_gh,
     restore_scrapers,
 )
-import src.api.ui.scraper_resources as scraper_resources_module
-from src.scrapers.base import BaseScraper
 from src.services.cache_service import get_cache_service
 # why：src.services 顶层的 TaskStatus 是主任务管理器的中文枚举（失败/已完成/运行中，且无 CANCELLED），
 #      下载任务用的是 download_task_manager 里的英文枚举（failed/completed/cancelled）。
 #      从顶层导入会写入中文状态，导致 SSE 终态判断（比对英文值）永不命中而无限推送 progress。
 #      必须直接从 download_task_manager 导入，禁止改回 from src.services import TaskStatus。
-from src.services.download_task_manager import TaskStatus
+from src.services.download_task_manager import DownloadTask, TaskStatus, get_download_task_manager
 from src.services.scraper_manager import _version_satisfies
 from src.utils.runtime.docker_utils import (
     get_current_container_id,
@@ -57,20 +53,19 @@ from src.utils.runtime.docker_utils import (
 from src.utils.scraper_ops.scraper_version_manager import ScraperVersionManager, is_semantic_version
 from src.utils.scraper_ops.version_comparator import VersionComparator
 
-if TYPE_CHECKING:
-    from src.services.download_task_manager import DownloadTask
+from src.services.scraper_resource_service import (
+    SCRAPER_DOWNLOAD_TASK_CACHE_PREFIX, SCRAPER_DOWNLOAD_TASK_CACHE_TTL,
+    check_scraper_compat_in_dir, ensure_manifest_in_dir, verify_scraper_package,
+    resource_version_cache,
+)
 
 logger = logging.getLogger(__name__)
-
-# 下载任务状态缓存前缀和TTL
-SCRAPER_DOWNLOAD_TASK_CACHE_PREFIX = "scraper_download_task_"
-SCRAPER_DOWNLOAD_TASK_CACHE_TTL = 3600  # 1小时
 
 # 临时下载目录前缀和TTL（用于部分成功时保存已下载的文件）
 TEMP_DOWNLOAD_DIR_PREFIX = "temp_download_"
 TEMP_DOWNLOAD_TTL_SECONDS = 3600  # 1小时
 
-# 导入需要的工具函数（稍后从 scraper_resources.py 中提取）
+# 下载与文件辅助统一由 scraper_resource_service 提供。
 SCRAPERS_DIR = Path("/app/scrapers")
 SCRAPERS_VERSIONS_FILE = SCRAPERS_DIR / "versions.json"
 
@@ -111,176 +106,6 @@ def parse_gitee_url(url: str):
 def _build_base_url(repo_info, repo_url: str, gitee_info, branch: str = "main") -> str:
     """构建基础 URL"""
     return build_url(repo_info, repo_url, gitee_info, branch)
-
-
-async def check_scraper_compat_in_dir(check_dir: Path) -> dict:
-    """从目录中逐个 import .so/.pyd，检查 min_server_version 类属性。
-    与 scraper_manager.load_and_sync_scrapers 使用相同机制，是部署前最可靠的校验点。
-    返回不兼容的 {provider_name: required_version} 字典。
-
-    why：提到模块级供手动下载与自动更新两条链路共用——此前只有手动路径做预检，
-    自动更新直接下载后重启，导致"重启后才发现全部源不满足版本"（源全废）。
-    """
-
-    def _probe_single(file_path: Path):
-        """在线程中同步加载单个 .so，返回 (provider_name, min_ver) 或 None。
-        why：exec_module 是同步阻塞调用，直接在事件循环中执行会阻塞所有 SSE 推送，
-        导致前端始终收到 status='运行中' 的旧消息，无法感知任务结束。
-        """
-        module_stem = file_path.stem.split('.')[0]
-        spec = importlib.util.spec_from_file_location(
-            f"_compat_probe_{module_stem}", file_path
-        )
-        if not spec or not spec.loader:
-            return None
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)  # type: ignore[union-attr]
-        for _, obj in inspect.getmembers(mod, inspect.isclass):
-            if not (issubclass(obj, BaseScraper) and obj is not BaseScraper):
-                continue
-            provider_name = getattr(obj, 'provider_name', None)
-            source_min_ver = getattr(obj, 'min_server_version', None) or ''
-            if source_min_ver and not _version_satisfies(APP_VERSION, source_min_ver):
-                if provider_name:
-                    return (provider_name, source_min_ver)
-        return None
-
-    incompatible: dict = {}
-    for file_path in sorted(check_dir.iterdir()):
-        if not (file_path.name.endswith(".so") or file_path.name.endswith(".pyd")):
-            continue
-        module_stem = file_path.stem.split('.')[0]
-        if module_stem.startswith("_") or module_stem == "base":
-            continue
-        if file_path.stat().st_size == 0:
-            continue
-        try:
-            result = await asyncio.to_thread(_probe_single, file_path)
-            if result:
-                provider_name, source_min_ver = result
-                incompatible[provider_name] = source_min_ver
-        except Exception as e:
-            # 无法 import 的模块跳过，不阻断整体校验
-            logger.debug(f"check_scraper_compat_in_dir 跳过 {file_path.name}: {e}")
-    return incompatible
-
-
-async def ensure_manifest_in_dir(check_dir: Path) -> Optional[Dict[str, Any]]:
-    """确保目录内存在权威文件；缺失时从 legacy 两份配置整合生成并落盘。
-
-    生成即整合完整数据（版本/哈希/架构/大小），之后该目录的一切操作只读权威文件。
-    """
-    manifest = await asyncio.to_thread(ScraperVersionManager.load_manifest, check_dir)
-    if manifest and ScraperVersionManager.validate_manifest(manifest):
-        return manifest
-
-    logger.info(f"{check_dir.name} 内无有效权威文件，从 legacy 配置整合生成")
-    manifest = await asyncio.to_thread(
-        ScraperVersionManager.extract_manifest_from_legacy,
-        check_dir / "package.json",
-        check_dir / "versions.json",
-        check_dir,
-    )
-    if manifest and manifest.get("sources"):
-        await asyncio.to_thread(ScraperVersionManager.save_manifest, manifest, check_dir)
-        return manifest
-
-    logger.warning(f"{check_dir.name} 无法生成权威文件（无源文件或 legacy 配置）")
-    return None
-
-
-async def verify_scraper_package(
-    check_dir: Path,
-    expected_version: Optional[str] = None,
-) -> Tuple[bool, List[str]]:
-    """对目录（通常是解压出的临时目录）做部署前四项校验。
-
-    校验项：架构 / 各源版本 / 最低可用版本 / 哈希。
-    全部通过才应继续备份与部署流程。
-
-    Returns:
-        (是否通过, 失败原因列表)
-    """
-    errors: List[str] = []
-
-    if not check_dir.exists():
-        return False, [f"目录不存在: {check_dir}"]
-
-    manifest = await ensure_manifest_in_dir(check_dir)
-    if not manifest:
-        return False, ["缺少权威文件且无法生成"]
-
-    platform_key = ScraperVersionManager.get_platform_key()
-    expected_arch = ScraperVersionManager.normalize_arch(platform_key)
-    sources = manifest.get("sources") or {}
-
-    # ── 1. 包版本与远程声明一致 ──
-    # why：expected_version 可能来自 Release 的 tag_name。测试通道用固定标签（如 test），
-    #      标签名并非语义版本，与包内真实版本（2.3.0）比对必然失败，会误判为"包版本不符"
-    #      而拒绝部署。因此仅当声明值本身是语义版本时才做一致性校验。
-    pkg_version = ScraperVersionManager.get_version_from_manifest(manifest)
-    if expected_version and pkg_version and _is_semantic_version(expected_version):
-        if pkg_version.lstrip('v') != expected_version.lstrip('v'):
-            errors.append(
-                f"包版本不符：声明 {expected_version}，实际 {pkg_version}"
-            )
-    elif expected_version and not _is_semantic_version(expected_version):
-        logger.info(
-            f"声明版本 '{expected_version}' 非语义版本（通常是测试通道标签），"
-            f"跳过版本一致性校验，实际包版本: {pkg_version or '未知'}"
-        )
-
-    # ── 2. 包级最低可用版本 ──
-    min_server = manifest.get("min_server_version")
-    if min_server and not _version_satisfies(APP_VERSION, min_server):
-        errors.append(
-            f"服务器版本不足：当前 {APP_VERSION}，包要求 >= {min_server}"
-        )
-
-    binaries = [p for p in sorted(check_dir.iterdir())
-                if ScraperVersionManager.is_scraper_binary(p)]
-    if not binaries:
-        return False, ["目录内无弹幕源二进制文件"]
-
-    # ── 3. 架构与哈希（逐文件，均以权威文件为基准） ──
-    def _verify_files() -> List[str]:
-        problems: List[str] = []
-        for file_path in binaries:
-            name = file_path.name.split('.')[0]
-            entry = sources.get(name) or {}
-
-            actual_arch = ScraperVersionManager.detect_binary_arch(file_path)
-            if actual_arch and expected_arch:
-                if ScraperVersionManager.normalize_arch(actual_arch) != expected_arch:
-                    problems.append(
-                        f"{name} 架构不符：本机 {expected_arch}，文件 {actual_arch}"
-                    )
-                    continue
-
-            expected_hash = None
-            hashes = entry.get("hashes")
-            if isinstance(hashes, dict):
-                expected_hash = hashes.get(platform_key)
-            if not expected_hash:
-                expected_hash = entry.get("hash")
-
-            if expected_hash:
-                actual_hash = ScraperVersionManager.calculate_file_hash(file_path)
-                if actual_hash != expected_hash:
-                    problems.append(
-                        f"{name} 哈希不符：期望 {expected_hash[:12]}…，实际 {actual_hash[:12]}…"
-                    )
-        return problems
-
-    errors.extend(await asyncio.to_thread(_verify_files))
-
-    # ── 4. 各源 min_server_version（import 探测，最可靠） ──
-    incompatible = await check_scraper_compat_in_dir(check_dir)
-    if incompatible:
-        detail = ", ".join(f"{k} 需要 >= {v}" for k, v in sorted(incompatible.items()))
-        errors.append(f"{len(incompatible)} 个源版本要求不满足（{detail}）")
-
-    return (not errors), errors
 
 
 class ScraperDownloadExecutor:
@@ -1825,8 +1650,7 @@ class ScraperDownloadExecutor:
     def _clear_version_cache(self):
         """清除版本缓存，让前端能获取到最新版本号"""
         try:
-            scraper_resources_module._version_cache = None
-            scraper_resources_module._version_cache_time = None
+            resource_version_cache.clear()
             logger.info("已清除版本缓存")
         except Exception as e:
             logger.warning(f"清除版本缓存失败: {e}")

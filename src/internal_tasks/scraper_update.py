@@ -27,16 +27,12 @@ from src.utils.scraper_ops.version_comparator import VersionComparator
 from src.utils.runtime.docker_utils import is_docker_socket_available, is_running_in_docker, restart_container
 from src.utils.scraper_ops.remote_manifest_fetcher import fetch_remote_manifest_dict
 from src.utils.scraper_ops.scraper_deployment_checker import should_restart_for_deployment
-from src.utils.scraper_ops.scraper_download_executor import (
-    _get_temp_download_base_dir,
-    verify_scraper_package,
-)
+from src.utils.scraper_ops.scraper_download_executor import _get_temp_download_base_dir
+from src.services.scraper_resource_service import verify_scraper_package, resource_version_cache
 from src._version import APP_VERSION
 from src.services.scraper_manager import _version_satisfies
-import src.api.ui.scraper_resources as sr
-
-# 复用 scraper_resources 中的工具函数
-from ..api.ui.scraper_resources import (
+# 自动更新与手动下载共享服务，不再依赖 HTTP 路由模块。
+from src.services.scraper_resource_service import (
     parse_github_url,
     parse_gitee_url,
     _build_base_url,
@@ -515,8 +511,7 @@ async def _perform_update(
                                 # 运行目录已被解压覆盖，从备份恢复旧版 .so
                                 await _restore_from_backup(scrapers_dir)
 
-                            sr._version_cache = None
-                            sr._version_cache_time = None
+                            resource_version_cache.clear()
                             return
 
                         logger.info(f"✓ 部署前校验通过（{verify_dir.name}，版本 {remote_version}），继续部署流程")
@@ -652,8 +647,7 @@ async def _perform_update(
                                 "请检查备份目录权限或磁盘空间。"
                                 f" [版本状态] {_describe_version_state()}"
                             )
-                            sr._version_cache = None
-                            sr._version_cache_time = None
+                            resource_version_cache.clear()
                             return
 
                         # 检查是否在 Docker 容器内且有 Docker socket
@@ -727,8 +721,7 @@ async def _perform_update(
                                 logger.error(f"热加载失败: {e}")
 
                         # 清除版本缓存
-                        sr._version_cache = None
-                        sr._version_cache_time = None
+                        resource_version_cache.clear()
 
                         return
                     else:
@@ -898,8 +891,7 @@ async def _perform_update(
                     "冷却期内不会重复尝试同版本，请检查备份目录权限或磁盘空间。"
                 )
                 # 清除版本缓存后直接返回，不重启
-                sr._version_cache = None
-                sr._version_cache_time = None
+                resource_version_cache.clear()
                 return
 
             # 根据是否在 Docker 容器内且有 Docker socket 决定重启方式
@@ -931,8 +923,7 @@ async def _perform_update(
                 logger.warning("⚠️ 未检测到 Docker 套接字，请手动重启容器以加载新的弹幕源（.so 文件需要重启才能生效）")
 
         # 清除版本缓存
-        sr._version_cache = None
-        sr._version_cache_time = None
+        resource_version_cache.clear()
 
 
 
