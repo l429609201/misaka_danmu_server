@@ -11,6 +11,7 @@ from src.notification.subscription_matcher import ScopeKey, SubscriptionMatcher
 from src.notification.template_resolver import TemplateResolver
 from src.services.service_container import get_database_service
 from src.services.template_renderer import get_template_renderer
+from src.schemas.notification_template import empty_template_variables
 
 logger = logging.getLogger(__name__)
 
@@ -223,7 +224,8 @@ def _get_template_variables(template_id: str) -> List[Dict[str, Any]]:
 
 def _get_sample_variables(template_id: str, status: str) -> Dict[str, Any]:
     """返回覆盖所有模板流程的预览上下文，未使用字段使用空值。"""
-    base_vars = {
+    base_vars = empty_template_variables()
+    base_vars.update({
         "status_icon": "✅" if status == "success" else ("ℹ️" if status == "no_change" else "❌"),
         "status_name": {"success": "成功", "failed": "失败", "no_change": "无变化"}.get(status, "成功"),
         "action_name": "刷新",
@@ -252,7 +254,7 @@ def _get_sample_variables(template_id: str, status: str) -> Dict[str, Any]:
         "finished_at": "2026-10-02 21:00:00",
         "webhook_source": "",
         "image_url": _PREVIEW_IMAGE_URL,
-    }
+    })
     return base_vars
 
 

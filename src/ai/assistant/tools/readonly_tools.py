@@ -20,6 +20,8 @@ from ..security_gateway import ToolPermission, is_forbidden_control_identifier
 from .base import Tool, registry
 from .search_session import save_search_results, get_result_item
 
+from src.workflows.supplement_episodes import get_episodes_routed
+
 logger = logging.getLogger(__name__)
 
 # 单次返回给模型的最大条数（控制 token）
@@ -231,7 +233,7 @@ async def _get_provider_episodes(arguments: Dict[str, Any], context: Dict[str, A
     if err:
         return {"error": err}
 
-    result = await scraper_manager.get_episodes_routed(
+    result = await get_episodes_routed(scraper_manager,
         item.provider, item.mediaId, db_media_type=item.type,
         return_filtered=include_filtered,
     )

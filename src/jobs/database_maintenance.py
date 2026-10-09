@@ -13,7 +13,8 @@ from .base import BaseJob
 from src.utils.diagnostics.task_exceptions import TaskSuccess
 from src.services.file_storage_service import CONFIG_DIR, get_file_storage_service
 from src.services.service_container import get_database_service
-from src.services.task_profiler import profile_flow, FLOW_DATABASE_MAINTENANCE
+from src.services.performance_service import profile_flow
+from src.schemas.performance import FLOW_DATABASE_MAINTENANCE
 
 logger = logging.getLogger(__name__)
 

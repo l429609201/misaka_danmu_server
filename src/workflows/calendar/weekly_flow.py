@@ -16,6 +16,8 @@ from src.services.metadata_service import MetadataService
 from src.services.scraper_manager import ScraperManager
 from src.services.service_container import get_database_service
 
+from src.workflows.calendar.cache_flow import get_all_calendars
+
 logger = logging.getLogger(__name__)
 
 
@@ -558,7 +560,7 @@ async def get_weekly_calendar_flow(
 
     # ── 2. 各元数据源日历 ──
     try:
-        all_calendars = await metadata_manager.get_all_calendars(user)
+        all_calendars = await get_all_calendars(metadata_manager, user)
         aggregator.merge_metadata_calendars(all_calendars, subscribed)
     except Exception as e:
         logger.warning(f"获取外部日历失败: {e}")

@@ -36,6 +36,7 @@ from fastapi import HTTPException
 
 # ✅ 统一在文件头部导入 ORM 模型
 from src.db import orm_models
+from src.db.database import get_db_session
 
 # ✅ 改为从 src.db.repositories 导入（新实现）
 from src.db.repositories import (
@@ -135,13 +136,13 @@ class _RepositoryProxy:
 class DatabaseService:
     """
     数据库服务层
-    
+
     职责：
     1. 统一管理 session 生命周期
     2. 自动事务控制（commit/rollback）
     3. 提供 Repository 访问入口
     4. 组合多个 Repository 完成复杂业务
-    
+
     使用方式：
     ```python
     db = get_database_service()
@@ -150,7 +151,7 @@ class DatabaseService:
         episodes = await db.episode.get_by_source(source_id)
     ```
     """
-    
+
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
         """
         初始化数据库服务
@@ -160,7 +161,7 @@ class DatabaseService:
         """
         self._session_factory = session_factory
         # 【修复】session 和 Repository 缓存都使用 ContextVar 存储，不再使用实例变量
-    
+
     class TransactionOutcome:
         """单次自持事务结果；由调用方持有，不放入全局服务共享状态。"""
 
@@ -283,7 +284,7 @@ class DatabaseService:
                 "示例: async with db.transaction(): ..."
             )
         return cache
-    
+
     def _check_session(self):
         """检查当前是否在事务上下文中"""
         # 【修复】从 ContextVar 获取 session
@@ -297,9 +298,9 @@ class DatabaseService:
     def _session(self) -> Optional[AsyncSession]:
         """获取当前协程的 session（向后兼容属性）"""
         return _session_context.get()
-    
+
     # ========== Repository 属性（懒加载）==========
-    
+
     @property
     def bangumi_data(self) -> _RepositoryProxy:
         """获取离线索引写仓储与只读查询仓储。"""
@@ -578,10 +579,10 @@ class DatabaseService:
     async def get_anime_with_sources(self, anime_id: int) -> Optional[dict]:
         """
         获取作品及其所有数据源（跨 Repository 操作）
-        
+
         Args:
             anime_id: 作品ID
-            
+
         Returns:
             包含作品和数据源的字典，或 None
         """
@@ -598,7 +599,7 @@ class DatabaseService:
             "anime": anime,
             "sources": sources,
         }
-    
+
     async def delete_anime_cascade(self, anime_id: int) -> bool:
         """
         级联删除作品（包括所有关联数据）
@@ -650,26 +651,4 @@ class DatabaseService:
         Returns:
             get_db_session 依赖注入函数
         """
-        from src.db.database import get_db_session
         return get_db_session
-
-    @property
-    def models(self):
-        """
-        提供访问 ORM 模型的入口
-
-        ✅ 正确用法（API 层通过服务层访问模型）：
-        ```python
-        db_service = get_database_service()
-        anime = db_service.models.Anime(...)
-        ```
-
-        ❌ 错误用法（跨层直接导入）：
-        ```python
-        from src.db import orm_models  # ❌ API 层跨层访问 DB 层
-        ```
-
-        Returns:
-            orm_models 模块
-        """
-        return orm_models

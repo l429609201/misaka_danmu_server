@@ -1,4 +1,4 @@
-﻿"""
+"""
 匹配后备流程 - Workflow 层实现
 
 职责：处理匹配后备场景的弹幕下载
@@ -36,13 +36,16 @@ from src.utils.dandan.constants import (
     COMMENTS_FETCH_CACHE_PREFIX,
     COMMENTS_FETCH_CACHE_TTL,
 )
-from src.services.task_profiler import TaskProfiler, FLOW_FALLBACK_MATCH
+from src.services.performance_service import TaskProfiler
+from src.schemas.performance import FLOW_FALLBACK_MATCH
 # 从零依赖异常模块导入，避免旧任务管理器路径及额外依赖链。
 from src.utils.diagnostics.task_exceptions import TaskSuccess
 from src.utils.parsing.filename_parser import parse_search_keyword
 from src.services.danmaku_service import DanmakuService
 from src.workflows.danmaku_import import save_danmaku_for_episode
-from src.workflows.comments.helpers import process_comments_for_dandanplay
+from src.workflows.comments.output_flow import apply_output_config
+
+from src.workflows.supplement_episodes import get_episodes_routed
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +55,8 @@ async def handle_match_fallback_comments(
     token: str,
     session: AsyncSession,
     request: Request,
-    async_mode: bool = False
+    async_mode: bool = False,
+    chConvert: int = 0,
 ) -> Optional[DandanCommentResponse]:
     """
     匹配后备流程：处理虚拟 episodeId 的弹幕下载
@@ -129,7 +133,7 @@ async def handle_match_fallback_comments(
         return None
 
     try:
-        episodes_list = await scraper_manager.get_episodes_routed(provider, mediaId, db_media_type=media_type)
+        episodes_list = await get_episodes_routed(scraper_manager, provider, mediaId, db_media_type=media_type)
         if not episodes_list:
             logger.error(f"无法获取分集列表")
             return None
@@ -175,7 +179,10 @@ async def handle_match_fallback_comments(
             if cached_comments:
                 logger.info(f"从缓存中获取到弹幕数据，共 {len(cached_comments)} 条")
                 # 命中缓存时直接返回实际弹幕，避免成功下载仍输出空列表。
-                processed = process_comments_for_dandanplay(cached_comments)
+                processed = await apply_output_config(
+                    cached_comments, config_service, chConvert,
+                    fire_threshold=scraper.likes_fire_threshold,
+                )
                 return DandanCommentResponse(count=len(processed), comments=processed)
 
         if async_mode:
@@ -218,7 +225,10 @@ async def handle_match_fallback_comments(
 
     if comments_data:
         # 主流程直接返回本响应，必须携带实际弹幕，不能返回空占位响应。
-        processed = process_comments_for_dandanplay(comments_data)
+        processed = await apply_output_config(
+            comments_data, config_service, chConvert,
+            fire_threshold=scraper.likes_fire_threshold,
+        )
         return DandanCommentResponse(count=len(processed), comments=processed)
 
     if async_mode:
@@ -530,10 +540,10 @@ async def _submit_download_task(
 
                     logger.info(f"匹配后备任务已完成（超时后），检查是否需要触发预下载 (episodeId={episodeId})")
 
-                    # 创建新的 session 检查弹幕是否下载成功
-                    async with request.app.state.db_session_factory() as check_session:
-                        # 文件弹幕通过服务读取，不再访问已删除的仓储接口。
-                        check_comments = await DanmakuService(check_session).fetch_comments(episodeId)
+                    # 通过统一事务检查后台刚提交的数据，不再另开原始 Session。
+                    check_db = get_database_service()
+                    async with check_db.transaction():
+                        check_comments = await DanmakuService(check_db).fetch_comments(episodeId)
                         if check_comments:
                             logger.info(f"匹配后备任务成功，触发预下载下一集 (episodeId={episodeId})")
                             # TODO: 触发预下载逻辑
@@ -555,7 +565,7 @@ async def _submit_download_task(
             # 新会话避免主请求的事务快照看不到后台刚提交的分集。
             db = get_database_service()
             async with db.transaction():
-                comments_data = await DanmakuService(db._session).fetch_comments(episodeId)
+                comments_data = await DanmakuService(db).fetch_comments(episodeId)
             if comments_data:
                 logger.info(f"从数据库读取到 {len(comments_data)} 条弹幕")
 

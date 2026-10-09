@@ -2,6 +2,7 @@
 from typing import Any, Dict, List, Tuple
 
 from src.services.service_container import get_database_service
+from src.workflows.image_download import download_image
 
 
 async def build_media_import_title(item_ids: List[int]) -> str:
@@ -28,6 +29,20 @@ async def prepare_media_import(item_ids: List[int]) -> Tuple[List[Dict[str, Any]
         raise ValueError("未找到要导入的媒体项")
     if len({item["serverId"] for item in items}) != 1:
         raise ValueError("同一批导入的媒体项必须属于同一媒体服务器")
+    # 同季多集复用一份本地海报；媒体认证在图片编排内按已配置同源地址决定。
+    posters: Dict[str, str | None] = {}
+    for item in items:
+        image_url = item.get("posterUrl")
+        if not image_url or image_url.startswith("/data/images/"):
+            continue
+        if image_url not in posters:
+            try:
+                posters[image_url] = await download_image(image_url)
+            except Exception:
+                # 海报失败不影响弹幕导入，也不把媒体服务器凭据写进日志。
+                posters[image_url] = None
+        if posters[image_url]:
+            item["posterUrl"] = posters[image_url]
     movies = []
     shows = {}
     for item in items:

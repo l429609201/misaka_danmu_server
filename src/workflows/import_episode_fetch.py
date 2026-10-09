@@ -6,6 +6,8 @@ from src.utils.parsing.episode_filter import get_and_apply_single_episode_filter
 from src.workflows.import_episode_indices import resolve_source_episode_indices
 from src.workflows.supplement_episodes import fetch_supplement_episodes
 
+from src.workflows.supplement_episodes import get_episodes_routed
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,7 +28,7 @@ async def fetch_import_episodes(
         title_recognition_manager,
     )
     async with profiler.step("获取分集列表"):
-        episodes = await manager.get_episodes_routed(
+        episodes = await get_episodes_routed(manager,
             provider, media_id,
             target_episode_index=None if selected is not None else source_index,
             db_media_type=parameters["mediaType"],

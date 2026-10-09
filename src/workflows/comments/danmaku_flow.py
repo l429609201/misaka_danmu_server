@@ -12,6 +12,7 @@
 import asyncio
 import logging
 from datetime import timedelta
+from typing import Any
 
 from fastapi import Request
 
@@ -27,7 +28,6 @@ from src.services.service_container import (
 from src.services.config_service import get_config_service
 from src.services.danmaku_service import DanmakuService
 from src.workflows.comments.helpers import (
-    process_comments_for_dandanplay,
     coalesce_or_own,
     release_coalesce,
 )
@@ -36,10 +36,8 @@ from src.workflows.danmaku.predownload_flow import (
     predownload_next_episode_flow,
     wait_for_refresh_task as wait_for_episode_refresh,
 )
-from src.utils import sample_comments_evenly
+from src.workflows.comments.output_flow import apply_output_config
 from src.utils.misc.play_history import record_play_history
-from src.utils.misc.converter import convert_comments, get_effective_convert_mode
-from src.db.orm_models import Episode
 from src import tasks
 
 # 导入后备流程
@@ -67,7 +65,7 @@ async def get_comments_for_dandan(
     await wait_for_refresh_task(episodeId, task_manager, max_wait_seconds=15.0)
     async with database_service.transaction():
         session = database_service._session
-        danmaku_service = DanmakuService(session)
+        danmaku_service = DanmakuService(database_service)
         comments_data = await danmaku_service.fetch_comments(episodeId)
         if comments_data:
             try:
@@ -102,12 +100,12 @@ async def get_comments_for_dandan(
         try:
             # request 必须按独立参数传递，不能让 async_mode 占据其位置。
             result = await handle_match_fallback_comments(
-                episodeId, token, session, request, async_mode
+                episodeId, token, session, request, async_mode, chConvert=chConvert
             )
             if result:
                 return result
             result = await handle_search_fallback_comments(
-                episodeId, token, session, async_mode
+                episodeId, token, session, async_mode, chConvert=chConvert
             )
             if result:
                 return result
@@ -121,7 +119,7 @@ async def wait_for_refresh_task(episodeId: int, task_manager, max_wait_seconds: 
     await wait_for_episode_refresh(episodeId, task_manager, max_wait_seconds)
 
 
-async def check_and_trigger_refresh(episode: Episode, task_manager, config_service) -> None:
+async def check_and_trigger_refresh(episode: Any, task_manager, config_service) -> None:
     """按获取时间和条数阈值触发自动刷新，默认关闭。"""
     refresh_days = int(await config_service.get("danmakuAutoRefreshDays", "0"))
     if refresh_days <= 0 or not episode.fetchedAt:
@@ -161,17 +159,8 @@ async def trigger_predownload_next_episode(episodeId: int, _session, task_manage
 async def process_output(
     comments_data, episodeId, token, chConvert, session, config_service
 ) -> DandanCommentsResponse:
-    """处理弹幕输出：简繁转换、采样、播放历史。"""
-    effective_convert = await get_effective_convert_mode(chConvert, config_service)
-    if effective_convert != 0:
-        comments_data = convert_comments(comments_data, effective_convert)
-
-    # 配置返回字符串；采样函数是同步函数，且只接受整数条数。
-    target_count = int(await config_service.get("danmakuOutputLimitPerSource", "-1"))
-    sampled = sample_comments_evenly(comments_data, target_count) if target_count > 0 else comments_data
-
-    # 处理为 dandanplay 格式
-    processed_comments = process_comments_for_dandanplay(sampled)
+    """通过统一输出编排应用显示配置，然后记录播放历史。"""
+    processed_comments = await apply_output_config(comments_data, config_service, chConvert)
 
     # 记录播放历史
     await record_play_history(session, token, episodeId)

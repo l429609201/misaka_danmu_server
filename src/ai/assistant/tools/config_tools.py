@@ -13,14 +13,15 @@ C组 过滤：全局标题过滤、兜底分集标题过滤、单剧过滤、单
 context 依赖：
 - context["session_factory"]: DB 会话工厂
 - context["config_service"]: ConfigService
-- context["title_recognition_manager"]: TitleRecognitionManager
+- context["title_recognition_manager"]: TitleRecognitionWorkflow
+- context["title_recognition_service"]: TitleRecognitionService（缺省使用容器实例）
 - context["scraper_manager"]: ScraperManager（单源黑名单用）
 """
 
 import logging
 from typing import Any, Dict, List
 
-from src.services.service_container import get_database_service
+from src.services.service_container import get_database_service, get_title_recognition_service
 
 import regex as _regex_module
 
@@ -81,10 +82,8 @@ def _merge_regex(old: str, new: str, mode: str) -> str:
 
 async def _get_recognition_rules(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """读取当前识别词配置全文。"""
-    db = get_database_service()
-    async with db.transaction():
-        recognition = await db.title_recognition.get_current()
-    content = getattr(recognition, "content", "") if recognition else ""
+    service = context.get("title_recognition_service") or get_title_recognition_service()
+    content = await service.get_content()
     result = _truncate(content)
     lines = [ln for ln in content.split("\n") if ln.strip() and not ln.strip().startswith("#")]
     result["effectiveRuleCount"] = len(lines)
@@ -124,8 +123,9 @@ async def _test_recognition(arguments: Dict[str, Any], context: Dict[str, Any]) 
             cur_title, cur_season, cur_episode = pre_title, pre_season, pre_ep
 
         if stage in ("postprocess", "all"):
-            post = await manager.apply_title_recognition(cur_title, cur_episode, cur_season)
-            post_title, post_ep, post_season, post_changed = post[0], post[1], post[2], post[3]
+            post_title, post_season, post_changed, _, post_ep = await manager.apply_storage_postprocessing(
+                cur_title, cur_season, arguments.get("source"), cur_episode
+            )
             if post_changed:
                 changed = True
                 if post_title != cur_title:
@@ -148,13 +148,12 @@ async def _test_recognition(arguments: Dict[str, Any], context: Dict[str, Any]) 
 
 async def _check_recognition_conflicts(arguments: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """扫描识别词规则，检测空规则、重复、过短关键词、潜在冲突（只读，不修改数据）。"""
-    db = get_database_service()
-    async with db.transaction():
-        recognition = await db.title_recognition.get_current()
-    if not recognition or not recognition.content:
+    service = context.get("title_recognition_service") or get_title_recognition_service()
+    content = await service.get_content()
+    if not content:
         return {"conflicts": [], "message": "识别词未配置或为空"}
 
-    lines = recognition.content.strip().split("\n")
+    lines = content.strip().split("\n")
     conflicts: List[Dict[str, Any]] = []
     seen_rules: Dict[str, List[int]] = {}
 
@@ -202,20 +201,14 @@ async def _set_recognition_rules(arguments: Dict[str, Any], context: Dict[str, A
     if mode not in ("append", "replace"):
         return {"error": "mode 必须为 append 或 replace"}
 
-    manager = context.get("title_recognition_manager")
-    if not manager:
-        return {"error": "识别词管理器不可用"}
+    service = context.get("title_recognition_service") or get_title_recognition_service()
 
-    # 先读旧配置
-    db = get_database_service()
-    async with db.transaction():
-        recognition = await db.title_recognition.get_current()
-    old_content = getattr(recognition, "content", "") if recognition else ""
+    # 读取和写入使用同一基础服务，确保所有业务入口共享提交后的规则缓存。
+    old_content = await service.get_content()
     new_content = _merge_text(old_content, content, mode)
 
-    # 更新
     try:
-        await manager.update_recognition_rules(new_content)
+        await service.update_recognition_rules(new_content)
     except Exception as e:  # noqa: BLE001
         logger.error(f"更新识别词失败: {e}", exc_info=True)
         return {"error": f"更新失败：{e}"}

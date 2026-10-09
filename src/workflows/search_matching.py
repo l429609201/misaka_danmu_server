@@ -18,16 +18,15 @@
 
 import logging
 import time
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
+from typing import List, Optional, Dict, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.schemas.search_flow import SearchResult, PreparedSearch
 from src.workflows.search import unified_search
 
-if TYPE_CHECKING:
-    from src.services.scraper_manager import ScraperManager
-    from src.services.metadata_manager import MetadataSourceManager
+from src.services.scraper_manager import ScraperManager
+from src.services.metadata_service import MetadataService
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +35,7 @@ async def execute_search_and_match(
     prepared: PreparedSearch,
     session: AsyncSession,
     scraper_manager: "ScraperManager",
-    metadata_manager: Optional["MetadataSourceManager"] = None,
+    metadata_manager: Optional["MetadataService"] = None,
     progress_callback: Optional[callable] = None,
 ) -> SearchResult:
     """

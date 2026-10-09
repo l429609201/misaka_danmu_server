@@ -12,8 +12,9 @@ from src.services.config_service import ConfigService
 from src.services.metadata_service import MetadataService
 from src.services.scraper_manager import ScraperManager
 from src.services.task_manager import TaskManager, TaskSuccess
-from src.services.task_profiler import TaskProfiler, FLOW_WEBHOOK_IMPORT
-from src.services.title_recognition import TitleRecognitionManager
+from src.services.performance_service import TaskProfiler
+from src.schemas.performance import FLOW_WEBHOOK_IMPORT
+from src.workflows.title_recognition import TitleRecognitionWorkflow
 from src.tasks.import_dispatch import submit_import_task
 from src.utils import SearchTimer, SEARCH_TYPE_WEBHOOK
 from src.workflows.search.webhook_input import prepare_webhook_search
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 async def _submit_webhook_import_task(
     *,
     best_match: Any,
+    imageUrl: Optional[str],
     webhookSource: str,
     mediaType: str,
     season: int,
@@ -88,7 +90,7 @@ async def _submit_webhook_import_task(
         "tvdbId": tvdbId,
         "doubanId": doubanId,
         "bangumiId": bangumiId,
-        "imageUrl": best_match.imageUrl,
+        "imageUrl": imageUrl or best_match.imageUrl,
         "webhookSource": webhookSource,
         # 实际派发只读取此字典，关联 ID 必须在这里持久化。
         "mediaServerType": mediaServerType,
@@ -138,7 +140,7 @@ async def webhook_search_and_dispatch_task(
     config_service: ConfigService,
     ai_service: AIService,
     rate_limiter: RateLimiter,
-    title_recognition_manager: TitleRecognitionManager,
+    title_recognition_manager: TitleRecognitionWorkflow,
     # 媒体库整季导入时, 可选: 指定已在媒体库中选中的分集索引列表
     selectedEpisodes: Optional[List[int]] = None,
     # 媒体服务三级 ID（用于 webhook 删除联动）
@@ -146,6 +148,7 @@ async def webhook_search_and_dispatch_task(
     mediaServerSeriesId: Optional[str] = None,
     mediaServerSeasonId: Optional[str] = None,
     mediaServerEpisodeId: Optional[str] = None,
+    imageUrl: Optional[str] = None,
 ):
     """
     Webhook 触发的后台任务：搜索所有源，找到最佳匹配，并为该匹配分发一个新的、具体的导入任务。
@@ -226,7 +229,7 @@ async def webhook_search_and_dispatch_task(
                 "tvdbId": tvdbId,
                 "doubanId": doubanId,
                 "bangumiId": bangumiId,
-                "imageUrl": favorited_source.get("imageUrl"),
+                "imageUrl": imageUrl or favorited_source.get("localImagePath") or favorited_source.get("imageUrl"),
                 "webhookSource": webhookSource,
                 "mediaServerType": mediaServerType,
                 "mediaServerSeriesId": mediaServerSeriesId,
@@ -276,6 +279,7 @@ async def webhook_search_and_dispatch_task(
         timer.step_start("触发导入任务")
         success_message = await _submit_webhook_import_task(
             best_match=best_match,
+            imageUrl=imageUrl,
             webhookSource=webhookSource,
             mediaType=mediaType,
             season=season,

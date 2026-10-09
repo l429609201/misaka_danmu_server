@@ -6,6 +6,8 @@ from typing import Any, Dict, Optional
 from src.services.service_container import get_database_service
 from src.workflows.calendar.weekly_flow import sync_scraper_calendars
 
+from src.workflows.calendar.cache_flow import get_all_calendars
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +53,7 @@ async def sync_calendar_schedule(
         details.append(f"自动绑定 {bound_count} 部")
 
     try:
-        calendars = dict(await metadata_service.get_all_calendars(user, force_refresh=force_refresh) or {})
+        calendars = dict(await get_all_calendars(metadata_service, user, force_refresh=force_refresh) or {})
     except Exception as exc:
         logger.error("获取外部日历失败: %s", exc)
         calendars = {}

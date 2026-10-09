@@ -14,6 +14,8 @@ from src.utils.parsing.filename_parser import parse_search_keyword
 from src.workflows.dandan.helpers import update_episode_mappings
 from src.workflows.bangumi.helpers import generate_episode_id
 
+from src.workflows.supplement_episodes import get_episodes_routed
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,7 +60,7 @@ async def get_fallback_bangumi_details(bangumi_id: str) -> BangumiDetailsRespons
     scraper_manager = get_scraper_manager()
     logger.info("后备详情命中搜索映射: bangumiId=%s, provider=%s, mediaId=%s", bangumi_id, provider, media_id)
     try:
-        actual_episodes = await scraper_manager.get_episodes_routed(
+        actual_episodes = await get_episodes_routed(scraper_manager,
             provider, media_id, db_media_type=media_type
         )
     except Exception:

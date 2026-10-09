@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 from src.utils.auth import security
 from src.schemas import ui_models
 from src.api.dependencies import get_config_service
-from src.services.assistant_code_service import get_assistant_code_service
+from src.workflows.assistant_code import get_assistant_code_workflow
 from src.services.ai_service import get_ai_service
 from src.services.service_container import get_database_service
 from src.core.timezone import get_app_timezone, get_now
@@ -218,7 +218,7 @@ async def chat_stream(
                     else:
                         if event.get('name') in ('code_apply_patch', 'code_rollback_patch'):
                             try:
-                                event = {**event, 'codePreview': get_assistant_code_service().preview(
+                                event = {**event, 'codePreview': get_assistant_code_workflow().preview(
                                     event['arguments'].get('draft_id', ''), context_extra,
                                 )}
                             except (PermissionError, ValueError):

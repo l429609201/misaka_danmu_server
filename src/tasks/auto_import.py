@@ -11,11 +11,12 @@ from src.rate_limiter import RateLimiter
 from src.services.scraper_manager import ScraperManager
 from src.services.task_manager import TaskManager
 from src.utils.diagnostics.task_exceptions import TaskSuccess
-from src.services.title_recognition import TitleRecognitionManager
+from src.workflows.title_recognition import TitleRecognitionWorkflow
 from src.services.ai_service import AIService
 from src.services.config_service import ConfigService
 from src.services.metadata_service import MetadataService
-from src.services.task_profiler import TaskProfiler, FLOW_AUTO_IMPORT
+from src.services.performance_service import TaskProfiler
+from src.schemas.performance import FLOW_AUTO_IMPORT
 from src.tasks.import_dispatch import submit_import_task
 from src.utils import SearchTimer, SEARCH_TYPE_CONTROL_AUTO_IMPORT
 # 业务准备直接引用 Workflow，任务层只保留执行与派发适配。
@@ -40,7 +41,7 @@ async def auto_search_and_import_task(
     ai_service: AIService,
     rate_limiter: Optional[RateLimiter] = None,
     api_key: Optional[str] = None,
-    title_recognition_manager: Optional[TitleRecognitionManager] = None,
+    title_recognition_manager: Optional[TitleRecognitionWorkflow] = None,
     oauth_user: Optional[User] = None,
 ):
     """

@@ -12,8 +12,6 @@ from uuid import uuid4, UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from fastapi import HTTPException, status
 
-# 恢复请求模型在模块顶部导入，不在恢复分支动态加载。
-from src.schemas.control import ControlAutoImportRequest, EditImportRequest
 
 # ? 改用 DatabaseService 替代直接调用 crud
 from src.services.service_container import get_database_service
@@ -29,61 +27,6 @@ from src.utils.diagnostics.task_exceptions import TaskSuccess, TaskFailed, TaskP
 from src.rate_limiter import ConfigVerificationError, RateLimitExceededError
 
 logger = logging.getLogger(__name__)
-
-
-def _parse_import_unique_key(key: str) -> Optional[Tuple[str, str, Optional[int]]]:
-    """从导入类 unique_key 解析出 (provider, media_id, season)。
-
-    支持的格式：
-      - import-{provider}-{mediaId}-S{season}-ep{ep}
-      - import-{provider}-{mediaId}-{8位hash}
-      - ui-import-{provider}-{mediaId}-season-{s}-episode-{e}-{type}
-      - url-import-{provider}-{mediaId}-{type}-season-{s} / url-import-{provider}-{mediaId}-{type}
-
-    why：mediaId 可能含连字符，故不能简单 split。先剥离已知前缀，再从尾部
-    剥离已知后缀标记（-S{n}-ep{m} / -season-{n}[-...] / 末尾8位hash），
-    剩余部分首段为 provider、其余为 mediaId。解析失败返回 None（调用方静默跳过）。
-    """
-    if not key:
-        return None
-    # 剥离前缀
-    prefix = None
-    for p in ("ui-import-", "url-import-", "import-"):
-        if key.startswith(p):
-            prefix = p
-            break
-    if prefix is None:
-        return None
-    body = key[len(prefix):]
-
-    season: Optional[int] = None
-    # 剥离 -S{season}-ep{ep} 尾部（webhook 导入）
-    m = re.search(r"-S(\d+)-ep\d*$", body)
-    if m:
-        season = int(m.group(1))
-        body = body[:m.start()]
-    else:
-        # 剥离 -season-{s}[-episode-{e}][-{type}] 尾部（ui-import / url-import）
-        m2 = re.search(r"-season-(\d+)(?:-.*)?$", body)
-        if m2:
-            season = int(m2.group(1))
-            body = body[:m2.start()]
-        else:
-            # 剥离末尾 8 位 hash（编辑导入 import-{provider}-{mediaId}-{hash}）
-            m3 = re.search(r"-[0-9a-f]{8}$", body)
-            if m3:
-                body = body[:m3.start()]
-            else:
-                # url-import-{provider}-{mediaId}-{type}：剥离末尾已知类型
-                m4 = re.search(r"-(movie|tv_series|tv|other)$", body)
-                if m4:
-                    body = body[:m4.start()]
-
-    parts = body.split("-", 1)
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        return None
-    provider, media_id = parts[0], parts[1]
-    return provider, media_id, season
 
 
 class TaskStatus(str, Enum):
@@ -154,28 +97,32 @@ class TaskManager:
         # {provider_name: expire_time} - expire_time 用于自动清除过期的受限记录
         self._rate_limited_providers: Dict[str, float] = {}
 
-        # 任务恢复所需的依赖，通过 set_recovery_dependencies 方法注入
-        self._recovery_dependencies: Optional[Dict[str, Any]] = None
+        # 具体业务恢复由组合根注入，队列只处理恢复后的执行工厂。
+        self._recovery_callback: Optional[Callable] = None
+        self._recovery_queue_resolver: Optional[Callable] = None
         # 具体任务实现由组合根注册，避免 Service 反向导入 Tasks。
         self._task_handlers: Dict[str, Callable[..., Coroutine]] = {}
-        # 通知服务引用，通过 set_notification_service 方法注入
-        self._notification_service = None
+        self._handler_dependencies: Dict[str, Any] = {}
+        self._rate_limiter = None
+        # 生命周期事件订阅由组合根注入，通知业务由上层处理。
+        self._task_event_callback: Optional[Callable] = None
+        self._task_progress_callback: Optional[Callable] = None
         # 关闭标志位：优雅关闭时设为 True，区分「程序关闭」和「用户主动取消」
         self._is_shutting_down: bool = False
 
-    def set_recovery_dependencies(self, dependencies: Dict[str, Any]):
-        """设置任务恢复所需的依赖
+    def set_recovery_callback(self, callback: Callable, queue_resolver: Optional[Callable] = None) -> None:
+        """注入任务工厂与历史队列迁移端口。"""
+        self._recovery_callback = callback
+        self._recovery_queue_resolver = queue_resolver
 
-        Args:
-            dependencies: 包含以下键的字典：
-                - scraper_manager: ScraperManager 实例
-                - rate_limiter: RateLimiter 实例
-                - metadata_manager: MetadataService 实例
-                - ai_service: AIService 全局实例
-                - title_recognition_manager: TitleRecognitionManager 实例
-        """
-        self._recovery_dependencies = dependencies
-        self.logger.info("任务恢复依赖已设置")
+    def set_execution_dependencies(self, dependencies: Dict[str, Any]) -> None:
+        """保存注册处理器使用的通用依赖端口，并注入队列流控能力。"""
+        self._handler_dependencies = dict(dependencies)
+        self._rate_limiter = dependencies.get("rate_limiter")
+
+    def get_execution_dependencies(self) -> Dict[str, Any]:
+        """返回处理器依赖快照，调用方不再读取恢复私有状态。"""
+        return dict(self._handler_dependencies)
 
     def register_task_handler(
         self,
@@ -201,248 +148,18 @@ class TaskManager:
             **handler_kwargs,
         )
 
-    def set_notification_service(self, notification_service):
-        """设置通知服务引用"""
-        self._notification_service = notification_service
-        self.logger.info("通知服务已注入 TaskManager")
+    def set_task_event_callbacks(self, completed: Callable, progress: Callable) -> None:
+        """订阅通用完成和进度生命周期，不让队列识别作品业务。"""
+        self._task_event_callback = completed
+        self._task_progress_callback = progress
 
-    def _determine_event_type(self, task: Task, is_success: bool) -> Optional[str]:
-        """根据任务的 unique_key 和 title 判断应触发的通知事件类型"""
-        key = task.unique_key or ""
-        title = task.title or ""
-        suffix = "_success" if is_success else "_failed"
-
-        # 删除任务不发通知（必须覆盖所有删除前缀，否则会掉到末尾兜底被误判为 import_success，
-        # 导致出现"? 导入成功 / 删除成功"这种标题与内容矛盾的通知）
-        if key.startswith((
-            "delete-source-",        # 删除单个数据源
-            "delete-bulk-sources-",  # 批量删除数据源
-            "delete-anime-",         # 删除作品
-            "delete-episode-",       # 删除单个分集
-            "delete-bulk-episodes-", # 批量删除分集
-            "modify-episodes-",      # 集数偏移（管理类操作，非导入，避免误判为"导入成功"）
-        )):
-            return None
-
-        # 定时任务（有 scheduled_task_id）
-        if task.scheduled_task_id:
-            return "scheduled_task_complete" if is_success else "scheduled_task_failed"
-
-        # Webhook 导入
-        if key.startswith("webhook-search-"):
-            return f"webhook_import{suffix}"
-
-        # 数据源刷新（含定时"刷新最新集" refresh-latest- 前缀，否则会掉到末尾兜底被误判为导入）
-        if (key.startswith("refresh-episode-") or key.startswith("full-refresh-")
-                or key.startswith("bulk-refresh-") or key.startswith("refresh-latest-")):
-            return f"refresh{suffix}"
-
-        # 追更刷新（增量刷新 job 提交的导入任务，通过 title 识别）
-        if "追更" in title or "增量刷新" in title:
-            return f"incremental_refresh{suffix}"
-
-        # 自动导入
-        if key.startswith("auto-import-"):
-            return f"auto_import{suffix}"
-
-        # 媒体库扫描
-        if key.startswith("scan-media-server-"):
-            return "media_scan_complete" if is_success else None
-
-        # 通用导入（UI导入、URL导入、手动导入、批量导入、编辑后导入等）
-        if key.startswith(("ui-import-", "url-import-", "manual-import-", "batch-manual-import-", "import-")):
-            return f"import{suffix}"
-
-        # 后备下载/搜索任务 —— 按 title 前缀细分，与 _get_progress_callback 的
-        # _FALLBACK_PROGRESS_KEY_MAP 保持一致，确保进度和完成通知使用相同的订阅 key
-        if getattr(task, "queue_type", "") == "fallback":
-            _FALLBACK_EVENT_MAP = {
-                "后备搜索:": "fallback_search",
-                "预下载弹幕:": "predownload",
-                "后备匹配:": "match_fallback",
-            }
-            prefix = next(
-                (v for k, v in _FALLBACK_EVENT_MAP.items() if title.startswith(k)),
-                "download_fallback",  # 兜底
-            )
-            return f"{prefix}{suffix}"
-
-        # 兜底：有 unique_key 但未匹配到的，按导入处理
-        if key:
-            return f"import{suffix}"
-
-        return None
-
-    async def _emit_task_event(self, task: Task, is_success: bool, message: str = ""):
-        """发射任务完成/失败的通知事件"""
-        if not self._notification_service:
-            return
-        event_type = self._determine_event_type(task, is_success)
-        if not event_type:
-            # 即使不需要发通知，也要清理进度消息缓存
-            self._notification_service.cleanup_task_progress(task.task_id)
-            return
-
-        # 1. 优先从 task_parameters 取 imageUrl（import/auto_import 任务已有）
-        image_url: str = (task.task_parameters or {}).get("imageUrl", "") or ""
-
-        # 2. 刷新类任务 task_parameters 通常缺标题/集数/年份/海报，从数据库补查。
-        #    db_extra 收集补查到的字段，稍后仅用于填补 payload 中为空的项（不覆盖已有值）。
-        db_extra: Dict[str, Any] = {}
-        if task.unique_key:
-            key = task.unique_key
+    async def _emit_task_event(self, task: Task, is_success: bool, message: str = "") -> None:
+        """发出通用任务结果，通知失败不改变任务终态。"""
+        if self._task_event_callback is not None:
             try:
-                async with self._db.transaction():
-                    if key.startswith("refresh-episode-"):
-                        # refresh-episode-{episodeId}：第三段是 episodeId
-                        try:
-                            episode_id = int(key.split("-")[2])
-                        except (ValueError, IndexError):
-                            episode_id = None
-                        if episode_id is not None:
-                            ep_info = await self._db.episode.get_episode_provider_info(episode_id)
-                            if ep_info:
-                                db_extra["episode"] = ep_info.get("episodeIndex")
-                                # 通过 animeId 反查 Anime 标题/年份/季/海报
-                                anime_row = await self._db.anime.get_by_id(ep_info.get("animeId"))
-                                if anime_row:
-                                    db_extra["anime_title"] = anime_row.title
-                                    db_extra["season"] = anime_row.season
-                                    db_extra["year"] = anime_row.year
-                                    db_extra["image_url"] = (anime_row.imageUrl or "")
-                                db_extra["source"] = ep_info.get("providerName", "")
-                    elif key.startswith("refresh-latest-"):
-                        # refresh-latest-{sourceId}-ep{n}：第三段是 sourceId，ep 后是集号（非 episodeId）。
-                        # 按 sourceId 反查作品/源信息，集号从 -ep 后解析。
-                        source_id = None
-                        ep_index = None
-                        try:
-                            rest = key[len("refresh-latest-"):]
-                            sid_part, _, ep_part = rest.partition("-ep")
-                            source_id = int(sid_part)
-                            if ep_part:
-                                ep_index = int(ep_part)
-                        except (ValueError, IndexError):
-                            pass
-                        if source_id is not None:
-                            info = await self._db.source.get_anime_source_info(source_id)
-                            if info:
-                                db_extra["anime_title"] = info.get("title", "")
-                                db_extra["season"] = info.get("season")
-                                db_extra["year"] = info.get("year")
-                                db_extra["source"] = info.get("providerName", "")
-                                db_extra["image_url"] = info.get("imageUrl", "") or ""
-                                if ep_index is not None:
-                                    db_extra["episode"] = ep_index
-                    elif key.startswith("full-refresh-") or key.startswith("bulk-refresh-"):
-                        # full-refresh-{anime_id}-xxx：直接查 Anime
-                        try:
-                            anime_id = int(key.split("-")[2])
-                        except (ValueError, IndexError):
-                            anime_id = None
-                        if anime_id is not None:
-                            anime_row = await self._db.anime.get_by_id(anime_id)
-                            if anime_row:
-                                db_extra["anime_title"] = anime_row.title
-                                db_extra["season"] = anime_row.season
-                                db_extra["year"] = anime_row.year
-                                db_extra["image_url"] = (anime_row.imageUrl or "")
-            except Exception:
-                pass  # 补查失败不影响通知发出
-
-        # 3. 兜底：task_parameters 带 sourceId 的刷新类任务（如 TG 刷新 tg_refresh、指令刷新），
-        #    其 unique_key 无 refresh 前缀，上面补不到，这里按 sourceId 反查作品/源信息。
-        if not db_extra.get("anime_title"):
-            source_id = (task.task_parameters or {}).get("sourceId")
-            if source_id is not None:
-                try:
-                    async with self._db.transaction():
-                        info = await self._db.source.get_anime_source_info(int(source_id))
-                        if info:
-                            db_extra["anime_title"] = info.get("title", "")
-                            db_extra["season"] = info.get("season")
-                            db_extra["year"] = info.get("year")
-                            db_extra["source"] = info.get("providerName", "")
-                            db_extra["tmdb_id"] = info.get("tmdbId", "") or ""
-                            if not db_extra.get("image_url"):
-                                db_extra["image_url"] = info.get("imageUrl", "") or ""
-                except Exception:
-                    pass  # 补查失败不影响通知发出
-
-        # 4. 兜底：导入类任务（import-/ui-import-/url-import- 前缀）若 task_parameters
-        #    未带 animeTitle（如 direct_import / URL导入 / 旧路径），从 unique_key 解析
-        #    provider+mediaId 反查 DB 补齐作品名/季/来源。why：媒体库逐集导入等路径
-        #    的微信通知只剩弹幕数，看不出是哪部作品。
-        if not db_extra.get("anime_title") and not (task.task_parameters or {}).get("animeTitle"):
-            key = task.unique_key or ""
-            parsed = _parse_import_unique_key(key)
-            if parsed:
-                provider, media_id, season_hint = parsed
-                try:
-                    async with self._db.transaction():
-                        anime_id = await self._db.source.get_anime_id_by_source_media_id(
-                            provider, media_id, season=season_hint
-                        )
-                        # season 提示查不到时退化为不带 season 再查一次
-                        if anime_id is None and season_hint is not None:
-                            anime_id = await self._db.source.get_anime_id_by_source_media_id(
-                                provider, media_id
-                            )
-                        if anime_id is not None:
-                            anime_row = await self._db.anime.get_by_id(anime_id)
-                            if anime_row:
-                                db_extra["anime_title"] = anime_row.title
-                                db_extra["season"] = anime_row.season
-                                db_extra["year"] = anime_row.year
-                                db_extra["media_type"] = anime_row.type
-                                if not db_extra.get("image_url"):
-                                    db_extra["image_url"] = (anime_row.imageUrl or "")
-                            db_extra["source"] = provider
-                except Exception:
-                    pass  # 补查失败不影响通知发出
-
-        # image_url 优先用任务参数里的，没有再用补查结果
-        if not image_url:
-            image_url = db_extra.get("image_url", "") or ""
-
-        try:
-            params = task.task_parameters or {}
-            # 提取任务参数中的上下文字段，供通知格式化使用
-            extra = {
-                "search_term": params.get("searchTerm", ""),
-                "search_type": str(params.get("searchType", "")).replace("AutoImportSearchType.", "").lower(),
-                "season": params.get("season"),
-                "episode": params.get("episode"),
-                "anime_title": params.get("animeTitle", "") or params.get("anime_title", ""),
-                "episode_count": params.get("episodeCount"),
-                "webhook_source": params.get("webhookSource", ""),
-                "provider": params.get("provider", "") or params.get("providerName", ""),
-                # source 字段：新消息类导入模板读取 source 展示"来源/弹幕源"，映射自 provider
-                "source": params.get("provider", "") or params.get("providerName", ""),
-                "media_id": params.get("mediaId", "") or params.get("media_id", ""),
-                "tmdb_id": params.get("tmdbId", ""),
-                "media_type": params.get("type", "") or params.get("mediaType", ""),
-                "year": params.get("year"),
-                "finished_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            }
-            # 用数据库补查结果填补 extra 中为空的字段（不覆盖任务参数已有的值）。
-            # 这样刷新类任务也能在通知里显示标题/集数/年份/季/海报。
-            for _k, _v in db_extra.items():
-                if _v in (None, "") :
-                    continue
-                if extra.get(_k) in (None, "", 0):
-                    extra[_k] = _v
-            await self._notification_service.emit_event(event_type, {
-                "task_title": task.title,
-                "message": message,
-                "task_id": task.task_id,
-                "unique_key": task.unique_key or "",
-                "image_url": image_url,
-                "task_parameters": params,
-                **extra,
-            })
-        except Exception as e:
-            self.logger.error(f"发射通知事件 {event_type} 失败: {e}")
+                await self._task_event_callback(task, is_success, message)
+            except Exception as exc:
+                self.logger.warning("任务结果订阅者失败: %s", exc)
 
     async def _safe_finalize_task(self, task_id: str, status, message: str):
         """安全地写入任务最终状态。
@@ -929,7 +646,7 @@ class TaskManager:
 
     async def _get_global_limit_status(self) -> Tuple[bool, float]:
         """读取全局流控状态，不在 worker 内睡眠等待。"""
-        limiter = (self._recovery_dependencies or {}).get("rate_limiter")
+        limiter = self._rate_limiter
         if limiter is None:
             return False, 0.0
         return await limiter.get_global_limit_status()
@@ -1110,23 +827,6 @@ class TaskManager:
 
     def _get_progress_callback(self, task: Task) -> Callable:
         """为特定任务创建一个可暂停的回调闭包。"""
-        queue_type = getattr(task, "queue_type", "download")
-        is_fallback = queue_type == "fallback"
-        # fallback 任务按 title 前缀确定对应的订阅 key，与 _determine_event_type 保持一致
-        _FALLBACK_PROGRESS_KEY_MAP = {
-            "后备搜索:": "fallback_search_complete",
-            "预下载弹幕:": "predownload_complete",
-            "后备匹配:": "match_fallback_complete",
-        }
-        if is_fallback:
-            title = task.title or ""
-            progress_check_key = next(
-                (v for k, v in _FALLBACK_PROGRESS_KEY_MAP.items() if title.startswith(k)),
-                "fallback_search_complete",  # 兜底
-            )
-        else:
-            progress_check_key = "task_progress"
-
         async def pausable_callback(progress: int, description: str, status: Optional[TaskStatus] = None):
             # 核心暂停逻辑：在每次更新进度前，检查暂停事件。
             # 如果事件被清除 (cleared)，.wait() 将会阻塞，直到事件被重新设置 (set)。
@@ -1155,16 +855,10 @@ class TaskManager:
 
             # 进度未完成时触发 TG 进度通知（TG 会 edit 已有消息，其他渠道跳过进度推送）
             # 加超时保护：通知推送不应阻塞任务执行（TG 代理不可达时可能卡住）
-            if self._notification_service and progress < 100:
+            if self._task_progress_callback is not None and progress < 100:
                 try:
                     await asyncio.wait_for(
-                        self._notification_service.emit_task_progress(
-                            task_id=task.task_id,
-                            task_title=task.title,
-                            progress=int(progress),
-                            description=description,
-                            check_event_key=progress_check_key,
-                        ),
+                        self._task_progress_callback(task, int(progress), description),
                         timeout=10  # 最多等10秒，超时则跳过本次通知
                     )
                 except asyncio.TimeoutError:
@@ -1585,9 +1279,8 @@ class TaskManager:
             if not coro_factory:
                 raise ValueError(f"无法为任务类型 '{task_type}' 重建执行逻辑")
 
-            # 自动导入父任务只负责搜索和派发，兼容旧历史中的下载队列标记。
-            if task_type == "auto_import" and queue_type == "download":
-                queue_type = "search"
+            if self._recovery_queue_resolver is not None:
+                queue_type = self._recovery_queue_resolver(task_type, queue_type)
             queue_map = {
                 "download": self._download_queue,
                 "management": self._management_queue,
@@ -1671,284 +1364,7 @@ class TaskManager:
             return False
 
     async def _rebuild_coro_factory(self, task_type: str, task_parameters: Dict) -> Optional[Callable]:
-        """根据任务类型和参数重建协程工厂
-
-        Args:
-            task_type: 任务类型
-            task_parameters: 任务参数
-
-        Returns:
-            协程工厂函数，如果无法重建则返回None
-        """
-        if not self._recovery_dependencies:
+        """经注入端口恢复工厂，队列服务不解析具体业务参数。"""
+        if self._recovery_callback is None:
             return None
-
-        deps = self._recovery_dependencies
-        scraper_manager = deps.get("scraper_manager")
-        rate_limiter = deps.get("rate_limiter")
-        metadata_manager = deps.get("metadata_manager")
-        # 恢复任务沿用启动时注册的共享 AI 服务。
-        ai_service = deps.get("ai_service")
-        title_recognition_manager = deps.get("title_recognition_manager")
-
-        try:
-            if task_type == "local_danmaku_import":
-                # 本地导入只恢复持久化参数，无需抓取器或外部会话快照。
-                return self.build_task_coro_factory(
-                    "local_danmaku_import",
-                    item_ids=task_parameters["item_ids"],
-                    import_options=task_parameters.get("import_options", {}),
-                )
-            if task_type == "generic_import":
-                # 恢复与首次派发共用注册处理器，服务层不反向导入任务包。
-                return self.build_task_coro_factory(
-                    "generic_import",
-                    provider=task_parameters.get("provider"),
-                    mediaId=task_parameters.get("mediaId"),
-                    animeTitle=task_parameters.get("animeTitle"),
-                    mediaType=task_parameters.get("mediaType"),
-                    season=task_parameters.get("season"),
-                    year=task_parameters.get("year"),
-                    currentEpisodeIndex=task_parameters.get("currentEpisodeIndex"),
-                    imageUrl=task_parameters.get("imageUrl"),
-                    config_service=self.config_service,
-                    metadata_manager=metadata_manager,
-                    manager=scraper_manager,
-                    task_manager=self,
-                    rate_limiter=rate_limiter,
-                    title_recognition_manager=title_recognition_manager,
-                    doubanId=task_parameters.get("doubanId"),
-                    tmdbId=task_parameters.get("tmdbId"),
-                    imdbId=task_parameters.get("imdbId"),
-                    tvdbId=task_parameters.get("tvdbId"),
-                    bangumiId=task_parameters.get("bangumiId"),
-                    # 恢复时保留多集选择，不能降级为全季导入。
-                    selectedEpisodes=task_parameters.get("selectedEpisodes"),
-                    mediaServerType=task_parameters.get("mediaServerType"),
-                    mediaServerSeriesId=task_parameters.get("mediaServerSeriesId"),
-                    mediaServerSeasonId=task_parameters.get("mediaServerSeasonId"),
-                    mediaServerEpisodeId=task_parameters.get("mediaServerEpisodeId"),
-                    fallbackCandidates=task_parameters.get("fallbackCandidates"),
-                )
-
-            elif task_type == "webhook_search":
-                return self.build_task_coro_factory(
-                    "webhook_search",
-                    animeTitle=task_parameters.get("animeTitle"),
-                    mediaType=task_parameters.get("mediaType"),
-                    season=task_parameters.get("season"),
-                    currentEpisodeIndex=task_parameters.get("currentEpisodeIndex"),
-                    searchKeyword=task_parameters.get("searchKeyword"),
-                    doubanId=task_parameters.get("doubanId"),
-                    tmdbId=task_parameters.get("tmdbId"),
-                    imdbId=task_parameters.get("imdbId"),
-                    tvdbId=task_parameters.get("tvdbId"),
-                    bangumiId=task_parameters.get("bangumiId"),
-                    webhookSource=task_parameters.get("webhookSource"),
-                    year=task_parameters.get("year"),
-                    manager=scraper_manager,
-                    task_manager=self,
-                    metadata_manager=metadata_manager,
-                    config_service=self.config_service,
-                    ai_service=ai_service,
-                    rate_limiter=rate_limiter,
-                    title_recognition_manager=title_recognition_manager,
-                    selectedEpisodes=task_parameters.get("selectedEpisodes"),
-                    # 搜索任务恢复后仍需把媒体关联传给下游导入。
-                    mediaServerType=task_parameters.get("mediaServerType"),
-                    mediaServerSeriesId=task_parameters.get("mediaServerSeriesId"),
-                    mediaServerSeasonId=task_parameters.get("mediaServerSeasonId"),
-                    mediaServerEpisodeId=task_parameters.get("mediaServerEpisodeId"),
-                )
-
-            elif task_type == "full_refresh":
-                source_id = task_parameters.get("sourceId")
-                if not source_id:
-                    return None
-                # 恢复分支按名称解析处理器，避免分支间共享局部任务模块。
-                return self.build_task_coro_factory(
-                    "full_refresh", sourceId=source_id,
-                    scraper_manager=scraper_manager, task_manager=self,
-                    rate_limiter=rate_limiter, metadata_manager=metadata_manager,
-                    config_service=self.config_service,
-                )
-
-            elif task_type == "incremental_refresh":
-                source_id = task_parameters.get("sourceId")
-                next_ep = task_parameters.get("nextEpisodeIndex")
-                if not source_id or next_ep is None:
-                    return None
-                return self.build_task_coro_factory(
-                    "incremental_refresh",
-                    sourceId=source_id,
-                    nextEpisodeIndex=next_ep,
-                    manager=scraper_manager,
-                    task_manager=self,
-                    config_service=self.config_service,
-                    rate_limiter=rate_limiter,
-                    metadata_manager=metadata_manager,
-                    title_recognition_manager=title_recognition_manager,
-                    animeTitle=task_parameters.get("animeTitle", ""),
-                )
-
-            elif task_type == "auto_import":
-                try:
-                    payload = ControlAutoImportRequest(**task_parameters)
-                except Exception:
-                    self.logger.warning("auto_import 任务参数解析失败，无法重建")
-                    return None
-                return self.build_task_coro_factory(
-                    "auto_import", payload=payload,
-                    config_service=self.config_service,
-                    scraper_manager=scraper_manager,
-                    metadata_manager=metadata_manager, task_manager=self,
-                    ai_service=ai_service,
-                    rate_limiter=rate_limiter,
-                    title_recognition_manager=title_recognition_manager,
-                )
-
-            elif task_type == "scan_and_import_target":
-                provider = task_parameters.get("provider")
-                external_id = task_parameters.get("externalId")
-                if not provider or not external_id:
-                    return None
-                return self.build_task_coro_factory(
-                    "scan_and_import_target",
-                    scraper_manager=scraper_manager,
-                    config_service=self.config_service,
-                    provider=provider,
-                    external_id=external_id,
-                    title_recognition_manager=title_recognition_manager,
-                    selected_episodes=task_parameters.get("selectedEpisodes"),
-                )
-
-            elif task_type in {"bangumiDataSync", "bangumiDataClear"}:
-                if not task_parameters.get("manual"):
-                    return None
-                return self.build_task_coro_factory(task_type)
-
-            elif task_type == "media_scan":
-                server_id = task_parameters.get("serverId")
-                if server_id is None:
-                    return None
-                return self.build_task_coro_factory(
-                    "media_scan", server_id=server_id,
-                    library_ids=task_parameters.get("libraryIds"),
-                )
-
-            elif task_type == "import_media_items":
-                item_ids = task_parameters.get("itemIds")
-                if not item_ids:
-                    return None
-                return self.build_task_coro_factory(
-                    "import_media_items", item_ids=item_ids,
-                    task_manager=self, scraper_manager=scraper_manager,
-                    metadata_manager=metadata_manager,
-                    config_service=self.config_service, ai_service=ai_service,
-                    rate_limiter=rate_limiter,
-                    title_recognition_manager=title_recognition_manager,
-                )
-
-            elif task_type == "import_all_unimported":
-                # 未导入清单由任务实时重新计算，不依赖重启前的内存状态。
-                server_id = task_parameters.get("serverId")
-                if not server_id:
-                    return None
-                return self.build_task_coro_factory(
-                    "import_all_unimported",
-                    server_id=server_id,
-                    media_type=task_parameters.get("mediaType"),
-                    task_manager=self,
-                    scraper_manager=scraper_manager,
-                    metadata_manager=metadata_manager,
-                    config_service=self.config_service,
-                    ai_service=ai_service,
-                    rate_limiter=rate_limiter,
-                    title_recognition_manager=title_recognition_manager,
-                )
-
-            elif task_type == "manual_import":
-                # XML/URL 手动导入（阶段4补齐：恢复完整性）
-                source_id = task_parameters.get("sourceId")
-                episode_index = task_parameters.get("episodeIndex")
-                provider_name = task_parameters.get("providerName")
-
-                if not all([source_id, episode_index, provider_name]):
-                    self.logger.warning(f"manual_import 恢复失败：缺少必要参数 (sourceId/episodeIndex/providerName)")
-                    return None
-
-                # 从 source_id 反查 anime_id, title, content
-                # why: 手动导入的 content（XML或URL）无法持久化到 task_parameters（可能很大），
-                # 恢复时只能跳过该任务，提示用户重新提交
-                self.logger.warning(
-                    f"manual_import 任务无法自动恢复（content 未序列化），"
-                    f"sourceId={source_id}, episodeIndex={episode_index}, providerName={provider_name}"
-                )
-                return None
-
-            elif task_type == "edited_import":
-                # 使用任务实际接收的编辑导入模型，避免恢复时导入不存在的名称。
-                try:
-                    request_data = EditImportRequest(**task_parameters)
-                except Exception as e:
-                    self.logger.error(f"edited_import 恢复失败：无法解析 task_parameters: {e}")
-                    return None
-
-                return self.build_task_coro_factory(
-                    "edited_import",
-                    request_data=request_data,
-                    config_service=self.config_service,
-                    manager=scraper_manager,
-                    rate_limiter=rate_limiter,
-                    title_recognition_manager=title_recognition_manager,
-                )
-
-            elif task_type == "download_comments":
-                # 后备弹幕下载（阶段4补齐：无法恢复）
-                # why: 该任务使用闭包，捕获外层运行时对象（scraper/rate_limiter/episodeId 等），
-                # 这些对象无法序列化到 task_parameters，重启后无法恢复。
-                # 用户可通过弹幕接口重新触发后备搜索。
-                self.logger.warning(
-                    f"download_comments 任务无法自动恢复（闭包依赖运行时对象），"
-                    f"task_parameters={task_parameters}"
-                )
-                return None
-
-            elif task_type == "match_fallback_download":
-                # 匹配后备下载（B类·冷启动）——阶段5：闭包已抽取为独立可恢复任务
-                # why: 参数全部可序列化存于 task_parameters，依赖（scraper/rate_limiter/config_service）
-                # 在此从恢复依赖 + self.config_service 重新注入，彻底解决原闭包无法恢复的问题。
-                episode_id = task_parameters.get("episodeId")
-                if not episode_id:
-                    self.logger.warning("match_fallback_download 恢复失败：缺少 episodeId")
-                    return None
-                return self.build_task_coro_factory(
-                    "match_fallback_download",
-                    episodeId=episode_id,
-                    real_anime_id=task_parameters.get("real_anime_id"),
-                    provider=task_parameters.get("provider"),
-                    mediaId=task_parameters.get("mediaId"),
-                    episode_number=task_parameters.get("episode_number"),
-                    episode_title=task_parameters.get("episode_title"),
-                    episode_url=task_parameters.get("episode_url"),
-                    provider_episode_id=task_parameters.get("provider_episode_id"),
-                    final_title=task_parameters.get("final_title"),
-                    display_title=task_parameters.get("display_title"),
-                    final_season=task_parameters.get("final_season"),
-                    media_type=task_parameters.get("media_type"),
-                    imageUrl=task_parameters.get("imageUrl"),
-                    year=task_parameters.get("year"),
-                    total_episodes=task_parameters.get("total_episodes"),
-                    fallback_episode_cache_key=task_parameters.get("fallback_episode_cache_key"),
-                    scraper_manager=scraper_manager,
-                    rate_limiter=rate_limiter,
-                    config_service=self.config_service,
-                )
-
-            else:
-                self.logger.warning(f"未知的任务类型 '{task_type}'，无法重建协程工厂")
-                return None
-
-        except Exception as e:
-            self.logger.error(f"重建任务类型 '{task_type}' 的协程工厂时发生错误: {e}", exc_info=True)
-            return None
+        return await self._recovery_callback(task_type, task_parameters)

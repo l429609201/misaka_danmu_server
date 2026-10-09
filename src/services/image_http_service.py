@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 async def fetch_image(
     image_url: str, *, proxy: Optional[str] = None, verify: bool = True,
     referer: Optional[str] = None, max_bytes: int = 10 * 1024 * 1024,
+    headers: Optional[dict[str, str]] = None,
 ) -> Optional[tuple[bytes, str]]:
     """流式获取图片及响应类型，在读取过程中限制内存占用。"""
     if max_bytes <= 0:
@@ -21,9 +22,11 @@ async def fetch_image(
     if not url.startswith(("http://", "https://")):
         return None
     try:
+        request_headers = build_image_headers(url, referer)
+        request_headers.update(headers or {})
         async with httpx.AsyncClient(
-            timeout=30.0, follow_redirects=True, proxy=proxy, verify=verify,
-            headers=build_image_headers(url, referer),
+            timeout=30.0, follow_redirects=not bool(headers), proxy=proxy, verify=verify,
+            headers=request_headers,
         ) as client:
             async with client.stream("GET", url) as response:
                 response.raise_for_status()

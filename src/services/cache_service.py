@@ -35,7 +35,9 @@ from src.core.cache import (
     MemoryBackend,
     RedisBackend,
 )
+from src.core.config import CacheConfig
 from src.db.cache import DatabaseBackend
+from src.utils.dandan.serialization import convert_to_serializable, fix_bangumi_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -217,8 +219,6 @@ class CacheService:
         Returns:
             缓存值；未命中、已过期或服务不可用时返回 None
         """
-        from src.utils.dandan.serialization import fix_bangumi_mapping
-
         cache_key = f"{prefix}{key}"
         try:
             result = await self.get(cache_key, region="default")
@@ -252,7 +252,6 @@ class CacheService:
             value: 待缓存的值
             ttl: 过期时间（秒），0 表示不过期
         """
-        from src.utils.dandan.serialization import convert_to_serializable
 
         cache_key = f"{prefix}{key}"
         if not isinstance(value, (str, int, float, bool, type(None))):
@@ -385,7 +384,6 @@ async def init_cache_service(session_factory=None, cache_config=None) -> CacheSe
     - Redis 模式启动时做连接健康检查，ping 失败同样降级。
     """
     global _global_cache_service
-    from src.core.config import CacheConfig
     if cache_config is None:
         cache_config = CacheConfig()
 

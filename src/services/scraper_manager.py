@@ -4,8 +4,6 @@ import inspect
 import json
 import logging
 import re
-import time
-from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Type
@@ -17,19 +15,12 @@ from src._version import APP_VERSION, MIN_SCRAPER_VERSION
 from src.core.env import is_docker_environment
 from src.core.timezone import get_now
 from src.services.config_service import ConfigService
-from src.schemas.search import ProviderSearchInfo, ProviderEpisodeInfo
+from src.schemas.search import ProviderSearchInfo
 from src.schemas.ui_models import ScraperSetting
 from src.schemas.common import SCRAPER_API_VERSION
 from src.scrapers.base import BaseScraper
-from src.services.service_container import get_database_service, get_task_manager
-from src.utils.diagnostics.task_exceptions import TaskFailed, TaskSuccess
+from src.services.service_container import get_database_service
 from src.utils.runtime.transport_manager import TransportManager
-from src.utils.diagnostics.buffered_logging import (
-    BufferedLogHandler,
-    create_buffered_logger,
-    flush_buffered_logs,
-)
-from src.utils.parsing.episode_filter import apply_global_episode_title_filter
 from src.services.file_storage_service import get_file_storage_service
 
 
@@ -47,9 +38,11 @@ class ScraperPaths:
                 scrapers_dir=Path("/app/src/scrapers"),
                 backup_dir=Path("/app/config/scrapers_backup")
             )
+        # 本地来源目录必须锚定当前代码位置，不依赖 IDE/重载进程的工作目录。
+        project_root = Path(__file__).resolve().parents[2]
         return cls(
-            scrapers_dir=Path("src/scrapers"),
-            backup_dir=Path("config/scrapers_backup")
+            scrapers_dir=project_root / "src" / "scrapers",
+            backup_dir=project_root / "config" / "scrapers_backup",
         )
 
 
@@ -105,7 +98,7 @@ class ScraperManager:
         self._webhook_search_locks: set[str] = set()  # Webhook 搜索锁（基于 animeTitle-season）
         self._lock = asyncio.Lock()
         self.config_service = config_service
-        self.metadata_manager = metadata_manager
+        self.offline_bangumi_service = None
         self.transport_manager = transport_manager
         # 组合根注入资源准备流程，服务层不反向依赖 workflow。
         self._prepare_load = prepare_load
@@ -224,11 +217,9 @@ class ScraperManager:
 
             if existing is None:
                 # 如果旧配置存在，迁移过来；否则默认 false
-                if old_value is not None:
-                    await self.config_service.set(new_key, old_value)
-                logger.info(f"已将 {provider_name} 的旧配置 {old_key}={old_value} 迁移到 {new_key}")
-            else:
-                await self.config_service.set(new_key, "false")
+                # 仅初始化缺失值，已有用户选择在 reload 时必须保留。
+                await self.config_service.set(new_key, old_value if old_value is not None else "false")
+                logger.info(f"已初始化 {provider_name} 的增强配置 {new_key}")
 
         logger.info(f"已为 {len(self.scrapers)} 个源初始化信息增强配置默认值（false）")
 
@@ -347,10 +338,7 @@ class ScraperManager:
         # 来源只接收基础设施服务；旧的三参数构造不再兼容，也不捕获 TypeError 重试。
         instance = scraper_class(self.config_service, self.transport_manager)
         instance._scraper_manager_ref = self
-        instance._bangumi_data = (
-            self.metadata_manager.get_offline_bangumi_service()
-            if self.metadata_manager is not None else None
-        )
+        instance._bangumi_data = self.offline_bangumi_service
         return instance
 
     async def _discover_and_load_modules(self, scrapers_dir: Path) -> ModuleDiscoveryResult:
@@ -368,11 +356,19 @@ class ScraperManager:
         # 从 manifest 读取各源版本号
         versions_from_file = self._load_versions_from_manifest(scrapers_dir)
 
-        # 遍历所有模块文件
-        for file_path in sorted(get_file_storage_service().resource_iterdir(scrapers_dir)):
-            if not self._is_valid_module_file(file_path):
-                continue
-
+        # 扫描信息与加载失败分开记录，便于识别空目录、工作目录偏移和契约拒绝。
+        module_files = sorted(get_file_storage_service().resource_iterdir(scrapers_dir))
+        candidates = [
+            path for path in module_files
+            if self._is_valid_module_file(path)
+            and not path.stem.startswith("_") and path.stem != "base"
+        ]
+        logging.getLogger(__name__).info(
+            "搜索源扫描目录: %s，候选模块: %d", scrapers_dir.resolve(), len(candidates),
+        )
+        if not candidates:
+            logging.getLogger(__name__).warning("搜索源目录未发现 .py/.so/.pyd 实现: %s", scrapers_dir.resolve())
+        for file_path in candidates:
             # 防御性检查：跳过损坏的二进制文件
             if file_path.name.endswith((".so", ".pyd")):
                 if not self._check_binary_file_integrity(file_path, failed_providers):
@@ -733,454 +729,6 @@ class ScraperManager:
             if provider_name != 'custom' and provider_name in self.scrapers
         )
 
-    async def search_all(self, keywords: List[str], episode_info: Optional[Dict[str, Any]] = None, max_results_per_source: Optional[int] = None) -> List[ProviderSearchInfo]:
-        """
-        在所有已启用的搜索源上并发搜索关键词列表。
-
-        Args:
-            keywords: 搜索关键词列表
-            episode_info: 分集信息
-            max_results_per_source: 每个源最多返回的结果数量（None表示不限制）
-        """
-        enabled_scrapers = [
-            scraper for name, scraper in self.scrapers.items()
-            if self.scraper_settings.get(name, {}).get('isEnabled')
-        ]
-
-        if not enabled_scrapers:
-            self.last_search_timing = []
-            self.last_search_errors = []
-            return []
-
-        self.last_search_errors = []
-        # 包装搜索任务，从 @track_performance 装饰器存储的 _task_timings 中读取耗时
-        # 使用缓冲 logger 避免并发搜索日志交叉
-
-        # 预加载所有启用源的超时配置并注入到 scraper 实例
-        timeout_tasks = {
-            scraper.provider_name: self.config_service.get(
-                f"scraper_{scraper.provider_name}_search_timeout", "30"
-            )
-            for scraper in enabled_scrapers
-        }
-        timeout_raw = await asyncio.gather(*timeout_tasks.values())
-        for scraper in enabled_scrapers:
-            raw_val = timeout_raw[list(timeout_tasks.keys()).index(scraper.provider_name)]
-            try:
-                scraper._search_timeout = max(5.0, min(100.0, float(raw_val)))
-            except (ValueError, TypeError):
-                scraper._search_timeout = 30.0
-
-        async def timed_search(scraper, keyword):
-            task_id = id(asyncio.current_task())  # 获取当前任务ID
-
-            # 安装缓冲 logger，替换 scraper.logger
-            original_logger = scraper.logger
-            temp_logger, buffer_handler = create_buffered_logger(scraper.provider_name, task_id)
-            scraper.logger = temp_logger
-
-            # 单源总搜索超时熔断：「搜索超时」配置语义为单个源的整体搜索时长上限，
-            # 而非单次 HTTP 请求超时。源内部可能并行多请求/降级/限流，任一源卡住
-            # 都会拖垮 gather 等待所有源完成，故在此用 wait_for 按配置值强制熔断。
-            source_total_timeout = getattr(scraper, "_search_timeout", 30.0) or 30.0
-            source_started = time.monotonic()
-            source_task = None
-            try:
-                source_task = asyncio.create_task(scraper.search(keyword, episode_info=episode_info))
-                result = await asyncio.wait_for(source_task, timeout=source_total_timeout)
-                # 装饰器运行于源搜索子任务，不是 timed_search 外层任务；缺失时用实际耗时兜底。
-                duration_ms = scraper._task_timings.pop(id(source_task), 0) if hasattr(scraper, '_task_timings') else 0
-                duration_ms = duration_ms or (time.monotonic() - source_started) * 1000
-                return (scraper.provider_name, result, duration_ms, None, buffer_handler)
-            except asyncio.TimeoutError:
-                # 源整体搜索超时：熔断该源，返回空结果，不拖垮其它源
-                duration_ms = scraper._task_timings.pop(id(source_task), 0) if hasattr(scraper, '_task_timings') else 0
-                duration_ms = duration_ms or (time.monotonic() - source_started) * 1000
-                scraper.logger.warning(
-                    f"{scraper.provider_name}: 搜索超过单源总超时 {source_total_timeout:.0f}s，已熔断跳过"
-                )
-                return (scraper.provider_name, None, duration_ms,
-                        TimeoutError(f"单源搜索超时 ({source_total_timeout:.0f}s)"), buffer_handler)
-            except Exception as e:
-                duration_ms = scraper._task_timings.pop(id(source_task), 0) if hasattr(scraper, '_task_timings') else 0
-                duration_ms = duration_ms or (time.monotonic() - source_started) * 1000
-                return (scraper.provider_name, None, duration_ms, e, buffer_handler)
-            finally:
-                # 恢复原始 logger
-                scraper.logger = original_logger
-
-        # 分发策略：每个源自行决定要搜哪些关键词（BaseScraper 默认只用主搜索词 keywords[0]，
-        # gamer 等源覆写 select_search_keywords 按语言挑别名），不再「全量别名 × 全部源」笛卡尔积。
-        # 各阶段从同一启动时刻扣减预算，单源既有超时配置不变。
-        search_started = time.monotonic()
-        supplement_deadline = search_started + 30.0
-        provider_deadlines = {
-            scraper.provider_name: search_started + scraper._search_timeout
-            for scraper in enabled_scrapers
-        }
-        tasks = []
-        for scraper in enabled_scrapers:
-            try:
-                scraper_keywords = scraper.select_search_keywords(keywords)
-            except Exception:
-                # 挑词异常不影响搜索：回退主搜索词
-                scraper_keywords = [keywords[0]] if keywords else []
-            for keyword in scraper_keywords:
-                tasks.append(timed_search(scraper, keyword))
-
-        # 并行启动补充源搜索（乐观策略：先搜所有可映射平台，后续再过滤）
-        supplement_task = None
-        if self.metadata_manager:
-            all_possible_empty = {
-                name for name in self.scrapers if name != 'custom'
-            }
-            if all_possible_empty:
-                primary_keyword = keywords[0] if keywords else ""
-
-                async def _run_supplement() -> Tuple[List[Any], float]:
-                    """并行启动元数据补充，耗时与总等待预算使用同一单调时钟。"""
-                    _start = time.monotonic()
-                    results = await asyncio.wait_for(
-                        self.metadata_manager.supplement_empty_search_results(primary_keyword, all_possible_empty),
-                        timeout=max(0.0, supplement_deadline - time.monotonic()),
-                    )
-                    _dur = (time.monotonic() - _start) * 1000
-                    return results, _dur
-
-                supplement_task = asyncio.create_task(_run_supplement())
-
-        # 预加载全局过滤配置（与弹幕源搜索并行，避免搜索完成后串行读取）
-        async def _preload_filter_config():
-            cn = await self.config_service.get("search_result_global_blacklist_cn", "")
-            eng = await self.config_service.get("search_result_global_blacklist_eng", "")
-            return cn, eng
-
-        filter_config_task = asyncio.create_task(_preload_filter_config())
-
-        try:
-            timed_results = await asyncio.gather(*tasks)
-        except BaseException:
-            for pending in (supplement_task, filter_config_task):
-                if pending is not None and not pending.done():
-                    pending.cancel()
-            await asyncio.gather(*[task for task in (supplement_task, filter_config_task) if task is not None],
-                                 return_exceptions=True)
-            raise
-
-        # 聚合每个源的耗时和结果数（同一个源可能搜索多个关键词）
-        provider_timing: Dict[str, Tuple[float, int]] = {}  # {provider: (max_duration, total_count)}
-        # 收集每个源的缓冲日志，按完成顺序记录
-        provider_buffers: Dict[str, List[Tuple[BufferedLogHandler, int, float, Exception]]] = {}
-
-        all_results = []
-        seen_results = set()
-
-        for provider_name, result, duration_ms, error, buffer_handler in timed_results:
-            result_count = 0
-            if error:
-                self.last_search_errors.append(f"{provider_name}: {error}")
-                # 记录失败的耗时
-                if provider_name not in provider_timing:
-                    provider_timing[provider_name] = (duration_ms, 0)
-                else:
-                    old_dur, old_cnt = provider_timing[provider_name]
-                    provider_timing[provider_name] = (max(old_dur, duration_ms), old_cnt)
-            elif result:
-                # 优化5: 限制每个源的结果数量
-                limited_result = result[:max_results_per_source] if max_results_per_source else result
-                result_count = len(limited_result)
-
-                # 更新耗时统计
-                if provider_name not in provider_timing:
-                    provider_timing[provider_name] = (duration_ms, result_count)
-                else:
-                    old_dur, old_cnt = provider_timing[provider_name]
-                    provider_timing[provider_name] = (max(old_dur, duration_ms), old_cnt + result_count)
-
-                for item in limited_result:
-                    unique_id = (item.provider, item.mediaId)
-                    if unique_id not in seen_results:
-                        all_results.append(item)
-                        seen_results.add(unique_id)
-            else:
-                # 空结果
-                if provider_name not in provider_timing:
-                    provider_timing[provider_name] = (duration_ms, 0)
-                else:
-                    old_dur, old_cnt = provider_timing[provider_name]
-                    provider_timing[provider_name] = (max(old_dur, duration_ms), old_cnt)
-
-            # 收集缓冲日志
-            if provider_name not in provider_buffers:
-                provider_buffers[provider_name] = []
-            provider_buffers[provider_name].append((buffer_handler, result_count, duration_ms, error))
-
-        # 按源分组输出缓冲的日志（消除交叉）- 使用 create_task 异步执行，不阻塞事件循环
-        mgr_logger = logging.getLogger(__name__)
-
-        def _do_flush_logs():
-            """在线程池中执行日志 flush，避免占用事件循环。
-            why：flush_buffered_logs 只是纯 Python 日志写入（无 I/O 等待），
-            用 run_in_executor 推给线程池，主协程可以并行继续处理补充源、过滤等逻辑，
-            最后在 return 前 await 确保日志块在计时报告之前全部输出完毕，
-            同时不阻塞事件循环。
-            """
-            for pn, buffers in provider_buffers.items():
-                total_count = provider_timing.get(pn, (0, 0))[1]
-                total_dur = provider_timing.get(pn, (0, 0))[0]
-                first_error = next((e for _, _, _, e in buffers if e), None)
-                merged_handler = BufferedLogHandler()
-                for bh, _, _, _ in buffers:
-                    merged_handler._records.extend(bh.records)
-                    bh.clear()
-                flush_buffered_logs(mgr_logger, pn, merged_handler, total_count, total_dur, first_error)
-
-        # 提交到线程池并行执行，主协程继续处理补充源/过滤等逻辑
-        flush_task = asyncio.get_event_loop().run_in_executor(None, _do_flush_logs)
-
-        # 保存耗时信息供计时报告使用
-        self.last_search_timing = [
-            (name, dur, cnt) for name, (dur, cnt) in sorted(provider_timing.items(), key=lambda x: -x[1][0])
-        ]
-
-        # 收集补充源结果（已在弹幕源搜索开始时并行启动，现在 await 获取结果）
-        try:
-            if supplement_task:
-                # 补充源只负责改善空结果；主搜索已完成时不能因补充源卡住而阻塞 API 响应。
-                try:
-                    if supplement_task.done():
-                        supplement_results, _supp_dur = supplement_task.result()
-                    else:
-                        supplement_results, _supp_dur = await asyncio.wait_for(
-                            supplement_task, timeout=max(0.0, supplement_deadline - time.monotonic()),
-                        )
-                except asyncio.TimeoutError:
-                    supplement_task.cancel()
-                    await asyncio.gather(supplement_task, return_exceptions=True)
-                    mgr_logger.warning("元数据补充搜索超过30秒，使用当前已收集的搜索结果")
-                    self.last_search_errors.append("元数据补充搜索超过30秒，已使用当前已收集的结果")
-                    supplement_results = []
-
-                # 完全无结果的弹幕源（含被禁用的），这些源的补充项无条件合并（零结果兜底）
-                empty_providers = {
-                    name for name, (_, cnt) in provider_timing.items()
-                    if cnt == 0 and name != 'custom'
-                }
-                disabled_providers = {
-                    name for name in self.scrapers
-                    if not self.scraper_settings.get(name, {}).get('isEnabled')
-                    and name != 'custom'
-                }
-                empty_providers |= disabled_providers
-
-                # why(方案1-结果增补)：不再只对空结果源补充。对"非空"源，也允许把
-                # 该源自身没搜到的条目（如综艺往季）合并进来，用「标题归一化+年份」防止
-                # 与自身已有结果重复。被禁用/零结果的源仍按原逻辑无条件兜底。
-                def _norm_title(t: str) -> str:
-                    # 归一化标题用于跨源去重：去除空白与常见分隔符，转小写
-                    if not t:
-                        return ""
-                    return re.sub(r'[\s:：·\-—_、,，.。]+', '', str(t)).lower()
-
-                # 建立"每个 provider 已存在结果"的标题+年份索引，用于识别补充项是否重复
-                existing_title_year: set = set()
-                for r in all_results:
-                    existing_title_year.add((r.provider, _norm_title(r.title), r.year))
-
-                # 去重并合并
-                added_count = 0
-                supplemented_providers = set()
-                merged_supp = []  # 实际参与合并的补充项（用于日志）
-                for supp_item in supplement_results:
-                    prov = supp_item.provider
-                    is_empty_provider = prov in empty_providers
-                    unique_id = (prov, supp_item.mediaId)
-                    title_year_key = (prov, _norm_title(supp_item.title), supp_item.year)
-
-                    if unique_id in seen_results:
-                        continue  # mediaId 完全重复，跳过
-                    if not is_empty_provider and title_year_key in existing_title_year:
-                        continue  # 非空源：该季已被自身结果覆盖，避免重复
-
-                    all_results.append(supp_item)
-                    seen_results.add(unique_id)
-                    existing_title_year.add(title_year_key)
-                    added_count += 1
-                    supplemented_providers.add(prov)
-                    merged_supp.append(supp_item)
-                # 日志只展示实际合并进结果的补充项
-                filtered_supp = merged_supp
-
-                # 使用框框格式输出日志
-                _lines = ["-", f"┌─── 搜索补充源 ({added_count}个补充, {_supp_dur:.0f}ms) ───"]
-                _lines.append(f"  无结果的弹幕源: {sorted(empty_providers)}")
-                if filtered_supp:
-                    for supp_item in filtered_supp:
-                        _lines.append(f"  + [{supp_item.provider}] {supp_item.title}")
-                else:
-                    _lines.append(f"  (未获得任何补充结果)")
-                _lines.append(f"└─── 搜索补充源 ───")
-                mgr_logger.info("\n".join(_lines))
-
-                # 将补充源各项耗时追加到计时报告
-                if hasattr(self.metadata_manager, 'last_supplement_timing') and self.metadata_manager.last_supplement_timing:
-                    for s_name, s_dur, s_cnt in self.metadata_manager.last_supplement_timing:
-                        self.last_search_timing.append((f"补充:{s_name}", s_dur, s_cnt))
-                else:
-                    self.last_search_timing.append(("搜索补充源", _supp_dur, added_count))
-        except asyncio.CancelledError:
-            pending_tasks = [task for task in (supplement_task, filter_config_task) if task is not None]
-            for task in pending_tasks:
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(*pending_tasks, return_exceptions=True)
-            raise
-        except Exception as e:
-            mgr_logger.warning(f"搜索补充源调用失败: {e}", exc_info=True)
-
-        # 使用预加载的全局过滤配置（已与弹幕源并行加载完成）
-        cn_pattern_str, eng_pattern_str = await filter_config_task
-
-        # ========== 通用信息增强逻辑（补全缺失字段：年份、集数等）==========
-        # 在应用全局过滤前补全，保证过滤时信息完整
-        global_enrich_enabled = (await self.config_service.get("searchEnrichResults", "false")).lower() == "true"
-        if global_enrich_enabled and all_results:
-            enrich_limit = int(await self.config_service.get("searchEnrichLimit", "10"))
-            enrich_timeout = float(await self.config_service.get("searchEnrichTimeout", "5"))
-            enrich_fields_str = await self.config_service.get("searchEnrichFields", "year,episodeCount")
-            global_fields = [f.strip() for f in enrich_fields_str.split(",") if f.strip()]
-
-            if not global_fields:
-                mgr_logger.debug("[信息增强] 全局字段配置为空，跳过增强")
-            else:
-                # 按源分组
-                results_by_provider = defaultdict(list)
-                for item in all_results:
-                    results_by_provider[item.provider].append(item)
-
-                mgr_logger.info(f"[信息增强] 全局开关已开启，待增强字段: {', '.join(global_fields)}")
-
-                # 并行处理各源（每源独立超时）
-                async def enrich_provider(provider: str, results: list) -> None:
-                    """仅在该源整体搜索预算剩余时间内补齐字段。"""
-                    deadline = provider_deadlines.get(provider, search_started + 30.0)
-                    if deadline <= time.monotonic():
-                        return
-                    # 读取该源的开关
-                    source_enabled = (await self.config_service.get(f"scraper_{provider}_enrich_enabled", "false")).lower() == "true"
-                    if not source_enabled:
-                        mgr_logger.debug(f"[信息增强] 源 {provider} 未开启增强，跳过")
-                        return
-
-                    # 改为读取源类硬编码的 enrich_fields（不再继承全局配置）
-                    scraper = self.scrapers.get(provider)
-                    fields = getattr(scraper, 'enrich_fields', []) if scraper else []
-
-                    if not fields:
-                        mgr_logger.debug(f"[信息增强] 源 {provider} 未配置 enrich_fields，跳过")
-                        return
-
-                    # 只处理前 N 条
-                    to_enrich = results[:enrich_limit]
-
-                    # 筛选出需要增强的结果（至少有一个字段缺失）
-                    need_enrich = []
-                    for result in to_enrich:
-                        missing = []
-                        for f in fields:
-                            if f == "episodeCount" and result.episodeCount is None:
-                                missing.append(f)
-                            elif f == "year" and not result.year:
-                                missing.append(f)
-                            # 未来扩展：type, season 等
-                        if missing:
-                            need_enrich.append((result, missing))
-
-                    if not need_enrich:
-                        mgr_logger.debug(f"[信息增强] 源 {provider} 无需增强的结果，跳过")
-                        return
-
-                    mgr_logger.info(f"[信息增强] 源 {provider} 开始增强前 {len(need_enrich)} 条结果")
-
-                    # 获取 scraper 实例
-                    scraper = self.scrapers.get(provider)
-                    if not scraper:
-                        mgr_logger.warning(f"[信息增强] 源 {provider} 实例未找到，跳过")
-                        return
-
-                    # 逐条增强（每条独立超时）
-                    for result, missing_fields in need_enrich:
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0:
-                            mgr_logger.debug("[信息增强] %s 整体预算已耗尽，保留已有结果", provider)
-                            break
-                        try:
-                            await asyncio.wait_for(
-                                scraper.enrich_result(result, missing_fields),
-                                timeout=min(enrich_timeout, remaining)
-                            )
-                        except asyncio.TimeoutError:
-                            mgr_logger.warning(f"[信息增强] {provider}/{result.mediaId} 超时({enrich_timeout}s)")
-                        except Exception as e:
-                            mgr_logger.warning(f"[信息增强] {provider}/{result.mediaId} 失败: {e}")
-
-                async def bounded_enrich_provider(provider: str, results: list) -> None:
-                    """将整段增强约束于同一剩余预算，包括配置与每条请求。"""
-                    remaining = provider_deadlines.get(provider, search_started + 30.0) - time.monotonic()
-                    if remaining <= 0:
-                        return
-                    try:
-                        await asyncio.wait_for(enrich_provider(provider, results), timeout=remaining)
-                    except asyncio.TimeoutError:
-                        mgr_logger.debug("[信息增强] %s 整体预算耗尽，保留已有结果", provider)
-
-                # 各源仍并行，但不为增强阶段重新启动完整搜索超时。
-                await asyncio.gather(*[bounded_enrich_provider(p, items) for p, items in results_by_provider.items()], return_exceptions=True)
-
-                mgr_logger.info(f"[信息增强] 完成，共处理 {len(all_results)} 条结果")
-        # ========== 信息增强逻辑结束 ==========
-
-        cn_pattern = re.compile(cn_pattern_str, re.IGNORECASE) if cn_pattern_str else None
-        eng_pattern = re.compile(r'(\[|\【|\b)(' + eng_pattern_str + r')(\d{1,2})?(\s|_ALL)?(\]|\】|\b)', re.IGNORECASE) if eng_pattern_str else None
-
-        # 无黑名单时全部保留，但仍完成日志收尾与托管健康统计。
-        filtered_results = []
-        for item in all_results:
-            is_junk = False
-            if cn_pattern and cn_pattern.search(item.title):
-                is_junk = True
-            if not is_junk and eng_pattern and eng_pattern.search(item.title):
-                is_junk = True
-
-            if not is_junk:
-                filtered_results.append(item)
-
-        logging.getLogger(__name__).info(f"全局标题过滤: 从 {len(all_results)} 个结果中保留了 {len(filtered_results)} 个。")
-
-        # 确保各源日志块在返回结果（进而触发计时报告）之前全部输出完毕
-        # why：flush_task 在线程池里并行执行，此处 await 不阻塞事件循环，
-        # 仅等待线程写完日志，保证日志顺序：各源日志块 → 补充源日志 → 计时报告
-        await flush_task
-
-        # 异步更新弹幕源健康度统计
-        try:
-            async def update_health(_session: Any, progress_callback: Any) -> None:
-                """管理任务只经服务事务写统计，不使用任务附带的原始会话。"""
-                await progress_callback(5, "正在更新搜索源健康统计")
-                if not await self._update_health_stats(timed_results):
-                    raise TaskFailed("搜索源健康统计更新失败")
-                raise TaskSuccess("搜索源健康统计更新完成")
-
-            await get_task_manager().submit_task(
-                update_health, f"更新搜索源健康统计 {id(timed_results)}",
-                task_type="search_health_update", queue_type="management",
-            )
-        except Exception as exc:
-            mgr_logger.debug("健康统计任务提交失败，不影响搜索结果: %s", exc)
-
-
-        return filtered_results
-
     async def _update_health_stats(self, timed_results: List[tuple]) -> bool:
         """通过统一服务事务更新统计，返回成败以避免托管任务误报成功。"""
         try:
@@ -1191,129 +739,6 @@ class ScraperManager:
         except Exception as exc:
             logging.getLogger(__name__).debug("更新弹幕源健康统计失败: %s", exc)
             return False
-
-    @staticmethod
-    def parse_supplement_media_id(media_id: str) -> Optional[tuple]:
-        """解析补充源 mediaId 格式: sup_{补充源名}_{媒体ID}_{平台key}
-
-        Returns:
-            (supplement_source_name, original_media_id, platform_key) 或 None
-        """
-        if not media_id or not media_id.startswith("sup_"):
-            return None
-        # 媒体 ID 可能包含下划线，只拆固定前缀和末尾平台键。
-        supplement_name, separator, remainder = media_id[4:].partition("_")
-        original_media_id, platform_separator, platform_key = remainder.rpartition("_")
-        if separator and platform_separator and supplement_name and original_media_id and platform_key:
-            return (supplement_name, original_media_id, platform_key)
-        return None
-
-    async def get_episodes_routed(
-        self,
-        provider: str,
-        media_id: str,
-        db_media_type: Optional[str] = None,
-        target_episode_index: Optional[int] = None,
-        return_filtered: bool = False,
-    ):
-        """统一分集获取路由：自动识别补充源 mediaId 并路由到正确的数据源。
-
-        如果 media_id 以 'sup_' 开头，转给对应补充源的 get_episode_urls()；
-        否则走弹幕源的 get_episodes()。
-        """
-        logger = logging.getLogger(__name__)
-        parsed = self.parse_supplement_media_id(media_id)
-
-        if media_id.startswith("sup_") and not parsed:
-            raise ValueError(f"补充源媒体 ID 格式无效: {media_id}")
-        if parsed:
-            if not self.metadata_manager:
-                raise ValueError("补充源管理器不可用，无法重新解析补充源分集")
-            supplement_source_name, original_media_id, platform_key = parsed
-            logger.info(f"补充源路由: {media_id} -> 补充源={supplement_source_name}, 媒体ID={original_media_id}, 平台={platform_key}")
-
-            source = self.metadata_manager.sources.get(supplement_source_name)
-            # 包含过滤明细时，即使提前结束也保持二元组契约，避免调用方解包失败。
-            if not source:
-                logger.warning(f"补充源 '{supplement_source_name}' 不可用")
-                return ([], []) if return_filtered else []
-
-            # 调用补充源获取分集URL
-            episode_urls = await source.get_episode_urls(
-                original_media_id, target_provider=provider, target_platform=platform_key,
-            )
-            if not episode_urls:
-                logger.warning(f"补充源 '{supplement_source_name}' 未返回分集URL")
-                return ([], []) if return_filtered else []
-
-            logger.info(f"补充源 '{supplement_source_name}' 返回 {len(episode_urls)} 个分集URL")
-
-            # 尝试用弹幕源解析URL为分集信息
-            scraper = self.get_scraper(provider)
-            if not scraper:
-                logger.warning(f"补充源路由: 弹幕源 '{provider}' 不可用，无法将分集URL解析为原生ID")
-                return ([], []) if return_filtered else []
-            episodes = []
-            for idx, url in episode_urls:
-                if target_episode_index is not None and idx != target_episode_index:
-                    continue
-                try:
-                    raw_id = await scraper.get_id_from_url(url)
-                except Exception as e:
-                    # 解析异常：跳过该集，不塞 URL 制造必然取不到弹幕的假分集
-                    logger.warning(f"补充源分集URL解析异常，跳过第{idx}集: url={url}, 原因={e}")
-                    continue
-
-                if not raw_id:
-                    # 无法从 URL 解析出弹幕源原生ID：该集在此源下无法取弹幕，跳过
-                    logger.warning(f"补充源无法从URL解析出 {provider} 原生分集ID，跳过第{idx}集: url={url}")
-                    continue
-
-                # 归一化为 get_comments 可解析的字符串（如 mgtv 的 "cid,vid"）。
-                # get_id_from_url 可能返回 dict（mgtv={cid,vid}、bilibili={aid,cid}）或字符串，
-                # 统一经 format_episode_id_for_comments 转成 get_comments 期望的字符串格式。
-                episode_id = scraper.format_episode_id_for_comments(raw_id)
-                episodes.append(ProviderEpisodeInfo(
-                    provider=provider,
-                    episodeId=episode_id,
-                    title=f"第{idx}集",
-                    episodeIndex=idx,
-                    url=url
-                ))
-            # 汇总日志（单条解析细节已降级为 DEBUG，此处统一打印一条 INFO 汇总，避免刷屏）
-            logger.info(f"补充源URL解析完成: {provider} 成功解析 {len(episodes)}/{len(episode_urls)} 个分集为原生ID")
-            # 兜底全局分集标题过滤（统一收口，对所有调用路径生效）
-            return await apply_global_episode_title_filter(
-                episodes, self.config_service, provider, media_id,
-                return_filtered=return_filtered,
-            )
-        else:
-            # 普通弹幕源路径
-            scraper = self.get_scraper(provider)
-            if not scraper:
-                raise ValueError(f"弹幕源 '{provider}' 不可用")
-            episodes = await scraper.get_episodes(
-                media_id,
-                target_episode_index=target_episode_index,
-                db_media_type=db_media_type
-            )
-            # 弹幕源内部已完成自身黑名单过滤；编辑导入需要取回其过滤明细。
-            filtered_key = (provider, str(media_id))
-            source_filtered = list(getattr(scraper, '_last_logged_filtered_out', []))
-            scraper._last_logged_filtered_out = []
-            if source_filtered:
-                self._episode_filtered_details[filtered_key] = source_filtered
-            elif return_filtered:
-                source_filtered = list(self._episode_filtered_details.get(filtered_key, []))
-            # 兜底全局分集标题过滤（统一收口，对所有调用路径生效）
-            global_result = await apply_global_episode_title_filter(
-                episodes, self.config_service, provider, media_id,
-                return_filtered=return_filtered,
-            )
-            if not return_filtered:
-                return global_result
-            kept, global_filtered = global_result
-            return kept, [*source_filtered, *global_filtered]
 
     async def search_sequentially(self, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> Optional[tuple[str, List[ProviderSearchInfo]]]:
         """
@@ -1344,7 +769,7 @@ class ScraperManager:
 
     async def search(self, provider: str, keyword: str, episode_info: Optional[Dict[str, Any]] = None) -> List[ProviderSearchInfo]:
         """
-        在指定的搜索源上搜索，如果失败则尝试故障转移。
+        在指定的搜索源上搜索，错误保持空结果契约。
         """
         scraper = self.get_scraper(provider)
         try:
@@ -1352,15 +777,6 @@ class ScraperManager:
         except Exception as e:
             logging.getLogger(__name__).error(f"主搜索源 '{provider}' 搜索时发生错误: {e}", exc_info=True)
             results = []
-
-        # 如果主搜索源没有结果，则尝试故障转移
-        if not results and self.metadata_manager:
-            try:
-                failover_results = await self.metadata_manager.supplement_search_result(provider, keyword, episode_info)
-                if failover_results:
-                    return failover_results
-            except Exception as e:
-                logging.getLogger(__name__).error(f"搜索故障转移过程中发生错误: {e}", exc_info=True)
 
         return results
 

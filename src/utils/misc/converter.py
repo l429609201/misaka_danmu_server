@@ -31,7 +31,8 @@ def _get_converter(mode: str) -> OpenCC:
     
     if _converters[mode] is None:
         try:
-            _converters[mode] = OpenCC(f'{mode}.json')
+            # 使用 OpenCC 标准配置名，避免 Python 实现自动补后缀后变成 .json.json。
+            _converters[mode] = OpenCC(mode)
         except Exception as e:
             logger.error(f"创建 OpenCC 转换器失败 (mode={mode}): {e}", exc_info=True)
             raise

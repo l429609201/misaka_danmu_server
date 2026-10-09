@@ -12,8 +12,8 @@ import logging
 import time
 
 from src.notification.messages.base import NotificationMessage, RenderedMessage
-# 通知和工作流复用同一图片资源服务，保持缓存路径一致。
-from src.services.image_resource_service import save_public_thumbnail
+# 通知和检索共用图片资源流程，保持缓存路径一致。
+from src.workflows.image_resources import save_public_thumbnail
 
 
 # ═══════════════════════════════════════════
@@ -338,9 +338,11 @@ class BaseNotificationChannel(ABC):
         if not base:
             return ""
 
-        if image_url.startswith(f"{base}/data/images/"):
+        if image_url.startswith(f"{base}/data/images/") and not image_url.split("?", 1)[0].lower().endswith(".webp"):
             return image_url
 
+        if image_url.startswith(f"{base}/data/images/"):
+            image_url = image_url[len(base):]
         source = image_bytes or image_url
         if not source:
             return ""

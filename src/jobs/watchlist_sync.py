@@ -16,7 +16,8 @@ from sqlalchemy import select
 from src.db import orm_models
 from src.jobs.base import BaseJob
 from src.utils.diagnostics.task_exceptions import TaskSuccess
-from src.services.task_profiler import profile_flow, FLOW_WATCHLIST_SYNC
+from src.services.performance_service import profile_flow
+from src.schemas.performance import FLOW_WATCHLIST_SYNC
 
 logger = logging.getLogger(__name__)
 

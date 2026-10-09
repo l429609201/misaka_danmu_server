@@ -26,6 +26,7 @@ from src.core import get_config_schema
 from src.services.scraper_manager import ScraperManager
 from src.services.metadata_service import MetadataService
 from src.services.scheduler import SchedulerManager
+from src.workflows.scheduled_tasks import ScheduledTaskWorkflow
 from src.ai.ai_prompts import (
     DEFAULT_AI_MATCH_PROMPT,
     DEFAULT_AI_SEASON_MAPPING_PROMPT,
@@ -777,7 +778,7 @@ async def set_provider_settings(
             else:
                 enabled = (await config_service.get("bangumiDataSyncEnabled", "false")).lower() == "true"
             cron = settings.get("bangumiDataSyncCron") or await config_service.get("bangumiDataSyncCron", "0 4 * * *")
-            await scheduler_manager.sync_bangumi_data_schedule(enabled, cron)
+            await ScheduledTaskWorkflow(scheduler_manager, get_database_service()).sync_bangumi_data_schedule(enabled, cron)
         except Exception as e:
             logger.error(f"维护 bangumi-data 同步调度任务失败: {e}", exc_info=True)
 

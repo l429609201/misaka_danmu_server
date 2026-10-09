@@ -4,10 +4,11 @@
 """
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from src.services.database_service import DatabaseService
+from src.services.file_storage_service import FileStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ _metadata_service = None
 _rate_limiter = None
 
 _title_recognition_manager = None
+_title_recognition_service = None
 _file_storage_service = None
 
 
@@ -196,15 +198,28 @@ def get_rate_limiter():
 # AI 全局实例统一由 services.ai_service 提供，此处不保留第二套入口。
 
 
+def init_title_recognition_service(instance: object) -> None:
+    """注册标题规则持久化与缓存基础服务。"""
+    global _title_recognition_service
+    _title_recognition_service = instance
+
+
+def get_title_recognition_service() -> Any:
+    """获取标题规则基础服务，不引入上层 Workflow 依赖。"""
+    if _title_recognition_service is None:
+        raise RuntimeError("TitleRecognitionService 未初始化")
+    return _title_recognition_service
+
+
 def init_title_recognition_manager(instance):
-    """初始化 TitleRecognitionManager"""
+    """初始化标题识别 Workflow 执行对象"""
     global _title_recognition_manager
     _title_recognition_manager = instance
     logger.info("TitleRecognitionManager 已注册到服务容器")
 
 
 def get_title_recognition_manager():
-    """获取 TitleRecognitionManager"""
+    """获取标题识别 Workflow 执行对象"""
     if _title_recognition_manager is None:
         raise RuntimeError("TitleRecognitionManager 未初始化")
     return _title_recognition_manager
@@ -223,7 +238,6 @@ def get_file_storage_service():
     global _file_storage_service
 
     if _file_storage_service is None:
-        from src.services.file_storage_service import FileStorageService
         _file_storage_service = FileStorageService()
         logger.info("FileStorageService 已初始化（懒加载）")
 

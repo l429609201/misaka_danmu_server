@@ -1,6 +1,7 @@
 """自动导入的库内去重判定，不持有任务长会话。"""
 from typing import Any, Dict, Optional, Tuple
 
+from src.workflows.title_recognition_lookup import find_anime_with_recognition
 from src.services.service_container import get_database_service
 from src.utils.parsing.filename_parser import parse_episode_ranges
 
@@ -23,8 +24,8 @@ async def check_auto_import_library(
                 existing = await db.anime.find_by_metadata_id_and_season(column, search_term, season)
     if not existing:
         async with db.transaction():
-            existing = await db.anime.find_by_title_season_year_with_recognition(
-                main_title, season_for_check, year, recognition_manager, None,
+            existing = await find_anime_with_recognition(
+                db, main_title, season_for_check, year, recognition_manager, None,
             )
     if not existing:
         return None, None

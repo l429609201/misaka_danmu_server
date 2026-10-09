@@ -35,6 +35,7 @@ from src.services.scraper_manager import ScraperManager
 from src.services.task_manager import TaskManager
 from src.services.config_service import ConfigService
 from src.services.service_container import get_database_service
+from src.workflows.title_recognition_lookup import find_anime_with_recognition
 from src.workflows.search.result_cache import read_search_results
 from src.workflows.search.entry_flow import (
     search_control, SearchBusyError, SearchCacheUnavailableError,
@@ -50,6 +51,8 @@ from .dependencies import (
     get_title_recognition_manager,
     verify_api_key,
 )
+
+from src.workflows.supplement_episodes import get_episodes_routed
 
 logger = logging.getLogger(__name__)
 
@@ -167,9 +170,9 @@ async def auto_import(
                         detail=f"一个相似的任务在 {hours_ago:.1f} 小时前已被提交 (状态: {recent_task.status})。请在 {threshold_hours} 小时后重试。",
                     )
 
-                # 保留识别词查找行为，调用支持 manager/source 参数的完整接口。
-                existing_anime = await db.anime.find_by_title_season_year_with_recognition(
-                    searchTerm, season, None, title_recognition_manager, None
+                # 转换重试由 Workflow 编排，仓储只接收标题、季度和年份。
+                existing_anime = await find_anime_with_recognition(
+                    db, searchTerm, season, None, title_recognition_manager, None
                 )
                 if existing_anime and episode is None:
                     raise HTTPException(
@@ -414,7 +417,7 @@ async def get_episodes(
     item_to_fetch = cached_results[result_index]
 
     try:
-        result = await manager.get_episodes_routed(
+        result = await get_episodes_routed(manager,
             item_to_fetch.provider, item_to_fetch.mediaId,
             db_media_type=item_to_fetch.type,
             return_filtered=bool(includeFiltered)

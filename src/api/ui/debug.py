@@ -16,7 +16,7 @@ from src.schemas import auth as models
 from src.services.config_service import ConfigService
 from src.services.scraper_manager import ScraperManager
 from src.services.metadata_service import MetadataService
-from src.services.title_recognition import TitleRecognitionManager
+from src.workflows.title_recognition import TitleRecognitionWorkflow
 from src.utils.data_processing.name_converter import convert_to_chinese_title
 from src.utils import parse_search_keyword
 from src.services.ai_service import AIService
@@ -24,6 +24,9 @@ from src.api.dependencies import (
     get_scraper_manager, get_metadata_service, get_config_service,
     get_title_recognition_manager, get_ai_service,
 )
+
+from src.workflows.search.engine import search_all
+from src.workflows.search.ui_results import search_supplemental_sources
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/debug", tags=["调试工具"])
@@ -60,7 +63,7 @@ async def match_trace(
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     metadata_manager: MetadataService = Depends(get_metadata_service),
     config_service: ConfigService = Depends(get_config_service),
-    title_recognition_manager: TitleRecognitionManager = Depends(get_title_recognition_manager),
+    title_recognition_manager: TitleRecognitionWorkflow = Depends(get_title_recognition_manager),
     ai_service: AIService = Depends(get_ai_service),
 ):
     """
@@ -152,7 +155,7 @@ async def match_trace(
     search_results = []
     source_timings = []
     try:
-        search_results = await scraper_manager.search_all(
+        search_results = await search_all(scraper_manager,
             [search_title], max_results_per_source=10
         )
         # 收集各源耗时
@@ -190,7 +193,7 @@ async def match_trace(
 
         if has_aux:
             user_obj = models.User(id=0, username="debug")
-            aliases, supp_results, aux_map, alias_sources = await metadata_manager.search_supplemental_sources(
+            aliases, supp_results, aux_map, alias_sources = await search_supplemental_sources(metadata_manager,
                 search_title, user_obj
             )
             steps.append(TraceStep(

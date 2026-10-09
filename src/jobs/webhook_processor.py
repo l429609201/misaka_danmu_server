@@ -5,7 +5,8 @@ from typing import Callable
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseJob
-from src.services.task_profiler import profile_flow, FLOW_WEBHOOK_PROCESSOR
+from src.services.performance_service import profile_flow
+from src.schemas.performance import FLOW_WEBHOOK_PROCESSOR
 from src.workflows.webhook_dispatch import WebhookDispatchContext, dispatch_due_webhooks
 
 

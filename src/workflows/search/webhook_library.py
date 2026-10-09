@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.workflows.title_recognition_lookup import find_anime_with_recognition
 from src.services.service_container import get_database_service
 
 logger = logging.getLogger(__name__)
@@ -20,8 +21,8 @@ async def find_webhook_favorite(
     )
     # 不以单集放映年份限制作品查询，也不回退识别规则变更前的输入。
     async with get_database_service().transaction(session) as db:
-        anime = await db.anime.find_by_title_season_year_with_recognition(
-            title, season, None, recognition_manager, source=None,
+        anime = await find_anime_with_recognition(
+            db, title, season, None, recognition_manager, source=None,
         )
         if not anime:
             return None, year

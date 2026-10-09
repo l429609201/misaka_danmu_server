@@ -17,6 +17,8 @@
 import logging
 from typing import Any, List, Optional
 
+from src.workflows.supplement_episodes import get_episodes_routed
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,7 +58,7 @@ async def validate_candidates_with_fallback(
                 continue
 
             # 获取分集列表进行验证
-            episodes = await scraper_manager.get_episodes_routed(
+            episodes = await get_episodes_routed(scraper_manager,
                 candidate.provider, candidate.mediaId, db_media_type=candidate.type
             )
             if not episodes:

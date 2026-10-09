@@ -8,6 +8,8 @@ from src.notification.base import ChannelCapability, CommandResult
 from src.utils.misc.poster_collage import build_poster_collage
 from src.workflows.search import unified_search
 
+from src.workflows.supplement_episodes import get_episodes_routed
+
 logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 5
@@ -476,7 +478,7 @@ class SearchMenuMixin:
         if not self.scraper_manager:
             return CommandResult(text="", answer_callback_text="搜索服务未就绪")
         try:
-            episodes = await self.scraper_manager.get_episodes_routed(provider, media_id, db_media_type=item.get("type"))
+            episodes = await get_episodes_routed(self.scraper_manager, provider, media_id, db_media_type=item.get("type"))
             if not episodes:
                 return CommandResult(text="", answer_callback_text="未获取到分集列表")
             ep_list = []

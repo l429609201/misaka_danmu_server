@@ -59,7 +59,7 @@ async def handle_webhook(
                 ai_service=state.ai_service,
                 rate_limiter=state.rate_limiter,
                 title_recognition_manager=state.title_recognition_manager,
-                notification_service=state.notification_service,
+                notification_service=state.notification_workflow,
             ),
         )
     except UnknownWebhookTypeError as e:

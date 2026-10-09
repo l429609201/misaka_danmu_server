@@ -6,6 +6,8 @@ from src.schemas import User
 from src.services.service_container import get_database_service
 from src.utils.data_processing.name_converter import convert_to_chinese_title
 
+from src.workflows.search.ui_results import search_supplemental_sources
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +24,7 @@ async def prepare_auto_import_search(
                 admin = await db.user.get_by_username("admin")
                 user = User.model_validate(admin, from_attributes=True) if admin else None
             if user:
-                supplemental, _, _, _ = await metadata_manager.search_supplemental_sources(main_title, user)
+                supplemental, _, _, _ = await search_supplemental_sources(metadata_manager, main_title, user)
                 aliases.update(supplemental)
             else:
                 logger.warning("未找到admin用户，跳过元数据源辅助搜索")

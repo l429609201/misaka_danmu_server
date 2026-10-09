@@ -7,8 +7,10 @@ from .base import BaseJob
 from src.services.service_container import get_database_service
 # 任务成功信号需在运行时 raise，必须真实导入
 from src.services.task_manager import TaskSuccess
-from src.services.task_profiler import profile_flow, FLOW_FILL_MISSING_EPISODES
+from src.services.performance_service import profile_flow
+from src.schemas.performance import FLOW_FILL_MISSING_EPISODES
 from src.tasks.refresh import fill_missing_task
+from src.workflows.supplement_episodes import get_episodes_routed
 
 
 class FillMissingEpisodesJob(BaseJob):
@@ -111,7 +113,7 @@ class FillMissingEpisodesJob(BaseJob):
                     continue
 
                 # 已存储的补充源标识也必须经过统一路由，不能当成原生媒体 ID。
-                remote_episodes = await self.scraper_manager.get_episodes_routed(provider_name, media_id)
+                remote_episodes = await get_episodes_routed(self.scraper_manager, provider_name, media_id)
                 if not remote_episodes:
                     continue
 

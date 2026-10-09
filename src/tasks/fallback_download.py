@@ -43,7 +43,7 @@ async def match_fallback_download_task(
         fallback_episode_cache_key: 待清理的 fallback_search 旧缓存键（不含前缀）
 
     依赖 scraper_manager/rate_limiter/config_service 由提交入口通过 coro_factory 注入；
-    恢复场景由 TaskManager 重建 coro_factory 时从 _recovery_dependencies 注入。
+    恢复场景由上层 TaskRecoveryResolver 重建 coro_factory 并注入执行依赖。
 
     Returns:
         str: 任务完成消息

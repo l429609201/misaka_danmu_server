@@ -3,25 +3,48 @@
 import io
 from urllib.parse import urlparse
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 PUBLIC_THUMBNAIL_WIDTH = 500
 
 
-def encode_thumbnail(raw: bytes, width: int = PUBLIC_THUMBNAIL_WIDTH) -> bytes:
-    """将内存图片等比缩小为 JPEG；由调用方安排线程执行。"""
-    if width <= 0:
-        raise ValueError("缩略图宽度必须为正数")
+def encode_webp(raw: bytes, quality: int = 85) -> bytes:
+    """将海报内存编码为静态 WebP，保留透明通道并校正 EXIF 方向。"""
     with Image.open(io.BytesIO(raw)) as source:
-        # 透明通道和调色板模式无法直接保存为 JPEG，统一转为 RGB。
-        image = source.convert("RGB")
-        if image.width > width:
+        image = ImageOps.exif_transpose(source).convert("RGBA")
+        with io.BytesIO() as output:
+            image.save(output, format="WEBP", quality=quality, method=4)
+            return output.getvalue()
+
+
+def encode_notification_image(raw: bytes, width: int | None = None) -> tuple[bytes, str, str]:
+    """将通知海报编码为兼容 JPEG/PNG，并返回字节、后缀及 MIME。"""
+    if width is not None and width <= 0:
+        raise ValueError("图片宽度必须为正数")
+    with Image.open(io.BytesIO(raw)) as source:
+        image = ImageOps.exif_transpose(source)
+        use_png = source.format == "PNG" and width is None
+        if use_png:
+            image = image.convert("RGBA")
+        else:
+            rgba = image.convert("RGBA")
+            image = Image.new("RGB", rgba.size, "white")
+            image.paste(rgba, mask=rgba.getchannel("A"))
+        if width is not None and image.width > width:
             height = max(1, round(image.height * width / image.width))
             image = image.resize((width, height), Image.Resampling.LANCZOS)
         with io.BytesIO() as output:
+            if use_png:
+                image.save(output, format="PNG", optimize=True)
+                return output.getvalue(), ".png", "image/png"
             image.save(output, format="JPEG", quality=85, optimize=True)
-            return output.getvalue()
+            return output.getvalue(), ".jpg", "image/jpeg"
+
+
+def encode_thumbnail(raw: bytes, width: int = PUBLIC_THUMBNAIL_WIDTH) -> bytes:
+    """将内存图片等比缩小为 JPEG；由调用方安排线程执行。"""
+    return encode_notification_image(raw, width)[0]
 
 
 def normalize_image_url(url: str) -> str:

@@ -64,6 +64,8 @@ class EditedImportRequest(BaseModel):
     imdbId: Optional[str] = None
     doubanId: Optional[str] = None
     bangumiId: Optional[str] = None
+    # 与控制 API 的编辑请求一致，未指定剧集组时保持原导入行为。
+    tmdbEpisodeGroupId: Optional[str] = None
 
 
 class ControlAutoImportRequest(BaseModel):

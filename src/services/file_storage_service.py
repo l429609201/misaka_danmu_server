@@ -135,6 +135,16 @@ class FileStorageService:
         return h.hexdigest()
 
     @staticmethod
+    def resource_resolve(path: Path) -> Path:
+        """解析真实路径，供调用方校验资源边界。"""
+        return path.resolve()
+
+    @staticmethod
+    def is_symlink(path: Path) -> bool:
+        """检查符号链接，供资源扫描拒绝跟随链接。"""
+        return path.is_symlink()
+
+    @staticmethod
     def resource_exists(path: Path) -> bool:
         """检查路径存在性。"""
         return path.exists()

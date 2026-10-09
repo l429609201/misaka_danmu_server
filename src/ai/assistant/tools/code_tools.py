@@ -2,49 +2,49 @@
 
 from typing import Any, Awaitable, Callable
 
-from src.services.assistant_code_service import get_assistant_code_service
+from src.workflows.assistant_code import get_assistant_code_workflow
 from src.ai.assistant.security_gateway import ToolPermission
 from .base import Tool, registry
 
 
 async def _capabilities(arguments: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     """检查源码能力与隔离验证后端真实状态。"""
-    return await get_assistant_code_service().capabilities(context)
+    return await get_assistant_code_workflow().capabilities(context)
 
 
 async def _search(arguments: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     """窄范围搜索源码与路径。"""
-    return await get_assistant_code_service().search(arguments['query'], context, arguments.get('prefix', ''))
+    return await get_assistant_code_workflow().search(arguments['query'], context, arguments.get('prefix', ''))
 
 
 async def _read(arguments: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     """读取源码片段及冲突检测哈希。"""
-    return await get_assistant_code_service().read(arguments['path'], arguments.get('start_line', 1), context)
+    return await get_assistant_code_workflow().read(arguments['path'], arguments.get('start_line', 1), context)
 
 
 async def _prepare(arguments: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     """只准备隔离草稿，不写真实项目。"""
-    return await get_assistant_code_service().prepare(arguments['changes'], context)
+    return await get_assistant_code_workflow().prepare(arguments['changes'], context)
 
 
 async def _validate(arguments: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     """验证只能在通过宿主检查的容器中执行。"""
-    return await get_assistant_code_service().validate(arguments['draft_id'], arguments['profile'], context)
+    return await get_assistant_code_workflow().validate(arguments['draft_id'], arguments['profile'], context)
 
 
 async def _apply(arguments: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     """当前管理员修复授权或确认端点提供单次授权后应用补丁。"""
-    return await get_assistant_code_service().apply(arguments['draft_id'], context)
+    return await get_assistant_code_workflow().apply(arguments['draft_id'], context)
 
 
 async def _rollback(arguments: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     """当前管理员修复授权或独立确认后恢复未产生后续变更的补丁。"""
-    return await get_assistant_code_service().rollback(arguments['draft_id'], context)
+    return await get_assistant_code_workflow().rollback(arguments['draft_id'], context)
 
 
 async def _preview(arguments: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     """重新读取服务端草稿状态，不接受模型提供的验证状态。"""
-    return get_assistant_code_service().preview(arguments['draft_id'], context)
+    return get_assistant_code_workflow().preview(arguments['draft_id'], context)
 
 
 def _safe_executor(executor: Callable[..., Awaitable[dict[str, Any]]]) -> Callable[..., Awaitable[dict[str, Any]]]:

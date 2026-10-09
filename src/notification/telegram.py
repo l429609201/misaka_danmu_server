@@ -27,6 +27,8 @@ from src.notification.base import (
 from src.notification.markdown_converter import (
     markdown_to_v2, strip_markdown, escape_v2,
 )
+from src.workflows.image_resources import load_image_bytes
+from src.utils.misc.image_processing import encode_notification_image
 
 logger = logging.getLogger(__name__)
 bot_raw_logger = logging.getLogger("bot_raw")
@@ -1064,8 +1066,7 @@ class TelegramChannel(BaseNotificationChannel):
 
         sent = None
         try:
-            photo = io.BytesIO(result.image_bytes)
-            photo.name = "poster.png"
+            photo = await self._prepare_photo(result.image_bytes)
             sent = await asyncio.to_thread(
                 self._bot.send_photo, chat_id, photo,
                 caption=caption, reply_markup=markup,
@@ -1076,8 +1077,7 @@ class TelegramChannel(BaseNotificationChannel):
             if "can't parse entities" in err_str:
                 # caption 解析失败：去掉 parse_mode 重发
                 try:
-                    photo = io.BytesIO(result.image_bytes)
-                    photo.name = "poster.png"
+                    photo = await self._prepare_photo(result.image_bytes)
                     sent = await asyncio.to_thread(
                         self._bot.send_photo, chat_id, photo,
                         caption=caption, reply_markup=markup,
@@ -1161,10 +1161,16 @@ class TelegramChannel(BaseNotificationChannel):
                     self._log_raw("⬆ 发送图文消息", {"chat_id": chat_id, "photo": cover_url, "text": result.text[:200]})
                     caption_text = result.text[:1024] if len(result.text) > 1024 else result.text
                     try:
+                        photo = cover_url
+                        if cover_url.startswith(("/data/images/", "file://")) or cover_url.split("?", 1)[0].lower().endswith(".webp"):
+                            raw = await load_image_bytes(cover_url)
+                            if not raw:
+                                raise ValueError("海报读取失败")
+                            photo = await self._prepare_photo(raw)
                         sent = await asyncio.to_thread(
                             self._bot.send_photo,
                             chat_id,
-                            cover_url,
+                            photo,
                             caption=caption_text,
                             reply_markup=markup,
                             parse_mode=parse_mode,
@@ -1268,6 +1274,13 @@ class TelegramChannel(BaseNotificationChannel):
         self._bot = None
         self.logger.info("Telegram 渠道已停止")
 
+    async def _prepare_photo(self, raw: bytes) -> io.BytesIO:
+        """在线程中编码海报并构建带真实后缀的 multipart 文件。"""
+        data, suffix, _ = await asyncio.to_thread(encode_notification_image, raw)
+        photo = io.BytesIO(data)
+        photo.name = f"poster{suffix}"
+        return photo
+
     async def send_message(self, title: str, text: str, **kwargs):
         if not self._bot:
             return
@@ -1278,6 +1291,10 @@ class TelegramChannel(BaseNotificationChannel):
         image: str = kwargs.get("image", "") or ""
         # image_bytes：聚合海报 PNG 字节（如后备搜索九宫格），优先级高于单图 URL
         image_bytes: Optional[bytes] = kwargs.get("image_bytes")
+        # 本地 web 路径不是 Telegram file_id；WebP 海报也必须作为兼容字节上传。
+        if image and (image.startswith(("/data/images/", "file://")) or image.split("?", 1)[0].lower().endswith(".webp")):
+            image_bytes = image_bytes or await load_image_bytes(image)
+            image = ""
 
         # ── 正文格式约定 ──
         # 入参 text 一律是**标准 Markdown**（由 to_markdown / render_progress_text
@@ -1304,8 +1321,7 @@ class TelegramChannel(BaseNotificationChannel):
         if kwargs.get("image_separate") and (image or image_bytes) and not edit_message_id:
             try:
                 if image_bytes:
-                    _photo = io.BytesIO(image_bytes)
-                    _photo.name = "poster.png"
+                    _photo = await self._prepare_photo(image_bytes)
                     await asyncio.to_thread(self._bot.send_photo, chat_id, _photo)
                 else:
                     await asyncio.to_thread(self._bot.send_photo, chat_id, image)
@@ -1353,8 +1369,7 @@ class TelegramChannel(BaseNotificationChannel):
                     except Exception as del_err:
                         self.logger.debug(f"删除旧进度消息失败（忽略）: {del_err}")
                 try:
-                    photo = io.BytesIO(image_bytes)
-                    photo.name = "poster.png"
+                    photo = await self._prepare_photo(image_bytes)
                     sent = await asyncio.to_thread(
                         self._bot.send_photo, chat_id, photo, caption=caption,
                         parse_mode="MarkdownV2", reply_markup=markup,
@@ -1363,8 +1378,7 @@ class TelegramChannel(BaseNotificationChannel):
                     photo_err_str = str(photo_err).lower()
                     if "can't parse entities" in photo_err_str:
                         self.logger.warning(f"send_photo(bytes) MarkdownV2 解析失败，降级纯文本caption: {photo_err}")
-                        photo = io.BytesIO(image_bytes)
-                        photo.name = "poster.png"
+                        photo = await self._prepare_photo(image_bytes)
                         sent = await asyncio.to_thread(
                             self._bot.send_photo, chat_id, photo,
                             caption=plain_caption, reply_markup=markup,

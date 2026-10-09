@@ -3,15 +3,16 @@ import logging
 from typing import Callable, Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.schemas import EditImportRequest
+from src.schemas.import_schemas import EditedImportRequest
 from src.rate_limiter import RateLimiter, RateLimitExceededError
 from src.services.scraper_manager import ScraperManager
 from src.services.task_manager import TaskManager
 from src.utils.diagnostics.task_exceptions import TaskSuccess, TaskPauseForRateLimit, TaskFailed
-from src.services.title_recognition import TitleRecognitionManager
+from src.workflows.title_recognition import TitleRecognitionWorkflow
 from src.services.config_service import ConfigService
 from src.services.metadata_service import MetadataService
-from src.services.task_profiler import TaskProfiler, FLOW_GENERIC_IMPORT
+from src.services.performance_service import TaskProfiler
+from src.schemas.performance import FLOW_GENERIC_IMPORT
 # 任务仅依赖编排入口，不再直接承担身份创建和故障转移保存。
 from src.workflows.edited_import_execution import execute_edited_import
 from src.workflows.episode_import import import_episodes_iteratively
@@ -45,7 +46,7 @@ async def generic_import_task(
     manager: ScraperManager,
     task_manager: TaskManager,
     rate_limiter: RateLimiter,
-    title_recognition_manager: TitleRecognitionManager,
+    title_recognition_manager: TitleRecognitionWorkflow,
     # 元数据 ID 参数（可选，带默认值）
     doubanId: Optional[str] = None,
     tmdbId: Optional[str] = None,
@@ -224,13 +225,13 @@ async def generic_import_task(
 
 
 async def edited_import_task(
-    request_data: "EditImportRequest",
+    request_data: EditedImportRequest,
     progress_callback: Callable,
     session: AsyncSession,
     config_service: ConfigService,
     manager: ScraperManager,
     rate_limiter: RateLimiter,
-    title_recognition_manager: TitleRecognitionManager
+    title_recognition_manager: TitleRecognitionWorkflow
 ) -> None:
     """后台任务：处理编辑后的导入请求，业务准备由 Workflow 承接。"""
     profiler = TaskProfiler(FLOW_GENERIC_IMPORT)

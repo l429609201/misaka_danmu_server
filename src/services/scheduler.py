@@ -21,35 +21,12 @@ from .metadata_service import MetadataService
 
 logger = logging.getLogger(__name__)
 
-def cron_is_valid(cron: str, min_hours: int) -> bool:
-    """
-    一个简单的CRON表达式验证器，用于检查轮询间隔是否满足最小小时数。
-    注意：这是一个非常简化的检查，只处理常见的 '*/X' 小时格式。
-    """
-    try:
-        parts = cron.split()
-        if len(parts) != 5:
-            # 不支持带秒或年的格式，但允许它通过，因为这可能是高级用法
-            return True
-
-        hour_part = parts[1]
-
-        # Case 1: '*/X' - every X hours
-        if hour_part.startswith('*/'):
-            interval = int(hour_part[2:])
-            if interval < min_hours:
-                return False
-        elif hour_part == '*': # every hour
-            return False
-    except (ValueError, IndexError): return False
-    return True
-
 # --- Scheduler Manager ---
 
 class SchedulerManager:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: TaskManager, scraper_manager: ScraperManager, rate_limiter: RateLimiter, metadata_manager: MetadataService, config_service, ai_service: AIService, title_recognition_manager=None, *, job_base_class: Type[Any], job_classes: Sequence[Type[Any]]) -> None:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], task_manager: TaskManager, scraper_manager: ScraperManager, rate_limiter: RateLimiter, metadata_manager: MetadataService, config_service, ai_service: AIService, title_recognition_manager=None, *, job_base_class: Type[Any], job_classes: Sequence[Type[Any]], database_service: DatabaseService) -> None:
         self._session_factory = session_factory
-        self._db = DatabaseService(session_factory)
+        self._db = database_service
         self.task_manager = task_manager
         self.scraper_manager = scraper_manager
         self.rate_limiter = rate_limiter
@@ -199,37 +176,7 @@ class SchedulerManager:
         if job_type not in self._job_classes:
             raise ValueError(f"未知的任务类型: {job_type}")
         
-        # 确保增量更新任务的轮询间隔不低于3小时
-        if job_type == "incrementalRefresh" and not cron_is_valid(cron, 3):
-            raise ValueError("定时增量更新任务的轮询间隔不得低于3小时。请使用如 '0 */3 * * *' (每3小时) 或更长的间隔。")
-
-        # 确保刷新最新集弹幕任务的轮询间隔不低于3小时
-        if job_type == "refreshLatestEpisode" and not cron_is_valid(cron, 3):
-            raise ValueError("刷新最新集弹幕任务的轮询间隔不得低于3小时。请使用如 '0 */3 * * *' (每3小时) 或更长的间隔。")
-
-        # 确保某些任务类型只能创建一个
         async with self._db.transaction():
-            if job_type == "incrementalRefresh":
-                exists = await self._db.scheduled_task.check_scheduled_task_exists_by_type("incrementalRefresh")
-                if exists:
-                    raise ValueError("定时追更任务已存在，无法重复创建。")
-            elif job_type == "refreshLatestEpisode":
-                exists = await self._db.scheduled_task.check_scheduled_task_exists_by_type("refreshLatestEpisode")
-                if exists:
-                    raise ValueError("刷新最新集弹幕任务已存在，无法重复创建。")
-            elif job_type == "tmdbAutoMap":
-                exists = await self._db.scheduled_task.check_scheduled_task_exists_by_type("tmdbAutoMap")
-                if exists:
-                    raise ValueError("TMDB自动映射与更新任务已存在，无法重复创建。")
-            elif job_type == "webhookProcessor":
-                exists = await self._db.scheduled_task.check_scheduled_task_exists_by_type("webhookProcessor")
-                if exists:
-                    raise ValueError("Webhook 延时任务处理器已存在，无法重复创建。")
-            elif job_type == "autoFinish":
-                exists = await self._db.scheduled_task.check_scheduled_task_exists_by_type("autoFinish")
-                if exists:
-                    raise ValueError("追更自动完结任务已存在，无法重复创建。")
-
             task_id = str(uuid4())
             await self._db.scheduled_task.create_scheduled_task(task_id, name, job_type, cron, is_enabled, task_config)
             runner = self._create_job_runner(job_type, task_id)
@@ -243,10 +190,6 @@ class SchedulerManager:
         async with self._db.transaction():
             task_info = await self._db.scheduled_task.get_scheduled_task(task_id)
             if not task_info: return None
-
-            # 确保增量更新任务的轮询间隔不低于3小时
-            if task_info['jobType'] == "incrementalRefresh" and not cron_is_valid(cron, 3):
-                raise ValueError("定时增量更新任务的轮询间隔不得低于3小时。请使用如 '0 */3 * * *' (每3小时) 或更长的间隔。")
 
             # 获取APScheduler中的job对象
             job = self.scheduler.get_job(task_id)
@@ -264,26 +207,6 @@ class SchedulerManager:
             await self._db.scheduled_task.update_scheduled_task(task_id, name, cron, is_enabled, task_config)
             await self._db.scheduled_task.update_scheduled_task_run_times(task_id, task_info['lastRunAt'], next_run_time)
             return await self._db.scheduled_task.get_scheduled_task(task_id)
-
-    async def sync_bangumi_data_schedule(self, enabled: bool, cron: str) -> None:
-        """方案甲：根据 Bangumi 源配置中的「开关 + cron」，自动维护 bangumiDataSync 调度任务。
-
-        - enabled=True：不存在则创建，存在则更新 cron 并启用
-        - enabled=False：存在则禁用（保留记录，不删除），不存在则不处理
-        由 set_provider_settings 在保存 Bangumi 配置时调用。
-        """
-        job_type = "bangumiDataSync"
-        name = "bangumi-data 离线索引同步"
-        cron = (cron or "").strip() or "0 4 * * *"  # 默认每天 4:00
-        async with self._db.transaction():
-            existing_id = await self._db.scheduled_task.get_scheduled_task_id_by_type(job_type)
-
-        if existing_id:
-            await self.update_task(existing_id, name, cron, enabled)
-            logger.info(f"已更新 bangumi-data 同步调度任务: enabled={enabled}, cron='{cron}'")
-        elif enabled:
-            await self.add_task(name, job_type, cron, True)
-            logger.info(f"已创建 bangumi-data 同步调度任务: cron='{cron}'")
 
     async def delete_task(self, task_id: str) -> bool:
         async with self._db.transaction():

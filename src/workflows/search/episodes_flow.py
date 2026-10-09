@@ -3,15 +3,14 @@
 """
 
 import logging
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 # 🚀 新架构：从 workflow 层导入 search_implementation
 from src.workflows.search.fallback_search import search_implementation
 from src.services.scraper_manager import ScraperManager
 from src.services.config_service import ConfigService
 
-if TYPE_CHECKING:
-    from src.rate_limiter import RateLimiter
+from src.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 

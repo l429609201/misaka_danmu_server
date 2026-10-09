@@ -8,6 +8,7 @@ import logging
 import re
 from src.notification.base import CommandResult
 from src.services.service_container import get_database_service
+from src.workflows.scheduled_tasks import ScheduledTaskWorkflow
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +206,7 @@ class TasksMenuMixin:
             if not task_info:
                 return CommandResult(text="", answer_callback_text="任务不存在")
             new_enabled = not task_info.get("isEnabled", False)
-            await self.scheduler_manager.update_task(
+            await ScheduledTaskWorkflow(self.scheduler_manager, get_database_service()).update_task(
                 task_id,
                 name=task_info["name"],
                 cron=task_info["cronExpression"],
@@ -356,7 +357,7 @@ class TasksMenuMixin:
         job_name = conv.data.get("job_name", job_type)
         self.clear_conversation(user_id)
         try:
-            await self.scheduler_manager.add_task(
+            await ScheduledTaskWorkflow(self.scheduler_manager, get_database_service()).add_task(
                 name=job_name, job_type=job_type,
                 cron=cron, is_enabled=True,
             )
@@ -376,7 +377,7 @@ class TasksMenuMixin:
         cron = text.strip()
         self.clear_conversation(user_id)
         try:
-            await self.scheduler_manager.add_task(
+            await ScheduledTaskWorkflow(self.scheduler_manager, get_database_service()).add_task(
                 name=job_name, job_type=job_type,
                 cron=cron, is_enabled=True,
             )

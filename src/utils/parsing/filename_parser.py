@@ -16,6 +16,17 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def parse_supplement_media_id(media_id: str) -> Optional[tuple[str, str, str]]:
+    """解析补充源坐标，原始媒体标识中的下划线必须保留。"""
+    if not media_id or not media_id.startswith("sup_"):
+        return None
+    source, separator, remainder = media_id[4:].partition("_")
+    original_id, platform_separator, platform = remainder.rpartition("_")
+    if separator and platform_separator and source and original_id and platform:
+        return source, original_id, platform
+    return None
+
+
 # ============================================================================
 # 数据结构
 # ============================================================================

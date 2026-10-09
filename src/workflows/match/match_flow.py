@@ -57,6 +57,8 @@ from src.workflows.search.engine import unified_search
 
 from src.workflows.dandan.helpers import get_next_virtual_anime_id
 
+from src.workflows.supplement_episodes import get_episodes_routed
+
 logger = logging.getLogger(__name__)
 
 
@@ -947,7 +949,7 @@ async def get_match_for_item(
                     # 并行获取分集列表
                     async def _fetch_episodes(candidate):
                         try:
-                            eps = await scraper_manager.get_episodes_routed(
+                            eps = await get_episodes_routed(scraper_manager,
                                 candidate.provider, candidate.mediaId, db_media_type=candidate.type
                             )
                             return candidate, eps
@@ -974,7 +976,7 @@ async def get_match_for_item(
                             episodes = episodes_cache[cache_key]
                         else:
                             try:
-                                episodes = await scraper_manager.get_episodes_routed(
+                                episodes = await get_episodes_routed(scraper_manager,
                                     candidate.provider, candidate.mediaId, db_media_type=candidate.type
                                 )
                                 episodes_cache[cache_key] = episodes
@@ -1033,7 +1035,7 @@ async def get_match_for_item(
                         cache_key = f"{best_match.provider}:{best_match.mediaId}"
                         episodes = episodes_cache.get(cache_key) if episodes_cache else None
                         if episodes is None:
-                            episodes = await scraper_manager.get_episodes_routed(best_match.provider, best_match.mediaId, db_media_type=best_match.type)
+                            episodes = await get_episodes_routed(scraper_manager, best_match.provider, best_match.mediaId, db_media_type=best_match.type)
                         if episodes:
                             for ep in episodes:
                                 if ep.episodeIndex == source_episode_number:

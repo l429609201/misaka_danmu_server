@@ -12,7 +12,7 @@ why: 识别词配置（title_recognition 表）此前没有 Repository 承接，
 import logging
 from typing import Any, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from ..orm_models import TitleRecognition
 from .base import BaseRepository
@@ -85,6 +85,11 @@ class TitleRecognitionRepository(BaseRepository[TitleRecognition]):
         recognition.content = content
         await self._session.flush()
         return recognition
+
+    async def replace_content(self, content: str) -> TitleRecognition:
+        """全量替换单记录配置，仅 flush，提交交给 DatabaseService。"""
+        await self._session.execute(delete(TitleRecognition))
+        return await self.create(content)
 
     async def delete(self, id: Any) -> bool:
         """按主键删除识别词记录。"""

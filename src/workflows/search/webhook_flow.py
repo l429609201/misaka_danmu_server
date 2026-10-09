@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.services.task_profiler import TaskProfiler
+from src.services.performance_service import TaskProfiler
 from src.utils import SearchTimer
 from src.utils.diagnostics.search_timer import SubStepTiming
 from src.workflows.search.ai_correction import correct_search_results

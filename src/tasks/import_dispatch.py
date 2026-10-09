@@ -194,7 +194,7 @@ async def submit_fallback_download(
     task_title = f"后备下载 {anime_title} S{season}E{episode_index}"
 
     # 通过注册处理器消除对任务包的反向依赖，并显式注入配置服务。
-    deps = task_manager._recovery_dependencies or {}
+    deps = task_manager.get_execution_dependencies()
     coro_factory = task_manager.build_task_coro_factory(
         "refresh_episode",
         episodeId=episode_id,
@@ -243,7 +243,7 @@ async def submit_match_fallback_download(
     与 submit_fallback_download（A类：已入库单集补弹幕，走 refresh_episode_task）不同，
     本入口对应 comments.py 的匹配后备闭包逻辑：下载→冷启动建库→入库→写3种缓存。
 
-    依赖注入：从 task_manager._recovery_dependencies 取 scraper_manager/rate_limiter，
+    依赖注入：从 task_manager.get_execution_dependencies() 取 scraper_manager/rate_limiter，
     从 task_manager.config_service 取 config_service，通过 coro_factory 注入到任务函数。
     task_parameters 只存可序列化参数，供任务恢复时由 _rebuild_coro_factory 重建。
 
@@ -267,7 +267,7 @@ async def submit_match_fallback_download(
 
     # 动态导入避免循环依赖
 
-    deps = task_manager._recovery_dependencies or {}
+    deps = task_manager.get_execution_dependencies()
     scraper_manager = deps.get("scraper_manager")
     rate_limiter = deps.get("rate_limiter")
     config_service = getattr(task_manager, "config_service", None)
@@ -387,7 +387,7 @@ async def submit_import_task(
         task_title = f"导入 {anime_title} S{season or 1}{episodes_desc}"
 
     # 按注册名称构建工厂，派发模块不再通过任务包查找通用导入实现。
-    deps = task_manager._recovery_dependencies or {}
+    deps = task_manager.get_execution_dependencies()
     coro_factory = task_manager.build_task_coro_factory(
         "generic_import",
         provider=task_parameters.get("provider"),

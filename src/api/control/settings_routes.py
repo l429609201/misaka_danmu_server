@@ -8,7 +8,7 @@ from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from src.services.service_container import get_database_service
+from src.services.service_container import get_database_service, get_title_recognition_service
 from src.services.config_service import ConfigService
 
 from src.schemas.control import (
@@ -20,7 +20,7 @@ from src.schemas.control import (
 )
 # 明确使用含合并输出字段的模型，避免同名导出覆盖接口契约。
 from src.schemas.control.common import DanmakuOutputSettings
-from .dependencies import get_config_service, get_title_recognition_manager
+from .dependencies import get_config_service
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ ALLOWED_CONFIG_KEYS = {
 async def get_allowed_configs(
     type: Optional[str] = Query(None, description="�������ͣ�ʹ�� 'help' ��ȡ�����������б�"),
     config_service: ConfigService = Depends(get_config_service),
-    title_recognition_manager=Depends(get_title_recognition_manager)
+    title_recognition_service=Depends(get_title_recognition_service)
 ):
     """
     ��ȡ���п�ͨ���ⲿAPI������������䵱ǰֵ��
@@ -104,11 +104,8 @@ async def get_allowed_configs(
 
     for key, meta in ALLOWED_CONFIG_KEYS.items():
         if key == "titleRecognition":
-            if title_recognition_manager:
-                # 通过服务层读取识别词，保留未配置时返回空字符串的语义。
-                db = get_database_service()
-                async with db.transaction():
-                    current_value = await db.title_recognition.get_content()
+            if title_recognition_service:
+                current_value = await title_recognition_service.get_content()
             else:
                 current_value = ""
         else:
@@ -135,7 +132,7 @@ async def get_allowed_configs(
 async def update_config(
     request: ConfigUpdateRequest,
     config_service: ConfigService = Depends(get_config_service),
-    title_recognition_manager=Depends(get_title_recognition_manager)
+    title_recognition_service=Depends(get_title_recognition_service)
 ):
     """
     ����ָ���������
@@ -165,14 +162,14 @@ async def update_config(
             )
 
     if request.key == "titleRecognition":
-        if title_recognition_manager is None:
+        if title_recognition_service is None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="ʶ��ʹ�����δ��ʼ��")
 
-        warnings = await title_recognition_manager.update_recognition_rules(request.value)
+        warnings = await title_recognition_service.update_recognition_rules(request.value)
         if warnings:
             logger.warning(f"�ⲿAPI����ʶ�������ʱ���� {len(warnings)} ������: {warnings}")
 
-        logger.info(f"�ⲿAPI������ʶ������ã��� {len(title_recognition_manager.recognition_rules)} ������")
+        logger.info(f"�ⲿAPI������ʶ������ã��� {len(await title_recognition_service.get_rules_snapshot())} ������")
     else:
         await config_service.set(request.key, request.value)
         logger.info(f"�ⲿAPI������������ '{request.key}' Ϊ '{request.value}'")

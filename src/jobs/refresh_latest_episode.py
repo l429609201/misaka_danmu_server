@@ -14,7 +14,8 @@ from .base import BaseJob
 from src.utils.diagnostics.task_exceptions import TaskSuccess
 from src.tasks import refresh_episode_task
 from src.core import get_now
-from src.services.task_profiler import profile_flow, FLOW_REFRESH_LATEST_EPISODE
+from src.services.performance_service import profile_flow
+from src.schemas.performance import FLOW_REFRESH_LATEST_EPISODE
 
 
 class RefreshLatestEpisodeJob(BaseJob):

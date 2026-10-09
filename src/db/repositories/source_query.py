@@ -202,6 +202,7 @@ class SourceQueryRepository:
             "season": anime.season,
             "year": anime.year,
             "imageUrl": anime.imageUrl,
+            "localImagePath": anime.localImagePath,
             "providerName": source.providerName,
             "mediaId": source.mediaId,
             "sourceOrder": source.sourceOrder,  # 添加 sourceOrder 字段，供分集重整任务使用

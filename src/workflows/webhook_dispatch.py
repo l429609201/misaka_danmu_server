@@ -17,7 +17,7 @@ from src.services.metadata_service import MetadataService
 from src.services.scraper_manager import ScraperManager
 from src.services.service_container import get_database_service
 from src.services.task_manager import TaskManager
-from src.services.title_recognition import TitleRecognitionManager
+from src.workflows.title_recognition import TitleRecognitionWorkflow
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class WebhookDispatchContext:
     config_service: ConfigService
     ai_service: AIService
     rate_limiter: RateLimiter
-    title_recognition_manager: TitleRecognitionManager
+    title_recognition_manager: TitleRecognitionWorkflow
     notification_service: Any = None
 
 

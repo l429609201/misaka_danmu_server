@@ -1,14 +1,16 @@
 """图片下载编排：读取业务配置，调用网络与文件服务，不借用外部会话。"""
 
+import asyncio
+import hashlib
 import logging
-import uuid
 from typing import Optional
 
 from src.services.config_service import get_config_service
 from src.services.file_storage_service import CONFIG_DIR, get_file_storage_service
 from src.services.image_http_service import fetch_image
 from src.services.service_container import get_database_service, get_scraper_manager
-from src.utils.misc.image_processing import image_extension
+from src.utils.misc.image_processing import encode_webp
+from src.workflows.media_poster import resolve_media_image_headers
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,10 @@ async def download_image(
     """按源代理配置缓存图片；网络和文件 I/O 均在配置查询事务结束后执行。"""
     if not image_url:
         return None
+    # 已有本地海报只在文件确实存在时复用，避免把失效路径写回业务记录。
+    if image_url.startswith("/data/images/"):
+        path = CONFIG_DIR / "image" / image_url.rsplit("/", 1)[-1]
+        return image_url if get_file_storage_service().exists(path) else None
     config = get_config_service()
     proxy_url = await config.get("proxyUrl", "")
     proxy_enabled = str(await config.get("proxyEnabled", "false")).lower() == "true"
@@ -42,16 +48,29 @@ async def download_image(
             referer = get_scraper_manager().get_scraper(provider_name).referer
         except ValueError:
             logger.debug("图片提供方不是搜索源，不附加源 Referer：%s", provider_name)
+    media_headers = None
+    if image_url.startswith(("http://", "https://")):
+        try:
+            media_headers = await resolve_media_image_headers(image_url)
+        except RuntimeError:
+            logger.debug("未匹配媒体服务器鉴权，按普通图片下载", exc_info=True)
     image = await fetch_image(
         image_url, proxy=proxy_url if proxy_enabled and use_proxy and proxy_url else None,
-        verify=verify, referer=referer,
+        verify=verify, referer=referer, headers=media_headers,
     )
     if image is None:
         return None
-    content, content_type = image
-    filename = f"{uuid.uuid4()}{image_extension(content_type)}"
+    content, _ = image
+    try:
+        content = await asyncio.to_thread(encode_webp, content)
+    except Exception:
+        logger.warning("海报 WebP 编码失败", exc_info=True)
+        return None
+    filename = f"{hashlib.sha256(content).hexdigest()}.webp"
     # 文件服务只负责落盘；缓存路径的业务约定由编排层决定。
-    if not await get_file_storage_service().write_bytes(CONFIG_DIR / "image" / filename, content):
+    storage = get_file_storage_service()
+    path = CONFIG_DIR / "image" / filename
+    if not storage.exists(path) and not await storage.write_bytes(path, content):
         return None
     return f"/data/images/{filename}"
 

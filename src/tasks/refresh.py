@@ -9,9 +9,10 @@ from src.workflows.source_refresh_import import prepare_source_refresh_import
 from src.services.scraper_manager import ScraperManager
 from src.services.task_manager import TaskManager
 from src.utils.diagnostics.task_exceptions import TaskSuccess
-from src.services.title_recognition import TitleRecognitionManager
+from src.workflows.title_recognition import TitleRecognitionWorkflow
 from src.services.metadata_service import MetadataService
-from src.services.task_profiler import TaskProfiler, FLOW_FULL_REFRESH, FLOW_SINGLE_REFRESH, FLOW_BULK_REFRESH
+from src.services.performance_service import TaskProfiler
+from src.schemas.performance import FLOW_FULL_REFRESH, FLOW_SINGLE_REFRESH, FLOW_BULK_REFRESH
 from src.utils.parsing.filename_parser import format_episode_ranges
 from src.workflows.bulk_episode_refresh import refresh_bulk_item
 from src.workflows.episode_refresh import refresh_one_episode
@@ -115,7 +116,7 @@ async def refresh_bulk_episodes_task(episodeIds: List[int], session: AsyncSessio
         raise
 
 
-async def incremental_refresh_task(sourceId: int, nextEpisodeIndex: int, session: AsyncSession, manager: ScraperManager, task_manager: TaskManager, config_service, rate_limiter: RateLimiter, metadata_manager: MetadataService, progress_callback: Callable, animeTitle: str, title_recognition_manager: TitleRecognitionManager) -> None:
+async def incremental_refresh_task(sourceId: int, nextEpisodeIndex: int, session: AsyncSession, manager: ScraperManager, task_manager: TaskManager, config_service, rate_limiter: RateLimiter, metadata_manager: MetadataService, progress_callback: Callable, animeTitle: str, title_recognition_manager: TitleRecognitionWorkflow) -> None:
     """管理单集增量导入生命周期，源信息与参数由 Workflow 准备。"""
     parameters = await prepare_source_refresh_import(sourceId, animeTitle, nextEpisodeIndex)
     await generic_import_task(
@@ -126,7 +127,7 @@ async def incremental_refresh_task(sourceId: int, nextEpisodeIndex: int, session
     )
 
 
-async def fill_missing_task(sourceId: int, session: AsyncSession, manager: ScraperManager, task_manager: TaskManager, config_service, rate_limiter: RateLimiter, metadata_manager: MetadataService, progress_callback: Callable, animeTitle: str, title_recognition_manager: TitleRecognitionManager) -> None:
+async def fill_missing_task(sourceId: int, session: AsyncSession, manager: ScraperManager, task_manager: TaskManager, config_service, rate_limiter: RateLimiter, metadata_manager: MetadataService, progress_callback: Callable, animeTitle: str, title_recognition_manager: TitleRecognitionWorkflow) -> None:
     """仅补全未收录分集，下载前过滤已有集，保存时再次查重。"""
     # 获取完整目录用于查缺，但不把已有集交给弹幕下载流程。
     parameters = await prepare_source_refresh_import(sourceId, animeTitle, None)

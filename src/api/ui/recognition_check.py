@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from src.services.service_container import get_database_service
+from src.services.service_container import get_title_recognition_service, get_title_recognition_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,9 +34,7 @@ class RuleTestResult(BaseModel):
 @router.get("/recognition-check/conflicts", summary="识别词规则冲突检测")
 async def check_rule_conflicts() -> List[RuleConflictItem]:
     """扫描识别词规则，读取快照后释放数据库事务。"""
-    db = get_database_service()
-    async with db.transaction():
-        content = await db.title_recognition.get_content()
+    content = await get_title_recognition_service().get_content()
     if not content:
         return []
 
@@ -103,31 +101,9 @@ async def test_recognition_rule(body: dict) -> RuleTestResult | Dict[str, Any]:
     if not title:
         return {"matchedRules": [], "transformedTitle": title}
 
-    db = get_database_service()
-    async with db.transaction():
-        content = await db.title_recognition.get_content()
+    content = await get_title_recognition_service().get_content()
     if not content:
         return {"matchedRules": [], "transformedTitle": title}
 
-    lines = content.strip().split("\n")
-    matched = []
-    current = title
-
-    for i, line in enumerate(lines):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "||" in line:
-            parts = line.split("||")
-            source = parts[0].strip()
-            target = parts[1].strip() if len(parts) > 1 else ""
-            if source and source in current:
-                old = current
-                current = current.replace(source, target)
-                matched.append({"ruleIndex": i, "rule": line, "before": old, "after": current})
-
-    return RuleTestResult(
-        originalTitle=title,
-        matchedRules=matched,
-        transformedTitle=current,
-    )
+    trace = await get_title_recognition_manager().test_legacy_rule_trace(title)
+    return RuleTestResult(**trace)

@@ -8,6 +8,8 @@ TemplateResolver 负责：
 import logging
 from typing import Optional
 
+from src.schemas.notification_template import TemplateID
+
 from src.notification.events import (
     EventContext, NotificationEvent, TaskOperation, SystemEventType
 )
@@ -15,13 +17,6 @@ from src.notification.events import (
 logger = logging.getLogger(__name__)
 
 
-class TemplateID:
-    """模板 ID 常量"""
-    DANMAKU_IMPORT = "danmaku_import"           # 弹幕入库
-    DANMAKU_REFRESH = "danmaku_refresh"         # 弹幕刷新
-    FALLBACK_PROCESSING = "fallback_processing" # 后备处理
-    MEDIA_SCAN = "media_scan"                   # 媒体库扫描
-    SYSTEM_NOTICE = "system_notice"             # 系统通知
 
 
 class TemplateResolver:

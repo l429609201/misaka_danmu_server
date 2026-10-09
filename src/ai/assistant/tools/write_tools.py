@@ -15,6 +15,7 @@ from ..api_gateway.policy import ApiOperation
 from ..security_gateway import ToolPermission
 from .base import Tool, registry
 from .search_session import get_result_item
+from src.workflows.supplement_episodes import get_episodes_routed
 
 
 async def _call_ui(
@@ -144,7 +145,7 @@ async def _import_edited(arguments: Dict[str, Any], context: Dict[str, Any]) -> 
         return {"error": "运行环境不完整，无法获取分集"}
 
     # 保留缓存候选与分集交叉选择，不接受模型构造的任意 episode 数据。
-    all_episodes = await scraper_manager.get_episodes_routed(
+    all_episodes = await get_episodes_routed(scraper_manager,
         item.provider, item.mediaId, db_media_type=item.type,
     )
     wanted = set(episode_indexes)
@@ -271,4 +272,3 @@ def register_write_tools() -> None:
         # 同 import_selected：触发外部抓取并写入
         effect=ActionEffect.EXTERNAL_SIDE_EFFECT,
     ))
-

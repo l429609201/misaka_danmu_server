@@ -18,11 +18,8 @@ from src.services.service_container import (
     get_rate_limiter,
 )
 from src.services.config_service import get_config_service
-from src.workflows.comments.helpers import (
-    process_comments_for_dandanplay,
-)
-from src.utils.misc.common import handle_danmaku_likes
-from src.utils.misc.converter import convert_comments, get_effective_convert_mode
+from src.workflows.comments.output_flow import apply_output_config
+from src.workflows.dandan.helpers import get_db_cache, set_db_cache
 
 logger = logging.getLogger(__name__)
 
@@ -44,15 +41,15 @@ async def get_external_comments_from_url(url: str, token: str, chConvert: int = 
     scraper_manager = get_scraper_manager()
     config_service = get_config_service()
 
+    scraper = scraper_manager.get_scraper_by_domain(url)
     async with db.transaction() as session:
         cache_key = f"ext_danmaku_v2_{url}"
-        cached_comments = await session.get_cache("", cache_key)
+        cached_comments = await get_db_cache(session, "", cache_key)
         if cached_comments is not None:
             logger.info(f"外部弹幕缓存命中: {url}")
             comments_data = cached_comments
         else:
             logger.info(f"外部弹幕缓存未命中，正在从网络获取: {url}")
-            scraper = scraper_manager.get_scraper_by_domain(url)
             if not scraper:
                 raise HTTPException(status_code=400, detail="不支持的URL或视频源。")
 
@@ -64,14 +61,6 @@ async def get_external_comments_from_url(url: str, token: str, chConvert: int = 
                 episode_id_for_comments = scraper.format_episode_id_for_comments(provider_episode_id)
                 # 外部 URL 同样消耗普通池额度，不提供旁路下载。
                 comments_data = await scraper.get_comments(episode_id_for_comments)
-                likes_enabled = (await config_service.get('danmakuLikesOutputEnabled', 'true')).lower() == 'true'
-                likes_style = await config_service.get('danmakuLikesStyle', 'heart_white')
-                # likes_style='off' 等价于 enabled=False
-                comments_data = handle_danmaku_likes(
-                    comments_data, scraper.likes_fire_threshold,
-                    enabled=likes_enabled and likes_style != 'off',
-                    style=likes_style
-                )
 
                 # 修正：使用 scraper.provider_name 修复未定义的 'provider' 变量
                 if not comments_data:
@@ -81,20 +70,11 @@ async def get_external_comments_from_url(url: str, token: str, chConvert: int = 
                 logger.error(f"处理 {scraper.provider_name} 外部弹幕时出错: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=f"获取 {scraper.provider_name} 弹幕失败。")
 
-            # 缓存结果5小时 (18000秒)
-            await session.set_cache("", cache_key, comments_data, 18000)
+            # 仅缓存源数据，显示配置在每次请求中重新应用。
+            await set_db_cache(session, "", cache_key, comments_data, 18000)
 
-        # 处理简繁转换（使用统一工具）
-        try:
-            final_convert_mode = await get_effective_convert_mode(
-                chConvert, config_service
-            )
-            if final_convert_mode != 0 and comments_data:
-                convert_comments(comments_data, final_convert_mode)
-                logger.debug(f"外部弹幕简繁转换完成: url={url}, mode={final_convert_mode}, count={len(comments_data)}")
-        except Exception as e:
-            logger.error(f"应用简繁转换失败: {e}", exc_info=True)
-
-        # 修正：使用统一的弹幕处理函数，以确保输出格式符合 dandanplay 客户端规范
-        processed_comments = process_comments_for_dandanplay(comments_data)
+        processed_comments = await apply_output_config(
+            comments_data, config_service, chConvert,
+            fire_threshold=scraper.likes_fire_threshold if scraper else 1000,
+        )
         return CommentsResponse(count=len(processed_comments), comments=processed_comments)

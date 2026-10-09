@@ -13,7 +13,8 @@ from src.schemas.import_schemas import (
 from .base import BaseJob
 from .subscription_scan import SubscriptionScanJob
 from src.utils.diagnostics.task_exceptions import TaskSuccess
-from src.services.task_profiler import profile_flow, FLOW_INCREMENTAL_REFRESH
+from src.services.performance_service import profile_flow
+from src.schemas.performance import FLOW_INCREMENTAL_REFRESH
 from src.tasks.auto_import import auto_search_and_import_task
 from src.tasks.import_core import generic_import_task
 

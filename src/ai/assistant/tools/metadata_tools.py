@@ -17,6 +17,8 @@ context 依赖（由 app.state / 渠道端注入）：
 import logging
 from typing import Any, Dict, List
 
+from src.workflows.calendar.subscription_flow import update_metadata_provider_config
+
 from ..api_gateway.contracts import ActionEffect, ConfirmationMode, ResultSensitivity
 from ..security_gateway import ToolPermission, is_forbidden_control_identifier
 from .base import Tool, registry
@@ -271,7 +273,7 @@ async def _set_metadata_source_key(arguments: Dict[str, Any], context: Dict[str,
 
     new_value = str(value).strip()
     try:
-        await manager.updateProviderConfig(provider, {**current, config_key: new_value})
+        await update_metadata_provider_config(manager, provider, {**current, config_key: new_value})
     except Exception as e:  # noqa: BLE001
         logger.error(f"写入 {provider}.{config_key} 失败: {e}", exc_info=True)
         return {"error": f"写入失败：{e}"}

@@ -140,6 +140,7 @@ async def import_media_items(
                     season=1,
                     currentEpisodeIndex=1,
                     searchKeyword=m['title'],
+                    imageUrl=m.get('posterUrl'),
                     year=m['year'],
                     tmdbId=m['tmdbId'],
                     tvdbId=m['tvdbId'],
@@ -253,6 +254,7 @@ async def import_media_items(
                     season=item['season'],
                     currentEpisodeIndex=item['episode'],  # 使用代表集数进行匹配
                     searchKeyword=f"{item['title']} S{item['season'] or 1:02d}E{item['episode'] or 1:02d}",
+                    imageUrl=item.get('posterUrl'),
                     year=item['year'],
                     tmdbId=item['tmdbId'],
                     tvdbId=item['tvdbId'],

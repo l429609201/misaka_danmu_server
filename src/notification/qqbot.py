@@ -551,6 +551,9 @@ class QQBotChannel(BaseNotificationChannel):
                 if image_mode == IMAGE_MODE_PUBLIC_URL:
                     # 外链模式：转换为公网URL
                     image_url = await self.build_public_image_url(image, image_bytes)
+                elif image_bytes or (image and (image.startswith("/data/images/") or image.split("?", 1)[0].lower().endswith(".webp"))):
+                    # QQ API 仅接收公网图片 URL，复用兼容 JPEG 缩略图，不把本地路径当外链。
+                    image_url = await self.build_public_image_url(image or "", image_bytes)
                 elif image:
                     image_url = image
 

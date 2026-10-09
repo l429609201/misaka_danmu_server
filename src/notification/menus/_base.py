@@ -6,7 +6,7 @@ import hashlib
 import logging
 
 from src.notification.base import CommandResult
-from src.schemas import EditImportRequest as EditedImportRequest, ProviderEpisodeInfo
+from src.schemas.import_schemas import EditedImportRequest, ProviderEpisodeInfo
 from src.schemas.control import ControlAutoImportRequest, AutoImportSearchType, AutoImportMediaType
 from src.tasks import auto_search_and_import_task, edited_import_task
 

@@ -1,4 +1,4 @@
-﻿"""
+"""
 搜索后备流程
 
 当主搜索流程失败时，尝试其他搜索策略
@@ -17,7 +17,10 @@ from src.services.service_container import (
     get_scraper_manager,
     get_title_recognition_manager,
 )
-from src.db.orm_models import Episode, AnimeSource, Anime
+from src.services.config_service import get_config_service
+from src.workflows.comments.output_flow import apply_output_config
+from src.workflows.dandan.helpers import get_db_cache
+from src.utils.dandan.constants import COMMENTS_FETCH_CACHE_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +29,8 @@ async def handle_search_fallback_comments(
     episodeId: int,
     token: str,
     session: AsyncSession,
-    async_mode: bool = False
+    async_mode: bool = False,
+    chConvert: int = 0,
 ) -> Optional[DandanCommentsResponse]:
     """
     搜索后备流程：尝试通过不同的搜索策略获取弹幕
@@ -37,20 +41,24 @@ async def handle_search_fallback_comments(
     :param async_mode: 是否异步模式
     :return: 弹幕响应或None
     """
+    # 已有后备任务的原始缓存也必须使用统一输出配置；不新增网络下载业务。
+    cached_comments = await get_db_cache(session, COMMENTS_FETCH_CACHE_PREFIX, f'comments_{episodeId}')
+    if cached_comments:
+        processed = await apply_output_config(cached_comments, get_config_service(), chConvert)
+        return DandanCommentsResponse(count=len(processed), comments=processed)
+    db = get_database_service()
     try:
-        episode = await session.get(Episode, episodeId)
-        if not episode:
-            logger.warning(f"Episode {episodeId} 不存在")
-            return None
-        
-        # 使用 ORM 实际的驼峰字段，避免后备分支触发 AttributeError。
-        anime_source = await session.get(AnimeSource, episode.sourceId)
-        if not anime_source:
-            return None
-
-        anime = await session.get(Anime, anime_source.animeId)
-        if not anime:
-            return None
+        async with db.transaction(session=session):
+            episode = await db.episode.get_by_id(episodeId)
+            if not episode:
+                logger.warning(f"Episode {episodeId} 不存在")
+                return None
+            anime_source = await db.source.get_by_id(episode.sourceId)
+            if not anime_source:
+                return None
+            anime = await db.anime.get_by_id(anime_source.animeId)
+            if not anime:
+                return None
         
         # TODO: 实现具体的搜索后备逻辑
         # 1. 尝试使用别名搜索

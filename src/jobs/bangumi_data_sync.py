@@ -10,7 +10,9 @@ from typing import Any, Callable
 
 from src.jobs.base import BaseJob
 from src.utils.diagnostics.task_exceptions import TaskSuccess, TaskFailed
-from src.services.task_profiler import profile_flow, FLOW_BANGUMI_DATA_SYNC
+from src.services.performance_service import profile_flow
+from src.schemas.performance import FLOW_BANGUMI_DATA_SYNC
+from src.workflows.bangumi_data_sync import sync_bangumi_data
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +30,16 @@ class BangumiDataSyncJob(BaseJob):
     config_schema = []  # 配置集中在 Bangumi 源特殊配置，这里不暴露额外项
 
     @profile_flow(FLOW_BANGUMI_DATA_SYNC)
-    async def run(self, session: Any, progress_callback: Callable):
+    async def run(self, session: Any, progress_callback: Callable) -> None:
+        """按配置触发离线索引同步流程并报告任务结果。"""
         enabled = (await self.config_service.get("bangumiDataSyncEnabled", "false")).lower() == "true"
         if not enabled:
             raise TaskSuccess("bangumi-data 定时同步未启用，已跳过。")
 
         await progress_callback(10, "正在从 CDN 拉取 bangumi-data...")
-        result = await self.metadata_manager.sync_bangumi_data(progress_callback=progress_callback)
+        result = await sync_bangumi_data(
+            self.metadata_manager.get_offline_bangumi_service(), progress_callback=progress_callback,
+        )
         if result.get("success"):
             raise TaskSuccess(f"bangumi-data 同步完成，共 {result.get('count')} 条。")
         raise TaskFailed(f"bangumi-data 同步失败：{result.get('message')}")

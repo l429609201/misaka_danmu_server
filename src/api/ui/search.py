@@ -11,7 +11,7 @@ from src.schemas.auth import User
 from src.schemas.search import AnimeInfo, AnimeSearchResponse
 from src.services.scraper_manager import ScraperManager
 from src.services.metadata_service import MetadataService
-from src.services.title_recognition import TitleRecognitionManager
+from src.workflows.title_recognition import TitleRecognitionWorkflow
 from src.services.ai_service import AIService
 from src.services.config_service import ConfigService
 from src.utils.auth import security
@@ -24,6 +24,8 @@ from src.api.dependencies import (
     get_title_recognition_manager, get_ai_service
 )
 from src.schemas.ui_models import UIProviderSearchResponse
+
+from src.workflows.supplement_episodes import get_episodes_routed
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +65,7 @@ async def search_anime_provider(
     manager: ScraperManager = Depends(get_scraper_manager),
     current_user: User = Depends(security.get_current_user),
     metadata_manager: MetadataService = Depends(get_metadata_service),
-    title_recognition_manager: TitleRecognitionManager = Depends(get_title_recognition_manager),
+    title_recognition_manager: TitleRecognitionWorkflow = Depends(get_title_recognition_manager),
     config_service: ConfigService = Depends(get_config_service),
     ai_service: AIService = Depends(get_ai_service)
 ):
@@ -96,12 +98,12 @@ async def get_episodes_for_search_result(
     title: Optional[str] = Query(None, description="搜索结果标题，用于匹配单剧过滤规则"),
     manager: ScraperManager = Depends(get_scraper_manager),
     config_service: ConfigService = Depends(get_config_service),
-    title_recognition_manager: TitleRecognitionManager = Depends(get_title_recognition_manager),
+    title_recognition_manager: TitleRecognitionWorkflow = Depends(get_title_recognition_manager),
     current_user: User = Depends(security.get_current_user)
 ):
     """为指定的搜索结果获取完整的分集列表。自动识别补充源mediaId并路由。"""
     try:
-        episodes, excluded = await manager.get_episodes_routed(
+        episodes, excluded = await get_episodes_routed(manager,
             provider, media_id, db_media_type=media_type, return_filtered=True
         )
         # 单剧过滤（依赖作品标题，未下沉到 get_episodes_routed）
@@ -142,7 +144,3 @@ async def get_episodes_for_search_result(
     except Exception as e:
         logger.error(f"获取分集列表失败 (provider={provider}, media_id={media_id}): {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="获取分集列表失败。")
-
-
-
-

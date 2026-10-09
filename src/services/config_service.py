@@ -39,7 +39,7 @@ class ConfigService:
     设计上与 CacheService 保持一致的架构风格。
     """
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], *, database_service: Optional[DatabaseService] = None):
         """
         初始化配置服务
 
@@ -47,7 +47,9 @@ class ConfigService:
             session_factory: 数据库会话工厂
         """
         self._session_factory = session_factory
-        self._db = DatabaseService(session_factory)  # ✅ 新架构：使用 DatabaseService
+        if database_service is None:
+            raise ValueError("ConfigService 必须由组合根注入共享 DatabaseService")
+        self._db = database_service
         self._cache: Dict[str, Any] = {}
         self._lock = asyncio.Lock()
         logger.info("ConfigService 初始化完成")
@@ -79,18 +81,6 @@ class ConfigService:
             # 写入缓存
             self._cache[key] = value
             return value
-
-    async def get_search_cache_ttl(self) -> int:
-        """读取搜索结果缓存寿命，兼容历史非法配置并保证至少三小时。"""
-        # 原始搜索与主页结果共用同一策略，避免各入口硬编码造成配置失效。
-        minimum_ttl = 10800
-        try:
-            value = await self.get("searchTtlSeconds", minimum_ttl)
-            return max(int(str(value).strip()), minimum_ttl)
-        except (RuntimeError, TypeError, ValueError) as exc:
-            logger.warning("读取搜索缓存 TTL 失败，使用 %d 秒: %s", minimum_ttl, exc)
-            return minimum_ttl
-
 
     async def set(self, key: str, value: str) -> None:
         """
@@ -146,7 +136,7 @@ class ConfigService:
 _config_service: Optional[ConfigService] = None
 
 
-def init_config_service(session_factory: async_sessionmaker[AsyncSession]) -> ConfigService:
+def init_config_service(session_factory: async_sessionmaker[AsyncSession], *, database_service: DatabaseService) -> ConfigService:
     """
     初始化全局 ConfigService 单例
 
@@ -161,7 +151,7 @@ def init_config_service(session_factory: async_sessionmaker[AsyncSession]) -> Co
         logger.warning("ConfigService 已经初始化，跳过重复初始化")
         return _config_service
 
-    _config_service = ConfigService(session_factory)
+    _config_service = ConfigService(session_factory, database_service=database_service)
     logger.info("✓ ConfigService 全局单例已初始化")
     return _config_service
 

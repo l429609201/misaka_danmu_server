@@ -133,6 +133,15 @@ class PerformanceQueryRepository:
 
         return metric
 
+    async def record_metrics(self, metrics: List[Dict[str, Any]]) -> int:
+        """记录探针采集结果，按实际成功创建的对象计数，不读取 Session.new。"""
+        written = 0
+        for payload in metrics:
+            metric = await self.record_metric(**payload)
+            if metric is not None:
+                written += 1
+        return written
+
     async def _check_and_create_alert(self, metric: SystemMetric):
         """检查指标是否需要创建告警"""
         # 这里可以扩展告警逻辑

@@ -3,11 +3,49 @@
 """
 import asyncio
 import logging
+import re
 from typing import List, Dict, Any
 
-from src.services.log_manager import get_logs, list_log_files, read_log_file, subscribe_to_logs, unsubscribe_from_logs
+from src.services.log_manager import get_logs, list_log_files, read_log_file, read_log_lines, subscribe_to_logs, unsubscribe_from_logs
 
 logger = logging.getLogger(__name__)
+
+
+_LEVEL_TAG_RE = re.compile(r'\[(DEBUG|INFO|WARNING|ERROR|CRITICAL)\]')
+_ACTIVE_LOG_RE = re.compile(r'^.+\.log$')
+
+
+def search_logs(keyword: str = "", level: str = "", filename: str = "",
+                limit: int = 30, line_max_chars: int = 300) -> dict:
+    """协调单文件读取并跨活跃日志检索，保留最新优先与 AND 关键词语义。"""
+    limit = max(1, min(limit, 100))
+    words = [word.lower() for word in keyword.split() if word.strip()]
+    order = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    wanted = set(order[order.index(level.strip().upper()):]) if level.strip().upper() in order else set()
+    files = [filename] if filename else [item["name"] for item in list_log_files()
+                                        if _ACTIVE_LOG_RE.match(item["name"])]
+    matches = []
+    scanned = []
+    total = 0
+    for name in files:
+        scanned.append(name)
+        try:
+            lines = read_log_lines(name)
+        except OSError as exc:
+            logger.warning("检索日志跳过不可读文件 %s: %s", name, exc)
+            continue
+        for line in reversed(lines):
+            if not line.strip() or (words and not all(word in line.lower() for word in words)):
+                continue
+            tag = _LEVEL_TAG_RE.search(line)
+            line_level = tag.group(1) if tag else ""
+            if wanted and line_level not in wanted:
+                continue
+            total += 1
+            if len(matches) < limit:
+                text = line if len(line) <= line_max_chars else line[:line_max_chars] + "…"
+                matches.append({"file": name, "level": line_level, "line": text})
+    return {"matches": matches, "total": total, "truncated": total > len(matches), "scannedFiles": scanned}
 
 
 async def workflow_get_logs() -> List[str]:

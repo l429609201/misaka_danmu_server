@@ -9,7 +9,6 @@ import asyncio
 import base64
 import hashlib
 import json
-import mimetypes
 import struct
 import time
 import xml.etree.ElementTree as ET
@@ -30,8 +29,9 @@ from src.notification.base import (
     ChannelCapability, ChannelCapabilities, CommandResult, IMAGE_MODE_FIELD,
 )
 from src._version import APP_VERSION
-# 图片来源选择和加载由共享服务完成，渠道只处理平台发送协议。
-from src.services.image_resource_service import load_image_bytes
+# 图片来源选择和加载由共享流程完成，渠道只处理平台发送协议。
+from src.workflows.image_resources import load_image_bytes
+from src.utils.misc.image_processing import encode_notification_image
 
 logger = logging.getLogger(__name__)
 bot_raw_logger = logging.getLogger("bot_raw")
@@ -294,8 +294,14 @@ class WeChatChannel(BaseNotificationChannel):
         if not token or not image_bytes:
             return None
 
+        try:
+            image_bytes, suffix, content_type = await asyncio.to_thread(encode_notification_image, image_bytes)
+            filename = f"poster{suffix}"
+        except Exception:
+            self.logger.warning("企业微信海报编码失败，继续发送文本", exc_info=True)
+            return None
+
         async def _upload(access_token: str) -> Optional[dict]:
-            content_type = mimetypes.guess_type(filename)[0] or "image/jpeg"
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.post(
@@ -350,6 +356,11 @@ class WeChatChannel(BaseNotificationChannel):
             image_bytes = await load_image_bytes(image_url)
 
         content = f"【{title}】\n{text}" if title else text
+
+        if poster_mode and image_url:
+            # 本地 WebP 需公开 JPEG 地址；无公网域名时保留图片上传+文字回退。
+            if image_url.startswith("/data/images/") or image_url.split("?", 1)[0].lower().endswith(".webp"):
+                image_url = await self.build_public_image_url(image_url, image_bytes)
 
         if poster_mode and image_url:
             # 海报模式：用 news 图文卡片实现图文合一（需要可访问的 picurl）

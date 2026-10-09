@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from src.services.service_container import get_database_service
 from src.utils.auth import security
 from src.core import settings as _settings
-from src.services.tunnel_service import apply_tunnel_from_notification_manager
+from src.workflows.notification_tunnel import apply_tunnel_from_notification_manager
 from src.services.config_service import get_config_service
 from src.utils.misc.public_url import validate_custom_domain_format
 # 探针文件与 HTTP 探测由编排层协调，路由不直接写文件。

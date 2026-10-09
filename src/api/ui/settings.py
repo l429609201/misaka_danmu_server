@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from src.utils.auth import security
 from src.schemas import auth as models
 from src.services.config_service import ConfigService
-from src.services.service_container import get_database_service
+from src.services.service_container import get_database_service, get_title_recognition_service
 from src.core.default_configs import get_default_configs
 
 from src.api.dependencies import get_config_service, get_title_recognition_manager
@@ -37,11 +37,7 @@ async def get_title_recognition_content(
 ) -> TitleRecognitionContent:
     """获取识别词配置；未配置时返回默认示例。"""
     try:
-        db = get_database_service()
-        # 在短事务内读取内容，区分未配置和用户主动保存的空字符串。
-        async with db.transaction():
-            recognition = await db.title_recognition.get_current()
-            content = recognition.content if recognition is not None else None
+        content = await get_title_recognition_service().get_configured_content()
 
         if content is None:
             # 如果没有配置记录，返回默认内容
@@ -110,7 +106,7 @@ async def get_title_recognition_content(
 async def update_title_recognition_content(
     payload: TitleRecognitionContent,
     current_user: models.User = Depends(security.get_current_user),
-    title_recognition_manager = Depends(get_title_recognition_manager)
+    title_recognition_service = Depends(get_title_recognition_service)
 ) -> TitleRecognitionUpdateResponse:
     """
     更新识别词配置内容，使用全量替换模式
@@ -122,11 +118,11 @@ async def update_title_recognition_content(
         TitleRecognitionUpdateResponse: 包含更新结果和警告信息
     """
     try:
-        if title_recognition_manager is None:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="识别词管理器未初始化")
+        if title_recognition_service is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="识别词基础服务未初始化")
 
-        # 使用全量替换模式更新识别词规则，获取警告信息
-        warnings = await title_recognition_manager.update_recognition_rules(payload.content)
+        # 配置写入直接使用基础服务，提交成功后更新共享规则快照。
+        warnings = await title_recognition_service.update_recognition_rules(payload.content)
 
         logger.info("识别词配置更新成功")
 

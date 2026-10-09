@@ -4,7 +4,8 @@ import uuid
 from typing import Any, Optional
 
 from src.schemas.ui_models import User
-from src.services.task_profiler import TaskProfiler, FLOW_HOME_SEARCH
+from src.services.performance_service import TaskProfiler
+from src.schemas.performance import FLOW_HOME_SEARCH
 from src.utils import SearchTimer, SEARCH_TYPE_HOME, SEARCH_TYPE_CONTROL_SEARCH, parse_search_keyword
 from src.workflows.search.engine import SearchCaller
 from src.workflows.search.provider_search_flow import (

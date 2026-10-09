@@ -515,69 +515,6 @@ class AnimeQueryRepository:
         row = result.mappings().first()
         return dict(row) if row else None
 
-    async def find_by_title_season_year_with_recognition(
-        self,
-        title: str,
-        season: Optional[int],
-        year: Optional[int] = None,
-        title_recognition_manager=None,
-        source: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
-        """
-        按标题 + 季度 (+ 年份) 查找作品，失败时应用识别词转换后重试
-
-        替代 crud.find_anime_by_title_season_year（完整行为）。
-
-        why 两段式：入库标题可能与外部传入的标题存在别名差异（如「XX 第二季」与
-        「XX S2」）。先做完全匹配可避免对已规范化的标题做无谓转换；只有匹配失败
-        才动用识别词规则，兼顾准确性与性能。
-
-        Args:
-            title: 作品标题
-            season: 季度
-            year: 年份，为 None 时不参与过滤
-            title_recognition_manager: 识别词管理器（调用方注入，为 None 时退化为纯查询）
-            source: 数据源标识，供识别词规则按源匹配
-
-        Returns:
-            命中的作品字典，两轮均未命中时返回 None
-        """
-        season_str = f"S{season:02d}" if season is not None else "S??"
-
-        # 步骤1：完全匹配（不应用识别词转换）
-        logger.info(f"🔍 数据库查找: title='{title}', season={season}, year={year}")
-        row = await self.find_by_title_season_year(title, season, year)
-        if row:
-            logger.info(f"✓ 完全匹配成功: 找到作品 '{title}' {season_str}")
-            return row
-
-        logger.info(f"○ 完全匹配失败: 未找到匹配的番剧")
-
-        # 步骤2：完全匹配失败，尝试识别词转换后重试
-        if not title_recognition_manager:
-            return None
-
-        converted_title, converted_season, was_converted, _metadata_info, _ = (
-            await title_recognition_manager.apply_storage_postprocessing(title, season, source)
-        )
-
-        if not was_converted:
-            logger.info(f"○ 标题识别转换未生效: '{title}' {season_str} (无匹配规则)")
-            return None
-
-        converted_season_str = f"S{converted_season:02d}" if converted_season is not None else "S??"
-        logger.info(
-            f"🔍 尝试识别词转换匹配: '{title}' {season_str} -> '{converted_title}' {converted_season_str}"
-        )
-
-        row = await self.find_by_title_season_year(converted_title, converted_season, year)
-        if row:
-            logger.info(f"✓ 识别词转换匹配成功: 找到作品 '{converted_title}' {converted_season_str}")
-            return row
-
-        logger.info(f"○ 识别词转换匹配也失败: 未找到匹配的番剧")
-        return None
-
     # ==================== 元数据ID查询 ====================
     async def find_anime_ids_by_media_server(
         self,

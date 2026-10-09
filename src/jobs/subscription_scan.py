@@ -16,7 +16,8 @@ from typing import Any, Callable, Dict, List, Optional
 from src.utils.diagnostics.task_exceptions import TaskFailed, TaskSuccess
 from src.services.service_container import get_database_service
 from src.services.subscription_manager import SubscriptionManager
-from src.services.task_profiler import FLOW_SUBSCRIPTION_SCAN, profile_flow
+from src.services.performance_service import profile_flow
+from src.schemas.performance import FLOW_SUBSCRIPTION_SCAN
 from src.workflows.subscription_scan_flow import import_subscription_item, persist_subscription_scan_result
 
 from .base import BaseJob

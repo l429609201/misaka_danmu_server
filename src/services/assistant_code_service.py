@@ -14,7 +14,6 @@ from uuid import uuid4
 
 from src.core.config import settings
 from src.utils.model_content_policy import contains_forbidden_control_content
-from src.utils.runtime.cancellation import finish_before_cancel
 from src.schemas.auth import User
 from src.services.assistant_code_runner import AssistantCodeRunner
 from src.services.file_storage_service import FileStorageService, get_file_storage_service
@@ -24,7 +23,7 @@ DIRECTORIES = ['src', 'web/src', 'tests', 'docs']
 EXTENSIONS = {'.py', '.js', '.jsx', '.ts', '.tsx', '.css', '.html', '.md'}
 # 禁止通过修正助手自身来扩大能力，也不开放真实配置、认证和部署入口。
 PROTECTED = ('src/ai/assistant/', 'src/rate_limit/', 'src/utils/auth/',
-             'src/services/assistant_code', 'src/services/file_storage_service.py',
+             'src/services/assistant_code', 'src/workflows/assistant_code', 'src/services/file_storage_service.py',
              'src/services/service_container.py', 'src/utils/model_content_policy.py',
              'src/utils/runtime/cancellation.py', 'src/core/', 'src/main.py',
              'src/api/ui/assistant', 'src/api/ui/auth', 'src/api/ui/config',
@@ -121,6 +120,7 @@ class AssistantCodeService:
             dangerous_attrs = {'open', 'write', '__dict__', '__class__', '__globals__', '__builtins__', '__subclasses__',
                                'read_text', 'read_bytes', 'write_text', 'write_bytes', 'unlink', 'rename',
                                'read_source_bytes', 'replace_source_bytes', 'write_with_backup', 'restore_backups',
+                               'source_path', 'read_source', 'current_source', 'replace_source', 'get_draft',
                                'delete_file', 'delete_by_web_path', 'move_file', 'make_dirs', 'source_workspace',
                                'get_file_storage_service', 'FileStorageService',
                                'config', 'execute', 'execute_query', 'execute_sql', 'system', 'popen'}
@@ -139,7 +139,8 @@ class AssistantCodeService:
                     if any(module_path.startswith(prefix.rstrip('/').removesuffix('.py')) for prefix in PROTECTED):
                         raise PermissionError('补丁不得引入受保护模块的运行时访问')
                     if any(alias.name in {'FileStorageService', 'get_file_storage_service', 'AssistantCodeService',
-                                          'get_assistant_code_service', 'AssistantCodeRunner', '*'} for alias in node.names):
+                                          'get_assistant_code_service', 'AssistantCodeRunner', 'AssistantCodeWorkflow',
+                                          'get_assistant_code_workflow', '*'} for alias in node.names):
                         raise PermissionError('补丁不得引入受保护能力的导出符号')
                 if isinstance(node, ast.Import):
                     if any(any(alias.name.replace('.', '/').startswith(prefix.rstrip('/').removesuffix('.py'))
@@ -285,144 +286,37 @@ class AssistantCodeService:
                 'validation': draft.validation, 'state': draft.state,
                 'expiresAt': draft.expires, 'recoveryScope': '当前用户会话、当前服务进程内有效，补丁和恢复记录30分钟过期。'}
 
-    async def validate(self, draft_id: str, profile: str, context: dict[str, Any]) -> dict[str, Any]:
-        """仅将筛选后的源码复制到临时目录，验证只委托给隔离容器。"""
-        async with self.lock:
-            draft = self._draft(draft_id, context)
-            if draft.state != 'draft':
-                raise ValueError('只有未应用补丁可验证')
-            draft.validation = {'validated': False, 'status': 'not_run', 'profile': profile}
-            paths = [item['path'] for item in draft.changes]
-            if profile in ('python_syntax', 'python_tests'):
-                if not all(path.endswith('.py') for path in paths):
-                    raise ValueError('Python验证只能用于纯Python补丁')
-            elif profile in ('frontend_build', 'frontend_lint'):
-                if not all(path.startswith('web/src/') for path in paths):
-                    raise ValueError('前端验证只能用于前端补丁')
-            else:
-                raise ValueError('不支持此验证profile')
-            if self.runner.capabilities().get('available') is False:
-                draft.validation = {'validated': False, 'status': 'unavailable', 'profile': profile,
-                                    'message': '隔离容器未配置，未执行验证，补丁不可应用。'}
-                return self.preview(draft_id, context)
-            workspace = await self.fs.source_workspace()
-            try:
-                total = 0
-                snapshot = {}
-                # 保护源码仅作为私有只读依赖，不向模型输出；真实配置、日志和共享库仍排除。
-                snapshot_directories = ['web/src'] if profile.startswith('frontend_') else DIRECTORIES
-                for name in await self.fs.list_source_files(self.root, snapshot_directories):
-                    try:
-                        text, digest = await self._read(name, snapshot=True)
-                    except (OSError, PermissionError, UnicodeError, ValueError):
-                        continue
-                    total += len(text.encode('utf-8'))
-                    if total > 32 * 1024 * 1024:
-                        raise ValueError('验证副本过大，请缩小修正范围')
-                    snapshot[name] = digest
-                    if not await self.fs.write_text(workspace / name, text):
-                        raise OSError('验证副本写入失败')
-                for change in draft.changes:
-                    if snapshot.get(change['path']) != change['sha256']:
-                        raise ValueError('补丁基线已改变或已不允许访问')
-                    if not await self.fs.write_text(workspace / change['path'], change['content']):
-                        raise OSError('验证补丁写入失败')
-                for name in sorted(READ_MANIFESTS):
-                    if not self.fs.exists(self.root / name):
-                        continue
-                    text, _ = await self._read(name)
-                    if not await self.fs.write_text(workspace / name, text):
-                        raise OSError('构建清单写入失败')
-                if profile.startswith('frontend_'):
-                    asset_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.woff', '.woff2', '.ttf'}
-                    for name in await self.fs.list_source_files(self.root, ['web/src/assets', 'web/public']):
-                        if Path(name).suffix.lower() not in asset_extensions or '.so' in name.lower():
-                            continue
-                        data = await self.fs.read_source_bytes(self.root, name, 4 * 1024 * 1024)
-                        total += len(data)
-                        if total > 32 * 1024 * 1024:
-                            raise ValueError('验证副本过大')
-                        if not await self.fs.write_bytes(workspace / name, data):
-                            raise OSError('静态资源副本写入失败')
-                await self.fs.make_source_workspace_readable(workspace)
-                result = await self.runner.validate(workspace, paths, profile)
-                draft.validation = result
-                return self.preview(draft_id, context)
-            finally:
-                await self.fs.remove_source_workspace(workspace)
-
-    async def _restore(self, draft: CodeDraft) -> bool:
-        success = True
-        for change in reversed(draft.changes):
-            target = self.root / change['path']
-            if target not in draft.backups:
-                continue
-            original = draft.backups[target]
-            try:
-                self._path(change['path'], True)
-                current = await self.fs.read_source_bytes(self.root, change['path'], MAX_FILE) if self.fs.exists(target) else None
-                original_bytes = original.encode('utf-8') if original is not None else None
-                if current == original_bytes:
-                    continue
-                await self.fs.replace_source_bytes(self.root, change['path'],
-                    original_bytes,
-                    change['content'].encode('utf-8'))
-            except (OSError, ValueError, PermissionError):
-                success = False
-        return success
-
-    async def apply(self, draft_id: str, context: dict[str, Any]) -> dict[str, Any]:
-        """本轮授权或单次确认后复核原文件再应用；失败补偿，禁止部署重启。"""
+    def require_action(self, context: dict[str, Any], *, rollback: bool = False) -> None:
+        """复核服务端身份和单次确认或本轮修复授权。"""
         self._require(context)
         if context.get('confirmed_action') is not True and not code_write_authorized(context):
-            raise PermissionError('补丁尚未获得确认卡授权')
-        async with self.lock:
-            draft = self._draft(draft_id, context)
-            if draft.state != 'draft' or draft.validation.get('validated') is not True or draft.validation.get('status') != 'passed':
-                raise PermissionError('补丁未通过隔离验证或已应用')
-            for change in draft.changes:
-                path = self._path(change['path'], True)
-                digest = (await self._read(change['path'], True))[1] if self.fs.exists(path) else None
-                if digest != change['sha256']:
-                    raise ValueError('项目文件已发生变化，禁止覆盖；请重新生成并验证补丁')
-                self._check_patch(change['path'], change['content'])
-            draft.state = 'applying'
-            try:
-                for change in draft.changes:
-                    path = self._path(change['path'], True)
-                    original = change['original'] if change['sha256'] is not None else None
-                    draft.backups[path] = original
-                    await self.fs.replace_source_bytes(self.root, change['path'],
-                        change['content'].encode('utf-8'), original.encode('utf-8') if original is not None else None)
-            except BaseException:
-                async def compensate() -> None:
-                    restored = await self._restore(draft)
-                    draft.state = 'failed' if restored else 'recovery_required'
-                await finish_before_cancel(compensate())
-                raise
-            draft.state = 'applied'
-            return {'draftId': draft_id, 'state': draft.state, 'files': [item['path'] for item in draft.changes],
-                    'message': '补丁已应用到源码，未重启、部署或提交。需要手动执行相应部署步骤。'}
+            raise PermissionError('恢复尚未获得确认' if rollback else '补丁尚未获得确认卡授权')
 
-    async def rollback(self, draft_id: str, context: dict[str, Any]) -> dict[str, Any]:
-        """经独立确认恢复补丁原文；后续发生变更的文件不允许覆盖。"""
-        if context.get('confirmed_action') is not True and not code_write_authorized(context):
-            raise PermissionError('恢复尚未获得确认')
-        async with self.lock:
-            draft = self._draft(draft_id, context)
-            if draft.state != 'applied':
-                raise ValueError('补丁不处于已应用状态')
-            for change in draft.changes:
-                text, _ = await self._read(change['path'], True)
-                if text != change['content']:
-                    raise ValueError('应用后的文件已变化，不允许自动恢复')
-            async def settle_restore() -> dict[str, Any]:
-                if not await self._restore(draft):
-                    draft.state = 'recovery_required'
-                    raise OSError('恢复失败，需要管理员检查')
-                draft.state = 'rolled_back'
-                return {'draftId': draft_id, 'state': draft.state, 'message': '源码已恢复，未重启或部署。'}
-            return await finish_before_cancel(settle_restore())
+    def get_draft(self, draft_id: str, context: dict[str, Any]) -> CodeDraft:
+        """向持有服务锁的流程提供当前用户会话有效草稿。"""
+        return self._draft(draft_id, context)
+
+    def source_path(self, name: str, *, write: bool = False) -> Path:
+        """提供经白名单、保护范围和链接边界复核的源码路径。"""
+        return self._path(name, write)
+
+    def check_patch(self, name: str, text: str) -> None:
+        """重新执行补丁安全策略，不暴露任意执行能力。"""
+        self._check_patch(name, text)
+
+    async def read_source(self, name: str, *, write: bool = False, snapshot: bool = False) -> tuple[str, str]:
+        """提供限量读取、保护文本筛选和原始哈希的窄能力。"""
+        return await self._read(name, write, snapshot)
+
+    async def current_source(self, name: str) -> Optional[bytes]:
+        """在写边界复核后读取当前原文；缺失时返回空值。"""
+        target = self._path(name, True)
+        return await self.fs.read_source_bytes(self.root, name, MAX_FILE) if self.fs.exists(target) else None
+
+    async def replace_source(self, name: str, content: Optional[bytes], expected: Optional[bytes]) -> None:
+        """复核路径后执行文件存储 CAS，禁止无条件覆盖或删除。"""
+        self._path(name, True)
+        await self.fs.replace_source_bytes(self.root, name, content, expected)
 
 
 _code_service: Optional[AssistantCodeService] = None

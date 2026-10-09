@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import ConfigRepository
+from src.schemas.notification_template import TemplateID
 
 logger = logging.getLogger(__name__)
 
@@ -78,10 +79,10 @@ class NotificationTemplateRepository:
         Returns:
             模板字典列表
         """
-        from src.notification.template_resolver import TemplateResolver
+
         
         templates = []
-        for template_id in TemplateResolver.get_all_template_ids():
+        for template_id in TemplateID.ALL:
             template = await self.get_by_id(template_id)
             if template:
                 templates.append(template)
@@ -124,7 +125,7 @@ class NotificationTemplateRepository:
         
         如果数据库中不存在某个默认模板，则创建它。
         """
-        from src.notification.template_resolver import TemplateID
+
         
         default_templates = {
             TemplateID.DANMAKU_IMPORT: {

@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import logging
 import re
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
@@ -19,7 +19,8 @@ from src.services.task_manager import TaskSuccess
 from src.services.ai_service import AIService
 from src.services.service_container import get_database_service
 from src.ai.ai_prompts import DEFAULT_AI_MATCH_PROMPT, DEFAULT_AI_RECOGNITION_PROMPT, DEFAULT_AI_ALIAS_VALIDATION_PROMPT
-from src.services.task_profiler import profile_flow, FLOW_TMDB_AUTO_SCRAPE
+from src.services.performance_service import profile_flow
+from src.schemas.performance import FLOW_TMDB_AUTO_SCRAPE
 
 if TYPE_CHECKING:
     from src.services.metadata_service import MetadataService

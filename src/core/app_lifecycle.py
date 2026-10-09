@@ -10,6 +10,7 @@ import time
 import asyncio
 import secrets
 import logging
+from functools import partial
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -26,7 +27,7 @@ from src.services.service_container import (
     init_scraper_manager, init_task_manager, init_scheduler_manager,
     init_webhook_service, init_media_server_service,
     init_metadata_service, init_rate_limiter,
-    init_title_recognition_manager,
+    init_title_recognition_manager, init_title_recognition_service,
 )
 from src.webhook.emby import EmbyWebhook
 from src.webhook.jellyfin import JellyfinWebhook
@@ -49,16 +50,26 @@ from src.services.task_manager import TaskManager
 from src.services.metadata_service import MetadataService
 from src.services.scraper_manager import ScraperManager
 from src.services.scheduler import SchedulerManager
-from src.services.title_recognition import TitleRecognitionManager
+from src.services.title_recognition import TitleRecognitionService
+from src.workflows.title_recognition import TitleRecognitionWorkflow
 from src.services.media_server_service import MediaServerService
 from src.utils.runtime.transport_manager import TransportManager
-from src.services.tunnel_service import TunnelService, apply_tunnel_from_notification_manager
+from src.services.tunnel_service import TunnelService
+from src.workflows.notification_tunnel import apply_tunnel_from_notification_manager
 from src.services.ai_service import init_ai_service
 from src.services.notification_manager import NotificationManager
 from src.services.notification_service import NotificationService
+from src.notification.input_adapter import NotificationInputAdapter
+from src.workflows.notification import NotificationWorkflow
+from src.workflows.task_notification import TaskNotificationWorkflow
+from src.workflows.tasks.recovery import TaskRecoveryResolver
+from src.services.bangumi_data_service import BangumiDataService
+from src.workflows.bangumi_data_sync import load_local_bangumi_data
+from src.workflows.bangumi_data_platforms import resolve_sources_by_title
+from src.api.ui.metadata_source import build_metadata_source_router
 from src.notification.events import EventContext, NotificationEvent, SystemEventType
 from src.utils.runtime.internal_polling import InternalPollingManager
-from src.utils.runtime.proxy_middleware import init_proxy_middleware
+from src.core.proxy import init_proxy_middleware
 from src.utils.runtime.server_instance_id import generate_server_instance_id
 from src.rate_limiter import RateLimiter
 from src.ai.ai_prompts import (
@@ -89,11 +100,11 @@ from src.jobs.webhook_processor import WebhookProcessorJob
 
 from src.ai.assistant.skill_manager import set_skills_base_dir, get_skill_manager
 from src.ai.assistant.builtin_skills import cleanup_legacy_builtin_files
-from src.services.log_manager import setup_logging
-from src.services.performance_collector import init_performance_collector
+from src.core.logging_setup import setup_logging
+from src.services.performance_collector import PerformanceCollector
+from src.internal_tasks.performance_collection import PerformanceCollectionTask
 from src.ai.assistant.tools.db_tools import init_llm_db_tools
 from src.ai.assistant.api_gateway import validate_whitelist
-from src.services.performance_collector import shutdown_performance_collector
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +211,7 @@ async def run_startup(app: FastAPI):
             logger.warning(f"同步PostgreSQL序列时出错(可忽略): {e}")
 
     # C5：初始化 ConfigService（新架构，单例模式）
-    config_service = init_config_service(session_factory)
+    config_service = init_config_service(session_factory, database_service=database_service)
     app.state.config_service = config_service
 
     # 注册默认配置(从default_configs.py导入)
@@ -239,9 +250,12 @@ async def run_startup(app: FastAPI):
     startup_start = time.time()
 
     # 搜索源仍按原有插件机制加载；元数据适配器由组装层显式注册。
+    offline_index = BangumiDataService(app.state.config_service)
     app.state.metadata_service = MetadataService(
         session_factory, app.state.config_service, None,
         source_classes=METADATA_SOURCE_CLASSES,
+        offline_bangumi_service=offline_index,
+        resolve_offline_sources=partial(resolve_sources_by_title, offline_index),
     )
     # 资源复合流程由组合根接线，管理器只消费准备完成的 manifest 快照。
     scraper_load_preparation = ScraperLoadPreparation()
@@ -250,6 +264,7 @@ async def run_startup(app: FastAPI):
         app.state.transport_manager, prepare_load=scraper_load_preparation.prepare,
     )
     app.state.metadata_service.scraper_manager = app.state.scraper_manager
+    app.state.scraper_manager.offline_bangumi_service = offline_index
 
     init_metadata_service(app.state.metadata_service)
     init_scraper_manager(app.state.scraper_manager)
@@ -280,7 +295,7 @@ async def run_startup(app: FastAPI):
     # 初始化关键组件
     app.state.rate_limiter = RateLimiter(database_service, app.state.scraper_manager)
     init_rate_limiter(app.state.rate_limiter)  # C7：注册到服务容器
-    app.include_router(app.state.metadata_service.router, prefix="/api/metadata")
+    app.include_router(build_metadata_source_router(app.state.metadata_service), prefix="/api/metadata")
 
     # Bangumi 专属路由
     if 'bangumi' in app.state.metadata_service.sources:
@@ -299,15 +314,17 @@ async def run_startup(app: FastAPI):
     app.state.task_manager.register_task_handler('bangumiDataSync', execute_bangumi_data_sync)
     app.state.task_manager.register_task_handler('bangumiDataClear', execute_bangumi_data_clear)
 
-    app.state.title_recognition_manager = TitleRecognitionManager(session_factory)
+    app.state.title_recognition_service = TitleRecognitionService(database_service)
+    app.state.title_recognition_manager = TitleRecognitionWorkflow(app.state.title_recognition_service)
+    init_title_recognition_service(app.state.title_recognition_service)
     init_title_recognition_manager(app.state.title_recognition_manager)  # C7：注册到服务容器
-    app.state.media_server_service = MediaServerService(session_factory)
+    app.state.media_server_service = MediaServerService(session_factory, database_service=database_service)
     init_media_server_service(app.state.media_server_service)
     await app.state.media_server_service.initialize()
 
     async def _load_bangumi_local_data():
         try:
-            await app.state.metadata_service.load_local_bangumi_data()
+            await load_local_bangumi_data(offline_index)
         except Exception as e:
             logger.warning(f"bangumi-data 本地离线数据加载失败（不影响启动）: {e}")
     asyncio.create_task(_load_bangumi_local_data())
@@ -320,11 +337,13 @@ async def run_startup(app: FastAPI):
     init_webhook_service(app.state.webhook_service)
 
     # 初始化性能监测采集器（C3.3：已删除 cache_manager 参数）
-    app.state.performance_collector = await init_performance_collector(
-        db_engine=app.state.db_engine,
-        task_manager=app.state.task_manager,
-        auto_start=True  # 自动启动性能采集
+    app.state.performance_collector = PerformanceCollector(
+        db_engine=app.state.db_engine, task_manager=app.state.task_manager,
     )
+    app.state.performance_collection_task = PerformanceCollectionTask(
+        app.state.performance_collector, database_service=database_service,
+    )
+    await app.state.performance_collection_task.start()
     logger.info("性能监测采集器已启动")
 
     # 初始化 LLM 数据库检索工具
@@ -359,13 +378,16 @@ async def run_startup(app: FastAPI):
 async def _run_startup_services(app: FastAPI, session_factory, startup_start: float):
     """启动依赖 webhook/task 管理器之后的服务（1:1 迁移）。"""
     # 设置任务恢复所需的依赖
-    app.state.task_manager.set_recovery_dependencies({
+    execution_dependencies = {
         "scraper_manager": app.state.scraper_manager,
         "rate_limiter": app.state.rate_limiter,
         "metadata_manager": app.state.metadata_service,
         "ai_service": app.state.ai_service,
         "title_recognition_manager": app.state.title_recognition_manager,
-    })
+    }
+    app.state.task_manager.set_execution_dependencies(execution_dependencies)
+    recovery = TaskRecoveryResolver(app.state.task_manager, execution_dependencies)
+    app.state.task_manager.set_recovery_callback(recovery.rebuild, recovery.resolve_queue)
 
     # 启动服务（使用异步方法，确保任务恢复完成后再启动 worker）
     await app.state.task_manager.start_async()
@@ -391,6 +413,7 @@ async def _run_startup_services(app: FastAPI, session_factory, startup_start: fl
         app.state.title_recognition_manager,
         job_base_class=BaseJob,
         job_classes=SCHEDULED_JOB_CLASSES,
+        database_service=db,
     )
     init_scheduler_manager(app.state.scheduler_manager)  # C7：注册到服务容器
     await app.state.scheduler_manager.start()
@@ -400,7 +423,8 @@ async def _run_startup_services(app: FastAPI, session_factory, startup_start: fl
     await app.state.internal_polling.start()
 
     # 初始化通知服务
-    app.state.notification_service = NotificationService(session_factory)
+    app.state.notification_state = NotificationService()
+    app.state.notification_service = NotificationInputAdapter(app.state.notification_state, session_factory)
     app.state.notification_service.set_dependencies(
         scraper_manager=app.state.scraper_manager,
         metadata_manager=app.state.metadata_service,
@@ -415,6 +439,10 @@ async def _run_startup_services(app: FastAPI, session_factory, startup_start: fl
     app.state.notification_manager = NotificationManager(session_factory, app.state.notification_service)
     await app.state.notification_manager.initialize()
     app.state.notification_service.notification_manager = app.state.notification_manager
+    app.state.notification_workflow = NotificationWorkflow(
+        app.state.notification_manager, app.state.notification_state, db,
+    )
+    await app.state.notification_workflow.start()
     await app.state.notification_manager.start_channels()
 
     # 初始化通知模板（订阅配置重置已迁移到 migrations.py 统一管理）
@@ -434,14 +462,17 @@ async def _run_startup_services(app: FastAPI, session_factory, startup_start: fl
     logger.info("隧道服务已初始化")
 
     # TaskManager 保留通知订阅；Webhook 接收通知由 Workflow 执行。
-    app.state.task_manager.set_notification_service(app.state.notification_service)
+    task_notifications = TaskNotificationWorkflow(db, app.state.notification_workflow)
+    app.state.task_manager.set_task_event_callbacks(
+        task_notifications.emit_task_event, task_notifications.emit_progress,
+    )
 
     total_time = time.time() - startup_start
     logger.info(f"应用启动完成，总耗时 {total_time:.2f} 秒")
 
     # 发射系统启动通知（使用 V2 事件入口）
     try:
-        await app.state.notification_manager.notify_event_v2(
+        await app.state.notification_workflow.notify_event_v2(
             EventContext(
                 event_type=NotificationEvent.SYSTEM_EVENT,
                 system_type=SystemEventType.STARTUP,
@@ -466,35 +497,36 @@ async def run_shutdown(app: FastAPI):
             pass
 
     # 关闭性能监测采集器
-    if hasattr(app.state, "performance_collector"):
-        await shutdown_performance_collector()
+    if hasattr(app.state, "performance_collection_task"):
+        await app.state.performance_collection_task.stop()
         logger.info("性能监测采集器已关闭")
 
-    # C4：关闭 CacheService（已替代 close_cache_backend）
-    await close_cache_service()
-    # C7：关闭 DatabaseService
-    await close_database_service()
-    await close_db_engine(app)
+    # 先停止产生业务任务的调度与轮询，再关闭其依赖的基础设施。
+    if hasattr(app.state, "scheduler_manager"):
+        await app.state.scheduler_manager.stop()
+    if hasattr(app.state, "internal_polling"):
+        await app.state.internal_polling.stop()
+    if hasattr(app.state, "task_manager"):
+        await app.state.task_manager.stop()
+    if hasattr(app.state, "notification_workflow"):
+        await app.state.notification_workflow.stop()
+    if hasattr(app.state, "notification_manager"):
+        await app.state.notification_manager.stop_channels()
+    if hasattr(app.state, "tunnel_service"):
+        await app.state.tunnel_service.stop()
+    if hasattr(app.state, "metadata_service"):
+        await app.state.metadata_service.close_all()
+    if hasattr(app.state, "media_server_service"):
+        await app.state.media_server_service.close_all()
     if hasattr(app.state, "scraper_manager"):
         await app.state.scraper_manager.close_all()
     if hasattr(app.state, "transport_manager"):
         try:
             await app.state.transport_manager.close_all()
-        except Exception as e:
-            logger.exception(f"关闭 TransportManager 时发生错误: {e}")
-    if hasattr(app.state, "task_manager"):
-        await app.state.task_manager.stop()
-    if hasattr(app.state, "metadata_manager"):
-        await app.state.metadata_service.close_all()
-    if hasattr(app.state, "notification_manager"):
-        await app.state.notification_manager.stop_channels()
-    if hasattr(app.state, "tunnel_service"):
-        await app.state.tunnel_service.stop()
-    if hasattr(app.state, "media_server_service"):
-        await app.state.media_server_service.close_all()
-    if hasattr(app.state, "scheduler_manager"):
-        await app.state.scheduler_manager.stop()
-    if hasattr(app.state, "internal_polling"):
-        await app.state.internal_polling.stop()
+        except Exception:
+            logger.exception("关闭 TransportManager 时发生错误")
+    await close_cache_service()
+    await close_database_service()
+    await close_db_engine(app)
 
     logger.info("应用已完全关闭")

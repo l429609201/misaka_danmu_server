@@ -3,7 +3,7 @@ import logging
 from typing import Any, Callable, List, Tuple
 
 from src.rate_limiter import RateLimitExceededError
-from src.schemas import EditImportRequest
+from src.schemas.import_schemas import EditedImportRequest
 from src.services.service_container import get_database_service
 from src.utils.diagnostics.error_message import extract_short_error_message
 from src.utils.diagnostics.task_exceptions import TaskFailed, TaskSuccess
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 async def prepare_edited_import(
-    request_data: EditImportRequest,
+    request_data: EditedImportRequest,
     scraper: Any,
     rate_limiter: Any,
     title_recognition_manager: Any,

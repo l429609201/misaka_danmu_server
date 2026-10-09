@@ -21,9 +21,9 @@ class MediaServerService:
         'plex': PlexMediaServer,
     }
     
-    def __init__(self, session_factory: Callable):
+    def __init__(self, session_factory: Callable, *, database_service: DatabaseService):
         self.session_factory = session_factory
-        self._db = DatabaseService(session_factory)  # ✅ 新架构：使用 DatabaseService
+        self._db = database_service
         self.servers: Dict[int, BaseMediaServer] = {}  # server_id -> instance
         self.logger = logging.getLogger(__name__)
     

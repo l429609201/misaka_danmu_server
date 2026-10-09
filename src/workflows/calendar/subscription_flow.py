@@ -20,6 +20,20 @@ from src.services.task_manager import TaskManager
 logger = logging.getLogger(__name__)
 
 
+async def update_metadata_provider_config(
+    metadata_service: MetadataService, provider: str, payload: dict[str, Any],
+) -> Any:
+    """先保存并重载源配置，再独立同步配置驱动的私人订阅。"""
+    result = await metadata_service.updateProviderConfig(provider, payload)
+    source = metadata_service.sources.get(provider)
+    if source is not None and hasattr(source, "sync_config_subscriptions"):
+        try:
+            await source.sync_config_subscriptions()
+        except Exception as exc:
+            logger.error("元数据源 '%s' 同步订阅目标失败: %s", provider, exc, exc_info=True)
+    return result
+
+
 @dataclass(frozen=True)
 class CalendarSubscriptionContext:
     """从 HTTP 接入层注入订阅执行所需的共享服务。"""

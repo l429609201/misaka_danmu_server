@@ -4,12 +4,15 @@ from typing import Any, Callable
 
 from src.services.service_container import get_metadata_service
 from src.services.task_manager import TaskFailed, TaskManager, TaskSuccess
+from src.workflows.bangumi_data_sync import sync_bangumi_data
 
 
 async def execute_bangumi_data_sync(session: Any, progress_callback: Callable) -> None:
-    """后台任务经 MetadataService 同步索引，失败交由任务系统记录。"""
+    """后台任务直接执行同步流程，失败交由任务系统记录。"""
     await progress_callback(10, "正在从 CDN 拉取 bangumi-data...")
-    result = await get_metadata_service().sync_bangumi_data(progress_callback=progress_callback)
+    result = await sync_bangumi_data(
+        get_metadata_service().get_offline_bangumi_service(), progress_callback=progress_callback,
+    )
     if not result.get("success"):
         raise TaskFailed(f"bangumi-data 同步失败：{result.get('message')}")
     raise TaskSuccess(f"bangumi-data 同步完成，共 {result.get('count')} 条。")

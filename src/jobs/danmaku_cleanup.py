@@ -16,7 +16,8 @@ from src.core import get_now
 from src.services.file_storage_service import get_file_storage_service
 from src.utils.diagnostics.task_exceptions import TaskSuccess
 from .base import BaseJob
-from src.services.task_profiler import profile_flow, FLOW_DANMAKU_CLEANUP
+from src.services.performance_service import profile_flow
+from src.schemas.performance import FLOW_DANMAKU_CLEANUP
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ from src.services.config_service import ConfigService, get_config_service
 from src.services.file_storage_service import get_file_storage_service
 from src.services.image_http_service import probe_image_url
 from src.utils.misc.public_url import validate_custom_domain_format
-from src.workflows.image_resource import IMAGE_DIR
+from src.workflows.image_resources import IMAGE_DIR
 
 PUBLIC_URL_PROBE_NAME = "notification_public_url_probe.png"
 PUBLIC_URL_PROBE_BYTES = base64.b64decode(

@@ -8,9 +8,8 @@ import asyncio
 import json
 import logging
 import time
-from typing import Optional, List, Dict, Any, Tuple, TYPE_CHECKING
+from typing import Optional, List, Dict, Any, Tuple
 
-from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.schemas.search import ProviderSearchInfo, AnimeSearchResponse
@@ -21,12 +20,13 @@ from src.services.service_container import (
     get_metadata_service,
     get_title_recognition_manager,
 )
-from src.db.orm_models import Anime, AnimeSource, User
+from src.schemas.auth import User
 from src.services.config_service import ConfigService
 from src.services.scraper_manager import ScraperManager
 from src.services.task_manager import TaskManager
 from src.services.metadata_service import MetadataService
-from src.workflows.search.engine import unified_search
+from src.workflows.search.engine import unified_search, search_all
+from src.workflows.search.ui_results import search_aliases_from_enabled_sources
 from src.utils.data_processing.name_converter import convert_to_chinese_title
 from src.utils import (
     parse_search_keyword,
@@ -36,14 +36,12 @@ from src.utils import (
 from src.workflows.search.ai_correction import correct_search_results
 # 外链配置与图片缓存分别复用对应编排流程。
 from src.workflows.image_public_url import get_custom_domain
-from src.workflows.image_resource import save_public_thumbnail
+from src.workflows.image_resources import save_public_thumbnail
 from src.utils.diagnostics.search_timer import SubStepTiming
 from src.rate_limiter import RateLimiter
 from src.services.ai_service import AIService
+from src.utils.title_recognition_engine import TitleRecognitionEngine
 from src.utils.parsing.filename_parser import format_episode_ranges
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -118,19 +116,6 @@ async def get_raw_cache(session: AsyncSession, key: str) -> Optional[Dict[str, A
 async def check_related_match_fallback_task(session: AsyncSession, search_term: str) -> Optional[Dict[str, Any]]:
     """检查是否有相关的匹配后备任务正在运行。"""
     return None
-
-
-async def get_next_virtual_anime_id(session: AsyncSession) -> int:
-    """在当前数据库会话中获取下一个虚拟 animeId。"""
-    try:
-        result = await session.execute(text(
-            "SELECT COALESCE(MAX(id), 900000000) + 1 AS next_id "
-            "FROM anime WHERE id >= 900000000"
-        ))
-        value = result.scalar_one_or_none()
-        return int(value or 900000001)
-    except Exception:
-        return 900000001
 
 
 async def handle_fallback_search(
@@ -733,7 +718,7 @@ async def _convert_and_cache_results(
                 item_recognition_title = None
             # 标题精确校验（复用识别词管理器 _exact_match，与命中判定一致）
             elif recognition_rule_source and title_recognition_manager:
-                if not title_recognition_manager._exact_match(result.title or "", recognition_rule_source):
+                if not TitleRecognitionEngine().exact_match(result.title or "", recognition_rule_source):
                     item_recognition_title = None
 
         search_results.append(
@@ -783,7 +768,7 @@ async def fallback_search_by_title(
         scraper_manager = get_scraper_manager()
 
         # 从所有启用的源搜索
-        results = await scraper_manager.search_all_sources(title, season)
+        results = await search_all(scraper_manager, [title], episode_info={"season": season})
 
         logger.info(f"标题 '{title}' 后备搜索找到 {len(results)} 个结果")
         return results
@@ -810,7 +795,7 @@ async def fallback_search_with_metadata(
         metadata_manager = get_metadata_service()
 
         # 从元数据源获取别名
-        aliases = await metadata_manager.search_aliases(title)
+        aliases = await search_aliases_from_enabled_sources(metadata_manager, title, User(id=0, username="fallback_search"))
 
         # 使用别名进行搜索
         all_results = []
@@ -859,55 +844,6 @@ async def fallback_search_with_recognition(
     except Exception as e:
         logger.error(f"标题识别后备搜索失败: {e}", exc_info=True)
         return None
-
-
-async def search_library_internal(
-    keyword: str,
-    season: Optional[int] = None,
-    session: Optional[AsyncSession] = None
-) -> List[Tuple[Anime, AnimeSource]]:
-    """
-    在本地库内搜索
-
-    :param keyword: 关键词
-    :param season: 季度
-    :param session: 数据库会话
-    :return: (Anime, AnimeSource) 元组列表
-    """
-    try:
-        if not session:
-            database_service = get_database_service()
-            async with database_service.session() as session:
-                return await _search_library_internal(keyword, season, session)
-        else:
-            return await _search_library_internal(keyword, season, session)
-    except Exception as e:
-        logger.error(f"库内搜索失败: {e}", exc_info=True)
-        return []
-
-
-
-
-async def _search_library_internal(
-    keyword: str,
-    season: Optional[int],
-    session: AsyncSession
-) -> List[Tuple[Anime, AnimeSource]]:
-    """内部库搜索实现"""
-    # 构建查询
-    stmt = select(Anime, AnimeSource).join(
-        AnimeSource, Anime.id == AnimeSource.anime_id
-    ).where(
-        Anime.title.ilike(f"%{keyword}%")
-    )
-
-    if season is not None:
-        stmt = stmt.where(Anime.season == season)
-
-    result = await session.execute(stmt)
-    rows = result.all()
-
-    return [(row.Anime, row.AnimeSource) for row in rows]
 
 
 # ============ 搜索分集业务逻辑（从 API 层迁移） ============

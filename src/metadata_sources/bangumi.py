@@ -448,7 +448,10 @@ class BangumiMetadataSource(BaseMetadataSource):
 
         try:
             core_title = parse_search_keyword(keyword)["title"]
-            direct_sources = await metadata_service.resolve_offline_sources_by_title(core_title)
+            resolver = getattr(self, "resolve_offline_sources", None)
+            if resolver is None:
+                return []
+            direct_sources = await resolver(core_title)
         except Exception as e:
             self.logger.warning(f"bangumi-data 直链补充解析失败: {type(e).__name__}: {e}")
             return []

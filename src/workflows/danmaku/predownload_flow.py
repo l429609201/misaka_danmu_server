@@ -21,6 +21,8 @@ from src.utils.parsing.episode_filter import get_and_apply_single_episode_filter
 from src.schemas.import_schemas import DanmakuEpisodeCreate
 from src.workflows.danmaku_import import save_danmaku_for_episode
 
+from src.workflows.supplement_episodes import get_episodes_routed
+
 logger = logging.getLogger(__name__)
 
 
@@ -170,7 +172,7 @@ async def predownload_next_episode_flow(
                     await progress_callback(10, f"正在获取分集列表...")
 
                     # 获取分集列表
-                    episodes = await scraper_manager.get_episodes_routed(provider, media_id)
+                    episodes = await get_episodes_routed(scraper_manager, provider, media_id)
 
                     # 应用单剧过滤规则
                     if episodes and anime and anime.title:

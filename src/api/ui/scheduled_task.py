@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.utils.auth import security
 from src.services.service_container import get_database_service
 from src.services.scheduler import SchedulerManager
+from src.workflows.scheduled_tasks import ScheduledTaskWorkflow
 from src.schemas.auth import User
 from src.schemas.common import ScheduledTaskInfo
 from src.schemas.control.scheduler import (
@@ -50,7 +51,7 @@ async def create_scheduled_task(
 ):
     try:
         logger.info(f"[调试] 创建定时任务 - 接收到的 task_data: name={task_data.name}, jobType={task_data.jobType}, taskConfig={task_data.taskConfig}")
-        new_task = await scheduler.add_task(task_data.name, task_data.jobType, task_data.cronExpression, task_data.isEnabled, task_data.taskConfig)
+        new_task = await ScheduledTaskWorkflow(scheduler, get_database_service()).add_task(task_data.name, task_data.jobType, task_data.cronExpression, task_data.isEnabled, task_data.taskConfig)
         return ScheduledTaskInfo.model_validate(new_task)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -68,7 +69,10 @@ async def update_scheduled_task(
     scheduler: SchedulerManager = Depends(get_scheduler_manager)
 ):
     logger.info(f"[调试] 更新定时任务 '{taskId}' - 接收到的 task_data: name={task_data.name}, cronExpression={task_data.cronExpression}, isEnabled={task_data.isEnabled}, taskConfig={task_data.taskConfig}")
-    updated_task = await scheduler.update_task(taskId, task_data.name, task_data.cronExpression, task_data.isEnabled, task_data.taskConfig)
+    try:
+        updated_task = await ScheduledTaskWorkflow(scheduler, get_database_service()).update_task(taskId, task_data.name, task_data.cronExpression, task_data.isEnabled, task_data.taskConfig)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not updated_task:
         raise HTTPException(status_code=404, detail="找不到指定的任务ID")
     return ScheduledTaskInfo.model_validate(updated_task)

@@ -6,6 +6,7 @@ from src.services.service_container import get_database_service
 from src.utils.diagnostics.task_exceptions import TaskFailed
 from src.workflows.danmaku_import import save_danmaku_for_episode
 from src.workflows.episode_download import download_episode_comments_concurrent
+from src.workflows.supplement_episodes import get_episodes_routed
 
 
 async def refresh_one_episode(
@@ -34,7 +35,7 @@ async def refresh_one_episode(
             raise TaskFailed("刷新失败：找不到对应的弹幕源")
         await progress_callback(15, "正在重新获取分集信息...")
         # 后备占位 ID 可能携带补充源坐标，必须保留并经过统一路由。
-        episodes = await manager.get_episodes_routed(provider, media_id, target_episode_index=index)
+        episodes = await get_episodes_routed(manager, provider, media_id, target_episode_index=index)
         target = next((item for item in episodes or [] if item.episodeIndex == index), None)
         if target is None:
             raise TaskFailed(f"刷新失败：分集列表中未找到第 {index} 集")

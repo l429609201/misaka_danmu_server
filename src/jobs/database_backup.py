@@ -24,7 +24,8 @@ from src.db import orm_models
 from src.core import settings, get_now
 from .base import BaseJob
 from src.utils.diagnostics.task_exceptions import TaskSuccess
-from src.services.task_profiler import profile_flow, FLOW_DATABASE_BACKUP
+from src.services.performance_service import profile_flow
+from src.schemas.performance import FLOW_DATABASE_BACKUP
 
 logger = logging.getLogger(__name__)
 

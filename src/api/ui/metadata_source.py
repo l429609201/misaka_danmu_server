@@ -14,11 +14,25 @@ from src.services.metadata_service import MetadataService
 from src.services.task_manager import TaskManager
 from src.services.scraper_manager import ScraperManager
 from src.api.dependencies import get_metadata_service, get_task_manager, get_scraper_manager
+from src.workflows.calendar.subscription_flow import update_metadata_provider_config
 from src.workflows.bangumi_data_tasks import submit_bangumi_data_task
 from src.workflows.bangumi_data_platforms import resolve_bangumi_danmaku_sources
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def build_metadata_source_router(metadata_service: MetadataService) -> APIRouter:
+    """在 HTTP 组合层聚合来源公开的子路由。"""
+    source_router = APIRouter()
+    for provider, source in metadata_service.sources.items():
+        api_router = getattr(source, "api_router", None)
+        if isinstance(api_router, APIRouter):
+            source_router.include_router(
+                api_router, prefix=f"/{provider}",
+                tags=[f"Metadata - {provider.capitalize()}"],
+            )
+    return source_router
 
 
 @router.get("/metadata-sources", response_model=List[MetadataSourceStatusResponse], summary="获取所有元数据源的设置")
@@ -63,7 +77,7 @@ async def update_metadata_source_config(
 ):
     """更新指定元数据源的配置"""
     try:
-        await metadata_manager.updateProviderConfig(providerName, payload)
+        await update_metadata_provider_config(metadata_manager, providerName, payload)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:

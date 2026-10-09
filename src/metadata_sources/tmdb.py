@@ -562,6 +562,18 @@ class TmdbMetadataSource(BaseMetadataSource):
             # 捕获 _create_client 中的 API Key 未配置错误
             raise HTTPException(status_code=status.HTTP_412_PRECONDITION_FAILED, detail=str(e))
 
+    async def find_by_external_id(self, external_id: str, external_source: str) -> Optional[str]:
+        """调用 TMDB 外部编号协议，返回首个电视剧或电影标识。"""
+        async with await self._create_client() as client:
+            response = await client.get(f"/find/{external_id}", params={"external_source": external_source})
+            response.raise_for_status()
+            data = response.json()
+        for result_key in ("tv_results", "movie_results"):
+            results = data.get(result_key, [])
+            if results:
+                return str(results[0]["id"])
+        return None
+
     async def get_all_episode_groups(self, tmdb_id: int, user: User) -> List[Dict[str, Any]]:
         """
         获取指定TMDB TV ID的所有剧集组信息。
