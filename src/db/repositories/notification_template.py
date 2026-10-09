@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import ConfigRepository
-from src.schemas.notification_template import TemplateID
+from src.schemas.notification_template import DEFAULT_PROGRESS_BODY, DEFAULT_PROGRESS_TITLE, TemplateID
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +128,11 @@ class NotificationTemplateRepository:
 
         
         default_templates = {
+            TemplateID.TASK_PROGRESS: {
+                "title": DEFAULT_PROGRESS_TITLE,
+                "body": DEFAULT_PROGRESS_BODY,
+                "imageEnabled": False,
+            },
             TemplateID.DANMAKU_IMPORT: {
                 "title": "{{ status_icon }} {{ action_name }}{{ status_name }}",
                 "body": """**作品**: {{ anime_title }}
@@ -187,6 +192,7 @@ class NotificationTemplateRepository:
                 await self.upsert(
                     template_id,
                     content["title"],
-                    content["body"]
+                    content["body"],
+                    content.get("imageEnabled", True),
                 )
                 logger.info(f"已创建默认模板: {template_id}")

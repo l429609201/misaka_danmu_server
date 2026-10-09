@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Card, Segmented, Select, Empty, Spin, Alert, Image, Typography, Space, Collapse } from 'antd'
+import { Card, Segmented, Select, Empty, Spin, Alert, Image, Typography, Space, Collapse, InputNumber } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
 
@@ -9,7 +9,7 @@ const { Text, Paragraph } = Typography
  * 通知预览组件 - 实时显示模板渲染结果
  * 支持切换渠道和示例状态
  */
-export const NotificationPreview = ({ previewData, loading, onChannelChange, onStatusChange, channelTypes = [] }) => {
+export const NotificationPreview = ({ previewData, loading, onChannelChange, onStatusChange, channelTypes = [], isTaskProgress = false, exampleProgress = 50, onProgressChange }) => {
   const { t } = useTranslation()
   const channelOptions = channelTypes.map((item) => ({
     label: item.displayName || item.name || item.channelType,
@@ -63,22 +63,41 @@ export const NotificationPreview = ({ previewData, loading, onChannelChange, onS
             options={channelOptions}
             value={selectedChannel || undefined}
             onChange={handleChannelChange}
-            placeholder="请选择渠道"
+            placeholder={t('notificationTemplate.channelPlaceholder')}
             style={{ width: '100%' }}
           />
         </div>
 
-        <div>
-          <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-            {t('notificationTemplate.statusLabel')}
-          </Text>
-          <Segmented
-            options={statusOptions}
-            value={selectedStatus}
-            onChange={handleStatusChange}
-            block
-          />
-        </div>
+        {isTaskProgress ? (
+          <div>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+              {t('notificationTemplate.statusRunning')}
+            </Text>
+            <InputNumber
+              aria-label={t('notificationTemplate.progressLabel')}
+              addonBefore={t('notificationTemplate.progressLabel')}
+              addonAfter="%"
+              min={0}
+              max={100}
+              precision={0}
+              value={exampleProgress}
+              onChange={onProgressChange}
+              style={{ width: '100%' }}
+            />
+          </div>
+        ) : (
+          <div>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+              {t('notificationTemplate.statusLabel')}
+            </Text>
+            <Segmented
+              options={statusOptions}
+              value={selectedStatus}
+              onChange={handleStatusChange}
+              block
+            />
+          </div>
+        )}
       </Space>
 
       {/* 预览内容 */}
@@ -100,9 +119,9 @@ export const NotificationPreview = ({ previewData, loading, onChannelChange, onS
             )}
 
             {/* 图片预览 */}
-            {previewData.imageUrl && (
+            {!isTaskProgress && previewData.imageUrl && (
               <div style={{ marginBottom: 16 }}>
-                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>示例图片</Text>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>{t('notificationTemplate.exampleImage')}</Text>
                 <Image
                   src={previewData.imageUrl}
                   alt="Preview"

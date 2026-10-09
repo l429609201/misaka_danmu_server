@@ -11,7 +11,10 @@ from src.notification.events import EventContext, NotificationEvent, TaskOperati
 from src.notification.template_resolver import TemplateResolver
 from src.notification.subscription_matcher import SubscriptionMatcher
 from src.notification.messages.unified import UnifiedTaskMessage, UnifiedSystemMessage
-from src.schemas.notification_template import empty_template_variables
+from src.schemas.notification_template import (
+    DEFAULT_PROGRESS_BODY, DEFAULT_PROGRESS_TITLE, TemplateID, empty_template_variables,
+)
+from src.utils.progress_bar import build_progress_bar
 from src.services.template_renderer import get_template_renderer
 from src.workflows.image_resources import load_image_bytes
 
@@ -526,24 +529,45 @@ class NotificationWorkflow:
         """
         if not self.manager:
             return
-        channels = self.manager.get_all_channels()
+        channels = {
+            ch_id: channel for ch_id, channel in self.manager.get_all_channels().items()
+            if channel.get_capabilities().supports_editing
+        }
+        if not channels:
+            return
+        # 每次回调只读取一次模板；事务在渲染及网络发送之前结束。
+        variables = empty_template_variables()
+        percent = max(0, min(100, int(progress)))
+        variables.update({
+            "task_id": task_id, "task_title": task_title, "progress": percent,
+            "progress_bar": build_progress_bar(percent), "description": description,
+            "status_icon": "⏳", "status_name": "进行中", "action_name": "任务",
+        })
+        template = None
+        try:
+            async with self._db.transaction():
+                template = await self._db.notification_template.get_by_id(TemplateID.TASK_PROGRESS)
+        except Exception as exc:
+            logger.debug("读取进度模板失败，使用默认模板: %s", exc)
+        renderer = get_template_renderer()
+        ok, title, text, error = renderer.render(
+            template.get("title", "") if template else DEFAULT_PROGRESS_TITLE,
+            template.get("body", "") if template else DEFAULT_PROGRESS_BODY,
+            variables,
+        )
+        if not ok:
+            logger.warning("进度模板渲染失败，使用默认模板: %s", error)
+            ok, title, text, error = renderer.render(DEFAULT_PROGRESS_TITLE, DEFAULT_PROGRESS_BODY, variables)
+        if not ok:
+            return
         for ch_id, channel_instance in channels.items():
             try:
-                # 常态化实时进度：只按渠道能力判断，不检查订阅
-                # why：进度消息靠「编辑同一条消息」刷新百分比，只有声明了
-                # MESSAGE_EDITING 能力的渠道才支持。不具备该能力的渠道（企业微信/
-                # Server酱）若逐条推送进度，会变成刷屏的进度条垃圾消息，
-                # 因此这里按能力而非渠道类型判断，新增渠道无需再改这里。
-                if not channel_instance.get_capabilities().supports_editing:
-                    continue
-                # 进度事件没有通用模板；使用普通文本供支持编辑的渠道复用消息。
-                percent = max(0, min(100, int(progress)))
-                text = f"{task_title}\n[{('█' * (percent // 5)).ljust(20, '░')}] {percent}%\n{description}"
+                # 进度只有文本，不读取海报或生成图片，也不改变普通进度订阅规则。
                 edit_mid = self.state.get_progress_messages(task_id).get(ch_id)
                 msg_id_out: List[int] = []
                 logger.debug(f"[进度通知] task_id={task_id[:8]} ch={ch_id} edit_mid={edit_mid} progress={progress}%")
                 await channel_instance.send_message(
-                    title="", text=text,
+                    title=title, text=text,
                     edit_message_id=edit_mid, _msg_id_out=msg_id_out
                 )
                 # 记录新发出的 message_id（首次 send 或 edit 失败降级后均更新缓存）

@@ -5,13 +5,14 @@ import logging
 from typing import Dict, Any, List, Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.notification.subscription_matcher import ScopeKey, SubscriptionMatcher
 from src.notification.template_resolver import TemplateResolver
 from src.services.service_container import get_database_service
 from src.services.template_renderer import get_template_renderer
-from src.schemas.notification_template import empty_template_variables
+from src.schemas.notification_template import TemplateID, empty_template_variables
+from src.utils.progress_bar import build_progress_bar
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +41,15 @@ class TemplatePreviewRequest(BaseModel):
     # 兼容前端历史字段名 exampleStatus，二者任一均可
     sampleStatus: Optional[str] = None  # success/failed/no_change
     exampleStatus: Optional[str] = None
+    exampleProgress: int = Field(55, ge=0, le=100)
     imageEnabled: bool = True
 
     @property
     def resolved_status(self) -> str:
         """归一化状态字段，优先 sampleStatus"""
-        return self.sampleStatus or self.exampleStatus or "success"
+        return self.sampleStatus or self.exampleStatus or (
+            "running" if self.templateId == TemplateID.TASK_PROGRESS else "success"
+        )
 
 
 @router.get("/scopes")
@@ -158,6 +162,10 @@ async def preview_template(
     
     # 获取示例变量（状态字段已做新旧字段名归一化）
     sample_vars = _get_sample_variables(req.templateId, req.resolved_status)
+    if req.templateId == TemplateID.TASK_PROGRESS:
+        # 预览使用用户选择的百分比，与真实发送复用同一进度条工具。
+        sample_vars["progress"] = req.exampleProgress
+        sample_vars["progress_bar"] = build_progress_bar(req.exampleProgress)
     if not req.imageEnabled:
         sample_vars["image_url"] = ""
     
@@ -191,6 +199,11 @@ def _get_template_variables(template_id: str) -> List[Dict[str, Any]]:
         {"name": "status_name", "label": "状态名称", "example": "成功", "category": "通用"},
         {"name": "action_name", "label": "操作名称", "example": "刷新", "category": "通用"},
         {"name": "task_id", "label": "任务 ID", "example": "task-123", "category": "通用"},
+        # 进度字段保持数值合同，正文可忽略默认进度条或使用沙箱循环自定义。
+        {"name": "task_title", "label": "任务标题", "example": "刷新弹幕", "category": "进度"},
+        {"name": "progress", "label": "进度百分比", "example": 55, "category": "进度"},
+        {"name": "progress_bar", "label": "二十格进度条", "example": build_progress_bar(55), "category": "进度"},
+        {"name": "description", "label": "进度说明", "example": "正在处理第 11/20 集", "category": "进度"},
         # 媒体主体字段
         {"name": "anime_title", "label": "作品标题", "example": "某动画", "category": "媒体"},
         {"name": "season", "label": "季度", "example": "1", "category": "媒体"},
@@ -255,6 +268,14 @@ def _get_sample_variables(template_id: str, status: str) -> Dict[str, Any]:
         "webhook_source": "",
         "image_url": _PREVIEW_IMAGE_URL,
     })
+    if template_id == TemplateID.TASK_PROGRESS:
+        # 进度没有媒体海报；即使历史请求保留图片默认参数也只预览文本。
+        base_vars.update({
+            "status_icon": "⏳", "status_name": "进行中", "action_name": "任务",
+            "task_title": "刷新弹幕", "progress": 55,
+            "progress_bar": build_progress_bar(55),
+            "description": "正在处理第 11/20 集", "image_url": "",
+        })
     return base_vars
 
 

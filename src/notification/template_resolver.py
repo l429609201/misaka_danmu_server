@@ -89,6 +89,7 @@ class TemplateResolver:
             TemplateID.FALLBACK_PROCESSING,
             TemplateID.MEDIA_SCAN,
             TemplateID.SYSTEM_NOTICE,
+            TemplateID.TASK_PROGRESS,
         ]
     
     @staticmethod
@@ -119,6 +120,11 @@ class TemplateResolver:
                 "zh": "媒体库扫描",
                 "en": "Media Library Scan",
                 "tw": "媒體庫掃描",
+            },
+            TemplateID.TASK_PROGRESS: {
+                "zh": "任务进度",
+                "en": "Task Progress",
+                "tw": "任務進度",
             },
             TemplateID.SYSTEM_NOTICE: {
                 "zh": "系统通知",

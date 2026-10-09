@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { ResponsiveModal } from '../../../components/ResponsiveModal'
 import { NotificationPreview } from './NotificationPreview'
 import { TemplateVariablePanel } from './TemplateVariablePanel'
+import { buildNotificationTemplateSavePayload, buildNotificationTemplatePreviewPayload } from './notificationTemplatePayload'
 import {
   getNotificationTemplate,
   updateNotificationTemplate,
@@ -18,7 +19,7 @@ const { Text } = Typography
 
 /**
  * 通知模板编辑器 - 通用编辑组件
- * 支持 5 个模板场景的编辑、变量插入、实时预览
+ * 支持后端注册模板的编辑、变量插入、实时预览
  */
 export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSaved, channelTypes = [] }) => {
   const { t } = useTranslation()
@@ -29,6 +30,8 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
   const [templateData, setTemplateData] = useState(null)
   const [previewData, setPreviewData] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [exampleProgress, setExampleProgress] = useState(50)
+  const isTaskProgress = templateId === 'task_progress'
 
   // 光标位置跟踪
   const [activeField, setActiveField] = useState('body') // 'title' | 'body'
@@ -38,26 +41,26 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
 
   // 防抖预览
   const previewTimerRef = useRef(null)
-  const previewSelectionRef = useRef({ channel: '', status: 'success' })
+  const previewSelectionRef = useRef({ channel: '', status: 'success', progress: 50 })
 
   // 防抖预览请求
-  const triggerPreview = useCallback((title, body, channel, status) => {
+  const triggerPreview = useCallback((title, body, channel, status, progress) => {
     const selectedChannel = channel || previewSelectionRef.current.channel || channelTypes[0]?.channelType
-    const selectedStatus = status || previewSelectionRef.current.status
-    previewSelectionRef.current = { channel: selectedChannel, status: selectedStatus }
+    const selectedStatus = isTaskProgress ? 'running' : (status || previewSelectionRef.current.status)
+    const selectedProgress = progress ?? previewSelectionRef.current.progress
+    previewSelectionRef.current = { channel: selectedChannel, status: selectedStatus, progress: selectedProgress }
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current)
     previewTimerRef.current = setTimeout(async () => {
       if (!templateId) return
       setPreviewLoading(true)
       try {
-        const res = await previewNotificationTemplate({
+        const res = await previewNotificationTemplate(buildNotificationTemplatePreviewPayload(
           templateId,
-          title,
-          body,
-          channel: selectedChannel,
-          exampleStatus: selectedStatus,
-          imageEnabled: form.getFieldValue('imageEnabled') !== false,
-        })
+          { title, body, imageEnabled: form.getFieldValue('imageEnabled') },
+          selectedChannel,
+          selectedStatus,
+          selectedProgress,
+        ))
         setPreviewData(res.data)
         setValidationError(res.data.error || null)
       } catch (e) {
@@ -67,7 +70,7 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
         setPreviewLoading(false)
       }
     }, 300)
-  }, [templateId, t, form, channelTypes])
+  }, [templateId, t, form, channelTypes, isTaskProgress])
 
   // 加载模板数据
   const loadTemplate = useCallback(async () => {
@@ -79,19 +82,23 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
       form.setFieldsValue({
         title: data.title || '',
         body: data.body || '',
-        imageEnabled: data.imageEnabled !== false,
+        imageEnabled: !isTaskProgress && data.imageEnabled !== false,
       })
       setValidationError(null)
       setHasUnsavedChanges(false)
-      triggerPreview(data.title || '', data.body || '', channelTypes[0]?.channelType, 'success')
+      setExampleProgress(50)
+      triggerPreview(data.title || '', data.body || '', channelTypes[0]?.channelType, isTaskProgress ? 'running' : 'success', 50)
     } catch (e) {
       message.error(t('notificationTemplate.loadFailed'))
       console.error('加载模板失败:', e)
     }
-  }, [templateId, form, t, channelTypes, triggerPreview])
+  }, [templateId, form, t, channelTypes, triggerPreview, isTaskProgress])
 
   useEffect(() => {
     if (visible && templateId) loadTemplate()
+    return () => {
+      if (previewTimerRef.current) clearTimeout(previewTimerRef.current)
+    }
   }, [visible, templateId, loadTemplate])
 
   // 表单值变化时触发预览
@@ -182,11 +189,7 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
       const values = await form.validateFields()
       setSaving(true)
 
-      await updateNotificationTemplate(templateId, {
-        title: values.title,
-        body: values.body,
-        imageEnabled: values.imageEnabled !== false,
-      })
+      await updateNotificationTemplate(templateId, buildNotificationTemplateSavePayload(templateId, values))
 
       message.success(t('notificationTemplate.saveSuccess'))
       setHasUnsavedChanges(false)
@@ -219,7 +222,7 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
   return (
     <ResponsiveModal
       visible={visible}
-      title={templateData?.displayName || t('notificationTemplate.editorTitle')}
+      title={isTaskProgress ? t('notificationTemplate.taskProgressName') : (templateData?.displayName || t('notificationTemplate.editorTitle'))}
       onCancel={handleClose}
       width={1200}
       footer={null}
@@ -229,21 +232,23 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
         {/* 左栏：编辑区 60% */}
         <div style={{ flex: '0 0 60%', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* 场景说明 */}
-          {templateData?.description && (
-            <Alert message={templateData.description} type="info" showIcon />
+          {(isTaskProgress || templateData?.description) && (
+            <Alert message={isTaskProgress ? t('notificationTemplate.taskProgressDescription') : templateData.description} type="info" showIcon />
           )}
 
           {/* 编辑表单 */}
           <Card>
             <Form form={form} layout="vertical" onValuesChange={handleValuesChange}>
-              <Form.Item
-                label="通知图片"
-                name="imageEnabled"
-                valuePropName="checked"
-                extra="开启后，渠道会按各自的图片发送模式附加海报；关闭后仅发送文字。"
-              >
-                <Switch checkedChildren="带图" unCheckedChildren="纯文字" />
-              </Form.Item>
+              {!isTaskProgress && (
+                <Form.Item
+                  label={t('notificationTemplate.imageLabel')}
+                  name="imageEnabled"
+                  valuePropName="checked"
+                  extra={t('notificationTemplate.imageDescription')}
+                >
+                  <Switch checkedChildren={t('notificationTemplate.imageOn')} unCheckedChildren={t('notificationTemplate.imageOff')} />
+                </Form.Item>
+              )}
               {/* 标题模板 */}
               <Form.Item
                 label={
@@ -316,7 +321,11 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
 
           {/* 变量面板 */}
           <TemplateVariablePanel
-            variables={templateData?.variables || []}
+            variables={(templateData?.variables || []).map(variable => isTaskProgress ? {
+              ...variable,
+              label: t(`notificationTemplate.taskProgressVariables.${variable.name}`, { defaultValue: variable.label }),
+              description: undefined,
+            } : variable)}
             onInsert={insertVariable}
           />
 
@@ -345,7 +354,15 @@ export const NotificationTemplateEditor = ({ visible, templateId, onClose, onSav
           <NotificationPreview
             previewData={previewData}
             loading={previewLoading}
-             channelTypes={channelTypes}
+            channelTypes={channelTypes}
+            isTaskProgress={isTaskProgress}
+            exampleProgress={exampleProgress}
+            onProgressChange={(progress) => {
+              if (progress === null) return
+              setExampleProgress(progress)
+              const values = form.getFieldsValue()
+              triggerPreview(values.title, values.body, undefined, 'running', progress)
+            }}
             onChannelChange={(channel) => handlePreviewChange(channel, previewSelectionRef.current.status)}
             onStatusChange={(status, channel) => handlePreviewChange(channel || channelTypes[0]?.channelType, status)}
           />

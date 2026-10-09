@@ -446,9 +446,9 @@ export const Notification = () => {
                 style={{ cursor: 'pointer', height: '100%' }}
               >
                 <Space direction="vertical" style={{ width: '100%' }}>
-                  <Text strong>{template.displayName}</Text>
+                  <Text strong>{template.templateId === 'task_progress' ? t('notificationTemplate.taskProgressName') : template.displayName}</Text>
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    {template.description}
+                    {template.templateId === 'task_progress' ? t('notificationTemplate.taskProgressDescription') : template.description}
                   </Text>
                   <Button
                     type="link"
