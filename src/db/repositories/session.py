@@ -19,6 +19,20 @@ from .base import BaseRepository
 logger = logging.getLogger(__name__)
 
 
+def _resolve_expires_at(now: datetime, expires_minutes: Optional[int]) -> Optional[datetime]:
+    """计算过期时间；None 或 -1 表示永不过期（expiresAt 留空）。"""
+    if expires_minutes and expires_minutes != -1:
+        return now + timedelta(minutes=expires_minutes)
+    return None
+
+
+def _truncate_user_agent(user_agent: Optional[str]) -> Optional[str]:
+    """userAgent 字段长度上限 500，超长截断避免入库失败。"""
+    if user_agent and len(user_agent) > 500:
+        return user_agent[:500]
+    return user_agent
+
+
 class SessionRepository(BaseRepository[UserSession]):
     """用户会话 Repository（对应表 user_sessions）"""
 
@@ -73,13 +87,9 @@ class SessionRepository(BaseRepository[UserSession]):
         expires_minutes 为 None 或 -1 时表示永不过期（expiresAt 留空）。
         """
         now = get_now()
-        expires_at: Optional[datetime] = None
-        if expires_minutes and expires_minutes != -1:
-            expires_at = now + timedelta(minutes=expires_minutes)
+        expires_at = _resolve_expires_at(now, expires_minutes)
 
-        # userAgent 字段长度上限 500，超长截断避免入库失败
-        if user_agent and len(user_agent) > 500:
-            user_agent = user_agent[:500]
+        user_agent = _truncate_user_agent(user_agent)
 
         user_session = UserSession(
             userId=user_id,
@@ -95,6 +105,52 @@ class SessionRepository(BaseRepository[UserSession]):
         # flush 以获得自增主键 id，但不提交事务
         await self._session.flush()
         return user_session
+
+    async def ensure_active_by_jti(
+        self,
+        user_id: int,
+        jti: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        expires_minutes: Optional[int] = None,
+    ) -> bool:
+        """确保 jti 对应的会话在本次事务后有效，返回是否新建了会话记录。
+
+        why：IP 白名单免登录按「IP + UA」生成固定 jti，重复登录必然命中唯一键。
+        已存在的会话可能已被登出撤销或已过期，若只刷新 lastUsedAt，
+        签发的令牌会在会话校验时被判无效（表现为自动登录成功但 /users/me 401）。
+        因此这里统一为「有效则仅刷新使用时间，失效或缺失则恢复/新建」，
+        同时避免「先删除再插入」写法在并发下抛重复键错误。
+        """
+        now = get_now()
+        user_agent = _truncate_user_agent(user_agent)
+        existing = await self.get_by_jti(jti)
+
+        if existing is not None:
+            expired = existing.expiresAt is not None and existing.expiresAt < now
+            existing.lastUsedAt = now
+            if existing.isRevoked or expired:
+                # 沿用同一 jti 恢复会话，避免唯一键冲突导致签发即失效。
+                existing.userId = user_id
+                existing.ipAddress = ip_address
+                existing.userAgent = user_agent
+                existing.isRevoked = False
+                existing.expiresAt = _resolve_expires_at(now, expires_minutes)
+            await self._session.flush()
+            return False
+
+        self._session.add(UserSession(
+            userId=user_id,
+            jti=jti,
+            ipAddress=ip_address,
+            userAgent=user_agent,
+            createdAt=now,
+            lastUsedAt=now,
+            expiresAt=_resolve_expires_at(now, expires_minutes),
+            isRevoked=False,
+        ))
+        await self._session.flush()
+        return True
 
     async def update(self, session_id: int, **kwargs) -> Optional[UserSession]:
         """按主键更新会话字段"""

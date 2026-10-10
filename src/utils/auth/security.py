@@ -234,7 +234,8 @@ async def check_ip_whitelist(request: Request, session: AsyncSession) -> Optiona
                     return None
 
                 user = User.model_validate(admin_user)
-                user_id = admin_user["id"]
+                # 仓储返回 ORM 实体，按属性取主键；字典下标写法会在会话恢复前直接抛错。
+                user_id = admin_user.id
 
                 # 获取 JWT 有效期配置（与正常登录一致）
                 expire_minutes_str = await db.config.get_config_value('jwtExpireMinutes', str(settings.jwt.access_token_expire_minutes))
@@ -252,24 +253,10 @@ async def check_ip_whitelist(request: Request, session: AsyncSession) -> Optiona
                 jti = f"whitelist_{client_ip_str}_{ua_hash}"
 
                 # 检查数据库中是否已存在该 jti 的会话
-                existing_session = await db.session_store.get_by_jti(jti)
-                if existing_session:
-                    if not existing_session.get("isRevoked"):
-                        # 检查是否过期
-                        expires_at = existing_session.get("expiresAt")
-                        if expires_at is None or expires_at > get_now():
-                            # 会话有效，更新最后使用时间并复用
-                            await db.session_store.update_last_used(jti)
-                            _whitelist_session_cache[cache_key] = (user, current_time, ttl_seconds, jti)
-                            logger.debug(f"IP {client_ip_str} 复用已有的白名单会话")
-                            return user
-
-                    # 会话已过期或被撤销，删除旧会话以便重建
-                    await db.session_store.delete_by_jti(jti)
-
-                # 通过登录会话数据域保存记录，避免与数据库连接会话混淆。
+                # 统一按「有效则仅刷新使用时间，被撤销/过期/缺失则按同一 jti 恢复或新建」处理。
+                # why：这里的会话对象是 ORM 实体而不是字典，且先删除再插入会在并发下抛重复键错误。
                 try:
-                    await db.session_store.create(
+                    created = await db.session_store.ensure_active_by_jti(
                         user_id=user_id,
                         jti=jti,
                         ip_address=client_ip_str,
@@ -277,19 +264,8 @@ async def check_ip_whitelist(request: Request, session: AsyncSession) -> Optiona
                         expires_minutes=db_expire_minutes
                     )
                 except Exception as e:
-                    # 可能是并发请求导致的重复键错误，尝试复用已存在的会话
-                    if "Duplicate entry" in str(e) or "UNIQUE constraint" in str(e):
-                        logger.debug(f"白名单会话已被其他请求创建，尝试复用: {jti}")
-                        # 更新最后使用时间
-                        try:
-                            await db.session_store.update_last_used(jti)
-                        except Exception:
-                            pass
-                        _whitelist_session_cache[cache_key] = (user, current_time, ttl_seconds, jti)
-                        return user
-                    else:
-                        logger.error(f"创建白名单会话记录失败: {e}")
-                    # 即使数据库记录失败，仍然允许访问（但不缓存）
+                    logger.error(f"创建白名单会话记录失败: {e}")
+                    # 会话记录写入失败时仍放行本次访问，但不写入缓存以免固化错误状态。
                     return user
 
                 # 缓存结果并打印一次日志（限制缓存大小防止内存增长）
@@ -298,7 +274,10 @@ async def check_ip_whitelist(request: Request, session: AsyncSession) -> Optiona
                     oldest_key = min(_whitelist_session_cache, key=lambda k: _whitelist_session_cache[k][1])
                     del _whitelist_session_cache[oldest_key]
                 _whitelist_session_cache[cache_key] = (user, current_time, ttl_seconds, jti)
-                logger.info(f"IP {client_ip_str} 在白名单中，已建立免登录会话（有效期 {expire_minutes if expire_minutes != -1 else '永久'} 分钟）")
+                if created:
+                    logger.info(f"IP {client_ip_str} 在白名单中，已建立免登录会话（有效期 {expire_minutes if expire_minutes != -1 else '永久'} 分钟）")
+                else:
+                    logger.debug(f"IP {client_ip_str} 复用已有的白名单会话")
                 return user
         except ValueError:
             logger.warning(f"无法解析客户端 IP '{client_ip_str}'")

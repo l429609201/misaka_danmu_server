@@ -10,6 +10,7 @@ from typing import AsyncIterator, List, Tuple, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.utils.auth import security
@@ -279,27 +280,29 @@ async def auto_login(request: Request):
         data={"sub": admin_user.username}, jti=whitelist_jti
     )
 
-    # 尝试创建会话记录（如果已存在则更新最后使用时间）
-    try:
-        db_expire_minutes = None if expire_minutes == -1 else expire_minutes
-        async with db.transaction():
-            await db.session_store.create(
-                user_id=admin_user.id,
-                jti=whitelist_jti,
-                ip_address=client_ip_str,
-                user_agent=user_agent[:500] if user_agent else None,
-                expires_minutes=db_expire_minutes
-            )
-    except Exception as e:
-        # 如果会话已存在（并发请求），更新最后使用时间
-        if "Duplicate entry" in str(e) or "UNIQUE constraint" in str(e):
-            try:
-                async with db.transaction():
-                    await db.session_store.update_last_used(whitelist_jti)
-            except Exception:
-                pass
-        else:
+    # 会话记录必须与令牌同时有效：按 jti 建立或恢复有效会话。
+    # 并发首次创建仍可能命中唯一键，此时在新事务中重试一次即可复用已有会话。
+    db_expire_minutes = None if expire_minutes == -1 else expire_minutes
+    for attempt in range(2):
+        try:
+            async with db.transaction():
+                await db.session_store.ensure_active_by_jti(
+                    user_id=admin_user.id,
+                    jti=whitelist_jti,
+                    ip_address=client_ip_str,
+                    user_agent=user_agent[:500] if user_agent else None,
+                    expires_minutes=db_expire_minutes
+                )
+            break
+        except IntegrityError as e:
+            if attempt == 0:
+                logger.debug(f"白名单会话并发创建，重试复用: {whitelist_jti}")
+                continue
             logger.error(f"创建白名单会话记录失败: {e}")
+            break
+        except Exception as e:
+            logger.error(f"创建白名单会话记录失败: {e}")
+            break
 
     return {"accessToken": access_token, "tokenType": "bearer", "expiresIn": expire_minutes}
 
