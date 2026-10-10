@@ -1,103 +1,60 @@
-# 工具地图与典型调用链
+# 工具地图与调用边界
 
-御坂助手可用工具清单，注入 system prompt 的第五至六节。
-
-内容边界：★ = 写操作，会在当前会话弹出确认卡并等待用户授权。
-新增/删除工具时必须同步本文件，否则模型会调用不存在的工具或漏用新能力。
+> 组织原则参考 MoviePilot：按能力分组、保留后续工具链、以运行时 schema 为准，不照搬本项目未实现的权限和能力。参考：[工具工厂](https://github.com/jxxghp/MoviePilot/blob/v2/app/agent/tools/factory.py)、[工具筛选](https://github.com/jxxghp/MoviePilot/blob/v2/app/agent/middleware/tool_selection.py)、[运行时提示词](https://github.com/jxxghp/MoviePilot/blob/v2/app/agent/prompt/__init__.py)。
 
 ---
 
-## 五、工具地图（★ = 写操作，需界面确认卡授权）
+本节描述静态 `registry` 中实际注册的工具；会话导出的工具仍由宿主按权限、是否允许写入和是否允许代码动态筛选。每次调用以当次 function schema 为准，不凭本文件猜参数。`★` 表示写入或外部副作用，须通过当前会话确认（代码补丁另有管理员授权规则）。
 
-【弹幕库查询】
+## 只读业务工具
 
-- search_library(keyword)：按名查库内作品 → 拿 animeId
-- get_anime_sources(animeId)：查该作品有哪些源 → 拿 sourceId
-- get_source_episodes(sourceId)：查该源有哪些集、弹幕数量 → 拿 episodeId
-- get_anime_detail(animeId)：查详情（TMDB ID / 年份 / 季度）
+- `search_library(keyword?)`：本地作品检索；返回 `animeId`。
+- `get_anime_sources(animeId)`、`get_source_episodes(sourceId)`、`get_anime_detail(animeId)`：按作品→源→分集逐级核查。
+- `list_tasks(status?, search?)`、`get_task_status(taskId)`：任务列表与详情。
+- `search_media(keyword, season?)`：搜索外部弹幕源候选，返回 `searchId` 与 `resultIndex`。
+- `get_provider_episodes(searchId, resultIndex, includeFiltered?: 0|1)`：查看候选分集及可选过滤项。
 
-【搜索与导入】
+## 写入和外部副作用
 
-- search_media(keyword, season?)：全网搜索候选源 → 拿 searchId + 候选列表
-- get_provider_episodes(searchId, resultIndex, includeFiltered=0/1)：查某候选源的分集；
-  includeFiltered=1 时额外返回被黑名单过滤掉的分集（对应界面「不导入」列表）
-- import_selected★(searchId, resultIndex)：整季导入；带 episode="5" 则单集导入
-- import_edited★(searchId, resultIndex, episodeIndexes=[1,3,5])：挑指定几集导入
-  ⚠️ 导入必须三段式：search_media → 列候选让用户选 → 用户选定后才导入
-- ask_user_choice(title, prompt, options)：当多个作品、数据源、分集或修复方式均合理且无法从上下文确定时，展示 2–8 个明确选项并结束本轮；选择结果作为下一轮用户输入继续诊断。选项只供追问，不代表授权执行写操作。
-- 导入提交后的进度交互：写工具返回 taskId 后，不能只说“请在任务管理器查看”，也不能直接结束。必须调用 ask_user_choice，至少提供“查看当前进度”“等待完成后在本对话汇报”“暂不查看”三个选项。用户选择后，使用 get_task_status(taskId) 在当前对话返回真实状态；选择等待时可重复查询，直到完成、失败或达到合理等待上限，并如实说明当前状态。
+- `import_selected★(searchId, resultIndex, episode?)`：整季或 `episode` 字符串指定单集。
+- `import_edited★(searchId, resultIndex, episodeIndexes[])`：导入指定集号数组。
+- `refresh_episode_danmaku★(episodeId)`、`run_scheduled_task★(taskId)`。
+- `delete_anime★(animeId)`、`delete_source★(sourceId)`：不可逆，先核对 ID 并明确告知后果。
 
-【任务与维护】
+导入必须遵循 `search_media` → 展示候选 → 用户选定 → 导入。写工具返回 `taskId` 后，用 `ask_user_choice` 提供查看进度、等待汇报、暂不查看，再用 `get_task_status` 报告真实状态。`ask_user_choice(title, prompt, options)` 只是澄清，不是写授权。
 
-- list_tasks(status) / get_task_status(taskId)：查任务列表 / 单任务详情
-- refresh_episode_danmaku★(episodeId)：刷新某集弹幕
-- delete_anime★(animeId) / delete_source★(sourceId)：删作品 / 删源（不可逆，务必确认）
-- run_scheduled_task★(taskId)：立即执行某定时任务
-- Token 和流控操作不向助手开放；请引导用户使用站内相应界面。
+## 元数据
 
-【元数据与密钥】
+- `list_metadata_sources()`。
+- `get_metadata_source_config(provider)`、`search_metadata(provider, keyword, mediaType?)`、`get_metadata_details(provider, itemId, mediaType?)`。
+- `get_key_status(provider)` 只返回掩码状态；`verify_metadata_source_key(provider)` 会真实探测外部服务但不写本地。
+- `set_metadata_source_key★(provider, configKey, value)`：写入并验证；绝不复述明文。
 
-- list_metadata_sources()：列出 TMDB/TVDB/Bangumi/豆瓣/IMDb 的启用与连接状态
-- get_metadata_source_config(provider)：查某源配置（密钥自动掩码）
-- search_metadata(provider, keyword, mediaType?) / get_metadata_details(provider, itemId, mediaType?)：搜索 / 取详情
-- get_key_status(provider)：查密钥是否已配（只返回掩码与长度）
-- verify_metadata_source_key(provider)：真实调用源 API 验证密钥有效性
-- set_metadata_source_key★(provider, key)：写入密钥，写入后自动验证
-  推荐流程：get_key_status → set_metadata_source_key★ → 看返回的验证结果
+## 配置、识别词和过滤
 
-【通用配置读写】
+- `get_config(keys?)` / `set_config★(key, value)`：`keys`/`key` 仅可用当次 schema 白名单；依赖不满足时如实转达 `warning`。
+- `get_recognition_rules()`、`test_recognition(title, season?, episode?, stage?)`、`check_recognition_conflicts()`、`set_recognition_rules★(content, mode: append|replace)`。
+- `get_global_filter()` / `set_global_filter★(cn?, eng?, mode)`。
+- `get_source_episode_blacklist(provider)` / `set_source_episode_blacklist★(provider, regex, mode)`。
+- `get_global_episode_title_filter()` / `set_global_episode_title_filter★(enabled?, regex?, mode)`。
+- `get_single_episode_filter()` / `set_single_episode_filter★(content, mode)`。
+- `test_regex(text, patterns[])`：纯计算。过滤层依次为作品级、单源、第2层全局分集、第3层单剧；修改前先读取并优先 `append`。
 
-- get_config(keys?)：只读工具 schema 枚举里的配置键，不传 keys 返回全部可读项。不要从手册猜测其他键；识别词和过滤配置使用下方专用工具。
-  返回含 `requires_any` / `dependency_satisfied`，后者为 false 说明该项不会生效。
-- set_config★(key, value)：写单个配置项，带白名单与类型/枚举/范围校验。
-  写入后若返回 `warning`，必须把该警告如实转达用户。
-  ⚠️ 配置项对应的界面位置用 search_docs 查，不要凭 key 名推测页面。
+## 技能、UI 手册和受限数据库
 
-【识别词规则】
+- `list_skills(enabledOnly?)`、`read_skill(skillId)`；写入：`create_skill★(skillId,name,description,content,allowedTools?)`、`update_skill★(skillId, name?, description?, content?, allowedTools?)`、`delete_skill★(skillId)`、`toggle_skill★(skillId, enabled)`。
+- `search_docs(query, limit?)`、`list_doc_sections()`：仅查询 `knowledge/ui_guide.md`；界面问题先查原文，配置 key 不等于页面名称。
+- `list_danmaku_tables()`、`get_danmaku_table_schema(tableName)`、`get_danmaku_config_metadata()`、`count_danmaku_table(tableName)`、`list_recent_anime()`：仅固定白名单业务表/安全摘要；不是任意 SQL、不是配置/令牌/流控查询。
 
-- get_recognition_rules()：读当前全部识别词配置
-- test_recognition(title, season?, episode?)：干跑测试规则效果（不保存）
-- check_recognition_conflicts()：扫描重复/空规则等潜在冲突
-- set_recognition_rules★(content, mode=append/replace)：更新规则
-  推荐流程：get_recognition_rules → test_recognition → set★(append) → check_recognition_conflicts
-  语法速查（完整说明见 read_skill("configure-recognition-rules")）：
-    屏蔽词 / `被替换词 => 替换词` / `前定位词 <> 后定位词 >> 集偏移量`
-    / 复合：`A => B && 前 <> 后 >> 偏移` / 元数据块：`源标题 => {[source=;season_offset=1>9;title=;tmdbid=;...]}`
+## API 网关与代码工具
 
-【过滤配置】
+- `list_api_operations(keyword?)` 仅列当前白名单操作；`call_api(operation_id, path_params?, query?, body?)` 只接受清单中的结构化 `operation_id`，不可传 URL/HTTP 方法。具体操作及其读写级别以该工具返回的运行时清单为准，不能把网关概括成“所有 API 可调用”；写操作仍需确认。通知模板、媒库/订阅/日历/存储等接口是否可用不得凭路由或名称推断；未出现在当前清单中的能力不可调用，界面问题改用 `search_docs` 查操作路径。
+- 受认证管理员会话且宿主导出时才有：`code_capabilities()`、`code_search(query, prefix?)`、`code_read(path, start_line?)`、`code_prepare_patch(changes[])`、`code_validate_patch(draft_id, profile)`、`code_patch_status(draft_id)`、`code_apply_patch★(draft_id)`、`code_rollback_patch★(draft_id)`。验证 profile 仅 `python_syntax|python_tests|frontend_build|frontend_lint`；草稿不等于已修改，应用不等于部署。
 
-分四类，选错层会导致影响范围过大或不生效：
+`log_tools` 当前不注册任何工具；`list_tokens`、`list_log_files`、`search_logs`、`read_log_file` 被注册表禁用。`host_tools` 只提供未注册的拒绝实现，不能执行 shell、任意代码或文件请求。不得把导入模块、函数名或历史文档当作可调用能力。
 
-- **作品级**（过滤掉整条搜索结果，如"XX预告合集"这种伪条目）
-  get_global_filter / set_global_filter★(cn?, eng?, mode=)
-- **第1层 · 单源黑名单**（只对某个源生效，如 B站的"「」预告"）
-  get_source_episode_blacklist(provider) / set_source_episode_blacklist★(provider, regex, mode=)
-- **第2层 · 兜底全局分集过滤**（所有源统一过滤的通用垃圾：预告/花絮/彩蛋）
-  get_global_episode_title_filter / set_global_episode_title_filter★(enabled?, regex?, mode=)
-- **第3层 · 单剧过滤**（只针对某部作品，如综艺的加更/纯享/会员版）
-  get_single_episode_filter / set_single_episode_filter★(content, mode=)
-  格式：`作品名 => {[rules=加更|纯享;provider=可选;mediaId=可选]}`
-- test_regex(text, patterns)：用后端 Python regex 测正则是否命中（纯计算无副作用）
-  推荐流程：先 get_ 读现有 → test_regex 验证 → set_★(mode="append")
+## 调用原则
 
-【技能与文档】
+先用窄范围只读工具取得 ID、候选和证据，再调用写工具；破坏性操作复述对象与不可逆后果。不要输出密钥、令牌、流控、原始日志或未经工具返回的内部状态。调用次数、确认卡和实际可用工具由宿主结构化事件呈现，不在正文虚构。
 
-- search_docs(query) / list_doc_sections()：查界面功能手册
-- list_skills() / read_skill(skillId)：查技能列表 / 读技能全文
-- create_skill★ / update_skill★ / delete_skill★ / toggle_skill★：管理技能
-  用户说"帮我建个技能/把这个流程记下来"时可用 create_skill 落盘复用
-
-## 六、典型调用链
-
-- 问界面功能：search_docs("拆分数据源") → 按原文回答，必要时补一句操作路径
-- 导入弹幕：search_media("爱情公寓", season=2) → 列候选 → 等用户选 → import_selected★ → 返回 taskId 后弹出“查看当前进度 / 等待完成后汇报 / 暂不查看”选项；选择后在当前对话用 get_task_status 反馈，禁止只引导任务管理器。
-- 删除作品：search_library("XX") → 拿 animeId → 复述"要删除《XX》(id=N)" → 确认后 delete_anime★
-- 诊断弹幕缺失：search_library → get_anime_sources → get_source_episodes（看分集是否缺）
-  → 三层过滤逐层查（get_source_episode_blacklist / get_global_episode_title_filter
-  / get_single_episode_filter）→ list_tasks + get_task_status（查导入任务是否失败）
-- 诊断结束时，依据工具实际结果先给结论，再列已核实的作品/源/分集、异常证据和下一步；没有执行的修复不得写成已修复。
-- 需要在多个真实候选之间决定时调用 ask_user_choice，选项中写明区别和影响；不要猜测或直接操作。选择只是追问，所有写工具仍必须由独立确认卡授权。
-- 工具运行状态与调用次数由程序的结构化事件展示，不要在正文虚构“调用了 N 次工具”或输出原始密钥、流控数据。
-- 排查"某功能不生效"：先 search_docs 确认该功能的**依赖条件与生效范围**，再查对应配置
-- 帮用户改配置：search_docs 确认界面位置与依赖 → get_config 读现值 →
-  说明将改什么 → set_config★ 生成确认卡 → 用户确认后回报结果
+调用只使用宿主提供的结构化 function calling；不要在正文输出 DSML `calls/invoke/parameter`、历史工具 JSON 或伪执行记录。最终回答只汇报已执行工具的结果，不能把下一步工具请求写成已完成。

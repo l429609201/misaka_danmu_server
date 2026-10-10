@@ -69,6 +69,26 @@ class AssistantSessionRepository(BaseRepository[AssistantSession]):
             "updatedAt": row.updatedAt.isoformat() if row.updatedAt else "",
         } for row in rows]
 
+    @staticmethod
+    def _round_metadata(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """轮次快照只允许安全标识、状态与计时，丢弃任何模型原始字段。"""
+        round_id = event.get("round_id")
+        started_at = event.get("started_at")
+        if (not isinstance(round_id, str) or not round_id or len(round_id) > 128
+                or not all(char.isalnum() or char in "_-" for char in round_id)
+                or event.get("status") not in {"running", "done", "error"}
+                or not isinstance(started_at, str) or len(started_at) > 64):
+            return None
+        try:
+            datetime.fromisoformat(started_at)
+        except ValueError:
+            return None
+        safe = {key: event[key] for key in ("type", "round_id", "status", "started_at")}
+        elapsed = event.get("elapsed_ms")
+        if isinstance(elapsed, int) and not isinstance(elapsed, bool) and elapsed >= 0:
+            safe["elapsed_ms"] = elapsed
+        return safe
+
     async def get_detail(self, sid: str, owner_id: int) -> Optional[Dict[str, Any]]:
         """仅读取当前用户会话及消息，返回可脱离事务的快照。"""
         row = (await self._session.execute(
@@ -85,6 +105,8 @@ class AssistantSessionRepository(BaseRepository[AssistantSession]):
                     event = json.loads(msg.content)
                 except (ValueError, TypeError):
                     continue
+                if isinstance(event, dict) and event.get("type") == "round":
+                    event = self._round_metadata(event)
                 if messages and messages[-1]["role"] == "bot" and isinstance(event, dict):
                     messages[-1].setdefault("events", []).append(event)
             elif msg.role in {"user", "bot", "assistant"}:
@@ -218,7 +240,13 @@ class AssistantSessionRepository(BaseRepository[AssistantSession]):
                     sessionDbId=row.id, role=message["role"], content=message.get("content", ""),
                 ))
                 for event in message.get("events", []):
-                    if event.get("type") in {"thinking", "tool", "choice", "text"}:
+                    if not isinstance(event, dict):
+                        continue
+                    if event.get("type") == "round":
+                        event = self._round_metadata(event)
+                        if event is None:
+                            continue
+                    if event.get("type") in {"round", "thinking", "tool", "choice", "text"}:
                         self._session.add(AssistantMessage(
                             sessionDbId=row.id, role="event",
                             content=json.dumps(event, ensure_ascii=False),

@@ -66,6 +66,8 @@ venv/*
 !tests/test_title_recognition_workflow.py
 !tests/test_scraper_source_discovery.py
 !tests/test_edited_import_contract.py
+!tests/isolated/
+!tests/isolated/test_assistant_protocol.py
 .pids/
 docs/*
 web/scripts/*

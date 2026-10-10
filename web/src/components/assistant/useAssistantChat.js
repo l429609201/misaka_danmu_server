@@ -8,6 +8,7 @@ import { useCallback, useRef } from 'react'
 import Cookies from 'js-cookie'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { useTranslation } from 'react-i18next'
+import { AssistantDisplaySanitizer, safeMessageContent, sanitizeAssistantText } from './assistantDisplaySanitizer'
 
 /**
  * @returns {{ send, abort }}
@@ -29,7 +30,7 @@ export function useAssistantChat() {
   }, [])
 
   const send = useCallback(async (messages, persona, handlers = {}, sessionId, options = {}) => {
-    const { onDelta, onDone, onError, onServerError, onTool, onThinking, onChoice, onConfirm } = handlers
+    const { onDelta, onDone, onError, onServerError, onTool, onThinking, onRound, onChoice, onConfirm } = handlers
     const token = Cookies.get('danmu_token')
     if (!token) {
       onError?.(t('assistant.errNotLoggedIn'))
@@ -41,6 +42,14 @@ export function useAssistantChat() {
     const controller = new AbortController()
     abortRef.current = controller
     let terminated = false
+    // 每条 SSE 流独占状态，仅处理 delta；真实工具事件不经过正文解析器。
+    let sanitizer = new AssistantDisplaySanitizer()
+    let deltaMetadata
+    const flush = (final = true) => {
+      const tail = sanitizer.finish()
+      if (tail) onDelta?.(tail, deltaMetadata)
+      if (!final) sanitizer = new AssistantDisplaySanitizer()
+    }
 
     try {
       await fetchEventSource('/api/ui/assistant/chat/stream', {
@@ -51,7 +60,7 @@ export function useAssistantChat() {
           'Content-Type': 'application/json',
         },
         // 授权仅来自界面显式开关，不从消息或模型输出推断。
-        body: JSON.stringify({ messages, persona, sessionId, codeRepair: options.codeRepair === true }),
+        body: JSON.stringify({ messages: messages.map(message => ({ ...message, content: safeMessageContent(message) })), persona, sessionId, codeRepair: options.codeRepair === true }),
         // 避免页面切到后台时自动关闭连接
         openWhenHidden: true,
         onopen: async response => {
@@ -68,13 +77,22 @@ export function useAssistantChat() {
           } catch {
             return
           }
-          if (data.type === 'delta') onDelta?.(data.content || '')
+          if (terminated) return
+          if (data.type === 'delta') {
+            deltaMetadata = data
+            const safe = sanitizer.feed(data.content || '')
+            if (safe) onDelta?.(safe, data)
+          }
+          else if (data.type === 'round') {
+            if (data.status === 'running') { flush(false); deltaMetadata = { round_id: data.round_id } }
+            onRound?.(data)
+          }
           else if (data.type === 'tool') onTool?.(data)
           else if (data.type === 'thinking') onThinking?.(data)
-          else if (data.type === 'choice') { terminated = true; onChoice?.(data) }
-          else if (data.type === 'confirm') { terminated = true; onConfirm?.(data) }
-          else if (data.type === 'done') { terminated = true; onDone?.() }
-          else if (data.type === 'error') { terminated = true; (onServerError || onError)?.(data.content || t('assistant.replyError')) }
+          else if (data.type === 'choice') { terminated = true; flush(); onChoice?.(data) }
+          else if (data.type === 'confirm') { terminated = true; flush(); onConfirm?.(data) }
+          else if (data.type === 'done') { terminated = true; flush(); onDone?.() }
+          else if (data.type === 'error') { terminated = true; flush(); (onServerError || onError)?.(sanitizeAssistantText(data.content) || t('assistant.replyError')) }
         },
         onclose: () => {
           if (!terminated) throw new Error(t('assistant.errConnInterrupted'))
@@ -86,7 +104,8 @@ export function useAssistantChat() {
       })
     } catch (err) {
       if (err?.name !== 'AbortError') {
-        onError?.(err?.message || t('assistant.errConnInterrupted'))
+        flush()
+        onError?.(sanitizeAssistantText(err?.message) || t('assistant.errConnInterrupted'))
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null

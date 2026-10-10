@@ -161,10 +161,12 @@ async def chat_stream(
                     piece = event.get("content", "")
                     assistant_reply += piece
                     if piece:
-                        if timeline and timeline[-1]["type"] == "text":
+                        if (timeline and timeline[-1]["type"] == "text"
+                                and timeline[-1].get("round_id") == event.get("round_id")):
                             timeline[-1]["content"] += piece
                         else:
-                            timeline.append({"type": "text", "content": piece})
+                            timeline.append({"type": "text", "content": piece,
+                                             **({"round_id": event["round_id"]} if "round_id" in event else {})})
                 elif event.get("type") == "done":
                     terminated = True
                     if run_hash:
@@ -257,10 +259,11 @@ async def chat_stream(
                     timeline.append({"type": "text", "content":
                                      ("\n\n" if any(item["type"] == "text" for item in timeline) else "")
                                      + event.get("content", "对话失败")})
-                if event.get("type") == "thinking":
-                    timeline.append({key: event[key] for key in ("type", "status", "started_at", "elapsed_ms") if key in event})
+                if event.get("type") in {"round", "thinking"}:
+                    # 轮次仅记录公开标识、状态和计时，禁止透传模型额外字段。
+                    timeline.append({key: event[key] for key in ("type", "round_id", "status", "started_at", "elapsed_ms") if key in event})
                 elif event.get("type") == "tool":
-                    timeline.append({key: event[key] for key in ("type", "tool_id", "name", "label", "count", "status", "error_code", "error_message") if key in event})
+                    timeline.append({key: event[key] for key in ("type", "round_id", "tool_id", "name", "label", "count", "status", "error_code", "error_message") if key in event})
                 elif event.get("type") == "choice":
                     timeline.append({key: event[key] for key in ("type", "id", "title", "prompt", "options", "expires_at", "expires_at_ms") if key in event})
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"

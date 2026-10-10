@@ -539,13 +539,70 @@
 }
 .assistant-msg.bot {
   align-self: flex-start;
-  border-bottom-left-radius: 4px;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  background: transparent;
+}
+/* 轮次消息的浅深主题变量只作用于助手面板，不改变页面主题。 */
+.assistant-panel {
+  --assistant-msg-bot-bg: rgba(0, 0, 0, 0.045);
+  --assistant-meta-color: #626b73;
+}
+.dark .assistant-panel {
+  --assistant-msg-bot-bg: rgba(255, 255, 255, 0.07);
+  --assistant-meta-color: #afb5bd;
+}
+.assistant-round { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; margin-bottom: 10px; }
+.assistant-round:last-child { margin-bottom: 0; }
+.assistant-round-bubble {
+  max-width: 92%;
+  padding: 10px 13px;
+  border-radius: 12px 12px 12px 4px;
   background: var(--assistant-msg-bot-bg, rgba(0, 0, 0, 0.04));
+}
+.assistant-round-bubble pre { max-width: 100%; overflow-x: auto; white-space: pre; }
+.assistant-round-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 2px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--assistant-meta-color, #626b73);
+  overflow-wrap: anywhere;
+}
+.assistant-round-status > .anticon { flex: 0 0 16px; width: 16px; height: 16px; font-size: 16px; color: #448567; }
+.assistant-round-status.running > .anticon { color: #8864c8; }
+.assistant-round-status:is(.error, .interrupted) > .anticon { color: #bd463e; }
+.assistant-round-status > span:last-child { min-width: 0; }
+.assistant-round-details { width: 100%; min-width: 0; }
+.assistant-round-details > summary { cursor: pointer; list-style: none; }
+.assistant-round-details > summary::-webkit-details-marker { display: none; }
+.assistant-round-details > summary::after { content: '\203A'; flex: none; margin-left: 2px; font-size: 16px; transform: rotate(0deg); }
+.assistant-round-details[open] > summary::after { transform: rotate(90deg); }
+.assistant-round-tools { margin: 6px 0 0 22px; }
+.assistant-round-tool-summary { color: var(--assistant-meta-color, #626b73); }
+/* 固定环形图标大小，避免 flex 压缩或主题样式令等待提示不可见。 */
+.assistant-loading-ring.anticon { display: inline-flex; flex: 0 0 16px; width: 16px; height: 16px; font-size: 16px; }
+.assistant-loading-ring svg { width: 16px; height: 16px; animation: assistant-ring-spin 1s linear infinite; }
+@keyframes assistant-ring-spin { to { transform: rotate(360deg); } }
+.assistant-header-text { min-width: 0; }
+.assistant-header-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-panel .ant-drawer-header-title { min-width: 0; }
+.assistant-panel .ant-drawer-title { min-width: 0; }
+.assistant-panel .ant-drawer-extra { flex-shrink: 0; }
+@media (max-width: 500px) {
+  .assistant-panel .ant-drawer-header { padding-left: 12px; padding-right: 12px; gap: 4px; }
+  .assistant-panel .ant-drawer-extra .ant-btn { width: 28px; min-width: 28px; padding: 0; }
+  .assistant-panel .assistant-title-avatar { flex-shrink: 0; }
+  .assistant-round-bubble { max-width: 96%; }
+  .assistant-msg-copy { opacity: .65; }
 }
 .assistant-msg.user {
   align-self: flex-end;
   border-bottom-right-radius: 4px;
-  background: #3a7bd5;
+  background: #8864c8;
   color: #fff;
 }
 .assistant-msg-list {

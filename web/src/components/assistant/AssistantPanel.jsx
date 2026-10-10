@@ -22,38 +22,13 @@ import { AVATAR_IMG, getPetLabel } from './pet/petActions'
 import { useAssistantChat } from './useAssistantChat'
 import { useAssistantSessions, createSessionId } from './useAssistantSessions'
 import { isSharedLibraryFileName } from './assistantCodePolicy'
+import { restoreMessages, safeMessageContent } from './assistantDisplaySanitizer'
+import { groupAssistantRounds, isAssistantWaiting, summarizeRoundTools } from './assistantTimeline'
 
 const { TextArea } = Input
 
 // 发送给后端的最大历史轮数（控制 token），只取最近 N 条 user/assistant
 const MAX_HISTORY = 20
-
-// 从服务端安全事件重建历史展示；老会话仍使用 content。
-function restoreMessages(messages) {
-  return (messages || []).map(m => {
-    if (m.role !== 'bot' || !Array.isArray(m.events)) return m
-    const timeline = []
-    let thinking
-    let choice
-    let toolCount = 0
-    for (const ev of m.events) {
-      if (ev.type === 'thinking') thinking = { ...thinking, ...ev }
-      if (ev.type === 'choice') choice = { ...ev, selectedOptionId: ev.selectedOptionId ?? null }
-      if (ev.type === 'tool') {
-        const index = timeline.findIndex(part => part.type === 'tool' && part.tool_id === ev.tool_id)
-        if (index >= 0) timeline[index] = { ...timeline[index], ...ev }
-        else timeline.push(ev)
-        toolCount = Math.max(toolCount, ev.count || 0, timeline.filter(part => part.type === 'tool').length)
-      }
-      if (ev.type === 'delta' || ev.type === 'text') {
-        if (timeline.at(-1)?.type === 'text') timeline.at(-1).content += ev.content || ''
-        else timeline.push({ type: 'text', content: ev.content || '' })
-      }
-    }
-    if (!timeline.some(part => part.type === 'text') && m.content) timeline.push({ type: 'text', content: m.content })
-    return { ...m, timeline, thinking, choice, toolCount }
-  })
-}
 
 const elapsedSeconds = ms => `${(Math.max(0, ms || 0) / 1000).toFixed(1)}s`
 
@@ -83,31 +58,44 @@ function AssistantCodePreview({ preview }) {
   )
 }
 
-function AssistantTimeline({ message, t, now }) {
-  const thinking = message.thinking
-  const elapsed = thinking?.status === 'running'
-    ? now - (Date.parse(thinking.started_at) || now)
-    : thinking?.elapsed_ms
-  return (
-    <>
-      {thinking && <div className={`assistant-thinking ${thinking.status || 'running'}`}>
-        {thinking.status === 'running' ? <LoadingOutlined spin /> : thinking.status === 'error' ? <CloseCircleOutlined /> : <CheckCircleOutlined />}
-        <span>{t('assistant.progressThinking')} · {elapsedSeconds(elapsed)}</span>
-      </div>}
-      {message.toolCount > 0 && <div className="assistant-tool-total">{t('assistant.diagnosticToolTotal')} {message.toolCount}</div>}
-      {(message.timeline?.length ? message.timeline : (message.content ? [{ type: 'text', content: message.content }] : [])).map((part, index) => part.type === 'tool' ? (
-        <div key={`tool-${part.tool_id || index}`} className={`assistant-tool-entry ${part.status || 'running'}`}>
-          {part.status === 'running' ? <LoadingOutlined spin /> : part.status === 'error' ? <CloseCircleOutlined /> : <CheckCircleOutlined />}
-          <span>{part.label || part.name || t('assistant.processingTool')}
-            {part.status === 'error' && part.error_message && <details className="assistant-tool-failure"><summary>失败原因</summary><div>{part.error_message}</div></details>}
-          </span>
-          <small>{part.status === 'running' ? t('assistant.toolRunning', { defaultValue: '运行中' }) : part.status === 'error' ? t('assistant.toolError', { defaultValue: '错误' }) : t('assistant.toolDone', { defaultValue: '完成' })}</small>
+function ProgressIcon({ status }) {
+  return status === 'running' ? <LoadingOutlined className="assistant-loading-ring" spin />
+    : status === 'error' || status === 'interrupted' ? <CloseCircleOutlined /> : <CheckCircleOutlined />
+}
+
+function AssistantTimeline({ message, t, now, active }) {
+  const rounds = groupAssistantRounds(message, { active })
+  const statusLabel = status => t(`assistant.${status === 'running' ? 'progressWaiting' : status === 'error' ? 'toolError' : status === 'interrupted' ? 'progressInterrupted' : 'toolDone'}`)
+  const toolLabel = tool => tool.name === 'code_search' ? t('assistant.toolSourceSearch')
+    : tool.name === 'code_read' || tool.name === 'code_read_file' ? t('assistant.toolSourceRead')
+      : tool.label || tool.name || t('assistant.processingTool')
+  return rounds.map(round => {
+    const timing = round.boundary || round.thinking
+    const started = typeof timing?.started_at === 'number' ? timing.started_at : Date.parse(timing?.started_at)
+    const elapsed = round.status === 'running' && Number.isFinite(started) ? now - started : timing?.elapsed_ms
+    const summary = summarizeRoundTools(round.tools, toolLabel).map(group => t('assistant.toolSummaryCount', group)).join(t('assistant.toolSummarySeparator'))
+    const showStatus = round.tools.length > 0 || timing || round.status !== 'done'
+    return <div key={round.id} className="assistant-round">
+      {round.content && <div className="assistant-timeline-text assistant-round-bubble"><Markdown remarkPlugins={[remarkGfm]}>{round.content}</Markdown></div>}
+      {showStatus && (round.tools.length ? <details className={`assistant-round-details ${round.status}`}>
+        <summary className={`assistant-round-status ${round.status}`}>
+          <ProgressIcon status={round.status} />
+          <span>{statusLabel(round.status)}{elapsed != null && ` · ${elapsedSeconds(elapsed)}`} <span className="assistant-round-tool-summary">({summary})</span></span>
+        </summary>
+        <div className="assistant-round-tools">
+          {round.tools.map((tool, index) => <div key={tool.tool_id || index} className={`assistant-tool-entry ${tool.status || 'done'}`}>
+            <ProgressIcon status={tool.status || 'done'} />
+            <span>{tool.label || tool.name || t('assistant.processingTool')}
+              {tool.error_message && <div className="assistant-tool-failure">{tool.error_message}</div>}
+            </span>
+            <small>{statusLabel(tool.status || 'done')}</small>
+          </div>)}
         </div>
-      ) : (
-        <div key={`text-${index}`} className="assistant-timeline-text"><Markdown remarkPlugins={[remarkGfm]}>{part.content || ''}</Markdown></div>
-      ))}
-    </>
-  )
+      </details> : <div className={`assistant-round-status ${round.status}`} role={round.status === 'running' ? 'status' : undefined}>
+        <ProgressIcon status={round.status} /><span>{statusLabel(round.status)}{elapsed != null && ` · ${elapsedSeconds(elapsed)}`}</span>
+      </div>)}
+    </div>
+  })
 }
 
 export function AssistantPanel({ open, onClose, machine, isMobile }) {
@@ -120,7 +108,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
   // 授权只保存在当前面板状态，不写入浏览器存储。
   const [codeRepair, setCodeRepair] = useState(false)
   const [now, setNow] = useState(Date.now())
-  const ticking = open && messages.some(m => m.thinking?.status === 'running')
+  const ticking = open && sending
   const pendingChoice = open && messages.some(m => m.choice?.selectedOptionId == null && !m.choice?.invalid
     && m.choice?.expires_at_ms != null && !choiceExpired(m.choice, now))
   useEffect(() => {
@@ -206,7 +194,8 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
 
   // 导出当前对话为纯文本文件下载
   const exportChat = useCallback(() => {
-    const real = messages.filter(m => m.content)
+    // 导出也在出口清理，用户消息及其 DSML 引用不受影响。
+    const real = messages.map(m => ({ ...m, content: safeMessageContent(m) })).filter(m => m.content)
     if (real.length === 0) { antdMessage.info(t('assistant.noExportContent')); return }
     const lines = real.map(m => `【${m.role === 'user' ? t('assistant.roleMe') : t('assistant.roleBot')}】\n${m.content}\n`)
     const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
@@ -345,6 +334,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
 
     // 后续文本由服务端生成；历史里的展示标签不得被模型误认作原始选择值。
     const history = [...baseMessages, { role: 'user', content: text, images: imgs }]
+      .map(m => ({ ...m, content: safeMessageContent(m) }))
       .filter(m => m.content || (m.images && m.images.length))
       .slice(-MAX_HISTORY)
       .map(m => ({
@@ -360,14 +350,15 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
       if (index >= 0) next[index] = updater(next[index])
       return next
     })
-    const appendToLastBot = (chunk, done = false, isErr = false) => updateBot(bot => {
+    let currentRoundId
+    const appendToLastBot = (chunk, done = false, isErr = false, roundId = currentRoundId) => updateBot(bot => {
       const timeline = [...(bot.timeline || [])]
       if (chunk) {
-        if (!isErr && timeline.at(-1)?.type === 'text') {
+        if (!isErr && timeline.at(-1)?.type === 'text' && timeline.at(-1)?.round_id === roundId) {
           timeline[timeline.length - 1] = { ...timeline.at(-1), content: timeline.at(-1).content + chunk }
-        } else timeline.push({ type: 'text', content: chunk })
+        } else timeline.push({ type: 'text', content: chunk, round_id: roundId })
       }
-      return { ...bot, content: isErr ? chunk : bot.content + chunk, timeline, streaming: !done }
+      return { ...bot, content: isErr ? chunk : bot.content + chunk, timeline, streaming: !done, ...(isErr ? { error: true } : {}) }
     })
     const finishThinking = status => updateBot(bot => bot.thinking?.status === 'running' ? {
       ...bot,
@@ -375,6 +366,17 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
     } : bot)
 
     await streamChat(history, undefined, {
+      onRound: ev => {
+        if (!active()) return
+        currentRoundId = ev.round_id
+        updateBot(bot => {
+          const timeline = [...(bot.timeline || [])]
+          const index = timeline.findIndex(part => part.type === 'round' && part.round_id === ev.round_id)
+          if (index >= 0) timeline[index] = { ...timeline[index], ...ev }
+          else timeline.push(ev)
+          return { ...bot, timeline }
+        })
+      },
       onTool: ev => {
         if (!active()) return
         if (ev.status === 'running') {
@@ -387,7 +389,8 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
         updateBot(bot => {
           const timeline = [...(bot.timeline || [])]
           const index = timeline.findIndex(part => part.type === 'tool' && part.tool_id === ev.tool_id)
-          const entry = { type: 'tool', tool_id: ev.tool_id, name: ev.name, label: ev.label, status: ev.status, count: ev.count, error_code: ev.error_code, error_message: ev.error_message }
+          // 保留正规事件的计时与错误字段，绝不从正文协议补造状态。
+          const entry = { ...ev, type: 'tool' }
           if (index >= 0) timeline[index] = { ...timeline[index], ...entry }
           else timeline.push(entry)
           return { ...bot, timeline, toolCount: Math.max(bot.toolCount || 0, ev.count || 0, timeline.filter(part => part.type === 'tool').length) }
@@ -395,7 +398,14 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
       },
       onThinking: ev => {
         if (!active()) return
-        updateBot(bot => ({ ...bot, thinking: { ...bot.thinking, status: ev.status, started_at: ev.started_at || bot.thinking?.started_at || new Date().toISOString(), elapsed_ms: ev.elapsed_ms } }))
+        updateBot(bot => {
+          const thinking = { ...bot.thinking, ...ev, started_at: ev.started_at || bot.thinking?.started_at || new Date().toISOString() }
+          const timeline = [...(bot.timeline || [])]
+          const index = timeline.findIndex(part => part.type === 'thinking' && part.round_id === ev.round_id)
+          if (index >= 0) timeline[index] = { ...timeline[index], ...ev }
+          else timeline.push({ ...ev, type: 'thinking' })
+          return { ...bot, thinking, timeline }
+        })
       },
       onChoice: ev => {
         if (!active()) return
@@ -426,13 +436,13 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
         machine.chatTo('idle')
         setSending(false)
       },
-      onDelta: piece => {
+      onDelta: (piece, ev) => {
         if (!active()) return
         if (firstDelta) {
           firstDelta = false
           if (activeTools.size === 0) machine.chatTo('talking') // 首个增量到达后，非工具阶段进入回复态
         }
-        appendToLastBot(piece)
+        appendToLastBot(piece, false, false, ev?.round_id ?? currentRoundId)
       },
       onDone: () => {
         if (!active()) return
@@ -477,6 +487,7 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
             content: next[i].content || t('assistant.stopped'),
             timeline: next[i].content ? next[i].timeline : [...(next[i].timeline || []), { type: 'text', content: t('assistant.stopped') }],
             streaming: false,
+            stopped: true,
             thinking: next[i].thinking?.status === 'running' ? {
               ...next[i].thinking, status: 'done', elapsed_ms: Date.now() - (Date.parse(next[i].thinking.started_at) || Date.now()),
             } : next[i].thinking,
@@ -589,14 +600,14 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
       onClose={onClose}
       placement="right"
       width={isMobile ? '100vw' : 475}
-      rootClassName={isMobile ? 'assistant-panel-mobile' : undefined}
+      rootClassName={`assistant-panel${isMobile ? ' assistant-panel-mobile' : ''}`}
       closable={!isMobile}
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Avatar className="assistant-title-avatar" src={AVATAR_IMG} size={36} />
-          <div style={{ lineHeight: 1.2 }}>
+          <div className="assistant-header-text" style={{ lineHeight: 1.2 }}>
             <div style={{ fontWeight: 600 }}>{t('assistant.title')}</div>
-            <div style={{ fontSize: 12, opacity: 0.6 }}>{t('assistant.online')} · {getPetLabel(machine.state, t)}</div>
+            <div className="assistant-header-status" style={{ fontSize: 12, opacity: 0.6 }}>{sending ? t('assistant.progressWaiting') : t('assistant.online')} · {getPetLabel(machine.state, t)}</div>
           </div>
         </div>
       }
@@ -643,14 +654,14 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
           <div key={i} className={`assistant-msg ${m.role === 'user' ? 'user' : 'bot'} ${m.choice || m.timeline?.some(part => part.type === 'tool') ? 'structured' : ''}`}>
             {m.role === 'bot' ? (
               <>
-                <AssistantTimeline message={m} t={t} now={now} />
+                <AssistantTimeline message={m} t={t} now={now} active={isAssistantWaiting(m, sending) && i === messages.length - 1} />
                 {/* 复制按钮：非流式且有内容时显示（hover 出现） */}
                 {!m.streaming && m.content && (
                   <span
                     className="assistant-msg-copy"
                     title={t('assistant.copy')}
                     onClick={() => {
-                      navigator.clipboard?.writeText(m.content)
+                      navigator.clipboard?.writeText(safeMessageContent(m))
                         .then(() => antdMessage.success(t('assistant.copied')))
                         .catch(() => antdMessage.error(t('assistant.copyFailed')))
                     }}

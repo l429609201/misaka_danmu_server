@@ -5,6 +5,8 @@
   模型 →(要调工具)→ 执行工具 → 结果回灌 → 再问模型 →…→ 最终回答（流式）
 
 事件（yield dict）：
+  {"type":"round","round_id","status":"running|done|error","started_at","elapsed_ms"}
+  thinking/tool/delta 均携带 round_id；round 结束不代表整个对话结束。
   {"type":"thinking","status":"running|done","started_at","elapsed_ms"}
   {"type":"tool","tool_id","label","count","status":"running|done|error"}
   {"type":"choice","title","prompt","options"} 终止本轮等待用户选择
@@ -25,6 +27,7 @@ from datetime import datetime
 
 import httpx
 
+from src.utils.assistant_protocol_text import ProtocolTextFilter, sanitize_protocol_text
 from src.services.config_service import ConfigService
 from src.services.assistant_code_service import code_authorized, code_write_authorized
 from .prompt_loader import get_coding_prompt
@@ -143,6 +146,9 @@ class AssistantAgent:
         for m in history:
             role = m.get("role")
             content = m.get("content", "")
+            if role == "assistant" and isinstance(content, str):
+                # 不把以前持久化的协议泄漏继续送回模型诱发重放。
+                content = sanitize_protocol_text(content)[0]
             images = m.get("images") or []
             if role not in ("user", "assistant"):
                 continue
@@ -203,6 +209,53 @@ class AssistantAgent:
         rich_message: bool = False,
         include_write_tools: bool = True,
     ) -> AsyncGenerator[Dict[str, Any], None]:
+        """为模型请求、公开旁白和工具阶段附加稳定轮次边界。"""
+        active: Optional[Dict[str, Any]] = None
+        round_start = 0.0
+        round_failed = False
+        async for event in self._stream_rounds(
+            history, persona_key, context_extra, rich_text, is_channel,
+            supports_table, rich_message, include_write_tools,
+        ):
+            etype = event.get("type")
+            opens = etype == "thinking" and event.get("status") == "running"
+            terminal = etype in {"done", "error", "choice", "confirm", "_round_end"}
+            if active and (opens or terminal):
+                status = "error" if round_failed or etype == "error" or event.get("status") == "error" else "done"
+                yield {**active, "status": status,
+                       "elapsed_ms": max(0, int((time.monotonic() - round_start) * 1000))}
+                if terminal:
+                    event = {**event, "round_id": active["round_id"]}
+                active = None
+            if opens:
+                round_start = time.monotonic()
+                round_failed = False
+                active = {"type": "round", "round_id": uuid4().hex,
+                          "status": "running", "started_at": event["started_at"]}
+                yield dict(active)
+            if etype == "_round_end":
+                continue
+            if active:
+                event = {**event, "round_id": active["round_id"]}
+                if etype == "tool" and event.get("status") == "error":
+                    round_failed = True
+            yield event
+        if active:
+            # 提前结束但无终止事件时，不能留下永久运行中的轮次。
+            yield {**active, "status": "error",
+                   "elapsed_ms": max(0, int((time.monotonic() - round_start) * 1000))}
+
+    async def _stream_rounds(
+        self,
+        history: List[Dict[str, str]],
+        persona_key: str = DEFAULT_PERSONA,
+        context_extra: Dict[str, Any] = None,
+        rich_text: bool = True,
+        is_channel: bool = False,
+        supports_table: bool = True,
+        rich_message: bool = False,
+        include_write_tools: bool = True,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """非流式选择工具，最终回答流式输出；写操作只发确认事件。
 
         外部 MCP 当前不进入模型工具目录，避免绕过站内流控与密钥边界。
@@ -245,6 +298,7 @@ class AssistantAgent:
 
         log_raw = cfg.get("log_raw_response", False)
         tool_count = 0
+        protocol_retries = 0
 
         try:
             for _round in range(20 if allow_code_write else _MAX_TOOL_ROUNDS):
@@ -314,13 +368,43 @@ class AssistantAgent:
                 ))
 
                 if not tool_calls:
+                    content, leaked = sanitize_protocol_text(msg.get("content") or "")
+                    if leaked:
+                        # 文本协议从不执行；保留原请求和工具目录，只允许模型纠正为结构化调用。
+                        protocol_retries += 1
+                        if protocol_retries <= 2:
+                            messages.append({"role": "system", "content":
+                                "上次响应出现了无效的工具协议文本，未执行其中任何请求。"
+                                "如需工具，请使用响应的结构化 tool_calls 字段，禁止在正文输出 DSML 或历史工具序列化；"
+                                "否则直接回答用户，不能把未执行的操作说成已完成。"})
+                            yield {"type": "_round_end", "status": "error"}
+                            continue
+                        if content.strip():
+                            yield {"type": "delta", "content": content}
+                        yield {"type": "delta", "content":
+                               "\n\n本轮未完成：模型未返回有效的结构化工具调用，文本中的工具请求未执行。"}
+                        yield {"type": "_round_end", "status": "error"}
+                        yield {"type": "done"}
+                        return
+                    if content.strip():
+                        # 已有正常答案无需再次请求，避免无工具重生成丢失原答案。
+                        yield {"type": "delta", "content": content}
+                        if self._has_failed_tool_results(messages):
+                            yield {"type": "delta", "content":
+                                   "\n\n本轮存在工具查询失败，相关信息未能核实，不能据此认定任务已完整完成。"}
+                        yield {"type": "done"}
+                        return
                     async for ev in self._stream_final(cfg, messages):
                         yield ev
                     return
 
+                narration = sanitize_protocol_text(msg.get("content") or "")[0]
+                if narration.strip():
+                    # 工具轮的合法旁白先公开，协议和工具返回仍只留在内部历史。
+                    yield {"type": "delta", "content": narration}
                 messages.append({
                     "role": "assistant",
-                    "content": msg.get("content") or "",
+                    "content": narration,
                     "tool_calls": tool_calls,
                 })
                 for tc in tool_calls:
@@ -394,15 +478,39 @@ class AssistantAgent:
                         "tool_call_id": tc.get("id"),
                         "content": json.dumps(result, ensure_ascii=False),
                     })
+                yield {"type": "_round_end"}
 
-            # 超过最大轮数仍未收敛 → 强制生成一次最终回答
-            async for ev in self._stream_final(cfg, messages):
+            # 最终汇报独立分轮，等待态持续到流式结束。
+            started_at = datetime.now().astimezone().isoformat()
+            yield {"type": "thinking", "status": "running", "started_at": started_at, "elapsed_ms": 0}
+            # 预算耗尽必须明确未完成；最终生成只负责总结已有证据。
+            yield {"type": "delta", "content": "本轮未完成：工具调用轮数已达上限，后续请求未执行。\n\n"}
+            final_start = time.monotonic()
+            async for ev in self._stream_final(cfg, [*messages, {"role": "system", "content":
+                    "工具轮数预算已耗尽，任务未完成。明确说明未完成部分，禁止宣称全部完成。"}]):
+                if ev.get("type") in {"done", "error"}:
+                    yield {"type": "thinking", "status": "done", "started_at": started_at,
+                           "elapsed_ms": max(0, int((time.monotonic() - final_start) * 1000))}
                 yield ev
         except httpx.TimeoutException:
             yield {"type": "error", "content": "AI 响应超时，请稍后重试。"}
         except Exception as e:  # noqa: BLE001
             self.logger.error(f"御坂 Agent 异常: {e}", exc_info=True)
             yield {"type": "error", "content": "对话出错了，请稍后重试。"}
+
+    @staticmethod
+    def _has_failed_tool_results(messages: List[Dict[str, Any]]) -> bool:
+        """识别未成功的工具结果，复用已有正文时仍保留证据不足提示。"""
+        for message in messages:
+            if message.get('role') != 'tool':
+                continue
+            try:
+                result = json.loads(message.get('content') or '{}')
+            except (ValueError, TypeError):
+                return True
+            if not isinstance(result, dict) or result.get('ok') is not True:
+                return True
+        return False
 
     @staticmethod
     def _tool_failure_summary(result: Dict[str, Any]) -> Dict[str, str]:
@@ -460,6 +568,9 @@ class AssistantAgent:
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """最终回答用流式输出（不再带 tools，纯生成文本）。"""
         incomplete = False
+        messages = [*messages, {'role': 'system', 'content':
+            '工具阶段已结束。只汇报已经执行并有结果的工具调用；不要继续请求工具，'
+            '不要输出 DSML、tool_calls 或历史工具序列化。'}]
         for message in messages:
             if message.get('role') != 'tool':
                 continue
@@ -491,7 +602,8 @@ class AssistantAgent:
         }
         log_raw = cfg.get("log_raw_response", False)
         self._log_raw(log_raw, "最终回答请求 messages", messages)
-        collected: List[str] = []  # 收集流式片段，用于完整记录最终回答
+        collected: List[str] = []  # 仅记录经过协议过滤的公开正文
+        output_filter = ProtocolTextFilter()
 
         start_time = datetime.now()
         total_tokens = 0  # 累计 token 使用量
@@ -540,13 +652,27 @@ class AssistantAgent:
                         if usage and usage.get("total_tokens"):
                             total_tokens = usage.get("total_tokens", 0)
 
-                        piece = (choices[0].get("delta") or {}).get("content")
+                        delta = choices[0].get("delta") or {}
+                        if delta.get("tool_calls"):
+                            # 最终阶段不允许新调用，结构化请求也只标记未完成，绝不执行。
+                            output_filter.blocked = True
+                        piece = delta.get("content")
                         if piece:
-                            collected.append(piece)
-                            yield {"type": "delta", "content": piece}
+                            safe_piece = output_filter.feed(piece)
+                            if safe_piece:
+                                collected.append(safe_piece)
+                                yield {"type": "delta", "content": safe_piece}
 
             if not completed:
                 raise ValueError("上游 AI 流式回答未完整结束")
+            tail = output_filter.finish()
+            if tail:
+                collected.append(tail)
+                yield {"type": "delta", "content": tail}
+            if output_filter.blocked:
+                notice = "\n\n本轮未完成：最终回答中的工具协议已屏蔽，其中的请求未执行。"
+                collected.append(notice)
+                yield {"type": "delta", "content": notice}
             duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
 
             # 记录成功的最终回答调用
