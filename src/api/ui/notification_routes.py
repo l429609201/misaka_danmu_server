@@ -15,7 +15,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from src.services.service_container import get_database_service
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.core import settings as _settings
 from src.workflows.notification_tunnel import apply_tunnel_from_notification_manager
 from src.services.config_service import get_config_service
@@ -125,7 +125,7 @@ async def _probe_public_domain() -> Dict[str, Any]:
 
 @router.get("/notification/public-domain/validate", summary="校验外链模式自定义域名")
 async def validate_public_domain(
-    current_user=Depends(security.get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """验证 Token 管理的自定义域名能否公开访问本服务的图片静态路由。"""
     return await _probe_public_domain()
@@ -136,7 +136,7 @@ async def validate_public_domain(
 @router.get("/notification/channel-types", summary="获取可用渠道类型及 Schema")
 async def get_channel_types(
     request: Request,
-    current_user=Depends(security.get_current_user),
+    current_user=Depends(get_current_user),
 ):
     manager = _get_notification_manager(request)
     return manager.get_available_channel_types()
@@ -146,7 +146,7 @@ async def get_channel_types(
 async def get_channel_schema(
     channel_type: str,
     request: Request,
-    current_user=Depends(security.get_current_user),
+    current_user=Depends(get_current_user),
 ):
     manager = _get_notification_manager(request)
     schema = manager.get_channel_schema(channel_type)
@@ -157,7 +157,7 @@ async def get_channel_schema(
 
 @router.get("/notification/channels", summary="获取所有通知渠道")
 async def list_channels(
-    current_user=Depends(security.get_current_user),
+    current_user=Depends(get_current_user),
 ):
     db = get_database_service()
     async with db.transaction():
@@ -171,7 +171,7 @@ async def list_channels(
 async def create_channel(
     payload: ChannelCreate,
     request: Request,
-    current_user=Depends(security.get_current_user),
+    current_user=Depends(get_current_user),
 ):
     # why：外链模式依赖全局域名和真实图片静态路由，校验失败时禁止落库。
     if payload.config.get("image_mode") == "public_url":
@@ -205,7 +205,7 @@ async def update_channel(
     channel_id: int,
     payload: ChannelUpdate,
     request: Request,
-    current_user=Depends(security.get_current_user),
+    current_user=Depends(get_current_user),
 ):
     # config 未提交时保持原值；只有明确保存外链模式才触发验证。
     if payload.config and payload.config.get("image_mode") == "public_url":
@@ -241,7 +241,7 @@ async def update_channel(
 async def delete_channel(
     channel_id: int,
     request: Request,
-    current_user=Depends(security.get_current_user),
+    current_user=Depends(get_current_user),
 ):
     db = get_database_service()
     async with db.transaction():
@@ -259,7 +259,7 @@ async def delete_channel(
 async def test_channel(
     channel_id: int,
     request: Request,
-    current_user=Depends(security.get_current_user),
+    current_user=Depends(get_current_user),
 ):
     db = get_database_service()
     async with db.transaction():

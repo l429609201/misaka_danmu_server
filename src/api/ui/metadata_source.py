@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Body, sta
 from src.schemas.auth import User
 from src.schemas.metadata import MetadataSourceStatusResponse, MetadataDetailsResponse
 from src.schemas.control import MetadataSourceSettingUpdate
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.services.metadata_service import MetadataService
 from src.services.task_manager import TaskManager
 from src.services.scraper_manager import ScraperManager
@@ -22,22 +22,9 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def build_metadata_source_router(metadata_service: MetadataService) -> APIRouter:
-    """在 HTTP 组合层聚合来源公开的子路由。"""
-    source_router = APIRouter()
-    for provider, source in metadata_service.sources.items():
-        api_router = getattr(source, "api_router", None)
-        if isinstance(api_router, APIRouter):
-            source_router.include_router(
-                api_router, prefix=f"/{provider}",
-                tags=[f"Metadata - {provider.capitalize()}"],
-            )
-    return source_router
-
-
 @router.get("/metadata-sources", response_model=List[MetadataSourceStatusResponse], summary="获取所有元数据源的设置")
 async def get_metadata_source_settings(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     manager: MetadataService = Depends(get_metadata_service)
 ):
     """获取所有元数据源及其当前状态(配置、连接性等)"""
@@ -47,7 +34,7 @@ async def get_metadata_source_settings(
 @router.put("/metadata-sources", status_code=status.HTTP_204_NO_CONTENT, summary="更新元数据源的设置")
 async def update_metadata_source_settings(
     settings: List[MetadataSourceSettingUpdate],
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     manager: MetadataService = Depends(get_metadata_service)
 ):
     """批量更新元数据源的启用状态、辅助搜索状态和显示顺序"""
@@ -58,7 +45,7 @@ async def update_metadata_source_settings(
 @router.get("/metadata-sources/{providerName}/config", response_model=Dict[str, Any], summary="获取指定元数据源的配置")
 async def get_metadata_source_config(
     providerName: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     metadata_manager: MetadataService = Depends(get_metadata_service)
 ):
     """获取单个元数据源的详细配置"""
@@ -72,7 +59,7 @@ async def get_metadata_source_config(
 async def update_metadata_source_config(
     providerName: str,
     payload: Dict[str, Any],
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     metadata_manager: MetadataService = Depends(get_metadata_service)
 ):
     """更新指定元数据源的配置"""
@@ -90,7 +77,7 @@ async def search_metadata(
     provider: str,
     keyword: str,
     mediaType: Optional[str] = Query(None),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     manager: MetadataService = Depends(get_metadata_service)
 ):
     """从指定元数据源搜索内容"""
@@ -102,7 +89,7 @@ async def get_metadata_details(
     provider: str,
     item_id: str,
     mediaType: Optional[str] = Query(None),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     manager: MetadataService = Depends(get_metadata_service)
 ):
     """获取指定元数据源的详情"""
@@ -117,7 +104,7 @@ async def get_metadata_details_with_type(
     provider: str,
     mediaType: str,
     item_id: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     manager: MetadataService = Depends(get_metadata_service)
 ):
     """
@@ -135,7 +122,7 @@ async def execute_metadata_action(
     action_name: str,
     request: Request,
     payload: Optional[Dict[str, Any]] = Body(None),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     manager: MetadataService = Depends(get_metadata_service)
 ):
     """执行指定元数据源的自定义操作"""
@@ -148,7 +135,7 @@ async def execute_metadata_action(
 @router.get("/bangumi-data/platforms/{bangumi_id}", summary="A3：查询某番在各平台的 id/链接（bangumi-data 离线索引）")
 async def get_bangumi_data_platforms(
     bangumi_id: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     metadata_service: MetadataService = Depends(get_metadata_service),
 ):
     """根据 bangumiId 从 bangumi-data 离线索引返回该作品在各平台的 id 与可点击链接。
@@ -163,7 +150,7 @@ async def get_bangumi_data_platforms(
 
 @router.get("/bangumi-data/status", summary="查询 bangumi-data 离线索引状态（条目数）")
 async def get_bangumi_data_status(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     metadata_service: MetadataService = Depends(get_metadata_service),
 ):
     """返回当前 bangumi-data 离线索引是否可用及条目数。"""
@@ -172,7 +159,7 @@ async def get_bangumi_data_status(
 
 @router.post("/bangumi-data/sync", summary="手动触发 bangumi-data 离线索引同步")
 async def trigger_bangumi_data_sync(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager),
 ):
     """提交后台同步任务并返回任务标识。"""
@@ -182,7 +169,7 @@ async def trigger_bangumi_data_sync(
 
 @router.post("/bangumi-data/clear", summary="清除 bangumi-data 离线索引数据")
 async def trigger_bangumi_data_clear(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager),
 ):
     """提交后台离线索引清理任务。"""
@@ -193,7 +180,7 @@ async def trigger_bangumi_data_clear(
 @router.get("/bangumi-data/danmaku-sources/{bangumi_id}", summary="反向解析：某番各平台 URL 及是否有对应弹幕源")
 async def get_bangumi_data_danmaku_sources(
     bangumi_id: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     metadata_service: MetadataService = Depends(get_metadata_service),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
 ):

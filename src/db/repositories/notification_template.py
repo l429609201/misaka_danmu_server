@@ -133,6 +133,23 @@ class NotificationTemplateRepository:
                 "body": DEFAULT_PROGRESS_BODY,
                 "imageEnabled": False,
             },
+            TemplateID.WEBHOOK: {
+                "title": "{{ status_icon }} Webhook {{ action_name }}{{ status_name }}",
+                "body": """**作品**: {{ anime_title }}
+{% if webhook_source %}**触发来源**: {{ webhook_source }}{% endif %}
+{% if season %}**季**: {{ season }}{% endif %}
+{% if episode_range %}**集数**: {{ episode_range }}{% endif %}
+{% if provider %}**弹幕源**: {{ provider }}{% endif %}
+{% if message %}**说明**: {{ message }}{% endif %}
+{% if error %}**错误**: {{ error }}{% endif %}""",
+            },
+            TemplateID.SCHEDULED_TASK: {
+                "title": "{{ status_icon }} 定时任务{{ status_name }}",
+                "body": """**任务**: {{ task_title }}
+{% if message %}**结果**: {{ message }}{% endif %}
+{% if error %}**错误**: {{ error }}{% endif %}""",
+                "imageEnabled": False,
+            },
             TemplateID.DANMAKU_IMPORT: {
                 "title": "{{ status_icon }} {{ action_name }}{{ status_name }}",
                 "body": """**作品**: {{ anime_title }}

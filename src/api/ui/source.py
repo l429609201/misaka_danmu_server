@@ -9,7 +9,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src import tasks
 from src.services.service_container import get_database_service
 from src.services.task_manager import TaskManager
@@ -47,7 +47,7 @@ router = APIRouter()
 @router.get("/library/source/{sourceId}/details", response_model=SourceDetailsResponse, summary="获取单个数据源的详情")
 async def get_source_details(
     sourceId: int,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取指定数据源的详细信息，包括其提供方名称。"""
     db = get_database_service()
@@ -63,7 +63,7 @@ async def get_source_details(
 async def delete_source_from_anime(
     sourceId: int,
     deleteFiles: bool = Query(True, description="是否同时删除弹幕XML文件"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     """提交一个后台任务来删除一个数据源及其所有关联的分集和弹幕。"""
@@ -88,7 +88,7 @@ async def delete_source_from_anime(
 @router.put("/library/source/{sourceId}/favorite", status_code=status.HTTP_204_NO_CONTENT, summary="切换数据源的精确标记状态")
 async def toggle_source_favorite(
     sourceId: int,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """切换指定数据源的精确标记状态。一个作品只能有一个精确标记的源。"""
     db = get_database_service()
@@ -103,7 +103,7 @@ async def toggle_source_favorite(
 @router.put("/library/source/{sourceId}/toggle-incremental-refresh", status_code=status.HTTP_204_NO_CONTENT, summary="切换数据源的定时增量更新状态")
 async def toggle_source_incremental_refresh(
     sourceId: int,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """切换指定数据源的定时增量更新的启用/禁用状态。同一番剧下只能有一个源开启追更。"""
     db = get_database_service()
@@ -119,7 +119,7 @@ async def get_source_episodes(
     sourceId: int,
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(25, ge=1, description="每页数量"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取指定数据源下的所有已收录分集列表。"""
     db = get_database_service()
@@ -139,7 +139,7 @@ async def get_source_episodes(
 @router.post("/library/source/{sourceId}/reorder-episodes", status_code=status.HTTP_202_ACCEPTED, summary="重整指定源的分集顺序")
 async def reorder_source_episodes(
     sourceId: int,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     """提交一个后台任务，按当前顺序重新编号指定数据源的所有分集。"""
@@ -166,7 +166,7 @@ async def reorder_source_episodes(
 async def refresh_anime(
     sourceId: int,
     mode: str = Query("full", description="刷新模式: 'full' (全量) 或 'incremental' (增量)"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     task_manager: TaskManager = Depends(get_task_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
@@ -188,10 +188,9 @@ async def refresh_anime(
     unique_key = ""
     if mode == "incremental":
         logger.info(f"用户 '{current_user.username}' 为番剧 '{source_info['title']}' (源ID: {sourceId}) 启动了增量刷新任务。")
-        # 修正：get_episodes_for_source 现在返回一个带分页的字典
+        # 复用追更任务的聚合查询，避免调用已删除的方法或分页截断最大集号。
         async with db.transaction():
-            paginated_result = await db.episode.get_episodes_for_source(sourceId, page_size=9999) # 获取所有分集以找到最大集数
-        latest_episode_index = max((ep['episodeIndex'] for ep in paginated_result.get("episodes", [])), default=0)
+            latest_episode_index = await db.episode.get_max_episode_index_by_source(sourceId)
         next_episode_index = latest_episode_index + 1
 
         unique_key = f"import-{source_info['providerName']}-{source_info['mediaId']}-ep{next_episode_index}"
@@ -240,7 +239,7 @@ async def refresh_anime(
 @router.post("/library/sources/delete-bulk", status_code=status.HTTP_202_ACCEPTED, summary="提交批量删除数据源的任务", response_model=UITaskResponse)
 async def delete_bulk_sources(
     request_data: BulkDeleteRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     """提交一个后台任务来批量删除多个数据源。"""
@@ -269,7 +268,7 @@ async def delete_bulk_sources(
 async def manual_import_episode(
     source_id: int,
     request_data: ManualImportRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     task_manager: TaskManager = Depends(get_task_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter)
@@ -331,7 +330,7 @@ async def manual_import_episode(
 async def batch_manual_import(
     sourceId: int,
     payload: BatchManualImportRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
@@ -374,7 +373,7 @@ async def batch_manual_import(
 async def import_collection(
     sourceId: int,
     payload: ImportCollectionRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     task_manager: TaskManager = Depends(get_task_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
@@ -525,7 +524,7 @@ async def get_incremental_refresh_sources(
     finishedFilter: str = Query("all", pattern="^(all|finished|unfinished)$", description="完结过滤"),
     sortBy: str = Query("created", pattern="^(created|title)$", description="排序字段: created=按入库时间, title=按标题"),
     sortOrder: str = Query("desc", pattern="^(asc|desc)$", description="排序方向: asc=升序, desc=降序"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """获取所有源（包括启用和未启用追更的），按番剧分组返回，支持分页和过滤。用于批量管理弹窗。"""
@@ -550,7 +549,7 @@ async def get_incremental_refresh_sources(
 
 @router.get("/library/incremental-refresh/task-status", response_model=IncrementalRefreshTaskStatus, summary="获取增量追更定时任务状态")
 async def get_incremental_refresh_task_status(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     scheduler: SchedulerManager = Depends(get_scheduler_manager),
 ):
     """检测增量追更定时任务是否存在及其状态。"""
@@ -579,7 +578,7 @@ async def get_incremental_refresh_task_status(
 @router.post("/library/incremental-refresh/batch-toggle", summary="批量开启/关闭追更")
 async def batch_toggle_incremental_refresh(
     payload: BatchToggleIncrementalRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """批量开启或关闭指定源的增量追更。"""
     db = get_database_service()
@@ -592,7 +591,7 @@ async def batch_toggle_incremental_refresh(
 @router.post("/library/incremental-refresh/batch-favorite", summary="批量设置标记")
 async def batch_set_favorite(
     payload: BatchSetFavoriteRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """批量设置标记。每个源会被设为标记，同一番剧下的其他源会被取消标记。"""
     db = get_database_service()
@@ -604,7 +603,7 @@ async def batch_set_favorite(
 @router.post("/library/incremental-refresh/batch-unfavorite", summary="批量取消标记")
 async def batch_unset_favorite(
     payload: BatchSetFavoriteRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """批量取消标记。"""
     db = get_database_service()
@@ -616,7 +615,7 @@ async def batch_unset_favorite(
 @router.put("/library/source/{sourceId}/toggle-finished", status_code=status.HTTP_204_NO_CONTENT, summary="切换数据源的完结状态")
 async def toggle_source_finished(
     sourceId: int,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """切换指定数据源的完结标记。完结后不再预加载下一集。"""
     db = get_database_service()
@@ -630,7 +629,7 @@ async def toggle_source_finished(
 @router.post("/library/incremental-refresh/batch-set-finished", summary="批量标记完结")
 async def batch_set_finished(
     payload: BatchSetFavoriteRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """批量将指定源标记为完结。"""
     db = get_database_service()
@@ -642,7 +641,7 @@ async def batch_set_finished(
 @router.post("/library/incremental-refresh/batch-unset-finished", summary="批量取消完结标记")
 async def batch_unset_finished(
     payload: BatchSetFavoriteRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """批量取消指定源的完结标记。"""
     db = get_database_service()
@@ -656,7 +655,7 @@ async def batch_unset_finished(
 @router.get("/library/source/{sourceId}/episodes-for-split", summary="获取数据源的分集列表（用于拆分选择）")
 async def get_source_episodes_for_split(
     sourceId: int,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取指定数据源的分集列表，用于拆分数据源时选择分集。"""
     db = get_database_service()
@@ -672,7 +671,7 @@ async def get_source_episodes_for_split(
 async def split_source(
     animeId: int,
     payload: SplitSourceRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     将一个数据源中的部分分集拆分到新的或已有的媒体条目。

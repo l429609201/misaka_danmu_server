@@ -15,6 +15,7 @@ from src.schemas.notification_template import (
     DEFAULT_PROGRESS_BODY, DEFAULT_PROGRESS_TITLE, TemplateID, empty_template_variables,
 )
 from src.utils.progress_bar import build_progress_bar
+from src.services.config_service import get_config_service
 from src.services.template_renderer import get_template_renderer
 from src.workflows.image_resources import load_image_bytes
 
@@ -51,10 +52,11 @@ class NotificationWorkflow:
     async def reload_surge_config(self) -> None:
         """读取汇总业务策略，非法配置保留默认值。"""
         try:
-            async with self._db.transaction():
-                enabled = await self._db.config.get_value("notificationSurgeAggregationEnabled", "true")
-                window = await self._db.config.get_value("notificationSurgeWindowSeconds", "30")
-                threshold = await self._db.config.get_value("notificationSurgeThreshold", "5")
+            # 配置统一通过 ConfigService，避免旁路配置缓存。
+            config = get_config_service()
+            enabled = await config.get("notificationSurgeAggregationEnabled", "true")
+            window = await config.get("notificationSurgeWindowSeconds", "30")
+            threshold = await config.get("notificationSurgeThreshold", "5")
             try:
                 window_value = float(window)
             except (ValueError, TypeError):
@@ -90,15 +92,15 @@ class NotificationWorkflow:
         "download_fallback": (TaskOperation.FALLBACK_SEARCH, TaskSource.API),
         "predownload": (TaskOperation.FALLBACK_PREDOWNLOAD, TaskSource.API),
         "match_fallback": (TaskOperation.FALLBACK_MATCH, TaskSource.API),
-        # 定时任务：无专属模板，归入刷新（定时任务多为刷新/追更类）
-        "scheduled_task": (TaskOperation.REFRESH, TaskSource.SCHEDULER),
+        # 定时维护使用专属模板，不能冒充弹幕刷新。
+        "scheduled_task": (TaskOperation.SCHEDULED_TASK, TaskSource.SCHEDULER),
     }
 
     # 无 _success/_failed 后缀的特殊事件名 → (操作, 来源, 状态)
     _LEGACY_EVENT_EXACT: Dict[str, tuple] = {
         "media_scan_complete": (TaskOperation.MEDIA_SCAN, TaskSource.MANUAL, TaskStatus.SUCCESS),
-        "scheduled_task_complete": (TaskOperation.REFRESH, TaskSource.SCHEDULER, TaskStatus.SUCCESS),
-        "scheduled_task_failed": (TaskOperation.REFRESH, TaskSource.SCHEDULER, TaskStatus.FAILED),
+        "scheduled_task_complete": (TaskOperation.SCHEDULED_TASK, TaskSource.SCHEDULER, TaskStatus.SUCCESS),
+        "scheduled_task_failed": (TaskOperation.SCHEDULED_TASK, TaskSource.SCHEDULER, TaskStatus.FAILED),
     }
 
     def _build_legacy_event_ctx(self, event_type: str, payload: dict) -> Optional[EventContext]:
@@ -110,6 +112,8 @@ class NotificationWorkflow:
             # 拆出 xxx_success / xxx_failed 形式
             if event_type.endswith("_success"):
                 base, status = event_type[: -len("_success")], TaskStatus.SUCCESS
+            elif event_type.endswith("_no_change"):
+                base, status = event_type[: -len("_no_change")], TaskStatus.NO_CHANGE
             elif event_type.endswith("_failed"):
                 base, status = event_type[: -len("_failed")], TaskStatus.FAILED
             else:
@@ -118,6 +122,10 @@ class NotificationWorkflow:
             if not mapped:
                 return None
             operation, source = mapped
+
+        if payload.get("webhook_source") or (payload.get("task_parameters") or {}).get("webhookSource"):
+            # 下游事件名可能沿用导入/后备类别，结构化来源始终决定独立订阅和模板。
+            source = TaskSource.WEBHOOK
 
         # subject 承载展示主体，context 承载结果详情（与 UnifiedTaskMessage 约定一致）
         subject = {
@@ -140,7 +148,7 @@ class NotificationWorkflow:
             "finished_at": payload.get("finished_at", ""),
             "search_term": payload.get("search_term", ""),
             "search_type": payload.get("search_type", ""),
-            "webhook_source": payload.get("webhook_source", ""),
+            "webhook_source": payload.get("webhook_source", "") or (payload.get("task_parameters") or {}).get("webhookSource", ""),
             "unique_key": payload.get("unique_key", ""),
             # 保留原始事件名，便于渠道端做细粒度区分与排查
             "legacy_event_type": event_type,
@@ -172,9 +180,8 @@ class NotificationWorkflow:
         """
         event_ctx = self._build_legacy_event_ctx(event_type, payload)
         if event_ctx is None:
-            # 无法映射到通用事件的旧事件，降级为纯文本直发
-            logger.warning(f"事件 [{event_type}] 无法映射到通用事件模板，使用降级发送")
-            await self._legacy_send(event_type, payload)
+            # 未注册的事件没有明确模板和订阅，不能旁路发送任意正文。
+            logger.warning("事件 [%s] 未注册模板与订阅，跳过推送", event_type)
             return
 
         await self.notify_event_v2(event_ctx)
@@ -219,15 +226,7 @@ class NotificationWorkflow:
         # 第三步：遍历渠道并判断发送范围
         for ch_id, channel in self.channels.items():
             try:
-                # 获取渠道的发送范围配置
-                events_cfg = channel.config.get("__events_config", {})
-
-                # 新版配置结构：{"version": 2, "scopes": {...}}
-                if isinstance(events_cfg, dict) and events_cfg.get("version") == 2:
-                    scopes = events_cfg.get("scopes", {})
-                else:
-                    # 旧版配置或空配置，使用默认范围
-                    scopes = SubscriptionMatcher.get_default_scopes()
+                scopes = SubscriptionMatcher.channel_scopes(channel.config)
 
                 # 判断是否应该发送
                 should_send = SubscriptionMatcher.should_send(event_ctx, scopes)
@@ -250,7 +249,11 @@ class NotificationWorkflow:
         await self._prepare_template(message)
         rendered = self.manager.render_for_channel(message, channel)
         if message.image_enabled and rendered.image and channel.get_capabilities().supports(ChannelCapability.IMAGES):
-            rendered.image_bytes = await load_image_bytes(rendered.image)
+            try:
+                rendered.image_bytes = await load_image_bytes(rendered.image)
+            except Exception as exc:
+                # 海报加载失败不能吞掉已渲染的正文，由渠道继续尝试外链或文本。
+                logger.warning("通知海报加载失败，保留正文: %s", exc)
         return rendered
 
     async def notify_message(self, message: NotificationMessage):
@@ -309,15 +312,12 @@ class NotificationWorkflow:
             proxy = None
             ssl_verify = True
             try:
-                async with self._db.transaction():
-                    enabled = (await self._db.config.get_value(
-                        "fallbackSearchPosterCollage", "true")).lower() == "true"
-                    proxy_enabled = (await self._db.config.get_value(
-                        "proxyEnabled", "false")).lower() == "true"
-                    proxy_url = await self._db.config.get_value("proxyUrl", "")
-                    ssl_verify = (await self._db.config.get_value(
-                        "proxySslVerify", "true")).lower() == "true"
-                    proxy = proxy_url if (proxy_enabled and proxy_url) else None
+                config = get_config_service()
+                enabled = str(await config.get("fallbackSearchPosterCollage", "true")).lower() == "true"
+                proxy_enabled = str(await config.get("proxyEnabled", "false")).lower() == "true"
+                proxy_url = await config.get("proxyUrl", "")
+                ssl_verify = str(await config.get("proxySslVerify", "true")).lower() == "true"
+                proxy = proxy_url if (proxy_enabled and proxy_url) else None
             except Exception:
                 pass
             if not enabled:
@@ -345,7 +345,7 @@ class NotificationWorkflow:
         variables["episode_range"] = variables.get("episode_range") or variables.get("episode") or ""
         source_names = {"manual": "手动", "auto": "自动追更", "webhook": "Webhook", "api": "API", "scheduler": "定时任务"}
         variables["trigger_name"] = source_names.get(str(event_payload.get("source") or ""), "")
-        operation_names = {"import": "导入", "refresh": "刷新", "incremental_refresh": "自动追更", "fallback_search": "后备处理", "fallback_predownload": "后备处理", "fallback_match": "后备处理", "media_scan": "媒体库扫描"}
+        operation_names = {"import": "导入", "refresh": "刷新", "incremental_refresh": "自动追更", "fallback_search": "后备处理", "fallback_predownload": "后备处理", "fallback_match": "后备处理", "media_scan": "媒体库扫描", "scheduled_task": "定时任务"}
         variables["action_name"] = operation_names.get(str(event_payload.get("operation") or ""), "任务")
         try:
             async with self._db.transaction():
@@ -385,11 +385,14 @@ class NotificationWorkflow:
     def _check_subscription(channel: BaseNotificationChannel,
                             message: NotificationMessage) -> bool:
         """检查渠道是否订阅了此消息类型"""
-        events_cfg = channel.config.get("__events_config", {})
+        scopes = SubscriptionMatcher.channel_scopes(channel.config)
+        event_ctx = getattr(message, "event_ctx", None)
+        if event_ctx is not None:
+            return SubscriptionMatcher.should_send(event_ctx, scopes)
         sub_key = message.subscription_key
         if not sub_key:
-            return True  # 无订阅 key 的消息默认发送
-        return bool(events_cfg.get(sub_key, False))
+            return message.category.value == "interaction"
+        return scopes.get(sub_key) is True
 
     async def flush_aggregations(self):
         """手动刷新所有聚合消息"""
@@ -411,20 +414,6 @@ class NotificationWorkflow:
             except Exception as e:
                 logger.error(f"聚合刷新异常: {e}")
 
-    async def _legacy_send(self, event_type: str, payload: dict):
-        """降级发送 — 直接用旧格式发送未注册的消息类型"""
-        title = event_type
-        text = payload.get("text", "") or payload.get("message", "") or str(payload)
-        for ch_id, channel in self.channels.items():
-            try:
-                events_cfg = channel.config.get("__events_config", {})
-                if not events_cfg.get(event_type, False):
-                    continue
-                await channel.send_message(title=title, text=text)
-            except Exception as e:
-                logger.error(f"渠道 {ch_id} 降级发送 [{event_type}] 失败: {e}")
-
-
     # 有进度消息记录时，完成通知会 edit 已有消息（适用于所有任务类型）
     _COMPLETE_EVENT_TYPES = {
         "download_fallback_success", "download_fallback_failed",
@@ -435,20 +424,8 @@ class NotificationWorkflow:
         "auto_import_success", "auto_import_failed",
         "webhook_import_success", "webhook_import_failed",
         "refresh_success", "refresh_failed",
-        "incremental_refresh_success", "incremental_refresh_failed",
+        "incremental_refresh_success", "incremental_refresh_failed", "incremental_refresh_no_change",
         "scheduled_task_complete", "scheduled_task_failed",
-    }
-
-    # fallback 完成事件 → 订阅 check_key 的映射（dict）
-    _FALLBACK_COMPLETE_EVENTS = {
-        "download_fallback_success": "download_fallback_complete",
-        "download_fallback_failed": "download_fallback_complete",
-        "fallback_search_success": "fallback_search_complete",
-        "fallback_search_failed": "fallback_search_complete",
-        "predownload_success": "predownload_complete",
-        "predownload_failed": "predownload_complete",
-        "match_fallback_success": "match_fallback_complete",
-        "match_fallback_failed": "match_fallback_complete",
     }
 
     async def emit_event(self, event_type: str, data: Dict[str, Any]):
@@ -483,18 +460,14 @@ class NotificationWorkflow:
         event_ctx = self._build_legacy_event_ctx(event_type, data)
         for ch_id, channel_instance in channels.items():
             try:
-                events_cfg = channel_instance.config.get("__events_config", {})
                 has_cached_progress = ch_id in cached_channels
-                if not has_cached_progress:
-                    if event_ctx is None:
-                        continue
-                    scopes = (
-                        events_cfg.get("scopes", {})
-                        if isinstance(events_cfg, dict) and events_cfg.get("version") == 2
-                        else SubscriptionMatcher.get_default_scopes()
-                    )
-                    if not SubscriptionMatcher.should_send(event_ctx, scopes):
-                        continue
+                # 缓存进度不能绕过订阅；取消勾选后完成消息也不能继续推送。
+                if event_ctx is None:
+                    continue
+                scopes = SubscriptionMatcher.channel_scopes(channel_instance.config)
+                if not SubscriptionMatcher.should_send(event_ctx, scopes):
+                    self.state.remove_progress_message(task_id, ch_id)
+                    continue
 
                 # 统一使用新消息类渲染（registry + render_for_channel），不再用旧 _format_event_message
                 rendered = await self.render_event_for_channel(
@@ -517,16 +490,8 @@ class NotificationWorkflow:
                 logger.error(f"渠道 {ch_id} 发送事件 {event_type} 失败: {e}")
 
     async def emit_task_progress(self, task_id: str, task_title: str, progress: int,
-                                  description: str, check_event_key: str = "task_progress"):
-        """向支持编辑的渠道发送任务进度通知（edit 已有消息）
-
-        常态化实时进度：所有支持 MESSAGE_EDITING 能力的渠道都会收到进度更新，
-        不再检查 task_progress 订阅。进度消息通过编辑同一条消息实现，
-        不具备编辑能力的渠道（企业微信/Server酱）不会收到进度更新，避免刷屏。
-
-        Args:
-            check_event_key: 已废弃，保留参数仅为兼容性（不再使用）
-        """
+                                  description: str, event_type: Optional[str] = None):
+        """通过进度模板发送文本，必须同时订阅进度和对应业务范围。"""
         if not self.manager:
             return
         channels = {
@@ -562,7 +527,14 @@ class NotificationWorkflow:
             return
         for ch_id, channel_instance in channels.items():
             try:
-                # 进度只有文本，不读取海报或生成图片，也不改变普通进度订阅规则。
+                # 未勾选进度或业务范围时不发送，尤其不能泄漏 Webhook 子任务。
+                scopes = SubscriptionMatcher.channel_scopes(channel_instance.config)
+                event_ctx = self._build_legacy_event_ctx(event_type, {}) if event_type else None
+                if scopes.get("task_progress") is not True or event_ctx is None:
+                    continue
+                if not SubscriptionMatcher.should_send(event_ctx, scopes):
+                    continue
+                # 进度只有文本，不读取海报或生成图片。
                 edit_mid = self.state.get_progress_messages(task_id).get(ch_id)
                 msg_id_out: List[int] = []
                 logger.debug(f"[进度通知] task_id={task_id[:8]} ch={ch_id} edit_mid={edit_mid} progress={progress}%")

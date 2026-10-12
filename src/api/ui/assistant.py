@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.schemas import ui_models
 from src.api.dependencies import get_config_service
 from src.workflows.assistant_code import get_assistant_code_workflow
@@ -85,7 +85,7 @@ async def get_personas():
 @router.get("/assistant/status", summary="御坂助手对话是否可用", include_in_schema=False)
 async def get_status(
     config_service = Depends(get_config_service),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     service = AssistantChatService(config_service)
     ready = await service.is_ready()
@@ -97,7 +97,7 @@ async def chat_stream(
     payload: ChatStreamRequest,
     request: Request,
     config_service = Depends(get_config_service),
-    current_user: ui_models.User = Depends(security.get_current_user_no_db_hold),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """流式对话；管理员可授权本轮代码修复，其余写工具仍需单次确认。"""
     # 从 app.state 取 DB 会话工厂，供工具执行时独立开会话
@@ -303,7 +303,7 @@ async def chat_stream(
 @router.post("/assistant/choice", summary="提交助手选择", include_in_schema=False)
 async def submit_choice(
     payload: ChoiceSubmitRequest,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> dict:
     """校验用户、会话、一次性票据和到期时间后返回用户消息。"""
     db = get_database_service()
@@ -330,7 +330,7 @@ async def execute_confirmed_tool(
     payload: ToolExecuteRequest,
     request: Request,
     config_service = Depends(get_config_service),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """只执行当前用户会话中尚未消费且未过期的确认动作。"""
     db = get_database_service()
@@ -443,7 +443,7 @@ def _skill_to_dict(skill, content: Optional[str] = None) -> dict:
 
 @router.get("/assistant/skills", summary="列出所有技能", include_in_schema=False)
 async def list_skills_api(
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """列出所有技能（含未启用）。"""
     skills = get_skill_manager().list_skills()
@@ -453,7 +453,7 @@ async def list_skills_api(
 @router.get("/assistant/skills/{skill_id}", summary="获取技能详情", include_in_schema=False)
 async def get_skill_api(
     skill_id: str,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """获取单个技能的完整内容（正文此刻按需读取）。"""
     manager = get_skill_manager()
@@ -466,7 +466,7 @@ async def get_skill_api(
 @router.post("/assistant/skills", status_code=201, summary="创建技能", include_in_schema=False)
 async def create_skill_api(
     payload: SkillCreateRequest,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """创建新技能并落盘到 config/skills/<skillId>/SKILL.md。"""
     try:
@@ -489,7 +489,7 @@ async def create_skill_api(
 async def update_skill_api(
     skill_id: str,
     payload: SkillUpdateRequest,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """更新技能（未提供字段保持不变，版本号自动递增）。"""
     try:
@@ -511,7 +511,7 @@ async def update_skill_api(
 @router.delete("/assistant/skills/{skill_id}", summary="删除技能", include_in_schema=False)
 async def delete_skill_api(
     skill_id: str,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """删除技能（连同整个目录，不可恢复）。"""
     try:
@@ -528,7 +528,7 @@ async def delete_skill_api(
 async def toggle_skill_api(
     skill_id: str,
     payload: SkillToggleRequest,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """启用或停用技能（停用后不再注入 system prompt，文件保留）。"""
     try:
@@ -540,7 +540,7 @@ async def toggle_skill_api(
 
 @router.post("/assistant/skills/reload", summary="重载技能目录", include_in_schema=False)
 async def reload_skills_api(
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """热重载：重新扫描 config/skills/ 目录（用户手动放入文件后可调此接口生效）。"""
     manager = get_skill_manager()
@@ -596,7 +596,7 @@ def _validate_mcp_server(payload: McpServerRequest) -> McpServerConfig:
 @router.get("/assistant/mcp/servers", summary="列出 MCP 服务器", include_in_schema=False)
 async def list_mcp_servers_api(
     config_service = Depends(get_config_service),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """列出所有已配置的 MCP 服务器。"""
     servers = await McpManager(config_service).get_servers()
@@ -614,7 +614,7 @@ async def list_mcp_servers_api(
 async def create_mcp_server_api(
     payload: McpServerRequest,
     config_service = Depends(get_config_service),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """新增 MCP 服务器。名称作为工具命名空间，必须唯一。"""
     server = _validate_mcp_server(payload)
@@ -636,7 +636,7 @@ async def update_mcp_server_api(
     server_name: str,
     payload: McpServerRequest,
     config_service = Depends(get_config_service),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """更新 MCP 服务器配置。改名时校验新名称不与其他条目冲突。"""
     server = _validate_mcp_server(payload)
@@ -660,7 +660,7 @@ async def update_mcp_server_api(
 async def delete_mcp_server_api(
     server_name: str,
     config_service = Depends(get_config_service),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """删除 MCP 服务器，其工具随即从助手能力中移除。"""
     manager = McpManager(config_service)
@@ -680,7 +680,7 @@ async def delete_mcp_server_api(
 async def test_mcp_server_api(
     payload: McpServerRequest,
     config_service = Depends(get_config_service),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """连通性测试：直接用传入配置试连并发现工具，无需先保存。"""
     server = _validate_mcp_server(payload)
@@ -690,7 +690,7 @@ async def test_mcp_server_api(
 @router.get("/assistant/mcp/tools", summary="列出已接入的 MCP 工具", include_in_schema=False)
 async def list_mcp_tools_api(
     config_service = Depends(get_config_service),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """列出所有已启用服务器当前可用的工具（走发现缓存）。"""
     specs = await McpManager(config_service).list_enabled_tool_specs()
@@ -712,7 +712,7 @@ async def list_mcp_tools_api(
 @router.post("/assistant/mcp/refresh", summary="刷新 MCP 工具缓存", include_in_schema=False)
 async def refresh_mcp_tools_api(
     config_service = Depends(get_config_service),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """清空工具发现缓存并立即重新发现（服务端工具变更后可调此接口）。"""
     manager = McpManager(config_service)

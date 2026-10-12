@@ -5,21 +5,26 @@
  * 页面从 URL 提取 code，调后端 API 完成 token 交换，
  * 然后通知父窗口刷新授权状态。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Spin, Result, Button } from 'antd'
 import { useTranslation } from 'react-i18next'
-import Cookies from 'js-cookie'
-import api from '../../apis/fetch'
+import { exchangeOAuth } from '../../apis'
 
 export default function BgmOAuthCallback() {
   const { t } = useTranslation()
   const [status, setStatus] = useState('loading') // loading | success | error
   const [message, setMessage] = useState('')
+  const exchangeStarted = useRef(false)
 
   useEffect(() => {
+    // 防止 StrictMode 重复消费 state 并提交一次性授权码。
+    if (exchangeStarted.current) return
+    exchangeStarted.current = true
     const url = new URL(window.location.href)
     const code = url.searchParams.get('code')
-    const state = url.searchParams.get('state')
+    const storageKey = 'oauth:bangumi:state'
+    const state = url.searchParams.get('state') || sessionStorage.getItem(storageKey)
+    sessionStorage.removeItem(storageKey)
 
     if (!code) {
       setStatus('error')
@@ -36,14 +41,10 @@ export default function BgmOAuthCallback() {
     // redirect_uri 必须和授权请求时一致（当前页面的 origin + /bgm-oauth-callback）
     const redirectUri = `${window.location.origin}/bgm-oauth-callback`
 
-    const token = Cookies.get('danmu_token')
-
-    api.post('/api/bangumi/auth/exchange_code', {
+    exchangeOAuth('bangumi', {
       code,
       state,
       redirect_uri: redirectUri,
-    }, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then(res => {
         const data = res.data
@@ -53,7 +54,7 @@ export default function BgmOAuthCallback() {
           // 通知父窗口
           try {
             if (window.opener) {
-              window.opener.postMessage('BANGUMI-OAUTH-COMPLETE', '*')
+              window.opener.postMessage('BANGUMI-OAUTH-COMPLETE', window.location.origin)
               setTimeout(() => window.close(), 1500)
             }
           } catch (e) {

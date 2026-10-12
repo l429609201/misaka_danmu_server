@@ -6,7 +6,7 @@ import logging
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src import tasks
 from src.schemas.auth import User
 from src.schemas.anime import EpisodeInfoUpdate
@@ -26,7 +26,7 @@ router = APIRouter()
 async def get_existing_episode_indices(
     title: str = Query(..., description="要查询的作品标题"),
     season: Optional[int] = Query(None, description="要查询的季度号"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> List[int]:
     """按作品标题及季度查询已存在的分集序号，供增量导入使用。"""
     db = get_database_service()
@@ -38,7 +38,7 @@ async def get_existing_episode_indices(
 async def edit_episode_info(
     episodeId: int,
     update_data: EpisodeInfoUpdate,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     """验证源链接后通过编排更新分集信息，保持文件和数据库一致。"""
     db = get_database_service()
@@ -62,7 +62,7 @@ async def edit_episode_info(
 async def delete_episode_from_source(
     episodeId: int,
     deleteFiles: bool = Query(True, description="是否同时删除弹幕XML文件"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """提交一个后台任务来删除一个分集及其所有关联的弹幕。"""
     task_manager = get_task_manager()
@@ -89,7 +89,7 @@ async def delete_episode_from_source(
 @router.post("/library/episode/{episodeId}/refresh", status_code=status.HTTP_202_ACCEPTED, summary="刷新单个分集的弹幕", response_model=UITaskResponse)
 async def refresh_single_episode(
     episodeId: int,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """为指定分集启动一个后台任务，重新获取其弹幕。"""
     scraper_manager = get_scraper_manager()
@@ -122,7 +122,7 @@ async def refresh_single_episode(
 @router.post("/library/episodes/refresh-bulk", status_code=status.HTTP_202_ACCEPTED, summary="批量刷新分集弹幕", response_model=UITaskResponse)
 async def refresh_episodes_bulk(
     request: Request,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """批量刷新多个分集的弹幕（整合为一个任务）。"""
     # 管理器按请求取全局实例，不再创建未使用的请求级数据库会话。
@@ -153,7 +153,7 @@ async def refresh_episodes_bulk(
 @router.post("/library/episodes/delete-bulk", status_code=status.HTTP_202_ACCEPTED, summary="提交批量删除分集的任务", response_model=UITaskResponse)
 async def delete_bulk_episodes(
     request_data: BulkDeleteEpisodesRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """提交一个后台任务来批量删除多个分集。"""
     task_manager = get_task_manager()
@@ -181,7 +181,7 @@ async def delete_bulk_episodes(
 @router.post("/library/episodes/offset", status_code=status.HTTP_202_ACCEPTED, summary="偏移选中分集的集数", response_model=UITaskResponse)
 async def offset_episodes(
     request_data: EpisodeOffsetRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """提交一个后台任务，对选中的分集进行集数偏移。"""
     if not request_data.episodeIds:

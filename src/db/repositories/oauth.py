@@ -9,7 +9,7 @@ import logging
 import secrets
 from datetime import timedelta
 from typing import Optional, Dict, Any
-from sqlalchemy import select, and_, delete
+from sqlalchemy import select, and_, delete, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..orm_models import OauthState, BangumiAuth, OauthCredential
@@ -26,7 +26,7 @@ class OAuthRepository:
 
     # ==================== OAuth State ====================
 
-    async def create_state(self, user_id: int, ttl_minutes: int = 10) -> str:
+    async def create_state(self, user_id: int, ttl_minutes: int = 10, *, provider: str = "bangumi", state: Optional[str] = None) -> str:
         """生成一次性 OAuth 状态令牌。
 
         Args:
@@ -36,16 +36,17 @@ class OAuthRepository:
         Returns:
             新生成的 state 字符串
         """
-        state = secrets.token_urlsafe(32)
+        state = state or secrets.token_urlsafe(32)
         self._session.add(OauthState(
             stateKey=state,
             userId=user_id,
+            provider=provider,
             expiresAt=get_now() + timedelta(minutes=ttl_minutes),
         ))
         await self._session.flush()
         return state
 
-    async def consume_state(self, state: str) -> Optional[int]:
+    async def consume_state(self, state: str, *, provider: str = "bangumi", user_id: Optional[int] = None) -> Optional[int]:
         """校验并消费 state 令牌（一次性，命中即删）。
 
         Args:
@@ -56,9 +57,10 @@ class OAuthRepository:
         """
         stmt = select(OauthState).where(
             and_(OauthState.stateKey == state, OauthState.expiresAt > get_now())
-        )
+        ).with_for_update()
+        # 同一状态令牌的并发消费串行化，第二个请求不能重复取得授权。
         state_obj = (await self._session.execute(stmt)).scalar_one_or_none()
-        if not state_obj:
+        if not state_obj or state_obj.provider != provider or (user_id is not None and state_obj.userId != user_id):
             return None
 
         user_id = state_obj.userId
@@ -105,6 +107,10 @@ class OAuthRepository:
         if auth:
             auth.bangumiUserId = auth_data.get("bangumiUserId")
             auth.nickname = auth_data.get("nickname")
+            # 重新授权同时更新资料与回调地址，避免沿用旧 OAuth 信息。
+            for field in ("username", "sign", "redirectUri"):
+                if field in auth_data:
+                    setattr(auth, field, auth_data[field])
             auth.avatarUrl = auth_data.get("avatarUrl")
             auth.accessToken = auth_data.get("accessToken")
             auth.refreshToken = auth_data.get("refreshToken")
@@ -120,6 +126,35 @@ class OAuthRepository:
 
         await self._session.flush()
         return auth
+
+    async def rotate_bangumi_token(self, user_id: int, previous_refresh_token: str, auth_data: Dict[str, Any]) -> bool:
+        """仅更新仍使用旧刷新凭证的现有记录，不复活注销或覆盖重新授权。"""
+        result = await self._session.execute(
+            update(BangumiAuth).where(
+                BangumiAuth.userId == user_id,
+                BangumiAuth.refreshToken == previous_refresh_token,
+            ).values(
+                accessToken=auth_data["accessToken"],
+                refreshToken=auth_data["refreshToken"],
+                expiresAt=auth_data["expiresAt"],
+            )
+        )
+        await self._session.flush()
+        return result.rowcount == 1
+
+    async def list_refreshable_bangumi_auth(self) -> list[BangumiAuth]:
+        """列出存在刷新令牌的授权记录，由服务层决定刷新策略。"""
+        result = await self._session.execute(
+            select(BangumiAuth).where(BangumiAuth.refreshToken.is_not(None), BangumiAuth.refreshToken != "")
+        )
+        return list(result.scalars().all())
+
+    async def count_valid_bangumi_auth(self) -> int:
+        """统计当前尚未过期的 Bangumi 授权。"""
+        result = await self._session.execute(
+            select(func.count()).select_from(BangumiAuth).where(BangumiAuth.expiresAt > get_now())
+        )
+        return int(result.scalar_one())
 
     async def delete_bangumi_auth(self, user_id: int) -> bool:
         """删除 Bangumi 授权记录，返回是否实际删除。"""
@@ -193,6 +228,54 @@ class OAuthRepository:
 
         await self._session.flush()
         return cred
+
+    async def credential_snapshot(self, user_id: int, provider: str) -> Optional[Dict[str, Any]]:
+        """在仓储边界转换现存授权表，调用方不持有 ORM 实体。"""
+        record = await self.get_bangumi_auth(user_id) if provider == "bangumi" else await self.get_credential(user_id, provider)
+        if record is None:
+            return None
+        fields = ("userId", "accessToken", "refreshToken", "expiresAt", "authorizedAt")
+        fields += (("bangumiUserId", "nickname", "username", "sign", "avatarUrl", "redirectUri")
+                   if provider == "bangumi" else ("providerUserId", "providerUsername", "extraData"))
+        return {field: getattr(record, field, None) for field in fields}
+
+    async def save_provider_credential(self, user_id: int, provider: str, data: Dict[str, Any]) -> None:
+        """通过一个仓储契约保存平台授权，保持既有存储无需迁移。"""
+        if provider == "bangumi":
+            await self.save_bangumi_auth(user_id, data)
+        else:
+            await self.save_credential(user_id, provider, data)
+
+    async def revoke_provider_credential(self, user_id: int, provider: str) -> bool:
+        """删除指定平台的授权记录。"""
+        return await self.delete_bangumi_auth(user_id) if provider == "bangumi" else await self.delete_credential(user_id, provider)
+
+    async def rotate_provider_credential(self, user_id: int, provider: str, previous_refresh_token: str, data: Dict[str, Any]) -> bool:
+        """条件更新凭证，刷新结果不能复活注销或覆盖重新授权。"""
+        if provider == "bangumi":
+            return await self.rotate_bangumi_token(user_id, previous_refresh_token, data)
+        result = await self._session.execute(update(OauthCredential).where(
+            OauthCredential.userId == user_id, OauthCredential.provider == provider,
+            OauthCredential.refreshToken == previous_refresh_token,
+        ).values(**data))
+        await self._session.flush()
+        return result.rowcount == 1
+
+    async def count_provider_credentials(self, provider: str) -> int:
+        """统计当前平台未过期的授权。"""
+        if provider == "bangumi":
+            return await self.count_valid_bangumi_auth()
+        result = await self._session.execute(select(func.count()).select_from(OauthCredential).where(
+            OauthCredential.provider == provider, OauthCredential.expiresAt > get_now()))
+        return int(result.scalar_one())
+
+    async def list_provider_refresh_users(self, provider: str) -> list[int]:
+        """列出平台可刷新的用户 ID，不向服务暴露实体。"""
+        model = BangumiAuth if provider == "bangumi" else OauthCredential
+        statement = select(model.userId).where(model.refreshToken.is_not(None), model.refreshToken != "")
+        if provider != "bangumi":
+            statement = statement.where(OauthCredential.provider == provider)
+        return list((await self._session.execute(statement)).scalars().all())
 
     async def delete_credential(self, user_id: int, provider: str) -> bool:
         """删除指定平台的凭证，返回是否实际删除。"""

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from src.services.database_service import DatabaseService
 from src.services.service_container import get_database_service
-from src.utils.auth import security
+from src.api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class GroupInfo(BaseModel):
 
 @router.get("/anime/groups", response_model=List[GroupInfo], summary="获取所有分组")
 async def list_groups(
-    _current_user=Depends(security.get_current_user),
+    _current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """获取所有分组，按 sortOrder 排序。"""
@@ -59,7 +59,7 @@ async def list_groups(
 @router.post("/anime/groups", response_model=GroupInfo, status_code=201, summary="创建分组")
 async def create_group(
     payload: GroupCreateRequest,
-    _current_user=Depends(security.get_current_user),
+    _current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """创建新分组。"""
@@ -71,7 +71,7 @@ async def create_group(
 @router.patch("/anime/groups/reorder", summary="批量更新分组排序")
 async def reorder_groups(
     payload: GroupReorderRequest,
-    _current_user=Depends(security.get_current_user),
+    _current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """按传入的 groupIds 顺序批量更新 sortOrder。"""
@@ -84,7 +84,7 @@ async def reorder_groups(
 async def rename_group(
     group_id: int,
     payload: GroupRenameRequest,
-    _current_user=Depends(security.get_current_user),
+    _current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """重命名指定分组。"""
@@ -99,7 +99,7 @@ async def rename_group(
 @router.delete("/anime/groups/{group_id}", status_code=204, summary="删除分组")
 async def delete_group(
     group_id: int,
-    _current_user=Depends(security.get_current_user),
+    _current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """删除分组。关联条目的 groupId 自动置 null（ON DELETE SET NULL）。"""
@@ -113,7 +113,7 @@ async def delete_group(
 async def set_anime_group(
     anime_id: int,
     payload: SetAnimeGroupRequest,
-    _current_user=Depends(security.get_current_user),
+    _current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """将条目加入分组或移出分组（groupId=null）。"""

@@ -159,6 +159,12 @@ export const Notification = () => {
     setModalVisible(true)
   }
 
+  // 所有已选标签按服务端模板顺序展示，不保留用户点击顺序或未知历史项。
+  const orderSelectedScopes = values => {
+    const selected = new Set(Array.isArray(values) ? values : [])
+    return availableScopes.filter(scope => selected.has(scope.key)).map(scope => scope.key)
+  }
+
   const handleEdit = async (record) => {
     setEditingChannel(record)
 
@@ -168,7 +174,7 @@ export const Notification = () => {
       if (record.eventsConfig.version === 2 && record.eventsConfig.scopes) {
         // V2 格式：{"version": 2, "scopes": {"scope_key": true/false}}
         selectedScopes = Object.entries(record.eventsConfig.scopes)
-          .filter(([, enabled]) => enabled)
+          .filter(([, enabled]) => enabled === true)
           .map(([key]) => key)
       }
     }
@@ -179,7 +185,7 @@ export const Notification = () => {
       isEnabled: record.isEnabled,
       useProxy: record.useProxy ?? false,
       config: record.config || {},
-      eventsConfig: selectedScopes,
+      eventsConfig: orderSelectedScopes(selectedScopes),
     })
     setModalVisible(true)
     // why：已有渠道可能保存了外链模式，但全局域名已被修改或反代失效；
@@ -222,7 +228,7 @@ export const Notification = () => {
       setSaving(true)
 
       // 构建 V2 格式的 eventsConfig
-      const selectedScopes = values.eventsConfig || []
+      const selectedScopes = orderSelectedScopes(values.eventsConfig)
       const scopesObj = {}
       availableScopes.forEach(scope => {
         scopesObj[scope.key] = selectedScopes.includes(scope.key)
@@ -646,7 +652,9 @@ export const Notification = () => {
             )
           })()}
 
-          <Form.Item label={t('notification.fieldEvents')} name="eventsConfig">
+          <Form.Item label={t('notification.fieldEvents')} name="eventsConfig"
+            getValueProps={values => ({ value: orderSelectedScopes(values) })}
+            normalize={orderSelectedScopes}>
             <Select
               mode="multiple"
               placeholder={t('notification.eventPlaceholder')}
@@ -669,7 +677,7 @@ export const Notification = () => {
                     <Select.Option
                       key={scope.key}
                       value={scope.key}
-                      label={`${category}-${t(scope.label_key)}`}
+                      label={t(scope.label_key)}
                     >
                       {t(scope.label_key)}
                     </Select.Option>

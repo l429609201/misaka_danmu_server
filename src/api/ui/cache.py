@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.services.cache_service import get_cache_service
 from src.schemas import ui_models
 # 缓存列表工具已归入 storage 子包，使用实际路径避免启动时导入失败。
@@ -40,7 +40,7 @@ async def _build_cache_preview(backend, region: str, key: str) -> dict:
 
 @router.get("/cache/stats", summary="获取缓存统计信息")
 async def get_cache_stats(
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """获取缓存的统计信息，包括各 region 的条目数量。"""
     backend = get_cache_service()
@@ -77,7 +77,7 @@ async def get_cache_list(
     search: Optional[str] = Query(None, description="搜索关键词"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """获取指定 region 下的缓存条目列表，包含键值预览。"""
     backend = get_cache_service()
@@ -114,7 +114,7 @@ async def get_cache_list(
 @router.delete("/cache/clear", summary="清除缓存")
 async def clear_cache(
     region: Optional[str] = Query(None, description="要清除的区域，不传则清除全部"),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """清除指定区域或全部缓存。"""
     backend = get_cache_service()
@@ -129,7 +129,7 @@ async def clear_cache(
 async def delete_cache_key(
     key: str = Query(..., description="缓存 key"),
     region: str = Query("search", description="缓存区域"),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """删除指定的单条缓存。"""
     backend = get_cache_service()
@@ -144,7 +144,7 @@ async def delete_cache_key(
 async def get_cache_detail(
     key: str = Query(..., description="缓存 key"),
     region: str = Query("search", description="缓存区域"),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ):
     """获取指定缓存条目的完整值，用于调试和查看详情。"""
     backend = get_cache_service()

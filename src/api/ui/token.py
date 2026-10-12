@@ -13,7 +13,7 @@ from src.schemas.auth import User
 from src.schemas.control.token import ApiTokenCreate, ApiTokenInfo, TokenAccessLog
 from src.schemas.ui_models import ApiTokenUpdate
 from src.services.service_container import get_database_service
-from src.utils.auth import security
+from src.api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def _validate_custom_token(token_str: str) -> str:
 
 @router.get("/tokens", response_model=List[ApiTokenInfo], summary="获取所有弹幕API Token")
 async def get_all_api_tokens(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> List[ApiTokenInfo]:
     """获取所有为第三方播放器创建的 API Token。"""
     db = get_database_service()
@@ -52,7 +52,7 @@ async def get_all_api_tokens(
 @router.post("/tokens", response_model=ApiTokenInfo, status_code=status.HTTP_201_CREATED, summary="创建一个新的API Token")
 async def create_new_api_token(
     token_data: ApiTokenCreate,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ApiTokenInfo:
     """创建一个新的 API Token，支持自定义 Token 字符串或自动生成。"""
     if token_data.customToken:
@@ -79,7 +79,7 @@ async def create_new_api_token(
 @router.delete("/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT, summary="删除一个API Token")
 async def delete_api_token(
     token_id: int,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     """根据ID删除一个 API Token。"""
     db = get_database_service()
@@ -91,7 +91,7 @@ async def delete_api_token(
 @router.put("/tokens/{token_id}/toggle", status_code=status.HTTP_204_NO_CONTENT, summary="切换API Token的启用状态")
 async def toggle_api_token_status(
     token_id: int,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     """切换指定 API Token 的启用/禁用状态。"""
     db = get_database_service()
@@ -104,7 +104,7 @@ async def toggle_api_token_status(
 async def update_api_token(
     token_id: int,
     payload: ApiTokenUpdate,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     """更新指定API Token的名称、每日调用上限、有效期和Token字符串。"""
     new_token_str = _validate_custom_token(payload.customToken) if payload.customToken else None
@@ -129,7 +129,7 @@ async def update_api_token(
 @router.post("/tokens/{token_id}/reset", status_code=status.HTTP_204_NO_CONTENT, summary="重置API Token的调用次数")
 async def reset_api_token_counter(
     token_id: int,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     """将指定API Token的今日调用次数重置为0。"""
     db = get_database_service()
@@ -142,7 +142,7 @@ async def reset_api_token_counter(
 @router.get("/tokens/{tokenId}/logs", response_model=List[TokenAccessLog], summary="获取Token的访问日志")
 async def get_token_logs(
     tokenId: int,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> List[TokenAccessLog]:
     """获取指定 Token 最近的访问日志。"""
     db = get_database_service()

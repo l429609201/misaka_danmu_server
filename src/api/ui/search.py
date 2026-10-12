@@ -14,7 +14,7 @@ from src.services.metadata_service import MetadataService
 from src.workflows.title_recognition import TitleRecognitionWorkflow
 from src.services.ai_service import AIService
 from src.services.config_service import ConfigService
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.utils.parsing.episode_filter import parse_single_episode_filter_rules, apply_single_episode_filter
 from src.workflows.search.entry_flow import search_home
 from src.workflows.search.ui_storage import search_local_anime
@@ -63,7 +63,7 @@ async def search_anime_provider(
     providerFilter: Optional[str] = Query(None, description="来源过滤: bilibili, tencent等"),
     titleFilter: Optional[str] = Query(None, description="标题关键词过滤"),
     manager: ScraperManager = Depends(get_scraper_manager),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     metadata_manager: MetadataService = Depends(get_metadata_service),
     title_recognition_manager: TitleRecognitionWorkflow = Depends(get_title_recognition_manager),
     config_service: ConfigService = Depends(get_config_service),
@@ -99,7 +99,7 @@ async def get_episodes_for_search_result(
     manager: ScraperManager = Depends(get_scraper_manager),
     config_service: ConfigService = Depends(get_config_service),
     title_recognition_manager: TitleRecognitionWorkflow = Depends(get_title_recognition_manager),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """为指定的搜索结果获取完整的分集列表。自动识别补充源mediaId并路由。"""
     try:

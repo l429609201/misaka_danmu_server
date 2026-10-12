@@ -6,6 +6,8 @@ import logging
 import re
 from typing import Dict, List, Optional
 
+import regex
+
 logger = logging.getLogger(__name__)
 
 # 通用分集过滤规则（硬编码），用于前端"填充通用规则"按钮
@@ -197,18 +199,27 @@ async def apply_global_episode_title_filter(
     if not pattern:
         return (episodes, []) if return_filtered else episodes
 
+    # 默认规则包含变长后行断言，必须与设置页测试使用同一 regex 引擎。
+    try:
+        compiled_pattern = regex.compile(pattern, regex.IGNORECASE)
+    except regex.error as error:
+        position = error.pos
+        fragment = pattern[max(0, position - 30):position + 30] if position is not None else pattern
+        logger.warning(
+            "兜底全局分集标题过滤正则无效，已跳过过滤: provider=%s, mediaId=%s, "
+            "错误=%s, 位置=%s（从0开始）, 附近片段=%r, 完整正则=%r",
+            provider, media_id, error, position, fragment, pattern,
+        )
+        return (episodes, []) if return_filtered else episodes
+
     before_count = len(episodes)
     kept = []
     filtered_out = []
     for ep in episodes:
         ep_title = getattr(ep, "title", "") or ""
-        try:
-            if re.search(pattern, ep_title, re.IGNORECASE):
-                filtered_out.append((ep, f"全局过滤：{pattern}"))
-                continue  # 命中过滤规则，丢弃
-        except re.error as e:
-            logger.warning(f"兜底全局分集标题过滤正则无效，已跳过过滤: {pattern} ({e})")
-            return (episodes, []) if return_filtered else episodes  # 正则无效时整体不过滤，避免误删
+        if compiled_pattern.search(ep_title):
+            filtered_out.append((ep, f"全局过滤：{pattern}"))
+            continue  # 命中过滤规则，丢弃
         kept.append(ep)
 
     removed = before_count - len(kept)

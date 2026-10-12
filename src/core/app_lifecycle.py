@@ -66,7 +66,8 @@ from src.workflows.tasks.recovery import TaskRecoveryResolver
 from src.services.bangumi_data_service import BangumiDataService
 from src.workflows.bangumi_data_sync import load_local_bangumi_data
 from src.workflows.bangumi_data_platforms import resolve_sources_by_title
-from src.api.ui.metadata_source import build_metadata_source_router
+from src.services.oauth_service import get_oauth_service
+from src.oauth.registry import register_oauth_providers
 from src.notification.events import EventContext, NotificationEvent, SystemEventType
 from src.utils.runtime.internal_polling import InternalPollingManager
 from src.core.proxy import init_proxy_middleware
@@ -212,6 +213,8 @@ async def run_startup(app: FastAPI):
 
     # C5：初始化 ConfigService（新架构，单例模式）
     config_service = init_config_service(session_factory, database_service=database_service)
+    # 平台协议在组合根显式注册，通用服务不反向导入具体来源。
+    register_oauth_providers(get_oauth_service())
     app.state.config_service = config_service
 
     # 注册默认配置(从default_configs.py导入)
@@ -295,12 +298,6 @@ async def run_startup(app: FastAPI):
     # 初始化关键组件
     app.state.rate_limiter = RateLimiter(database_service, app.state.scraper_manager)
     init_rate_limiter(app.state.rate_limiter)  # C7：注册到服务容器
-    app.include_router(build_metadata_source_router(app.state.metadata_service), prefix="/api/metadata")
-
-    # Bangumi 专属路由
-    if 'bangumi' in app.state.metadata_service.sources:
-        bangumi_router = app.state.metadata_service.sources['bangumi'].api_router
-        app.include_router(bangumi_router, prefix="/api/bangumi", tags=["Bangumi"])
 
     app.state.task_manager = TaskManager(
         session_factory,

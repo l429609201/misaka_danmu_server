@@ -12,11 +12,11 @@ from src.api.dependencies import get_config_service
 from src.core import get_now
 from src.services.config_service import ConfigService
 from src.services.service_container import get_database_service
-from src.utils.auth import security
+from src.api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 # 统一保护审计查询和清空操作，沿用现有 JWT 与 IP 白名单鉴权策略。
-router = APIRouter(dependencies=[Depends(security.get_current_user)])
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class AuditLogItem(BaseModel):

@@ -131,6 +131,8 @@ class UnifiedTaskMessage(NotificationMessage):
             return "自动追更"
         elif operation in (TaskOperation.FALLBACK_SEARCH, TaskOperation.FALLBACK_PREDOWNLOAD, TaskOperation.FALLBACK_MATCH):
             return "后备处理"
+        elif operation == TaskOperation.SCHEDULED_TASK:
+            return "定时任务"
         elif operation == TaskOperation.MEDIA_SCAN:
             return "媒体库扫描"
         return "任务"

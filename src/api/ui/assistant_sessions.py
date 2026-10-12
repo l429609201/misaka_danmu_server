@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from src.schemas import ui_models as models
 from src.services.database_service import DatabaseService
 from src.services.service_container import get_database_service
-from src.utils.auth import security
+from src.api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -84,7 +84,7 @@ async def save_session_snapshot(
 async def list_sessions(
     limit: int = Query(50, ge=1, le=200),
     db_service: DatabaseService = Depends(get_database_service),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
 ) -> List[dict]:
     """列出最近更新的会话摘要。"""
     async with db_service.transaction():
@@ -95,7 +95,7 @@ async def list_sessions(
 async def get_session(
     sid: str,
     db_service: DatabaseService = Depends(get_database_service),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
 ) -> dict:
     """读取指定会话及其消息。"""
     async with db_service.transaction():
@@ -110,7 +110,7 @@ async def save_session(
     sid: str,
     payload: SessionSaveRequest,
     db_service: DatabaseService = Depends(get_database_service),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
 ) -> dict:
     """保存或整体更新会话展示快照。"""
     title = payload.title or _title_from_messages(payload.messages)
@@ -132,7 +132,7 @@ async def save_session(
 async def delete_session(
     sid: str,
     db_service: DatabaseService = Depends(get_database_service),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
 ) -> dict:
     """删除会话，不存在也返回成功。"""
     async with db_service.transaction():

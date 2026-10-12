@@ -4,6 +4,7 @@
 import logging
 
 from src.notification.base import CommandResult
+from src.services.database_service import DatabaseService
 from src.services.service_container import get_database_service
 from src.tasks import delete_bulk_episodes_task, delete_source_task, full_refresh_task, refresh_bulk_episodes_task
 from src.utils.parsing.filename_parser import parse_episode_ranges
@@ -15,6 +16,22 @@ PAGE_SIZE = 5
 
 class LibraryMenuMixin:
     """处理 /refresh 命令及弹幕库管理所有 cmd_/cb_/_text_/_do_ 方法"""
+
+    @staticmethod
+    async def _get_source_episodes(db: DatabaseService, source_id: int) -> list[dict]:
+        """在调用方事务内分页获取完整分集，供选集与批量操作使用。"""
+        episodes = []
+        page = 1
+        # 查询默认最多返回 5000 集；必须收齐分页，避免全选和范围操作遗漏后续分集。
+        while True:
+            result = await db.episode.get_episodes_by_source(
+                source_id, page=page, page_size=5000,
+            )
+            page_episodes = result["list"]
+            episodes.extend(page_episodes)
+            if not page_episodes or len(episodes) >= result["total"]:
+                return episodes
+            page += 1
 
     # ── /refresh 入口 ──
 
@@ -207,10 +224,11 @@ class LibraryMenuMixin:
         try:
             db = get_database_service()
             async with db.transaction():
-                ep_result = await db.episode.get_episodes_for_source(source_id)
+                # 预览仅取前 8 集，集数统计使用查询返回的总数而非当前页长度。
+                ep_result = await db.episode.get_episodes_by_source(source_id, page=1, page_size=8)
                 source_info = await db.source.get_source_info(source_id)
-            episodes = ep_result.get("episodes", [])
-            total = ep_result.get("total", 0)
+            episodes = ep_result["list"]
+            total = ep_result["total"]
             provider = source_info.get("providerName", "未知") if source_info else "未知"
             title = source_info.get("title", "未知") if source_info else "未知"
 
@@ -221,8 +239,8 @@ class LibraryMenuMixin:
 
             lines = [f"📂 {title} [{provider}]\n共 {total} 集\n"]
             for ep in episodes[:8]:
-                idx = ep.get("episodeIndex", "?")
-                ep_title = ep.get("title", "")
+                idx = ep.get("episodeNumber", "?")
+                ep_title = ep.get("episodeTitle", "")
                 count = ep.get("commentCount", 0)
                 lines.append(f"  第{idx}集 {ep_title} ({count}条弹幕)")
             if total > 8:
@@ -259,19 +277,18 @@ class LibraryMenuMixin:
             try:
                 db = get_database_service()
                 async with db.transaction():
-                    ep_result = await db.episode.get_episodes_for_source(source_id)
-                episodes = ep_result.get("episodes", [])
+                    episodes = await self._get_source_episodes(db, source_id)
                 if not episodes:
                     return CommandResult(text="暂无分集数据。", edit_message_id=kw.get("message_id"))
                 conv = self.get_conversation(user_id)
                 data = conv.data if conv else {}
                 data["source_id"] = source_id
                 data["episodes"] = [
-                    {"idx": e.get("episodeIndex", 0), "id": e["episodeId"],
-                     "title": e.get("title", ""), "count": e.get("commentCount", 0)}
+                    {"idx": e.get("episodeNumber", 0), "id": e["episodeId"],
+                     "title": e.get("episodeTitle", ""), "count": e.get("commentCount", 0)}
                     for e in episodes
                 ]
-                data["selected"] = []  # 选中的 episodeIndex 列表
+                data["selected"] = []  # 选中的集数列表
                 data["ep_page"] = 0
                 data["mode"] = "refresh"
                 self.set_conversation(user_id, "ep_select", data, chat_id=kw.get("chat_id"))
@@ -297,10 +314,9 @@ class LibraryMenuMixin:
             if episode_range:
                 indices = parse_episode_ranges(episode_range)
                 async with db.transaction():
-                    ep_result = await db.episode.get_episodes_for_source(source_id)
-                episodes = ep_result.get("episodes", [])
+                    episodes = await self._get_source_episodes(db, source_id)
                 ep_ids = [e["episodeId"] for e in episodes
-                          if e.get("episodeIndex") in indices]
+                          if e.get("episodeNumber") in indices]
                 if not ep_ids:
                     return CommandResult(text=f"未找到匹配的集数: {episode_range}")
                 ep_desc = episode_range
@@ -658,8 +674,8 @@ class LibraryMenuMixin:
             unique_key = f"delete-bulk-sources-{source_id}-all"
 
             async with db.transaction():
-                ep_result = await db.episode.get_episodes_for_source(source_id)
-                ep_ids = [e["episodeId"] for e in ep_result.get("episodes", [])]
+                episodes = await self._get_source_episodes(db, source_id)
+            ep_ids = [e["episodeId"] for e in episodes]
             if not ep_ids:
                 return CommandResult(text="数据源暂无分集。")
 
@@ -690,16 +706,15 @@ class LibraryMenuMixin:
         try:
             db = get_database_service()
             async with db.transaction():
-                ep_result = await db.episode.get_episodes_for_source(source_id)
-            episodes = ep_result.get("episodes", [])
+                episodes = await self._get_source_episodes(db, source_id)
             if not episodes:
                 return CommandResult(text="暂无分集数据。", edit_message_id=kw.get("message_id"))
             conv = self.get_conversation(user_id)
             data = conv.data if conv else {}
             data["source_id"] = source_id
             data["episodes"] = [
-                {"idx": e.get("episodeIndex", 0), "id": e["episodeId"],
-                 "title": e.get("title", ""), "count": e.get("commentCount", 0)}
+                {"idx": e.get("episodeNumber", 0), "id": e["episodeId"],
+                 "title": e.get("episodeTitle", ""), "count": e.get("commentCount", 0)}
                 for e in episodes
             ]
             data["selected"] = []
@@ -735,15 +750,14 @@ class LibraryMenuMixin:
             title = source_info.get("title", "未知")
 
             async with db.transaction():
-                ep_result = await db.episode.get_episodes_for_source(source_id)
-            episodes = ep_result.get("episodes", [])
+                episodes = await self._get_source_episodes(db, source_id)
 
             if episode_range.lower() == "all":
                 ep_ids = [e["episodeId"] for e in episodes]
                 ep_desc = "全部"
             else:
                 indices = parse_episode_ranges(episode_range)
-                ep_ids = [e["episodeId"] for e in episodes if e.get("episodeIndex") in indices]
+                ep_ids = [e["episodeId"] for e in episodes if e.get("episodeNumber") in indices]
                 ep_desc = episode_range
 
             if not ep_ids:

@@ -31,7 +31,8 @@ def _load_step(_desc: str):
 # 内部模块导入
 from src.core import settings
 _load_step("核心配置已加载")
-from src.api import api_router, control_router
+from src.api.router import api_router
+from src.api.control import control_router
 _load_step("API 路由与搜索源/元数据源已加载")
 from src.api.dandan import dandan_router
 from src.api.mcp import setup_mcp

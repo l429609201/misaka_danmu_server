@@ -5,7 +5,6 @@ import logging
 from typing import Any, Dict, List, Optional, Set
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker # type: ignore
-from fastapi import Request
 from httpx import HTTPStatusError
 
 from src.schemas import User
@@ -126,7 +125,7 @@ class BaseMetadataSource(ABC):
         raise NotImplementedError
     
     @abstractmethod
-    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: User, request: Request) -> Any:
+    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: User, request: Any) -> Any:
         """
         执行一个指定的操作。
         子类可以重写此方法来处理其特定的操作，例如OAuth流程。

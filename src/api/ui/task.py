@@ -7,7 +7,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from src.core.timezone import get_now
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.services.database_service import DatabaseService
 from src.services.service_container import get_database_service
 from src.services.task_manager import TaskManager, TaskStatus
@@ -22,7 +22,7 @@ router = APIRouter()
 
 @router.get("/tasks", response_model=PaginatedTasksResponse, summary="获取所有后台任务的状态")
 async def get_all_tasks(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db: DatabaseService = Depends(get_database_service),
     search: Optional[str] = Query(None, description="按标题搜索"),
     status: Optional[str] = Query("all", description="按状态过滤: all, in_progress, completed"),
@@ -51,7 +51,7 @@ async def get_all_tasks(
 @router.get("/tasks/{task_id}", response_model=TaskInfo, summary="获取单个后台任务状态")
 async def get_task_details(
     task_id: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db: DatabaseService = Depends(get_database_service),
 ) -> TaskInfo:
     """通过短事务读取任务状态，供页面等待后台操作完成。"""
@@ -65,7 +65,7 @@ async def get_task_details(
 @router.post("/tasks/{task_id}/pause", status_code=status.HTTP_204_NO_CONTENT, summary="暂停一个正在运行的任务")
 async def pause_task_endpoint(
     task_id: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     """暂停一个正在运行的任务。"""
@@ -80,7 +80,7 @@ async def pause_task_endpoint(
 @router.post("/tasks/{task_id}/resume", status_code=status.HTTP_204_NO_CONTENT, summary="恢复一个已暂停的任务")
 async def resume_task_endpoint(
     task_id: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     """恢复一个已暂停的任务。"""
@@ -96,7 +96,7 @@ async def resume_task_endpoint(
 async def abort_task_endpoint(
     task_id: str,
     request: dict,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager),
     db: DatabaseService = Depends(get_database_service),
 ):
@@ -134,7 +134,7 @@ async def abort_task_endpoint(
 @router.post("/tasks/{task_id}/retry", summary="重试一个失败的任务")
 async def retry_task_endpoint(
     task_id: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     """重试一个失败的任务。从历史记录中读取任务参数，重建并重新提交到队列。"""
@@ -147,7 +147,7 @@ async def retry_task_endpoint(
 async def delete_task_from_history_endpoint(
     task_id: str,
     force: bool = False,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db: DatabaseService = Depends(get_database_service),
     task_manager: TaskManager = Depends(get_task_manager)
 ):

@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.db import crud, models, get_db_session, ConfigManager
 from src.core import get_now
 from src.core.config import settings
@@ -106,7 +106,7 @@ class DatabaseInfoResponse(BaseModel):
 @router.get("/database-info", response_model=DatabaseInfoResponse, summary="获取数据库和缓存连接信息")
 async def get_database_info(
     request: Request,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
 ):
     """获取当前数据库类型、连接信息、连接池状态以及 Redis 详细指标。"""
     db_cfg = settings.database
@@ -353,13 +353,13 @@ async def get_release_history(
 
 
 @router.get("/logs", response_model=List[str], summary="获取最新的服务器日志")
-async def get_server_logs(current_user: models.User = Depends(security.get_current_user)):
+async def get_server_logs(current_user: models.User = Depends(get_current_user)):
     """获取存储在内存中的最新日志条目。"""
     return get_logs()
 
 
 @router.get("/logs/files", summary="列出所有日志文件")
-async def get_log_files(current_user: models.User = Depends(security.get_current_user)):
+async def get_log_files(current_user: models.User = Depends(get_current_user)):
     """列出日志目录中的所有日志文件（包括轮转文件）。"""
     return list_log_files()
 
@@ -370,7 +370,7 @@ async def get_log_file_content(
     tail: int = Query(200, ge=1, description="每批返回行数，默认200"),
     keyword: str = Query("", description="关键词过滤（大小写不敏感），空字符串不过滤"),
     offset: int = Query(0, ge=0, description="已加载条数，用于加载更多"),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
 ):
     """读取指定日志文件，支持后端关键词过滤和分页加载。
 
@@ -395,7 +395,7 @@ class ParseFilenameRequest(BaseModel):
 @router.post("/tools/parse-filename", summary="文件名识别测试")
 async def parse_filename_test(
     request: ParseFilenameRequest,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
 ):
     """调用文件名解析模块，返回识别结果。"""
     result = parse_filename(request.fileName)
@@ -405,7 +405,7 @@ async def parse_filename_test(
 
 
 @router.get("/logs/stream", summary="SSE实时日志推送")
-async def stream_server_logs(current_user: models.User = Depends(security.get_current_user_no_db_hold)):
+async def stream_server_logs(current_user: models.User = Depends(get_current_user)):
     """使用Server-Sent Events实时推送服务器日志。"""
 
     async def event_generator():
@@ -467,7 +467,7 @@ async def stream_server_logs(current_user: models.User = Depends(security.get_cu
 @router.post("/cache/clear", status_code=status.HTTP_200_OK, summary="清除所有缓存")
 
 async def clear_all_caches(
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ): #noqa
     """清除所有缓存数据（缓存后端 + 数据库）。"""
@@ -498,7 +498,7 @@ async def clear_all_caches(
 
 @router.get("/external-logs", response_model=List[models.ExternalApiLogInfo], summary="获取最新的外部API访问日志")
 async def get_external_api_logs(
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
     logs = await crud.get_external_api_logs(session)
@@ -508,7 +508,7 @@ async def get_external_api_logs(
 
 @router.get("/ua-rules", response_model=List[models.UaRule], summary="获取所有UA规则")
 async def get_ua_rules(
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
     rules = await crud.get_ua_rules(session)
@@ -520,7 +520,7 @@ async def get_ua_rules(
 @router.post("/ua-rules", response_model=models.UaRule, status_code=201, summary="添加UA规则")
 async def add_ua_rule(
     ruleData: models.UaRuleCreate,
-    currentUser: models.User = Depends(security.get_current_user),
+    currentUser: models.User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
     try:
@@ -537,7 +537,7 @@ async def add_ua_rule(
 @router.delete("/ua-rules/{ruleId}", status_code=204, summary="删除UA规则")
 async def delete_ua_rule(
     ruleId: str,
-    currentUser: models.User = Depends(security.get_current_user),
+    currentUser: models.User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session)
 ):
     try:
@@ -718,7 +718,7 @@ class RestartResponse(BaseModel):
 
 @router.get("/docker/status", response_model=DockerStatusResponse, summary="获取 Docker 状态")
 async def get_docker_status_endpoint(
-    _: models.User = Depends(security.get_current_user)
+    _: models.User = Depends(get_current_user)
 ):
     """
     获取 Docker 连接状态，用于判断是否可以使用 Docker API 进行重启/更新操作。
@@ -729,7 +729,7 @@ async def get_docker_status_endpoint(
 
 @router.get("/docker/stats", summary="获取容器资源使用统计（SSE 实时推送）")
 async def get_docker_stats_endpoint(
-    _: models.User = Depends(security.get_current_user_no_db_hold)
+    _: models.User = Depends(get_current_user)
 ):
     """
     获取当前容器的资源使用统计信息，包括 CPU、内存、网络 I/O 等。
@@ -979,7 +979,7 @@ async def get_docker_stats_endpoint(
 
 @router.post("/restart", response_model=RestartResponse, summary="重启服务")
 async def restart_service(
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
     config_manager: ConfigManager = Depends(get_config_service)
 ):
     """
@@ -1024,7 +1024,7 @@ async def restart_service(
 @router.get("/update/stream", summary="流式更新服务")
 async def stream_update(
     source: str = Query("docker", description="更新源: docker (Docker Hub) 或 github (ghcr.io)"),
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: models.User = Depends(get_current_user),
     config_manager: ConfigManager = Depends(get_config_service)
 ):
     """

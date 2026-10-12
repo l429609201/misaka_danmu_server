@@ -8,16 +8,15 @@ Trakt 元数据源插件
 import asyncio
 import json as _json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
 import httpx
-from fastapi import Request
 
-from src.core.timezone import get_now
 from src.schemas.auth import User
 from src.schemas.metadata import MetadataDetailsResponse
 from src.services.cache_service import get_cache_service
+from src.services.oauth_service import get_oauth_service
 from src.services.service_container import get_database_service
 
 from .base import BaseMetadataSource
@@ -75,30 +74,13 @@ class TraktMetadataSource(BaseMetadataSource):
 
     async def _get_headers_for_user(self, user: User) -> Optional[Dict[str, str]]:
         """获取带有完整认证信息的 Trakt API 请求头（含 trakt-api-key）"""
-        db = get_database_service()
-
-        # 先做一次临期检测：若 access_token 即将过期（剩余 <=7 天），先经 Worker 刷新。
-        # 仅当存在 refresh_token 时才会真正刷新，避免对老凭证（无 refresh_token）反复尝试。
-        async with db.transaction():
-            cred = await db.oauth.get_credential(user.id, "trakt")
-            if not cred or not cred.accessToken:
-                return None
-            needs_refresh = bool(
-                cred.refreshToken and cred.expiresAt
-                and (cred.expiresAt - get_now()).total_seconds() <= 7 * 24 * 3600
-            )
-
-        if needs_refresh:
-            # 刷新失败不阻断：继续用旧 token 尝试（可能仍有效），由调用方处理 401。
-            await self._refresh_token_via_worker(user)
-
-        # 重新读取（刷新后可能已更新 accessToken）
-        async with db.transaction():
-            cred = await db.oauth.get_credential(user.id, "trakt")
-            if not cred or not cred.accessToken:
-                return None
-            access_token = cred.accessToken
-            extra_data_raw = cred.extraData
+        credential = await get_oauth_service().credentials("trakt", user.id, auto_refresh=True)
+        if not credential:
+            return None
+        access_token = credential.get("accessToken")
+        if not access_token:
+            return None
+        extra_data_raw = credential.get("extraData")
 
         headers = await self._get_headers(user_token=access_token)
         # 从 extraData 中获取 client_id 作为 trakt-api-key
@@ -111,62 +93,6 @@ class TraktMetadataSource(BaseMetadataSource):
             except (_json.JSONDecodeError, TypeError):
                 pass
         return headers
-
-    async def _refresh_token_via_worker(self, user: User) -> bool:
-        """通过 CF Worker 的 /oauth/refresh 端点刷新 Trakt access_token。
-
-        Trakt 的 client_secret 保存在 Worker 端，本地无法直连 trakt.tv 刷新，
-        因此走 Worker 代理：POST /oauth/refresh {provider, refresh_token}
-        返回 {access_token, refresh_token, expires_in, token_type, created_at}。
-
-        Returns:
-            bool: 刷新成功返回 True；无 refresh_token 或失败返回 False。
-        """
-        db = get_database_service()
-
-        # 取当前 refresh_token
-        async with db.transaction():
-            cred = await db.oauth.get_credential(user.id, "trakt")
-            if not cred or not cred.refreshToken:
-                self.logger.debug("Trakt: 无 refresh_token，无法自动刷新（需重新授权）")
-                return False
-            refresh_token = cred.refreshToken
-
-        try:
-            proxy = await self._get_proxy()
-            async with httpx.AsyncClient(timeout=15, proxy=proxy) as client:
-                resp = await client.post(
-                    f"{TRAKT_OAUTH_WORKER_URL}/oauth/refresh",
-                    json={"provider": "trakt", "refresh_token": refresh_token},
-                )
-                resp.raise_for_status()
-                data = resp.json()
-
-            new_access = data.get("access_token")
-            if not new_access:
-                self.logger.warning(f"Trakt: 刷新响应缺少 access_token: {data}")
-                return False
-
-            # refresh_token 轮换则更新，否则沿用原值
-            new_refresh = data.get("refresh_token") or refresh_token
-            expires_in = data.get("expires_in")
-
-            update_data = {"accessToken": new_access, "refreshToken": new_refresh}
-            try:
-                if expires_in is not None:
-                    update_data["expiresAt"] = get_now() + timedelta(seconds=int(expires_in))
-            except (TypeError, ValueError):
-                pass
-
-            # transaction 自持 session，退出时自动 commit
-            async with db.transaction():
-                await db.oauth.save_credential(user.id, "trakt", update_data)
-
-            self.logger.info(f"Trakt token 已自动刷新 (用户ID: {user.id})")
-            return True
-        except Exception as e:
-            self.logger.error(f"Trakt token 刷新失败: {e}")
-            return False
 
     async def search(self, keyword: str, user: User, mediaType: Optional[str] = None) -> List[MetadataDetailsResponse]:
         """搜索影视作品（需要用户已通过 OAuth 授权）"""
@@ -564,65 +490,6 @@ class TraktMetadataSource(BaseMetadataSource):
                 return {"code": "error", "message": "CF Worker 未配置 Trakt Provider"}
         except Exception as e:
             return {"code": "error", "message": f"CF Worker 连接失败: {e}"}
-
-    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: User, request: Request) -> Any:
-        """处理 OAuth 授权相关操作"""
-        if action_name == "get_auth_status":
-            return await self._get_auth_status(user)
-        elif action_name == "save_oauth":
-            return await self._save_oauth(user, payload)
-        elif action_name == "revoke_auth":
-            return await self._revoke_auth(user)
-        raise NotImplementedError(f"未知操作: {action_name}")
-
-    async def _get_auth_status(self, user: User) -> Dict[str, Any]:
-        # 用状态视图而非完整凭证，避免明文 token 回传前端
-        db = get_database_service()
-        async with db.transaction():
-            return await db.oauth.get_credential_status(user.id, "trakt")
-
-    async def _save_oauth(self, user: User, payload: Dict) -> Dict[str, Any]:
-        """保存从 CF Worker OAuth 回调获得的 token 信息"""
-        access_token = payload.get("accessToken")
-        if not access_token:
-            return {"success": False, "message": "缺少 access_token"}
-
-
-        # 将 client_id 存入 extraData（JSON 格式），用于后续 API 调用时带 trakt-api-key
-        extra_data = {}
-        client_id = payload.get("clientId", "")
-        if client_id:
-            extra_data["clientId"] = client_id
-
-        # 落库 refresh_token 与过期时间，用于后续自动刷新（修复：此前从未保存，导致 token 过期后无法刷新）。
-        # 兼容前端可能传 refreshToken / refresh_token 两种命名；expiresIn 为秒。
-        refresh_token = payload.get("refreshToken") or payload.get("refresh_token") or None
-        expires_in = payload.get("expiresIn") or payload.get("expires_in")
-        save_data = {
-            "accessToken": access_token,
-            "refreshToken": refresh_token,
-            "providerUserId": payload.get("userId", ""),
-            "providerUsername": payload.get("username", ""),
-            "authorizedAt": get_now(),
-            "extraData": _json.dumps(extra_data) if extra_data else None,
-        }
-        # 仅当拿到有效 expires_in 时才写过期时间，避免把 None 误当作"立即过期"。
-        try:
-            if expires_in is not None:
-                save_data["expiresAt"] = get_now() + timedelta(seconds=int(expires_in))
-        except (TypeError, ValueError):
-            pass
-
-        db = get_database_service()
-        async with db.transaction():
-            await db.oauth.save_credential(user.id, "trakt", save_data)
-        return {"success": True, "message": "Trakt 授权成功"}
-
-    async def _revoke_auth(self, user: User) -> Dict[str, Any]:
-        db = get_database_service()
-        async with db.transaction():
-            deleted = await db.oauth.delete_credential(user.id, "trakt")
-        return {"success": deleted, "message": "已撤销 Trakt 授权" if deleted else "未找到授权信息"}
 
     # ============ 订阅助手实现 ============
 

@@ -20,7 +20,7 @@ from src.services.metadata_service import MetadataService
 from src.services.scraper_manager import ScraperManager
 from src.services.service_container import get_database_service
 from src.services.subscription_manager import SubscriptionManager
-from src.utils.auth import security
+from src.api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/subscriptions", tags=["Subscriptions"])
@@ -86,7 +86,7 @@ async def _probe_source(provider: str, source: Any, source_type: str, user: Opti
 
 @router.get("/available-sources", summary="探测当前可用订阅源")
 async def get_available_sources(
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
@@ -150,7 +150,7 @@ async def discover_targets(
     provider: str = Query(..., description="订阅源标识，如 bilibili"),
     query: str = Query(..., description="关键词或视频/合集 URL"),
     type: Optional[str] = Query(None, description="可选：限制订阅类型（如 bilibili_up / bilibili_bangumi）"),
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
@@ -182,7 +182,7 @@ async def discover_targets(
 async def discover_offline(
     query: str = Query(..., description="关键词（支持任意语言译名）"),
     onlineProvider: Optional[str] = Query(None, description="可选：辅助在线探索源，如 bangumi / trakt"),
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
@@ -216,7 +216,7 @@ async def discover_offline(
 @router.post("/sync-explore", summary="同步订阅探索榜单")
 
 async def sync_explore(
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
@@ -254,7 +254,7 @@ async def list_explore(
     keyword: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     pageSize: int = Query(30, ge=1, le=100),
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """读取已落库的探索榜单条目（airWeekday 为空的外部条目），供探索发现网格分页展示。"""
     db = get_database_service()
@@ -273,7 +273,7 @@ async def list_targets(
     keyword: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=200),
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """分页查询订阅目标。type 对应 extraData.subscriptionType。"""
     db = get_database_service()
@@ -291,7 +291,7 @@ async def list_targets(
 @router.post("/targets", summary="创建订阅目标", status_code=status.HTTP_201_CREATED)
 async def create_target(
     body: CreateTargetRequest,
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
@@ -337,7 +337,7 @@ async def create_target(
 async def update_target(
     target_id: int,
     body: UpdateTargetRequest,
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """修改启用状态 / 状态 / 通用 extraData 字段。"""
     db = get_database_service()
@@ -359,7 +359,7 @@ async def update_target(
 @router.delete("/targets/{target_id}", summary="取消订阅目标")
 async def delete_target(
     target_id: int,
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """取消订阅（重置订阅意向字段）。"""
     db = get_database_service()
@@ -375,7 +375,7 @@ async def delete_target(
 @router.post("/targets/{target_id}/scan", summary="立即扫描订阅目标")
 async def scan_target(
     target_id: int,
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
@@ -449,7 +449,7 @@ async def list_items(
     keyword: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=200),
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """分页查询订阅目标产生的候选项（视频候选 / 分集候选）。"""
     db = get_database_service()
@@ -468,7 +468,7 @@ async def list_items(
 @router.post("/items/{item_id}/retry", summary="重试订阅候选项")
 async def retry_item(
     item_id: int,
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """把候选项重置为 waiting，等待下一轮扫描重新处理。"""
     db = get_database_service()
@@ -482,7 +482,7 @@ async def retry_item(
 @router.post("/items/{item_id}/ignore", summary="忽略订阅候选项")
 async def ignore_item(
     item_id: int,
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
 ):
     """标记候选项为 ignored。"""
     db = get_database_service()
@@ -501,7 +501,7 @@ class ResolveUrlRequest(BaseModel):
 @router.post("/resolve-url", summary="按 URL 自动定位订阅源并发现候选")
 async def resolve_url(
     body: ResolveUrlRequest,
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     metadata_manager: MetadataService = Depends(get_metadata_service),
 ):

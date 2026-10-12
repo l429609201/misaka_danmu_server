@@ -3,11 +3,45 @@
 import datetime
 import logging
 import re
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
 from typing import Any, Dict, Optional, Tuple
 
 from src.services.task_manager import Task
+from src.services.file_storage_service import CONFIG_DIR, get_file_storage_service
 
 logger = logging.getLogger(__name__)
+
+
+def _select_poster(local_path: Optional[str], remote_url: Optional[str]) -> str:
+    """只选真实存在的缓存海报，失效缓存不能遮蔽可用原始 URL。"""
+    for candidate in (local_path, remote_url):
+        if not isinstance(candidate, str) or not candidate.strip():
+            continue
+        candidate = candidate.strip()
+        if candidate.startswith("//"):
+            return "https:" + candidate
+        parsed = urlsplit(candidate)
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            return candidate
+        storage = get_file_storage_service()
+        if parsed.path.startswith("/data/images/"):
+            path = CONFIG_DIR / "image" / Path(unquote(parsed.path)).name
+            if storage.exists(path):
+                return "/data/images/" + path.name
+        elif parsed.scheme == "file":
+            path = Path(unquote(parsed.path))
+            if path.is_absolute() and storage.exists(path):
+                return path.as_uri()
+        elif not parsed.scheme:
+            # 兼容历史缓存的裸文件名或相对目录；不把本机路径当 Telegram file_id。
+            path = Path(unquote(parsed.path))
+            candidates = (path,) if path.is_absolute() else (CONFIG_DIR / path, CONFIG_DIR / "image" / path.name)
+            for cached in candidates:
+                if storage.exists(cached):
+                    return cached.resolve().as_uri()
+    return ""
+
 
 def _parse_import_unique_key(key: str) -> Optional[Tuple[str, str, Optional[int]]]:
     """从导入类 unique_key 解析出 (provider, media_id, season)。
@@ -74,8 +108,11 @@ class TaskNotificationWorkflow:
 
     async def emit_progress(self, task: Task, progress: int, description: str) -> None:
         """保持内部健康任务静默，普通任务按渠道编辑能力输出进度。"""
-        if self.determine_event_type(task, True) is not None:
-            await self.notifications.emit_task_progress(task.task_id, task.title, progress, description)
+        event_type = self.determine_event_type(task, True)
+        if event_type is not None:
+            await self.notifications.emit_task_progress(
+                task.task_id, task.title, progress, description, event_type=event_type,
+            )
 
     def determine_event_type(self, task: Task, is_success: bool) -> Optional[str]:
         """根据任务的 unique_key 和 title 判断应触发的通知事件类型"""
@@ -99,9 +136,9 @@ class TaskNotificationWorkflow:
         )):
             return None
 
-        # 定时任务（有 scheduled_task_id）
-        if task.scheduled_task_id:
-            return "scheduled_task_complete" if is_success else "scheduled_task_failed"
+        # 结构化来源优先，搜索派发后的导入子任务仍属于 Webhook。
+        if (task.task_parameters or {}).get("webhookSource"):
+            return f"webhook_import{suffix}"
 
         # Webhook 导入
         if key.startswith("webhook-search-"):
@@ -142,10 +179,11 @@ class TaskNotificationWorkflow:
             )
             return f"{prefix}{suffix}"
 
-        # 兜底：有 unique_key 但未匹配到的，按导入处理
-        if key:
-            return f"import{suffix}"
+        # 业务分类优先；仅非作品类定时维护使用定时任务模板。
+        if task.scheduled_task_id:
+            return "scheduled_task_complete" if is_success else "scheduled_task_failed"
 
+        # 未识别业务不冒充导入；仅已注册的类型能选择模板和发送范围。
         return None
 
     async def emit_task_event(self, task: Task, is_success: bool, message: str = ""):
@@ -159,7 +197,8 @@ class TaskNotificationWorkflow:
             return
 
         # 1. 优先从 task_parameters 取 imageUrl（import/auto_import 任务已有）
-        image_url: str = (task.task_parameters or {}).get("imageUrl", "") or ""
+        params = task.task_parameters or {}
+        image_url: str = _select_poster(params.get("localImagePath"), params.get("imageUrl") or params.get("image_url"))
 
         # 2. 刷新类任务 task_parameters 通常缺标题/集数/年份/海报，从数据库补查。
         #    db_extra 收集补查到的字段，稍后仅用于填补 payload 中为空的项（不覆盖已有值）。
@@ -184,7 +223,7 @@ class TaskNotificationWorkflow:
                                     db_extra["anime_title"] = anime_row.title
                                     db_extra["season"] = anime_row.season
                                     db_extra["year"] = anime_row.year
-                                    db_extra["image_url"] = (anime_row.localImagePath or anime_row.imageUrl or "")
+                                    db_extra["image_url"] = _select_poster(anime_row.localImagePath, anime_row.imageUrl)
                                 db_extra["source"] = ep_info.get("providerName", "")
                     elif key.startswith("refresh-latest-"):
                         # refresh-latest-{sourceId}-ep{n}：第三段是 sourceId，ep 后是集号（非 episodeId）。
@@ -206,7 +245,7 @@ class TaskNotificationWorkflow:
                                 db_extra["season"] = info.get("season")
                                 db_extra["year"] = info.get("year")
                                 db_extra["source"] = info.get("providerName", "")
-                                db_extra["image_url"] = info.get("localImagePath") or info.get("imageUrl", "") or ""
+                                db_extra["image_url"] = _select_poster(info.get("localImagePath"), info.get("imageUrl"))
                                 if ep_index is not None:
                                     db_extra["episode"] = ep_index
                     elif key.startswith("full-refresh-") or key.startswith("bulk-refresh-"):
@@ -221,13 +260,27 @@ class TaskNotificationWorkflow:
                                 db_extra["anime_title"] = anime_row.title
                                 db_extra["season"] = anime_row.season
                                 db_extra["year"] = anime_row.year
-                                db_extra["image_url"] = (anime_row.localImagePath or anime_row.imageUrl or "")
+                                db_extra["image_url"] = _select_poster(anime_row.localImagePath, anime_row.imageUrl)
             except Exception:
                 pass  # 补查失败不影响通知发出
 
+        # 后备匹配和手动任务可能只携带 animeId，不能仅靠 unique_key 反查海报。
+        if params.get("animeId") is not None and (not db_extra.get("anime_title") or not db_extra.get("image_url")):
+            try:
+                async with self._db.transaction():
+                    anime_row = await self._db.anime.get_by_id(int(params["animeId"]))
+                    if anime_row:
+                        db_extra.setdefault("anime_title", anime_row.title)
+                        db_extra.setdefault("season", anime_row.season)
+                        db_extra.setdefault("year", anime_row.year)
+                        if not db_extra.get("image_url"):
+                            db_extra["image_url"] = _select_poster(anime_row.localImagePath, anime_row.imageUrl)
+            except Exception:
+                logger.debug("任务作品海报补查失败，继续发送文本", exc_info=True)
+
         # 3. 兜底：task_parameters 带 sourceId 的刷新类任务（如 TG 刷新 tg_refresh、指令刷新），
         #    其 unique_key 无 refresh 前缀，上面补不到，这里按 sourceId 反查作品/源信息。
-        if not db_extra.get("anime_title"):
+        if not db_extra.get("anime_title") or (not image_url and not db_extra.get("image_url")):
             source_id = (task.task_parameters or {}).get("sourceId")
             if source_id is not None:
                 try:
@@ -240,7 +293,7 @@ class TaskNotificationWorkflow:
                             db_extra["source"] = info.get("providerName", "")
                             db_extra["tmdb_id"] = info.get("tmdbId", "") or ""
                             if not db_extra.get("image_url"):
-                                db_extra["image_url"] = info.get("localImagePath") or info.get("imageUrl", "") or ""
+                                db_extra["image_url"] = _select_poster(info.get("localImagePath"), info.get("imageUrl"))
                 except Exception:
                     pass  # 补查失败不影响通知发出
 
@@ -248,9 +301,12 @@ class TaskNotificationWorkflow:
         #    未带 animeTitle（如 direct_import / URL导入 / 旧路径），从 unique_key 解析
         #    provider+mediaId 反查 DB 补齐作品名/季/来源。why：媒体库逐集导入等路径
         #    的微信通知只剩弹幕数，看不出是哪部作品。
-        if not db_extra.get("anime_title") and not (task.task_parameters or {}).get("animeTitle"):
+        # 已有标题不代表已有海报；缺图时仍按结构化来源补查作品。
+        if (not db_extra.get("anime_title") and not params.get("animeTitle")) or (not image_url and not db_extra.get("image_url")):
             key = task.unique_key or ""
             parsed = _parse_import_unique_key(key)
+            if parsed is None and params.get("provider") and params.get("mediaId"):
+                parsed = (params["provider"], str(params["mediaId"]), params.get("season"))
             if parsed:
                 provider, media_id, season_hint = parsed
                 try:
@@ -271,7 +327,7 @@ class TaskNotificationWorkflow:
                                 db_extra["year"] = anime_row.year
                                 db_extra["media_type"] = anime_row.type
                                 if not db_extra.get("image_url"):
-                                    db_extra["image_url"] = (anime_row.localImagePath or anime_row.imageUrl or "")
+                                    db_extra["image_url"] = _select_poster(anime_row.localImagePath, anime_row.imageUrl)
                             db_extra["source"] = provider
                 except Exception:
                     pass  # 补查失败不影响通知发出

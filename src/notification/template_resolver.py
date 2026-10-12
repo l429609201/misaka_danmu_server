@@ -11,7 +11,7 @@ from typing import Optional
 from src.schemas.notification_template import TemplateID
 
 from src.notification.events import (
-    EventContext, NotificationEvent, TaskOperation, SystemEventType
+    EventContext, NotificationEvent, TaskOperation, TaskSource, SystemEventType
 )
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,11 @@ class TemplateResolver:
     def _resolve_task_event(event_ctx: EventContext) -> Optional[str]:
         """解析任务事件到模板"""
         operation = event_ctx.operation
+        # 来源优先，Webhook 子任务不能误用手动导入模板。
+        if event_ctx.source == TaskSource.WEBHOOK:
+            return TemplateID.WEBHOOK
+        if operation == TaskOperation.SCHEDULED_TASK:
+            return TemplateID.SCHEDULED_TASK
         
         # 弹幕导入：手动、自动、Webhook、URL/XML
         if operation == TaskOperation.IMPORT:
@@ -83,14 +88,7 @@ class TemplateResolver:
     @staticmethod
     def get_all_template_ids() -> list:
         """获取所有模板 ID"""
-        return [
-            TemplateID.DANMAKU_IMPORT,
-            TemplateID.DANMAKU_REFRESH,
-            TemplateID.FALLBACK_PROCESSING,
-            TemplateID.MEDIA_SCAN,
-            TemplateID.SYSTEM_NOTICE,
-            TemplateID.TASK_PROGRESS,
-        ]
+        return list(TemplateID.ALL)
     
     @staticmethod
     def get_template_display_name(template_id: str, lang: str = "zh") -> str:
@@ -101,6 +99,8 @@ class TemplateResolver:
             lang: 语言代码（zh/en/tw）
         """
         names = {
+            TemplateID.WEBHOOK: {"zh": "Webhook", "en": "Webhook", "tw": "Webhook"},
+            TemplateID.SCHEDULED_TASK: {"zh": "定时任务", "en": "Scheduled Task", "tw": "定時任務"},
             TemplateID.DANMAKU_IMPORT: {
                 "zh": "弹幕入库",
                 "en": "Danmaku Import",

@@ -8,7 +8,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src import tasks
 from src.services.service_container import (
     get_database_service, get_task_manager, get_metadata_service,
@@ -34,7 +34,7 @@ router = APIRouter()
 @router.post("/library/anime", response_model=ui_models.LibraryAnimeInfo, status_code=201, summary="创建自定义作品条目")
 async def create_anime_entry(
     payload: ui_models.AnimeCreate,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> ui_models.LibraryAnimeInfo:
     """手动创建一个新的作品条目，不关联任何数据源。"""
     db = get_database_service()
@@ -59,7 +59,7 @@ async def get_library(
     pageSize: int = Query(10, ge=1, description="每页数量"),
     sortBy: str = Query("anime_created", description="排序字段: anime_created=媒体库入库时间, episode_fetched=分集入库时间"),
     sortOrder: str = Query("desc", description="排序方向: asc=升序, desc=降序"),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> ui_models.LibraryResponse:
     """获取已收录的番剧信息，支持搜索、类型过滤、排序和分页。"""
     db = get_database_service()
@@ -78,7 +78,7 @@ async def get_library(
 @router.get("/library/anime/{animeId}/details", response_model=ui_models.AnimeFullDetails, summary="获取影视完整详情")
 async def get_anime_full_details(
     animeId: int,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> ui_models.AnimeFullDetails:
     """获取指定番剧的完整信息，包括所有元数据ID。"""
     db = get_database_service()
@@ -94,7 +94,7 @@ async def get_anime_full_details(
 async def bulk_set_finished(
     animeIds: List[int] = Body(..., description="番剧ID列表"),
     isFinished: bool = Body(..., description="是否完结"),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> None:
     """批量设置作品下所有源的完结状态；完结后预下载将跳过该源。"""
     db = get_database_service()
@@ -108,7 +108,7 @@ async def bulk_set_finished(
 async def edit_anime_info(
     animeId: int,
     update_data: ui_models.AnimeDetailUpdate,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> None:
     """更新指定番剧的标题、季度和元数据。"""
     db = get_database_service()
@@ -144,7 +144,7 @@ async def edit_anime_info(
 async def refresh_anime_poster(
     animeId: int,
     request_data: RefreshPosterRequest,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> dict:
     """委托编排层刷新海报，路由只映射业务异常为 HTTP 状态。"""
     try:
@@ -161,7 +161,7 @@ async def refresh_anime_poster(
 async def add_source_to_anime(
     animeId: int,
     payload: ui_models.SourceCreate,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> ui_models.SourceInfo:
     """在同一事务中关联数据源并构建响应。"""
     db = get_database_service()
@@ -185,7 +185,7 @@ async def add_source_to_anime(
 @router.get("/library/anime/{animeId}/sources", response_model=List[ui_models.SourceInfo], summary="获取作品的所有数据源")
 async def get_anime_sources_for_anime(
     animeId: int,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> List[ui_models.SourceInfo]:
     """获取指定作品关联的所有数据源列表。"""
     db = get_database_service()
@@ -198,7 +198,7 @@ async def get_anime_sources_for_anime(
 async def check_reassociation_conflicts(
     sourceAnimeId: int,
     request_data: ui_models.ReassociationRequest = Body(...),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> ui_models.ReassociationConflictResponse:
     """检测关联操作是否存在冲突。"""
     if sourceAnimeId == request_data.targetAnimeId:
@@ -212,7 +212,7 @@ async def check_reassociation_conflicts(
 async def reassociate_anime_sources(
     sourceAnimeId: int,
     request_data: ReassociationRequest = Body(...),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> None:
     """由编排层统一迁移文件和数据源，并删除已空的原作品。"""
     try:
@@ -228,7 +228,7 @@ async def reassociate_anime_sources(
 async def reassociate_with_conflict_resolution(
     sourceAnimeId: int,
     request_data: ui_models.ReassociationResolveRequest = Body(...),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> None:
     """根据用户选择执行关联，冲突决策缺失时拒绝操作。"""
     try:
@@ -245,7 +245,7 @@ async def reassociate_with_conflict_resolution(
 async def delete_anime_from_library(
     animeId: int,
     deleteFiles: bool = Query(True, description="是否同时删除弹幕XML文件"),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> dict[str, str]:
     """提交一个后台任务来删除一个番剧及其所有关联数据。"""
     db = get_database_service()
@@ -268,7 +268,7 @@ async def delete_anime_from_library(
 @router.get("/library/scan-duplicates", response_model=ScanDuplicatesResponse, summary="扫描弹幕库中的重复条目")
 async def scan_duplicates(
     strict: bool = Query(True, description="严格模式(tmdbId+season)或宽松模式(仅tmdbId)"),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> ScanDuplicatesResponse:
     """扫描弹幕库中基于TMDB ID的重复条目，返回重复组列表。"""
     db = get_database_service()
@@ -285,7 +285,7 @@ async def scan_duplicates(
 @router.post("/library/batch-merge", response_model=BatchMergeResponse, summary="批量合并重复条目")
 async def batch_merge_animes(
     request: BatchMergeRequest,
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
 ) -> BatchMergeResponse:
     """逐个源条目独立合并，单项回滚不影响其他已完成的合并。"""
     results = []

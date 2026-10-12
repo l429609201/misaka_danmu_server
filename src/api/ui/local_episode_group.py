@@ -12,7 +12,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
 from pydantic import BaseModel
 
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.services.database_service import DatabaseService
 from src.services.service_container import get_database_service
 from src.schemas import (
@@ -37,7 +37,7 @@ class ApplyLocalEpisodeGroupRequest(BaseModel):
 @router.post("/local-episode-group/fetch", summary="获取本地剧集组JSON（支持URL和本地路径）")
 async def fetch_local_episode_group(
     payload: FetchUrlRequest,
-    current_user = Depends(security.get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     获取 episodegroup.json 内容。
@@ -81,7 +81,7 @@ async def fetch_local_episode_group(
 @router.post("/local-episode-group/apply", summary="应用本地剧集组映射")
 async def apply_local_episode_group(
     payload: ApplyLocalEpisodeGroupRequest,
-    current_user = Depends(security.get_current_user),
+    current_user = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """
@@ -146,7 +146,7 @@ async def apply_local_episode_group(
 @router.get("/local-episode-group/detail", summary="获取已保存的剧集组详情（从数据库读取）")
 async def get_episode_group_detail(
     groupId: str = Query(..., description="剧集组ID，如 local-12345 或 TMDB 剧集组ID"),
-    current_user = Depends(security.get_current_user),
+    current_user = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """

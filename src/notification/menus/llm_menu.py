@@ -18,7 +18,7 @@ from src.notification.base import CommandResult
 from src.ai.assistant import AssistantAgent, DEFAULT_PERSONA
 from src.ai.assistant.tools import registry
 from src.services.ai_service import get_ai_service
-from src.utils.auth import security
+from src.services.auth_service import create_channel_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ class LlmChatMixin:
         if not approved:
             return CommandResult(text="已取消本次操作。")
         username = await self.config_service.get("assistantChannelUsername", "admin")
-        token, _, _ = await security.create_access_token(data={"sub": username})
+        token = await create_channel_access_token(username)
         context = self._agent_context_extra()
         context.update({"authorization": f"Bearer {token}", "confirmed_action": True})
         result = await registry.execute(pending["name"], pending["arguments"], context)

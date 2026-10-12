@@ -12,7 +12,7 @@ from src.schemas.auth import User
 from src.workflows.media_server_binding import bind_media_server_to_anime as bind_media_server_to_anime_workflow
 from src.workflows.media_import_preparation import build_media_import_title
 from src.services.service_container import get_database_service
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.services.task_manager import TaskManager
 from src.services.scraper_manager import ScraperManager
 from src.services.metadata_service import MetadataService
@@ -127,7 +127,7 @@ class MediaServerScanRequest(BaseModel):
 
 @router.get("/media-servers", response_model=List[MediaServerResponse], summary="获取所有媒体服务器")
 async def get_media_servers(
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取所有媒体服务器配置"""
     db = get_database_service()
@@ -139,7 +139,7 @@ async def get_media_servers(
 @router.post("/media-servers", response_model=MediaServerResponse, status_code=201, summary="添加媒体服务器")
 async def create_media_server(
     payload: MediaServerCreate,
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """创建新的媒体服务器配置"""
     db = get_database_service()
@@ -174,7 +174,7 @@ async def create_media_server(
 async def update_media_server(
     server_id: int,
     payload: MediaServerUpdate,
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """更新媒体服务器配置"""
     db = get_database_service()
@@ -210,7 +210,7 @@ async def update_media_server(
 @router.delete("/media-servers/{server_id}", status_code=204, summary="删除媒体服务器")
 async def delete_media_server(
     server_id: int,
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """删除媒体服务器配置(级联删除关联的媒体项)"""
     db = get_database_service()
@@ -225,7 +225,7 @@ async def delete_media_server(
 @router.post("/media-servers/{server_id}/test", response_model=MediaServerTestResponse, summary="测试媒体服务器连接")
 async def test_media_server_connection(
     server_id: int,
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """测试媒体服务器连接"""
     service = get_media_server_service()
@@ -244,7 +244,7 @@ async def test_media_server_connection(
 @router.get("/media-servers/{server_id}/libraries", response_model=List[MediaLibraryInfo], summary="获取媒体库列表")
 async def get_media_server_libraries(
     server_id: int,
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取媒体服务器的媒体库列表"""
     service = get_media_server_service()
@@ -263,7 +263,7 @@ async def get_media_server_libraries(
 async def scan_media_server_library(
     server_id: int,
     payload: MediaServerScanRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager)
 ):
     """扫描媒体服务器的媒体库"""
@@ -306,7 +306,7 @@ async def get_media_items(
     media_type: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取媒体项列表,支持过滤和分页"""
     db = get_database_service()
@@ -331,7 +331,7 @@ async def get_media_works(
     year_to: Optional[int] = Query(None, description="结束年份，闭区间"),
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取作品列表(电影+电视剧组),按作品计数"""
     db = get_database_service()
@@ -353,7 +353,7 @@ async def get_media_works(
 async def get_show_seasons(
     title: str,
     server_id: int = Query(...),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取某部剧集的所有季度信息"""
     db = get_database_service()
@@ -369,7 +369,7 @@ async def get_season_episodes(
     server_id: int = Query(...),
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取某一季的所有集"""
     db = get_database_service()
@@ -388,7 +388,7 @@ async def get_season_episodes(
 async def update_media_item(
     item_id: int,
     payload: MediaItemUpdate,
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """更新媒体项信息"""
     db = get_database_service()
@@ -426,7 +426,7 @@ async def update_media_item(
 @router.delete("/media-items/{item_id}", status_code=204, summary="删除媒体项")
 async def delete_media_item(
     item_id: int,
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """删除单个媒体项"""
     db = get_database_service()
@@ -439,7 +439,7 @@ async def delete_media_item(
 @router.post("/media-items/batch-delete", status_code=200, summary="批量删除媒体项")
 async def batch_delete_media_items(
     payload: Dict[str, Any],
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """批量删除媒体项
 
@@ -515,7 +515,7 @@ class MediaItemsImportRequest(BaseModel):
 @router.post("/media-items/import", status_code=202, summary="导入选中的媒体项")
 async def import_media_items(
     payload: MediaItemsImportRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     metadata_manager: MetadataService = Depends(get_metadata_service),
@@ -590,7 +590,7 @@ async def import_media_items(
 async def get_unimported_media_count(
     server_id: int = Query(..., description="媒体服务器ID"),
     media_type: Optional[str] = Query(None, description="媒体类型过滤"),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取指定服务器下未导入的媒体项数量"""
     db = get_database_service()
@@ -602,7 +602,7 @@ async def get_unimported_media_count(
 @router.post("/media-items/import-all-unimported", status_code=202, summary="一键导入全部未导入的媒体项")
 async def import_all_unimported_media_items(
     payload: Dict[str, Any],
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     task_manager: TaskManager = Depends(get_task_manager),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     metadata_manager: MetadataService = Depends(get_metadata_service),
@@ -697,7 +697,7 @@ async def _resolve_server_instance(server_id: int):
 async def lookup_media_server_items(
     serverId: int,
     payload: MediaServerLookupRequest,
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> List[MediaServerLookupItem]:
     """按关键词搜索媒体服务器中的条目，返回候选列表供用户选择绑定。
 
@@ -765,7 +765,7 @@ async def lookup_media_server_items(
 async def bind_media_server_to_anime(
     animeId: int,
     payload: MediaServerBindRequest,
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """将反查得到的媒体服务器条目绑定到指定作品，写入 anime_metadata 表。
 

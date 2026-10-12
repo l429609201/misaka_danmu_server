@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 import httpx
 
 from src.schemas import ui_models
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.api.dependencies import get_config_service, get_scraper_manager
 from src.workflows.scraper_resources import offline_upload
 
@@ -20,7 +20,7 @@ _MAX_UPLOAD_BYTES = 256 * 1024 * 1024
 
 @router.get("/config/github-token", summary="获取GitHub Token")
 async def get_github_token(
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
     config_service = Depends(get_config_service)
 ):
     """获取GitHub Token配置"""
@@ -31,7 +31,7 @@ async def get_github_token(
 @router.post("/config/github-token", summary="保存GitHub Token")
 async def save_github_token(
     payload: Dict[str, Any],
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
     config_service = Depends(get_config_service)
 ):
     """保存GitHub Token配置"""
@@ -44,7 +44,7 @@ async def save_github_token(
 @router.post("/config/github-token/verify", summary="验证GitHub Token")
 async def verify_github_token(
     payload: Dict[str, Any],
-    current_user: ui_models.User = Depends(security.get_current_user)
+    current_user: ui_models.User = Depends(get_current_user)
 ):
     """验证GitHub Token有效性"""
     token = payload.get("token", "")
@@ -88,7 +88,7 @@ async def verify_github_token(
 @router.post("/scrapers/upload-package", summary="上传弹幕源离线包")
 async def upload_scraper_package(
     file: UploadFile = File(...),
-    current_user: ui_models.User = Depends(security.get_current_user),
+    current_user: ui_models.User = Depends(get_current_user),
     manager = Depends(get_scraper_manager),
     config_service = Depends(get_config_service)
 ):

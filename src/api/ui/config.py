@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.services.service_container import get_database_service
 from src.core import get_config_schema
 from src.api.dependencies import get_config_service
@@ -35,7 +35,7 @@ class ConfigValueRequest(BaseModel):
 
 @router.get("/schema/parameters", summary="获取参数配置的 Schema")
 async def get_parameters_schema(
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取参数配置页面的 Schema 定义。
@@ -47,7 +47,7 @@ async def get_parameters_schema(
 @router.get("/{config_key}", response_model=Dict[str, str], summary="获取指定配置项的值")
 async def get_config_item(
     config_key: str,
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取数据库中单个配置项的值。"""
     db = get_database_service()
@@ -60,7 +60,7 @@ async def get_config_item(
 async def update_config_item(
     config_key: str,
     payload: Dict[str, Any],  # 修正：允许任意类型的值,避免前端传递undefined时报错
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """更新数据库中单个配置项的值。"""
@@ -98,7 +98,7 @@ async def update_config_item(
 
 @router.post("/webhookApiKey/regenerate", response_model=Dict[str, str], summary="重新生成Webhook API Key")
 async def regenerate_webhook_api_key(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """生成一个新的、随机的Webhook API Key并保存到数据库。"""
@@ -116,7 +116,7 @@ async def regenerate_webhook_api_key(
 
 @router.post("/externalApiKey/regenerate", response_model=Dict[str, str], summary="重新生成外部API Key")
 async def regenerate_external_api_key(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """生成一个新的、随机的外部API Key并保存到数据库。"""

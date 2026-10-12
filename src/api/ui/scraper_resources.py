@@ -10,7 +10,7 @@ from src.api.dependencies import get_scraper_manager, get_config_service
 from src.schemas.ui_models import User
 from src.services.config_service import ConfigService
 from src.workflows.scraper_resources.resources import get_platform_key
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.workflows.scraper_resources import workflow as resource_workflow
 
 
@@ -19,7 +19,7 @@ router = APIRouter()
 
 @router.get("/scrapers/resource-repo", summary="获取资源仓库配置")
 async def get_resource_repo(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """获取当前配置的资源仓库链接"""
@@ -29,7 +29,7 @@ async def get_resource_repo(
 
 @router.get("/scrapers/repo-refs", summary="获取资源仓库的分支和标签列表")
 async def get_repo_refs(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """将资源业务委托给编排层，保留原有 HTTP 契约。"""
@@ -41,7 +41,7 @@ async def get_repo_refs(
 
 @router.get("/scrapers/versions", summary="获取资源包版本信息")
 async def get_versions(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service),
     force_refresh: bool = False  # 新增参数：强制刷新缓存
 ):
@@ -55,7 +55,7 @@ async def get_versions(
 @router.put("/scrapers/resource-repo", status_code=status.HTTP_204_NO_CONTENT, summary="保存资源仓库配置")
 async def save_resource_repo(
     payload: Dict[str, str],
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """保存资源仓库链接"""
@@ -71,7 +71,7 @@ async def save_resource_repo(
 
 @router.post("/scrapers/backup", summary="备份当前弹幕源")
 async def backup_scrapers(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     new_versions_data: Optional[Dict[str, str]] = None,
     new_hashes_data: Optional[Dict[str, str]] = None,
     package_data: Optional[Dict[str, Any]] = None,
@@ -85,7 +85,7 @@ async def backup_scrapers(
 
 @router.get("/scrapers/backup-info", summary="获取备份信息")
 async def get_backup_info(
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """将资源业务委托给编排层，保留原有 HTTP 契约。"""
     try:
@@ -96,7 +96,7 @@ async def get_backup_info(
 
 @router.post("/scrapers/restore", summary="从备份还原弹幕源")
 async def restore_scrapers(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     manager = Depends(get_scraper_manager),
 ) -> Dict[str, Any]:
     """将资源业务委托给编排层，保留原有 HTTP 契约。"""
@@ -108,7 +108,7 @@ async def restore_scrapers(
 
 @router.post("/scrapers/reload", summary="重载弹幕源")
 async def reload_scrapers(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     manager = Depends(get_scraper_manager)
 ):
     """将资源业务委托给编排层，保留原有 HTTP 契约。"""
@@ -121,7 +121,7 @@ async def reload_scrapers(
 @router.post("/scrapers/load-resources-stream", summary="从资源仓库加载弹幕源(SSE流式)")
 async def load_resources_stream(
     payload: Dict[str, Any],
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service),
     manager = Depends(get_scraper_manager)
 ):
@@ -143,7 +143,7 @@ async def load_resources_stream(
 @router.post("/scrapers/download/start", summary="启动下载任务")
 async def start_download(
     payload: Dict[str, Any],
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service),
     manager = Depends(get_scraper_manager)
 ):
@@ -190,7 +190,7 @@ async def start_download(
 @router.get("/scrapers/download/status/{task_id}", summary="获取下载任务状态")
 async def get_download_status(
     task_id: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """将资源业务委托给编排层，保留原有 HTTP 契约。"""
     try:
@@ -201,7 +201,7 @@ async def get_download_status(
 
 @router.get("/scrapers/download/current", summary="获取当前下载任务")
 async def get_current_download(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """将资源业务委托给编排层，保留原有 HTTP 契约。"""
     try:
@@ -213,7 +213,7 @@ async def get_current_download(
 @router.post("/scrapers/download/cancel/{task_id}", summary="取消下载任务")
 async def cancel_download(
     task_id: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """将资源业务委托给编排层，保留原有 HTTP 契约。"""
     try:
@@ -225,7 +225,7 @@ async def cancel_download(
 @router.get("/scrapers/download/progress/{task_id}", summary="SSE 进度流")
 async def download_progress_stream(
     task_id: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """通过 SSE 实时推送下载进度（可选，用于前端实时显示）"""
     try:
@@ -247,7 +247,7 @@ async def download_progress_stream(
 @router.get("/scrapers/download/cached-status/{task_id}", summary="查询缓存的任务状态")
 async def get_cached_task_status(
     task_id: str,
-    current_user: User = Depends(security.get_current_user),  # noqa: ARG001
+    current_user: User = Depends(get_current_user),  # noqa: ARG001
 ):
     """将资源业务委托给编排层，保留原有 HTTP 契约。"""
     try:
@@ -260,7 +260,7 @@ async def get_cached_task_status(
 
 @router.get("/scrapers/auto-update", summary="获取自动更新配置")
 async def get_auto_update_config(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """获取弹幕源自动更新配置"""
@@ -275,7 +275,7 @@ async def get_auto_update_config(
 @router.put("/scrapers/auto-update", status_code=status.HTTP_204_NO_CONTENT, summary="保存自动更新配置")
 async def save_auto_update_config(
     payload: Dict[str, Any],
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """保存弹幕源自动更新配置"""
@@ -290,7 +290,7 @@ async def save_auto_update_config(
 
 @router.get("/scrapers/full-replace", summary="获取全量替换配置")
 async def get_full_replace_config(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """获取弹幕源全量替换配置
@@ -307,7 +307,7 @@ async def get_full_replace_config(
 @router.put("/scrapers/full-replace", status_code=status.HTTP_204_NO_CONTENT, summary="保存全量替换配置")
 async def save_full_replace_config(
     payload: Dict[str, Any],
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """保存弹幕源全量替换配置"""
@@ -318,7 +318,7 @@ async def save_full_replace_config(
 
 @router.delete("/scrapers/backup", summary="删除弹幕源备份")
 async def delete_backup(
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """将资源业务委托给编排层，保留原有 HTTP 契约。"""
     try:
@@ -329,7 +329,7 @@ async def delete_backup(
 
 @router.delete("/scrapers/current", summary="删除当前弹幕源")
 async def delete_current_scrapers(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     manager = Depends(get_scraper_manager)
 ):
     """将资源业务委托给编排层，保留原有 HTTP 契约。"""
@@ -341,7 +341,7 @@ async def delete_current_scrapers(
 
 @router.delete("/scrapers/all", summary="删除当前源和备份源")
 async def delete_all_scrapers(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     manager = Depends(get_scraper_manager)
 ):
     """将资源业务委托给编排层，保留原有 HTTP 契约。"""

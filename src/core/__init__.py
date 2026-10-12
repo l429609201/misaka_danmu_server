@@ -4,7 +4,7 @@
 此模块遵循 MoviePilot 的架构设计原则：
 - core 层只包含纯静态配置，不依赖数据库
 - 缓存抽象层定义在 core，具体后端实现可依赖 db 层
-- 安全相关功能请直接导入: from src.utils.auth.security import ...
+- 认证业务请直接导入 src.services.auth_service；HTTP 鉴权依赖请导入 src.api.auth
 - 配置服务请直接导入: from src.services.config_service import ConfigService, get_config_service
 
 使用方式:

@@ -8,7 +8,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.schemas.auth import User
 from src.services.database_service import DatabaseService
 from src.services.service_container import get_database_service
@@ -73,7 +73,7 @@ class CreateFolderRequest(BaseModel):
 async def browse_directory(
     path: str = Query(..., description="目录路径"),
     sort: str = Query("name", description="排序方式: name/time"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """浏览本地目录 - 🚀 薄层路由"""
     try:
@@ -88,7 +88,7 @@ async def browse_directory(
 @router.post("/local-danmaku/folder", status_code=status.HTTP_201_CREATED, summary="创建文件夹")
 async def create_folder(
     request: CreateFolderRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """创建新文件夹 - 🚀 薄层路由"""
     try:
@@ -103,7 +103,7 @@ async def create_folder(
 @router.delete("/local-danmaku/folder", summary="删除文件夹")
 async def delete_folder(
     path: str = Query(..., description="文件夹路径"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """删除空文件夹 - 🚀 薄层路由"""
     try:
@@ -120,7 +120,7 @@ async def delete_folder(
 @router.get("/local-danmaku/last-path", summary="获取上次扫描路径")
 async def get_last_scan_path(
     config_service: ConfigService = Depends(get_config_service),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取上次扫描的路径 - 🚀 薄层路由"""
     last_path = await config_service.get("local_danmaku_last_scan_path", "")
@@ -131,7 +131,7 @@ async def get_last_scan_path(
 async def save_scan_path(
     path: str = Query(..., description="扫描路径"),
     config_service: ConfigService = Depends(get_config_service),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """保存上次扫描路径。"""
     await config_service.set("local_danmaku_last_scan_path", path)
@@ -146,7 +146,7 @@ async def save_scan_path(
 async def scan_local_danmaku(
     path: str = Query(..., description="扫描路径"),
     db: DatabaseService = Depends(get_database_service),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """扫描指定目录下的本地弹幕文件 - 🚀 薄层路由"""
     try:
@@ -169,7 +169,7 @@ async def get_local_items(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(100, ge=1, le=500, description="每页数量"),
     db: DatabaseService = Depends(get_database_service),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取本地弹幕项列表 - 🚀 薄层路由"""
     result = await get_local_items_flow(db, is_imported, media_type, page, page_size)
@@ -185,7 +185,7 @@ async def get_local_works(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(100, ge=1, le=500, description="每页数量"),
     db: DatabaseService = Depends(get_database_service),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取本地作品列表（按作品分组） - 🚀 薄层路由"""
     result = await get_local_works_flow(db, is_imported, media_type, year_from, year_to, page, page_size)
@@ -199,7 +199,7 @@ async def get_local_movie_files(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(100, ge=1, le=500, description="每页数量"),
     db: DatabaseService = Depends(get_database_service),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取电影的所有弹幕文件 - 🚀 薄层路由"""
     result = await get_movie_files_flow(db, title, year, page, page_size)
@@ -210,7 +210,7 @@ async def get_local_movie_files(
 async def get_local_show_seasons(
     title: str,
     db: DatabaseService = Depends(get_database_service),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取本地剧集的所有季度 - 🚀 薄层路由"""
     seasons = await get_show_seasons_flow(db, title)
@@ -224,7 +224,7 @@ async def get_local_season_episodes(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(100, ge=1, le=500, description="每页数量"),
     db: DatabaseService = Depends(get_database_service),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取本地某一季的所有集 - 🚀 薄层路由"""
     result = await get_season_episodes_flow(db, title, season, page, page_size)
@@ -238,7 +238,7 @@ async def update_local_item(
     item_id: int,
     request: UpdateItemRequest,
     db: DatabaseService = Depends(get_database_service),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """更新本地弹幕项信息 - 🚀 薄层路由"""
     try:
@@ -254,7 +254,7 @@ async def delete_local_item(
     item_id: int,
     delete_file: bool = Query(False, description="是否删除物理文件"),
     db: DatabaseService = Depends(get_database_service),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """删除本地弹幕项 - 🚀 薄层路由"""
     try:
@@ -268,7 +268,7 @@ async def delete_local_item(
 async def batch_delete_local_items(
     request: BatchDeleteRequest,
     db: DatabaseService = Depends(get_database_service),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """批量删除本地弹幕项 - 🚀 薄层路由"""
     result = await batch_delete_local_items_flow(db, request.itemIds, request.deleteFiles)
@@ -282,7 +282,7 @@ async def import_local_items(
     request: ImportRequest,
     db: DatabaseService = Depends(get_database_service),
     task_manager: TaskManager = Depends(get_task_manager),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """将本地弹幕项导入到正式数据库 - 🚀 薄层路由"""
     try:

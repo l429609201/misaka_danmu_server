@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from src.db import get_db_session
 from src.schemas.auth import User
 from src.schemas.ui_models import FileItem
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.services.task_manager import TaskManager
 from src.services.metadata_service import MetadataService
 from src.services.config_service import ConfigService
@@ -80,7 +80,7 @@ class DeleteFolderRequest(BaseModel):
 async def browse_directory(
     fileitem: FileItem,
     sort: Optional[str] = "name",
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> List[FileItem]:
     """
     浏览本地文件系统目录
@@ -157,7 +157,7 @@ async def browse_directory(
 @router.post("/local-scan/create-folder", summary="创建文件夹")
 async def create_folder(
     payload: CreateFolderRequest,
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     在指定路径创建新文件夹
@@ -233,7 +233,7 @@ async def create_folder(
 @router.delete("/local-scan/delete-folder", summary="删除文件夹")
 async def delete_folder(
     folderPath: str = Query(..., description="要删除的文件夹路径"),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     删除指定的文件夹
@@ -311,7 +311,7 @@ async def delete_folder(
 @router.get("/local-scan/last-path", summary="获取上次使用的扫描路径")
 async def get_last_scan_path(
     config_manager: ConfigManager = Depends(get_config_service),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取上次使用的扫描路径"""
     try:
@@ -326,7 +326,7 @@ async def get_last_scan_path(
 async def save_scan_path(
     payload: LocalScanRequest,
     config_manager: ConfigManager = Depends(get_config_service),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """保存扫描路径以便下次使用"""
     try:
@@ -342,7 +342,7 @@ async def scan_local_danmaku(
     payload: LocalScanRequest,
     request: Request,
     config_manager: ConfigManager = Depends(get_config_service),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     扫描指定目录下的所有.xml弹幕文件
@@ -384,7 +384,7 @@ async def get_local_items(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取本地弹幕项列表,支持过滤和分页"""
     result = await crud.get_local_items(
@@ -406,7 +406,7 @@ async def get_local_works(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取本地作品列表(电影+电视剧组),按作品计数"""
     result = await crud.get_local_works(
@@ -428,7 +428,7 @@ async def get_local_movie_files(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取电影的所有弹幕文件"""
     files = await crud.get_movie_files(session, title, year, page, page_size)
@@ -439,7 +439,7 @@ async def get_local_movie_files(
 async def get_local_show_seasons(
     title: str,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取本地剧集的所有季度"""
     seasons = await crud.get_show_seasons(session, title)
@@ -453,7 +453,7 @@ async def get_local_season_episodes(
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取本地某一季的所有集"""
     result = await crud.get_season_episodes(
@@ -471,7 +471,7 @@ async def update_local_item(
     item_id: int,
     payload: LocalItemUpdate,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """更新本地弹幕项的元数据"""
     update_data = payload.model_dump(exclude_unset=True)
@@ -490,7 +490,7 @@ async def update_local_item(
 async def delete_local_item(
     item_id: int,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """删除单个本地弹幕项"""
     success = await crud.delete_local_item(session, item_id)
@@ -505,7 +505,7 @@ async def delete_local_item(
 async def batch_delete_local_items(
     payload: Dict[str, Any],
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     批量删除本地弹幕项
@@ -542,7 +542,7 @@ async def import_local_items(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
     task_manager: TaskManager = Depends(get_task_manager),
-    current_user: User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     导入选中的本地弹幕项到弹幕库

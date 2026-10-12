@@ -7,7 +7,7 @@ from typing import Optional, List
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.services.database_service import DatabaseService
 from src.services.service_container import get_database_service
 # 下载和作品关联均由编排层管理，API 不持有下载期间的事务。
@@ -48,7 +48,7 @@ async def get_local_image(
     title: str = Query(..., description="作品标题"),
     season: int = Query(..., description="季度"),
     year: Optional[int] = Query(None, description="年份"),
-    current_user = Depends(security.get_current_user),
+    current_user = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service)
 ):
     """根据标题、季度、年份查找对应 Anime 记录的 localImagePath。"""
@@ -65,7 +65,7 @@ async def get_local_image(
 @router.post("/poster/download-to-local", summary="下载网络海报到本地缓存")
 async def download_poster_to_local(
     request_data: DownloadPosterRequest,
-    current_user = Depends(security.get_current_user),
+    current_user = Depends(get_current_user),
 ) -> dict:
     """委托编排层下载海报并关联作品，保留原响应字段。"""
     try:
@@ -82,7 +82,7 @@ async def search_fanart_posters(
     tmdbId: Optional[str] = Query(None, description="TMDB ID（电影）"),
     tvdbId: Optional[str] = Query(None, description="TVDB ID（电视剧）"),
     mediaType: str = Query("tv", description="媒体类型: tv 或 movie"),
-    current_user = Depends(security.get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """通过 TMDB ID 或 TVDB ID 从 Fanart.tv 获取海报列表。"""
     if not tmdbId and not tvdbId:

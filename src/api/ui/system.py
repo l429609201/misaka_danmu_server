@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 
 # 流控重置倒计时使用应用时区，与数据库记录的时间保持一致。
 from src.core.timezone import get_now
-from src.utils.auth import security
+from src.api.auth import get_current_user
 # 直接引用解析模块，避免旧路径在接口调用时才触发导入失败。
 from src.utils.parsing.filename_parser import parse_filename
 from src.utils.runtime.cancellation import finish_before_cancel
@@ -102,7 +102,7 @@ async def get_release_history(
 @router.get("/database-info", response_model=DatabaseInfoResponse, summary="获取数据库和缓存连接信息")
 async def get_database_info(
     request: Request,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """获取数据库类型、连接池状态、Redis 详细指标 - 🚀 薄层路由，委托给 workflow"""
     info = await workflow_get_database_info(request)
@@ -112,13 +112,13 @@ async def get_database_info(
 # ==================== 日志管理 ====================
 
 @router.get("/logs", response_model=List[str], summary="获取最新的服务器日志")
-async def get_server_logs(current_user: User = Depends(security.get_current_user)):
+async def get_server_logs(current_user: User = Depends(get_current_user)):
     """获取存储在内存中的最新日志条目 - 🚀 薄层路由，委托给 workflow"""
     return await workflow_get_logs()
 
 
 @router.get("/logs/files", summary="列出所有日志文件")
-async def get_log_files(current_user: User = Depends(security.get_current_user)):
+async def get_log_files(current_user: User = Depends(get_current_user)):
     """列出日志目录中的所有日志文件 - 🚀 薄层路由，委托给 workflow"""
     return await workflow_list_log_files()
 
@@ -129,7 +129,7 @@ async def get_log_file_content(
     tail: int = Query(200, ge=1, description="每批返回行数，默认200"),
     keyword: str = Query("", description="关键词过滤（大小写不敏感），空字符串不过滤"),
     offset: int = Query(0, ge=0, description="已加载条数，用于加载更多"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     读取指定日志文件，支持后端关键词过滤和分页加载 - 🚀 薄层路由，委托给 workflow
@@ -141,7 +141,7 @@ async def get_log_file_content(
 
 @router.get("/logs/stream", summary="SSE实时日志推送")
 async def stream_server_logs(
-    current_user: User = Depends(security.get_current_user_no_db_hold)
+    current_user: User = Depends(get_current_user)
 ):
     """使用Server-Sent Events实时推送服务器日志 - 🚀 薄层路由，委托给 workflow"""
     event_generator = await workflow_stream_logs()
@@ -161,7 +161,7 @@ async def stream_server_logs(
 @router.post("/cache/clear", status_code=status.HTTP_200_OK, summary="清除所有缓存")
 async def clear_all_caches(
     request: Request,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db: DatabaseService = Depends(get_database_service)
 ):
     """清除所有缓存数据（缓存后端 + 数据库） - 🚀 薄层路由，委托给 workflow"""
@@ -172,7 +172,7 @@ async def clear_all_caches(
 
 @router.get("/docker/status", response_model=DockerStatusResponse, summary="获取 Docker 状态")
 async def get_docker_status_endpoint(
-    _: User = Depends(security.get_current_user)
+    _: User = Depends(get_current_user)
 ) -> DockerStatusResponse:
     """异步获取 Docker 连接状态，阻塞检查由工作流在线程中执行。"""
     status_data = await workflow_get_docker_status()
@@ -181,7 +181,7 @@ async def get_docker_status_endpoint(
 
 @router.get("/docker/stats", summary="获取容器资源使用统计（SSE 实时推送）")
 async def get_docker_stats_endpoint(
-    _: User = Depends(security.get_current_user_no_db_hold)
+    _: User = Depends(get_current_user)
 ):
     """
     获取当前容器的资源使用统计信息 - 🚀 薄层路由，委托给 workflow
@@ -203,7 +203,7 @@ async def get_docker_stats_endpoint(
 
 @router.post("/restart", response_model=RestartResponse, summary="重启服务")
 async def restart_service(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ):
     """
@@ -219,7 +219,7 @@ async def restart_service(
 @router.get("/update/stream", summary="流式更新服务")
 async def stream_update(
     source: str = Query("docker", pattern="^(docker|github)$", description="镜像来源：docker 或 github"),
-    current_user: User = Depends(security.get_current_user_no_db_hold),
+    current_user: User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service)
 ) -> StreamingResponse:
     """按前端指定的镜像来源获取更新事件流。"""
@@ -245,7 +245,7 @@ async def stream_update(
 @router.post("/tools/parse-filename", summary="文件名识别测试")
 async def parse_filename_test(
     request: ParseFilenameRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """调用文件名解析模块，返回识别结果 - 🚀 薄层路由"""
     result = parse_filename(request.filename)
@@ -276,7 +276,7 @@ async def get_comments(
 
 @router.get("/ua-rules", response_model=List[UaRule], summary="获取所有UA规则")
 async def get_ua_rules(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db: DatabaseService = Depends(get_database_service)
 ):
     """获取所有 UA 规则 - 🚀 薄层路由"""
@@ -288,7 +288,7 @@ async def get_ua_rules(
 @router.post("/ua-rules", response_model=UaRule, status_code=201, summary="添加UA规则")
 async def add_ua_rule(
     ruleData: UaRuleCreate,
-    currentUser: User = Depends(security.get_current_user),
+    currentUser: User = Depends(get_current_user),
     db: DatabaseService = Depends(get_database_service)
 ):
     """添加新的 UA 规则 - 🚀 薄层路由"""
@@ -301,7 +301,7 @@ async def add_ua_rule(
 @router.delete("/ua-rules/{ruleId}", status_code=204, summary="删除UA规则")
 async def delete_ua_rule(
     ruleId: int,
-    currentUser: User = Depends(security.get_current_user),
+    currentUser: User = Depends(get_current_user),
     db: DatabaseService = Depends(get_database_service)
 ):
     """删除指定的 UA 规则 - 🚀 薄层路由"""
@@ -316,7 +316,7 @@ async def delete_ua_rule(
 
 @router.get("/external-logs", response_model=List[ExternalApiLogInfo], summary="获取最新的外部API访问日志")
 async def get_external_api_logs(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db: DatabaseService = Depends(get_database_service)
 ):
     """获取最新的外部 API 访问日志 - 🚀 薄层路由"""

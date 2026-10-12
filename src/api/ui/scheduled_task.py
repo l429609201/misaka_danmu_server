@@ -7,7 +7,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.services.service_container import get_database_service
 from src.services.scheduler import SchedulerManager
 from src.workflows.scheduled_tasks import ScheduledTaskWorkflow
@@ -35,7 +35,7 @@ async def get_available_jobs(request: Request):
 
 @router.get("/scheduled-tasks", response_model=List[ScheduledTaskInfo], summary="获取所有定时任务")
 async def get_scheduled_tasks(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     scheduler: SchedulerManager = Depends(get_scheduler_manager)
 ):
     tasks = await scheduler.get_all_tasks()
@@ -46,7 +46,7 @@ async def get_scheduled_tasks(
 @router.post("/scheduled-tasks", response_model=ScheduledTaskInfo, status_code=201, summary="创建定时任务")
 async def create_scheduled_task(
     task_data: ScheduledTaskCreate,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     scheduler: SchedulerManager = Depends(get_scheduler_manager)
 ):
     try:
@@ -65,7 +65,7 @@ async def create_scheduled_task(
 async def update_scheduled_task(
     taskId: str,
     task_data: ScheduledTaskUpdate,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     scheduler: SchedulerManager = Depends(get_scheduler_manager)
 ):
     logger.info(f"[调试] 更新定时任务 '{taskId}' - 接收到的 task_data: name={task_data.name}, cronExpression={task_data.cronExpression}, isEnabled={task_data.isEnabled}, taskConfig={task_data.taskConfig}")
@@ -80,13 +80,13 @@ async def update_scheduled_task(
 
 
 @router.delete("/scheduled-tasks/{taskId}", status_code=204, summary="删除定时任务")
-async def delete_scheduled_task(taskId: str, current_user: User = Depends(security.get_current_user), scheduler: SchedulerManager = Depends(get_scheduler_manager)):
+async def delete_scheduled_task(taskId: str, current_user: User = Depends(get_current_user), scheduler: SchedulerManager = Depends(get_scheduler_manager)):
     await scheduler.delete_task(taskId)
 
 
 
 @router.post("/scheduled-tasks/{taskId}/run", status_code=202, summary="立即运行一次定时任务")
-async def run_scheduled_task_now(taskId: str, current_user: User = Depends(security.get_current_user), scheduler: SchedulerManager = Depends(get_scheduler_manager)):
+async def run_scheduled_task_now(taskId: str, current_user: User = Depends(get_current_user), scheduler: SchedulerManager = Depends(get_scheduler_manager)):
     try:
         await scheduler.run_task_now(taskId)
         return {"message": "任务已触发运行"}

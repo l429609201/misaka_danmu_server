@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 
 class ScopeKey:
     """发送范围键常量 — 对应前端业务项"""
+    # Webhook 按触发来源单独订阅，不借用导入范围。
+    WEBHOOK = "webhook"
+    SCHEDULED_TASK = "scheduled_task"
+    TASK_PROGRESS = "task_progress"
+
     # 弹幕入库
     IMPORT_SUCCESS = "import_success"
     IMPORT_FAILED = "import_failed"
@@ -43,13 +48,22 @@ class ScopeKey:
     SYSTEM_STARTUP = "system_startup"
     SYSTEM_EXCEPTION = "system_exception"
     
-    # 批量结果（固定开启，不可配置）
+    # 批量结果
     BATCH_RESULT = "batch_result"
 
 
 class SubscriptionMatcher:
     """订阅匹配器 — 判断事件是否应该发送"""
     
+    @staticmethod
+    def channel_scopes(config: Dict[str, Any]) -> Dict[str, bool]:
+        """提取渠道订阅范围；非法、缺失配置一律关闭，避免旁路推送。"""
+        events = config.get("__events_config", {})
+        if not isinstance(events, dict):
+            return {}
+        scopes = events.get("scopes", {}) if events.get("version") == 2 else events
+        return scopes if isinstance(scopes, dict) else {}
+
     @staticmethod
     def should_send(event_ctx: EventContext, channel_scopes: Dict[str, bool]) -> bool:
         """判断事件是否应该发送到指定渠道
@@ -67,13 +81,10 @@ class SubscriptionMatcher:
             logger.debug(f"事件无法映射到发送范围: {event_ctx.to_dict()}")
             return False
         
-        # 批量结果固定开启
-        if scope_key == ScopeKey.BATCH_RESULT:
-            return True
-        
+        # 批量结果同样需要显式订阅，不能绕过渠道选择。
         # 查询渠道配置
-        enabled = channel_scopes.get(scope_key, False)
-        return enabled
+        # 只接受明确的布尔订阅，缺失、字符串和历史配置均不能扩大推送范围。
+        return isinstance(channel_scopes, dict) and channel_scopes.get(scope_key) is True
     
     @staticmethod
     def _get_scope_key(event_ctx: EventContext) -> Optional[str]:
@@ -90,6 +101,12 @@ class SubscriptionMatcher:
         operation = event_ctx.operation
         status = event_ctx.status
         
+        # 必须先检查来源，未勾选 Webhook 时即使导入开启也不发送。
+        if event_ctx.source == TaskSource.WEBHOOK:
+            return ScopeKey.WEBHOOK
+        if operation == TaskOperation.SCHEDULED_TASK:
+            return ScopeKey.SCHEDULED_TASK
+
         # 弹幕导入
         if operation == TaskOperation.IMPORT:
             if status == TaskStatus.SUCCESS:
@@ -149,6 +166,9 @@ class SubscriptionMatcher:
     def get_default_scopes() -> Dict[str, bool]:
         """获取默认发送范围配置"""
         return {
+            ScopeKey.WEBHOOK: False,
+            ScopeKey.SCHEDULED_TASK: False,
+            ScopeKey.TASK_PROGRESS: False,
             # 弹幕入库：成功和失败都开启
             ScopeKey.IMPORT_SUCCESS: True,
             ScopeKey.IMPORT_FAILED: True,

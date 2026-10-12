@@ -23,6 +23,7 @@ class TaskOperation(str, Enum):
     FALLBACK_PREDOWNLOAD = "fallback_predownload"  # 后备预下载
     FALLBACK_MATCH = "fallback_match"       # 后备匹配
     MEDIA_SCAN = "media_scan"               # 媒体库扫描
+    SCHEDULED_TASK = "scheduled_task"       # 非作品类定时维护任务
 
 
 class TaskSource(str, Enum):

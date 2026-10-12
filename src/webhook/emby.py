@@ -166,7 +166,8 @@ class EmbyWebhook(BaseWebhook):
                 "imdbId": str(imdb_id) if imdb_id else None,
                 "tvdbId": str(tvdb_id) if tvdb_id else None,
                 "bangumiId": str(bangumi_id) if bangumi_id else None,
-                "selectedEpisodes": selected_episodes,
+                # 单集事件也显式携带选集，避免后续任务恢复或派发时丢失集号范围。
+                "selectedEpisodes": selected_episodes if item_type == "Series" else [episode_number],
                 "mediaServerType": "emby",
                 "mediaServerSeriesId": emby_series_id or emby_item_id,
                 "mediaServerSeasonId": emby_season_id if item_type != "Series" else None,

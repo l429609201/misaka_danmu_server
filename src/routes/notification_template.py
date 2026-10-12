@@ -11,7 +11,9 @@ from src.notification.subscription_matcher import ScopeKey, SubscriptionMatcher
 from src.notification.template_resolver import TemplateResolver
 from src.services.service_container import get_database_service
 from src.services.template_renderer import get_template_renderer
-from src.schemas.notification_template import TemplateID, empty_template_variables
+from src.schemas.notification_template import (
+    SCOPE_TEMPLATE_IDS, TemplateID, empty_template_variables, template_order,
+)
 from src.utils.progress_bar import build_progress_bar
 
 logger = logging.getLogger(__name__)
@@ -59,28 +61,51 @@ async def get_available_scopes() -> Dict[str, Any]:
     # 精简后的核心事件：只保留用户真正需要的通知场景
     all_scopes = [
         # 手动操作结果
-        {"key": ScopeKey.IMPORT_SUCCESS, "category": "manual", "label_key": "notification.scopeImportSuccess"},
-        {"key": ScopeKey.IMPORT_FAILED, "category": "manual", "label_key": "notification.scopeImportFailed"},
-        {"key": ScopeKey.REFRESH_SUCCESS, "category": "manual", "label_key": "notification.scopeRefreshSuccess"},
-        {"key": ScopeKey.REFRESH_FAILED, "category": "manual", "label_key": "notification.scopeRefreshFailed"},
+        {"key": ScopeKey.IMPORT_SUCCESS, "category": "import", "label_key": "notification.scopeImportSuccess"},
+        {"key": ScopeKey.IMPORT_FAILED, "category": "import", "label_key": "notification.scopeImportFailed"},
+        {"key": ScopeKey.REFRESH_SUCCESS, "category": "refresh", "label_key": "notification.scopeRefreshSuccess"},
+        {"key": ScopeKey.REFRESH_FAILED, "category": "refresh", "label_key": "notification.scopeRefreshFailed"},
 
         # 自动追更（最重要的通知场景）
-        {"key": ScopeKey.INCREMENTAL_REFRESH_SUCCESS, "category": "auto", "label_key": "notification.scopeIncrementalSuccess"},
-        {"key": ScopeKey.INCREMENTAL_REFRESH_FAILED, "category": "auto", "label_key": "notification.scopeIncrementalFailed"},
+        {"key": ScopeKey.INCREMENTAL_REFRESH_SUCCESS, "category": "refresh", "label_key": "notification.scopeIncrementalSuccess"},
+        {"key": ScopeKey.INCREMENTAL_REFRESH_NO_CHANGE, "category": "refresh", "label_key": "notification.scopeIncrementalNoChange"},
+        {"key": ScopeKey.INCREMENTAL_REFRESH_FAILED, "category": "refresh", "label_key": "notification.scopeIncrementalFailed"},
 
+        # 与模板列表同序，所有发送范围均可显式选择。
+        {"key": ScopeKey.WEBHOOK, "category": "webhook", "label_key": "notification.scopeWebhook"},
+        {"key": ScopeKey.FALLBACK_SUCCESS, "category": "fallback", "label_key": "notification.scopeFallbackSuccess"},
+        {"key": ScopeKey.FALLBACK_FAILED, "category": "fallback", "label_key": "notification.scopeFallbackFailed"},
+        {"key": ScopeKey.MEDIA_SCAN_SUCCESS, "category": "media", "label_key": "notification.scopeMediaSuccess"},
+        {"key": ScopeKey.MEDIA_SCAN_FAILED, "category": "media", "label_key": "notification.scopeMediaFailed"},
+        {"key": ScopeKey.SCHEDULED_TASK, "category": "scheduled", "label_key": "notification.scopeScheduled"},
         # 系统级事件
         {"key": ScopeKey.SYSTEM_STARTUP, "category": "system", "label_key": "notification.scopeSystemStartup"},
         {"key": ScopeKey.SYSTEM_EXCEPTION, "category": "system", "label_key": "notification.scopeSystemException"},
+        {"key": ScopeKey.TASK_PROGRESS, "category": "progress", "label_key": "notification.scopeProgress"},
     ]
+
+    # 每个订阅明确关联模板，列表与类别均由同一模板顺序决定。
+    for scope in all_scopes:
+        scope["templateId"] = SCOPE_TEMPLATE_IDS[scope["key"]]
+    all_scopes.sort(key=lambda scope: template_order(scope["templateId"]))
 
     # 获取默认配置
     default_scopes = SubscriptionMatcher.get_default_scopes()
 
     # 分类的 i18n 键
     category_labels = {
-        "manual": "notification.groupManual",
-        "auto": "notification.groupAuto",
+        "import": "notification.groupImport",
+        "refresh": "notification.groupRefresh",
         "system": "notification.groupSystem",
+        "webhook": "notification.groupWebhook",
+        "fallback": "notification.groupFallback",
+        "media": "notification.groupMedia",
+        "scheduled": "notification.groupScheduled",
+        "progress": "notification.groupTaskProgress",
+    }
+
+    category_labels = {
+        scope["category"]: category_labels[scope["category"]] for scope in all_scopes
     }
 
     # 与本项目其他 UI 接口保持一致：直接返回数据本体，不额外包裹 data 层
@@ -99,6 +124,9 @@ async def get_templates() -> List[Dict[str, Any]]:
     db = get_database_service()
     async with db.transaction():
         templates = await db.notification_template.get_all()
+
+    # 路由显式遵循共享顺序，不依赖仓储返回顺序。
+    templates.sort(key=lambda template: template_order(template["templateId"]))
 
     # 添加显示名称
     for tmpl in templates:
@@ -268,6 +296,10 @@ def _get_sample_variables(template_id: str, status: str) -> Dict[str, Any]:
         "webhook_source": "",
         "image_url": _PREVIEW_IMAGE_URL,
     })
+    if template_id == TemplateID.WEBHOOK:
+        base_vars.update({"action_name": "导入", "trigger_name": "Webhook", "webhook_source": "emby"})
+    elif template_id == TemplateID.SCHEDULED_TASK:
+        base_vars.update({"action_name": "定时任务", "task_title": "清理缓存", "image_url": ""})
     if template_id == TemplateID.TASK_PROGRESS:
         # 进度没有媒体海报；即使历史请求保留图片默认参数也只预览文本。
         base_vars.update({

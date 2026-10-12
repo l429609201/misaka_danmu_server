@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from src.schemas.auth import User
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.services.service_container import get_database_service
 from src.core.timezone import get_now
 
@@ -43,7 +43,7 @@ class PerfFlowStat(BaseModel):
 )
 async def get_perf_stats(
     days: int = Query(7, ge=1, le=90, description="统计天数，1/7/30，最大90天"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> List[PerfFlowStat]:
     """通过性能查询仓储获取流程统计，在短事务结束后构造响应。"""
     db = get_database_service()
@@ -99,7 +99,7 @@ def _fmt_metric(m) -> Dict[str, Any]:
 
 @router.get("/perf/system-metrics", summary="获取系统资源最新指标（分组）")
 async def get_system_metrics(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """读取最新指标及告警，在事务内转换响应以免访问脱离会话的对象。"""
     categories = ["system", "database", "task", "cache"]
@@ -145,7 +145,7 @@ async def get_system_metric_history(
     category: str = Query(..., description="指标大类，如 system/database/task/cache"),
     metric: str = Query(..., description="指标名，如 cpu_usage / db_pool_usage_rate"),
     hours: int = Query(24, ge=1, le=168, description="回溯小时数，1~168（最多7天）"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """通过仓储读取指标历史，在事务内生成按时间正序的响应快照。"""
     start_time = get_now() - timedelta(hours=hours)

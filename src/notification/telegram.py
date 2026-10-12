@@ -12,6 +12,8 @@ import logging
 import threading
 import time
 from typing import Any, Dict, List, Optional
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 try:
     import telebot
@@ -27,6 +29,7 @@ from src.notification.base import (
 from src.notification.markdown_converter import (
     markdown_to_v2, strip_markdown, escape_v2,
 )
+from src.services.file_storage_service import CONFIG_DIR, get_file_storage_service
 from src.workflows.image_resources import load_image_bytes
 from src.utils.misc.image_processing import encode_notification_image
 
@@ -1291,9 +1294,22 @@ class TelegramChannel(BaseNotificationChannel):
         image: str = kwargs.get("image", "") or ""
         # image_bytes：聚合海报 PNG 字节（如后备搜索九宫格），优先级高于单图 URL
         image_bytes: Optional[bytes] = kwargs.get("image_bytes")
+        # 历史相对缓存路径不是 Telegram file_id，需由文件服务确认并转为字节。
+        if image and not urlsplit(image).scheme and not image.startswith("/data/images/"):
+            path = Path(unquote(urlsplit(image).path))
+            candidates = (path,) if path.is_absolute() else (CONFIG_DIR / path, CONFIG_DIR / "image" / path.name)
+            for cached in candidates:
+                if get_file_storage_service().exists(cached):
+                    image = cached.resolve().as_uri()
+                    break
+        if image.startswith("//"):
+            image = "https:" + image
         # 本地 web 路径不是 Telegram file_id；WebP 海报也必须作为兼容字节上传。
         if image and (image.startswith(("/data/images/", "file://")) or image.split("?", 1)[0].lower().endswith(".webp")):
-            image_bytes = image_bytes or await load_image_bytes(image)
+            try:
+                image_bytes = image_bytes or await load_image_bytes(image)
+            except Exception:
+                self.logger.warning("海报读取失败，继续发送文本", exc_info=True)
             image = ""
 
         # ── 正文格式约定 ──
@@ -1318,13 +1334,23 @@ class TelegramChannel(BaseNotificationChannel):
         # image_separate：图片模式 — 图片与文字分两条消息发送。
         # why: 先单独发图（无 caption），再走下方纯文本分支发文字，
         # 观感与企业微信的「图片模式」一致。
-        if kwargs.get("image_separate") and (image or image_bytes) and not edit_message_id:
+        # Telegram caption 上限为 1024 字符；长正文拆图文，不能因模板较长而丢图。
+        separate_image = kwargs.get("image_separate") or len(plain_caption.encode("utf-16-le")) // 2 > 1024
+        if separate_image and (image or image_bytes):
             try:
                 if image_bytes:
                     _photo = await self._prepare_photo(image_bytes)
                     await asyncio.to_thread(self._bot.send_photo, chat_id, _photo)
                 else:
-                    await asyncio.to_thread(self._bot.send_photo, chat_id, image)
+                    try:
+                        await asyncio.to_thread(self._bot.send_photo, chat_id, image)
+                    except Exception:
+                        # 分离图文模式同样允许本机代抓远端海报，读取失败仍保留正文。
+                        raw = await load_image_bytes(image)
+                        if not raw:
+                            raise
+                        _photo = await self._prepare_photo(raw)
+                        await asyncio.to_thread(self._bot.send_photo, chat_id, _photo)
             except Exception as sep_err:
                 self.logger.warning(f"图片模式单独发图失败，改为仅发文本: {sep_err}")
             # 图片已单独发出，后续按纯文本处理
@@ -1426,7 +1452,25 @@ class TelegramChannel(BaseNotificationChannel):
                         # why：外层 except 的 _strip_markdown_v2 不处理 [text](url) 链接语法，
                         # 会把 [海报](URL) 原样打印到消息里（TG 纯文本不渲染 Markdown 链接）。
                         # 改为就地降级，plain_caption 已经过 _strip_markdown_v2 完整清洗。
-                        self.logger.warning(f"send_photo 图片发送失败，降级为纯文字消息（图片 URL 可能不可访问）: {photo_err}")
+                        # Telegram 无法抓取 URL 时由服务器读取再上传，避免直接丢掉海报。
+                        self.logger.warning(f"send_photo URL 发送失败，尝试字节上传: {photo_err}")
+                        raw = None
+                        if image.startswith(("http://", "https://")):
+                            try:
+                                raw = await load_image_bytes(image)
+                            except Exception:
+                                self.logger.warning("远端海报代抓失败，继续发送文本", exc_info=True)
+                        if raw:
+                            try:
+                                photo = await self._prepare_photo(raw)
+                                sent = await asyncio.to_thread(
+                                    self._bot.send_photo, chat_id, photo, caption=plain_caption, reply_markup=markup,
+                                )
+                                if msg_id_out is not None and sent:
+                                    msg_id_out.append(sent.message_id)
+                                return
+                            except Exception as upload_err:
+                                self.logger.warning(f"图片字节上传失败，继续发送文本: {upload_err}")
                         try:
                             # 尝试发送带 markup 的纯文本消息
                             sent = await asyncio.to_thread(self._bot.send_message, chat_id, plain_caption, reply_markup=markup)

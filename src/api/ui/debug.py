@@ -10,9 +10,9 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.utils.auth import security
+from src.api.auth import get_current_user
 # 响应模型直接来自 Schema 层，避免依赖已删除的数据库兼容模块。
-from src.schemas import auth as models
+from src.schemas.auth import User
 from src.services.config_service import ConfigService
 from src.services.scraper_manager import ScraperManager
 from src.services.metadata_service import MetadataService
@@ -59,7 +59,7 @@ class MatchTraceResponse(BaseModel):
 @router.post("/match-trace", summary="匹配过程调试")
 async def match_trace(
     request: MatchTraceRequest,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     metadata_manager: MetadataService = Depends(get_metadata_service),
     config_service: ConfigService = Depends(get_config_service),
@@ -192,7 +192,7 @@ async def match_trace(
         ) if hasattr(metadata_manager, 'is_source_enabled') else False
 
         if has_aux:
-            user_obj = models.User(id=0, username="debug")
+            user_obj = User(id=0, username="debug")
             aliases, supp_results, aux_map, alias_sources = await search_supplemental_sources(metadata_manager,
                 search_title, user_obj
             )

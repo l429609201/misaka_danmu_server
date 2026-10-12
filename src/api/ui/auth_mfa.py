@@ -30,7 +30,9 @@ from webauthn.helpers.structs import (
 from webauthn.helpers import bytes_to_base64url, base64url_to_bytes
 
 from src.services.service_container import get_database_service
-from src.utils.auth import security
+from src.services.auth_service import create_access_token
+from src.api.auth import get_current_user, get_real_client_ip
+from src.utils.auth.passwords import verify_password
 from src.utils.misc.otp import generate_secret, get_totp_uri, verify_otp
 from src.api.dependencies import get_config_service
 from src.services.config_service import ConfigService
@@ -148,7 +150,7 @@ def _get_origin(request: Request) -> str:
 
 @router.get("/status", summary="获取当前用户的 MFA 状态")
 async def get_mfa_status(
-    current_user: orm_models.User = Depends(security.get_current_user)
+    current_user: orm_models.User = Depends(get_current_user)
 ):
     """获取当前用户的 MFA 配置状态（TOTP 是否开启、PassKey 列表）"""
     db = get_database_service()
@@ -184,7 +186,7 @@ async def get_mfa_status(
 
 @router.post("/totp/setup", summary="生成 TOTP 密钥")
 async def setup_totp(
-    current_user: orm_models.User = Depends(security.get_current_user)
+    current_user: orm_models.User = Depends(get_current_user)
 ):
     """
     生成 TOTP 密钥和二维码 URI。
@@ -214,7 +216,7 @@ async def setup_totp(
 @router.post("/totp/verify-setup", status_code=status.HTTP_200_OK, summary="确认 TOTP 设置")
 async def verify_totp_setup(
     data: Dict[str, str],
-    current_user: orm_models.User = Depends(security.get_current_user)
+    current_user: orm_models.User = Depends(get_current_user)
 ):
     """用户扫码后输入验证码，确认 TOTP 设置"""
     secret_bytes = _get_and_consume_challenge(f"totp_setup_{current_user.username}")
@@ -242,7 +244,7 @@ async def verify_totp_setup(
 @router.post("/totp/disable", status_code=status.HTTP_200_OK, summary="关闭 TOTP 两步验证")
 async def disable_totp(
     data: Dict[str, str],
-    current_user: orm_models.User = Depends(security.get_current_user)
+    current_user: orm_models.User = Depends(get_current_user)
 ):
     """关闭 TOTP 两步验证（需要输入当前密码确认）"""
     db = get_database_service()
@@ -262,7 +264,7 @@ async def disable_totp(
     if not password:
         raise HTTPException(status_code=400, detail="缺少密码")
 
-    if not security.verify_password(password, user.hashedPassword):
+    if not verify_password(password, user.hashedPassword):
         raise HTTPException(status_code=400, detail="密码错误")
 
     # 关闭 TOTP 时连带删除所有 PassKey（TOTP 是 PassKey 的前置条件）
@@ -281,7 +283,7 @@ async def disable_totp(
 @router.post("/passkey/register/options", summary="生成 PassKey 注册选项")
 async def passkey_register_options(
     request: Request,
-    current_user: orm_models.User = Depends(security.get_current_user)
+    current_user: orm_models.User = Depends(get_current_user)
 ):
     """
     生成 WebAuthn 注册选项，前端调用 navigator.credentials.create() 时使用。
@@ -336,7 +338,7 @@ async def passkey_register_options(
 async def passkey_register_verify(
     data: Dict[str, Any],
     request: Request,
-    current_user: orm_models.User = Depends(security.get_current_user)
+    current_user: orm_models.User = Depends(get_current_user)
 ):
     """验证浏览器返回的 WebAuthn 注册凭证并保存"""
     db = get_database_service()
@@ -496,7 +498,7 @@ async def passkey_authenticate_verify(
 async def rename_passkey(
     passkey_id: int,
     data: Dict[str, str],
-    current_user: orm_models.User = Depends(security.get_current_user)
+    current_user: orm_models.User = Depends(get_current_user)
 ):
     """重命名指定的 PassKey"""
     db = get_database_service()
@@ -522,7 +524,7 @@ async def rename_passkey(
 @router.delete("/passkey/{passkey_id}", status_code=status.HTTP_200_OK, summary="删除 PassKey")
 async def delete_passkey(
     passkey_id: int,
-    current_user: orm_models.User = Depends(security.get_current_user)
+    current_user: orm_models.User = Depends(get_current_user)
 ):
     """删除指定的 PassKey"""
     db = get_database_service()
@@ -552,15 +554,13 @@ async def _issue_jwt_for_user(
     """MFA 验证通过后签发 JWT 并创建会话，返回 Token 响应体"""
     db = get_database_service()
 
-    async with db.transaction() as session:
-        access_token, jti, expire_minutes = await security.create_access_token(
-            data={"sub": username}, session=session
-        )
+    client_ip = await get_real_client_ip(request, config_service)
+    access_token, jti, expire_minutes = await create_access_token(data={"sub": username})
+    async with db.transaction():
         # 更新用户登录信息
         await db.user.update_login_info(username, access_token)
 
         # 使用登录会话数据域，而非数据库连接会话。
-        client_ip = await security.get_real_client_ip(request, config_service)
         user_agent = request.headers.get("user-agent", "")
         await db.session_store.create(
             user_id=user_id,

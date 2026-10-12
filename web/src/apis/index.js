@@ -523,26 +523,17 @@ export const syncBangumiData = () =>
 /** 清除 bangumi-data 离线索引数据 */
 export const clearBangumiData = () =>
   api.post('/api/ui/bangumi-data/clear')
-/** 获取授权信息 */
-export const getBangumiAuth = () =>
-  api.post('/api/ui/metadata/bangumi/actions/get_auth_state')
-/** 获取授权链接 */
-export const getBangumiAuthUrl = (data) =>
-  api.post('/api/ui/metadata/bangumi/actions/get_auth_url', data)
-/** 注销授权 */
-export const logoutBangumiAuth = () =>
-  api.post('/api/ui/metadata/bangumi/actions/logout')
-/** 刷新/续期授权 (使用 refresh_token，不跳转) */
-export const refreshBangumiAuth = () =>
-  api.post('/api/ui/metadata/bangumi/actions/refresh_token')
-
-/** Trakt OAuth Auth */
-export const getTraktAuthStatus = () =>
-  api.post('/api/ui/metadata/trakt/actions/get_auth_status')
-export const saveTraktOAuth = (data) =>
-  api.post('/api/ui/metadata/trakt/actions/save_oauth', data)
-export const logoutTraktAuth = () =>
-  api.post('/api/ui/metadata/trakt/actions/revoke_auth')
+/** 通用 OAuth：平台差异由服务端注册的提供方处理。 */
+export const getOAuthStatus = provider =>
+  api.get(`/api/ui/oauth/${encodeURIComponent(provider)}/status`)
+export const getOAuthAuthorizeUrl = (provider, data) =>
+  api.post(`/api/ui/oauth/${encodeURIComponent(provider)}/authorize`, data)
+export const exchangeOAuth = (provider, data) =>
+  api.post(`/api/ui/oauth/${encodeURIComponent(provider)}/exchange`, data)
+export const revokeOAuth = provider =>
+  api.delete(`/api/ui/oauth/${encodeURIComponent(provider)}`)
+export const refreshOAuth = provider =>
+  api.post(`/api/ui/oauth/${encodeURIComponent(provider)}/refresh`)
 
 /** ------------------------------------------ 豆瓣、tmdb、tvdb配置、代理------------------------------------------  */
 /** 获取tmdb配置 */

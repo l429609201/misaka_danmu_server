@@ -4,19 +4,25 @@
  * CF Worker 授权完成后 redirect 到此页面，URL 参数中携带 token 信息。
  * 页面提取参数，调后端 API 保存 OAuth 凭据，然后通知父窗口刷新状态。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Spin, Result, Button } from 'antd'
 import { useTranslation } from 'react-i18next'
-import Cookies from 'js-cookie'
-import api from '../../apis/fetch'
+import { exchangeOAuth } from '../../apis'
 
 export default function TraktOAuthCallback() {
   const { t } = useTranslation()
   const [status, setStatus] = useState('loading') // loading | success | error
   const [message, setMessage] = useState('')
+  const exchangeStarted = useRef(false)
 
   useEffect(() => {
+    // 防止 StrictMode 重复消费 state 并交换凭据。
+    if (exchangeStarted.current) return
+    exchangeStarted.current = true
+    const storageKey = 'oauth:trakt:state'
     const url = new URL(window.location.href)
+    const state = url.searchParams.get('state') || sessionStorage.getItem(storageKey)
+    sessionStorage.removeItem(storageKey)
     // CF Worker 回调时会在 URL 参数中携带这些信息
     const accessToken = url.searchParams.get('access_token')
     const user = url.searchParams.get('user')
@@ -39,18 +45,22 @@ export default function TraktOAuthCallback() {
       return
     }
 
-    const token = Cookies.get('danmu_token')
+    if (!state) {
+      setStatus('error')
+      setMessage(t('bgmOAuth.stateMissing'))
+      return
+    }
 
-    // 调后端 API 保存 Trakt OAuth 凭据（含 client_id 用于后续 API 调用，refresh_token/expires_in 用于自动刷新）
-    api.post('/api/ui/metadata/trakt/actions/save_oauth', {
+    // 通用交换接口校验 state 后保存 Worker 载荷。
+    exchangeOAuth('trakt', {
+      state,
+      redirect_uri: `${window.location.origin}/trakt-oauth-callback`,
       accessToken,
       userId: user || '',
       username: name || '',
       clientId: clientId || '',
       refreshToken: refreshToken || '',
       expiresIn: expiresIn ? Number(expiresIn) : undefined,
-    }, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then(res => {
         const data = res.data
@@ -60,7 +70,7 @@ export default function TraktOAuthCallback() {
           // 通知父窗口
           try {
             if (window.opener) {
-              window.opener.postMessage('TRAKT-OAUTH-COMPLETE', '*')
+              window.opener.postMessage('TRAKT-OAUTH-COMPLETE', window.location.origin)
               setTimeout(() => window.close(), 1500)
             }
           } catch (e) {

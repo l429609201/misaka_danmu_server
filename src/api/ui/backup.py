@@ -15,7 +15,7 @@ from sqlalchemy import select, func
 from pydantic import BaseModel
 import shutil
 
-from src.utils.auth import security
+from src.api.auth import get_current_user, oauth2_scheme_optional
 from src.core.timezone import get_now
 from src.services.scheduler import SchedulerManager
 from src.services.database_service import DatabaseService
@@ -76,7 +76,7 @@ class RestoreRequest(BaseModel):
 
 @router.get("/list", response_model=List[BackupInfo], summary="获取备份列表")
 async def get_backup_list(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """获取所有备份文件列表"""
@@ -91,7 +91,7 @@ async def get_backup_list(
 
 @router.post("/create", response_model=BackupCreateResponse, summary="立即创建备份")
 async def create_backup_now(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """立即创建数据库备份"""
@@ -118,18 +118,14 @@ async def download_backup(
     filename: str,
     request: Request,
     token: Optional[str] = Query(None, description="JWT token（用于 window.open 等无法携带 Header 的场景）"),
-    header_token: Optional[str] = Depends(security.oauth2_scheme_optional),
+    header_token: Optional[str] = Depends(oauth2_scheme_optional),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """下载指定的备份文件，支持 query parameter 传递 token"""
     # query parameter 优先（window.open 场景），否则用 header
     final_token = token or header_token
+    current_user = await get_current_user(request=request, token=final_token)
     async with db_service.session() as session:
-        current_user = await security.get_current_user(
-            request=request,
-            token=final_token,
-            session=session,
-        )
         _ = current_user
         backup_path = await get_backup_path(session)
         filepath = _resolve_backup_file_or_400(backup_path, filename)
@@ -147,7 +143,7 @@ async def download_backup(
 @router.delete("/delete/{filename}", summary="删除备份文件")
 async def delete_backup_file(
     filename: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """删除指定的备份文件"""
@@ -167,7 +163,7 @@ async def delete_backup_file(
 @router.delete("/delete-batch", summary="批量删除备份文件")
 async def delete_backup_files_batch(
     filenames: List[str] = Query(..., description="要删除的文件名列表"),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """批量删除备份文件"""
@@ -193,7 +189,7 @@ async def delete_backup_files_batch(
 @router.post("/restore", summary="从备份还原数据库")
 async def restore_from_backup(
     request: RestoreRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """
@@ -241,7 +237,7 @@ async def restore_from_backup(
 
 @router.get("/job-status", response_model=BackupJobStatus, summary="获取备份定时任务状态")
 async def get_backup_job_status(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     scheduler: SchedulerManager = Depends(get_scheduler_manager),
 ):
     """获取数据库备份定时任务的状态"""
@@ -263,7 +259,7 @@ async def get_backup_job_status(
 
 @router.get("/config", summary="获取备份配置")
 async def get_backup_config(
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """获取备份相关配置"""
@@ -280,7 +276,7 @@ async def get_backup_config(
 @router.post("/upload", summary="上传备份文件")
 async def upload_backup_file(
     file: UploadFile = File(...),
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """上传备份文件到服务器"""
@@ -332,7 +328,7 @@ async def upload_backup_file(
 @router.get("/detail/{filename}", summary="获取备份文件详情")
 async def get_backup_detail(
     filename: str,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """获取备份文件的详细信息，包括各表记录数和元数据。"""
@@ -385,7 +381,7 @@ class DryRunRequest(BaseModel):
 @router.post("/dry-run", summary="恢复预检（dry-run）")
 async def backup_dry_run(
     request: DryRunRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """

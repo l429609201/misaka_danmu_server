@@ -6,7 +6,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from src import tasks
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.schemas.auth import User
 from src.schemas.import_schemas import EditedImportRequest
 from src.schemas.ui.search import ImportRequest
@@ -27,7 +27,7 @@ router = APIRouter()
 @router.post("/import", status_code=status.HTTP_202_ACCEPTED, summary="从指定数据源导入弹幕", response_model=UITaskResponse)
 async def import_from_provider(
     request_data: ImportRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, str]:
     """校验源与重复分集后提交导入任务。"""
     # 服务在请求执行时获取，避免模块加载时访问尚未初始化的单例。
@@ -155,7 +155,7 @@ async def import_from_provider(
 @router.post("/import/edited", status_code=status.HTTP_202_ACCEPTED, summary="导入编辑后的分集列表", response_model=UITaskResponse)
 async def import_edited_episodes(
     request_data: EditedImportRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, str]:
     """提交一个后台任务，使用用户在前端编辑过的分集列表进行导入。"""
     task_manager = get_task_manager()
@@ -231,7 +231,7 @@ async def import_edited_episodes(
 @router.post("/import/preview-offset", response_model=EpisodeOffsetPreviewResponse, summary="预览集数偏移效果")
 async def preview_episode_offset(
     request_data: EpisodeOffsetPreviewRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> EpisodeOffsetPreviewResponse:
     """
     根据自定义识别词规则，预览指定标题和集数列表的偏移效果。
@@ -259,7 +259,7 @@ async def preview_episode_offset(
 @router.post("/validate-url", summary="校验并解析导入URL", response_model=ValidateUrlResponse)
 async def validate_import_url(
     request_data: ValidateUrlRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ValidateUrlResponse:
     """动态校验 URL，返回平台、作品信息及可选的合集信息。"""
     scraper_manager = get_scraper_manager()
@@ -325,7 +325,7 @@ async def validate_import_url(
 @router.post("/import-from-url", status_code=status.HTTP_202_ACCEPTED, summary="从URL导入弹幕", response_model=UITaskResponse)
 async def import_from_url(
     request_data: ImportFromUrlRequest,
-    current_user: User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, str]:
     """解析 URL 并提交导入任务，用户指定参数优先于源返回信息。"""
     scraper_manager = get_scraper_manager()

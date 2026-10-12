@@ -113,6 +113,7 @@ class SessionRepository(BaseRepository[UserSession]):
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
         expires_minutes: Optional[int] = None,
+        fresh: bool = False,
     ) -> bool:
         """确保 jti 对应的会话在本次事务后有效，返回是否新建了会话记录。
 
@@ -129,8 +130,8 @@ class SessionRepository(BaseRepository[UserSession]):
         if existing is not None:
             expired = existing.expiresAt is not None and existing.expiresAt < now
             existing.lastUsedAt = now
-            if existing.isRevoked or expired:
-                # 沿用同一 jti 恢复会话，避免唯一键冲突导致签发即失效。
+            if fresh or existing.isRevoked or expired:
+                # 新签发令牌必须同步延长会话，否则新令牌会受旧会话有效期限制。
                 existing.userId = user_id
                 existing.ipAddress = ip_address
                 existing.userAgent = user_agent

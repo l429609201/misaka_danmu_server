@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from src.db import orm_models
 from src.schemas.ui_models import ScraperSettingWithConfig, ScraperSetting
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.services.scraper_manager import ScraperManager
 from src.services.config_service import ConfigService
 from src.services.service_container import get_database_service
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/scrapers/load-check", summary="弹幕源加载兼容性校验结果")
 async def get_scraper_load_check(
-    current_user: orm_models.User = Depends(security.get_current_user),
+    current_user: orm_models.User = Depends(get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager),
 ):
     """
@@ -47,7 +47,7 @@ async def get_scraper_load_check(
 
 @router.get("/scrapers", response_model=List[ScraperSettingWithConfig], summary="获取所有搜索源的设置")
 async def get_scraper_settings(
-    current_user: orm_models.User = Depends(security.get_current_user),
+    current_user: orm_models.User = Depends(get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager),
     config_service: ConfigService = Depends(get_config_service)
 ):
@@ -115,7 +115,7 @@ async def get_scraper_settings(
 @router.put("/scrapers", status_code=status.HTTP_204_NO_CONTENT, summary="更新搜索源的设置")
 async def update_scraper_settings(
     settings: List[ScraperSetting],
-    current_user: orm_models.User = Depends(security.get_current_user),
+    current_user: orm_models.User = Depends(get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager)
 ):
     """批量更新搜索源的启用状态和显示顺序"""
@@ -127,7 +127,7 @@ async def update_scraper_settings(
 @router.get("/scrapers/{providerName}/config", response_model=Dict[str, Any], summary="获取指定搜索源的配置")
 async def get_scraper_config(
     providerName: str,
-    current_user: orm_models.User = Depends(security.get_current_user),
+    current_user: orm_models.User = Depends(get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager),
     config_service: ConfigService = Depends(get_config_service)
 ):
@@ -306,7 +306,7 @@ async def get_scraper_config(
 async def update_scraper_config(
     providerName: str,
     payload: Dict[str, Any],
-    current_user: orm_models.User = Depends(security.get_current_user),
+    current_user: orm_models.User = Depends(get_current_user),
     config_service: ConfigService = Depends(get_config_service),
     manager: ScraperManager = Depends(get_scraper_manager)
 ):
@@ -449,7 +449,7 @@ async def execute_scraper_action(
     providerName: str,
     actionName: str,
     payload: Dict[str, Any] = None,
-    current_user: orm_models.User = Depends(security.get_current_user),
+    current_user: orm_models.User = Depends(get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager)
 ):
     """
@@ -485,7 +485,7 @@ async def execute_scraper_action(
 @router.get("/scrapers/{providerName}/default-blacklist", summary="获取搜索源的默认分集黑名单")
 async def get_scraper_default_blacklist(
     providerName: str,
-    current_user: orm_models.User = Depends(security.get_current_user),
+    current_user: orm_models.User = Depends(get_current_user),
     manager: ScraperManager = Depends(get_scraper_manager)
 ):
     """
@@ -502,7 +502,7 @@ async def get_scraper_default_blacklist(
 
 @router.get("/scrapers/common-blacklist", summary="获取通用分集黑名单规则")
 async def get_common_blacklist(
-    current_user: orm_models.User = Depends(security.get_current_user)
+    current_user: orm_models.User = Depends(get_current_user)
 ):
     """
     获取通用的分集标题黑名单正则表达式。

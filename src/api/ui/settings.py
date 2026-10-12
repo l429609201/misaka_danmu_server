@@ -3,17 +3,13 @@ Settings相关的API端点
 """
 import asyncio
 import logging
-import re
 
-try:
-    import regex as _regex_module
-except ImportError:
-    _regex_module = re
+import regex as _regex_module
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from src.utils.auth import security
-from src.schemas import auth as models
+from src.api.auth import get_current_user
+from src.schemas.auth import User
 from src.services.config_service import ConfigService
 from src.services.service_container import get_database_service, get_title_recognition_service
 from src.core.default_configs import get_default_configs
@@ -33,7 +29,7 @@ router = APIRouter()
 
 @router.get("/settings/title-recognition", response_model=TitleRecognitionContent, summary="获取识别词配置内容")
 async def get_title_recognition_content(
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> TitleRecognitionContent:
     """获取识别词配置；未配置时返回默认示例。"""
     try:
@@ -105,7 +101,7 @@ async def get_title_recognition_content(
 @router.put("/settings/title-recognition", response_model=TitleRecognitionUpdateResponse, summary="更新识别词配置内容")
 async def update_title_recognition_content(
     payload: TitleRecognitionContent,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     title_recognition_service = Depends(get_title_recognition_service)
 ) -> TitleRecognitionUpdateResponse:
     """
@@ -137,7 +133,7 @@ async def update_title_recognition_content(
 @router.post("/settings/title-recognition/test", response_model=TitleRecognitionTestResponse, summary="测试识别词规则")
 async def test_title_recognition_rules(
     payload: TitleRecognitionTestRequest,
-    current_user: models.User = Depends(security.get_current_user),
+    current_user: User = Depends(get_current_user),
     title_recognition_manager = Depends(get_title_recognition_manager)
 ):
     """
@@ -211,7 +207,7 @@ async def test_title_recognition_rules(
 @router.get("/settings/global-filter", response_model=GlobalFilterSettings, summary="获取全局标题过滤规则")
 async def get_global_filter_settings(
     config: ConfigService = Depends(get_config_service),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取用于过滤搜索结果的全局中文和英文黑名单正则表达式。"""
     cn_filter = await config.get("search_result_global_blacklist_cn", "")
@@ -221,7 +217,7 @@ async def get_global_filter_settings(
 
 @router.get("/settings/global-filter/defaults", summary="获取全局标题过滤的默认规则")
 async def get_global_filter_defaults(
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取全局搜索结果标题过滤的默认规则。
@@ -237,7 +233,7 @@ async def get_global_filter_defaults(
 @router.post("/settings/regex-test", response_model=RegexTestResponse, summary="使用后端 Python regex 测试正则")
 async def test_regex_patterns(
     payload: RegexTestRequest,
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """使用后端 Python regex 模块测试一组正则是否命中指定文本。"""
     text = payload.text or ""
@@ -268,7 +264,7 @@ async def test_regex_patterns(
 
 @router.get("/settings/danmaku-blacklist/defaults", summary="获取弹幕黑名单的默认规则")
 async def get_danmaku_blacklist_defaults(
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取弹幕输出黑名单的默认正则规则。
@@ -283,7 +279,7 @@ async def get_danmaku_blacklist_defaults(
 async def update_global_filter_settings(
     payload: GlobalFilterSettings,
     config: ConfigService = Depends(get_config_service),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """更新全局的中文和英文标题过滤黑名单。"""
     await config.set("search_result_global_blacklist_cn", payload.cn)
@@ -294,7 +290,7 @@ async def update_global_filter_settings(
 @router.get("/settings/single-episode-filter", response_model=SingleEpisodeFilterSettings, summary="获取单剧分集过滤规则")
 async def get_single_episode_filter_settings(
     config: ConfigService = Depends(get_config_service),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取单剧分集过滤文本配置。"""
     content = await config.get("singleEpisodeFilterRules", "")
@@ -305,7 +301,7 @@ async def get_single_episode_filter_settings(
 async def update_single_episode_filter_settings(
     payload: SingleEpisodeFilterSettings,
     config: ConfigService = Depends(get_config_service),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """更新单剧分集过滤文本配置。"""
     await config.set("singleEpisodeFilterRules", payload.content)
@@ -319,7 +315,7 @@ DEFAULT_EPISODE_TITLE_FILTER_REGEX = r"""(特别|惊喜|纳凉)?企划(?!(书|�
 @router.get("/settings/global-episode-title-filter", response_model=GlobalEpisodeTitleFilterSettings, summary="获取兜底全局分集标题过滤配置")
 async def get_global_episode_title_filter(
     config: ConfigService = Depends(get_config_service),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """获取兜底全局分集标题过滤的开关和正则。"""
     enabled = await config.get("globalEpisodeTitleFilterEnabled", "false")
@@ -329,7 +325,7 @@ async def get_global_episode_title_filter(
 
 @router.get("/settings/global-episode-title-filter/defaults", summary="获取兜底分集标题过滤的默认正则")
 async def get_global_episode_title_filter_defaults(
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """返回硬编码的默认兜底分集标题过滤正则。"""
     return {"regex": DEFAULT_EPISODE_TITLE_FILTER_REGEX}
@@ -339,7 +335,7 @@ async def get_global_episode_title_filter_defaults(
 async def update_global_episode_title_filter(
     payload: GlobalEpisodeTitleFilterSettings,
     config: ConfigService = Depends(get_config_service),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """更新兜底全局分集标题过滤的开关和正则。"""
     await config.set("globalEpisodeTitleFilterEnabled", "true" if payload.enabled else "false")
@@ -350,7 +346,7 @@ async def update_global_episode_title_filter(
 @router.get("/settings/webhook", response_model=WebhookSettings, summary="获取Webhook设置")
 async def get_webhook_settings(
     config: ConfigService = Depends(get_config_service),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     # 使用 asyncio.gather 并发获取所有配置项
     (
@@ -388,7 +384,7 @@ async def get_webhook_settings(
 async def update_webhook_settings(
     payload: WebhookSettings,
     config: ConfigService = Depends(get_config_service),
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     # 使用 asyncio.gather 并发保存所有配置项
     await asyncio.gather(

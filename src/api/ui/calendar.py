@@ -19,7 +19,7 @@ from src.services.scraper_manager import ScraperManager
 from src.services.task_manager import TaskManager
 from src.services.ai_service import AIService
 from src.services.config_service import ConfigService
-from src.utils.auth import security
+from src.api.auth import get_current_user
 from src.workflows.calendar.weekly_flow import get_weekly_calendar_flow
 from src.workflows.calendar.cache_flow import clear_calendar_cache_flow
 from src.workflows.calendar.schedule_flow import sync_calendar_schedule
@@ -55,7 +55,7 @@ def _subscription_context(
 
 @router.get("/weekly")
 async def get_weekly_calendar(
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     metadata_manager: MetadataService = Depends(get_metadata_service),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
 ):
@@ -103,7 +103,7 @@ async def get_tmdb_title(
 
 @router.post("/clear-cache", summary="清除日历同步缓存（Trakt/Bangumi 日历结果）")
 async def clear_calendar_cache(
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
 ) -> dict:
     """清除日历缓存，保留订阅意向及订阅扫描产生的子候选项。"""
     try:
@@ -119,7 +119,7 @@ async def clear_calendar_cache(
 
 @router.post("/sync-bangumi-schedule")
 async def sync_bangumi_schedule(
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     metadata_manager: MetadataService = Depends(get_metadata_service),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
 ):
@@ -132,7 +132,7 @@ async def sync_bangumi_schedule(
 
 @router.get("/discover")
 async def discover_current_season(
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     metadata_manager: MetadataService = Depends(get_metadata_service),
 ):
     """返回当季 Bangumi 日历及本地收录状态。"""
@@ -146,7 +146,7 @@ async def discover_current_season(
 @router.post("/subscribe", summary="订阅外部番（标记订阅意向，可选立即执行轮询）")
 async def subscribe_calendar_item(
     body: SubscribeRequest,
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     context: CalendarSubscriptionContext = Depends(_subscription_context),
 ):
     """登记外部日历订阅并按需提交导入任务。"""
@@ -156,7 +156,7 @@ async def subscribe_calendar_item(
 @router.post("/subscribe/batch", summary="批量订阅外部番（可选立即执行轮询）")
 async def subscribe_calendar_items_batch(
     body: BatchSubscribeRequest,
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
     context: CalendarSubscriptionContext = Depends(_subscription_context),
 ):
     """逐项提交日历订阅并返回每项结果。"""
@@ -166,7 +166,7 @@ async def subscribe_calendar_items_batch(
 @router.post("/unsubscribe", summary="取消订阅（统一处理本地取消追更 + 外部取消订阅）")
 async def unsubscribe_calendar_item(
     body: UnsubscribeRequest,
-    user: User = Depends(security.get_current_user),
+    user: User = Depends(get_current_user),
 ) -> dict:
     """取消外部日历订阅或本地追更。"""
     return await unsubscribe_calendar_item_flow(body)
