@@ -267,6 +267,21 @@ class TaskManager:
         # 再启动后台 worker
         self.start()
 
+    @staticmethod
+    def _format_execution_time(started_at: float) -> str:
+        """将单调时钟计算的执行耗时格式化为时、分、秒。"""
+        # 排队时间不计入；单调时钟避免系统校时影响耗时，最低显示整数秒。
+        total_seconds = max(0, int(time.monotonic() - started_at))
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        parts = []
+        if hours:
+            parts.append(f"{hours} 时")
+        if hours or minutes:
+            parts.append(f"{minutes} 分")
+        parts.append(f"{seconds} 秒")
+        return f"（ 执行时间 {' '.join(parts)} ）"
+
     async def _run_task_wrapper(self, task: Task, queue_type: str = "download"):
         """
         一个独立的包装器，用于在后台安全地执行单个任务。
@@ -278,6 +293,7 @@ class TaskManager:
         """
         self.logger.info(f"开始执行任务 '{task.title}' (ID: {task.task_id}) [队列: {queue_type}]")
         paused_for_rate_limit = False
+        execution_started_at = time.monotonic()
         try:
             # This task is now running, remove it from pending titles
             # This is now the single point of responsibility for this cleanup.
@@ -312,6 +328,8 @@ class TaskManager:
                 # why：允许任务以非空字符串返回业务完成消息，避免正常返回路径把
                 # “新增 N 条弹幕”等结果覆盖成笼统的“任务成功完成”。
                 final_message = task_result if isinstance(task_result, str) and task_result.strip() else "任务成功完成"
+                # 所有队列统一追加执行耗时，保留原有业务完成说明。
+                final_message = f"{final_message}{self._format_execution_time(execution_started_at)}"
 
                 # ? 改用 DatabaseService
                 async with self._db.transaction():
@@ -345,6 +363,7 @@ class TaskManager:
         except TaskSuccess as e:
             self.logger.debug(f"捕获到 TaskSuccess 异常: {e}")
             final_message = str(e) if str(e) else "任务成功完成"
+            final_message = f"{final_message}{self._format_execution_time(execution_started_at)}"
             await self._safe_finalize_task(task.task_id, TaskStatus.COMPLETED, final_message)
             self.logger.info(f"任务 '{task.title}' (ID: {task.task_id}) 已成功完成，消息: {final_message}")
             await self._emit_task_event(task, True, final_message)
@@ -774,16 +793,22 @@ class TaskManager:
                 async with self._lock:
                     self._immediate_tasks[task_id] = task
 
-                # 定时任务超时保护：管理队列任务 15 分钟，下载队列任务 30 分钟
-                immediate_timeout = 900 if queue_type == "management" else 1800
+                # 管理任务可能逐项刮削整个媒体库，不设置总时限；其他队列保留超时保护。
+                immediate_timeout = None if queue_type == "management" else 1800
 
                 async def _run_and_cleanup():
                     try:
-                        await asyncio.wait_for(
-                            self._run_task_wrapper(task, queue_type=queue_type),
-                            timeout=immediate_timeout
-                        )
+                        if immediate_timeout is None:
+                            await self._run_task_wrapper(task, queue_type=queue_type)
+                        else:
+                            await asyncio.wait_for(
+                                self._run_task_wrapper(task, queue_type=queue_type),
+                                timeout=immediate_timeout
+                            )
                     except asyncio.TimeoutError:
+                        # 未设置总时限时，内部超时不能被误报为任务总时限到期。
+                        if immediate_timeout is None:
+                            raise
                         self.logger.error(f"立即执行任务 '{title}' (ID: {task_id}) 超时（{immediate_timeout}秒），强制终止")
                         # 确保内部 running_coro_task 被取消
                         if task.running_coro_task and not task.running_coro_task.done():
