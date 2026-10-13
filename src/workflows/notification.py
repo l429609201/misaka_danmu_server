@@ -337,6 +337,9 @@ class NotificationWorkflow:
         variables = empty_template_variables()
         variables.update(event_payload.get("subject") or {})
         variables.update(event_payload.get("context") or {})
+        # 系统启动事件通常没有 message 字段，复用消息正文为默认模板提供内容。
+        if isinstance(message, UnifiedSystemMessage) and not variables.get("message"):
+            variables["message"] = message.to_markdown()[1]
         variables.update({key: value for key, value in event_payload.items()
                          if key not in ("subject", "context", "source", "operation", "status", "event_type")})
         status = event_payload.get("status") or ""

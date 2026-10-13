@@ -420,6 +420,9 @@ class BaseNotificationChannel(ABC):
         if rendered.edit_message_id:
             kwargs["edit_message_id"] = rendered.edit_message_id
         kwargs.update(rendered.metadata)
+        # 模板标题与正文分开渲染；正文为空时仍发送标题，避免平台拒绝空消息。
+        if not body.strip() and title.strip():
+            body = title
         kwargs["article_title"] = title
         await self.send_message(title="", text=body, **kwargs)
 

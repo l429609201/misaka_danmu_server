@@ -1322,6 +1322,9 @@ class TelegramChannel(BaseNotificationChannel):
         # 传输格式，换发送方式就得反向还原一遍。现在统一为标准 Markdown 入、
         # 各自转义出，新增发送方式不必再关心历史包袱。
         md_body = f"**{title}**\n{text}" if title else text
+        # 空模板不能交给 Telegram，也不能被上层记录成发送成功。
+        if not md_body.strip() and not (image or image_bytes):
+            raise ValueError("Telegram 通知标题和正文均为空")
         caption = self._markdown_to_v2(md_body)
         plain_caption = self._strip_markdown_v2(caption)
         # edit_message_id：有则 edit 已有消息，无则发新消息
@@ -1510,8 +1513,9 @@ class TelegramChannel(BaseNotificationChannel):
                 )
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)
-            except Exception:
-                pass
+            except Exception as fallback_error:
+                # 最后一次兜底也失败时向上传播，编排层才能正确记录渠道发送失败。
+                raise RuntimeError("Telegram 消息发送及纯文本兜底均失败") from fallback_error
 
     def render_progress_text(self, progress: int, description: str) -> str:
         """渲染进度条，产出**标准 Markdown**。

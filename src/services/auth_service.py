@@ -98,23 +98,24 @@ async def get_user_from_token(
         db = get_database_service()
         async with db.transaction():
             secret = await get_config_service().get("jwtSecretKey", settings.jwt.secret_key)
-            try:
-                payload = jwt.decode(token, secret, algorithms=[settings.jwt.algorithm])
-            except JWTError as error:
-                raise AuthenticationError("Could not validate credentials") from error
-            username = payload.get("sub")
-            token_jti = payload.get("jti")
-            if not isinstance(username, str) or not username:
-                raise AuthenticationError("Could not validate credentials")
-            if not isinstance(token_jti, str) or not token_jti or token_jti.startswith("whitelist_") or "exp" not in payload:
-                raise AuthenticationError("Could not validate credentials")
-            # 每个令牌必须对应可撤销的持久化会话，不接受无会话旧凭据。
-            if not await db.session_store.validate(token_jti):
-                raise AuthenticationError("Could not validate credentials")
-            record = await db.user.get_by_username(username)
-            if record is None:
-                raise AuthenticationError("Could not validate credentials")
-            user = User.model_validate(record)
+        # JWT 校验不操作数据库，在事务外拒绝无效凭据，避免误报为事务故障。
+        try:
+            payload = jwt.decode(token, secret, algorithms=[settings.jwt.algorithm])
+        except JWTError as error:
+            raise AuthenticationError("Could not validate credentials") from error
+        username = payload.get("sub")
+        token_jti = payload.get("jti")
+        if not isinstance(username, str) or not username:
+            raise AuthenticationError("Could not validate credentials")
+        if not isinstance(token_jti, str) or not token_jti or token_jti.startswith("whitelist_") or "exp" not in payload:
+            raise AuthenticationError("Could not validate credentials")
+        # 每个令牌必须对应可撤销的持久化会话，不接受无会话旧凭据。
+        async with db.transaction():
+            valid_session = await db.session_store.validate(token_jti)
+            record = await db.user.get_by_username(username) if valid_session else None
+        if record is None:
+            raise AuthenticationError("Could not validate credentials")
+        user = User.model_validate(record)
         return user, token_jti
     except AuthenticationError:
         raise
