@@ -153,6 +153,17 @@ class WebhookTaskRepository(BaseRepository[WebhookTask]):
         await self._session.flush()  # Repository 只 flush，不 commit
         return result.rowcount
 
+    async def get_pending_snapshots(self) -> List[Dict[str, Any]]:
+        """读取全部待处理快照，供手动执行跳过延迟时间。"""
+        result = await self._session.execute(
+            select(WebhookTask).where(WebhookTask.status == "pending")
+        )
+        return [
+            {"id": task.id, "payload": task.payload, "title": task.taskTitle,
+             "unique_key": task.uniqueKey, "source": task.webhookSource}
+            for task in result.scalars().all()
+        ]
+
     async def get_due_snapshots(self) -> List[Dict[str, Any]]:
         """读取全部到期待处理记录，返回可在事务外使用的值快照。"""
         result = await self._session.execute(

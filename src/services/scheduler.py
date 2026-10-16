@@ -68,7 +68,9 @@ class SchedulerManager:
             for job in self._job_classes.values()
         ]
 
-    def _create_job_runner(self, job_type: str, scheduled_task_id: str) -> Callable:
+    def _create_job_runner(
+        self, job_type: str, scheduled_task_id: str, *, manual_run: bool = False,
+    ) -> Callable:
         """创建一个包装器，用于在 TaskManager 中运行任务，并等待其完成。"""
         job_class = self._job_classes[job_type]
 
@@ -108,6 +110,10 @@ class SchedulerManager:
                     return lambda session, callback: job_instance.run(session, callback)
 
             task_coro_factory = make_task_coro(task_config)
+            if manual_run and job_type == "webhookProcessor":
+                task_coro_factory = lambda session, callback: job_instance.run(
+                    session, callback, manual_run=True
+                )
             task_id, _ = await self.task_manager.submit_task(
                 task_coro_factory,
                 job_instance.job_name,
@@ -218,7 +224,7 @@ class SchedulerManager:
             return True
 
     async def run_task_now(self, task_id: str):
-        """立即运行指定的定时任务"""
+        """立即运行指定的定时任务，并让 Webhook 执行器处理全部待处理记录。"""
         async with self._db.transaction():
             task_info = await self._db.scheduled_task.get_scheduled_task(task_id)
             if not task_info:
@@ -229,7 +235,8 @@ class SchedulerManager:
             raise ValueError(f"调度器中找不到ID为 '{task_id}' 的任务")
 
         # 修正：直接使用数据库中的 jobType，而不是从 job.func.keywords 获取
-        runner = self._create_job_runner(task_info['jobType'], task_id)
+        # 手动触发需要绕过 Webhook 延迟时间；自动调度仍只处理到期记录。
+        runner = self._create_job_runner(task_info['jobType'], task_id, manual_run=True)
         await runner()
 
         # 手动运行后更新运行时间

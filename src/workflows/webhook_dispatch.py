@@ -145,12 +145,19 @@ async def dispatch_pending_webhooks(task_ids: list[int], context: WebhookDispatc
 
 
 async def dispatch_due_webhooks(
-    context: WebhookDispatchContext, progress_callback: Callable[[int, str], Any],
+    context: WebhookDispatchContext,
+    progress_callback: Callable[[int, str], Any],
+    *,
+    include_future: bool = False,
 ) -> None:
-    """逐条提交到期任务，失败记录状态，成功或队列重复则清理。"""
+    """逐条提交待处理任务；手动运行时可跳过计划时间限制。"""
     db = get_database_service()
     async with db.transaction():
-        due_tasks = await db.webhook_task.get_due_snapshots()
+        due_tasks = (
+            await db.webhook_task.get_pending_snapshots()
+            if include_future
+            else await db.webhook_task.get_due_snapshots()
+        )
     if not due_tasks:
         await progress_callback(100, "没有需要处理的 Webhook 任务。")
         return

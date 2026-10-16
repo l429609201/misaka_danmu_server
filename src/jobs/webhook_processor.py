@@ -20,7 +20,9 @@ class WebhookProcessorJob(BaseJob):
     description_tw = "定期檢查並處理來自Emby/Jellyfin等媒體伺服器的延時Webhook請求，自動匯入新增的劇集彈幕。"
 
     @profile_flow(FLOW_WEBHOOK_PROCESSOR)
-    async def run(self, session: AsyncSession, progress_callback: Callable) -> None:
+    async def run(
+        self, session: AsyncSession, progress_callback: Callable, *, manual_run: bool = False,
+    ) -> None:
         """委托 Workflow 提交到期任务；调度层不操作 ORM 或事务。"""
         del session
         await progress_callback(0, "开始检查待处理的 Webhook 任务...")
@@ -35,4 +37,5 @@ class WebhookProcessorJob(BaseJob):
                 title_recognition_manager=self.title_recognition_manager,
             ),
             progress_callback,
+            include_future=manual_run,
         )

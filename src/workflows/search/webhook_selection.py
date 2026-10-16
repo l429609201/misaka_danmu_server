@@ -83,11 +83,15 @@ async def select_webhook_result(
     fallback_enabled = (await config_service.get("webhookFallbackEnabled", "false")).lower() == "true"
     best_match = await selector.select_best(
         candidates=results,
-        query_info={"title": title, "season": season, "episode": episode, "year": year, "type": media_type},
+        # 与统一选择器保持一致，分别传递查询条件供 AI 和传统匹配使用。
+        query_title=title,
+        query_season=season,
+        query_episode=episode,
+        query_year=year,
+        media_type=media_type,
         existing_source_keys=existing_source_keys,
         session=session,
         enable_ai=True,
-        enable_traditional=True,
         enable_defer_validation=fallback_enabled,
         enable_fallback=True,
     )
