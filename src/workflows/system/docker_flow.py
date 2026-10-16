@@ -4,7 +4,8 @@ Docker 管理相关的 workflow 编排层
 import asyncio
 import json
 import logging
-from typing import Dict, Any
+import time
+from typing import Dict, Any, AsyncIterator
 
 from src.services.config_service import ConfigService
 from src.utils.runtime.docker_utils import (
@@ -12,6 +13,8 @@ from src.utils.runtime.docker_utils import (
     DOCKER_SOCKET_PATH,
     is_docker_socket_available,
     get_current_container_id,
+    get_container_stats,
+    _format_bytes,
 )
 from src._version import GITHUB_OWNER, GITHUB_REPO
 
@@ -47,23 +50,33 @@ async def workflow_get_docker_status() -> Dict[str, Any]:
     return status_data
 
 
-async def workflow_get_docker_stats_stream():
-    """获取 Docker 统计信息流的 workflow（生成器）"""
+async def workflow_get_docker_stats_stream() -> AsyncIterator[str]:
+    """持续采样容器统计；连接关闭后不再调度采样。"""
+    previous = None
     try:
-        if not is_docker_socket_available():
-            yield f"data: {json.dumps({'available': False, 'message': 'Docker socket 不可用'})}\n\n"
-            return
-        
-        container_id = get_current_container_id()
-        if not container_id:
-            yield f"data: {json.dumps({'available': False, 'message': '未检测到当前容器 ID'})}\n\n"
-            return
-        
-        yield f"data: {json.dumps({'available': True, 'containerId': container_id, 'message': '功能开发中'})}\n\n"
-        
+        while True:
+            # SDK 为阻塞调用；逐次等待采样，不创建无限队列或常驻采集线程。
+            stats = await asyncio.to_thread(get_container_stats)
+            sampled_at = time.monotonic()
+            if stats.get("available"):
+                network = stats.get("network", {})
+                rx, tx = network.get("rxBytes", 0), network.get("txBytes", 0)
+                rx_rate = tx_rate = 0.0
+                if previous and previous[0] == stats.get("containerId"):
+                    elapsed = sampled_at - previous[1]
+                    if elapsed > 0:
+                        rx_rate = max(0, rx - previous[2]) / elapsed
+                        tx_rate = max(0, tx - previous[3]) / elapsed
+                network.update(rxRateFormatted=f"{_format_bytes(rx_rate)}/s",
+                               txRateFormatted=f"{_format_bytes(tx_rate)}/s")
+                previous = (stats.get("containerId"), sampled_at, rx, tx)
+            else:
+                previous = None
+            yield f"data: {json.dumps(stats, ensure_ascii=False)}\n\n"
+            await asyncio.sleep(2)
     except Exception as e:
         logger.error(f"获取 Docker 统计信息失败: {e}")
-        yield f"data: {json.dumps({'available': False, 'error': str(e)})}\n\n"
+        yield f"data: {json.dumps({'available': False, 'message': str(e)})}\n\n"
 
 
 async def workflow_restart_service(
