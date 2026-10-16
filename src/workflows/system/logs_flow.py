@@ -80,8 +80,8 @@ async def workflow_stream_logs():
     这是一个异步生成器，用于 StreamingResponse
     """
     async def event_generator():
-        # 创建一个队列用于接收新日志
-        log_queue = asyncio.Queue()
+        # 慢客户端只缓冲有限日志，满时由发布端丢弃，避免搜索日志持续堆积。
+        log_queue = asyncio.Queue(maxsize=200)
 
         # 订阅日志更新
         subscribe_to_logs(log_queue)

@@ -121,8 +121,8 @@ class MetadataSourceQueryRepository:
         for s in settings:
             source = await self._session.get(MetadataSource, s.providerName)
             if source:
-                source.isEnabled = s.isEnabled
-                source.isFailoverEnabled = s.isFailoverEnabled
+                # 批量接口只更新辅助搜索开关和排序，其余开关由独立设置接口管理。
+                source.isAuxSearchEnabled = s.isAuxSearchEnabled
                 source.displayOrder = s.displayOrder
 
     async def update_metadata_source_specific_settings(

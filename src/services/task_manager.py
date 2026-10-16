@@ -556,6 +556,8 @@ class TaskManager:
             finally:
                 set_current(None)
                 queue.task_done()
+                # 等待下一项任务前释放局部引用，避免空闲 worker 保留任务闭包及其数据。
+                del task
 
     async def _download_worker(self, worker_id: int):
         """从下载队列中获取并执行任务（复用通用骨架）。

@@ -40,8 +40,8 @@ def create_buffered_logger(provider_name: str, task_id: int) -> Tuple[logging.Lo
     handler = BufferedLogHandler()
     handler.setLevel(logging.DEBUG)
 
-    temp_logger = logging.getLogger(f"_buf_.{provider_name}.{task_id}")
-    temp_logger.handlers.clear()
+    # 临时实例不能注册到全局 loggerDict，否则每次搜索的 logger/handler 都会永久驻留。
+    temp_logger = logging.Logger(f"_buf_.{provider_name}.{task_id}")
     temp_logger.addHandler(handler)
     temp_logger.propagate = False
     temp_logger.setLevel(logging.DEBUG)
