@@ -873,15 +873,15 @@ class SystemMetric(Base):
 
     # ===== 指标标识 =====
     category: Mapped[str] = mapped_column(
-        String(50), nullable=False, index=True,
+        String(50), nullable=False,
         comment='指标大类: database/task/cache/api/system/custom'
     )
     subcategory: Mapped[Optional[str]] = mapped_column(
-        String(50), nullable=True, index=True,
+        String(50), nullable=True,
         comment='指标子类: pool/queue/slow_query/hit_rate/response_time/cpu/memory等'
     )
     metricName: Mapped[str] = mapped_column(
-        "metric_name", String(100), nullable=False, index=True,
+        "metric_name", String(100), nullable=False,
         comment='指标名称（唯一标识符）'
     )
     displayName: Mapped[Optional[str]] = mapped_column(
@@ -918,7 +918,7 @@ class SystemMetric(Base):
 
     # ===== 阈值和状态 =====
     status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default='normal', index=True,
+        String(20), nullable=False, default='normal',
         comment='状态: normal/warning/critical/unknown'
     )
     thresholdWarning: Mapped[Optional[float]] = mapped_column(
@@ -932,7 +932,7 @@ class SystemMetric(Base):
 
     # ===== 元数据和标签 =====
     serverInstance: Mapped[Optional[str]] = mapped_column(
-        "server_instance", String(100), nullable=True, index=True,
+        "server_instance", String(100), nullable=True,
         comment='服务器实例标识（多实例部署时区分）'
     )
     tags: Mapped[Optional[str]] = mapped_column(
@@ -964,19 +964,11 @@ class SystemMetric(Base):
         comment='记录创建时间'
     )
 
-    # ===== 复合索引优化 =====
+    # ===== 复合索引 =====
+    # why：原有 17 个索引（大量重复前缀）使每行写入/删除需维护十余个索引条目，
+    # 清理历史数据时打满数据库 IO。保留 collected_at 单列索引（清理/时间范围）
+    # 与 (category, metric_name, collected_at)（趋势/最新值查询，前缀覆盖按分类查询）。
     __table_args__ = (
-        # 按分类查询最近指标
-        Index('idx_metric_category_time', 'category', 'collected_at'),
-        # 按子类查询
-        Index('idx_metric_subcat_time', 'subcategory', 'collected_at'),
-        # 按指标名查询时间序列
-        Index('idx_metric_name_time', 'metric_name', 'collected_at'),
-        # 按状态查询异常指标
-        Index('idx_metric_status_time', 'status', 'collected_at'),
-        # 多实例环境按实例查询
-        Index('idx_metric_instance_time', 'server_instance', 'collected_at'),
-        # 复合查询优化
         Index('idx_metric_cat_name_time', 'category', 'metric_name', 'collected_at'),
         {'comment': '系统性能指标通用表'}
     )

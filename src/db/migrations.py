@@ -838,6 +838,39 @@ async def _isolate_assistant_sessions_v1(conn: AsyncConnection):
         ))
 
 
+# system_metrics 精简后保留的索引（与 ORM 模型保持一致）
+_SYSTEM_METRICS_KEEP_INDEXES = {"ix_system_metrics_collected_at", "idx_metric_cat_name_time"}
+
+
+async def _slim_system_metrics_indexes_v1(conn: AsyncConnection, db_type: str):
+    """删除 system_metrics 上冗余的非唯一二级索引。
+
+    why：该表原有十余个重复前缀索引，写入/清理时索引维护开销远大于数据本身，
+    曾导致一次历史清理打满 MySQL CPU/IO。create_all 不会删除旧索引，需迁移处理。
+    """
+    if db_type == 'mysql':
+        rows = await conn.execute(text("""
+            SELECT DISTINCT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'system_metrics'
+            AND INDEX_NAME <> 'PRIMARY' AND NON_UNIQUE = 1
+        """))
+        for (name,) in rows.fetchall():
+            if name not in _SYSTEM_METRICS_KEEP_INDEXES:
+                await conn.execute(text(f"ALTER TABLE `system_metrics` DROP INDEX `{name}`"))
+                logger.info("  已删除 system_metrics 冗余索引 %s", name)
+    else:
+        rows = await conn.execute(text("""
+            SELECT i.relname FROM pg_index x
+            JOIN pg_class i ON i.oid = x.indexrelid
+            JOIN pg_class t ON t.oid = x.indrelid
+            WHERE t.relname = 'system_metrics' AND NOT x.indisunique AND NOT x.indisprimary
+        """))
+        for (name,) in rows.fetchall():
+            if name not in _SYSTEM_METRICS_KEEP_INDEXES:
+                await conn.execute(text(f'DROP INDEX IF EXISTS "{name}"'))
+                logger.info("  已删除 system_metrics 冗余索引 %s", name)
+
+
 # 所有迁移任务的 ID 列表（新增迁移时需同步更新此列表）
 ALL_MIGRATION_IDS = [
     "migrate_clear_rate_limit_state_v1",
@@ -855,6 +888,7 @@ ALL_MIGRATION_IDS = [
     "reset_server_instance_id_v2",
     "reset_notification_subscriptions_v1",
     "isolate_assistant_sessions_v1",
+    "slim_system_metrics_indexes_v1",
 ]
 
 
@@ -898,6 +932,7 @@ async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
         ("reset_server_instance_id_v2", _reset_server_instance_id_v2, ()),  # 重置为带归属标记的可反解格式
         ("reset_notification_subscriptions_v1", _reset_notification_subscriptions_v1, ()),  # 清空旧订阅配置
         ("isolate_assistant_sessions_v1", _isolate_assistant_sessions_v1, ()),  # 历史会话不自动归属
+        ("slim_system_metrics_indexes_v1", _slim_system_metrics_indexes_v1, (db_type,)),  # 删除 system_metrics 冗余索引
     ]
 
     for migration_id, migration_func, args in migrations:

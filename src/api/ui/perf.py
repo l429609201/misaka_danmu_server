@@ -144,7 +144,8 @@ class MetricHistoryPoint(BaseModel):
 async def get_system_metric_history(
     category: str = Query(..., description="指标大类，如 system/database/task/cache"),
     metric: str = Query(..., description="指标名，如 cpu_usage / db_pool_usage_rate"),
-    hours: int = Query(24, ge=1, le=168, description="回溯小时数，1~168（最多7天）"),
+    # 指标仅保留 1 天，回溯上限同步收敛到 24 小时
+    hours: int = Query(24, ge=1, le=24, description="回溯小时数，1~24（指标保留 1 天）"),
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """通过仓储读取指标历史，在事务内生成按时间正序的响应快照。"""

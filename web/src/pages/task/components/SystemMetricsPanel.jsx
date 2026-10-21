@@ -238,7 +238,7 @@ export const SystemMetricsPanel = () => {
           options={[
             { label: t('systemMetrics.range6h'), value: 6 },
             { label: t('systemMetrics.range24h'), value: 24 },
-            { label: t('systemMetrics.range7d'), value: 168 },
+            // 指标仅保留 1 天，不再提供 7 天范围
           ]}
           style={{ marginBottom: 16 }}
         />

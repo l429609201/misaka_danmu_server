@@ -481,15 +481,24 @@ class PerformanceQueryRepository:
 
         await self._session.flush()
 
-    async def delete_old_metrics(self, retain_days: int = 7) -> int:
-        """清理超过保留天数的系统指标，返回删除行数。
+    async def delete_old_metrics(self, cutoff: datetime, batch_size: int = 5000) -> int:
+        """删除一批早于 cutoff 的系统指标，返回本批删除行数。
 
-        why：采集任务每分钟写入约 15 行且此前没有任何清理调用方，表无限增长，
-        仪表盘聚合查询随之扫描越来越多行；集合式 DELETE 不把行载入内存。
+        why：单条无界 DELETE 曾一次删除百万行，长事务打满 MySQL CPU/IO 并留下
+        大量 undo；这里每次只删一批，由流程层用独立短事务循环调用。
+        先按主键选出一批 id 再删除，兼容 MySQL/PostgreSQL（DELETE 不支持可移植 LIMIT）。
         """
-        cutoff = get_now() - timedelta(days=retain_days)
+        id_rows = await self._session.execute(
+            select(SystemMetric.id)
+            .where(SystemMetric.collectedAt < cutoff)
+            .order_by(SystemMetric.id)
+            .limit(batch_size)
+        )
+        ids = [row[0] for row in id_rows]
+        if not ids:
+            return 0
         result = await self._session.execute(
-            delete(SystemMetric).where(SystemMetric.collectedAt < cutoff)
+            delete(SystemMetric).where(SystemMetric.id.in_(ids))
         )
         await self._session.flush()
         return int(result.rowcount or 0)
