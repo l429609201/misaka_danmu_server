@@ -20,6 +20,9 @@ async def fetch_aliases(
 ) -> Optional[Dict[str, Any]]:
     """按 TMDB ID、本地索引、标题搜索的既有优先级获取结构化别名。"""
     user = User(id=0, username="system")
+    # 调用方传入的是库内类型（tv_series/movie/ova/other），TMDB 路径只接受 tv/movie；
+    # 原样透传会请求 /search/tv_series 导致 404，这里统一映射。
+    media_type = "movie" if media_type == "movie" else "tv"
     if tmdb_id:
         try:
             # 明确媒体类型，避免同号电影和剧集的详情串用。

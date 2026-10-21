@@ -4,24 +4,40 @@ import asyncio
 import collections
 from pathlib import Path
 import re
-from typing import List, Set
+from threading import Lock
+from typing import Dict, List
 
 from src.core.env import is_docker_environment
 from src.services.file_storage_service import get_file_storage_service
 
 _logs_deque = collections.deque(maxlen=200)
-_log_subscribers: Set[asyncio.Queue] = set()
+_log_subscribers: Dict[asyncio.Queue, asyncio.AbstractEventLoop] = {}
+_subscriber_lock = Lock()
 _LOG_FILE_RE = re.compile(r'^.+\.log(\.\d+)?$')
 
 
 def publish_log(message: str) -> None:
     """接收已格式化日志并通知内存订阅者。"""
     _logs_deque.appendleft(message)
-    for queue in tuple(_log_subscribers):
+    with _subscriber_lock:
+        subscribers = tuple(_log_subscribers.items())
+    for queue, loop in subscribers:
         try:
-            queue.put_nowait(message)
-        except asyncio.QueueFull:
-            pass
+            # 工作线程不能直接唤醒 asyncio 队列，交回订阅者事件循环投递。
+            loop.call_soon_threadsafe(_deliver_log, queue, message)
+        except RuntimeError:
+            unsubscribe_from_logs(queue)
+
+
+def _deliver_log(queue: asyncio.Queue, message: str) -> None:
+    """在订阅者循环中投递日志，忽略已关闭的订阅。"""
+    with _subscriber_lock:
+        if queue not in _log_subscribers:
+            return
+    try:
+        queue.put_nowait(message)
+    except asyncio.QueueFull:
+        pass
 
 
 def get_logs() -> List[str]:
@@ -77,9 +93,12 @@ def read_log_file(filename: str, tail: int = 200, keyword: str = "", offset: int
 
 def subscribe_to_logs(queue: asyncio.Queue) -> None:
     """订阅日志更新。"""
-    _log_subscribers.add(queue)
+    loop = asyncio.get_running_loop()
+    with _subscriber_lock:
+        _log_subscribers[queue] = loop
 
 
 def unsubscribe_from_logs(queue: asyncio.Queue) -> None:
     """取消订阅日志更新。"""
-    _log_subscribers.discard(queue)
+    with _subscriber_lock:
+        _log_subscribers.pop(queue, None)

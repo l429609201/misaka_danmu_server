@@ -2,12 +2,17 @@
 
 import asyncio
 import logging
+import time
 from typing import Any, Optional
 
 from src.services.performance_collector import PerformanceCollector
-from src.workflows.system.performance_flow import collect_performance_metrics
+from src.workflows.system.performance_flow import collect_performance_metrics, prune_performance_metrics
 
 logger = logging.getLogger(__name__)
+
+# 指标保留与清理节奏：采集无清理会让 system_metrics 无限增长
+_METRIC_RETAIN_DAYS = 7
+_PRUNE_INTERVAL_SECONDS = 3600.0
 
 
 class PerformanceCollectionTask:
@@ -40,7 +45,17 @@ class PerformanceCollectionTask:
             self._task = None
 
     async def _collect_loop(self) -> None:
+        last_prune = 0.0
         while self.is_running:
+            # 启动后首轮即清理一次，之后每小时一次，避免每分钟执行删除
+            if time.monotonic() - last_prune >= _PRUNE_INTERVAL_SECONDS:
+                last_prune = time.monotonic()
+                try:
+                    deleted = await prune_performance_metrics(_METRIC_RETAIN_DAYS, self.database_service)
+                    if deleted:
+                        logger.info("已清理 %s 条超过 %s 天的系统指标", deleted, _METRIC_RETAIN_DAYS)
+                except Exception:
+                    logger.error("系统指标清理失败", exc_info=True)
             try:
                 written = await collect_performance_metrics(self.collector, self.database_service)
                 logger.debug("性能采集完成：本轮写入 %s 条指标", written)

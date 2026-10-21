@@ -145,7 +145,9 @@ def model_to_dict(obj) -> Dict[str, Any]:
 async def get_backup_path(session: AsyncSession) -> Path:
     """获取备份路径"""
     db = get_database_service()
-    path_str = await db.config.get_value("backupPath", DEFAULT_BACKUP_PATH)
+    # 定时任务直接传入会话而不在事务上下文中，借用该会话读取配置，生命周期仍归调用方。
+    async with db.transaction(session):
+        path_str = await db.config.get_value("backupPath", DEFAULT_BACKUP_PATH)
     # 如果配置值为空字符串，使用默认路径
     if not path_str or not path_str.strip():
         path_str = DEFAULT_BACKUP_PATH
@@ -156,7 +158,9 @@ async def get_backup_path(session: AsyncSession) -> Path:
 async def get_retention_count(session: AsyncSession) -> int:
     """获取备份保留数量"""
     db = get_database_service()
-    count_str = await db.config.get_value("backupRetentionCount", str(DEFAULT_RETENTION_COUNT))
+    # 与 get_backup_path 一致：借用调用方会话，避免定时任务上下文缺失报错。
+    async with db.transaction(session):
+        count_str = await db.config.get_value("backupRetentionCount", str(DEFAULT_RETENTION_COUNT))
     try:
         return int(count_str)
     except (ValueError, TypeError):

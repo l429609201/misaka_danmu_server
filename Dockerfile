@@ -56,6 +56,8 @@ ENV PYTHONUNBUFFERED 1
 ENV TZ=Asia/Shanghai
 ENV LANG C.UTF-8
 ENV LC_ALL C.UTF-8
+# 减少 glibc malloc arena 数量以避免线程池导致的堆碎片 & RSS 长期保留(2.8.9 无此环境变量)
+ENV MALLOC_ARENA_MAX=2
 
 # 设置工作目录
 WORKDIR /app

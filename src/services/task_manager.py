@@ -25,6 +25,8 @@ from src.utils.diagnostics.task_exceptions import TaskSuccess, TaskFailed, TaskP
 # why: _run_task 中兜底捕获流控异常（见 except RateLimitExceededError），
 # rate_limiter 不反向依赖 src.services，顶部导入无循环依赖风险。
 from src.rate_limiter import ConfigVerificationError, RateLimitExceededError
+# why: 任务队列空闲时把堆页归还 OS，降低备份/搜索后的 RSS 保留峰值（零项目依赖，无循环导入）
+from src.utils.runtime.memory_release import release_memory
 
 logger = logging.getLogger(__name__)
 
@@ -558,6 +560,9 @@ class TaskManager:
                 queue.task_done()
                 # 等待下一项任务前释放局部引用，避免空闲 worker 保留任务闭包及其数据。
                 del task
+                # 队列已空时把本轮任务释放的堆页归还 OS(节流,见 memory_release)
+                if queue.empty():
+                    release_memory()
 
     async def _download_worker(self, worker_id: int):
         """从下载队列中获取并执行任务（复用通用骨架）。

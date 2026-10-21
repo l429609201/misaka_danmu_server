@@ -641,6 +641,24 @@ def pull_image_stream(image_name: str, proxy_url: Optional[str] = None) -> Gener
         os.environ.update(old_env)
 
 
+def _read_proc_net_dev(path: str = "/proc/net/dev") -> tuple:
+    """汇总当前网络命名空间内除回环外所有网卡的收发字节数，读取失败返回 (0, 0)。"""
+    rx_total = tx_total = 0
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()[2:]  # 前两行为表头
+    except OSError:
+        return 0, 0
+    for line in lines:
+        iface, _, data = line.partition(":")
+        fields = data.split()
+        if iface.strip() == "lo" or len(fields) < 9:
+            continue
+        rx_total += int(fields[0])
+        tx_total += int(fields[8])
+    return rx_total, tx_total
+
+
 def get_container_stats(fallback_container_name: str = "misaka_danmu_server") -> Dict[str, Any]:
     """
     获取容器的资源使用统计信息
@@ -703,7 +721,9 @@ def get_container_stats(fallback_container_name: str = "misaka_danmu_server") ->
         memory_usage = memory_stats.get("usage", 0)
         memory_limit = memory_stats.get("limit", 0)
         # 减去缓存（如果有的话）
-        cache = memory_stats.get("stats", {}).get("cache", 0)
+        # cgroup v1 为 cache，cgroup v2 无该字段，与 docker stats 一致改减 inactive_file
+        mem_detail = memory_stats.get("stats", {}) or {}
+        cache = mem_detail.get("cache", mem_detail.get("inactive_file", 0))
         memory_usage_actual = memory_usage - cache
 
         memory_percent = 0.0
@@ -726,9 +746,10 @@ def get_container_stats(fallback_container_name: str = "misaka_danmu_server") ->
                 network_rx += rx
                 network_tx += tx
         else:
-            # 某些网络模式（如 host）可能没有 networks 字段
-            # 尝试从容器信息中获取
-            logger.debug("networks 字段为空，可能使用 host 网络模式")
+            # host 网络模式下 Docker 不提供 networks 统计；此时容器与宿主共享网络命名空间，
+            # 进程内 /proc/net/dev 即宿主网卡计数，读取它代替恒为 0 的结果。
+            logger.debug("networks 字段为空，按 host 网络模式读取 /proc/net/dev")
+            network_rx, network_tx = _read_proc_net_dev()
 
         # 磁盘 I/O
         blkio_stats = stats.get("blkio_stats", {})

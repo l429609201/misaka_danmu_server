@@ -14,3 +14,10 @@ async def collect_performance_metrics(collector: PerformanceCollector, database_
     db = database_service or get_database_service()
     async with db.transaction():
         return await db.performance.record_metrics(metrics)
+
+
+async def prune_performance_metrics(retain_days: int = 7, database_service: Any = None) -> int:
+    """清理过期系统指标，返回删除行数；事务由本流程声明。"""
+    db = database_service or get_database_service()
+    async with db.transaction():
+        return await db.performance.delete_old_metrics(retain_days)

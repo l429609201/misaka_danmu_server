@@ -976,101 +976,94 @@ async def search_all(scraper_manager: ScraperManager, keywords: List[str], episo
 
     # ========== 通用信息增强逻辑（补全缺失字段：年份、集数等）==========
     # 在应用全局过滤前补全，保证过滤时信息完整
-    global_enrich_enabled = (await scraper_manager.config_service.get("searchEnrichResults", "false")).lower() == "true"
-    if global_enrich_enabled and all_results:
+    # why：曾额外要求全局 searchEnrichResults=true，但该键默认 false 且前端无入口，
+    # 导致各源「信息增强」开关保存后永不生效；现以各源开关 + 源类 enrich_fields 为唯一依据。
+    if all_results:
         enrich_limit = int(await scraper_manager.config_service.get("searchEnrichLimit", "10"))
         enrich_timeout = float(await scraper_manager.config_service.get("searchEnrichTimeout", "5"))
-        enrich_fields_str = await scraper_manager.config_service.get("searchEnrichFields", "year,episodeCount")
-        global_fields = [f.strip() for f in enrich_fields_str.split(",") if f.strip()]
+        # 按源分组
+        results_by_provider = defaultdict(list)
+        for item in all_results:
+            results_by_provider[item.provider].append(item)
 
-        if not global_fields:
-            mgr_logger.debug("[信息增强] 全局字段配置为空，跳过增强")
-        else:
-            # 按源分组
-            results_by_provider = defaultdict(list)
-            for item in all_results:
-                results_by_provider[item.provider].append(item)
+        # 并行处理各源（每源独立超时）
+        async def enrich_provider(provider: str, results: list) -> None:
+            """仅在该源整体搜索预算剩余时间内补齐字段。"""
+            deadline = provider_deadlines.get(provider, search_started + 30.0)
+            if deadline <= time.monotonic():
+                return
+            # 读取该源的开关
+            source_enabled = (await scraper_manager.config_service.get(f"scraper_{provider}_enrich_enabled", "false")).lower() == "true"
+            if not source_enabled:
+                mgr_logger.debug(f"[信息增强] 源 {provider} 未开启增强，跳过")
+                return
 
-            mgr_logger.info(f"[信息增强] 全局开关已开启，待增强字段: {', '.join(global_fields)}")
+            # 改为读取源类硬编码的 enrich_fields（不再继承全局配置）
+            scraper = scraper_manager.scrapers.get(provider)
+            fields = getattr(scraper, 'enrich_fields', []) if scraper else []
 
-            # 并行处理各源（每源独立超时）
-            async def enrich_provider(provider: str, results: list) -> None:
-                """仅在该源整体搜索预算剩余时间内补齐字段。"""
-                deadline = provider_deadlines.get(provider, search_started + 30.0)
-                if deadline <= time.monotonic():
-                    return
-                # 读取该源的开关
-                source_enabled = (await scraper_manager.config_service.get(f"scraper_{provider}_enrich_enabled", "false")).lower() == "true"
-                if not source_enabled:
-                    mgr_logger.debug(f"[信息增强] 源 {provider} 未开启增强，跳过")
-                    return
+            if not fields:
+                mgr_logger.debug(f"[信息增强] 源 {provider} 未配置 enrich_fields，跳过")
+                return
 
-                # 改为读取源类硬编码的 enrich_fields（不再继承全局配置）
-                scraper = scraper_manager.scrapers.get(provider)
-                fields = getattr(scraper, 'enrich_fields', []) if scraper else []
+            # 只处理前 N 条
+            to_enrich = results[:enrich_limit]
 
-                if not fields:
-                    mgr_logger.debug(f"[信息增强] 源 {provider} 未配置 enrich_fields，跳过")
-                    return
+            # 筛选出需要增强的结果（至少有一个字段缺失）
+            need_enrich = []
+            for result in to_enrich:
+                missing = []
+                for f in fields:
+                    if f == "episodeCount" and result.episodeCount is None:
+                        missing.append(f)
+                    elif f == "year" and not result.year:
+                        missing.append(f)
+                    # 未来扩展：type, season 等
+                if missing:
+                    need_enrich.append((result, missing))
 
-                # 只处理前 N 条
-                to_enrich = results[:enrich_limit]
+            if not need_enrich:
+                mgr_logger.debug(f"[信息增强] 源 {provider} 无需增强的结果，跳过")
+                return
 
-                # 筛选出需要增强的结果（至少有一个字段缺失）
-                need_enrich = []
-                for result in to_enrich:
-                    missing = []
-                    for f in fields:
-                        if f == "episodeCount" and result.episodeCount is None:
-                            missing.append(f)
-                        elif f == "year" and not result.year:
-                            missing.append(f)
-                        # 未来扩展：type, season 等
-                    if missing:
-                        need_enrich.append((result, missing))
+            mgr_logger.info(f"[信息增强] 源 {provider} 开始增强前 {len(need_enrich)} 条结果")
 
-                if not need_enrich:
-                    mgr_logger.debug(f"[信息增强] 源 {provider} 无需增强的结果，跳过")
-                    return
+            # 获取 scraper 实例
+            scraper = scraper_manager.scrapers.get(provider)
+            if not scraper:
+                mgr_logger.warning(f"[信息增强] 源 {provider} 实例未找到，跳过")
+                return
 
-                mgr_logger.info(f"[信息增强] 源 {provider} 开始增强前 {len(need_enrich)} 条结果")
-
-                # 获取 scraper 实例
-                scraper = scraper_manager.scrapers.get(provider)
-                if not scraper:
-                    mgr_logger.warning(f"[信息增强] 源 {provider} 实例未找到，跳过")
-                    return
-
-                # 逐条增强（每条独立超时）
-                for result, missing_fields in need_enrich:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        mgr_logger.debug("[信息增强] %s 整体预算已耗尽，保留已有结果", provider)
-                        break
-                    try:
-                        await asyncio.wait_for(
-                            scraper.enrich_result(result, missing_fields),
-                            timeout=min(enrich_timeout, remaining)
-                        )
-                    except asyncio.TimeoutError:
-                        mgr_logger.warning(f"[信息增强] {provider}/{result.mediaId} 超时({enrich_timeout}s)")
-                    except Exception as e:
-                        mgr_logger.warning(f"[信息增强] {provider}/{result.mediaId} 失败: {e}")
-
-            async def bounded_enrich_provider(provider: str, results: list) -> None:
-                """将整段增强约束于同一剩余预算，包括配置与每条请求。"""
-                remaining = provider_deadlines.get(provider, search_started + 30.0) - time.monotonic()
+            # 逐条增强（每条独立超时）
+            for result, missing_fields in need_enrich:
+                remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    return
+                    mgr_logger.debug("[信息增强] %s 整体预算已耗尽，保留已有结果", provider)
+                    break
                 try:
-                    await asyncio.wait_for(enrich_provider(provider, results), timeout=remaining)
+                    await asyncio.wait_for(
+                        scraper.enrich_result(result, missing_fields),
+                        timeout=min(enrich_timeout, remaining)
+                    )
                 except asyncio.TimeoutError:
-                    mgr_logger.debug("[信息增强] %s 整体预算耗尽，保留已有结果", provider)
+                    mgr_logger.warning(f"[信息增强] {provider}/{result.mediaId} 超时({enrich_timeout}s)")
+                except Exception as e:
+                    mgr_logger.warning(f"[信息增强] {provider}/{result.mediaId} 失败: {e}")
 
-            # 各源仍并行，但不为增强阶段重新启动完整搜索超时。
-            await asyncio.gather(*[bounded_enrich_provider(p, items) for p, items in results_by_provider.items()], return_exceptions=True)
+        async def bounded_enrich_provider(provider: str, results: list) -> None:
+            """将整段增强约束于同一剩余预算，包括配置与每条请求。"""
+            remaining = provider_deadlines.get(provider, search_started + 30.0) - time.monotonic()
+            if remaining <= 0:
+                return
+            try:
+                await asyncio.wait_for(enrich_provider(provider, results), timeout=remaining)
+            except asyncio.TimeoutError:
+                mgr_logger.debug("[信息增强] %s 整体预算耗尽，保留已有结果", provider)
 
-            mgr_logger.info(f"[信息增强] 完成，共处理 {len(all_results)} 条结果")
+        # 各源仍并行，但不为增强阶段重新启动完整搜索超时。
+        await asyncio.gather(*[bounded_enrich_provider(p, items) for p, items in results_by_provider.items()], return_exceptions=True)
+
+        mgr_logger.debug(f"[信息增强] 完成，共处理 {len(all_results)} 条结果")
     # ========== 信息增强逻辑结束 ==========
 
     cn_pattern = re.compile(cn_pattern_str, re.IGNORECASE) if cn_pattern_str else None

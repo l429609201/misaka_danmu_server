@@ -481,6 +481,19 @@ class PerformanceQueryRepository:
 
         await self._session.flush()
 
+    async def delete_old_metrics(self, retain_days: int = 7) -> int:
+        """清理超过保留天数的系统指标，返回删除行数。
+
+        why：采集任务每分钟写入约 15 行且此前没有任何清理调用方，表无限增长，
+        仪表盘聚合查询随之扫描越来越多行；集合式 DELETE 不把行载入内存。
+        """
+        cutoff = get_now() - timedelta(days=retain_days)
+        result = await self._session.execute(
+            delete(SystemMetric).where(SystemMetric.collectedAt < cutoff)
+        )
+        await self._session.flush()
+        return int(result.rowcount or 0)
+
     async def delete_old_perf_events(self, retain_days: int = 90) -> int:
         """清理超过保留天数的性能事件，返回删除行数。"""
         cutoff = get_now() - timedelta(days=retain_days)
