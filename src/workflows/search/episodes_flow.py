@@ -16,12 +16,13 @@ logger = logging.getLogger(__name__)
 
 
 async def search_episodes_flow(
-    anime: str,
+    anime: Optional[str],
     episode: Optional[str],
     db,
     scraper_manager: ScraperManager,
     config_service: ConfigService,
     rate_limiter: "RateLimiter",
+    tmdb_id: Optional[str] = None,
 ):
     """
     搜索节目和分集的业务流程
@@ -41,7 +42,18 @@ async def search_episodes_flow(
     Returns:
         DandanSearchEpisodesResponse 对象
     """
-    search_term = anime.strip()
+    search_term = anime.strip() if anime else ""
+    if not search_term and tmdb_id:
+        anime_id = await db.anime.get_id_by_tmdb_id(str(tmdb_id))
+        if anime_id is not None:
+            library_anime = await db.anime.get_by_id(anime_id)
+            if library_anime is not None:
+                search_term = library_anime.title.strip()
+
+    if not search_term:
+        logger.warning("未找到可用于分集搜索的节目：anime=%r, tmdbId=%r", anime, tmdb_id)
+        search_term = str(tmdb_id or "")
+
     return await search_implementation(
         search_term, episode, db,
         scraper_manager=scraper_manager,

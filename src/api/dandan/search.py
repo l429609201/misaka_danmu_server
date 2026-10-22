@@ -8,7 +8,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 # 🚀 导入 workflow 层实现
 from src.workflows.search.anime_flow import search_anime_flow
@@ -50,8 +50,12 @@ search_router = APIRouter(route_class=DandanApiRoute)
     summary="[dandanplay兼容] 搜索节目和分集"
 )
 async def search_episodes_for_dandan(
-    anime: str = Query(..., description="节目名称"),
+    anime: Optional[str] = Query(None, description="节目名称"),
     episode: Optional[str] = Query(None, description="分集标题 (通常是数字)"),
+    tmdb_id: Optional[str] = Query(None, alias="tmdbId", description="TMDB 节目 ID"),
+    tmdb_id_type: Optional[int] = Query(
+        None, alias="tmdbIdType", description="TMDB ID 类型，0 表示 TV 节目"
+    ),
     token: str = Depends(get_token_from_path),
     db = Depends(get_database_service),
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
@@ -63,10 +67,15 @@ async def search_episodes_for_dandan(
     """
     logger.debug("dandan 分集搜索使用 token: %s", token[:8])
 
+    if not anime and not tmdb_id:
+        raise HTTPException(status_code=400, detail="anime 或 tmdbId 至少提供一个")
+    if tmdb_id and tmdb_id_type not in (None, 0):
+        raise HTTPException(status_code=400, detail="仅支持 tmdbIdType=0")
+
     async with db.transaction():
         return await search_episodes_flow(
             anime, episode, db,
-            scraper_manager, config_service, rate_limiter
+            scraper_manager, config_service, rate_limiter, tmdb_id=tmdb_id
         )
 
 
