@@ -9,7 +9,9 @@ from urllib.parse import unquote, urlparse
 
 from src.services.file_storage_service import CONFIG_DIR, get_file_storage_service
 from src.services.image_http_service import fetch_image
-from src.utils.misc.image_processing import PUBLIC_THUMBNAIL_WIDTH, encode_thumbnail
+from src.utils.misc.image_processing import (
+    PUBLIC_THUMBNAIL_WIDTH, THUMBNAIL_FORMAT_WEBP, THUMBNAIL_SUFFIXES, encode_thumbnail,
+)
 
 logger = logging.getLogger(__name__)
 IMAGE_DIR = CONFIG_DIR / "image"
@@ -38,18 +40,25 @@ async def load_image_bytes(
 
 async def save_public_thumbnail(
     image_source: Optional[Union[str, bytes]], width: int = PUBLIC_THUMBNAIL_WIDTH,
+    fmt: str = THUMBNAIL_FORMAT_WEBP,
 ) -> Optional[str]:
-    """加载图片、复用内容哈希缓存并返回可公开访问的缩略图路径。"""
+    """加载图片、复用内容哈希缓存并返回可公开访问的缩略图路径。
+
+    fmt 默认 WebP；不支持 WebP 的调用方传 jpeg，两种格式按后缀分别缓存。
+    """
+    suffix = THUMBNAIL_SUFFIXES.get(fmt)
+    if suffix is None:
+        raise ValueError(f"不支持的缩略图格式: {fmt}")
     raw = image_source if isinstance(image_source, bytes) else await load_image_bytes(image_source)
     if not raw:
         return None
     # 通知与检索共用内容缓存；实际原子落盘仍由文件服务负责。
-    filename = f"w{width}_{hashlib.sha256(raw).hexdigest()[:16]}.jpg"
+    filename = f"w{width}_{hashlib.sha256(raw).hexdigest()[:16]}{suffix}"
     path = IMAGE_DIR / filename
     storage = get_file_storage_service()
     if not storage.exists(path):
         try:
-            data = await asyncio.to_thread(encode_thumbnail, raw, width)
+            data = await asyncio.to_thread(encode_thumbnail, raw, width, fmt)
         except Exception:
             logger.warning("生成缩略图失败", exc_info=True)
             return None

@@ -42,9 +42,32 @@ def encode_notification_image(raw: bytes, width: int | None = None) -> tuple[byt
             return output.getvalue(), ".jpg", "image/jpeg"
 
 
-def encode_thumbnail(raw: bytes, width: int = PUBLIC_THUMBNAIL_WIDTH) -> bytes:
-    """将内存图片等比缩小为 JPEG；由调用方安排线程执行。"""
-    return encode_notification_image(raw, width)[0]
+THUMBNAIL_FORMAT_WEBP = "webp"
+THUMBNAIL_FORMAT_JPEG = "jpeg"
+THUMBNAIL_SUFFIXES = {THUMBNAIL_FORMAT_WEBP: ".webp", THUMBNAIL_FORMAT_JPEG: ".jpg"}
+
+
+def encode_thumbnail(
+    raw: bytes, width: int = PUBLIC_THUMBNAIL_WIDTH, fmt: str = THUMBNAIL_FORMAT_JPEG,
+) -> bytes:
+    """将内存图片等比缩小为 WebP 或 JPEG；由调用方安排线程执行。
+
+    why：外链模式优先保存体积更小的 WebP，不支持 WebP 的渠道再使用兼容 JPEG。
+    """
+    if fmt == THUMBNAIL_FORMAT_JPEG:
+        return encode_notification_image(raw, width)[0]
+    if fmt != THUMBNAIL_FORMAT_WEBP:
+        raise ValueError(f"不支持的缩略图格式: {fmt}")
+    if width <= 0:
+        raise ValueError("图片宽度必须为正数")
+    with Image.open(io.BytesIO(raw)) as source:
+        image = ImageOps.exif_transpose(source).convert("RGBA")
+        if image.width > width:
+            height = max(1, round(image.height * width / image.width))
+            image = image.resize((width, height), Image.Resampling.LANCZOS)
+        with io.BytesIO() as output:
+            image.save(output, format="WEBP", quality=85, method=4)
+            return output.getvalue()
 
 
 def normalize_image_url(url: str) -> str:

@@ -14,6 +14,9 @@ import time
 from src.notification.messages.base import NotificationMessage, RenderedMessage
 # 通知和检索共用图片资源流程，保持缓存路径一致。
 from src.workflows.image_resources import save_public_thumbnail
+from src.utils.misc.image_processing import (
+    THUMBNAIL_FORMAT_JPEG, THUMBNAIL_SUFFIXES,
+)
 
 
 # ═══════════════════════════════════════════
@@ -290,6 +293,10 @@ class BaseNotificationChannel(ABC):
         """
         return False
 
+    # 外链模式下平台抓取图片的格式。默认 JPEG：Telegram/QQ/企业微信按 URL 抓取
+    # WebP 会报「wrong type of the web page content」等错误；确认支持 WebP 的渠道覆写为 webp。
+    public_image_format: str = THUMBNAIL_FORMAT_JPEG
+
     @property
     def image_mode(self) -> str:
         """当前渠道的图片发送模式（text / poster / separate / public_url）"""
@@ -338,17 +345,19 @@ class BaseNotificationChannel(ABC):
         if not base:
             return ""
 
-        if image_url.startswith(f"{base}/data/images/") and not image_url.split("?", 1)[0].lower().endswith(".webp"):
-            return image_url
-
+        fmt = self.public_image_format
+        suffix = THUMBNAIL_SUFFIXES[fmt]
         if image_url.startswith(f"{base}/data/images/"):
+            # 已是本站外链且格式符合渠道要求时直接复用；格式不符则读取本地文件转码。
+            if image_url.split("?", 1)[0].lower().endswith(suffix):
+                return image_url
             image_url = image_url[len(base):]
         source = image_bytes or image_url
         if not source:
             return ""
 
         try:
-            web_path = await save_public_thumbnail(source)
+            web_path = await save_public_thumbnail(source, fmt=fmt)
         except Exception as e:
             self.logger.warning(f"生成对外分享缩略图失败: {e}")
             return ""
