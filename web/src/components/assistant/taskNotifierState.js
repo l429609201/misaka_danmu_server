@@ -2,6 +2,8 @@
 export const RUNNING_STATES = ['排队中', '运行中', '已暂停']
 export const DONE_STATES = ['已完成']
 export const FAIL_STATES = ['失败', '已取消', '超时']
+// 高频后台小任务不播报气泡（与后端 _QUIET_TASK_TYPES 保持一致）。
+export const QUIET_TASK_TYPES = ['search_health_update']
 
 export function serverTimestamp(value) {
   if (!value) return NaN
@@ -13,6 +15,7 @@ export function serverTimestamp(value) {
 export function taskEvents(previous, list, since) {
   if (previous === null) return [] // 首次进入页面不播报历史完成记录。
   return list.flatMap(task => {
+    if (QUIET_TASK_TYPES.includes(task.taskType)) return []
     const old = previous[task.taskId]
     const recent = Number.isFinite(since)
       && serverTimestamp(task.updatedAt || task.createdAt) >= since - 2000

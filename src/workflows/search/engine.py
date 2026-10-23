@@ -27,7 +27,7 @@ from src.workflows.search.ui_results import search_supplemental_sources, supplem
 from src.workflows.search.cache_policy import read_search_cache_ttl
 # 原始源结果使用完整搜索模型；直接导入接口的同名模型要求 result_index，不能用于缓存恢复。
 from src.schemas.ui.search import ProviderSearchInfo
-from src.workflows.search.filtering import correct_movie_type_by_title, filter_by_season
+from src.workflows.search.filtering import correct_movie_type_by_title, filter_by_season, is_series_candidate
 from src.workflows.search.result_cache import read_search_results, write_search_results
 from src.services.config_service import get_config_service
 from src.services.cache_service import get_cache_service
@@ -625,7 +625,7 @@ async def unified_search(
             filtered_results = [
                 item for item in filtered_results
                 if item.season == filter_season and (
-                    item.type == "tv_series"
+                    is_series_candidate(item.type)
                     or (getattr(item, "typeDecision", None) == "needs_confirmation"
                         and getattr(item, "typeSuggestion", None) == "tv_series")
                 )

@@ -80,6 +80,11 @@ async def get_fallback_bangumi_details(bangumi_id: str) -> BangumiDetailsRespons
         real_id = latest_mapping.get("real_anime_id")
         if not real_id:
             existing_id = await db.source.get_anime_id_by_source_media_id(provider, media_id, season)
+            if not existing_id:
+                # 同一源的同一 mediaId 就是同一部作品；入库时季度可能被判成 1（如误判为电影），
+                # 而这里的季度来自标题解析（"第2季"→2），按季度查会落空，导致每次后备搜索都新建重复作品。
+                # 因此季度查不到时，按源坐标忽略季度再查一次。
+                existing_id = await db.source.get_anime_id_by_source_media_id(provider, media_id)
             real_id = existing_id or await db.fallback.find_anime_by_title_season(
                 title, parsed.get("title") or title, season
             )

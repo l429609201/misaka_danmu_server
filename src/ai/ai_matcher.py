@@ -1124,7 +1124,7 @@ class AIMatcher:
                 return await self.recognize_title(
                     item.get("title", ""),
                     item.get("year"),
-                    item.get("type", "tv_series")
+                    item.get("type") or "tv_series"
                 )
 
         logger.info(f"批量识别: 开始处理 {len(items)} 个标题 (最大并发: {max_concurrent})")
@@ -1145,6 +1145,71 @@ class AIMatcher:
         logger.info(f"批量识别: 完成 {success_count}/{len(items)} 个标题")
 
         return processed_results
+
+    async def classify_media_types(self, items: List[Dict[str, Any]]) -> Dict[int, str]:
+        """批量判定类型未知的搜索结果是电影还是剧集。
+
+        源站无法明确给出类型时，搜索结果 type 为 None；这里交给 AI 依据标题、年份、
+        集数、源站原始分类判断。AI 无把握的条目不返回，保持 None，由入库时兜底。
+
+        Args:
+            items: 待判定条目，每项含 index/title/year/episodeCount/sourceType。
+
+        Returns:
+            {index: "movie" | "tv_series"}，只包含 AI 明确判定的条目。
+        """
+        if not items or not self.client:
+            return {}
+        system_prompt = (
+            "你是影视作品类型判定助手。根据标题、年份、集数、源站分类，判断每个条目是"
+            "电影(movie，含剧场版/单部电影)还是剧集(tv_series，含番剧/电视剧/综艺/纪录片系列)。"
+            "无法确定时输出 null，不要猜测。"
+            '只输出 JSON：{"results":[{"index":0,"type":"movie|tv_series|null"}]}'
+        )
+        user_prompt = json.dumps({"items": items}, ensure_ascii=False)
+        start_time = datetime.now()
+        tokens = 0
+        try:
+            if self.provider == "gemini":
+                response = await asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model=self.model,
+                    contents=f"{system_prompt}\n\n{user_prompt}",
+                    config={"temperature": 0.0, "response_mime_type": "application/json"},
+                )
+                usage = getattr(response, "usage_metadata", None)
+                tokens = getattr(usage, "total_token_count", 0) or 0
+                content = response.text
+            else:
+                content, tokens = await self._call_openai_json(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    method_name="classify_media_types",
+                )
+            data = json.loads(content) if content else {}
+            valid_indexes = {item.get("index") for item in items}
+            result: Dict[int, str] = {}
+            for row in (data.get("results") or []) if isinstance(data, dict) else []:
+                if not isinstance(row, dict):
+                    continue
+                index, media_type = row.get("index"), row.get("type")
+                # 只接受合法索引与两种明确类型，其余一律视为未判定
+                if index in valid_indexes and media_type in ("movie", "tv_series"):
+                    result[index] = media_type
+            self.metrics.record(AICallMetrics(
+                timestamp=datetime.now(), method="classify_media_types", success=True,
+                duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+                tokens_used=tokens, model=self.model, cache_hit=False,
+            ))
+            return result
+        except Exception as exc:
+            self.metrics.record(AICallMetrics(
+                timestamp=datetime.now(), method="classify_media_types", success=False,
+                duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+                tokens_used=tokens, model=self.model, error=str(exc), cache_hit=False,
+            ))
+            logger.warning("AI类型判定失败 (%s): %s", self.provider, exc)
+            return {}
 
     async def select_best_season_for_title(
         self,

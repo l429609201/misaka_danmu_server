@@ -10,7 +10,8 @@ class ProviderSearchInfo(BaseModel):
     provider: str = Field(..., description="数据源提供方, e.g., 'tencent', 'bilibili'")
     mediaId: str = Field(..., description="该数据源中的媒体ID (e.g., tencent的cid)")
     title: str = Field(..., description="节目名称")
-    type: str = Field(..., description="节目类型, e.g., 'tv_series', 'movie'")
+    # 源站无法明确判定类型时为 None，交由元数据/AI 判定，入库前再兜底，避免强行猜测类型
+    type: Optional[str] = Field(None, description="节目类型: 'tv_series' / 'movie'；无法确定时为 null")
     season: Optional[int] = Field(1, description="季度, 默认为1；电影可为空")
     year: Optional[int] = Field(None, description="发行年份")
     imageUrl: Optional[str] = Field(None, description="封面图片URL")
@@ -45,7 +46,8 @@ class ImportRequest(BaseModel):
     provider: str = Field(..., description="要导入的数据源, e.g., 'tencent'")
     mediaId: str = Field(..., description="数据源中的媒体ID (e.g., tencent的cid)")
     animeTitle: str = Field(..., description="要存储在数据库中的番剧标题")
-    type: str = Field(..., description="媒体类型, e.g., 'tv_series', 'movie'")
+    # 搜索阶段允许 None，由前端/后端在编辑/导入时明确为 tv_series 或 movie。
+    type: Optional[str] = Field(None, description="媒体类型: tv_series / movie；未确定时为 null")
     season: Optional[int] = Field(1, description="季度数，默认为1")
     year: Optional[int] = Field(None, description="发行年份")
     tmdbId: Optional[str] = Field(None, description="关联的TMDB ID (可选)")

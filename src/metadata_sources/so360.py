@@ -1076,7 +1076,7 @@ class So360MetadataSource(BaseMetadataSource):
                         provider=provider_name,
                         mediaId=media_id,
                         title=so360_item.title,
-                        type=so360_item.type or 'tv_series',
+                        type=so360_item.type,  # 补充源未给出类型时保持 None，交由元数据/AI 判定
                         season=1,
                         year=so360_item.year,
                         imageUrl=so360_item.imageUrl,

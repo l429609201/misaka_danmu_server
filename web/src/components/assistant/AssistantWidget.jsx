@@ -67,6 +67,16 @@ export function AssistantWidget() {
     if (!open) showNextNotice()
   }, [open, showNextNotice])
 
+  // 页面内的即时事件（如主页搜索完成）通过全局事件投递气泡，不必等任务轮询。
+  useEffect(() => {
+    const onPageNotify = event => {
+      const { text, kind = 'done', title, body } = event.detail || {}
+      if (text) handleNotify(text, kind, { title, body })
+    }
+    window.addEventListener('assistant-notify', onPageNotify)
+    return () => window.removeEventListener('assistant-notify', onPageNotify)
+  }, [handleNotify])
+
   const handleActivity = useCallback(phase => machineRef.current?.activity?.(phase), [])
 
   const openPanel = useCallback(() => {

@@ -31,6 +31,10 @@ from src.utils.runtime.memory_release import release_memory
 logger = logging.getLogger(__name__)
 
 
+
+# why：高频后台小任务（每次搜索都会触发）的生命周期日志降为 DEBUG，避免刷屏。
+_QUIET_TASK_TYPES = frozenset({"search_health_update"})
+
 class TaskStatus(str, Enum):
     """任务状态枚举"""
     PENDING = "排队中"
@@ -154,6 +158,10 @@ class TaskManager:
         """订阅通用完成和进度生命周期，不让队列识别作品业务。"""
         self._task_event_callback = completed
         self._task_progress_callback = progress
+
+    def _lifecycle_logger(self, task: "Task") -> Callable[..., None]:
+        """返回任务生命周期日志使用的日志方法，静默类任务降为 DEBUG。"""
+        return self.logger.debug if task.task_type in _QUIET_TASK_TYPES else self.logger.info
 
     async def _emit_task_event(self, task: Task, is_success: bool, message: str = "") -> None:
         """发出通用任务结果，通知失败不改变任务终态。"""
@@ -293,7 +301,7 @@ class TaskManager:
             task: 要执行的任务
             queue_type: 队列类型 ("download" 或 "management")
         """
-        self.logger.info(f"开始执行任务 '{task.title}' (ID: {task.task_id}) [队列: {queue_type}]")
+        self._lifecycle_logger(task)(f"开始执行任务 '{task.title}' (ID: {task.task_id}) [队列: {queue_type}]")
         paused_for_rate_limit = False
         execution_started_at = time.monotonic()
         try:
@@ -338,7 +346,7 @@ class TaskManager:
                     await self._db.task.finalize_task_in_history(
                         task.task_id, TaskStatus.COMPLETED, final_message
                     )
-                self.logger.info(
+                self._lifecycle_logger(task)(
                     f"任务 '{task.title}' (ID: {task.task_id}) 已成功完成，消息: {final_message} "
                     f"[队列: {queue_type}]。"
                 )
@@ -367,7 +375,7 @@ class TaskManager:
             final_message = str(e) if str(e) else "任务成功完成"
             final_message = f"{final_message}{self._format_execution_time(execution_started_at)}"
             await self._safe_finalize_task(task.task_id, TaskStatus.COMPLETED, final_message)
-            self.logger.info(f"任务 '{task.title}' (ID: {task.task_id}) 已成功完成，消息: {final_message}")
+            self._lifecycle_logger(task)(f"任务 '{task.title}' (ID: {task.task_id}) 已成功完成，消息: {final_message}")
             await self._emit_task_event(task, True, final_message)
         except TaskFailed as e:
             # 业务失败：标记 FAILED 并发"失败"通知，但不打印 traceback（失败原因已在消息中）

@@ -251,7 +251,8 @@ async def ai_season_mapping_and_correction(
                 f"  - 第{season.season_number}季: {season.name or f'第{season.season_number}季'}"
             )
 
-        tv_results = [item for item in search_results if item.type == 'tv_series']
+        # 类型未知(None)的结果也可能是剧集，一并参与季度修正
+        tv_results = [item for item in search_results if item.type in ('tv_series', None)]
         if not tv_results:
             log_lines.append("○ AI季度映射: 没有TV结果需要修正")
             logger.info("\n".join(log_lines))
@@ -381,12 +382,35 @@ async def ai_type_and_season_mapping_and_correction(
         type_corrections: List[Dict[str, Any]] = []
         season_corrections: List[Dict[str, Any]] = []
 
-        # 1. 类型修正：当前保持原类型，保留结构以便后续接入类型判定逻辑
+        # 1. 类型修正：只处理源站无法确定类型(None)的条目，已有明确类型的保持原值
         log_lines.append("○ 开始类型修正...")
+        unknown_items = [item for item in search_results if item.type is None]
+        if unknown_items and ai_matcher is not None and hasattr(ai_matcher, "classify_media_types"):
+            payload = [
+                {
+                    "index": index,
+                    "title": item.title,
+                    "year": getattr(item, "year", None),
+                    "episodeCount": getattr(item, "episodeCount", None),
+                    "sourceType": getattr(item, "sourceType", None),
+                }
+                for index, item in enumerate(unknown_items)
+            ]
+            decided = await ai_matcher.classify_media_types(payload)
+            for index, media_type in decided.items():
+                item = unknown_items[index]
+                item.type = media_type
+                type_corrections.append({
+                    'item': item,
+                    'original_type': None,
+                    'corrected_type': media_type,
+                    'method': 'ai_classify',
+                })
+                log_lines.append(f"  ✓ 类型判定: '{item.title}' → {media_type}")
         log_lines.append(f"✓ 类型修正完成: 修正了 {len(type_corrections)} 个结果的类型信息")
 
         # 2. 季度修正：仅对电视剧生效
-        if any(item.type == 'tv_series' for item in search_results):
+        if any(item.type in ('tv_series', None) for item in search_results):
             season_corrections = await ai_season_mapping_and_correction(
                 search_title=search_title,
                 search_results=search_results,

@@ -375,7 +375,7 @@ async def get_match_for_item(
                     "final_title": cached_title,
                     "original_title": season_cache.get("original_title", cached_title),
                     "final_season": cached_season,
-                    "media_type": season_cache.get("media_type", "tv_series"),
+                    "media_type": season_cache.get("media_type") or "tv_series",
                     "imageUrl": season_cache.get("imageUrl"),
                     "year": season_cache.get("year"),
                     "timestamp": time.time()

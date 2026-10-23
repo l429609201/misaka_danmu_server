@@ -173,7 +173,7 @@ class ExampleScraper(BaseScraper):
                     provider=self.provider_name,        # 源标识符
                     mediaId=str(item["id"]),            # 媒体ID（字符串）
                     title=item["title"],                # 标题
-                    type="tvseries",                    # 类型: tvseries / movie / ova / web
+                    type=None,                          # 类型: tv_series / movie / ova；无法确定时为 None，交由元数据/AI 判定
                     season=detected_season,             # 季度（可选, int）
                     year=item.get("year"),              # 年份（可选, int）
                     imageUrl=item.get("cover"),         # 封面图URL（可选）
@@ -334,7 +334,7 @@ class ExampleScraper(BaseScraper):
                 provider=self.provider_name,
                 mediaId=media_id,
                 title=data["title"],
-                type=data.get("type", "tvseries"),
+                type=data.get("type"),  # 源站未给出类型时为 None，不强行猜测
                 url=url,
             )
         except Exception as e:

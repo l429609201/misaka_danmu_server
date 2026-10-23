@@ -34,6 +34,7 @@ from src.utils import (
     is_movie_by_title,
 )
 from src.workflows.search.ai_correction import correct_search_results
+from src.workflows.search.filtering import is_series_candidate
 # 外链配置与图片缓存分别复用对应编排流程。
 from src.workflows.image_public_url import get_custom_domain
 from src.workflows.image_resources import save_public_thumbnail
@@ -522,14 +523,14 @@ async def _execute_fallback_search_core(
 
     # 6. 根据标题关键词修正媒体类型（复用统一的 is_movie_by_title）
     for item in sorted_results:
-        if item.type == "tv_series" and is_movie_by_title(item.title):
-            logger.info(f"标题 '{item.title}' 包含电影关键词，类型从 'tv_series' 修正为 'movie'。")
+        if is_series_candidate(item.type) and is_movie_by_title(item.title):
+            logger.info(f"标题 '{item.title}' 包含电影关键词，类型从 '{item.type}' 修正为 'movie'。")
             item.type = "movie"
 
     # 7. 如果搜索词中明确指定了季度，对结果进行过滤
     if season_to_filter:
         original_count = len(sorted_results)
-        filtered_by_type = [item for item in sorted_results if item.type == "tv_series"]
+        filtered_by_type = [item for item in sorted_results if is_series_candidate(item.type)]
         filtered_by_season = [item for item in filtered_by_type if item.season == season_to_filter]
         logger.info(f"根据指定的季度 ({season_to_filter}) 进行过滤，从 {original_count} 个结果中保留了 {len(filtered_by_season)} 个。")
         sorted_results = filtered_by_season

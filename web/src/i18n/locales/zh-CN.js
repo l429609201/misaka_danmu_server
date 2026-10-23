@@ -786,6 +786,11 @@ export default {
 
   // 首页
   home: {
+    searchNotifyTitle: '主页搜索',
+    searchNotifyDone: '「{{keyword}}」搜到 {{total}} 条结果，来自 {{sources}} 个源，耗时 {{seconds}} 秒，御坂御坂报告道！',
+    searchNotifyEmpty: '「{{keyword}}」没有搜到结果（耗时 {{seconds}} 秒），御坂御坂沮丧地报告道。',
+    searchNotifyBody: '关键词：{{keyword}}\n结果：{{total}} 条（{{sources}} 个源，补充 {{supplemental}} 条）\n耗时：{{seconds}} 秒',
+    searchNotifyFailed: '「{{keyword}}」搜索失败：{{reason}}',
     search: '搜索',
     searchAnime: '搜索番剧',
     clearCache: '清除缓存',

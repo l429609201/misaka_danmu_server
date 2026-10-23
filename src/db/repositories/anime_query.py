@@ -600,7 +600,7 @@ class AnimeQueryRepository:
 
     async def scan_duplicate_animes(self, strict: bool = True) -> List[Dict[str, Any]]:
         """
-        扫描弹幕库中基于 TMDB ID 的重复条目。
+        扫描弹幕库中的重复条目：基于 TMDB ID 分组，并追加“同一弹幕源 mediaId 挂在多个条目下”的分组。
 
         替代 crud.scan_duplicate_animes（纯聚合查询，无写操作）。
 
@@ -662,6 +662,47 @@ class AnimeQueryRepository:
             if strict:
                 group["season"] = items[0]["season"]
             duplicate_groups.append(group)
+
+        # why: 后备搜索建出的条目没有 tmdbId，按 TMDB 分组扫不出来；
+        #      同一 provider + mediaId 挂在多个作品下是确定的重复，
+        #      追加同源分组，已被 TMDB 分组覆盖的同一作品集合不重复展示。
+        reported = {frozenset(i["animeId"] for i in g["items"]) for g in duplicate_groups}
+        same_source_stmt = (
+            select(
+                AnimeSource.providerName,
+                AnimeSource.mediaId,
+                Anime.id.label("animeId"),
+                Anime.title,
+                Anime.season,
+                Anime.year,
+                Anime.imageUrl,
+                Anime.localImagePath,
+                func.coalesce(source_count_subq.c.sourceCount, 0).label("sourceCount"),
+            )
+            .join(Anime, AnimeSource.animeId == Anime.id)
+            .outerjoin(source_count_subq, Anime.id == source_count_subq.c.animeId)
+            .where(
+                AnimeSource.mediaId.isnot(None),
+                AnimeSource.mediaId != "",
+            )
+            .order_by(AnimeSource.providerName, AnimeSource.mediaId, Anime.id)
+        )
+        source_groups: Dict[Any, Dict[int, Dict[str, Any]]] = defaultdict(dict)
+        for row in (await self._session.execute(same_source_stmt)).mappings():
+            item = dict(row)
+            key = (item.pop("providerName"), item.pop("mediaId"))
+            source_groups[key][item["animeId"]] = item
+        for (provider, media_id), by_anime in source_groups.items():
+            anime_ids = frozenset(by_anime)
+            if len(anime_ids) < 2 or anime_ids in reported:
+                continue
+            reported.add(anime_ids)
+            duplicate_groups.append({
+                "tmdbId": None,
+                "provider": provider,
+                "mediaId": media_id,
+                "items": list(by_anime.values()),
+            })
 
         return duplicate_groups
 

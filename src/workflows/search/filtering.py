@@ -33,11 +33,26 @@ def correct_movie_type_by_title(results: List[Any], *, log_prefix: str = "") -> 
         传入的同一列表（就地修改，返回以便链式调用）。
     """
     for item in results:
-        if item.type == "tv_series" and is_movie_by_title(item.title):
+        # 类型未知(None)同样允许按标题强关键词判定为电影
+        if is_series_candidate(item.type) and is_movie_by_title(item.title):
             prefix = f"{log_prefix} " if log_prefix else ""
-            logger.info(f"{prefix}标题 '{item.title}' 包含电影关键词，类型从 'tv_series' 修正为 'movie'。")
+            logger.info(f"{prefix}标题 '{item.title}' 包含电影关键词，类型从 '{item.type}' 修正为 'movie'。")
             item.type = "movie"
     return results
+
+
+def is_series_candidate(item_type: Any) -> bool:
+    """判断搜索结果是否可作为剧集候选。
+
+    源站无法确定类型时 type 为 None，此时不能直接丢弃，需与 tv_series 一样参与季度过滤/映射。
+
+    Args:
+        item_type: 搜索结果的 type 字段。
+
+    Returns:
+        type 为 tv_series 或 None 时返回 True。
+    """
+    return item_type is None or item_type == "tv_series"
 
 
 def filter_by_season(results: List[Any], season: int) -> Tuple[List[Any], List[Any]]:
@@ -58,7 +73,7 @@ def filter_by_season(results: List[Any], season: int) -> Tuple[List[Any], List[A
         return results, []
 
     original_count = len(results)
-    filtered_by_type = [item for item in results if item.type == "tv_series"]
+    filtered_by_type = [item for item in results if is_series_candidate(item.type)]
 
     kept: List[Any] = []
     filtered_out: List[Any] = []

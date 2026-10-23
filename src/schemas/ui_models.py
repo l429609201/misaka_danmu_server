@@ -620,8 +620,10 @@ class DuplicateAnimeItem(BaseModel):
 
 class DuplicateGroup(BaseModel):
     """一组重复的条目"""
-    tmdbId: str
+    tmdbId: Optional[str] = None  # 同源分组时为空
     season: Optional[int] = None  # 严格模式下有值
+    provider: Optional[str] = None  # 同源分组：重复的弹幕源
+    mediaId: Optional[str] = None  # 同源分组：重复的源站媒体 ID
     items: List[DuplicateAnimeItem]
 
 

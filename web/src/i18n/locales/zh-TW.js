@@ -786,6 +786,11 @@ export default {
 
   // 首頁
   home: {
+    searchNotifyTitle: '主頁搜尋',
+    searchNotifyDone: '「{{keyword}}」搜到 {{total}} 條結果，來自 {{sources}} 個源，耗時 {{seconds}} 秒，御坂御坂報告道！',
+    searchNotifyEmpty: '「{{keyword}}」沒有搜到結果（耗時 {{seconds}} 秒），御坂御坂沮喪地報告道。',
+    searchNotifyBody: '關鍵詞：{{keyword}}\n結果：{{total}} 條（{{sources}} 個源，補充 {{supplemental}} 條）\n耗時：{{seconds}} 秒',
+    searchNotifyFailed: '「{{keyword}}」搜尋失敗：{{reason}}',
     search: '搜尋',
     searchAnime: '搜尋番劇',
     clearCache: '清除快取',

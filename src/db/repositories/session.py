@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, List
 
 from sqlalchemy import case, func, select, update as sa_update, delete as sa_delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.timezone import get_now
@@ -127,31 +128,45 @@ class SessionRepository(BaseRepository[UserSession]):
         user_agent = _truncate_user_agent(user_agent)
         existing = await self.get_by_jti(jti)
 
-        if existing is not None:
-            expired = existing.expiresAt is not None and existing.expiresAt < now
-            existing.lastUsedAt = now
-            if fresh or existing.isRevoked or expired:
-                # 新签发令牌必须同步延长会话，否则新令牌会受旧会话有效期限制。
-                existing.userId = user_id
-                existing.ipAddress = ip_address
-                existing.userAgent = user_agent
-                existing.isRevoked = False
-                existing.expiresAt = _resolve_expires_at(now, expires_minutes)
-            await self._session.flush()
-            return False
+        if existing is None:
+            # why：同一浏览器页面加载时会并发发出多个请求，它们都查不到会话、同时插入，
+            # 后到者命中唯一键。用保存点隔离插入，冲突只回滚保存点，
+            # 外层事务保持可用，改为刷新对方刚插入的记录，避免整笔事务失败并刷 ERROR 日志。
+            try:
+                async with self._session.begin_nested():
+                    self._session.add(UserSession(
+                        userId=user_id,
+                        jti=jti,
+                        ipAddress=ip_address,
+                        userAgent=user_agent,
+                        createdAt=now,
+                        lastUsedAt=now,
+                        expiresAt=_resolve_expires_at(now, expires_minutes),
+                        isRevoked=False,
+                    ))
+                return True
+            except IntegrityError:
+                # MySQL 可重复读下普通 SELECT 仍读旧快照（看不到对方刚提交的行），
+                # 必须用加锁读取最新已提交版本。
+                result = await self._session.execute(
+                    select(UserSession).where(UserSession.jti == jti).with_for_update()
+                )
+                existing = result.scalar_one_or_none()
+                if existing is None:
+                    # 非 jti 冲突（如外键错误）不能吞掉
+                    raise
 
-        self._session.add(UserSession(
-            userId=user_id,
-            jti=jti,
-            ipAddress=ip_address,
-            userAgent=user_agent,
-            createdAt=now,
-            lastUsedAt=now,
-            expiresAt=_resolve_expires_at(now, expires_minutes),
-            isRevoked=False,
-        ))
+        expired = existing.expiresAt is not None and existing.expiresAt < now
+        existing.lastUsedAt = now
+        if fresh or existing.isRevoked or expired:
+            # 新签发令牌必须同步延长会话，否则新令牌会受旧会话有效期限制。
+            existing.userId = user_id
+            existing.ipAddress = ip_address
+            existing.userAgent = user_agent
+            existing.isRevoked = False
+            existing.expiresAt = _resolve_expires_at(now, expires_minutes)
         await self._session.flush()
-        return True
+        return False
 
     async def update(self, session_id: int, **kwargs) -> Optional[UserSession]:
         """按主键更新会话字段"""

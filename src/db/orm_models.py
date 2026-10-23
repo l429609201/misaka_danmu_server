@@ -7,7 +7,7 @@ from sqlalchemy import (
     String, TEXT, TypeDecorator, UniqueConstraint, DECIMAL, func
 )
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 from src.core.timezone import get_now
 
 class NaiveDateTime(TypeDecorator):
@@ -47,11 +47,15 @@ class AnimeGroup(Base):
     animes: Mapped[List["Anime"]] = relationship(back_populates="group")
 
 
+# anime.type 允许的枚举值
+ANIME_TYPES = ('tv_series', 'movie', 'ova', 'other')
+
+
 class Anime(Base):
     __tablename__ = "anime"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(500), index=True)
-    type: Mapped[str] = mapped_column(Enum('tv_series', 'movie', 'ova', 'other', name="anime_type"), default='tv_series')
+    type: Mapped[str] = mapped_column(Enum(*ANIME_TYPES, name="anime_type"), default='tv_series')
     imageUrl: Mapped[Optional[str]] = mapped_column("image_url", String(512))
     localImagePath: Mapped[Optional[str]] = mapped_column("local_image_path", String(512))
     season: Mapped[int] = mapped_column(Integer, default=1)
@@ -68,6 +72,14 @@ class Anime(Base):
     __table_args__ = (
         Index('idx_title_fulltext', 'title'),
     )
+
+    @validates("type")
+    def _normalize_type(self, _key: str, value: Optional[str]) -> str:
+        """入库兜底：搜索阶段允许类型为 None（交给元数据/AI 判定），
+        但 anime.type 为 NOT NULL 枚举，未判定或非法值统一落为 tv_series。"""
+        if value in ANIME_TYPES:
+            return value
+        return "tv_series"
 
 class AnimeSource(Base):
     __tablename__ = "anime_sources"

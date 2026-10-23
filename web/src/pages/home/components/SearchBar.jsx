@@ -18,6 +18,11 @@ import {
   searchLoadingAtom,
 } from '../../../../store'
 import { useModal } from '../../../ModalContext'
+
+// 把主页搜索结果投递给御坂看板娘气泡（AssistantWidget 监听该事件）。
+function notifyAssistant(text, kind, title, body) {
+  window.dispatchEvent(new CustomEvent('assistant-notify', { detail: { text, kind, title, body } }))
+}
 import { useMessage } from '../../../MessageContext'
 import { useSearchParams } from 'react-router-dom'
 
@@ -78,6 +83,7 @@ export const SearchBar = () => {
         return [values.keyword, ...history].slice(0, 10)
       })
 
+      const startedAt = performance.now()
       timer.current = window.setInterval(() => {
         setPercent(p => (p <= 90 ? p + Math.ceil(Math.random() * 5) : 95))
       }, 200)
@@ -95,8 +101,27 @@ export const SearchBar = () => {
         ...(res?.data || {}),
         keyword: values.keyword,
       })
+      if (page === 1) {
+        const data = res?.data || {}
+        const total = data.total ?? data.results?.length ?? 0
+        const sources = data.available_providers?.length || 0
+        const supplemental = data.supplemental_results?.length || 0
+        const seconds = ((performance.now() - startedAt) / 1000).toFixed(2)
+        const params = { keyword: values.keyword, total, sources, supplemental, seconds }
+        notifyAssistant(
+          total ? t('home.searchNotifyDone', params) : t('home.searchNotifyEmpty', params),
+          total ? 'done' : 'failed',
+          t('home.searchNotifyTitle'),
+          t('home.searchNotifyBody', params)
+        )
+      }
     } catch (error) {
       console.error(`搜索失败: ${error.message || error}`)
+      notifyAssistant(
+        t('home.searchNotifyFailed', { keyword: values.keyword, reason: String(error?.message || error).slice(0, 60) }),
+        'failed',
+        t('home.searchNotifyTitle')
+      )
     } finally {
       setLoading(false)
       setPercent(0)

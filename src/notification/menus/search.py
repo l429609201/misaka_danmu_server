@@ -502,7 +502,7 @@ class SearchMenuMixin:
                 "episodes": ep_list,
                 "selected": selected,
                 "title": item.get("title", ""),
-                "type": item.get("type", "tv_series"),
+                "type": item.get("type") or "tv_series",  # 类型未知(None)时默认按剧集导入，可在编辑页切换
                 "season": item.get("season", 1),
                 "_search_snapshot": conv.data,
             }
@@ -520,7 +520,7 @@ class SearchMenuMixin:
         selected = set(edit_data.get("selected", []))
         item = edit_data.get("item", {})
         title = edit_data.get("title", item.get("title", ""))
-        media_type = edit_data.get("type", "tv_series")
+        media_type = edit_data.get("type") or "tv_series"
         season = edit_data.get("season", 1)
         type_label = "📺 电视剧" if media_type == "tv_series" else "🎬 电影"
 
@@ -671,7 +671,7 @@ class SearchMenuMixin:
         selected: list = conv.data.get("selected", [])
         item = conv.data.get("item", {})
         title = conv.data.get("title", item.get("title", ""))
-        media_type = conv.data.get("type", "tv_series")
+        media_type = conv.data.get("type") or "tv_series"
         season = conv.data.get("season", 1)
 
         if not selected:

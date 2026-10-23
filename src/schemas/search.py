@@ -37,7 +37,8 @@ class ProviderSearchInfo(BaseModel):
     provider: str = Field(..., description="数据源名称")
     mediaId: str = Field(..., description="该数据源中的媒体ID")
     title: str = Field(..., description="作品标题")
-    type: str = Field(..., description="作品类型: tv_series, movie")
+    # 源站无法明确判定类型时为 None，入库前再兜底
+    type: Optional[str] = Field(None, description="作品类型: tv_series / movie；无法确定时为 null")
     season: Optional[int] = Field(None, description="季度号")
     result_index: int = Field(..., description="结果索引（用于 /import/direct）")
 

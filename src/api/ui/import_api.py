@@ -38,6 +38,9 @@ async def import_from_provider(
     config_service = get_config_service()
     title_recognition_manager = get_title_recognition_manager()
     logger.info(f"导入请求: 用户={current_user.username}, provider={request_data.provider}, title={request_data.animeTitle}")
+    # 搜索结果类型可能为 None（源站未明确类型）；进入导入流程前统一兜底为剧集
+    if not request_data.type:
+        request_data.type = "tv_series"
     try:
         # 在启动任务前检查provider是否存在
         scraper_manager.get_scraper(request_data.provider)

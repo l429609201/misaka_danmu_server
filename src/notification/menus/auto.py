@@ -111,7 +111,7 @@ class AutoMenuMixin:
         if not conv:
             return CommandResult(text="", answer_callback_text="操作已过期")
         search_term = conv.data.get("search_term", "")
-        media_type = conv.data.get("media_type", "tv_series")
+        media_type = conv.data.get("media_type") or "tv_series"
         search_type = conv.data.get("search_type", "keyword")
         self.clear_conversation(user_id)
         return await self._submit_auto_import(

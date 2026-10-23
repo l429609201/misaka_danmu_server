@@ -32,7 +32,7 @@ async def prepare_library_import(
         unique_key += f"-s{target_season}"
     parameters = {
         "provider": source["providerName"], "mediaId": source["mediaId"],
-        "animeTitle": existing["title"], "mediaType": existing.get("type", "tv_series"),
+        "animeTitle": existing["title"], "mediaType": existing.get("type") or "tv_series",
         "season": target_season, "year": existing.get("year"),
         "currentEpisodeIndex": None, "selectedEpisodes": parse_episode_ranges(episode_text),
         "imageUrl": existing.get("imageUrl"), "preassignedAnimeId": anime_id,

@@ -203,7 +203,7 @@ class TmdbAutoMapJob(BaseJob):
                 # 初始化变量
                 use_episode_group = False
                 recognized_season = None
-                search_type = show.get('type', 'tv_series')  # 提前初始化,供AI验证别名使用
+                search_type = show.get('type') or 'tv_series'  # 提前初始化,供AI验证别名使用
 
                 # 步骤 1: 如果没有TMDB ID，尝试通过标题搜索获取
                 if not tmdb_id:

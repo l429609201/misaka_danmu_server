@@ -786,6 +786,11 @@ export default {
 
   // Home page
   home: {
+    searchNotifyTitle: 'Home Search',
+    searchNotifyDone: '"{{keyword}}": {{total}} results from {{sources}} sources in {{seconds}}s, Misaka Misaka reports!',
+    searchNotifyEmpty: '"{{keyword}}": no results ({{seconds}}s), Misaka Misaka reports sadly.',
+    searchNotifyBody: 'Keyword: {{keyword}}\nResults: {{total}} ({{sources}} sources, {{supplemental}} supplemental)\nTime: {{seconds}}s',
+    searchNotifyFailed: '"{{keyword}}" search failed: {{reason}}',
     search: 'Search',
     searchAnime: 'Search Anime',
     clearCache: 'Clear Cache',
