@@ -125,6 +125,19 @@ const PREVIEW_STYLES = {
     },
     badge: { emoji: '💎', label: '玻璃' },
   },
+  anibt: {
+    wrap: {
+      background: 'radial-gradient(circle at 20% 20%, rgba(255,111,156,0.18), transparent 45%), #f7f5fa',
+      border: '1px solid #ebe6f0',
+    },
+    card: {
+      background: '#fff',
+      borderRadius: 14,
+      border: '1px solid #ebe6f0',
+      boxShadow: '0 2px 0 #ebe6f0',
+    },
+    badge: { emoji: '🌸', label: 'AniBT' },
+  },
 }
 
 // 徽标配色：统一走主题粉色（页面样式不再覆写配色，无需按风格分色）
@@ -144,6 +157,7 @@ const STYLE_TIP_KEYS = {
   calendar:        'calendarTip',
   github:          'githubTip',
   material:        'materialTip',
+  anibt:           'anibtTip',
 }
 
 const PageStylePicker = ({ open, onClose }) => {

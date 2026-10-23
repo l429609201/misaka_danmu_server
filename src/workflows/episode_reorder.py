@@ -8,14 +8,27 @@ from src.workflows.danmaku_edit_operations import DanmakuEditWriteContext
 async def renumber_episodes(
     progress_callback: Callable, source_id: Optional[int] = None,
     episode_ids: Optional[List[int]] = None, offset: Optional[int] = None,
+    ordered_ids: Optional[List[int]] = None,
 ) -> str:
-    """重整一个源或偏移所选分集，失败恢复文件且不关闭外键约束。"""
+    """重整一个源、偏移所选分集或按拖动顺序重排，失败恢复文件且不关闭外键约束。
+
+    ordered_ids 须与 source_id 同时提供，并完整列出该源全部分集；
+    原有集数集合保持不变，仅按新顺序重新分配（保留缺集空位）。
+    """
     if source_id is None and not episode_ids:
         return "没有选中任何分集。"
     ctx = DanmakuEditWriteContext()
     await progress_callback(0, "正在验证分集编号...")
     async with ctx.transaction():
-        if source_id is not None:
+        if source_id is not None and ordered_ids is not None:
+            current = await ctx.db.episode.get_all(source_id=source_id)
+            by_id = {ep.id: ep for ep in current}
+            # 必须是全量且无重复，避免基于过期列表覆盖其他分集。
+            if len(ordered_ids) != len(set(ordered_ids)) or set(ordered_ids) != set(by_id):
+                raise ValueError("排序列表与当前分集不一致，请刷新后重试")
+            episodes = [by_id[ep_id] for ep_id in ordered_ids]
+            indices = sorted(ep.episodeIndex for ep in current)
+        elif source_id is not None:
             episodes = await ctx.db.episode.get_all(source_id=source_id)
             episodes.sort(key=lambda ep: (ep.episodeIndex, ep.id))
             indices = list(range(1, len(episodes) + 1))

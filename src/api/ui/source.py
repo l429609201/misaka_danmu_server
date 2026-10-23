@@ -38,6 +38,7 @@ from src.schemas.control import (
     BatchManualImportItem,
     SplitSourceRequest,
     SplitSourceResponse,
+    EpisodeSortRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,6 +161,34 @@ async def reorder_source_episodes(
     logger.info(f"用户 '{current_user.username}' 提交了重整源 ID: {sourceId} 集数的任务 (Task ID: {task_id})。")
     return {"message": f"重整集数任务 '{task_title}' 已提交。", "taskId": task_id}
 
+
+
+@router.post("/library/source/{sourceId}/sort-episodes", status_code=status.HTTP_202_ACCEPTED, summary="按拖动顺序重排分集集数", response_model=UITaskResponse)
+async def sort_source_episodes(
+    sourceId: int,
+    request_data: EpisodeSortRequest,
+    current_user: User = Depends(get_current_user),
+    task_manager: TaskManager = Depends(get_task_manager),
+) -> dict:
+    """提交后台任务，按前端拖动后的顺序重新分配该源已有的集数。"""
+    db = get_database_service()
+    async with db.transaction():
+        source_info = await db.source.get_anime_source_info(sourceId)
+    if not source_info:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+
+    task_title = f"拖动排序: {source_info['title']} ({source_info['providerName']})"
+    task_coro = lambda session, callback: tasks.sort_episodes_task(
+        sourceId, request_data.episodeIds, session, callback
+    )
+    # 与集数偏移共用唯一键，防止同一源的编号任务并发互相覆盖。
+    task_id, _ = await task_manager.submit_task(
+        task_coro, task_title, unique_key=f"modify-episodes-{sourceId}",
+        queue_type="management", task_type="sort_episodes",
+        task_parameters={"sourceId": sourceId},
+    )
+    logger.info(f"用户 '{current_user.username}' 提交了源 ID: {sourceId} 的拖动排序任务 (Task ID: {task_id})。")
+    return {"message": f"拖动排序任务 '{task_title}' 已提交。", "taskId": task_id}
 
 
 @router.post("/library/source/{sourceId}/refresh", status_code=status.HTTP_202_ACCEPTED, summary="刷新指定数据源 (全量或增量)", response_model=UITaskResponse)

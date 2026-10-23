@@ -16,6 +16,17 @@ async def reorder_episodes_task(
     raise TaskSuccess(message)
 
 
+async def sort_episodes_task(
+    source_id: int, ordered_ids: List[int], session: AsyncSession,
+    progress_callback: Callable,
+) -> None:
+    """按拖动排序结果重新分配分集集数。"""
+    message = await renumber_episodes(
+        progress_callback, source_id=source_id, ordered_ids=ordered_ids,
+    )
+    raise TaskSuccess(message)
+
+
 async def offset_episodes_task(
     episode_ids: List[int], offset: int, session: AsyncSession,
     progress_callback: Callable,

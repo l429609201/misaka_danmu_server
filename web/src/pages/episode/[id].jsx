@@ -26,7 +26,6 @@ import {
   Modal,
   Space,
   Switch,
-  Table,
   Tooltip,
   Upload,
   Tag,
@@ -53,6 +52,7 @@ import { useModal } from '../../ModalContext'
 import { useMessage } from '../../MessageContext'
 import { BatchImportModal } from '../../components/BatchImportModal'
 import { DanmakuEditModal } from '../../components/DanmakuEditModal'
+import { EpisodeSortModal } from '../../components/EpisodeSortModal'
 import { isUrl } from '../../utils/data'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../store'
@@ -87,9 +87,7 @@ export const EpisodeDetail = () => {
   const [form] = Form.useForm()
   const [editOpen, setEditOpen] = useState(false)
   const [confirmLoading, setConfirmLoading] = useState(false)
-  const [resetOpen, setResetOpen] = useState(false)
-  const [resetLoading, setResetLoading] = useState(false)
-  const [resetInfo, setResetInfo] = useState({})
+  const [sortOpen, setSortOpen] = useState(false)
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const uploadRef = useRef(null)
@@ -717,27 +715,6 @@ export const EpisodeDetail = () => {
     }
   }
 
-  const keepColumns = [
-    {
-      title: t('episodePage.colEpisodeIndex'),
-      dataIndex: 'episodeIndex',
-      key: 'episodeIndex',
-      width: 60,
-    },
-    {
-      title: t('episodePage.colTitle'),
-      dataIndex: 'title',
-      key: 'title',
-      width: 200,
-    },
-    {
-      title: t('episodePage.colCommentCount'),
-      dataIndex: 'commentCount',
-      key: 'commentCount',
-      width: 60,
-    },
-  ]
-
   const handleBatchDelete = () => {
     deleteFilesRef.current = true // 重置为默认值
     modalApi.confirm({
@@ -1095,27 +1072,6 @@ export const EpisodeDetail = () => {
     })
   }
 
-  const handleResetMainEpisode = async () => {
-    try {
-      if (resetLoading) return
-      setResetLoading(true)
-      const episodeIds = resetInfo?.toDelete?.map(ep => Number(ep.episodeId))
-      await deleteAnimeEpisode({
-        episodeIds: episodeIds,
-      })
-      await resetEpisode({
-        sourceId: Number(id),
-      })
-      messageApi.success(t('episodePage.resetSubmitted'))
-    } catch (error) {
-      messageApi.error(t('episodePage.resetSubmitFailed', { error: error.message }))
-    } finally {
-      setResetInfo({})
-      setResetOpen(false)
-      setResetLoading(false)
-    }
-  }
-
   const handleUpload = async ({ file }) => {
     setUploading(true)
 
@@ -1227,39 +1183,13 @@ export const EpisodeDetail = () => {
               </Tooltip>
             </Button>
             <Button
-              onClick={() => {
-                const validCounts = episodeList
-                  .map(ep => Number(ep.commentCount))
-                  .filter(n => Number.isFinite(n) && n >= 0)
-                if (validCounts.length === 0) {
-                  messageApi.error(t('episodePage.danmakuUnavailable'))
-                  return
-                }
-                const average =
-                  validCounts.reduce((a, b) => a + b, 0) / validCounts.length
-                const toDelete = episodeList.filter(
-                  ep => Number(ep.commentCount) < average
-                )
-                const toKeep = episodeList.filter(
-                  ep => Number(ep.commentCount) >= average
-                )
-
-                if (toDelete.length === 0) {
-                  messageApi.error(
-                    t('episodePage.noEpisodeBelowAvg', { avg: average.toFixed(2) })
-                  )
-                  return
-                }
-                setResetInfo({
-                  average,
-                  toDelete,
-                  toKeep,
-                })
-                setResetOpen(true)
-              }}
+              onClick={() => setSortOpen(true)}
               disabled={!episodeList.length}
             >
-              {t('episodePage.btnReorderMain')}
+              <Tooltip title={t('episodeSort.btnTip')}>
+                <HolderOutlined />
+                <span className="ml-1">{t('episodeSort.btn')}</span>
+              </Tooltip>
             </Button>
             <Button
               onClick={() => {
@@ -1787,57 +1717,14 @@ export const EpisodeDetail = () => {
           </Form.Item>
         </Form>
       </Modal>
-      <Modal
-        title={t('episodePage.resetPreviewTitle', { title: animeDetail.title })}
-        open={resetOpen}
-        onOk={handleResetMainEpisode}
-        confirmLoading={resetLoading}
-        cancelText={t('common.cancel')}
-        okText={t('episodePage.btnConfirmExec')}
-        onCancel={() => setResetOpen(false)}
-        zIndex={100}
-      >
-        <div>
-          <Typography.Text className="mb-2">{t('episodePage.resetPreviewDesc')}</Typography.Text>
-          <ul>
-            <li>
-              <Typography.Text>
-                {t('episodePage.avgCommentCount')}<strong>{resetInfo?.average?.toFixed(2)}</strong>
-              </Typography.Text>
-            </li>
-            <li>
-              <Typography.Text>
-                {t('episodePage.estimateDelete')}
-                <span className="text-red-400 font-bold">
-                  {resetInfo?.toDelete?.length}
-                </span>{' '}
-                / {episodeList.length}
-              </Typography.Text>
-            </li>
-            <li>
-              <Typography.Text>
-                {t('episodePage.estimateKeep')}
-                <span className="text-green-500 font-bold">
-                  {resetInfo?.toKeep?.length}
-                </span>{' '}
-                / {episodeList.length}
-              </Typography.Text>
-            </li>
-          </ul>
-        </div>
-        <div className="my-4 text-sm font-semibold">
-          <Typography.Text>{t('episodePage.previewKeepHint')}</Typography.Text>
-        </div>
-        <Table
-          className="library-table"
-          pagination={false}
-          size="small"
-          dataSource={resetInfo?.toKeep?.slice(0, 80) ?? []}
-          columns={keepColumns}
-          rowKey={'episodeId'}
-          scroll={{ x: '100%' }}
-        />
-      </Modal>
+      <EpisodeSortModal
+        open={sortOpen}
+        sourceId={Number(id)}
+        isMobile={isMobile}
+        onClose={() => setSortOpen(false)}
+        // 任务异步执行，稍等再刷新列表以展示新集数
+        onSubmitted={() => setTimeout(getDetail, 2000)}
+      />
       {/* 批量编辑弹窗 */}
       <Modal
         title={t('episodePage.batchEditTitle')}

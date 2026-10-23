@@ -29,6 +29,7 @@ from .refresh import (
 # 分集管理任务
 from .episode_numbering import (
     reorder_episodes_task,
+    sort_episodes_task,
     offset_episodes_task,
 )
 
@@ -81,6 +82,7 @@ __all__ = [
     'fill_missing_task',
     # 分集管理任务
     'reorder_episodes_task',
+    'sort_episodes_task',
     'offset_episodes_task',
     # 核心导入任务
     'generic_import_task',

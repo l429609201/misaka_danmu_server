@@ -1,5 +1,8 @@
 ﻿/* 导入Tailwind核心（v4.0必需） */
 @import 'tailwindcss';
+/* AniBT UI 组件库变量/工具类 + AniBT 页面样式的 antd 皮肤 */
+@import './components/anibt/anibt.css';
+@import './components/anibt/anibt-antd.css';
 
 /* 深色模式使用 class 策略（.dark 类），而非媒体查询 */
 @custom-variant dark (&:where(.dark, .dark *));

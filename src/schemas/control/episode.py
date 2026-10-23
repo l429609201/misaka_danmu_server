@@ -37,6 +37,11 @@ class EpisodeOffsetRequest(BaseModel):
     offset: int
 
 
+class EpisodeSortRequest(BaseModel):
+    """拖动排序请求：按新顺序列出该源全部分集 ID"""
+    episodeIds: List[int] = Field(..., min_length=1)
+
+
 class BulkDeleteEpisodesRequest(BaseModel):
     """批量删除分集请求"""
     episodeIds: List[int]
@@ -52,6 +57,7 @@ __all__ = [
     "EpisodeInfoUpdate",
     "PaginatedEpisodesResponse",
     "EpisodeOffsetRequest",
+    "EpisodeSortRequest",
     "BulkDeleteEpisodesRequest",
     "BulkDeleteRequest",
 ]

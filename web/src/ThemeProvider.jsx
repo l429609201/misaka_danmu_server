@@ -135,7 +135,66 @@ export const PAGE_STYLES = [
   { key: 'calendar',      name: '挂历' },
   { key: 'github',        name: '代码仓库' },
   { key: 'material',      name: '质感设计' },
+  { key: 'anibt',         name: 'AniBT' },
 ]
+
+// AniBT「白樱 / 夜樱」配色（取自 OpenAniBT/ui 主题，见 components/anibt/anibt.css）。
+// why：AniBT 是完整主题而非纯布局皮肤，需要连同 antd token 一起换色；
+// 其余页面样式仍遵守「不覆写颜色」的约定。
+const ANIBT_STYLE = 'anibt'
+const ANIBT_PALETTE = {
+  light: { primary: '#c22a62', hover: '#a8204f', bg: '#f7f5fa', card: '#ffffff', fill: '#f3f0f7', border: '#ebe6f0', input: '#dad3e3', text: '#1f1c28', text2: '#6e6a78', onPrimary: '#ffffff' },
+  dark: { primary: '#ffa3c3', hover: '#ff8db3', bg: '#13111a', card: '#1c1926', fill: '#252130', border: '#2b2738', input: '#3b354a', text: '#f3f0f8', text2: '#9690a6', onPrimary: '#1f1c28' },
+}
+// 暗色基础主题里写死的 slate 色 → 夜樱对应色
+const ANIBT_DARK_REMAP = { '#0f172a': '#13111a', '#1e293b': '#1c1926', '#273449': '#252130', '#334155': '#2b2738' }
+
+/**
+ * 在现有 antd 主题上叠加 AniBT 配色与圆角（不改动原主题对象）。
+ * @param {object} base 原 light/dark 主题配置
+ * @param {boolean} dark 是否夜樱
+ * @returns {object} 新主题配置
+ */
+function applyAnibtTheme(base, dark) {
+  const c = dark ? ANIBT_PALETTE.dark : ANIBT_PALETTE.light
+  const remap = value => {
+    if (Array.isArray(value)) return value.map(remap)
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, remap(v)]))
+    }
+    if (dark && typeof value === 'string') return ANIBT_DARK_REMAP[value.toLowerCase()] || value
+    return value
+  }
+  const token = remap(base.token)
+  return {
+    ...base,
+    token: {
+      ...token,
+      colorPrimary: c.primary,
+      colorPrimaryHover: c.hover,
+      colorPrimaryActive: c.hover,
+      colorLink: c.primary,
+      colorInfo: dark ? '#6cb4ff' : '#1a64bf',
+      colorBgBase: c.bg,
+      colorBgLayout: c.bg,
+      colorBgContainer: c.card,
+      colorBgElevated: c.card,
+      colorFillSecondary: c.fill,
+      colorBorder: c.input,
+      colorBorderSecondary: c.border,
+      colorSplit: c.border,
+      colorTextBase: c.text,
+      colorText: c.text,
+      colorTextSecondary: c.text2,
+      colorTextLightSolid: c.onPrimary,
+      borderRadius: 10,
+      Button: { ...token.Button, borderRadius: 10, primaryShadow: 'none', defaultShadow: 'none' },
+      Card: { ...token.Card, borderRadius: 16 },
+      Tag: { ...token.Tag, borderRadiusSM: 6 },
+      Progress: { ...token.Progress, defaultColor: c.primary, remainingColor: c.fill },
+    },
+  }
+}
 const DEFAULT_PAGE_STYLE = 'normal'
 
 // 已移除的页面样式：读到这些历史值时回落到 normal，避免旧 localStorage 卡在无 CSS 的空样式
@@ -203,7 +262,11 @@ export function ThemeProvider({ children }) {
   }, [language])
 
   // 根据主色生成派生色
-  const colors = useMemo(() => generateThemeColors(themeColor), [themeColor])
+  // AniBT 样式下主色固定为樱粉（明暗各一），其余样式跟随用户主题色
+  const effectiveThemeColor = pageStyle === ANIBT_STYLE
+    ? (isDark ? ANIBT_PALETTE.dark.primary : ANIBT_PALETTE.light.primary)
+    : themeColor
+  const colors = useMemo(() => generateThemeColors(effectiveThemeColor), [effectiveThemeColor])
 
   // 动态更新 CSS 变量
   const applyCssVariables = (isDarkMode, colorScheme) => {
@@ -289,7 +352,15 @@ export function ThemeProvider({ children }) {
   // 当 isDark 或 themeColor 变化时，更新 CSS 变量
   useEffect(() => {
     applyCssVariables(isDark, colors)
-  }, [isDark, colors])
+    if (pageStyle === ANIBT_STYLE) {
+      // AniBT：页面底色/边框改用白樱/夜樱色，保证 Tailwind bg-base-* 类同步
+      const c = isDark ? ANIBT_PALETTE.dark : ANIBT_PALETTE.light
+      const root = document.documentElement
+      root.style.setProperty('--color-bg', c.bg)
+      root.style.setProperty('--color-hover', c.fill)
+      root.style.setProperty('--color-border', c.border)
+    }
+  }, [isDark, colors, pageStyle])
 
   // 切换暗黑模式
   const toggleDarkMode = () => {
@@ -467,9 +538,15 @@ export function ThemeProvider({ children }) {
     },
   }), [colors, pageStyle])
 
+  // AniBT 样式在原主题上叠加配色；其余样式原样使用
+  const antdTheme = useMemo(() => {
+    const base = isDark ? darkTheme : lightTheme
+    return pageStyle === ANIBT_STYLE ? applyAnibtTheme(base, isDark) : base
+  }, [isDark, darkTheme, lightTheme, pageStyle])
+
   return (
     <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle, wallpaperUrl, setWallpaperUrl, language, setLanguage }}>
-      <ConfigProvider locale={ANTD_LOCALES[language] || zhCN} theme={isDark ? darkTheme : lightTheme}>
+      <ConfigProvider locale={ANTD_LOCALES[language] || zhCN} theme={antdTheme}>
         {children}
       </ConfigProvider>
     </ThemeContext.Provider>

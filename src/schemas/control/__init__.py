@@ -41,6 +41,7 @@ from .episode import (
     EpisodeInfoUpdate,
     PaginatedEpisodesResponse,
     EpisodeOffsetRequest,
+    EpisodeSortRequest,
     BulkDeleteEpisodesRequest,
     BulkDeleteRequest,
 )
@@ -128,6 +129,7 @@ __all__ = [
     "EpisodeInfoUpdate",
     "PaginatedEpisodesResponse",
     "EpisodeOffsetRequest",
+    "EpisodeSortRequest",
     "BulkDeleteEpisodesRequest",
     "BulkDeleteRequest",
     # task

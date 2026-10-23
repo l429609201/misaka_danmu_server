@@ -834,6 +834,10 @@ export const deleteAnimeEpisodeSingle = data =>
 export const resetEpisode = data =>
   api.post(`/api/ui/library/source/${data.sourceId}/reorder-episodes`)
 
+/** 拖动排序：按新顺序提交该源全部分集 ID */
+export const sortEpisodes = data =>
+  api.post(`/api/ui/library/source/${data.sourceId}/sort-episodes`, { episodeIds: data.episodeIds })
+
 /** 集数偏移 */
 export const offsetEpisodes = data =>
   api.post('/api/ui/library/episodes/offset', data)

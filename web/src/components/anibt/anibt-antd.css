@@ -1,0 +1,122 @@
+/*
+ * AniBT 页面样式：把全站 antd 组件改成 AniBT UI 的外观。
+ * 仅在 <html data-page-style="anibt"> 时生效；颜色全部取自 anibt.css 的变量，
+ * 白樱 / 夜樱随 html.dark 自动切换。
+ * why：项目 118 个文件依赖 antd，逐个替换组件成本过高，统一用皮肤覆盖。
+ */
+
+html[data-page-style="anibt"] body {
+  background-color: var(--ab-background);
+  color: var(--ab-foreground);
+}
+
+/* ---------- Progress：糖果/流水渐变条 + 内凹轨道 ---------- */
+html[data-page-style="anibt"] body .ant-progress-inner {
+  background-color: var(--ab-muted) !important;
+  box-shadow: inset 0 0 0 1px var(--ab-border), inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  border-radius: 999px !important;
+}
+html[data-page-style="anibt"] body .ant-progress-bg {
+  background-color: var(--anibt-water-edge) !important;
+  background-image: var(--anibt-water) !important;
+  border-radius: 999px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+html[data-page-style="anibt"] body .ant-progress-status-success .ant-progress-bg {
+  background-color: var(--anibt-ok) !important;
+  background-image: none !important;
+}
+html[data-page-style="anibt"] body .ant-progress-status-exception .ant-progress-bg {
+  background-color: var(--ab-destructive) !important;
+  background-image: none !important;
+}
+html[data-page-style="anibt"] body .ant-progress-text {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--anibt-ink2);
+}
+html[data-page-style="anibt"] body .ant-progress-circle .ant-progress-circle-path {
+  stroke: var(--ab-primary) !important;
+}
+html[data-page-style="anibt"] body .ant-progress-circle .ant-progress-circle-trail {
+  stroke: var(--ab-muted) !important;
+}
+
+/* ---------- Button：贴纸按钮（1.5px 底边投影，按下下沉） ---------- */
+html[data-page-style="anibt"] body .ant-btn {
+  font-weight: 600;
+  transition: transform 0.14s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.14s cubic-bezier(0.2, 0.7, 0.2, 1),
+    background-color 0.14s, color 0.14s, filter 0.14s;
+}
+html[data-page-style="anibt"] body .ant-btn-default:not(:disabled) {
+  border-color: transparent;
+  background-color: var(--ab-card);
+  color: var(--ab-foreground);
+  box-shadow: inset 0 0 0 1px var(--ab-input), 0 1.5px 0 var(--ab-input);
+}
+html[data-page-style="anibt"] body .ant-btn-default:not(:disabled):hover {
+  border-color: transparent;
+  color: var(--ab-accent-foreground);
+  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1px var(--anibt-wash-line), 0 2.5px 0 var(--anibt-wash-line);
+}
+html[data-page-style="anibt"] body .ant-btn-default:not(:disabled):active {
+  background-color: var(--ab-accent);
+  transform: translateY(1.5px);
+  box-shadow: inset 0 0 0 1px var(--anibt-wash-line);
+}
+html[data-page-style="anibt"] body .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous) {
+  border-color: transparent;
+  background-color: var(--anibt-candy-edge) !important;
+  background-image: var(--anibt-candy);
+  color: var(--anibt-candy-ink) !important;
+  text-shadow: var(--anibt-candy-text-shadow);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 1.5px 0 var(--anibt-candy-edge),
+    0 4px 10px -4px var(--anibt-candy-glow);
+}
+html[data-page-style="anibt"] body .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):hover {
+  transform: translateY(-1px);
+  filter: saturate(1.08) brightness(1.03);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2.5px 0 var(--anibt-candy-edge),
+    0 8px 16px -6px var(--anibt-candy-glow);
+}
+html[data-page-style="anibt"] body .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):active {
+  transform: translateY(1.5px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 2px var(--anibt-candy-glow);
+}
+
+/* ---------- Tag：小方圆标签 ---------- */
+html[data-page-style="anibt"] body .ant-tag {
+  border-radius: 6px;
+  font-weight: 600;
+}
+html[data-page-style="anibt"] body .ant-tag:not([class*="ant-tag-"]),
+html[data-page-style="anibt"] body .ant-tag.ant-tag-default {
+  background-color: var(--ab-muted);
+  border-color: var(--ab-border);
+  color: var(--anibt-ink2);
+}
+
+/* ---------- Card：纸片（细描边 + 柔和投影） ---------- */
+html[data-page-style="anibt"] body .ant-card {
+  border: 0;
+  border-radius: 14px;
+  background-color: var(--ab-card);
+  box-shadow: 0 0 0 1px var(--ab-border), var(--anibt-shadow-panel);
+}
+html[data-page-style="anibt"] body .ant-card .ant-card-head {
+  border-bottom: 1px dashed var(--ab-border);
+}
+
+/* ---------- Tabs / Segmented / Switch：主色跟随樱粉 ---------- */
+html[data-page-style="anibt"] body .ant-segmented {
+  background-color: var(--ab-muted);
+  box-shadow: inset 0 0 0 1px var(--ab-border);
+  border-radius: 10px;
+}
+html[data-page-style="anibt"] body .ant-segmented .ant-segmented-item-selected {
+  background-color: var(--ab-card);
+  color: var(--ab-primary);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--ab-input), 0 1.5px 0 var(--ab-input);
+}
