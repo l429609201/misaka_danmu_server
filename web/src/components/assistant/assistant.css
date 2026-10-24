@@ -670,3 +670,40 @@
 .dark .assistant-msg table tbody tr:nth-child(even) {
   background: rgba(255, 255, 255, 0.03);
 }
+
+/* 桌面端全屏：去掉侧边阴影，消息与输入区居中限宽，避免超宽屏下一行过长（参考 MoviePilot） */
+.assistant-panel.is-fullscreen .ant-drawer-content-wrapper { box-shadow: none; }
+.assistant-panel.is-fullscreen .ant-drawer-body {
+  padding-inline: max(16px, calc((100% - 72rem) / 2)) !important;
+}
+.assistant-panel.is-fullscreen .assistant-msg { max-width: 64rem; }
+
+/* 斜杠命令菜单：输入以 / 开头时出现在输入框上方 */
+.assistant-slash-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 4px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  background: var(--color-card, #fff);
+}
+.assistant-slash-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.assistant-slash-item:hover,
+.assistant-slash-item:focus-visible {
+  background: rgba(127, 127, 127, 0.12);
+  outline: none;
+}
+.assistant-slash-item span { opacity: 0.7; font-size: 12px; }

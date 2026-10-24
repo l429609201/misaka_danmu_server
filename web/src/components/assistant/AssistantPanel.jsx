@@ -13,7 +13,7 @@
  */
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Drawer, Input, Button, Avatar, Dropdown, Collapse, message as antdMessage } from 'antd'
-import { SendOutlined, HistoryOutlined, PlusOutlined, DeleteOutlined, PaperClipOutlined, CopyOutlined, DownloadOutlined, LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, CloseOutlined, ToolOutlined } from '@ant-design/icons'
+import { SendOutlined, HistoryOutlined, PlusOutlined, DeleteOutlined, PaperClipOutlined, CopyOutlined, DownloadOutlined, LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, CloseOutlined, ToolOutlined, FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useTranslation } from 'react-i18next'
@@ -28,7 +28,8 @@ import { groupAssistantRounds, isAssistantWaiting, summarizeRoundTools } from '.
 const { TextArea } = Input
 
 // 发送给后端的最大历史轮数（控制 token），只取最近 N 条 user/assistant
-const MAX_HISTORY = 20
+// 后端超长时会把较早对话压缩成摘要，这里放宽上送条数
+const MAX_HISTORY = 60
 
 const elapsedSeconds = ms => `${(Math.max(0, ms || 0) / 1000).toFixed(1)}s`
 
@@ -108,6 +109,8 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
   // 授权只保存在当前面板状态，不写入浏览器存储。
   const [codeRepair, setCodeRepair] = useState(false)
   const [now, setNow] = useState(Date.now())
+  // 桌面端全屏切换（参考 MoviePilot 助手面板），移动端本身已占满屏幕
+  const [fullscreen, setFullscreen] = useState(false)
   const ticking = open && sending
   const pendingChoice = open && messages.some(m => m.choice?.selectedOptionId == null && !m.choice?.invalid
     && m.choice?.expires_at_ms != null && !choiceExpired(m.choice, now))
@@ -305,6 +308,52 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
     }
     setTimeout(poll, 1200)
   }, [loadSession, machine, refreshSessions])
+
+  // 运行中插话：把输入作为纠偏消息推给正在执行的会话，下一轮工具调用前生效
+  const steer = useCallback(async () => {
+    const text = input.trim()
+    if (!text || !sending) return
+    try {
+      const res = await fetch('/api/ui/assistant/chat/steer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Cookies.get('danmu_token') || ''}` },
+        body: JSON.stringify({ sessionId, content: text }),
+      })
+      if (!res.ok) {
+        antdMessage.warning(t('assistant.steerRejected'))
+        return
+      }
+      setInput('')
+      antdMessage.success(t('assistant.steerQueued'))
+    } catch {
+      antdMessage.error(t('assistant.steerRejected'))
+    }
+  }, [input, sending, sessionId, t])
+
+  // 斜杠命令：本地执行，不发给模型
+  const slashCommands = useMemo(() => [
+    { cmd: '/new', desc: t('assistant.cmdNew'), run: () => newSession() },
+    { cmd: '/export', desc: t('assistant.cmdExport'), run: () => exportChat() },
+    ...(isMobile ? [] : [{ cmd: '/fullscreen', desc: t('assistant.cmdFullscreen'), run: () => setFullscreen(v => !v) }]),
+    { cmd: '/repair', desc: t('assistant.cmdRepair'), run: () => setCodeRepair(v => !v) },
+    { cmd: '/help', desc: t('assistant.cmdHelp'), run: null },
+  ], [t, newSession, exportChat, isMobile])
+
+  const slashMatches = useMemo(() => {
+    const v = input.trim()
+    if (!v.startsWith('/') || v.includes(' ') || v.includes('\n')) return []
+    return slashCommands.filter(c => c.cmd.startsWith(v.toLowerCase()))
+  }, [input, slashCommands])
+
+  const runSlash = useCallback((item) => {
+    setInput('')
+    if (item.run) {
+      item.run()
+      return
+    }
+    // /help：在对话里列出命令，仅本地展示
+    setMessages(prev => [...prev, { role: 'bot', content: slashCommands.map(c => `- \`${c.cmd}\` ${c.desc}`).join('\n') }])
+  }, [slashCommands])
 
   const send = useCallback(async (overrideText, options = {}) => {
     // 选项回调只提供服务端返回的后续文本；界面显示选中的安全标签。
@@ -599,8 +648,8 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
       open={open}
       onClose={onClose}
       placement="right"
-      width={isMobile ? '100vw' : 475}
-      rootClassName={`assistant-panel${isMobile ? ' assistant-panel-mobile' : ''}`}
+      width={isMobile || fullscreen ? '100vw' : 475}
+      rootClassName={`assistant-panel${isMobile ? ' assistant-panel-mobile' : ''}${!isMobile && fullscreen ? ' is-fullscreen' : ''}`}
       closable={!isMobile}
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -643,6 +692,15 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
           </Dropdown>
           <Button type="text" icon={<PlusOutlined />} title={t('assistant.newChat')} onClick={newSession} />
           <Button type="text" icon={<DownloadOutlined />} title={t('assistant.exportChat')} onClick={exportChat} />
+          {!isMobile && (
+            <Button
+              type="text"
+              icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+              title={t(fullscreen ? 'assistant.exitFullscreen' : 'assistant.fullscreen')}
+              aria-pressed={fullscreen}
+              onClick={() => setFullscreen(v => !v)}
+            />
+          )}
           {isMobile && <Button type="text" icon={<CloseOutlined />} aria-label={t('common.close')} title={t('common.close')} onClick={onClose} />}
         </div>
       }
@@ -769,6 +827,16 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
           代码修复
         </Button>
       </div>
+      {slashMatches.length > 0 && !sending && (
+        <div className="assistant-slash-menu" role="listbox">
+          {slashMatches.map(c => (
+            <button type="button" key={c.cmd} role="option" aria-selected={false}
+              className="assistant-slash-item" onClick={() => runSlash(c)}>
+              <code>{c.cmd}</code><span>{c.desc}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
         <input
           ref={fileInputRef}
@@ -786,13 +854,17 @@ export function AssistantPanel({ open, onClose, machine, isMobile }) {
         <TextArea
           value={input}
           onChange={e => setInput(e.target.value)}
-          placeholder={t('assistant.inputPlaceholder')}
+          placeholder={sending ? t('assistant.steerPlaceholder') : t('assistant.inputPlaceholder')}
           autoSize={{ minRows: 1, maxRows: 3 }}
           onPaste={handlePaste}
           onPressEnter={e => {
             if (!e.shiftKey) {
               e.preventDefault()
-              send()
+              // 精确匹配斜杠命令时本地执行；运行中则作为插话
+              const exact = slashMatches.find(c => c.cmd === input.trim().toLowerCase())
+              if (exact && !sending) runSlash(exact)
+              else if (sending) steer()
+              else send()
             }
           }}
         />

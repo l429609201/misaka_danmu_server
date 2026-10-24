@@ -37,6 +37,7 @@ from .api_gateway import ConfirmationMode, resolve_api_operation
 from .security_gateway import contains_forbidden_control_content
 from .mcp import McpManager, McpToolSpec
 from .tools import registry
+from .steering import steering_registry
 from ..ai_metrics import AIMetricsCollector, AICallMetrics
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,14 @@ ai_responses_logger = logging.getLogger("ai_responses")  # 专用日志器，用
 
 _TIMEOUT = 120.0
 _MAX_TOOL_ROUNDS = 8  # 最多工具调用轮数，防止无限循环（三段式导入需 搜索→查分集→导入 多步只读调用）
+# 长对话摘要压缩：历史超过条数或字符阈值时，把较早部分总结成一段摘要，只保留最近若干条原文
+_COMPACT_MIN_MESSAGES = 16
+_COMPACT_MAX_CHARS = 24000
+_COMPACT_KEEP_RECENT = 8
+_COMPACT_SUMMARY_CHARS = 1500
+# 工具防死循环护栏：同一工具+同参数的调用上限、连续全失败轮数上限
+_MAX_SAME_TOOL_CALLS = 2
+_MAX_FAILED_ROUNDS = 3
 _CHOICE_SECRET = re.compile(r"api[_\s-]?key|access[_\s-]?token|authorization|password|passwd|secret|cookie|密钥|令牌|密码", re.I)
 _CHOICE_TOOL = {
     "type": "function",
@@ -167,6 +176,75 @@ class AssistantAgent:
         return messages
 
     @staticmethod
+    def _history_text(m: Dict[str, Any]) -> str:
+        """取历史消息的纯文本（图片只记占位），用于估算长度和生成摘要。"""
+        content = m.get("content", "")
+        text = content if isinstance(content, str) else ""
+        if m.get("images"):
+            text += f" [附图 {len(m['images'])} 张]"
+        return text
+
+    @classmethod
+    def _needs_compaction(cls, history: List[Dict[str, Any]]) -> bool:
+        """历史条数或总字符数超过阈值才压缩，短对话保持原样。"""
+        if len(history) <= _COMPACT_KEEP_RECENT:
+            return False
+        total = sum(len(cls._history_text(m)) for m in history)
+        return len(history) > _COMPACT_MIN_MESSAGES or total > _COMPACT_MAX_CHARS
+
+    async def _compact_history(
+        self, cfg: Dict[str, Any], history: List[Dict[str, Any]],
+    ) -> tuple:
+        """把较早的对话总结为摘要，返回 (摘要文本, 保留的最近历史)。
+
+        摘要请求失败时退化为仅保留最近历史，不影响本轮对话。
+        """
+        older = history[:-_COMPACT_KEEP_RECENT]
+        recent = history[-_COMPACT_KEEP_RECENT:]
+        lines = []
+        for m in older:
+            if m.get("role") not in ("user", "assistant"):
+                continue
+            text = self._history_text(m)
+            if m.get("role") == "assistant":
+                text = sanitize_protocol_text(text)[0]
+            # 单条截断，防止摘要请求本身超长
+            lines.append(f"{'用户' if m['role'] == 'user' else '助手'}：{text[:1500]}")
+        if not lines:
+            return "", recent
+        try:
+            resp = await self._post(cfg, {
+                "model": cfg["model"],
+                "messages": [
+                    {"role": "system", "content":
+                        "你负责压缩对话历史。用中文简洁总结下面这段较早的对话："
+                        "保留用户目标、已确认的事实与决定、涉及的条目名称/ID、尚未完成的事项；"
+                        f"不要编造，不要输出客套话，不超过 {_COMPACT_SUMMARY_CHARS} 字。"},
+                    {"role": "user", "content": "\n".join(lines)},
+                ],
+                "stream": False,
+                "temperature": 0.2,
+            })
+            if resp.status_code != 200:
+                self.logger.warning(f"对话摘要压缩失败 HTTP {resp.status_code}，仅保留最近历史")
+                return "", recent
+            msg = ((resp.json().get("choices") or [{}])[0].get("message") or {})
+            summary = sanitize_protocol_text(msg.get("content") or "")[0].strip()
+            return summary[:_COMPACT_SUMMARY_CHARS * 2], recent
+        except Exception as e:  # noqa: BLE001
+            # 摘要只是优化手段，失败不能阻断对话
+            self.logger.warning(f"对话摘要压缩异常，仅保留最近历史: {e}")
+            return "", recent
+
+    @staticmethod
+    def _tool_signature(name: str, args: Dict[str, Any]) -> str:
+        """工具名+规范化参数，作为重复调用判定键。"""
+        try:
+            return f"{name}:{json.dumps(args, ensure_ascii=False, sort_keys=True)}"
+        except (TypeError, ValueError):
+            return f"{name}:{args!r}"
+
+    @staticmethod
     def _log_raw(enabled: bool, section: str, content: Any) -> None:
         """按开关将助手的原始交互写入 ai_responses.log。
 
@@ -274,11 +352,19 @@ class AssistantAgent:
             yield {"type": "error", "content": "AI 未配置：请先在设置中填写 API Key、Base URL 与模型。"}
             return
 
+        # 长对话先压缩较早历史，避免直接截断导致“失忆”或上下文超长
+        summary = ""
+        if self._needs_compaction(history):
+            summary, history = await self._compact_history(cfg, history)
+            yield {"type": "compacted", "has_summary": bool(summary)}
         messages = self._build_messages(
             history, persona_key, rich_text=rich_text,
             is_channel=is_channel, supports_table=supports_table,
             rich_message=rich_message,
         )
+        if summary:
+            messages[0]["content"] += ("\n\n以下是本会话较早对话的摘要（原文已省略），回答时据此保持上下文连续：\n"
+                                       + summary)
         if not include_write_tools:
             messages[0]["content"] += "\n\n当前渠道只有只读工具，不支持确认卡或代办写操作；需要修改数据时请引导用户到 Web 界面。"
         # 提示词、目录和执行阶段必须复用同一份已初始化的可信上下文。
@@ -299,9 +385,19 @@ class AssistantAgent:
         log_raw = cfg.get("log_raw_response", False)
         tool_count = 0
         protocol_retries = 0
+        # 防死循环护栏状态：同签名调用次数、连续“全部工具失败”的轮数
+        call_counts: Dict[str, int] = {}
+        failed_rounds = 0
+        steer_session = context.get("session_id")
 
         try:
             for _round in range(20 if allow_code_write else _MAX_TOOL_ROUNDS):
+                # 运行中插话：每轮请求模型前注入用户追加的纠偏消息
+                if steer_session and _round > 0:
+                    for steer in steering_registry.drain(steer_session):
+                        messages.append({"role": "user", "content":
+                            f"[用户在你执行过程中补充/纠正]：{steer}\n请据此调整后续步骤。"})
+                        yield {"type": "steer", "content": steer}
                 started_at = datetime.now().astimezone().isoformat()
                 thinking_start = time.monotonic()
                 yield {"type": "thinking", "status": "running", "started_at": started_at, "elapsed_ms": 0}
@@ -407,6 +503,7 @@ class AssistantAgent:
                     "content": narration,
                     "tool_calls": tool_calls,
                 })
+                round_ok: List[bool] = []
                 for tc in tool_calls:
                     fn = tc.get("function") or {}
                     name = fn.get("name") or ""
@@ -424,7 +521,13 @@ class AssistantAgent:
                         else:
                             yield {"type": "choice", **choice}
                         return
-                    if name.startswith('code_') and not allow_code:
+                    signature = self._tool_signature(name, args)
+                    call_counts[signature] = call_counts.get(signature, 0) + 1
+                    if call_counts[signature] > _MAX_SAME_TOOL_CALLS:
+                        # 同参数重复调用不会得到新信息，直接拦截，提示模型换思路或收尾
+                        result = {"ok": False, "error":
+                                  "已拦截：相同工具与参数已重复调用，结果不会变化。请换用其他参数/工具，或基于已有结果回答。"}
+                    elif name.startswith('code_') and not allow_code:
                         result = {'ok': False, 'error': '当前请求未开放代码工具'}
                     elif McpManager.is_mcp_tool_name(name):
                         result = {"ok": False, "error": "外部 MCP 工具当前不可用"}
@@ -478,7 +581,23 @@ class AssistantAgent:
                         "tool_call_id": tc.get("id"),
                         "content": json.dumps(result, ensure_ascii=False),
                     })
+                    round_ok.append(bool(result.get("ok", False)))
                 yield {"type": "_round_end"}
+                # 连续多轮工具全部失败时提前收尾，避免空耗轮数和 token
+                failed_rounds = failed_rounds + 1 if round_ok and not any(round_ok) else 0
+                if failed_rounds >= _MAX_FAILED_ROUNDS:
+                    started_at = datetime.now().astimezone().isoformat()
+                    yield {"type": "thinking", "status": "running", "started_at": started_at, "elapsed_ms": 0}
+                    yield {"type": "delta", "content":
+                           f"本轮未完成：工具已连续 {failed_rounds} 轮调用失败，已提前停止。\n\n"}
+                    final_start = time.monotonic()
+                    async for ev in self._stream_final(cfg, [*messages, {"role": "system", "content":
+                            "工具连续失败，已停止继续调用。说明失败原因与可行的下一步，禁止宣称任务完成。"}]):
+                        if ev.get("type") in {"done", "error"}:
+                            yield {"type": "thinking", "status": "done", "started_at": started_at,
+                                   "elapsed_ms": max(0, int((time.monotonic() - final_start) * 1000))}
+                        yield ev
+                    return
 
             # 最终汇报独立分轮，等待态持续到流式结束。
             started_at = datetime.now().astimezone().isoformat()

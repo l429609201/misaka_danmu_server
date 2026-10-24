@@ -1,0 +1,332 @@
+/*
+ * 放送时间表（仿 anibt.net「今日放送」页）专用样式。
+ * 配方移植自 AniBT UI 的 poster-card / page-header 组件，变量来自 components/anibt/anibt.css。
+ * why：海报卡的封套、扫光、贴纸时间角标等效果用 Tailwind 任意值写会非常冗长，集中在这里便于维护。
+ */
+
+/* ---------- 海报网格：3 → 4 → 6 → 8 列 ---------- */
+.ab-poster-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (min-width: 37.5rem) {
+  .ab-poster-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+}
+@media (min-width: 60rem) {
+  .ab-poster-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
+}
+@media (min-width: 85rem) {
+  .ab-poster-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+}
+
+/* ---------- 海报卡 ---------- */
+.ab-poster {
+  position: relative;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--ab-card);
+  padding: 4px;
+  cursor: default;
+  box-shadow: 0 0 0 1px var(--ab-border), var(--anibt-shadow-panel);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s, background-color 0.2s;
+}
+.ab-poster[data-clickable="true"] { cursor: pointer; }
+.ab-poster:hover {
+  z-index: 2;
+  transform: translateY(-4px) rotate(-0.6deg);
+  box-shadow: 0 0 0 1px var(--anibt-wash-line), var(--anibt-shadow-lift);
+}
+.ab-poster[data-tone="next"] {
+  background: var(--anibt-time-wash);
+  box-shadow: 0 0 0 1.5px var(--anibt-time-line), var(--anibt-shadow-panel);
+}
+.ab-poster[data-selected="true"] {
+  box-shadow: 0 0 0 2px var(--anibt-mark), var(--anibt-shadow-lift);
+}
+.ab-poster[data-aired="true"] .ab-poster-cover img { filter: saturate(0.85); }
+
+.ab-poster-cover {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: 10px;
+  background-color: var(--anibt-deep2);
+  background-image: var(--anibt-dots);
+  background-size: 16px 16px;
+}
+.ab-poster-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* 封套：顶部高光 + 内描边 */
+.ab-poster-cover::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: var(--anibt-sleeve);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--anibt-sticker-edge) 28%, transparent);
+}
+/* 扫光：悬停时从左扫到右 */
+.ab-poster-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--anibt-sheen);
+  transform: translateX(-120%);
+  transition: transform 0.7s ease;
+}
+.ab-poster:hover .ab-poster-cover::after { transform: translateX(120%); }
+
+/* 贴纸角标（左上时间 / 右上来源） */
+.ab-poster-badge {
+  position: absolute;
+  top: 6px;
+  z-index: 2;
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  background: var(--ab-card);
+  color: var(--ab-foreground);
+  box-shadow: 0 0 0 2px var(--anibt-sticker-edge), var(--anibt-shadow-sticker);
+}
+.ab-poster-badge[data-side="left"] { left: 6px; }
+.ab-poster-badge[data-side="right"] { right: 6px; font-size: 11px; font-weight: 600; color: var(--anibt-ink2); }
+.ab-poster-badge[data-tone="ink"] {
+  background: rgba(20, 16, 28, 0.82);
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), var(--anibt-shadow-sticker);
+}
+
+.ab-poster-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 4px 2px;
+  min-width: 0;
+}
+.ab-poster-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 700;
+  color: var(--ab-foreground);
+  transition: color 0.15s;
+}
+.ab-poster:hover .ab-poster-title { color: var(--ab-accent-foreground); }
+.ab-poster-sub {
+  height: 18px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ab-muted-foreground);
+}
+.ab-poster-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 4px;
+}
+.ab-poster-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--anibt-ink2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ab-poster-sep {
+  width: 3px;
+  height: 3px;
+  flex: none;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.6;
+}
+.ab-poster-star { width: 12px; height: 12px; flex: none; fill: var(--anibt-mark); }
+
+/* 状态行：前置 6px 圆点 */
+.ab-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ab-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: currentColor;
+}
+.ab-status[data-tone="ok"] { color: var(--anibt-ok); }
+.ab-status[data-tone="next"] { color: var(--anibt-time-ink); }
+.ab-status[data-tone="next"]::before { animation: ab-blink 1.2s ease-in-out infinite; }
+.ab-status[data-tone="wait"] { color: var(--anibt-ink2); }
+.ab-status[data-tone="none"] { color: var(--ab-muted-foreground); }
+.ab-status[data-tone="none"]::before { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+@keyframes ab-blink { 50% { opacity: 0.25; } }
+
+/* 右下角订阅按钮（40px 热区 + 28px 贴纸） */
+.ab-poster-action {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--anibt-ink2);
+  cursor: pointer;
+}
+.ab-poster-action::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 9px;
+  background: var(--ab-card);
+  box-shadow: inset 0 0 0 1px var(--ab-input), var(--anibt-shadow-sticker);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.ab-poster-action > * { position: relative; }
+.ab-poster-action:hover { color: var(--ab-primary); }
+.ab-poster-action:hover::before { transform: translateY(-1px); box-shadow: inset 0 0 0 1px var(--anibt-wash-line), var(--anibt-shadow-sticker); }
+.ab-poster-action[data-on="true"] { color: var(--anibt-candy-ink); }
+.ab-poster-action[data-on="true"]::before {
+  background-color: var(--anibt-candy-edge);
+  background-image: var(--anibt-candy);
+  box-shadow: 0 1px 0 var(--anibt-candy-edge);
+}
+.ab-poster-action:disabled { opacity: 0.5; cursor: wait; }
+
+/* ---------- 日期卡 ---------- */
+.ab-day {
+  position: relative;
+  display: flex;
+  min-width: 76px;
+  flex: 1 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--ab-card);
+  color: var(--anibt-ink2);
+  box-shadow: 0 0 0 1px var(--ab-border);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.ab-day:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px var(--anibt-wash-line), var(--anibt-shadow-sticker); }
+.ab-day[aria-selected="true"] {
+  color: var(--ab-foreground);
+  box-shadow: 0 0 0 1.5px var(--anibt-time-line), var(--anibt-shadow-sticker);
+  background: var(--anibt-time-wash);
+}
+.ab-day-num { font-size: 22px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ab-foreground); }
+.ab-day-week { font-size: 12px; font-weight: 600; }
+.ab-day-count { font-size: 11px; font-variant-numeric: tabular-nums; opacity: 0.75; }
+.ab-day-today {
+  position: absolute;
+  top: -8px;
+  left: 8px;
+  height: 18px;
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  background: var(--anibt-time);
+  color: #fff;
+  box-shadow: 0 0 0 2px var(--anibt-sticker-edge);
+}
+
+/* ---------- 「现在」时间轴 ---------- */
+.ab-timeline {
+  position: relative;
+  height: 32px;
+  margin-top: 6px;
+}
+.ab-timeline-track {
+  position: absolute;
+  top: 15px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background-image: var(--anibt-stitch);
+  background-size: 8px 2px;
+}
+.ab-timeline-past {
+  position: absolute;
+  top: 15px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--anibt-time-line);
+}
+.ab-timeline-tick {
+  position: absolute;
+  top: 10px;
+  width: 2px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--anibt-ink2);
+  opacity: 0.55;
+  transform: translateX(-1px);
+}
+.ab-timeline-tick[data-aired="true"] { background: var(--anibt-time-line); opacity: 1; }
+.ab-timeline-label {
+  position: absolute;
+  top: 24px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ab-muted-foreground);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.ab-timeline-now {
+  position: absolute;
+  top: 6px;
+  width: 10px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--anibt-time);
+  transform: translateX(-5px);
+  box-shadow: 0 0 0 2px var(--anibt-sticker-edge), 0 0 0 6px color-mix(in oklab, var(--anibt-time) 18%, transparent);
+}

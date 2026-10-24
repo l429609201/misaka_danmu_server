@@ -636,9 +636,9 @@ html body .ant-typography a {
 
 /* FloatingMenu（移动端上拉菜单）液态玻璃化 */
 html[data-page-style="liquid-glass"] .floating-menu-panel {
-  background: rgba(255, 255, 255, 0.9) !important;
-  backdrop-filter: blur(28px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  background: rgba(255, 255, 255, calc(0.9 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.8) !important;
   border-radius: 20px !important;
   box-shadow:
@@ -646,9 +646,9 @@ html[data-page-style="liquid-glass"] .floating-menu-panel {
     inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
 }
 html[data-page-style="liquid-glass"].dark .floating-menu-panel {
-  background: rgba(30, 41, 59, 0.9) !important;
-  backdrop-filter: blur(28px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  background: rgba(30, 41, 59, calc(0.9 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.18) !important;
   border-radius: 20px !important;
   box-shadow:
@@ -665,9 +665,9 @@ html[data-page-style="liquid-glass"] .ant-popover-inner,
 html[data-page-style="liquid-glass"] .ant-tooltip-inner,
 html[data-page-style="liquid-glass"] .ant-message-notice-content,
 html[data-page-style="liquid-glass"] .ant-notification-notice {
-  background: rgba(255, 255, 255, 0.55) !important;
-  backdrop-filter: blur(24px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  background: rgba(255, 255, 255, calc(0.55 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(24px * var(--glass-blur-scale, 1))) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(calc(24px * var(--glass-blur-scale, 1))) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.5) !important;
   border-radius: 20px !important;
   box-shadow:
@@ -690,80 +690,80 @@ html[data-page-style="liquid-glass"].dark .ant-card-head {
    有独立背景 token，不被通用 .ant-card 规则覆盖，会露出实色白底；
    单独覆盖为半透明毛玻璃，并透明化表格背景消除硬白行。 */
 html[data-page-style="liquid-glass"] .ant-card-type-inner {
-  background: rgba(255, 255, 255, 0.30) !important;
+  background: rgba(255, 255, 255, calc(0.30 * var(--glass-opacity-scale, 1))) !important;
   border: 1px solid rgba(255, 255, 255, 0.40) !important;
 }
 html[data-page-style="liquid-glass"] .ant-card-type-inner .ant-card-head {
-  background: rgba(255, 255, 255, 0.18) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, calc(0.18 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(12px * var(--glass-blur-scale, 1)));
+  -webkit-backdrop-filter: blur(calc(12px * var(--glass-blur-scale, 1)));
   border-bottom: 1px solid rgba(255, 255, 255, 0.32) !important;
 }
 html[data-page-style="liquid-glass"] .ant-card-type-inner .ant-table {
   background: transparent !important;
 }
 html[data-page-style="liquid-glass"] .ant-card-type-inner .ant-table-thead > tr > th {
-  background: rgba(255, 255, 255, 0.22) !important;
+  background: rgba(255, 255, 255, calc(0.22 * var(--glass-opacity-scale, 1))) !important;
 }
 html[data-page-style="liquid-glass"] .ant-card-type-inner .ant-table-tbody > tr > td {
   background: transparent !important;
 }
 html[data-page-style="liquid-glass"] .ant-card-type-inner .ant-table-tbody > tr:nth-child(even) > td {
-  background: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, calc(0.12 * var(--glass-opacity-scale, 1))) !important;
 }
 html[data-page-style="liquid-glass"].dark .ant-card-type-inner {
-  background: rgba(30, 41, 59, 0.35) !important;
+  background: rgba(30, 41, 59, calc(0.35 * var(--glass-opacity-scale, 1))) !important;
   border: 1px solid rgba(255, 255, 255, 0.10) !important;
 }
 html[data-page-style="liquid-glass"].dark .ant-card-type-inner .ant-card-head {
-  background: rgba(30, 41, 59, 0.25) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(30, 41, 59, calc(0.25 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(12px * var(--glass-blur-scale, 1)));
+  -webkit-backdrop-filter: blur(calc(12px * var(--glass-blur-scale, 1)));
   border-bottom: 1px solid rgba(255, 255, 255, 0.10) !important;
 }
 html[data-page-style="liquid-glass"].dark .ant-card-type-inner .ant-table {
   background: transparent !important;
 }
 html[data-page-style="liquid-glass"].dark .ant-card-type-inner .ant-table-thead > tr > th {
-  background: rgba(30, 41, 59, 0.40) !important;
+  background: rgba(30, 41, 59, calc(0.40 * var(--glass-opacity-scale, 1))) !important;
 }
 html[data-page-style="liquid-glass"].dark .ant-card-type-inner .ant-table-tbody > tr > td {
   background: transparent !important;
 }
 html[data-page-style="liquid-glass"].dark .ant-card-type-inner .ant-table-tbody > tr:nth-child(even) > td {
-  background: rgba(255, 255, 255, 0.04) !important;
+  background: rgba(255, 255, 255, calc(0.04 * var(--glass-opacity-scale, 1))) !important;
 }
 
 /* Modal / Drawer 磨砂玻璃专属覆写（why：弹窗叠在内容上，0.55 透明度会穿底看到背景文字，
    故单独提高不透明度 + 加大模糊，比普通卡片更"实"，但仍保留磨砂质感） */
 html[data-page-style="liquid-glass"] .ant-modal-content,
 html[data-page-style="liquid-glass"] .ant-drawer-content {
-  background: rgba(255, 255, 255, 0.82) !important;
-  backdrop-filter: blur(40px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  background: rgba(255, 255, 255, calc(0.82 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(40px * var(--glass-blur-scale, 1))) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(calc(40px * var(--glass-blur-scale, 1))) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.65) !important;
 }
 html[data-page-style="liquid-glass"].dark .ant-modal-content,
 html[data-page-style="liquid-glass"].dark .ant-drawer-content {
-  background: rgba(30, 41, 59, 0.92) !important;
-  backdrop-filter: blur(40px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  background: rgba(30, 41, 59, calc(0.92 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(40px * var(--glass-blur-scale, 1))) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(calc(40px * var(--glass-blur-scale, 1))) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.16) !important;
 }
 
 /* 遮罩层加深 + 轻微模糊，让弹窗更聚焦、背景内容不再清晰可读 */
 html[data-page-style="liquid-glass"] .ant-modal-mask,
 html[data-page-style="liquid-glass"] .ant-drawer-mask {
-  background: rgba(0, 0, 0, 0.45) !important;
-  backdrop-filter: blur(4px) !important;
-  -webkit-backdrop-filter: blur(4px) !important;
+  background: rgba(0, 0, 0, calc(0.45 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(4px * var(--glass-blur-scale, 1))) !important;
+  -webkit-backdrop-filter: blur(calc(4px * var(--glass-blur-scale, 1))) !important;
 }
 
 
 html[data-page-style="liquid-glass"] .ant-dropdown .ant-dropdown-menu {
-  background: rgba(255, 255, 255, 0.9) !important;
-  backdrop-filter: blur(28px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  background: rgba(255, 255, 255, calc(0.9 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.8) !important;
   border-radius: 16px !important;
   box-shadow:
@@ -779,11 +779,11 @@ html[data-page-style="liquid-glass"] .ant-tooltip-inner {
 /* 箭头颜色跟随气泡背景 */
 html[data-page-style="liquid-glass"] .ant-tooltip-arrow::before,
 html[data-page-style="liquid-glass"] .ant-tooltip-arrow::after {
-  background: rgba(255, 255, 255, 0.55) !important;
+  background: rgba(255, 255, 255, calc(0.55 * var(--glass-opacity-scale, 1))) !important;
 }
 html[data-page-style="liquid-glass"].dark .ant-tooltip-arrow::before,
 html[data-page-style="liquid-glass"].dark .ant-tooltip-arrow::after {
-  background: rgba(30, 41, 59, 0.55) !important;
+  background: rgba(30, 41, 59, calc(0.55 * var(--glass-opacity-scale, 1))) !important;
 }
 
 /* Modal 头部/底部圆角配合主体 */
@@ -801,17 +801,17 @@ html[data-page-style="liquid-glass"] .ant-btn {
   border-radius: 16px !important;
 }
 html[data-page-style="liquid-glass"] .ant-btn-default {
-  background: rgba(255, 255, 255, 0.5) !important;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, calc(0.5 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1)));
+  -webkit-backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1)));
   border: 1px solid color-mix(in srgb, var(--color-primary) 25%, rgba(0, 0, 0, 0.1)) !important;
 }
 
 /* Tag 圆角 + 默认态玻璃化（不加 !important 让 antd 自定义 color 的 Tag 保持原色） */
 html[data-page-style="liquid-glass"] .ant-tag {
   border-radius: 12px !important;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(calc(8px * var(--glass-blur-scale, 1)));
+  -webkit-backdrop-filter: blur(calc(8px * var(--glass-blur-scale, 1)));
 }
 
 /* 输入框/选择器 大圆角 */
@@ -821,7 +821,7 @@ html[data-page-style="liquid-glass"] .ant-input-number,
 html[data-page-style="liquid-glass"] .ant-select-selector,
 html[data-page-style="liquid-glass"] .ant-picker {
   border-radius: 14px !important;
-  background: rgba(255, 255, 255, 0.5) !important;
+  background: rgba(255, 255, 255, calc(0.5 * var(--glass-opacity-scale, 1))) !important;
   border: 1px solid color-mix(in srgb, var(--color-primary) 25%, rgba(0, 0, 0, 0.1)) !important;
 }
 /* ant-input-affix-wrapper 内部的 input 不要边框和背景（避免双层） */
@@ -862,9 +862,9 @@ html[data-page-style="liquid-glass"].dark .ant-popover-inner,
 html[data-page-style="liquid-glass"].dark .ant-tooltip-inner,
 html[data-page-style="liquid-glass"].dark .ant-message-notice-content,
 html[data-page-style="liquid-glass"].dark .ant-notification-notice {
-  background: rgba(30, 41, 59, 0.85) !important;
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background: rgba(30, 41, 59, calc(0.85 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(24px * var(--glass-blur-scale, 1))) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(24px * var(--glass-blur-scale, 1))) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
   border-radius: 20px !important;
   box-shadow:
@@ -874,9 +874,9 @@ html[data-page-style="liquid-glass"].dark .ant-notification-notice {
 
 /* 暗色下拉菜单：毛玻璃 + 更高不透明度 */
 html[data-page-style="liquid-glass"].dark .ant-dropdown .ant-dropdown-menu {
-  background: rgba(30, 41, 59, 0.92) !important;
-  backdrop-filter: blur(28px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  background: rgba(30, 41, 59, calc(0.92 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.18) !important;
   border-radius: 16px !important;
   box-shadow:
@@ -889,36 +889,36 @@ html[data-page-style="liquid-glass"].dark .ant-tooltip-inner {
 
 /* 暗色按钮/输入框/Tag 圆角 */
 html[data-page-style="liquid-glass"].dark .ant-btn-default {
-  background: rgba(30, 41, 59, 0.5) !important;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(30, 41, 59, calc(0.5 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1)));
+  -webkit-backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1)));
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
 html[data-page-style="liquid-glass"].dark .ant-tag {
   /* 不用 !important，让 antd 自定义 color Tag 保持原色 */
   backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(calc(8px * var(--glass-blur-scale, 1)));
 }
 html[data-page-style="liquid-glass"].dark .ant-input,
 html[data-page-style="liquid-glass"].dark .ant-input-affix-wrapper,
 html[data-page-style="liquid-glass"].dark .ant-input-number,
 html[data-page-style="liquid-glass"].dark .ant-select-selector,
 html[data-page-style="liquid-glass"].dark .ant-picker {
-  background: rgba(30, 41, 59, 0.5) !important;
+  background: rgba(30, 41, 59, calc(0.5 * var(--glass-opacity-scale, 1))) !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
 
 /* 顶部导航栏玻璃化 */
 html[data-page-style="liquid-glass"] .bg-base-bg.fixed.top-0 {
-  background: rgba(255, 255, 255, 0.65) !important;
-  backdrop-filter: blur(28px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  background: rgba(255, 255, 255, calc(0.65 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.5);
 }
 html[data-page-style="liquid-glass"].dark .bg-base-bg.fixed.top-0 {
-  background: rgba(15, 23, 42, 0.88) !important;
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  background: rgba(15, 23, 42, calc(0.88 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(28px * var(--glass-blur-scale, 1))) saturate(180%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
@@ -939,14 +939,14 @@ html[data-page-style="liquid-glass"].dark .bg-base-bg.fixed.top-0 {
 
 /* 底部移动导航栏 — 液态玻璃模式下更通透 */
 html[data-page-style="liquid-glass"] .mobile-nav-floating {
-  background: rgba(255, 255, 255, 0.88) !important;
+  background: rgba(255, 255, 255, calc(0.88 * var(--glass-opacity-scale, 1))) !important;
   border: 1px solid rgba(255, 255, 255, 0.8) !important;
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
 }
 html[data-page-style="liquid-glass"].dark .mobile-nav-floating {
-  background: rgba(30, 41, 59, 0.88) !important;
+  background: rgba(30, 41, 59, calc(0.88 * var(--glass-opacity-scale, 1))) !important;
   border: 1px solid rgba(255, 255, 255, 0.18) !important;
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.4),
@@ -955,15 +955,15 @@ html[data-page-style="liquid-glass"].dark .mobile-nav-floating {
 
 /* 底部移动导航栏玻璃化 */
 html[data-page-style="liquid-glass"] .bg-base-bg.fixed.bottom-0 {
-  background: rgba(255, 255, 255, 0.7) !important;
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  background: rgba(255, 255, 255, calc(0.7 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(20px * var(--glass-blur-scale, 1))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(20px * var(--glass-blur-scale, 1))) saturate(160%);
   border-top: 1px solid rgba(255, 255, 255, 0.5);
 }
 html[data-page-style="liquid-glass"].dark .bg-base-bg.fixed.bottom-0 {
-  background: rgba(15, 23, 42, 0.7) !important;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(15, 23, 42, calc(0.7 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(20px * var(--glass-blur-scale, 1))) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(20px * var(--glass-blur-scale, 1))) saturate(180%);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -972,19 +972,19 @@ html[data-page-style="liquid-glass"] .ant-table {
   background: transparent !important;
 }
 html[data-page-style="liquid-glass"] .ant-table-thead > tr > th {
-  background: rgba(255, 255, 255, 0.4) !important;
-  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, calc(0.4 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1)));
 }
 html[data-page-style="liquid-glass"].dark .ant-table-thead > tr > th {
-  background: rgba(30, 41, 59, 0.5) !important;
-  backdrop-filter: blur(10px);
+  background: rgba(30, 41, 59, calc(0.5 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1)));
 }
 
 /* 任务管理器列表 — 液态玻璃下每项独立玻璃卡片 */
 html[data-page-style="liquid-glass"] .task-manager-list .ant-list-item {
-  background: rgba(255, 255, 255, 0.45) !important;
-  backdrop-filter: blur(12px) saturate(160%);
-  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  background: rgba(255, 255, 255, calc(0.45 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(12px * var(--glass-blur-scale, 1))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(12px * var(--glass-blur-scale, 1))) saturate(160%);
   border: 1px solid rgba(255, 255, 255, 0.55) !important;
   border-radius: 16px !important;
   margin-bottom: 12px !important;
@@ -994,21 +994,21 @@ html[data-page-style="liquid-glass"] .task-manager-list .ant-list-item {
   transition: all 0.2s ease;
 }
 html[data-page-style="liquid-glass"] .task-manager-list .ant-list-item:hover {
-  background: rgba(255, 255, 255, 0.6) !important;
+  background: rgba(255, 255, 255, calc(0.6 * var(--glass-opacity-scale, 1))) !important;
   transform: translateY(-1px);
   box-shadow:
     0 6px 20px rgba(0, 0, 0, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 html[data-page-style="liquid-glass"].dark .task-manager-list .ant-list-item {
-  background: rgba(30, 41, 59, 0.55) !important;
+  background: rgba(30, 41, 59, calc(0.55 * var(--glass-opacity-scale, 1))) !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 html[data-page-style="liquid-glass"].dark .task-manager-list .ant-list-item:hover {
-  background: rgba(30, 41, 59, 0.7) !important;
+  background: rgba(30, 41, 59, calc(0.7 * var(--glass-opacity-scale, 1))) !important;
   box-shadow:
     0 6px 20px rgba(0, 0, 0, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
@@ -1116,34 +1116,34 @@ html[data-page-style="liquid-glass"].dark .task-manager-list .ant-list-item:hove
 }
 
 html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th {
-  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, 0.56)) !important;
-  backdrop-filter: blur(10px) saturate(160%);
-  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, calc(0.56 * var(--glass-opacity-scale, 1)))) !important;
+  backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
 }
 
 html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td,
 html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td[class*="ant-table-cell-fix-"] {
-  background: color-mix(in srgb, var(--color-primary) 4%, rgba(255, 255, 255, 0.48)) !important;
-  backdrop-filter: blur(10px) saturate(160%);
-  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  background: color-mix(in srgb, var(--color-primary) 4%, rgba(255, 255, 255, calc(0.48 * var(--glass-opacity-scale, 1)))) !important;
+  backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
 }
 
 html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td,
 html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr.ant-table-row:hover > td,
 html[data-page-style="liquid-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td[class*="ant-table-cell-fix-"] {
-  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, 0.6)) !important;
+  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, calc(0.6 * var(--glass-opacity-scale, 1)))) !important;
 }
 
 html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th,
 html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td,
 html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td[class*="ant-table-cell-fix-"] {
-  background: rgba(30, 41, 59, 0.52) !important;
+  background: rgba(30, 41, 59, calc(0.52 * var(--glass-opacity-scale, 1))) !important;
 }
 
 html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td,
 html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr.ant-table-row:hover > td,
 html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr:hover > td[class*="ant-table-cell-fix-"] {
-  background: rgba(30, 41, 59, 0.72) !important;
+  background: rgba(30, 41, 59, calc(0.72 * var(--glass-opacity-scale, 1))) !important;
 }
 
 /* why：上方通用规则把所有表格行底色写死为 var(--color-card)，而 glass / acg-glass
@@ -1151,9 +1151,9 @@ html[data-page-style="liquid-glass"].dark :where(.library-table, .ant-table-wrap
    表格呈整块实底。参照 liquid-glass 的做法补上半透明覆盖。 */
 html[data-page-style="glass"] :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th,
 html[data-page-style="acg-glass"] :where(.library-table, .ant-table-wrapper) .ant-table-thead > tr > th {
-  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, 0.56)) !important;
-  backdrop-filter: blur(10px) saturate(160%);
-  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  background: color-mix(in srgb, var(--color-primary) 8%, rgba(255, 255, 255, calc(0.56 * var(--glass-opacity-scale, 1)))) !important;
+  backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
 }
 
 html[data-page-style="glass"] :where(.library-table, .ant-table-wrapper) .ant-table-tbody > tr > td,
@@ -1237,14 +1237,14 @@ html[data-page-style="acg-glass"].dark :where(.library-table, .ant-table-wrapper
 
 html[data-page-style="liquid-glass"] .library-drag-overlay,
 html[data-page-style="liquid-glass"] .library-drag-overlay td {
-  background: color-mix(in srgb, var(--color-primary) 4%, rgba(255, 255, 255, 0.58)) !important;
-  backdrop-filter: blur(12px) saturate(160%);
-  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  background: color-mix(in srgb, var(--color-primary) 4%, rgba(255, 255, 255, calc(0.58 * var(--glass-opacity-scale, 1)))) !important;
+  backdrop-filter: blur(calc(12px * var(--glass-blur-scale, 1))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(12px * var(--glass-blur-scale, 1))) saturate(160%);
 }
 
 html[data-page-style="liquid-glass"].dark .library-drag-overlay,
 html[data-page-style="liquid-glass"].dark .library-drag-overlay td {
-  background: rgba(30, 41, 59, 0.72) !important;
+  background: rgba(30, 41, 59, calc(0.72 * var(--glass-opacity-scale, 1))) !important;
 }
 
 /* ===== 全功能搜索：锚点定位高亮 ===== */
@@ -1484,15 +1484,15 @@ html[data-page-style="wallpaper-acg"].dark .batch-multitoggle-dropdown {
    三个主题的 .ant-card 取值各不相同，故拆为按主题独立规则逐项复制
    （背景/模糊/描边/圆角/投影；暗色规则只覆盖 .ant-card 暗色同款属性）。 */
 html[data-page-style="liquid-glass"] .batch-manage-panel {
-  background: rgba(255, 255, 255, 0.55) !important;
-  backdrop-filter: blur(24px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  background: rgba(255, 255, 255, calc(0.55 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(24px * var(--glass-blur-scale, 1))) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(calc(24px * var(--glass-blur-scale, 1))) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.5) !important;
   border-radius: 20px !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
 }
 html[data-page-style="liquid-glass"].dark .batch-manage-panel {
-  background: rgba(30, 41, 59, 0.85) !important;
+  background: rgba(30, 41, 59, calc(0.85 * var(--glass-opacity-scale, 1))) !important;
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
 }
@@ -1534,13 +1534,13 @@ html[data-page-style="acg-glass"].dark .batch-manage-header {
 html[data-page-style="liquid-glass"] .batch-stat-badge,
 html[data-page-style="glass"] .batch-stat-badge,
 html[data-page-style="acg-glass"] .batch-stat-badge {
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: rgba(255, 255, 255, calc(0.06 * var(--glass-opacity-scale, 1))) !important;
   border-color: rgba(255, 255, 255, 0.30) !important;
 }
 html[data-page-style="liquid-glass"].dark .batch-stat-badge,
 html[data-page-style="glass"].dark .batch-stat-badge,
 html[data-page-style="acg-glass"].dark .batch-stat-badge {
-  background: rgba(255, 255, 255, 0.04) !important;
+  background: rgba(255, 255, 255, calc(0.04 * var(--glass-opacity-scale, 1))) !important;
   border-color: rgba(255, 255, 255, 0.10) !important;
 }
 
@@ -1552,38 +1552,38 @@ html[data-page-style="acg-glass"] .batch-rows-container > * {
 html[data-page-style="liquid-glass"] .batch-rows-container > *:hover,
 html[data-page-style="glass"] .batch-rows-container > *:hover,
 html[data-page-style="acg-glass"] .batch-rows-container > *:hover {
-  background: rgba(255, 255, 255, 0.18) !important;
+  background: rgba(255, 255, 255, calc(0.18 * var(--glass-opacity-scale, 1))) !important;
 }
 html[data-page-style="liquid-glass"].dark .batch-rows-container > *:hover,
 html[data-page-style="glass"].dark .batch-rows-container > *:hover,
 html[data-page-style="acg-glass"].dark .batch-rows-container > *:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, calc(0.08 * var(--glass-opacity-scale, 1))) !important;
 }
 
 html[data-page-style="liquid-glass"] .batch-mobile-card:not([class*="ring-2"]),
 html[data-page-style="glass"] .batch-mobile-card:not([class*="ring-2"]),
 html[data-page-style="acg-glass"] .batch-mobile-card:not([class*="ring-2"]) {
-  background: rgba(255, 255, 255, 0.38) !important;
+  background: rgba(255, 255, 255, calc(0.38 * var(--glass-opacity-scale, 1))) !important;
 }
 html[data-page-style="liquid-glass"].dark .batch-mobile-card:not([class*="ring-2"]),
 html[data-page-style="glass"].dark .batch-mobile-card:not([class*="ring-2"]),
 html[data-page-style="acg-glass"].dark .batch-mobile-card:not([class*="ring-2"]) {
-  background: rgba(30, 41, 59, 0.42) !important;
+  background: rgba(30, 41, 59, calc(0.42 * var(--glass-opacity-scale, 1))) !important;
 }
 
 html[data-page-style="liquid-glass"] .batch-multitoggle-dropdown,
 html[data-page-style="glass"] .batch-multitoggle-dropdown,
 html[data-page-style="acg-glass"] .batch-multitoggle-dropdown {
-  background: rgba(255, 255, 255, 0.80) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, calc(0.80 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
+  -webkit-backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
 }
 html[data-page-style="liquid-glass"].dark .batch-multitoggle-dropdown,
 html[data-page-style="glass"].dark .batch-multitoggle-dropdown,
 html[data-page-style="acg-glass"].dark .batch-multitoggle-dropdown {
-  background: rgba(30, 41, 59, 0.85) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(30, 41, 59, calc(0.85 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
+  -webkit-backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
 }
 
 /* why：表头透明后与数据行完全融为一体，缺乏层次感。
@@ -2032,18 +2032,18 @@ html[data-page-style="liquid-glass"] .sortable-priority-item,
 html[data-page-style="liquid-glass"] .sortable-priority-overlay,
 html[data-page-style="liquid-glass"] .metadata-sortable-item,
 html[data-page-style="liquid-glass"] .scraper-sortable-item {
-  background: rgba(255, 255, 255, 0.50) !important;
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  background: rgba(255, 255, 255, calc(0.50 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1))) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1))) saturate(180%);
   border-color: rgba(255, 255, 255, 0.55) !important;
 }
 html[data-page-style="liquid-glass"].dark .sortable-priority-item,
 html[data-page-style="liquid-glass"].dark .sortable-priority-overlay,
 html[data-page-style="liquid-glass"].dark .metadata-sortable-item,
 html[data-page-style="liquid-glass"].dark .scraper-sortable-item {
-  background: rgba(30, 41, 59, 0.55) !important;
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  background: rgba(30, 41, 59, calc(0.55 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1))) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1))) saturate(180%);
   border-color: rgba(255, 255, 255, 0.15) !important;
 }
 
@@ -2824,16 +2824,16 @@ html[data-page-style="wallpaper-acg"].dark .login-panel {
 html[data-page-style="liquid-glass"] .login-panel,
 html[data-page-style="glass"] .login-panel,
 html[data-page-style="acg-glass"] .login-panel {
-  background: rgba(255, 255, 255, 0.42) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, calc(0.42 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
+  -webkit-backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
 }
 html[data-page-style="liquid-glass"].dark .login-panel,
 html[data-page-style="glass"].dark .login-panel,
 html[data-page-style="acg-glass"].dark .login-panel {
-  background: rgba(30, 41, 59, 0.50) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(30, 41, 59, calc(0.50 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
+  -webkit-backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
 }
 
 /* ==================== 弹幕搜索源页版本信息小卡片 scraper-version-card ====================
@@ -2845,19 +2845,19 @@ html[data-page-style="wallpaper-acg"] .ant-card.scraper-version-card,
 html[data-page-style="liquid-glass"] .ant-card.scraper-version-card,
 html[data-page-style="glass"] .ant-card.scraper-version-card,
 html[data-page-style="acg-glass"] .ant-card.scraper-version-card {
-  background: rgba(255, 255, 255, 0.35) !important;
+  background: rgba(255, 255, 255, calc(0.35 * var(--glass-opacity-scale, 1))) !important;
   border: 1px solid rgba(255, 255, 255, 0.55) !important;
-  backdrop-filter: blur(10px) saturate(160%);
-  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
 }
 html[data-page-style="wallpaper-acg"].dark .ant-card.scraper-version-card,
 html[data-page-style="liquid-glass"].dark .ant-card.scraper-version-card,
 html[data-page-style="glass"].dark .ant-card.scraper-version-card,
 html[data-page-style="acg-glass"].dark .ant-card.scraper-version-card {
-  background: rgba(15, 23, 42, 0.35) !important;
+  background: rgba(15, 23, 42, calc(0.35 * var(--glass-opacity-scale, 1))) !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  backdrop-filter: blur(10px) saturate(160%);
-  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(10px * var(--glass-blur-scale, 1))) saturate(160%);
 }
 
 /* ==================== 弹幕搜索源页两张大卡片 scraper-panel-card ====================
@@ -2880,16 +2880,16 @@ html[data-page-style="wallpaper-acg"].dark .ant-card.scraper-panel-card {
 html[data-page-style="liquid-glass"] .ant-card.scraper-panel-card,
 html[data-page-style="glass"] .ant-card.scraper-panel-card,
 html[data-page-style="acg-glass"] .ant-card.scraper-panel-card {
-  background: rgba(255, 255, 255, 0.42) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, calc(0.42 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
+  -webkit-backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
 }
 html[data-page-style="liquid-glass"].dark .ant-card.scraper-panel-card,
 html[data-page-style="glass"].dark .ant-card.scraper-panel-card,
 html[data-page-style="acg-glass"].dark .ant-card.scraper-panel-card {
-  background: rgba(30, 41, 59, 0.50) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(30, 41, 59, calc(0.50 * var(--glass-opacity-scale, 1))) !important;
+  backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
+  -webkit-backdrop-filter: blur(calc(16px * var(--glass-blur-scale, 1)));
 }
 
 /* ==================== 批量管理列表滚动条 batch-scroll ====================
@@ -2977,7 +2977,7 @@ html[data-page-style="wallpaper-acg"] .sticky-pagination-card,
 html[data-page-style="liquid-glass"] .sticky-pagination-card,
 html[data-page-style="glass"] .sticky-pagination-card,
 html[data-page-style="acg-glass"] .sticky-pagination-card {
-  background: color-mix(in srgb, var(--color-primary) 6%, rgba(255, 255, 255, 0.62)) !important;
+  background: color-mix(in srgb, var(--color-primary) 6%, rgba(255, 255, 255, calc(0.62 * var(--glass-opacity-scale, 1)))) !important;
   border-color: rgba(255, 255, 255, 0.35) !important;
 }
 
@@ -2985,7 +2985,7 @@ html[data-page-style="wallpaper-acg"].dark .sticky-pagination-card,
 html[data-page-style="liquid-glass"].dark .sticky-pagination-card,
 html[data-page-style="glass"].dark .sticky-pagination-card,
 html[data-page-style="acg-glass"].dark .sticky-pagination-card {
-  background: rgba(30, 41, 59, 0.66) !important;
+  background: rgba(30, 41, 59, calc(0.66 * var(--glass-opacity-scale, 1))) !important;
   border-color: rgba(255, 255, 255, 0.12) !important;
 }
 

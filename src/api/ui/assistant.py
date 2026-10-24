@@ -43,6 +43,7 @@ from src.ai.assistant.mcp import (
 )
 from src.ai.assistant.skill_manager import get_skill_manager
 from src.ai.assistant.tools import registry
+from src.ai.assistant.steering import MAX_STEER_CHARS, steering_registry
 from .assistant_sessions import mark_session_processing, save_session_snapshot
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,12 @@ class ChatStreamRequest(BaseModel):
     persona: Optional[str] = Field(DEFAULT_PERSONA, description="人设 key")
     codeRepair: bool = Field(False, description='本次管理员代码修复任务授权；不授权部署、重启或业务写操作')
     sessionId: Optional[str] = Field(None, description="会话 ID（用于断流恢复标记处理状态）")
+
+
+class SteerRequest(BaseModel):
+    """助手运行中追加的纠偏消息。"""
+    sessionId: str = Field(..., min_length=1)
+    content: str = Field(..., min_length=1, max_length=MAX_STEER_CHARS)
 
 
 class ChoiceSubmitRequest(BaseModel):
@@ -150,8 +157,18 @@ async def chat_stream(
         terminated = False
         snapshot_persisted = False
         choice_persisted = False
+        # 登记为运行中会话，允许用户在流进行时插话纠偏；finally 中清理
+        if sid:
+            steering_registry.open(sid, current_user.id)
         try:
             async for event in agent.stream(history, persona_key, context_extra):
+                if event.get("type") == "steer":
+                    # 插话转成引用式文本增量，前端无需改动即可展示，并随快照持久化
+                    event = {"type": "delta", "content": f"\n\n> 补充：{event.get('content', '')}\n\n",
+                             **({"round_id": event["round_id"]} if "round_id" in event else {})}
+                elif event.get("type") == "compacted":
+                    # 摘要压缩只是内部优化，不向前端透传
+                    continue
                 if run_hash:
                     db = get_database_service()
                     async with db.transaction():
@@ -278,6 +295,8 @@ async def chat_stream(
             err = {"type": "error", "content": assistant_reply}
             yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
         finally:
+            if sid:
+                steering_registry.close(sid)
             # 旧流即使后来结束也不能覆盖新流快照或清除其处理中标记。
             snapshot = [{"role": m.role, "content": m.content} for m in payload.messages]
             if assistant_reply or timeline:
@@ -298,6 +317,17 @@ async def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/assistant/chat/steer", summary="助手运行中插话纠偏", include_in_schema=False)
+async def steer_chat(
+    payload: SteerRequest,
+    current_user: ui_models.User = Depends(get_current_user),
+) -> dict:
+    """向当前用户正在运行的会话追加一条纠偏消息，下一轮工具调用前注入。"""
+    if not steering_registry.push(payload.sessionId, current_user.id, payload.content):
+        raise HTTPException(409, "会话当前未在运行，或插话过多，请等本轮结束后再发送")
+    return {"ok": True}
 
 
 @router.post("/assistant/choice", summary="提交助手选择", include_in_schema=False)

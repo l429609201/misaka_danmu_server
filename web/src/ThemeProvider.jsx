@@ -1,4 +1,4 @@
-﻿import { createContext, useContext, useEffect, useState, useMemo } from 'react'
+import { createContext, useContext, useEffect, useState, useMemo } from 'react'
 import { ConfigProvider } from 'antd'
 import { theme } from 'antd'
 import { useTranslation } from 'react-i18next'
@@ -127,14 +127,7 @@ function getCardHeaderBg(pageStyle) {
 export const PAGE_STYLES = [
   { key: 'normal',        name: '常规' },
   { key: 'liquid-glass',  name: '液态玻璃' },
-  { key: 'glass',         name: '云海玻璃' },
-  { key: 'acg-glass',     name: '二次元玻璃' },
   { key: 'wallpaper-acg', name: '二次元壁纸' },
-  { key: 'sakura',        name: '樱花物语' },
-  { key: 'paper',         name: '纸感极简' },
-  { key: 'calendar',      name: '挂历' },
-  { key: 'github',        name: '代码仓库' },
-  { key: 'material',      name: '质感设计' },
   { key: 'anibt',         name: 'AniBT' },
 ]
 
@@ -166,8 +159,26 @@ function applyAnibtTheme(base, dark) {
     return value
   }
   const token = remap(base.token)
+  const comps = remap(base.components || {})
   return {
     ...base,
+    // 组件级 token 必须放在 components 下（放进 token 里 antd 不认），AniBT 规格：控件高 32、圆角 10、卡片 14
+    components: {
+      ...comps,
+      Button: { ...comps.Button, borderRadius: 10, controlHeight: 32, primaryShadow: 'none', defaultShadow: 'none', dangerShadow: 'none', fontWeight: 600 },
+      Card: { ...comps.Card, borderRadiusLG: 14 },
+      Tag: { ...comps.Tag, borderRadiusSM: 6 },
+      Progress: { ...comps.Progress, defaultColor: c.primary, remainingColor: c.fill },
+      Input: { ...comps.Input, borderRadius: 10, activeShadow: 'none' },
+      InputNumber: { ...comps.InputNumber, borderRadius: 10, activeShadow: 'none' },
+      Select: { ...comps.Select, borderRadius: 10, optionSelectedBg: dark ? '#3a2232' : '#fdeef4', optionSelectedFontWeight: 600 },
+      Tabs: { ...comps.Tabs, inkBarColor: 'transparent', itemSelectedColor: c.text, itemHoverColor: c.primary, itemColor: c.text2 },
+      Table: { ...comps.Table, headerBg: 'transparent', headerSplitColor: 'transparent', borderColor: c.border, rowHoverBg: c.fill, headerColor: c.text2 },
+      Modal: { ...comps.Modal, borderRadiusLG: 16, contentBg: c.card, headerBg: c.card },
+      Menu: { ...comps.Menu, itemBorderRadius: 10, itemSelectedBg: dark ? '#3a2232' : '#fdeef4', itemSelectedColor: c.primary },
+      Pagination: { ...comps.Pagination, itemActiveBg: c.card, borderRadius: 10 },
+      Segmented: { ...comps.Segmented, borderRadius: 10, borderRadiusSM: 6, itemSelectedBg: c.card, trackBg: c.fill },
+    },
     token: {
       ...token,
       colorPrimary: c.primary,
@@ -188,10 +199,7 @@ function applyAnibtTheme(base, dark) {
       colorTextSecondary: c.text2,
       colorTextLightSolid: c.onPrimary,
       borderRadius: 10,
-      Button: { ...token.Button, borderRadius: 10, primaryShadow: 'none', defaultShadow: 'none' },
-      Card: { ...token.Card, borderRadius: 16 },
-      Tag: { ...token.Tag, borderRadiusSM: 6 },
-      Progress: { ...token.Progress, defaultColor: c.primary, remainingColor: c.fill },
+      controlHeight: 32,
     },
   }
 }
@@ -200,7 +208,41 @@ const DEFAULT_PAGE_STYLE = 'normal'
 // 已移除的页面样式：读到这些历史值时回落到 normal，避免旧 localStorage 卡在无 CSS 的空样式
 const REMOVED_PAGE_STYLES = new Set([
   'terminal', 'neon', 'acg-starry', 'acg-peach', 'acg-cyber', 'bing-mist', 'bing-night',
+  // 精简为四种样式（常规/液态玻璃/二次元壁纸/AniBT），其余回落默认；CSS 暂留便于恢复
+  'glass', 'acg-glass', 'sakura', 'paper', 'calendar', 'github', 'material',
 ])
+
+// 液态玻璃配置：opacity/blur 均为相对原样式的倍率（1 = 原效果）
+const GLASS_SETTINGS_KEY = 'liquidGlassSettings'
+export const GLASS_PRESETS = {
+  low:    { opacity: 1.4, blur: 0.6 },
+  medium: { opacity: 1,   blur: 1 },
+  high:   { opacity: 0.5, blur: 1.4 },
+}
+export const GLASS_RANGE = { opacity: [0.2, 1.8], blur: [0, 2] }
+const clampNum = (v, [min, max], fallback) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
+}
+/**
+ * 规整液态玻璃配置，越界或非法值回落到默认。
+ * @param {object} raw 原始配置
+ * @returns {{level: string, opacity: number, blur: number}}
+ */
+function normalizeGlassSettings(raw) {
+  return {
+    level: ['low', 'medium', 'high', 'custom'].includes(raw?.level) ? raw.level : 'medium',
+    opacity: clampNum(raw?.opacity, GLASS_RANGE.opacity, 1),
+    blur: clampNum(raw?.blur, GLASS_RANGE.blur, 1),
+  }
+}
+function loadGlassSettings() {
+  try {
+    return normalizeGlassSettings(JSON.parse(localStorage.getItem(GLASS_SETTINGS_KEY) || '{}'))
+  } catch {
+    return normalizeGlassSettings({})
+  }
+}
 
 // 需要背景图的页面样式：未配置地址时仅显示渐变兜底
 export const WALLPAPER_STYLE_KEYS = ['wallpaper-acg']
@@ -313,10 +355,27 @@ export function ThemeProvider({ children }) {
     else localStorage.removeItem('wallpaperUrl')
   }
 
+  // 液态玻璃的透明度/模糊度倍率（参考 MoviePilot 透明主题的低/中/高预设）
+  const [glassSettings, setGlassSettingsState] = useState(loadGlassSettings)
+  const setGlassSettings = (patch) => {
+    setGlassSettingsState(prev => {
+      const next = normalizeGlassSettings({ ...prev, ...patch })
+      localStorage.setItem(GLASS_SETTINGS_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
   // 把 pageStyle 写到 <html> 的 data-page-style 属性，全局 CSS 据此切换
   useEffect(() => {
     document.documentElement.setAttribute('data-page-style', pageStyle)
   }, [pageStyle])
+
+  // why：倍率以 CSS 变量下发，index.css 中液态玻璃规则统一乘以它，其它样式不受影响
+  useEffect(() => {
+    const root = document.documentElement.style
+    root.setProperty('--glass-opacity-scale', String(glassSettings.opacity))
+    root.setProperty('--glass-blur-scale', String(glassSettings.blur))
+  }, [glassSettings])
 
   // 壁纸地址 → CSS 变量 --ani-wallpaper
   // why：壁纸主题的 background-image 直接用 var(--ani-wallpaper)，不带任何内置默认值。
@@ -545,7 +604,7 @@ export function ThemeProvider({ children }) {
   }, [isDark, darkTheme, lightTheme, pageStyle])
 
   return (
-    <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle, wallpaperUrl, setWallpaperUrl, language, setLanguage }}>
+    <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle, wallpaperUrl, setWallpaperUrl, glassSettings, setGlassSettings, language, setLanguage }}>
       <ConfigProvider locale={ANTD_LOCALES[language] || zhCN} theme={antdTheme}>
         {children}
       </ConfigProvider>
