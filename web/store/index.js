@@ -4,6 +4,14 @@ import { atomWithStorage } from 'jotai/utils'
 /** 768 手机尺寸 */
 export const isMobileAtom = atom(false)
 
+/** 桌面端左侧边栏是否折叠（持久化，刷新后保持） */
+export const sidebarCollapsedAtom = atomWithStorage(
+  'sidebarCollapsedAtom',
+  false,
+  undefined,
+  { getOnInit: true }
+)
+
 /** 用户信息 */
 export const userinfoAtom = atom(undefined)
 

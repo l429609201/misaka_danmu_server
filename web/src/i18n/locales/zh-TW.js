@@ -125,6 +125,7 @@ export default {
   // 頂部欄工具 + 使用者選單
   header: {
     realtimeLog: '即時記錄',
+    collapseSidebar: '收起側欄',
     historyLog: '歷史記錄',
     github: 'GitHub',
     telegram: 'Telegram',

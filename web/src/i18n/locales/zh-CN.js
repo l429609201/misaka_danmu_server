@@ -125,6 +125,7 @@ export default {
   // 顶部栏工具 + 用户菜单
   header: {
     realtimeLog: '实时日志',
+    collapseSidebar: '收起侧栏',
     historyLog: '历史日志',
     github: 'GitHub',
     telegram: 'Telegram',

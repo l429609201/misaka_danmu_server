@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useState, useRef, useLayoutEffect, useCallback } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RoutePaths } from './RoutePaths.jsx'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { isMobileAtom, userinfoAtom } from '../../store/index.js'
+import { isMobileAtom, userinfoAtom, sidebarCollapsedAtom } from '../../store/index.js'
 import DarkModeToggle from '@/components/DarkModeToggle.jsx';
 import { MyIcon } from '@/components/MyIcon'
 import classNames from 'classnames'
 import { Tag, Dropdown, Modal, Form, Input, Button, Space, Badge, Popconfirm } from 'antd';
 import { logout, changePassword, checkAppUpdate, getDockerStatus, restartService, getVersion } from '../apis/index.js'
 import Cookies from 'js-cookie'
-import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, SearchOutlined } from '@ant-design/icons'
+import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, SearchOutlined, MenuFoldOutlined, MenuUnfoldOutlined, RightOutlined } from '@ant-design/icons'
 import { Tooltip } from 'antd'
 import SessionManager from '@/components/SessionManager'
 import VersionModal from '@/components/VersionModal'
@@ -170,6 +170,165 @@ const getNavChildActiveKey = (parentItem, location, subKey) => {
   return subKey
 }
 
+
+// 桌面端左侧边栏宽度（展开/折叠），Layout 与顶栏共用，保持对齐
+export const SIDEBAR_WIDTH = 208
+export const SIDEBAR_COLLAPSED_WIDTH = 64
+export const getSidebarWidth = (collapsed) => (collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH)
+
+/**
+ * 桌面端左侧边栏导航（参考 MoviePilot 风格）
+ * - 展开态：一级栏目 + 可展开的子页面列表
+ * - 折叠态：仅图标，悬停弹出子页面菜单
+ */
+const DesktopSidebar = ({ activeKey }) => {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const subKey = searchParams.get('key')
+  const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom)
+  // 展开的分组：默认展开当前所在栏目
+  const [openKeys, setOpenKeys] = useState(() => new Set([activeKey]))
+
+  // 切换路由时自动展开当前栏目
+  useEffect(() => {
+    setOpenKeys(prev => (prev.has(activeKey) ? prev : new Set([...prev, activeKey])))
+  }, [activeKey])
+
+  const toggleGroup = (key) => {
+    setOpenKeys(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+
+  const itemBase = 'flex items-center gap-3 rounded-lg cursor-pointer transition-colors select-none'
+
+  return (
+    <aside
+      className="fixed top-0 left-0 h-screen z-50 bg-base-bg shadow-box flex flex-col transition-[width] duration-200"
+      style={{ width: getSidebarWidth(collapsed) }}
+    >
+      <div
+        className={classNames('flex items-center h-16 flex-shrink-0', collapsed ? 'justify-center' : 'px-4')}
+        onClick={() => navigate(RoutePaths.HOME)}
+      >
+        <img src="/images/logo.png" className={classNames('cursor-pointer', collapsed ? 'h-9' : 'h-12')} />
+      </div>
+
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-2 space-y-1">
+        {navItems.map(it => {
+          const isActive = activeKey === it.key
+          const icon = (
+            <i className={`iconfont ${it.iconfontIcon}`} style={navIconStyle(collapsed ? 22 : 18, it.iconScale, true)} />
+          )
+
+          // ---- 折叠态：仅图标 ----
+          if (collapsed) {
+            const btn = (
+              <div
+                className={classNames(itemBase, 'justify-center p-2', isActive ? 'text-primary bg-[var(--ant-color-primary-bg)]' : 'hover:bg-[var(--ant-color-bg-text-hover)]')}
+                onClick={() => navigate(it.children ? getChildNavigatePath(it, it.children[0].key) : it.key)}
+              >
+                {icon}
+              </div>
+            )
+            if (!it.children) {
+              return <Tooltip key={it.key} title={t(it.label)} placement="right">{btn}</Tooltip>
+            }
+            return (
+              <Dropdown
+                key={it.key}
+                placement="bottomLeft"
+                menu={{
+                  items: [
+                    { key: '_title', type: 'group', label: <div className="font-bold text-sm">{t(it.label)}</div> },
+                    ...it.children.map(child => ({
+                      key: child.key,
+                      label: (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="inline-flex w-7 shrink-0 items-center justify-center">
+                            <MyIcon icon={child.icon} size={child.iconSize || 20} className={child.iconClassName} />
+                          </span>
+                          <span>{t(child.label)}</span>
+                        </span>
+                      ),
+                    })),
+                  ],
+                  selectedKeys: isActive ? [getNavChildActiveKey(it, location, subKey)] : [],
+                  onClick: ({ key: childKey }) => navigate(getChildNavigatePath(it, childKey)),
+                }}
+              >
+                {btn}
+              </Dropdown>
+            )
+          }
+
+          // ---- 展开态：无子项 ----
+          if (!it.children) {
+            return (
+              <div
+                key={it.key}
+                className={classNames(itemBase, 'px-3 py-2 text-sm font-semibold', isActive ? 'text-white' : 'hover:bg-[var(--ant-color-bg-text-hover)]')}
+                style={isActive ? { backgroundColor: 'var(--color-primary)' } : undefined}
+                onClick={() => navigate(it.key)}
+              >
+                {icon}
+                <span className="truncate">{t(it.label)}</span>
+              </div>
+            )
+          }
+
+          // ---- 展开态：有子项（可折叠分组） ----
+          const open = openKeys.has(it.key)
+          const childActive = getNavChildActiveKey(it, location, subKey)
+          return (
+            <div key={it.key}>
+              <div
+                className={classNames(itemBase, 'px-3 py-2 text-sm font-semibold', isActive ? 'text-primary' : '', 'hover:bg-[var(--ant-color-bg-text-hover)]')}
+                onClick={() => toggleGroup(it.key)}
+              >
+                {icon}
+                <span className="truncate flex-1">{t(it.label)}</span>
+                <RightOutlined className={classNames('text-xs transition-transform', { 'rotate-90': open })} />
+              </div>
+              {open && (
+                <div className="mt-1 space-y-0.5">
+                  {it.children.map(child => {
+                    const active = isActive && childActive === child.key
+                    return (
+                      <div
+                        key={child.key}
+                        className={classNames(itemBase, 'pl-6 pr-3 py-1.5 text-sm', active ? 'text-white' : 'text-base-text hover:bg-[var(--ant-color-bg-text-hover)]')}
+                        style={active ? { backgroundColor: 'var(--color-primary)' } : undefined}
+                        onClick={() => navigate(getChildNavigatePath(it, child.key))}
+                      >
+                        <span className="inline-flex w-6 shrink-0 items-center justify-center">
+                          <MyIcon icon={child.icon} size={child.iconSize ? child.iconSize - 4 : 18} className={child.iconClassName} />
+                        </span>
+                        <span className="truncate">{t(child.label)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </nav>
+
+      {/* 底部折叠按钮 */}
+      <div
+        className={classNames('flex items-center h-12 flex-shrink-0 cursor-pointer text-gray-400 hover:text-primary border-t border-gray-200/50 dark:border-gray-800/30', collapsed ? 'justify-center' : 'px-5 gap-2')}
+        onClick={() => setCollapsed(!collapsed)}
+      >
+        {collapsed ? <MenuUnfoldOutlined /> : <><MenuFoldOutlined /><span className="text-sm">{t('header.collapseSidebar')}</span></>}
+      </div>
+    </aside>
+  )
+}
 
 const FloatingMenu = ({ trigger, items, onItemClick, activeKey }) => {
   const [isOpen, setIsOpen] = useState(false)
@@ -361,6 +520,8 @@ export const Header = () => {
           <MobileHeader activeKey={activeKey} />
         </>
       ) : (
+        <>
+        <DesktopSidebar activeKey={activeKey} />
         <DesktopHeader
           activeKey={activeKey}
           version={version}
@@ -370,6 +531,7 @@ export const Header = () => {
           onRealtimeLog={() => setRealtimeLogOpen(true)}
           onHistoryLog={() => setHistoryLogOpen(true)}
         />
+        </>
       )}
 
       {/* 版本信息弹窗 */}
@@ -803,7 +965,7 @@ const MobileHeader = ({ activeKey }) => {
 }
 
 const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick, onRealtimeLog, onHistoryLog }) => {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const userinfo = useAtomValue(userinfoAtom)
   const location = useLocation()
@@ -841,36 +1003,9 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  // ---- 导航挤压检测 ----
-  const [compactNav, setCompactNav] = useState(false)
-  const navContainerRef = useRef(null)
-  const navMeasureRef = useRef(null)
-
-  // 检测导航是否需要切换到 icon-only 模式
-  const checkNavCompact = useCallback(() => {
-    const container = navContainerRef.current
-    const measure = navMeasureRef.current
-    if (!container || !measure) return
-    const available = container.clientWidth
-    const natural = measure.scrollWidth
-    setCompactNav(available < natural)
-  }, [])
-
-  useEffect(() => {
-    const container = navContainerRef.current
-    if (!container) return
-
-    const ro = new ResizeObserver(checkNavCompact)
-    ro.observe(container)
-    if (container.parentElement) ro.observe(container.parentElement)
-    return () => ro.disconnect()
-  }, [checkNavCompact])
-
-  // 语言切换时重新检测导航宽度（文字长度变化）
-  useEffect(() => {
-    // 延迟一帧让 DOM 先更新完文字内容
-    requestAnimationFrame(checkNavCompact)
-  }, [i18n.language, checkNavCompact])
+  // 桌面端导航已移至左侧边栏：顶栏起点跟随侧栏宽度（折叠/展开）
+  const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom)
+  const sidebarWidth = getSidebarWidth(sidebarCollapsed)
 
   // 检查 Docker 套接字是否可用
   useEffect(() => {
@@ -944,157 +1079,19 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
 
   return (
     <>
-      <div className="fixed top-0 left-0 w-full shadow-box z-50 py-2 bg-base-bg">
-        <div className="flex justify-start items-center max-w-[1200px] mx-auto w-full px-6 gap-4">
-          <div onClick={() => navigate(RoutePaths.HOME)} className="flex-shrink-0">
-            <img src="/images/logo.png" className="h-12 cursor-pointer" />
-          </div>
-          {/* 隐藏的测量行：icon+文字完整渲染，用于计算自然宽度 */}
+      {/* 桌面端顶栏：导航已移至左侧边栏，这里只保留工具区；left 跟随侧栏宽度 */}
+      <div
+        className="fixed top-0 right-0 shadow-box z-40 py-2 bg-base-bg transition-[left] duration-200"
+        style={{ left: sidebarWidth }}
+      >
+        <div className="flex justify-start items-center w-full px-6 gap-4 h-12">
           <div
-            ref={navMeasureRef}
-            className="flex items-center"
-            style={{ position: 'absolute', visibility: 'hidden', whiteSpace: 'nowrap', pointerEvents: 'none', height: 0, overflow: 'hidden' }}
-            aria-hidden="true"
+            className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer select-none"
+            onClick={() => setFeatureSearchOpen(true)}
           >
-            {navItems.map(it => (
-              <div key={it.key} className="flex items-center gap-1 mx-1 text-sm font-semibold whitespace-nowrap">
-                <i
-                  className={`iconfont ${it.iconfontIcon}`}
-                  style={navIconStyle(16, it.iconScale)}
-                />
-                <span>{t(it.label)}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* 实际导航 */}
-          <div ref={navContainerRef} className="flex items-center justify-center min-w-0 flex-1">
-            {navItems.map(it => {
-              const isActive = activeKey === it.key
-
-              // ---- 挤压态：icon-only ----
-              if (compactNav) {
-                if (it.children) {
-                  // 有子项时用 Dropdown，顶部显示分类标题
-                  return (
-                    <Dropdown
-                      key={it.key}
-                      menu={{
-                        items: [
-                          { key: '_title', type: 'group', label: (<div className="font-bold text-sm" style={{ color: 'var(--ant-color-text)' }}>{t(it.label)}</div>) },
-                          { type: 'divider' },
-                          ...it.children.map(child => ({
-                            key: child.key,
-                            label: (
-                              <span className="inline-flex items-center gap-2">
-                                {child.icon && (
-                                  <span className="inline-flex w-7 shrink-0 items-center justify-center">
-                                    <MyIcon icon={child.icon} size={child.iconSize || 20} className={child.iconClassName} />
-                                  </span>
-                                )}
-                                <span>{t(child.label)}</span>
-                              </span>
-                            ),
-                          })),
-                        ],
-                        selectedKeys: [getNavChildActiveKey(it, location, subKey)],
-                        onClick: ({ key: childKey }) => {
-                          if (childKey !== '_title') navigate(getChildNavigatePath(it, childKey))
-                        },
-                      }}
-                    >
-                      <div
-                        className={classNames(
-                          'cursor-pointer mx-0.5 p-1.5 rounded-md transition-colors hover:bg-[var(--ant-color-bg-text-hover)]',
-                          { 'text-primary': isActive }
-                        )}
-                        onClick={() => navigate(it.key)}
-                      >
-                        <i
-                          className={`iconfont ${it.iconfontIcon}`}
-                          style={navIconStyle(22, it.iconScale, true)}
-                        />
-                      </div>
-                    </Dropdown>
-                  )
-                }
-                // 无子项时用 Tooltip
-                return (
-                  <Tooltip key={it.key} title={t(it.label)}>
-                    <div
-                      className={classNames(
-                        'cursor-pointer mx-0.5 p-1.5 rounded-md transition-colors hover:bg-[var(--ant-color-bg-text-hover)]',
-                        { 'text-primary': isActive }
-                      )}
-                      onClick={() => navigate(it.key)}
-                    >
-                      <i
-                        className={`iconfont ${it.iconfontIcon}`}
-                        style={navIconStyle(22, it.iconScale, true)}
-                      />
-                    </div>
-                  </Tooltip>
-                )
-              }
-
-              // ---- 正常态：icon + 文字 ----
-              if (it.children) {
-                return (
-                  <Dropdown
-                    key={it.key}
-                    menu={{
-                      items: it.children.map(child => ({
-                        key: child.key,
-                        label: (
-                          <span className="inline-flex items-center gap-2">
-                            {child.icon && (
-                              <span className="inline-flex w-7 shrink-0 items-center justify-center">
-                                <MyIcon icon={child.icon} size={child.iconSize || 20} className={child.iconClassName} />
-                              </span>
-                            )}
-                            <span>{t(child.label)}</span>
-                          </span>
-                        ),
-                      })),
-                      selectedKeys: [getNavChildActiveKey(it, location, subKey)],
-                      onClick: ({ key: childKey }) => {
-                        navigate(getChildNavigatePath(it, childKey))
-                      },
-                    }}
-                  >
-                    <div
-                      className={classNames(
-                        'text-sm font-semibold cursor-pointer mx-1 flex items-center gap-1 whitespace-nowrap',
-                        { 'text-primary': isActive }
-                      )}
-                      onClick={() => navigate(it.key)}
-                    >
-                      <i
-                        className={`iconfont ${it.iconfontIcon}`}
-                        style={navIconStyle(16, it.iconScale)}
-                      />
-                      <span>{t(it.label)}</span>
-                    </div>
-                  </Dropdown>
-                )
-              }
-              return (
-                <div
-                  key={it.key}
-                  className={classNames(
-                    'text-sm font-semibold cursor-pointer mx-1 flex items-center gap-1 whitespace-nowrap',
-                    { 'text-primary': isActive }
-                  )}
-                  onClick={() => navigate(it.key)}
-                >
-                  <i
-                    className={`iconfont ${it.iconfontIcon}`}
-                    style={navIconStyle(16, it.iconScale)}
-                  />
-                  <span>{t(it.label)}</span>
-                </div>
-              )
-            })}
+            <SearchOutlined />
+            <span>{t('featureSearch.menuTitle')}</span>
+            <span className="text-xs">Ctrl/⌘+K</span>
           </div>
           <div className="flex items-center justify-center gap-4 ml-auto flex-shrink-0">
             <RateLimitIndicator />

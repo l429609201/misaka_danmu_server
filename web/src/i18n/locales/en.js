@@ -125,6 +125,7 @@ export default {
   // Top bar tools + user menu
   header: {
     realtimeLog: 'Realtime Log',
+    collapseSidebar: 'Collapse',
     historyLog: 'History Log',
     github: 'GitHub',
     telegram: 'Telegram',

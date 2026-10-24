@@ -2,10 +2,10 @@ import { ErrorBoundary } from 'react-error-boundary'
 import { ErrorFallback } from '../components/ErrorFallback.jsx'
 import { Outlet } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { Header } from './Header.jsx'
+import { Header, getSidebarWidth } from './Header.jsx'
 import { AssistantWidget } from '../components/assistant/AssistantWidget.jsx'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { isMobileAtom, userinfoAtom } from '../../store/index.js'
+import { isMobileAtom, userinfoAtom, sidebarCollapsedAtom } from '../../store/index.js'
 import { getUserInfo, autoLogin } from '../apis/index.js'
 import { useAnchorScroll } from '../hooks/useAnchorScroll.js'
 import classNames from 'classnames'
@@ -14,6 +14,8 @@ import Cookies from 'js-cookie'
 export const Layout = () => {
   const setUserinfo = useSetAtom(userinfoAtom)
   const isMobile = useAtomValue(isMobileAtom)
+  // 桌面端内容区需给左侧边栏让出宽度
+  const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom)
   const [isAuthenticating, setIsAuthenticating] = useState(true)
 
   // 全功能搜索：监听 location.hash，跳转后滚动到目标功能区块并高亮
@@ -90,10 +92,15 @@ export const Layout = () => {
           <div
             className={classNames({
               'w-full min-h-screen px-4 pb-28 pt-14': isMobile,
-              'max-w-[1200px] min-h-screen mx-auto pt-18 pb-10 px-8': !isMobile,
+              'min-h-screen transition-[padding] duration-200': !isMobile,
             })}
+            style={isMobile ? undefined : { paddingLeft: getSidebarWidth(sidebarCollapsed) }}
           >
-            <Outlet />
+            {isMobile ? <Outlet /> : (
+              <div className="max-w-[1400px] mx-auto pt-18 pb-10 px-8">
+                <Outlet />
+              </div>
+            )}
           </div>
           {/* 全局看板娘助手：认证通过后挂载，全站右下角可用 */}
           <AssistantWidget />
