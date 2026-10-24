@@ -1,4 +1,4 @@
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   deleteAnimeEpisode,
   deleteAnimeEpisodeSingle,
@@ -11,6 +11,7 @@ import {
   refreshEpisodeDanmaku,
   refreshEpisodesBulk,
   resetEpisode,
+  sortEpisodes,
   validateImportUrl,
   importCollection,
 } from '../../apis'
@@ -52,7 +53,7 @@ import { useModal } from '../../ModalContext'
 import { useMessage } from '../../MessageContext'
 import { BatchImportModal } from '../../components/BatchImportModal'
 import { DanmakuEditModal } from '../../components/DanmakuEditModal'
-import { EpisodeSortModal } from '../../components/EpisodeSortModal'
+import { EpisodeSortBoard, getSortSlots, sortByOriginalIndex } from '../../components/EpisodeSortBoard'
 import { isUrl } from '../../utils/data'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../store'
@@ -87,7 +88,11 @@ export const EpisodeDetail = () => {
   const [form] = Form.useForm()
   const [editOpen, setEditOpen] = useState(false)
   const [confirmLoading, setConfirmLoading] = useState(false)
-  const [sortOpen, setSortOpen] = useState(false)
+  // 页面内拖拽排序模式：sortItems 为全量分集的本地新顺序，保存前不影响服务端
+  const [sortMode, setSortMode] = useState(false)
+  const [sortItems, setSortItems] = useState([])
+  const [sortLoading, setSortLoading] = useState(false)
+  const [sortSaving, setSortSaving] = useState(false)
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const uploadRef = useRef(null)
@@ -188,6 +193,94 @@ export const EpisodeDetail = () => {
   useEffect(() => {
     getDetail()
   }, [id, animeId, pagination.current, pagination.pageSize])
+
+  const sortChangedCount = useMemo(() => {
+    const slots = getSortSlots(sortItems)
+    return sortItems.filter((item, i) => item.episodeIndex !== slots[i]).length
+  }, [sortItems])
+
+  // 有未保存的排序改动时拦截站内跳转与关闭/刷新页面
+  const sortBlocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      sortMode && sortChangedCount > 0 && currentLocation.pathname !== nextLocation.pathname
+  )
+  useEffect(() => {
+    if (sortBlocker.state !== 'blocked') return
+    modalApi.confirm({
+      title: t('episodeSort.leaveTitle'),
+      content: t('episodeSort.leaveContent', { count: sortChangedCount }),
+      okText: t('episodeSort.discard'),
+      cancelText: t('episodeSort.keepEditing'),
+      onOk: () => sortBlocker.proceed(),
+      onCancel: () => sortBlocker.reset(),
+    })
+  }, [sortBlocker.state])
+  useEffect(() => {
+    if (!sortMode || !sortChangedCount) return
+    const onBeforeUnload = e => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [sortMode, sortChangedCount])
+
+  /** 进入拖拽排序模式：一次性加载本源全部分集，排序必须基于全量 */
+  const enterSortMode = async () => {
+    setSortMode(true)
+    setSelectedRows([])
+    setSortLoading(true)
+    try {
+      const total = pagination.total || episodeList.length
+      const res = await getEpisodes({ sourceId: Number(id), page: 1, pageSize: Math.max(total, 1) })
+      setSortItems(sortByOriginalIndex(res.data?.list || []))
+    } catch (error) {
+      messageApi.error(t('episodeSort.loadFailed', { error: error.message }))
+      setSortMode(false)
+    } finally {
+      setSortLoading(false)
+    }
+  }
+
+  const exitSortMode = () => {
+    setSortMode(false)
+    setSortItems([])
+  }
+
+  /** 取消：有改动时二次确认再丢弃 */
+  const cancelSortMode = () => {
+    if (!sortChangedCount) {
+      exitSortMode()
+      return
+    }
+    modalApi.confirm({
+      title: t('episodeSort.leaveTitle'),
+      content: t('episodeSort.leaveContent', { count: sortChangedCount }),
+      okText: t('episodeSort.discard'),
+      cancelText: t('episodeSort.keepEditing'),
+      onOk: exitSortMode,
+    })
+  }
+
+  /** 保存并退出：提交新顺序，后端按原集数集合重新分配 */
+  const saveSortMode = async () => {
+    if (!sortChangedCount) {
+      exitSortMode()
+      return
+    }
+    setSortSaving(true)
+    try {
+      await sortEpisodes({ sourceId: Number(id), episodeIds: sortItems.map(i => i.episodeId) })
+      messageApi.success(t('episodeSort.submitted'))
+      exitSortMode()
+      // 任务异步执行，稍等再刷新列表以展示新集数
+      setTimeout(getDetail, 2000)
+    } catch (error) {
+      messageApi.error(t('episodeSort.submitFailed', { error: error?.detail || error.message }))
+    } finally {
+      setSortSaving(false)
+    }
+  }
 
   // 处理 URL 参数 batchEdit=all，自动打开批量编辑弹窗
   const batchEditParam = searchParams.get('batchEdit')
@@ -1153,6 +1246,35 @@ export const EpisodeDetail = () => {
         <div className="mb-3 text-sm text-gray-600 dark:text-gray-400">
           💡 {isMobile ? t('episodePage.selectTipMobile') : t('episodePage.selectTipDesktop')}{t('episodePage.selectTipSuffix')}
         </div>
+        {sortMode ? (
+          // 排序模式下整条工具栏切换成排序栏，吸顶便于长列表随时保存
+          <div
+            className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 py-2"
+            style={{ background: 'var(--color-card, #fff)' }}
+          >
+            <div className="flex items-center gap-2 text-sm">
+              <HolderOutlined />
+              <span>{isMobile ? t('episodeSort.hintMobile') : t('episodeSort.hintDesktop')}</span>
+              {sortChangedCount > 0 && (
+                <Tag color="blue">{t('episodeSort.changed', { count: sortChangedCount })}</Tag>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={!sortChangedCount || sortSaving}
+                onClick={() => setSortItems(prev => sortByOriginalIndex(prev))}
+              >
+                {t('episodeSort.reset')}
+              </Button>
+              <Button disabled={sortSaving} onClick={cancelSortMode}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="primary" loading={sortSaving} disabled={sortLoading} onClick={saveSortMode}>
+                {t('episodeSort.saveAndExit', { count: sortChangedCount })}
+              </Button>
+            </div>
+          </div>
+        ) : (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <Button
             onClick={() => {
@@ -1183,7 +1305,7 @@ export const EpisodeDetail = () => {
               </Tooltip>
             </Button>
             <Button
-              onClick={() => setSortOpen(true)}
+              onClick={enterSortMode}
               disabled={!episodeList.length}
             >
               <Tooltip title={t('episodeSort.btnTip')}>
@@ -1244,8 +1366,16 @@ export const EpisodeDetail = () => {
             </Button>
           </div>
         </div>
+        )}
         <div className="mb-4"></div>
-        {episodeList?.length ? (
+        {sortMode ? (
+          <EpisodeSortBoard
+            items={sortItems}
+            onChange={setSortItems}
+            isMobile={isMobile}
+            loading={sortLoading}
+          />
+        ) : episodeList?.length ? (
           <ResponsiveTable
             pagination={{
               ...pagination,
@@ -1717,14 +1847,6 @@ export const EpisodeDetail = () => {
           </Form.Item>
         </Form>
       </Modal>
-      <EpisodeSortModal
-        open={sortOpen}
-        sourceId={Number(id)}
-        isMobile={isMobile}
-        onClose={() => setSortOpen(false)}
-        // 任务异步执行，稍等再刷新列表以展示新集数
-        onSubmitted={() => setTimeout(getDetail, 2000)}
-      />
       {/* 批量编辑弹窗 */}
       <Modal
         title={t('episodePage.batchEditTitle')}
