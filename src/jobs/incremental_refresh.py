@@ -1,4 +1,5 @@
 import logging
+from src.schemas.media_types import is_movie_type
 from src.services.service_container import get_database_service
 from typing import Callable
 from datetime import datetime
@@ -59,7 +60,7 @@ class IncrementalRefreshJob(BaseJob):
             tmdb_id = item.get("tmdbId")
             season = item.get("season")
             anime_type = item.get("animeType") or "tv_series"
-            is_movie = anime_type == "movie"
+            is_movie = is_movie_type(anime_type)
 
             # 选择搜索类型
             if tmdb_id:

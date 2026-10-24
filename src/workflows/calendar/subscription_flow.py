@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
+from src.schemas.media_types import is_movie_type
 from src.rate_limiter import RateLimiter
 from src.schemas.auth import User
 from src.schemas.calendar import BatchSubscribeRequest, SubscribeRequest, UnsubscribeRequest
@@ -60,7 +61,7 @@ def resolve_provider_external_id(body: SubscribeRequest) -> tuple[str | None, st
 
 async def _submit_auto_import(body: SubscribeRequest, user: User, context: CalendarSubscriptionContext) -> str:
     """为元数据标识生成可恢复的自动导入任务。"""
-    is_movie = body.mediaType == "movie"
+    is_movie = is_movie_type(body.mediaType)
     media_type = AutoImportMediaType.MOVIE if is_movie else AutoImportMediaType.TV_SERIES
     season = None if is_movie else (body.season or 1)
     if body.traktTmdbId:

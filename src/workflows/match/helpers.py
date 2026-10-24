@@ -11,7 +11,7 @@ import logging
 from typing import Dict, Any, Optional
 
 from src.schemas.dandan import DandanMatchInfo, DandanMatchResponse
-from src.utils.dandan.constants import DANDAN_TYPE_MAPPING, DANDAN_TYPE_DESC_MAPPING
+from src.schemas.dandan.constants import DANDAN_TYPE_MAPPING, DANDAN_TYPE_DESC_MAPPING
 from src.utils.parsing.filename_parser import parse_filename
 
 logger = logging.getLogger(__name__)

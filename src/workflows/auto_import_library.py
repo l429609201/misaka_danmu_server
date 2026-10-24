@@ -1,6 +1,7 @@
 """自动导入的库内去重判定，不持有任务长会话。"""
 from typing import Any, Dict, Optional, Tuple
 
+from src.schemas.media_types import is_movie_type
 from src.workflows.title_recognition_lookup import find_anime_with_recognition
 from src.services.service_container import get_database_service
 from src.utils.parsing.filename_parser import parse_episode_ranges
@@ -14,7 +15,7 @@ async def check_auto_import_library(
     """返回已有作品与可提前结束的原因，保留单集缺失时继续导入的策略。"""
     db = get_database_service()
     existing = None
-    season_for_check = 1 if media_type == "movie" and season is None else season
+    season_for_check = 1 if is_movie_type(media_type) and season is None else season
     columns = {"tmdb": "tmdbId", "tvdb": "tvdbId", "imdb": "imdbId",
                "douban": "doubanId", "bangumi": "bangumiId"}
     if search_type != "keyword" and season is not None:

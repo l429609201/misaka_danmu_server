@@ -12,6 +12,7 @@ from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
+from src.schemas.media_types import MEDIA_TYPE_MOVIE, MEDIA_TYPE_TV_SERIES, SERIES_TYPES, is_movie_type
 from ..orm_models import AnimeSource, Anime, Episode, Scraper, AnimeMetadata
 
 logger = logging.getLogger(__name__)
@@ -458,10 +459,11 @@ class SourceQueryRepository:
             conditions.append(AnimeSource.incrementalRefreshEnabled == True)  # noqa: E712
         elif refresh_filter == "disabled":
             conditions.append(AnimeSource.incrementalRefreshEnabled == False)  # noqa: E712
-        if type_filter == "movie":
-            conditions.append(Anime.type == "movie")
-        elif type_filter == "tv_series":
-            conditions.append(Anime.type == "tv_series")
+        if is_movie_type(type_filter):
+            conditions.append(Anime.type == MEDIA_TYPE_MOVIE)
+        elif type_filter == MEDIA_TYPE_TV_SERIES:
+            # 剧集筛选覆盖所有分集形态（剧集/综艺/短剧），避免新分类被漏掉
+            conditions.append(Anime.type.in_(SERIES_TYPES))
         if finished_filter == "finished":
             conditions.append(AnimeSource.isFinished == True)  # noqa: E712
         elif finished_filter == "unfinished":

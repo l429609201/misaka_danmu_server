@@ -2,6 +2,7 @@
 import logging
 from typing import Any, Dict, Optional
 
+from src.schemas.media_types import is_movie_type
 from src.schemas.auth import User
 from src.services.metadata_service import MetadataService
 from src.services.service_container import get_database_service
@@ -22,7 +23,7 @@ async def fetch_aliases(
     user = User(id=0, username="system")
     # 调用方传入的是库内类型（tv_series/movie/ova/other），TMDB 路径只接受 tv/movie；
     # 原样透传会请求 /search/tv_series 导致 404，这里统一映射。
-    media_type = "movie" if media_type == "movie" else "tv"
+    media_type = "movie" if is_movie_type(media_type) else "tv"
     if tmdb_id:
         try:
             # 明确媒体类型，避免同号电影和剧集的详情串用。

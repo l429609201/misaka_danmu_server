@@ -321,8 +321,9 @@ BUILTIN_SKILLS: Dict[str, Skill] = {
 - `tvDanmakuDirectoryPath`（默认 `/app/config/danmaku/tv`）
 - `tvDanmakuFilenameTemplate`（默认 `${animeId}/${episodeId}`）
 
-**10 个模板变量**：`${title}`、`${titleBase}`（标准化标题，去除季度信息）、`${season}`、
-`${episode}`、`${year}`、`${provider}`、`${animeId}`、`${episodeId}`、`${sourceId}`、`${tmdbId}`
+**12 个模板变量**：`${title}`、`${titleBase}`（标准化标题，去除季度信息）、`${season}`、
+`${episode}`、`${year}`、`${provider}`、`${animeId}`、`${episodeId}`、`${sourceId}`、`${tmdbId}`、
+`${category}`（类型名：电视节目/电影/OVA/其他/综艺/短剧）、`${type}`（类型原始值）
 
 模板支持子目录（`/` 分隔），`.xml` 后缀自动添加不要手写。
 改模板**不会**重命名已有文件，只影响后续新增。

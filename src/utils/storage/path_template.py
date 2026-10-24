@@ -12,6 +12,8 @@
 - ${episodeId}: 分集ID
 - ${sourceId}: 数据源ID
 - ${tmdbId}: TMDB ID（可能为空）
+- ${category}: 类型中文名（电视节目/电影/OVA/其他/综艺/短剧）
+- ${type}: 类型原始值（tv_series/movie/ova/other/variety/short_drama）
 
 支持的格式化选项：
 - ${season:02d}: 季度号补零到2位
@@ -29,6 +31,7 @@ from string import Template
 logger = logging.getLogger(__name__)
 
 # normalize_title 已迁移至统一模块
+from src.schemas.media_types import get_type_label, is_movie_type
 from src.utils.parsing.filename_parser import normalize_title  # noqa: E402
 from src.core.env import is_docker_environment
 
@@ -163,7 +166,8 @@ def create_danmaku_context(anime_title: str, season: int, episode_index: int,
                           year: Optional[int] = None, provider: Optional[str] = None,
                           anime_id: Optional[int] = None, episode_id: Optional[int] = None,
                           source_id: Optional[int] = None,
-                          tmdb_id: Optional[str] = None) -> Dict[str, Any]:
+                          tmdb_id: Optional[str] = None,
+                          anime_type: Optional[str] = None) -> Dict[str, Any]:
     """
     创建弹幕路径模板的上下文变量
 
@@ -177,6 +181,7 @@ def create_danmaku_context(anime_title: str, season: int, episode_index: int,
         episode_id: 分集ID
         source_id: 数据源ID
         tmdb_id: TMDB ID（可能为 None）
+        anime_type: 作品类型原始值，用于 ${category}/${type}
 
     Returns:
         上下文字典
@@ -192,6 +197,9 @@ def create_danmaku_context(anime_title: str, season: int, episode_index: int,
         'episodeId': episode_id,
         'sourceId': source_id,
         'tmdbId': tmdb_id,
+        # 按类型分目录（如 综艺/、短剧/）；未知类型统一归「其他」
+        'category': get_type_label(anime_type),
+        'type': anime_type or 'other',
     }
 
 
@@ -240,7 +248,7 @@ async def generate_danmaku_path(episode, config_service=None) -> tuple[str, Path
         try:
             # 根据类型选择不同的配置
             # movie 类型使用电影配置,其他类型使用电视配置
-            if anime_type == 'movie':
+            if is_movie_type(anime_type):
                 root_directory = await config_service.get('movieDanmakuDirectoryPath', '/app/config/danmaku/movies')
                 filename_template = await config_service.get('movieDanmakuFilenameTemplate', '${title}/${episodeId}')
             else:
@@ -268,6 +276,7 @@ async def generate_danmaku_path(episode, config_service=None) -> tuple[str, Path
                 episode_id=episode_id,
                 source_id=episode.source.id,
                 tmdb_id=tmdb_id,
+                anime_type=anime_type,
             )
 
             # 生成相对路径(不包含.xml后缀)

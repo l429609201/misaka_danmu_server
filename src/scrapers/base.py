@@ -48,6 +48,10 @@ from thefuzz import fuzz
 from src.rate_limiter import RateLimitExceededError
 from src.schemas.auth import User
 from src.schemas.common import SCRAPER_API_VERSION
+from src.schemas.media_types import (
+    MEDIA_TYPE_MOVIE, MEDIA_TYPE_OTHER, MEDIA_TYPE_OVA, MEDIA_TYPE_SHORT_DRAMA,
+    MEDIA_TYPE_TV_SERIES, MEDIA_TYPE_VARIETY, is_movie_type, is_series_type,
+)
 from src.schemas.ui.search import ProviderEpisodeInfo, ProviderSearchInfo
 from src.security_core import require_download_permission
 from src.services.service_container import get_database_service, get_rate_limiter
@@ -66,6 +70,8 @@ from src.utils.runtime.transport_manager import TransportManager
 
 # 库和工具均由本模块公开原对象，来源仅从.base选择所需名字。
 __all__ = [
+    # 媒体类型（anime.type）常量与判断，来源统一经 .base 取用
+    "MEDIA_TYPE_MOVIE", "MEDIA_TYPE_OVA", "MEDIA_TYPE_OTHER", "MEDIA_TYPE_SHORT_DRAMA", "MEDIA_TYPE_TV_SERIES", "MEDIA_TYPE_VARIETY", "is_movie_type", "is_series_type",
     "BaseScraper", "ProviderEpisodeInfo", "ProviderSearchInfo", "User",
     "ConfigService", "TransportManager", "RateLimitExceededError",
     "require_download_permission", "get_season_from_title", "track_performance",

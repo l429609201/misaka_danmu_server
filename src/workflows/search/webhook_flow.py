@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.schemas.media_types import is_movie_type
 from src.services.performance_service import TaskProfiler
 from src.utils import SearchTimer
 from src.utils.diagnostics.search_timer import SubStepTiming
@@ -80,7 +81,7 @@ async def search_webhook_source(
             )
 
     correct_movie_type_by_title(results, log_prefix="Webhook:")
-    if season and season > 0 and media_type != "movie":
+    if season and season > 0 and not is_movie_type(media_type):
         results, _ = filter_by_season(results, season)
     timer.step_start("结果排序与匹配")
     best_match = await select_webhook_result(

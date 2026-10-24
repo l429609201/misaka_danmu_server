@@ -13,6 +13,8 @@ const TYPE_LABELS = {
   movie: 'libraryGroup.typeMovie',
   ova: 'libraryGroup.typeOva',
   other: 'libraryGroup.typeOther',
+  variety: 'libraryGroup.typeVariety',
+  short_drama: 'libraryGroup.typeShortDrama',
 }
 
 const formatBytes = (bytes = 0) => {

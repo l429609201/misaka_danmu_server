@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 
 from src.core import get_app_timezone
 from src.schemas.dandan import DandanSearchAnimeItem
-from src.utils.dandan.constants import DANDAN_TYPE_MAPPING, DANDAN_TYPE_DESC_MAPPING
+from src.schemas.dandan.constants import DANDAN_TYPE_MAPPING, DANDAN_TYPE_DESC_MAPPING
 
 
 def format_db_results(db_results: List[Dict[str, Any]]) -> List[DandanSearchAnimeItem]:

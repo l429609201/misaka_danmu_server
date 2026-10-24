@@ -20,6 +20,7 @@ from src.services.ai_service import AIService
 from src.services.service_container import get_database_service
 from src.ai.ai_prompts import DEFAULT_AI_MATCH_PROMPT, DEFAULT_AI_RECOGNITION_PROMPT, DEFAULT_AI_ALIAS_VALIDATION_PROMPT
 from src.services.performance_service import profile_flow
+from src.schemas.media_types import SERIES_TYPES, is_movie_type, is_series_type
 from src.schemas.performance import FLOW_TMDB_AUTO_SCRAPE
 
 if TYPE_CHECKING:
@@ -260,7 +261,7 @@ class TmdbAutoMapJob(BaseJob):
                                 self.logger.info(f"正则提取季度: '{title}' → '{search_title}' (season={recognized_season})")
 
                         # 根据类型选择mediaType
-                        media_type = "movie" if search_type == "movie" else "tv"
+                        media_type = "movie" if is_movie_type(search_type) else "tv"
 
                         search_results = await self.metadata_manager.search("tmdb", search_title, user, mediaType=media_type)
                         if search_results:
@@ -350,7 +351,7 @@ class TmdbAutoMapJob(BaseJob):
                                         Anime.title.like(f"{base_title}%"),
                                         AnimeMetadata.tmdbId.isnot(None),
                                         AnimeMetadata.tmdbId != "",
-                                        Anime.type == 'tv_series'
+                                        Anime.type.in_(SERIES_TYPES)  # 综艺/短剧同属剧集形态
                                     )
                                     .limit(1)
                                 )
@@ -387,7 +388,7 @@ class TmdbAutoMapJob(BaseJob):
 
                 # 步骤 2: 获取媒体详情，包括别名
                 # 根据作品类型决定mediaType参数
-                media_type_for_details = "movie" if search_type == "movie" else "tv"
+                media_type_for_details = "movie" if is_movie_type(search_type) else "tv"
                 details = await self.metadata_manager.get_details("tmdb", tmdb_id, user, mediaType=media_type_for_details)
                 if not details:
                     self.logger.warning(f"未能从 TMDB 获取 '{title}' (ID: {tmdb_id}) 的详情 (mediaType={media_type_for_details})。")
@@ -398,7 +399,7 @@ class TmdbAutoMapJob(BaseJob):
                 force_update = False
 
                 # 已有 TMDB ID 的作品也经服务初始化，不依赖前面的标题识别分支。
-                if ai_available and ai_alias_correction_enabled and search_type == "tv_series" and aliases_to_update:
+                if ai_available and ai_alias_correction_enabled and is_series_type(search_type) and aliases_to_update:
                     aliases_to_update, force_update = await validate_aliases_with_ai(
                         title, year, search_type, aliases_to_update, self.ai_service, ai_alias_correction_enabled
                     )

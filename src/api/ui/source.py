@@ -549,7 +549,7 @@ async def get_incremental_refresh_sources(
     keyword: str = Query("", description="搜索关键词（匹配番剧名称或源名称）"),
     favoriteFilter: str = Query("all", pattern="^(all|favorited|unfavorited)$", description="标记过滤"),
     refreshFilter: str = Query("all", pattern="^(all|enabled|disabled)$", description="追更过滤"),
-    typeFilter: str = Query("all", pattern="^(all|movie|tv_series)$", description="类型过滤"),
+    typeFilter: str = Query("all", pattern="^(all|movie|tv_series)$", description="类型过滤（tv_series 包含综艺/短剧等分集形态）"),
     finishedFilter: str = Query("all", pattern="^(all|finished|unfinished)$", description="完结过滤"),
     sortBy: str = Query("created", pattern="^(created|title)$", description="排序字段: created=按入库时间, title=按标题"),
     sortOrder: str = Query("desc", pattern="^(asc|desc)$", description="排序方向: asc=升序, desc=降序"),

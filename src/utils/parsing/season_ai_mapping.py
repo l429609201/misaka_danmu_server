@@ -13,6 +13,7 @@ from thefuzz import fuzz
 
 from src.schemas.metadata import MetadataDetailsResponse
 from src.schemas.search import ProviderSearchInfo
+from src.schemas.media_types import is_series_type
 from src.utils.parsing.season_mapper import (
     _build_title_alias_equivalence_map,
     _calculate_season_similarity,
@@ -252,7 +253,7 @@ async def ai_season_mapping_and_correction(
             )
 
         # 类型未知(None)的结果也可能是剧集，一并参与季度修正
-        tv_results = [item for item in search_results if item.type in ('tv_series', None)]
+        tv_results = [item for item in search_results if item.type is None or is_series_type(item.type)]
         if not tv_results:
             log_lines.append("○ AI季度映射: 没有TV结果需要修正")
             logger.info("\n".join(log_lines))
@@ -410,7 +411,7 @@ async def ai_type_and_season_mapping_and_correction(
         log_lines.append(f"✓ 类型修正完成: 修正了 {len(type_corrections)} 个结果的类型信息")
 
         # 2. 季度修正：仅对电视剧生效
-        if any(item.type in ('tv_series', None) for item in search_results):
+        if any(item.type is None or is_series_type(item.type) for item in search_results):
             season_corrections = await ai_season_mapping_and_correction(
                 search_title=search_title,
                 search_results=search_results,

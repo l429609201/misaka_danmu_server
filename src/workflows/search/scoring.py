@@ -16,6 +16,7 @@
 
 import logging
 from typing import Any, Dict, Optional, Set
+from src.schemas.media_types import is_series_type
 from src.services.service_container import get_database_service
 from thefuzz import fuzz
 
@@ -120,7 +121,7 @@ def compute_score(
         query_season is not None
         and query_season > 0
         and item_season is not None
-        and (query_type is None or query_type == "tv_series")
+        and (query_type is None or is_series_type(query_type))
     ):
         score += weights["season_match"] if item_season == query_season else weights["season_mismatch"]
 

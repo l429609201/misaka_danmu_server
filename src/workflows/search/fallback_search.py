@@ -10,10 +10,14 @@ import logging
 import time
 from typing import Optional, List, Dict, Any, Tuple
 
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.schemas.search import ProviderSearchInfo, AnimeSearchResponse
-from src.schemas.dandan import DandanSearchAnimeResponse, DandanSearchAnimeItem
+from src.schemas.dandan import (
+    DandanSearchAnimeResponse, DandanSearchAnimeItem,
+    DandanSearchEpisodesResponse, DandanAnimeInfo, DandanEpisodeInfo,
+)
 from src.services.service_container import (
     get_database_service,
     get_scraper_manager,
@@ -46,25 +50,11 @@ from src.utils.parsing.filename_parser import format_episode_ranges
 
 logger = logging.getLogger(__name__)
 
-# ============ 常量定义（从 api/dandan/constants.py 复制） ============
-DANDAN_TYPE_MAPPING = {
-    "tv_series": "tvseries",
-    "movie": "movie",
-    "ova": "ova",
-    "web": "web",
-    "other": "other",
-}
-
-DANDAN_TYPE_DESC_MAPPING = {
-    "tv_series": "TV",
-    "movie": "剧场版",
-    "ova": "OVA",
-    "web": "Web",
-    "other": "其他",
-}
-
+# 弹弹 类型映射统一来自 src/schemas/dandan/constants.py，避免多处副本漂移
 # 复用搜索会话契约，避免详情读取误用旧后备弹幕缓存前缀。
-from src.utils.dandan.constants import (
+from src.schemas.dandan.constants import (
+    DANDAN_TYPE_MAPPING,
+    DANDAN_TYPE_DESC_MAPPING,
     FALLBACK_SEARCH_SESSION_PREFIX as FALLBACK_SEARCH_CACHE_PREFIX,
     FALLBACK_SEARCH_SESSION_TTL as FALLBACK_SEARCH_CACHE_TTL,
 )
@@ -857,7 +847,7 @@ async def search_implementation(
     scraper_manager=None,
     config_service=None,
     rate_limiter=None,
-) -> "DandanSearchEpisodesResponse":
+) -> DandanSearchEpisodesResponse:
     """
     搜索接口的通用实现，避免代码重复。
     当启用并行搜索时，还会从源站补充库内缺失的分集。
@@ -875,10 +865,6 @@ async def search_implementation(
     Returns:
         DandanSearchEpisodesResponse 对象
     """
-    from src.schemas.dandan import DandanSearchEpisodesResponse, DandanAnimeInfo, DandanEpisodeInfo
-    from src.api.dandan.constants import DANDAN_TYPE_MAPPING, DANDAN_TYPE_DESC_MAPPING
-    from src.utils import parse_search_keyword
-    from fastapi import HTTPException, status
 
     search_term = search_term.strip()
     if not search_term:

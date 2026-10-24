@@ -11,6 +11,7 @@ from src.schemas.auth import User
 from src.schemas.import_schemas import EditedImportRequest
 from src.schemas.ui.search import ImportRequest
 from src.services.config_service import get_config_service
+from src.schemas.media_types import is_series_type
 from src.services.service_container import (
     get_database_service, get_scraper_manager, get_task_manager,
     get_metadata_service, get_rate_limiter, get_title_recognition_manager,
@@ -113,7 +114,7 @@ async def import_from_provider(
     # 构造任务标题（使用转换后的标题）
     task_title = f"导入: {display_title} ({request_data.provider})"
     # 如果是电视剧且指定了单集导入，则在标题中追加季和集信息
-    if request_data.type == "tv_series" and request_data.currentEpisodeIndex is not None and display_season is not None:
+    if is_series_type(request_data.type) and request_data.currentEpisodeIndex is not None and display_season is not None:
         task_title += f" - S{display_season:02d}E{request_data.currentEpisodeIndex:02d}"
 
     # 生成unique_key以避免重复任务

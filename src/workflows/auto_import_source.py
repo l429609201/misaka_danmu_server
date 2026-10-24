@@ -1,6 +1,7 @@
 """自动导入的库内源选择与下载参数准备。"""
 from typing import Any, Dict, Optional
 
+from src.schemas.media_types import is_movie_type
 from src.services.service_container import get_database_service
 from src.utils.parsing.filename_parser import parse_episode_ranges
 from src.workflows.search.scoring import load_provider_order
@@ -24,7 +25,7 @@ async def prepare_library_import(
     if not source:
         return None
     # 与库内去重一致，电影未显式指定季度时使用第一季。
-    target_season = 1 if media_type == "movie" and season is None else season
+    target_season = 1 if is_movie_type(media_type) and season is None else season
     title = f"自动导入 (库内): {existing['title']}"
     unique_key = f"import-{source['providerName']}-{source['mediaId']}"
     if target_season is not None:

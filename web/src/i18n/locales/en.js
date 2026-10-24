@@ -2129,7 +2129,7 @@ export default {
   // Library group view
   libraryGroup: {
     menuFav: 'Mark', menuUnFav: 'Unmark', menuInc: 'Follow', menuUnInc: 'Unfollow', menuFin: 'Finished', menuUnFin: 'Unfinished',
-    episodeUnit: '{{count}} eps', sourceUnit: '{{count}} src', typeMovie: 'Movie/Theatrical', typeTv: 'TV Show', typeOva: 'OVA', typeOther: 'Other',
+    episodeUnit: '{{count}} eps', sourceUnit: '{{count}} src', typeMovie: 'Movie/Theatrical', typeTv: 'TV Show', typeOva: 'OVA', typeOther: 'Other', typeVariety: 'Variety', typeShortDrama: 'Short Drama',
     seasonTag: 'S{{season}}', yearTag: '{{year}}', episodeCount: 'Episodes: {{count}}', sourceCount: 'Sources: {{count}}',
     btnEdit: 'Edit', btnDetail: 'Details', btnMore: 'More', btnDelete: 'Delete', partCount: '{{count}}',
     dropToJoin: 'Release to join this group', clickExpandDrag: 'Click to expand · drag up to join', btnDissolveGroup: 'Dissolve Group',

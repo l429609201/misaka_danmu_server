@@ -113,9 +113,9 @@ def get_default_configs(settings=None, ai_prompts=None):
         # 弹幕文件路径配置
         'customDanmakuPathEnabled': ('false', '是否启用自定义弹幕文件保存路径。'),
         'movieDanmakuDirectoryPath': ('/app/config/danmaku/movies', '电影/剧场版弹幕文件存储的根目录。'),
-        'movieDanmakuFilenameTemplate': ('${title}/${episodeId}', '电影/剧场版弹幕文件命名模板。支持变量：${title}, ${titleBase}(标准化标题，去除季度信息), ${season}, ${episode}, ${year}, ${provider}, ${animeId}, ${episodeId}, ${sourceId}, ${tmdbId}(TMDB ID)。支持子目录。.xml后缀会自动添加。'),
+        'movieDanmakuFilenameTemplate': ('${title}/${episodeId}', '电影/剧场版弹幕文件命名模板。支持变量：${title}, ${titleBase}(标准化标题，去除季度信息), ${season}, ${episode}, ${year}, ${provider}, ${animeId}, ${episodeId}, ${sourceId}, ${tmdbId}(TMDB ID), ${category}(类型名), ${type}(类型值)。支持子目录。.xml后缀会自动添加。'),
         'tvDanmakuDirectoryPath': ('/app/config/danmaku/tv', '电视节目弹幕文件存储的根目录。'),
-        'tvDanmakuFilenameTemplate': ('${animeId}/${episodeId}', '电视节目弹幕文件命名模板。支持变量：${title}, ${titleBase}(标准化标题，去除季度信息), ${season}, ${episode}, ${year}, ${provider}, ${animeId}, ${episodeId}, ${sourceId}, ${tmdbId}(TMDB ID)。支持子目录。.xml后缀会自动添加。'),
+        'tvDanmakuFilenameTemplate': ('${animeId}/${episodeId}', '电视节目弹幕文件命名模板。支持变量：${title}, ${titleBase}(标准化标题，去除季度信息), ${season}, ${episode}, ${year}, ${provider}, ${animeId}, ${episodeId}, ${sourceId}, ${tmdbId}(TMDB ID), ${category}(类型名), ${type}(类型值)。支持子目录。.xml后缀会自动添加。'),
 
         'iqiyiUseProtobuf': ('false', '（爱奇艺）是否使用新的Protobuf弹幕接口（实验性）。'),
         'gamerUserAgent': ('', '用于访问巴哈姆特动画疯的User-Agent。'),

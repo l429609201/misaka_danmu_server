@@ -27,10 +27,11 @@ from typing import Any, Optional
 
 # C4 注意：避免循环导入，cache_service 改为延迟导入（在函数内部 import）
 
-# 常量定义（原从 api.dandan.constants 导入，为避免循环依赖在此本地定义）
-COMMENTS_FETCH_CACHE_PREFIX = "comments_fetch_"
-COMMENTS_FETCH_CACHE_TTL = 300
-FALLBACK_SEARCH_CACHE_PREFIX = "fallback_search_"
+from src.schemas.dandan.constants import (
+    COMMENTS_FETCH_CACHE_PREFIX,
+    COMMENTS_FETCH_CACHE_TTL,
+    FALLBACK_SEARCH_CACHE_PREFIX,
+)
 
 from .id_mapping import encode_series_base_id
 

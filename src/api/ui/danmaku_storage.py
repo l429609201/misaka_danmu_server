@@ -122,6 +122,8 @@ TEMPLATE_VARIABLES = [
     {"name": "${episodeId}", "desc": "分集ID", "example": "25000234010001"},
     {"name": "${sourceId}", "desc": "数据源ID", "example": "1"},
     {"name": "${tmdbId}", "desc": "TMDB ID（未关联时为空）", "example": "209867"},
+    {"name": "${category}", "desc": "类型名(电视节目/电影/OVA/其他/综艺/短剧)", "example": "电视节目"},
+    {"name": "${type}", "desc": "类型原始值(tv_series/movie/variety/short_drama等)", "example": "tv_series"},
 ]
 
 

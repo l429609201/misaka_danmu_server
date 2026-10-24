@@ -233,6 +233,35 @@ def markdown_to_v2(text: str) -> str:
     return '\n'.join(result)
 
 
+def normalize_rich_linebreaks(text: str) -> str:
+    """把单个换行转成 Markdown 硬换行（行尾两个空格），供 Telegram 富消息使用。
+
+    why：富消息按标准 Markdown 解析，单个换行只是软换行（渲染成空格），
+    模板里逐行排布的「任务/结果」「标题/进度条」会被挤成一行。
+    空行（段落分隔）、代码块内部和表格行保持原样，避免破坏其语法。
+    """
+    if not text or '\n' not in text:
+        return text
+    lines = text.split('\n')
+    in_fence = False
+    out = []
+    for idx, line in enumerate(lines):
+        is_fence = line.lstrip().startswith('```')
+        if is_fence:
+            in_fence = not in_fence
+        nxt = lines[idx + 1] if idx + 1 < len(lines) else None
+        need_hard_break = (
+            nxt is not None
+            and line.strip() and nxt.strip()
+            # 代码块内部（含开围栏行）的换行必须原样保留
+            and (not in_fence or is_fence and not in_fence)
+            and not line.lstrip().startswith('|')
+            and not nxt.lstrip().startswith('|')
+        )
+        out.append(line.rstrip() + '  ' if need_hard_break else line)
+    return '\n'.join(out)
+
+
 def strip_markdown(text: str) -> str:
     """清洗 Markdown 符号，返回纯文本。"""
     if not text:

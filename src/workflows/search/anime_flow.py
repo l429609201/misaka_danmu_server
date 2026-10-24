@@ -22,7 +22,7 @@ from src.schemas.dandan import (
     DandanSearchAnimeResponse,
 )
 
-from src.utils.dandan.constants import (
+from src.schemas.dandan.constants import (
     DANDAN_TYPE_MAPPING,
     DANDAN_TYPE_DESC_MAPPING,
     FALLBACK_SEARCH_CACHE_PREFIX,

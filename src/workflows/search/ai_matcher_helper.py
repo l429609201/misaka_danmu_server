@@ -12,6 +12,7 @@
 
 import logging
 from typing import Any, Dict, List, Optional, Set
+from src.schemas.media_types import is_series_type
 
 # 库内源能力不依赖 AI 辅助器，无需通过延迟导入规避依赖。
 from src.workflows.search.library_sources import collect_favorited_source_keys
@@ -77,7 +78,7 @@ async def select_best_with_ai(
     # 1. 构建查询信息
     query_info = {
         'title': query_title,
-        'season': query_season if media_type == 'tv_series' else None,
+        'season': query_season if is_series_type(media_type) else None,  # 综艺/短剧也带季度
         'episode': query_episode,
         'year': query_year,
         'type': media_type

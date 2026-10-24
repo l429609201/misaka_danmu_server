@@ -24,6 +24,7 @@ from sqlalchemy import select, func, or_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
+from src.schemas.media_types import MEDIA_TYPE_MOVIE, is_movie_type
 from ..orm_models import Anime, AnimeSource, AnimeAlias, AnimeMetadata, Episode, AnimeGroup
 
 logger = logging.getLogger(__name__)
@@ -361,10 +362,10 @@ class AnimeQueryRepository:
         )
         if anime_id is not None:
             stmt = stmt.where(Anime.id == anime_id)
-        if anime_type == "movie":
-            stmt = stmt.where(Anime.type == "movie")
+        if is_movie_type(anime_type):
+            stmt = stmt.where(Anime.type == MEDIA_TYPE_MOVIE)
         elif anime_type == "tv":
-            stmt = stmt.where(Anime.type != "movie")
+            stmt = stmt.where(Anime.type != MEDIA_TYPE_MOVIE)
         elif anime_type:
             stmt = stmt.where(Anime.type == anime_type)
         if keyword:

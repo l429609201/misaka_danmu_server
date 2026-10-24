@@ -20,6 +20,7 @@ from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Request
 
+from src.schemas.media_types import is_movie_type
 from src.schemas.dandan import CommentResponse as DandanCommentResponse
 # 后备编排使用全局配置入口，不依赖请求级配置注入。
 from src.services.config_service import get_config_service
@@ -31,7 +32,7 @@ from src.services.service_container import (
 )
 # 复用编排层缓存辅助函数，保留现有缓存键拼接和序列化契约。
 from src.workflows.dandan.helpers import get_db_cache, set_db_cache, delete_db_cache
-from src.utils.dandan.constants import (
+from src.schemas.dandan.constants import (
     FALLBACK_SEARCH_CACHE_PREFIX,
     COMMENTS_FETCH_CACHE_PREFIX,
     COMMENTS_FETCH_CACHE_TTL,
@@ -464,7 +465,7 @@ async def _submit_download_task(
             logger.debug(f"清理数据库缓存: {current_fallback_episode_cache_key}")
 
             # 写入 match_season 整季缓存
-            if current_media_type != "movie":
+            if not is_movie_type(current_media_type):
                 try:
                     _parsed_for_cache = parse_search_keyword(current_final_title)
                     season_cache_key = f"match_season_{_parsed_for_cache['title']}_{current_final_season}"
@@ -506,7 +507,7 @@ async def _submit_download_task(
             "episode": episode_number,
             "provider": provider,
             "imageUrl": imageUrl or "",
-            "is_movie": (episode_number is None and media_type == "movie"),
+            "is_movie": (episode_number is None and is_movie_type(media_type)),
             "media_type": media_type,
         }
 

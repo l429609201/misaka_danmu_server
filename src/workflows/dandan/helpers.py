@@ -16,7 +16,7 @@ from src.services.service_container import get_database_service
 from src.services.cache_service import get_cache_service
 
 # 常量已迁移到纯工具层，避免依赖不存在的同包模块。
-from src.utils.dandan.constants import (
+from src.schemas.dandan.constants import (
     EPISODE_MAPPING_CACHE_PREFIX,
     FALLBACK_SEARCH_CACHE_PREFIX,
     FALLBACK_SEARCH_CACHE_TTL,

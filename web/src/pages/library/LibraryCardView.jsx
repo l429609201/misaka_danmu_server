@@ -19,6 +19,8 @@ const typeIconMap = {
   movie: 'movie',
   ova: 'tv',
   other: 'tv',
+  variety: 'tv',
+  short_drama: 'tv',
 }
 
 const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished }) => {

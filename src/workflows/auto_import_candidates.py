@@ -2,6 +2,7 @@
 import logging
 from typing import Any, Dict
 
+from src.schemas.media_types import is_movie_type
 from src.utils.diagnostics.search_timer import SubStepTiming
 from src.utils.parsing.filename_parser import parse_episode_ranges
 from src.workflows.search.ai_correction import correct_search_results
@@ -35,7 +36,7 @@ async def search_auto_import_candidates(
     duration = timer.step_end(details=f"{len(results)}个结果", sub_steps=timing)
     profiler.record_step("弹幕源搜索", duration)
     mapping_enabled = (await config_service.get("autoImportEnableTmdbSeasonMapping", "false")).lower() == "true"
-    if mapping_enabled and media_type != "movie" and await ai_service.is_available():
+    if mapping_enabled and not is_movie_type(media_type) and await ai_service.is_available():
         timer.step_start("AI映射修正")
         try:
             matcher = await warmup_task if warmup_task else await ai_service.get_matcher()

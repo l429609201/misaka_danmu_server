@@ -2131,7 +2131,7 @@ export default {
   // 彈幕庫分組視圖
   libraryGroup: {
     menuFav: '標記', menuUnFav: '取消標記', menuInc: '追更', menuUnInc: '取消追更', menuFin: '完結', menuUnFin: '取消完結',
-    episodeUnit: '{{count}}集', sourceUnit: '{{count}}源', typeMovie: '電影/劇場版', typeTv: '電視節目', typeOva: 'OVA', typeOther: '其他',
+    episodeUnit: '{{count}}集', sourceUnit: '{{count}}源', typeMovie: '電影/劇場版', typeTv: '電視節目', typeOva: 'OVA', typeOther: '其他', typeVariety: '綜藝', typeShortDrama: '短劇',
     seasonTag: '第{{season}}季', yearTag: '{{year}}年', episodeCount: '集數: {{count}}', sourceCount: '來源: {{count}}',
     btnEdit: '編輯', btnDetail: '詳情', btnMore: '更多', btnDelete: '刪除', partCount: '{{count}}部',
     dropToJoin: '鬆開以加入此分組', clickExpandDrag: '點擊展開 · 向上拖曳可加入', btnDissolveGroup: '解散分組',

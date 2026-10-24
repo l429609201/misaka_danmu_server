@@ -871,6 +871,23 @@ async def _slim_system_metrics_indexes_v1(conn: AsyncConnection, db_type: str):
                 logger.info("  已删除 system_metrics 冗余索引 %s", name)
 
 
+async def _extend_anime_type_enum_v1(conn: AsyncConnection, db_type: str):
+    """扩展 anime.type 枚举，追加综艺 variety、短剧 short_drama。
+
+    why：db_maintainer 只做字段新增与安全的长度扩展，不会改 ENUM 取值，
+    不迁移的话旧库写入新类型会被 MySQL 拒绝/截断。只追加取值，不改动任何已有数据。
+    取值写死为 v1 当时的快照：迁移只执行一次，不能跟随业务常量后续变化。
+    """
+    anime_types = ('tv_series', 'movie', 'ova', 'other', 'variety', 'short_drama')
+    if db_type == 'mysql':
+        values = ", ".join(f"'{v}'" for v in anime_types)
+        await conn.execute(text(f"ALTER TABLE `anime` MODIFY COLUMN `type` ENUM({values}) NOT NULL"))
+    else:  # postgresql：枚举类型名与 ORM 中 Enum(name="anime_type") 一致
+        for value in anime_types:
+            await conn.execute(text(f"ALTER TYPE anime_type ADD VALUE IF NOT EXISTS '{value}'"))
+    logger.info("  已扩展 anime.type 枚举：%s", ", ".join(anime_types))
+
+
 # 所有迁移任务的 ID 列表（新增迁移时需同步更新此列表）
 ALL_MIGRATION_IDS = [
     "migrate_clear_rate_limit_state_v1",
@@ -889,6 +906,7 @@ ALL_MIGRATION_IDS = [
     "reset_notification_subscriptions_v1",
     "isolate_assistant_sessions_v1",
     "slim_system_metrics_indexes_v1",
+    "extend_anime_type_enum_v1",
 ]
 
 
@@ -933,6 +951,7 @@ async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
         ("reset_notification_subscriptions_v1", _reset_notification_subscriptions_v1, ()),  # 清空旧订阅配置
         ("isolate_assistant_sessions_v1", _isolate_assistant_sessions_v1, ()),  # 历史会话不自动归属
         ("slim_system_metrics_indexes_v1", _slim_system_metrics_indexes_v1, (db_type,)),  # 删除 system_metrics 冗余索引
+        ("extend_anime_type_enum_v1", _extend_anime_type_enum_v1, (db_type,)),  # anime.type 追加 variety/short_drama
     ]
 
     for migration_id, migration_func, args in migrations:

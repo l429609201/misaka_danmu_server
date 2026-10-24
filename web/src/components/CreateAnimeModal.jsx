@@ -59,6 +59,8 @@ export const CreateAnimeModal = ({ open, onCancel, onSuccess }) => {
           <Select>
             <Select.Option value="tv_series">{t('createAnime.tvSeries')}</Select.Option>
             <Select.Option value="movie">{t('createAnime.movie')}</Select.Option>
+            <Select.Option value="variety">{t('libraryGroup.typeVariety')}</Select.Option>
+            <Select.Option value="short_drama">{t('libraryGroup.typeShortDrama')}</Select.Option>
           </Select>
         </Form.Item>
         <Form.Item name="season" label={t('createAnime.season')} initialValue={1}>

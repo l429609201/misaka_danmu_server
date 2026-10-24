@@ -18,6 +18,7 @@ from src.services.service_container import get_database_service
 from src.workflows.search import unified_search
 from ..security_gateway import ToolPermission, is_forbidden_control_identifier
 from .base import Tool, registry
+from src.schemas.media_types import is_series_type
 from .search_session import save_search_results, get_result_item
 
 from src.workflows.supplement_episodes import get_episodes_routed
@@ -190,7 +191,7 @@ async def _search_media(arguments: Dict[str, Any], context: Dict[str, Any]) -> D
     if season is not None:
         results = [
             r for r in results
-            if getattr(r, "type", None) == "tv_series" and getattr(r, "season", None) == season
+            if is_series_type(getattr(r, "type", None)) and getattr(r, "season", None) == season
         ]
     search_id = await save_search_results(results)
 

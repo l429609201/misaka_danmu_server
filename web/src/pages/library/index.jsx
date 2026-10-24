@@ -57,7 +57,7 @@ import {
 } from '../../apis'
 import LibraryGroupView from './LibraryGroupView'
 import { MyIcon } from '@/components/MyIcon'
-import { DANDAN_TYPE_DESC_MAPPING, DANDAN_TYPE_MAPPING } from '../../configs'
+import { ANIME_TYPE_OPTIONS, DANDAN_TYPE_DESC_MAPPING, DANDAN_TYPE_MAPPING } from '../../configs'
 import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 import { CreateAnimeModal } from '../../components/CreateAnimeModal'
@@ -113,6 +113,8 @@ export const Library = () => {
   const deletePollingCallbacksRef = useRef(null)
   // 从 sessionStorage 恢复上次的搜索关键词
   const [keyword, setKeyword] = useState(() => sessionStorage.getItem('lib_keyword') || '')
+  // 类型筛选（空串=全部），同样记在 sessionStorage，返回页面时保留
+  const [typeFilter, setTypeFilter] = useState(() => sessionStorage.getItem('lib_type') || '')
   // null 表示未从 DB 初始化，防止初始化前触发 getList
   const [sortBy, setSortBy] = useState(null)
   const [sortOrder, setSortOrder] = useState(null)
@@ -274,6 +276,7 @@ export const Library = () => {
       setLoading(true)
       const res = await getAnimeLibrary({
         keyword: keyword,
+        type: typeFilter || undefined,
         page: pagination.current,
         pageSize: pagination.pageSize,
         sortBy,
@@ -311,13 +314,13 @@ export const Library = () => {
         current: 1,
       }
     })
-  }, [keyword])
+  }, [keyword, typeFilter])
 
   useEffect(() => {
     // sortBy/sortOrder 未从 DB 初始化完成时不触发
     if (sortBy === null || sortOrder === null) return
     getList()
-  }, [keyword, pagination.current, pagination.pageSize, sortBy, sortOrder])
+  }, [keyword, typeFilter, pagination.current, pagination.pageSize, sortBy, sortOrder])
 
   // mount 时从 DB 读取上次保存的排序配置，读完后才触发 getList
   // sessionStorage 中若有缓存的排序状态，优先使用（返回弹幕库时恢复）
@@ -1418,6 +1421,23 @@ export const Library = () => {
     setKeyword(searchInputValue)
   }
 
+  const handleTypeFilterChange = (value) => {
+    const next = value || ''
+    sessionStorage.setItem('lib_type', next)
+    setTypeFilter(next)
+  }
+
+  const typeFilterSelect = (style) => (
+    <Select
+      allowClear
+      placeholder={t('libraryPage.labelType')}
+      value={typeFilter || undefined}
+      onChange={handleTypeFilterChange}
+      options={ANIME_TYPE_OPTIONS}
+      style={style}
+    />
+  )
+
   const handleReset = () => {
     setKeyword('')
     setSearchInputValue('')
@@ -1508,6 +1528,7 @@ export const Library = () => {
                 allowClear
                 style={{ width: 300 }}
               />
+              {typeFilterSelect({ width: 130 })}
               {keyword && (
                 <Button onClick={handleReset}>
                   {t('libraryPage.btnReset')}
@@ -1587,6 +1608,7 @@ export const Library = () => {
               )}
             </div>
             <div className="space-y-2">
+              {typeFilterSelect({ width: '100%' })}
               <div className="flex gap-2">
                 <Button
                   block
@@ -1721,18 +1743,8 @@ export const Library = () => {
             label={t('libraryPage.labelType')}
             rules={[{ required: true, message: t('libraryPage.ruleType') }]}
           >
-            <Select
-              options={[
-                {
-                  value: 'tv_series',
-                  label: DANDAN_TYPE_DESC_MAPPING['tv_series'],
-                },
-                {
-                  value: 'movie',
-                  label: DANDAN_TYPE_DESC_MAPPING['movie'],
-                },
-              ]}
-            />
+            {/* 编辑类型下拉：覆盖全部类型（含综艺/短剧） */}
+            <Select options={ANIME_TYPE_OPTIONS} />
           </Form.Item>
           <Form.Item name="season" label={t('libraryPage.labelSeason')}>
             <InputNumber style={{ width: '100%' }} placeholder={t('libraryPage.placeholderSeason')} />

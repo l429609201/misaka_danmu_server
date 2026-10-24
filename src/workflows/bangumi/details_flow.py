@@ -11,7 +11,7 @@ from typing import Optional
 
 from src.schemas.dandan import BangumiDetailsResponse, BangumiDetails, BangumiEpisode
 from src.services.service_container import get_database_service
-from src.utils.dandan.constants import (
+from src.schemas.dandan.constants import (
     DANDAN_TYPE_MAPPING,
     DANDAN_TYPE_DESC_MAPPING,
     FALLBACK_SEARCH_BANGUMI_ID,

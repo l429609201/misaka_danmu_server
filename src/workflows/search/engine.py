@@ -19,6 +19,7 @@ import json
 
 
 # why: 统一走服务层，不再直连已废弃的 crud 层（架构规则：DB 访问经 Repository/DatabaseService）。
+from src.schemas.media_types import is_series_type
 from src.services.service_container import get_database_service, get_metadata_service, get_task_manager
 from src.schemas.auth import User
 from src.utils.diagnostics.task_exceptions import TaskFailed, TaskSuccess
@@ -627,7 +628,7 @@ async def unified_search(
                 if item.season == filter_season and (
                     is_series_candidate(item.type)
                     or (getattr(item, "typeDecision", None) == "needs_confirmation"
-                        and getattr(item, "typeSuggestion", None) == "tv_series")
+                        and is_series_type(getattr(item, "typeSuggestion", None)))
                 )
             ]
         else:
@@ -1018,7 +1019,10 @@ async def search_all(scraper_manager: ScraperManager, keywords: List[str], episo
                         missing.append(f)
                     elif f == "year" and not result.year:
                         missing.append(f)
-                    # 未来扩展：type, season 等
+                    elif f == "type" and not result.type:
+                        # 源站搜索结果无类型字段时，由源的 enrich_result 补全
+                        missing.append(f)
+                    # 未来扩展：season 等
                 if missing:
                     need_enrich.append((result, missing))
 

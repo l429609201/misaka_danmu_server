@@ -141,6 +141,8 @@ const typeIconMap = {
   movie: 'movie',
   ova: 'tv',
   other: 'tv',
+  variety: 'tv',
+  short_drama: 'tv',
 }
 
 const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished, isDragging, isMobile, deletingAnimeIds }) => {
@@ -281,7 +283,7 @@ const MobileLibraryCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, o
         <div className="flex-1 space-y-2 min-w-0">
           <div className="font-bold text-base line-clamp-2">{record.title}</div>
           <div className="flex flex-wrap gap-1">
-            <Tag color="blue" style={{ fontSize: 12 }}>{typeIconMap[record.type] === 'movie' ? t('libraryGroup.typeMovie') : record.type === 'tv_series' ? t('libraryGroup.typeTv') : record.type === 'ova' ? t('libraryGroup.typeOva') : t('libraryGroup.typeOther')}</Tag>
+            <Tag color="blue" style={{ fontSize: 12 }}>{typeIconMap[record.type] === 'movie' ? t('libraryGroup.typeMovie') : record.type === 'tv_series' ? t('libraryGroup.typeTv') : record.type === 'ova' ? t('libraryGroup.typeOva') : record.type === 'variety' ? t('libraryGroup.typeVariety') : record.type === 'short_drama' ? t('libraryGroup.typeShortDrama') : t('libraryGroup.typeOther')}</Tag>
             {record.type !== 'movie' && record.season > 1 && <Tag style={{ fontSize: 12 }}>{t('libraryGroup.seasonTag', { season: record.season })}</Tag>}
             {record.year && <Tag style={{ fontSize: 12 }}>{t('libraryGroup.yearTag', { year: record.year })}</Tag>}
           </div>

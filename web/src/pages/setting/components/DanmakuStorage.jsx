@@ -460,6 +460,8 @@ const DanmakuStorage = () => {
       provider: 'bilibili',
       sourceId: '192',
       tmdbId: '1022789',
+      category: '电影',
+      type: 'movie',
     };
 
     // 电视示例数据
@@ -474,6 +476,8 @@ const DanmakuStorage = () => {
       provider: 'bilibili',
       sourceId: '192',
       tmdbId: '209867',
+      category: '电视节目',
+      type: 'tv_series',
     };
 
     // 生成电影预览
@@ -626,6 +630,8 @@ const DanmakuStorage = () => {
           'tv_series': { text: 'TV', color: 'blue' },
           'ova': { text: 'OVA', color: 'purple' },
           'other': { text: t('danmakuStorage.colTypeOther'), color: 'default' },
+          'variety': { text: t('libraryGroup.typeVariety'), color: 'green' },
+          'short_drama': { text: t('libraryGroup.typeShortDrama'), color: 'magenta' },
         };
         const config = typeMap[type] || typeMap['other'];
         return <Tag color={config.color}>{config.text}</Tag>;

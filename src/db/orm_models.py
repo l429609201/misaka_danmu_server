@@ -10,6 +10,10 @@ from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 from src.core.timezone import get_now
 
+# anime.type 的数据库枚举取值，写死在 ORM 中，不从业务层导入（避免循环依赖）；
+# 增删类型时需同步修改此处并新增迁移。
+ANIME_TYPE_VALUES = ('tv_series', 'movie', 'ova', 'other', 'variety', 'short_drama')
+
 class NaiveDateTime(TypeDecorator):
     """
     自定义数据库类型，确保无论数据库驱动返回何种datetime对象，
@@ -47,15 +51,14 @@ class AnimeGroup(Base):
     animes: Mapped[List["Anime"]] = relationship(back_populates="group")
 
 
-# anime.type 允许的枚举值
-ANIME_TYPES = ('tv_series', 'movie', 'ova', 'other')
+# anime.type 允许的枚举值：统一定义在 src/schemas/media_types.py（新增综艺 variety、短剧 short_drama）
 
 
 class Anime(Base):
     __tablename__ = "anime"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(500), index=True)
-    type: Mapped[str] = mapped_column(Enum(*ANIME_TYPES, name="anime_type"), default='tv_series')
+    type: Mapped[str] = mapped_column(Enum(*ANIME_TYPE_VALUES, name="anime_type"), default='tv_series')
     imageUrl: Mapped[Optional[str]] = mapped_column("image_url", String(512))
     localImagePath: Mapped[Optional[str]] = mapped_column("local_image_path", String(512))
     season: Mapped[int] = mapped_column(Integer, default=1)
@@ -77,7 +80,7 @@ class Anime(Base):
     def _normalize_type(self, _key: str, value: Optional[str]) -> str:
         """入库兜底：搜索阶段允许类型为 None（交给元数据/AI 判定），
         但 anime.type 为 NOT NULL 枚举，未判定或非法值统一落为 tv_series。"""
-        if value in ANIME_TYPES:
+        if value in ANIME_TYPE_VALUES:
             return value
         return "tv_series"
 

@@ -20,7 +20,7 @@ from src.services.service_container import (
 from src.services.config_service import get_config_service
 from src.workflows.comments.output_flow import apply_output_config
 from src.workflows.dandan.helpers import get_db_cache
-from src.utils.dandan.constants import COMMENTS_FETCH_CACHE_PREFIX
+from src.schemas.dandan.constants import COMMENTS_FETCH_CACHE_PREFIX
 
 logger = logging.getLogger(__name__)
 

@@ -11,6 +11,7 @@
 
 import logging
 from typing import Any, List, Tuple
+from src.schemas.media_types import is_series_type
 
 from src.utils.parsing.filename_parser import is_movie_by_title
 
@@ -52,7 +53,7 @@ def is_series_candidate(item_type: Any) -> bool:
     Returns:
         type 为 tv_series 或 None 时返回 True。
     """
-    return item_type is None or item_type == "tv_series"
+    return item_type is None or is_series_type(item_type)  # 综艺/短剧同属剧集形态
 
 
 def filter_by_season(results: List[Any], season: int) -> Tuple[List[Any], List[Any]]:

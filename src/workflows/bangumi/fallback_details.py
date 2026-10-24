@@ -5,7 +5,7 @@ from typing import Optional
 
 from src.schemas.dandan import BangumiDetailsResponse, BangumiDetails, BangumiEpisode
 from src.services.service_container import get_database_service, get_scraper_manager
-from src.utils.dandan.constants import (
+from src.schemas.dandan.constants import (
     FALLBACK_SEARCH_SESSION_PREFIX as FALLBACK_SEARCH_CACHE_PREFIX,
     FALLBACK_SEARCH_SESSION_TTL as FALLBACK_SEARCH_CACHE_TTL,
     DANDAN_TYPE_MAPPING, DANDAN_TYPE_DESC_MAPPING,

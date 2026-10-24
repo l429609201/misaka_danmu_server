@@ -6,7 +6,6 @@
     from src.api.dandan import apply_random_color, apply_blacklist_filter
     from src.schemas.dandan import DandanResponseBase, DandanMatchResponse
     from src.api.dandan.dependencies import get_config_service, get_task_manager
-    from src.api.dandan.constants import DANDAN_TYPE_MAPPING
     from src.api.dandan.route_handler import DandanApiRoute, get_token_from_path
 """
 
@@ -48,25 +47,6 @@ from .dependencies import (
     get_metadata_service,
     get_rate_limiter,
     get_scraper_manager,
-)
-
-# 常量
-from .constants import (
-    DANDAN_TYPE_MAPPING,
-    DANDAN_TYPE_DESC_MAPPING,
-    FALLBACK_SEARCH_BANGUMI_ID,
-    SAMPLED_CACHE_TTL,
-    EPISODE_MAPPING_CACHE_PREFIX,
-    FALLBACK_SEARCH_CACHE_PREFIX,
-    TOKEN_SEARCH_TASKS_PREFIX,
-    USER_LAST_BANGUMI_CHOICE_PREFIX,
-    COMMENTS_FETCH_CACHE_PREFIX,
-    SAMPLED_COMMENTS_CACHE_PREFIX,
-    FALLBACK_SEARCH_CACHE_TTL,
-    TOKEN_SEARCH_TASKS_TTL,
-    USER_LAST_BANGUMI_CHOICE_TTL,
-    COMMENTS_FETCH_CACHE_TTL,
-    SAMPLED_COMMENTS_CACHE_TTL_DB,
 )
 
 # 弹幕颜色处理
@@ -163,22 +143,6 @@ __all__ = [
     'get_metadata_service',
     'get_rate_limiter',
     'get_scraper_manager',
-    # 常量
-    'DANDAN_TYPE_MAPPING',
-    'DANDAN_TYPE_DESC_MAPPING',
-    'FALLBACK_SEARCH_BANGUMI_ID',
-    'SAMPLED_CACHE_TTL',
-    'EPISODE_MAPPING_CACHE_PREFIX',
-    'FALLBACK_SEARCH_CACHE_PREFIX',
-    'TOKEN_SEARCH_TASKS_PREFIX',
-    'USER_LAST_BANGUMI_CHOICE_PREFIX',
-    'COMMENTS_FETCH_CACHE_PREFIX',
-    'SAMPLED_COMMENTS_CACHE_PREFIX',
-    'FALLBACK_SEARCH_CACHE_TTL',
-    'TOKEN_SEARCH_TASKS_TTL',
-    'USER_LAST_BANGUMI_CHOICE_TTL',
-    'COMMENTS_FETCH_CACHE_TTL',
-    'SAMPLED_COMMENTS_CACHE_TTL_DB',
     # 弹幕颜色
     'DEFAULT_RANDOM_COLOR_MODE',
     'DEFAULT_RANDOM_COLOR_PALETTE',

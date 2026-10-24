@@ -17,6 +17,7 @@
 import logging
 from typing import Any, List, Optional
 
+from src.schemas.media_types import is_movie_type
 from src.workflows.supplement_episodes import get_episodes_routed
 
 logger = logging.getLogger(__name__)
@@ -66,8 +67,8 @@ async def validate_candidates_with_fallback(
                 continue
 
             # 电影：只匹配电影类型的候选源
-            if media_type == "movie":
-                if candidate.type != "movie":
+            if is_movie_type(media_type):
+                if not is_movie_type(candidate.type):
                     logger.warning(
                         f"    {attempt}. {candidate.provider} - 类型不匹配 "
                         f"(搜索电影，但候选源是{candidate.type})，跳过"

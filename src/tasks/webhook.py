@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional, List
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.schemas.media_types import is_series_type
 from src.core import get_now
 from src.rate_limiter import RateLimiter
 from src.services.ai_service import AIService
@@ -62,7 +63,7 @@ async def _submit_webhook_import_task(
     else:
         source_prefix = f"Webhook自动导入 ({webhookSource})"
 
-    if mediaType == "tv_series":
+    if is_series_type(mediaType):
         task_title = f"{source_prefix}: {best_match.title} - S{season:02d}{ep_label} ({best_match.provider}) [{current_time}]"
     else:
         task_title = f"{source_prefix}: {best_match.title} ({best_match.provider}) [{current_time}]"

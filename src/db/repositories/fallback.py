@@ -19,17 +19,6 @@ from src.core.timezone import get_now
 
 logger = logging.getLogger(__name__)
 
-# ═══════════ 缓存键常量（与 api.dandan.constants 保持一致） ═══════════
-EPISODE_MAPPING_CACHE_PREFIX = "episode_mapping_"
-FALLBACK_SEARCH_CACHE_PREFIX = "fallback_search_"
-USER_LAST_BANGUMI_CHOICE_PREFIX = "user_last_bangumi_"
-
-# 缓存TTL
-FALLBACK_SEARCH_CACHE_TTL = 3600
-USER_LAST_BANGUMI_CHOICE_TTL = 86400
-EPISODE_MAPPING_TTL = 10800
-
-
 class FallbackRepository(BaseRepository[Anime]):
     """后备流程 Repository - 包含所有后备流程相关的数据库操作"""
 

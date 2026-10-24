@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 from src.schemas.search import ProviderSearchInfo, ProviderEpisodeInfo
 from src.schemas.metadata import MetadataDetailsResponse
 from src.schemas.import_schemas import AutoImportMediaType, AutoImportSearchType, ControlAutoImportRequest
+from src.schemas.media_types import is_series_type
 
 
 class ControlActionResponse(BaseModel):
@@ -80,7 +81,7 @@ class ControlAnimeCreateRequest(BaseModel):
     @model_validator(mode='after')
     def check_season_for_tv_series(self) -> "ControlAnimeCreateRequest":
         """保持电视剧创建时必须提供季度的校验规则。"""
-        if self.type == 'tv_series' and self.season is None:
+        if is_series_type(self.type) and self.season is None:  # 综艺/短剧同样按剧集需要季度
             raise ValueError('对于电视节目 (tv_series)，季度 (season) 是必需的。')
         return self
 

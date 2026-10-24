@@ -149,7 +149,7 @@ ASSISTANT_CONFIG_WHITELIST = {
     },
     "movieDanmakuFilenameTemplate": {
         "type": "string",
-        "description": "电影命名模板，可用变量 ${title} ${titleBase} ${season} ${episode} ${year} ${provider} ${animeId} ${episodeId} ${sourceId} ${tmdbId}",
+        "description": "电影命名模板，可用变量 ${title} ${titleBase} ${season} ${episode} ${year} ${provider} ${animeId} ${episodeId} ${sourceId} ${tmdbId} ${category} ${type}",
     },
     "tvDanmakuDirectoryPath": {
         "type": "string",

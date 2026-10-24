@@ -11,6 +11,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 
+from src.schemas.media_types import is_movie_type
 from src.services.scraper_manager import ScraperManager
 from src.services.task_manager import TaskManager
 from src.utils.diagnostics.task_exceptions import TaskSuccess, TaskFailed
@@ -267,7 +268,7 @@ async def predownload_next_episode_flow(
                     "provider": provider,
                     "year": anime.year,
                     "imageUrl": anime.imageUrl or "",
-                    "is_movie": (anime.type == "movie"),
+                    "is_movie": is_movie_type(anime.type),
                 },
             )
             logger.info(f"✓ 预下载任务已提交: anime='{anime.title}', index={next_episode_index}, taskId={task_id}")

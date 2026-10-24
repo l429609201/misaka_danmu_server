@@ -2610,6 +2610,8 @@ export default {
     typeTv: '电视节目',
     typeOva: 'OVA',
     typeOther: '其他',
+    typeVariety: '综艺',
+    typeShortDrama: '短剧',
     seasonTag: '第{{season}}季',
     yearTag: '{{year}}年',
     episodeCount: '集数: {{count}}',

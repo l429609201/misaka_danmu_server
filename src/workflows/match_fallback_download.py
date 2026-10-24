@@ -2,6 +2,7 @@
 import logging
 from typing import Any, Callable, Dict
 
+from src.schemas.media_types import is_movie_type
 from src.core import get_now
 from src.schemas.import_schemas import DanmakuEpisodeCreate
 from src.services.service_container import get_database_service
@@ -80,7 +81,7 @@ async def execute_match_fallback_download(
                 await db.cache.delete(f"fallback_search_{cache_key}")
         except Exception as exc:
             logger.warning("清理 fallback_search 缓存失败: %s", exc)
-    if parameters["media_type"] != "movie":
+    if not is_movie_type(parameters["media_type"]):
         try:
             pure_title = parse_search_keyword(parameters["final_title"])["title"]
             await write_match_season_cache(

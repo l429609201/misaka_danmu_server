@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from thefuzz import fuzz
 
 # 仅保留实际使用的顶层依赖，数据库访问统一经服务层。
+from src.schemas.media_types import is_movie_type
 from src.ai.ai_prompts import DEFAULT_AI_MATCH_PROMPT
 from src.services.ai_service import get_ai_service
 from src.services.cache_service import get_cache_service
@@ -40,7 +41,7 @@ from src.workflows.match.helpers import (
     _matched_response_from_row,
     parse_filename_for_match,
 )
-from src.utils.dandan.constants import (
+from src.schemas.dandan.constants import (
     FALLBACK_SEARCH_CACHE_PREFIX,
     FALLBACK_SEARCH_CACHE_TTL,
     SEARCH_TYPE_FALLBACK_MATCH,
@@ -990,7 +991,7 @@ async def get_match_for_item(
 
                         # 类型验证
                         if is_movie:
-                            if candidate.type != "movie":
+                            if not is_movie_type(candidate.type):
                                 logger.warning(f"    {attempt}. {candidate.provider} - 类型不匹配 (搜索电影，但候选源是{candidate.type})，跳过")
                                 continue
                             logger.info(f"    {attempt}. {candidate.provider} - 验证通过 (电影)")

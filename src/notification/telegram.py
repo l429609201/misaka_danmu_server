@@ -27,7 +27,7 @@ from src.notification.base import (
     ChannelCapability, ChannelCapabilities, IMAGE_MODE_FIELD,
 )
 from src.notification.markdown_converter import (
-    markdown_to_v2, strip_markdown, escape_v2,
+    markdown_to_v2, strip_markdown, escape_v2, normalize_rich_linebreaks,
 )
 from src.services.file_storage_service import CONFIG_DIR, get_file_storage_service
 from src.workflows.image_resources import load_image_bytes
@@ -788,6 +788,8 @@ class TelegramChannel(BaseNotificationChannel):
         回复里出现的链接和命令能直接点击。
         """
         telebot = _get_telebot()
+        # 富消息按标准 Markdown 解析，单个换行会被合并成空格，需转成硬换行。
+        markdown = normalize_rich_linebreaks(markdown)
         if image_url:
             # 媒体块必须独立成段（官方："Media can be specified only as a separate block"）
             markdown = f"![]({image_url})\n\n{markdown}"

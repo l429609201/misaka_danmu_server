@@ -7,6 +7,7 @@ from src.schemas.auth import User
 from src.schemas.import_schemas import AutoImportMediaType, ControlAutoImportRequest
 from src.utils.parsing.filename_parser import parse_filename, is_chinese_title
 from src.utils import format_parse_result_log
+from src.schemas.media_types import is_series_type
 
 from src.workflows.search.ui_results import search_aliases_from_enabled_sources
 
@@ -49,9 +50,9 @@ async def prepare_auto_import_metadata(
         try:
             if media_type and effective_search_type in ("tmdb", "tvdb"):
                 media_types = [
-                    ("tv" if media_type == "tv_series" else "movie")
+                    ("tv" if is_series_type(media_type) else "movie")  # 外部元数据只有 tv/movie
                     if effective_search_type == "tmdb"
-                    else ("series" if media_type == "tv_series" else "movies")
+                    else ("series" if is_series_type(media_type) else "movies")
                 ]
             else:
                 media_types = ["tv", "movie"] if effective_search_type == "tmdb" else ["series", "movies"]
