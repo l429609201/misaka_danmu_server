@@ -10,7 +10,7 @@ import classNames from 'classnames'
 import { Tag, Dropdown, Modal, Form, Input, Button, Space, Badge, Popconfirm } from 'antd';
 import { logout, changePassword, checkAppUpdate, getDockerStatus, restartService, getVersion } from '../apis/index.js'
 import Cookies from 'js-cookie'
-import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, SearchOutlined, MenuFoldOutlined, MenuUnfoldOutlined, RightOutlined } from '@ant-design/icons'
+import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, SearchOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 import { Tooltip } from 'antd'
 import SessionManager from '@/components/SessionManager'
 import VersionModal from '@/components/VersionModal'
@@ -79,6 +79,7 @@ const DocsIcon = () => (
 
 const navItems = [
   { key: RoutePaths.HOME, label: 'nav.home', icon: 'home', iconfontIcon: 'icon-home' },
+  { key: RoutePaths.SEARCH, label: 'nav.search', icon: 'search', iconfontIcon: 'icon-search' },
   { key: RoutePaths.LIBRARY, label: 'nav.library', icon: 'tvlibrary', iconfontIcon: 'icon-tvlibrary', children: [
     { key: 'library', label: 'libraryPage.pageTitle', icon: 'kufangguanli' },
     { key: 'batch', label: 'libraryPage.btnBatchManage', icon: 'piliangguanli' },
@@ -188,22 +189,6 @@ const DesktopSidebar = ({ activeKey }) => {
   const [searchParams] = useSearchParams()
   const subKey = searchParams.get('key')
   const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom)
-  // 展开的分组：默认展开当前所在栏目
-  const [openKeys, setOpenKeys] = useState(() => new Set([activeKey]))
-
-  // 切换路由时自动展开当前栏目
-  useEffect(() => {
-    setOpenKeys(prev => (prev.has(activeKey) ? prev : new Set([...prev, activeKey])))
-  }, [activeKey])
-
-  const toggleGroup = (key) => {
-    setOpenKeys(prev => {
-      const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
-      return next
-    })
-  }
-
   const itemBase = 'flex items-center gap-3 rounded-lg cursor-pointer transition-colors select-none'
 
   return (
@@ -230,7 +215,7 @@ const DesktopSidebar = ({ activeKey }) => {
             const btn = (
               <div
                 className={classNames(itemBase, 'justify-center p-2', isActive ? 'text-primary bg-[var(--ant-color-primary-bg)]' : 'hover:bg-[var(--ant-color-bg-text-hover)]')}
-                onClick={() => navigate(it.children ? getChildNavigatePath(it, it.children[0].key) : it.key)}
+                onClick={it.children ? undefined : () => navigate(it.key)}
               >
                 {icon}
               </div>
@@ -238,31 +223,18 @@ const DesktopSidebar = ({ activeKey }) => {
             if (!it.children) {
               return <Tooltip key={it.key} title={t(it.label)} placement="right">{btn}</Tooltip>
             }
+            // 折叠态同样点击弹出贴侧栏的浮动菜单
             return (
-              <Dropdown
+              <FloatingMenu
                 key={it.key}
-                placement="bottomLeft"
-                menu={{
-                  items: [
-                    { key: '_title', type: 'group', label: <div className="font-bold text-sm">{t(it.label)}</div> },
-                    ...it.children.map(child => ({
-                      key: child.key,
-                      label: (
-                        <span className="inline-flex items-center gap-2">
-                          <span className="inline-flex w-7 shrink-0 items-center justify-center">
-                            <MyIcon icon={child.icon} size={child.iconSize || 20} className={child.iconClassName} />
-                          </span>
-                          <span>{t(child.label)}</span>
-                        </span>
-                      ),
-                    })),
-                  ],
-                  selectedKeys: isActive ? [getNavChildActiveKey(it, location, subKey)] : [],
-                  onClick: ({ key: childKey }) => navigate(getChildNavigatePath(it, childKey)),
-                }}
-              >
-                {btn}
-              </Dropdown>
+                trigger={btn}
+                items={it.children.map(c => ({ ...c, label: t(c.label) }))}
+                onItemClick={(child) => navigate(getChildNavigatePath(it, child.key))}
+                activeKey={isActive ? getNavChildActiveKey(it, location, subKey) : null}
+                placement="right-start"
+                offsetPx={12}
+                wrapperClassName=""
+              />
             )
           }
 
@@ -281,43 +253,48 @@ const DesktopSidebar = ({ activeKey }) => {
             )
           }
 
-          // ---- 展开态：有子项（可折叠分组） ----
-          const open = openKeys.has(it.key)
+          // ---- 展开态：有子项 → 点击弹出贴侧栏浮动菜单 ----
           const childActive = getNavChildActiveKey(it, location, subKey)
-          return (
-            <div key={it.key}>
-              <div
-                className={classNames(itemBase, 'px-3 py-2 text-sm font-semibold', isActive ? 'text-primary' : '', 'hover:bg-[var(--ant-color-bg-text-hover)]')}
-                onClick={() => toggleGroup(it.key)}
-              >
-                {icon}
-                <span className="truncate flex-1">{t(it.label)}</span>
-                <RightOutlined className={classNames('text-xs transition-transform', { 'rotate-90': open })} />
-              </div>
-              {open && (
-                <div className="mt-1 space-y-0.5">
-                  {it.children.map(child => {
-                    const active = isActive && childActive === child.key
-                    return (
-                      <div
-                        key={child.key}
-                        className={classNames(itemBase, 'pl-6 pr-3 py-1.5 text-sm', active ? 'text-white' : 'text-base-text hover:bg-[var(--ant-color-bg-text-hover)]')}
-                        style={active ? { backgroundColor: 'var(--color-primary)' } : undefined}
-                        onClick={() => navigate(getChildNavigatePath(it, child.key))}
-                      >
-                        <span className="inline-flex w-6 shrink-0 items-center justify-center">
-                          <MyIcon icon={child.icon} size={child.iconSize ? child.iconSize - 4 : 18} className={child.iconClassName} />
-                        </span>
-                        <span className="truncate">{t(child.label)}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+          const trigger = (
+            <div
+              className={classNames(itemBase, 'px-3 py-2 text-sm font-semibold', isActive ? 'text-white' : 'hover:bg-[var(--ant-color-bg-text-hover)]')}
+              style={isActive ? { backgroundColor: 'var(--color-primary)' } : undefined}
+            >
+              {icon}
+              <span className="truncate">{t(it.label)}</span>
             </div>
+          )
+          return (
+            <FloatingMenu
+              key={it.key}
+              trigger={trigger}
+              items={it.children.map(c => ({ ...c, label: t(c.label) }))}
+              onItemClick={(child) => navigate(getChildNavigatePath(it, child.key))}
+              activeKey={isActive ? childActive : null}
+              placement="right-start"
+              offsetPx={16}
+              wrapperClassName=""
+            />
           )
         })}
       </nav>
+
+      {/* 侧栏底部：流控面板 + GitHub / Telegram（由顶栏移入） */}
+      <div className={classNames('flex-shrink-0 border-t border-gray-200/50 dark:border-gray-800/30 py-2 flex gap-3', collapsed ? 'flex-col items-center' : 'flex-col px-3')}>
+        {!collapsed && <RateLimitIndicator />}
+        <div className={classNames('flex items-center gap-4', collapsed ? 'flex-col' : 'justify-center')}>
+          <Tooltip title="GitHub" placement="right">
+            <a href="https://github.com/l429609201/misaka_danmu_server" target="_blank" rel="noopener noreferrer" style={{ color: '#333', fontSize: 20 }}>
+              <GithubIcon />
+            </a>
+          </Tooltip>
+          <Tooltip title="Telegram" placement="right">
+            <a href="https://t.me/misaka_danmaku" target="_blank" rel="noopener noreferrer" style={{ color: '#0088cc', fontSize: 20 }}>
+              <TelegramIcon />
+            </a>
+          </Tooltip>
+        </div>
+      </div>
 
       {/* 底部折叠按钮 */}
       <div
@@ -330,15 +307,15 @@ const DesktopSidebar = ({ activeKey }) => {
   )
 }
 
-const FloatingMenu = ({ trigger, items, onItemClick, activeKey }) => {
+const FloatingMenu = ({ trigger, items, onItemClick, activeKey, placement = 'top', offsetPx = 8, wrapperClassName = 'flex-1' }) => {
   const [isOpen, setIsOpen] = useState(false)
 
   const { refs, floatingStyles, context } = useFloating({
     open: isOpen,
     onOpenChange: setIsOpen,
-    placement: 'top', // 强制向上展开
+    placement, // 移动端底栏向上展开；桌面侧栏向右贴边展开
     middleware: [
-      offset(8),
+      offset(offsetPx),
       shift({ padding: 8 }),
     ],
     whileElementsMounted: autoUpdate,
@@ -353,7 +330,7 @@ const FloatingMenu = ({ trigger, items, onItemClick, activeKey }) => {
       <div
         ref={refs.setReference}
         {...getReferenceProps()}
-        className="flex-1"
+        className={wrapperClassName}
       >
         {trigger}
       </div>
@@ -1094,7 +1071,6 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
             <span className="text-xs">Ctrl/⌘+K</span>
           </div>
           <div className="flex items-center justify-center gap-4 ml-auto flex-shrink-0">
-            <RateLimitIndicator />
             <Tooltip title={t('header.realtimeLog')}>
               <div onClick={onRealtimeLog} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 20 }}>
                 <RealtimeLogIcon />
@@ -1104,26 +1080,6 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
               <div onClick={onHistoryLog} className="cursor-pointer" style={{ color: '#8B7355', fontSize: 20 }}>
                 <HistoryLogIcon />
               </div>
-            </Tooltip>
-            <Tooltip title="GitHub">
-              <a
-                href="https://github.com/l429609201/misaka_danmu_server"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: '#333', fontSize: 20 }}
-              >
-                <GithubIcon />
-              </a>
-            </Tooltip>
-            <Tooltip title="Telegram">
-              <a
-                href="https://t.me/misaka_danmaku"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: '#0088cc', fontSize: 20 }}
-              >
-                <TelegramIcon />
-              </a>
             </Tooltip>
             {docsUrl && (
               <Tooltip title={t('header.docs')}>

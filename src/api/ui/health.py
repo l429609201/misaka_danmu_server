@@ -20,6 +20,11 @@ from src.api.dependencies import get_config_service
 from src.core import get_now
 from src.api.dependencies import get_scraper_manager
 from src.services.scraper_manager import ScraperManager
+from src.api.dependencies import get_task_manager
+from src.api.auth import get_current_user
+from src.schemas.auth import User
+from src.services.task_manager import TaskManager
+from src.workflows.dashboard import workflow_get_dashboard_overview
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -191,6 +196,15 @@ async def get_system_health_summary(
         missingEpisodes=episode_counts["missing"],
         configScore=config_score["percentage"],
     )
+
+
+@router.get("/dashboard/overview", summary="仪表盘总览")
+async def get_dashboard_overview(
+    task_manager: TaskManager = Depends(get_task_manager),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """仪表盘只读聚合数据（含媒体服务器与系统资源，需登录），业务逻辑由工作流负责。"""
+    return await workflow_get_dashboard_overview(task_manager)
 
 
 # ==================== 配置完整性评分 ====================

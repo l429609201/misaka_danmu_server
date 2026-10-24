@@ -428,6 +428,27 @@ class TaskManager:
                     self._pending_titles.discard(task.title)
                     task.done_event.set()
 
+    def get_queue_snapshot(self) -> Dict[str, Any]:
+        """返回各队列运行/排队/暂停的只读快照，供仪表盘展示，不修改任何状态。"""
+        def _titles(tasks: List[Optional[Task]]) -> List[Dict[str, str]]:
+            return [{"taskId": t.task_id, "title": t.title} for t in tasks if t is not None]
+
+        running = _titles(
+            list(self._current_download_tasks.values())
+            + list(self._current_search_tasks.values())
+            + [self._current_management_task, self._current_fallback_task]
+            + list(self._immediate_tasks.values())
+        )
+        pending = (
+            self._download_queue.qsize() + self._search_queue.qsize()
+            + self._management_queue.qsize() + self._fallback_queue.qsize()
+        )
+        return {
+            "running": running,
+            "pendingCount": pending,
+            "pausedCount": len(self._paused_tasks),
+        }
+
     async def stop(self):
         """停止任务管理器。"""
         # 标记正在关闭，使运行中任务因 CancelledError 中断时不覆盖数据库状态

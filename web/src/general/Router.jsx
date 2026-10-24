@@ -7,6 +7,7 @@ import { LayoutLogin } from './LayoutLogin.jsx'
 
 import { Home } from '@/pages/home'
 import { Login } from '@/pages/login'
+import { Search } from '@/pages/search'
 import { Task } from '@/pages/task'
 import { LibraryTabsPage } from '../pages/library/tabs.jsx'
 import { Setting } from '../pages/setting/index.jsx'
@@ -32,6 +33,10 @@ export const router = createBrowserRouter([
       {
         index: true,
         element: <Home />,
+      },
+      {
+        path: RoutePaths.SEARCH,
+        element: <Search />,
       },
       {
         path: RoutePaths.TASK,
