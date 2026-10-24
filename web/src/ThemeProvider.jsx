@@ -3,6 +3,7 @@ import { ConfigProvider } from 'antd'
 import { theme } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { getConfig, setConfig } from './apis/index.js'
+import { GLASS_APPEARANCES, GLASS_PARAM_KEYS, getGlassCssVariables, getGlassPreset, normalizeGlassStrength } from './utils/glassOptics.js'
 
 import zhCN from 'antd/locale/zh_CN'
 import zhTW from 'antd/locale/zh_TW'
@@ -212,29 +213,19 @@ const REMOVED_PAGE_STYLES = new Set([
   'glass', 'acg-glass', 'sakura', 'paper', 'calendar', 'github', 'material',
 ])
 
-// 液态玻璃配置：opacity/blur 均为相对原样式的倍率（1 = 原效果）
+// 液态玻璃配置（移植 MoviePilot 标准档）：材质 + 通透度/透射亮度/反射亮度，均为 0–100
 const GLASS_SETTINGS_KEY = 'liquidGlassSettings'
-export const GLASS_PRESETS = {
-  low:    { opacity: 1.4, blur: 0.6 },
-  medium: { opacity: 1,   blur: 1 },
-  high:   { opacity: 0.5, blur: 1.4 },
-}
-export const GLASS_RANGE = { opacity: [0.2, 1.8], blur: [0, 2] }
-const clampNum = (v, [min, max], fallback) => {
-  const n = Number(v)
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
-}
 /**
- * 规整液态玻璃配置，越界或非法值回落到默认。
- * @param {object} raw 原始配置
- * @returns {{level: string, opacity: number, blur: number}}
+ * 规整液态玻璃配置，越界或非法值回落到所选材质的预设。
+ * @param {object} raw 原始配置（旧版 {level, opacity, blur} 会回落到默认）
+ * @returns {{appearance: string, transparency: number, transmission: number, reflection: number}}
  */
 function normalizeGlassSettings(raw) {
-  return {
-    level: ['low', 'medium', 'high', 'custom'].includes(raw?.level) ? raw.level : 'medium',
-    opacity: clampNum(raw?.opacity, GLASS_RANGE.opacity, 1),
-    blur: clampNum(raw?.blur, GLASS_RANGE.blur, 1),
-  }
+  const appearance = GLASS_APPEARANCES.includes(raw?.appearance) ? raw.appearance : 'clear'
+  const preset = getGlassPreset(appearance)
+  const next = { appearance }
+  for (const key of GLASS_PARAM_KEYS) next[key] = normalizeGlassStrength(raw?.[key], preset[key])
+  return next
 }
 function loadGlassSettings() {
   try {
@@ -355,7 +346,7 @@ export function ThemeProvider({ children }) {
     else localStorage.removeItem('wallpaperUrl')
   }
 
-  // 液态玻璃的透明度/模糊度倍率（参考 MoviePilot 透明主题的低/中/高预设）
+  // 液态玻璃光学参数（参考 MoviePilot 玻璃设置的标准档）
   const [glassSettings, setGlassSettingsState] = useState(loadGlassSettings)
   const setGlassSettings = (patch) => {
     setGlassSettingsState(prev => {
@@ -370,11 +361,13 @@ export function ThemeProvider({ children }) {
     document.documentElement.setAttribute('data-page-style', pageStyle)
   }, [pageStyle])
 
-  // why：倍率以 CSS 变量下发，index.css 中液态玻璃规则统一乘以它，其它样式不受影响
+  // why：参数经 MP 响应曲线换算成 CSS 变量下发，index.css 中液态玻璃规则统一消费，其它样式不受影响
   useEffect(() => {
-    const root = document.documentElement.style
-    root.setProperty('--glass-opacity-scale', String(glassSettings.opacity))
-    root.setProperty('--glass-blur-scale', String(glassSettings.blur))
+    const root = document.documentElement
+    root.setAttribute('data-glass-appearance', glassSettings.appearance)
+    for (const [name, value] of Object.entries(getGlassCssVariables(glassSettings))) {
+      root.style.setProperty(name, value)
+    }
   }, [glassSettings])
 
   // 壁纸地址 → CSS 变量 --ani-wallpaper

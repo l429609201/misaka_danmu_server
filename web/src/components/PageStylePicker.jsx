@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { CheckOutlined, PictureOutlined } from '@ant-design/icons'
 import { Input, Segmented, Slider } from 'antd'
 import { useTranslation } from 'react-i18next'
-import { useThemeMode, PAGE_STYLES, WALLPAPER_STYLE_KEYS, GLASS_PRESETS, GLASS_RANGE } from '../ThemeProvider'
+import { useThemeMode, PAGE_STYLES, WALLPAPER_STYLE_KEYS } from '../ThemeProvider'
+import { GLASS_APPEARANCES, GLASS_PARAM_KEYS, GLASS_STRENGTH_MAX, GLASS_STRENGTH_MIN, getGlassPreset } from '../utils/glassOptics.js'
 import { ResponsiveModal } from './ResponsiveModal'
 
 // 每种风格的缩略图预览样式
@@ -262,43 +263,49 @@ const PageStylePicker = ({ open, onClose }) => {
           })}
         </div>
 
-        {/* 液态玻璃专属配置：预设档位 + 自定义滑块，改动实时生效 */}
+        {/* 液态玻璃专属配置（参考 MoviePilot 标准档）：材质 + 通透度/透射亮度/反射亮度，改动实时生效 */}
         {pageStyle === 'liquid-glass' && (
           <div
             className="mt-4 rounded-xl border p-3"
             style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-hover)' }}
           >
-            <div className="mb-2 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-              {t('pageStyle.glassConfigTitle')}
+            <div className="mb-2 flex items-center justify-between text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              <span>{t('pageStyle.glassConfigTitle')}</span>
+              <a
+                className="text-xs font-normal"
+                onClick={() => setGlassSettings(getGlassPreset(glassSettings.appearance))}
+              >
+                {t('pageStyle.glassReset')}
+              </a>
             </div>
+            <div className="mb-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              {t('pageStyle.glassAppearance')}
+            </div>
+            {/* why：切换材质时套用该材质的预设值，与 MP 行为一致 */}
             <Segmented
               block
-              value={glassSettings.level}
-              onChange={level => setGlassSettings(level === 'custom' ? { level } : { level, ...GLASS_PRESETS[level] })}
-              options={['low', 'medium', 'high', 'custom'].map(v => ({ value: v, label: t(`pageStyle.glassLevel_${v}`) }))}
+              value={glassSettings.appearance}
+              onChange={appearance => setGlassSettings({ appearance, ...getGlassPreset(appearance) })}
+              options={GLASS_APPEARANCES.map(v => ({ value: v, label: t(`pageStyle.glassAppearance_${v}`) }))}
             />
-            <div className="mt-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-              {t('pageStyle.glassOpacity')}：{Math.round(glassSettings.opacity * 100)}%
+            <div className="mt-1 text-xs leading-5" style={{ color: 'var(--color-text-secondary)' }}>
+              {t('pageStyle.glassAppearanceHint')}
             </div>
-            <Slider
-              min={GLASS_RANGE.opacity[0]}
-              max={GLASS_RANGE.opacity[1]}
-              step={0.05}
-              value={glassSettings.opacity}
-              tooltip={{ formatter: v => `${Math.round(v * 100)}%` }}
-              onChange={opacity => setGlassSettings({ level: 'custom', opacity })}
-            />
-            <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-              {t('pageStyle.glassBlur')}：{Math.round(glassSettings.blur * 100)}%
-            </div>
-            <Slider
-              min={GLASS_RANGE.blur[0]}
-              max={GLASS_RANGE.blur[1]}
-              step={0.05}
-              value={glassSettings.blur}
-              tooltip={{ formatter: v => `${Math.round(v * 100)}%` }}
-              onChange={blur => setGlassSettings({ level: 'custom', blur })}
-            />
+            {GLASS_PARAM_KEYS.map(key => (
+              <div key={key} className="mt-3">
+                <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {t(`pageStyle.glass_${key}`)}：{glassSettings[key]}%
+                </div>
+                <Slider
+                  min={GLASS_STRENGTH_MIN}
+                  max={GLASS_STRENGTH_MAX}
+                  step={1}
+                  value={glassSettings[key]}
+                  tooltip={{ formatter: v => `${v}%` }}
+                  onChange={value => setGlassSettings({ [key]: value })}
+                />
+              </div>
+            ))}
             <div className="text-xs leading-5" style={{ color: 'var(--color-text-secondary)' }}>
               {t('pageStyle.glassConfigHint')}
             </div>
