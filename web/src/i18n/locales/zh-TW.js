@@ -83,8 +83,8 @@ export default {
 
   // 頂部導航
   nav: {
-    home: '首頁',
-    search: '搜尋',
+    home: '儀表板',
+    search: '搜尋結果',
     library: '彈幕庫',
     task: '任務管理器',
     bullet: '彈幕',
@@ -103,6 +103,7 @@ export default {
     bulletStorage: '彈幕儲存設定',
     bulletFallback: '設定',
     bulletDataCheck: '資料體檢',
+    apiTest: '介面測試',
     mediaLibraryScan: '媒體庫讀取',
     mediaLocalScan: '本機掃描',
     sourceScrapers: '彈幕搜尋源',
@@ -4039,6 +4040,7 @@ export default {
     allSources: '全部來源',
     tooltip: '功能搜尋 (Ctrl/Cmd+K)',
     menuTitle: '功能搜尋',
+    contentTitle: '內容搜尋',
     placeholder: '搜尋功能，如「彈幕輸出」「全域過濾」「限速」…',
     empty: '沒有找到相關功能',
   },
@@ -4064,6 +4066,7 @@ export default {
     bulletStorage: { title: '彈幕儲存配置', desc: '彈幕檔案儲存路徑與命名範本' },
     bulletFallback: { title: '後備設定', desc: '匹配後備、搜尋後備（全網搜尋）開關' },
     bulletDataCheck: { title: '資料校驗', desc: '檢查彈幕資料一致性' },
+    apiTest: { title: '介面測試', desc: 'match 匹配、分集、彈幕取得、檔案識別測試' },
     mediaLibraryScan: { title: '媒體庫讀取', desc: '從 Emby/Jellyfin/Plex 等媒體伺服器掃描匯入' },
     mediaLocalScan: { title: '本地掃描', desc: '掃描本地目錄檔案並匯入彈幕' },
     sourceScrapers: { title: '彈幕搜尋源', desc: '管理 B站/騰訊/愛奇藝等彈幕源、Cookie、代理' },

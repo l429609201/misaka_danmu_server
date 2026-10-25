@@ -135,13 +135,16 @@ export const GlobalSearchBar = ({ focusSignal }) => {
             />
           ) : (
             <>
-              {!kw && (
-                <div className="px-4 pt-1 pb-1 text-xs text-gray-400">
-                  {t('featureSearch.menuTitle')}
-                </div>
-              )}
-              {items.map((item, idx) =>
-                item._danmu ? (
+              {items.map((item, idx) => (
+                <div key={item.id}>
+                {/* 分组标题：内容搜索 / 功能搜索 */}
+                {item._danmu && (
+                  <div className="px-4 pt-1 pb-1 text-xs text-gray-400">{t('featureSearch.contentTitle')}</div>
+                )}
+                {!item._danmu && idx === (kw ? 1 : 0) && (
+                  <div className="px-4 pt-1 pb-1 text-xs text-gray-400">{t('featureSearch.menuTitle')}</div>
+                )}
+                {item._danmu ? (
                   <div
                     key={item.id}
                     onClick={() => go(item)}
@@ -190,8 +193,9 @@ export const GlobalSearchBar = ({ focusSignal }) => {
                       )}
                     </div>
                   </div>
-                )
-              )}
+                )}
+                </div>
+              ))}
             </>
           )}
         </div>

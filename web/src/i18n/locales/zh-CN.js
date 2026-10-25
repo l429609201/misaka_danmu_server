@@ -83,8 +83,8 @@ export default {
 
   // 顶部导航
   nav: {
-    home: '首页',
-    search: '搜索',
+    home: '仪表盘',
+    search: '搜索结果',
     library: '弹幕库',
     task: '任务管理器',
     bullet: '弹幕',
@@ -103,6 +103,7 @@ export default {
     bulletStorage: '弹幕存储配置',
     bulletFallback: '设置',
     bulletDataCheck: '数据体检',
+    apiTest: '接口测试',
     mediaLibraryScan: '媒体库读取',
     mediaLocalScan: '本地扫描',
     sourceScrapers: '弹幕搜索源',
@@ -4596,6 +4597,7 @@ export default {
     allSources: '全部源',
     tooltip: '功能搜索 (Ctrl/Cmd+K)',
     menuTitle: '功能搜索',
+    contentTitle: '内容搜索',
     placeholder: '搜索功能，如"弹幕输出""全局过滤""限速"…',
     empty: '没有找到相关功能',
   },
@@ -4621,6 +4623,7 @@ export default {
     bulletStorage: { title: '弹幕存储配置', desc: '弹幕文件保存路径与命名模板' },
     bulletFallback: { title: '后备设置', desc: '匹配后备、搜索后备（全网搜索）开关' },
     bulletDataCheck: { title: '数据校验', desc: '检查弹幕数据一致性' },
+    apiTest: { title: '接口测试', desc: 'match 匹配、分集、弹幕获取、文件识别测试' },
     mediaLibraryScan: { title: '媒体库读取', desc: '从 Emby/Jellyfin/Plex 等媒体服务器扫描导入' },
     mediaLocalScan: { title: '本地扫描', desc: '扫描本地目录文件并导入弹幕' },
     sourceScrapers: { title: '弹幕搜索源', desc: '管理 B站/腾讯/爱奇艺等弹幕源、Cookie、代理' },

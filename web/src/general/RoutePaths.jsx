@@ -1,6 +1,7 @@
 export const RoutePaths = {
   HOME: '/',
   SEARCH: '/search',
+  API_TEST: '/api-test',
   LOGIN: '/login',
   LIBRARY: '/library',
   TASK: '/task',

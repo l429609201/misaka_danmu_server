@@ -8,6 +8,7 @@ import { LayoutLogin } from './LayoutLogin.jsx'
 import { Home } from '@/pages/home'
 import { Login } from '@/pages/login'
 import { Search } from '@/pages/search'
+import { ApiTest } from '@/pages/api-test'
 import { Task } from '@/pages/task'
 import { LibraryTabsPage } from '../pages/library/tabs.jsx'
 import { Setting } from '../pages/setting/index.jsx'
@@ -37,6 +38,10 @@ export const router = createBrowserRouter([
       {
         path: RoutePaths.SEARCH,
         element: <Search />,
+      },
+      {
+        path: RoutePaths.API_TEST,
+        element: <ApiTest />,
       },
       {
         path: RoutePaths.TASK,

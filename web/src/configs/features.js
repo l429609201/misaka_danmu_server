@@ -174,6 +174,13 @@ export const FEATURES = [
     keywords: ['数据校验', '数据检查', 'data check', '一致性'],
     path: '/bullet', tabKey: 'data-check', icon: 'renlianshibie_o',
   },
+  {
+    id: 'api-test',
+    titleKey: 'features.apiTest.title',
+    descKey: 'features.apiTest.desc',
+    keywords: ['接口测试', '测试', 'match', '匹配测试', '分集', '弹幕获取', 'api test'],
+    path: '/api-test', tabKey: '', icon: 'controlapi',
+  },
 
   // ============ 媒体获取 ============
   {

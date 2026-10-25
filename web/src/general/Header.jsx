@@ -10,7 +10,7 @@ import classNames from 'classnames'
 import { Tag, Dropdown, Modal, Form, Input, Button, Space, Badge, Popconfirm } from 'antd';
 import { logout, changePassword, checkAppUpdate, getDockerStatus, restartService, getVersion } from '../apis/index.js'
 import Cookies from 'js-cookie'
-import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, SearchOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
+import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 import { Tooltip } from 'antd'
 import SessionManager from '@/components/SessionManager'
 import VersionModal from '@/components/VersionModal'
@@ -81,6 +81,7 @@ const DocsIcon = () => (
 const navItems = [
   { key: RoutePaths.HOME, label: 'nav.home', icon: 'home', iconfontIcon: 'icon-home' },
   { key: RoutePaths.SEARCH, label: 'nav.search', icon: 'search', iconfontIcon: 'icon-search' },
+  { key: RoutePaths.API_TEST, label: 'nav.apiTest', icon: 'controlapi', iconfontIcon: 'icon-controlapi' },
   { key: RoutePaths.LIBRARY, label: 'nav.library', icon: 'tvlibrary', iconfontIcon: 'icon-tvlibrary', children: [
     { key: 'library', label: 'libraryPage.pageTitle', icon: 'kufangguanli' },
     { key: 'batch', label: 'libraryPage.btnBatchManage', icon: 'piliangguanli' },
@@ -1099,16 +1100,6 @@ const DesktopHeader = ({ activeKey, version, hasUpdate, onVersionClick, onRealti
             <Dropdown
               menu={{
                 items: [
-                  {
-                    key: 'featureSearch',
-                    icon: <SearchOutlined style={{ fontSize: 16 }} />,
-                    label: (
-                      <div onClick={focusGlobalSearch} className="text-base">
-                        {t('featureSearch.menuTitle')}
-                        <span className="ml-2 text-xs text-gray-400">Ctrl/⌘+K</span>
-                      </div>
-                    ),
-                  },
                   {
                     key: 'themeColor',
                     icon: <MyIcon icon="MenuIcon-gexinghua-heise" size={16} />,
