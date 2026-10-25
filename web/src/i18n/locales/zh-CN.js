@@ -4602,6 +4602,9 @@ export default {
 
   // 全功能搜索
   featureSearch: {
+    historyTitle: '搜索历史',
+    clearHistory: '清空',
+    exact: '精确搜索',
     barPlaceholder: '搜索功能或弹幕…',
     searchDanmu: '搜索弹幕：{{keyword}}',
     allSources: '全部源',

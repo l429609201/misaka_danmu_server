@@ -4045,6 +4045,9 @@ export default {
 
   // 全功能搜尋
   featureSearch: {
+    historyTitle: '搜尋歷史',
+    clearHistory: '清空',
+    exact: '精確搜尋',
     barPlaceholder: '搜尋功能或彈幕…',
     searchDanmu: '搜尋彈幕：{{keyword}}',
     allSources: '全部來源',

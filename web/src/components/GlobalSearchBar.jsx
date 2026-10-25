@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Input, Select, Empty } from 'antd'
-import { SearchOutlined } from '@ant-design/icons'
+import { Input, Select, Empty, InputNumber, Tag } from 'antd'
+import { SearchOutlined, HistoryOutlined } from '@ant-design/icons'
+import { useAtom } from 'jotai'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { MyIcon } from './MyIcon'
 import { getScrapers } from '../apis'
+import { searchHistoryAtom } from '../../store'
 import {
   useFeatureMatches,
   featureUrl,
@@ -30,6 +32,10 @@ export const GlobalSearchBar = ({ focusSignal }) => {
   const [activeIndex, setActiveIndex] = useState(0)
   const [provider, setProvider] = useState('all')
   const [providers, setProviders] = useState(null)
+  // 精确搜索：填写季/集后在关键词末尾追加 SxxEyy（原搜索页“精确搜索 + 插入”合并到这里）
+  const [season, setSeason] = useState(null)
+  const [episode, setEpisode] = useState(null)
+  const [searchHistory, setSearchHistory] = useAtom(searchHistoryAtom)
   const inputRef = useRef(null)
   const wrapRef = useRef(null)
 
@@ -84,13 +90,44 @@ export const GlobalSearchBar = ({ focusSignal }) => {
     [providers, t]
   )
 
-  const go = item => {
-    if (!item) return
-    navigate(item._danmu ? danmuSearchUrl(kw, provider) : featureUrl(item))
+  // 实际提交的弹幕搜索关键词：季必填才追加，集可选
+  const exactKeyword = useMemo(() => {
+    if (!kw || !season) return kw
+    let suffix = ` S${String(season).padStart(2, '0')}`
+    if (episode) suffix += `E${String(episode).padStart(2, '0')}`
+    return `${kw}${suffix}`
+  }, [kw, season, episode])
+
+  const close = () => {
     setOpen(false)
     setKeyword('')
+    setSeason(null)
+    setEpisode(null)
     inputRef.current?.blur()
   }
+
+  // 直接按关键词搜索弹幕（历史记录点击也走这里）
+  const searchDanmu = (text, src = provider) => {
+    if (!text?.trim()) return
+    navigate(danmuSearchUrl(text, src))
+    close()
+  }
+
+  const go = item => {
+    if (!item) return
+    if (item._danmu) {
+      searchDanmu(exactKeyword)
+      return
+    }
+    navigate(featureUrl(item))
+    close()
+  }
+
+  // 有输入时历史记录按包含关系过滤，没输入时全部展示
+  const historyItems = useMemo(
+    () => (kw ? searchHistory.filter(h => h !== kw && h.includes(kw)) : searchHistory).slice(0, 10),
+    [kw, searchHistory]
+  )
 
   const onKeyDown = e => {
     if (e.key === 'ArrowDown') {
@@ -127,12 +164,46 @@ export const GlobalSearchBar = ({ focusSignal }) => {
       />
       {open && (
         <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg shadow-lg bg-base-bg border border-base-hover max-h-[440px] overflow-y-auto py-1">
+          {/* 搜索历史：参考 MP，点击搜索框即可看到，点一下直接重新搜索 */}
+          {historyItems.length > 0 && (
+            <div className="px-4 pt-1 pb-2">
+              <div className="flex items-center gap-1 pb-1 text-xs text-gray-400">
+                <HistoryOutlined />
+                {t('featureSearch.historyTitle')}
+                <span
+                  className="ml-auto cursor-pointer hover:text-primary"
+                  onClick={() => setSearchHistory([])}
+                >
+                  {t('featureSearch.clearHistory')}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {historyItems.map(h => (
+                  <Tag
+                    key={h}
+                    closable
+                    className="cursor-pointer m-0"
+                    onClick={() => searchDanmu(h)}
+                    onClose={e => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setSearchHistory(list => list.filter(o => o !== h))
+                    }}
+                  >
+                    {h}
+                  </Tag>
+                ))}
+              </div>
+            </div>
+          )}
           {items.length === 0 ? (
+            historyItems.length > 0 ? null : (
             <Empty
               className="py-6"
               description={t('featureSearch.empty')}
               image={Empty.PRESENTED_IMAGE_SIMPLE}
             />
+            )
           ) : (
             <>
               {items.map((item, idx) => (
@@ -154,8 +225,41 @@ export const GlobalSearchBar = ({ focusSignal }) => {
                     }`}
                   >
                     <MyIcon icon="danmu" size={20} className="text-primary flex-shrink-0" />
-                    <div className="min-w-0 flex-1 text-sm font-medium text-base-text truncate">
-                      {t('featureSearch.searchDanmu', { keyword: kw })}
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-base-text truncate">
+                        {t('featureSearch.searchDanmu', { keyword: exactKeyword })}
+                      </div>
+                      {/* 精确搜索：季/集输入，阻止冒泡避免点输入框就跳转 */}
+                      <div
+                        className="flex items-center gap-1 mt-1 text-xs text-gray-500"
+                        onClick={e => e.stopPropagation()}
+                        onKeyDown={e => {
+                          // 在季/集框里回车也直接提交搜索
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            searchDanmu(exactKeyword)
+                          }
+                        }}
+                      >
+                        <span>{t('featureSearch.exact')}</span>
+                        <InputNumber
+                          size="small"
+                          min={0}
+                          value={season}
+                          onChange={setSeason}
+                          placeholder={t('home.season')}
+                          style={{ width: 60 }}
+                        />
+                        <InputNumber
+                          size="small"
+                          min={1}
+                          value={episode}
+                          onChange={setEpisode}
+                          disabled={!season}
+                          placeholder={t('home.episode')}
+                          style={{ width: 60 }}
+                        />
+                      </div>
                     </div>
                     {/* 阻止冒泡：选源时不触发跳转 */}
                     <div onClick={e => e.stopPropagation()}>

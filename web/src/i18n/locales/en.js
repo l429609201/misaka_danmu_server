@@ -4051,6 +4051,9 @@ Singer 2024 => {[rules=extra|pure version|preview|behind the scenes]}`,
 
   // Feature search
   featureSearch: {
+    historyTitle: 'Search history',
+    clearHistory: 'Clear',
+    exact: 'Exact',
     barPlaceholder: 'Search features or danmaku…',
     searchDanmu: 'Search danmaku: {{keyword}}',
     allSources: 'All sources',
