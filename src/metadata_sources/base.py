@@ -124,11 +124,13 @@ class BaseMetadataSource(ABC):
         """
         raise NotImplementedError
     
-    @abstractmethod
     async def execute_action(self, action_name: str, payload: Dict[str, Any], user: User, request: Any) -> Any:
         """
         执行一个指定的操作。
-        子类可以重写此方法来处理其特定的操作，例如OAuth流程。
+        子类可以重写此方法来处理其特定的操作。
+
+        why：OAuth 流程已迁移到 oauth_service，bangumi/trakt 不再需要自定义操作；
+        这里保留默认实现而非抽象方法，否则未覆写的源会实例化失败被跳过。
         """
         raise NotImplementedError(f"操作 '{action_name}' 在 {self.provider_name} 中未实现。")
 

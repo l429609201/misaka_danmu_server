@@ -23,6 +23,14 @@ export const FEATURES = [
     titleKey: 'features.homeSearch.title',
     descKey: 'features.homeSearch.desc',
     keywords: ['搜索', '搜番', '搜剧', 'search', 'anime', '导入', 'import'],
+    // 搜索页已从首页独立到 /search（首页现为仪表盘）
+    path: '/search', tabKey: '', icon: 'home',
+  },
+  {
+    id: 'home-dashboard',
+    titleKey: 'features.homeDashboard.title',
+    descKey: 'features.homeDashboard.desc',
+    keywords: ['首页', '仪表盘', '概览', '健康', 'dashboard', 'home', 'overview'],
     path: '/', tabKey: '', icon: 'home',
   },
 
@@ -84,6 +92,13 @@ export const FEATURES = [
     descKey: 'features.taskProfile.desc',
     keywords: ['任务画像', '统计', 'profile', '分析'],
     path: '/task', tabKey: 'profile', icon: 'tongji-jinhangzhongderenwushuliang',
+  },
+  {
+    id: 'task-sysmetrics',
+    titleKey: 'features.taskSysMetrics.title',
+    descKey: 'features.taskSysMetrics.desc',
+    keywords: ['系统指标', '内存', 'CPU', '性能', '监控', 'metrics', 'memory', 'cpu'],
+    path: '/task', tabKey: 'sysmetrics', icon: 'tongji-jinhangzhongderenwushuliang',
   },
 
   // ============ 弹幕（Token 页子卡片）============

@@ -48,17 +48,21 @@ export const SearchBar = () => {
   const modalApi = useModal()
   const messageApi = useMessage()
 
-  // 从 URL 参数读取 keyword 并自动填入
+  // 从 URL 参数读取 keyword 并自动填入；顶栏弹幕搜索会额外带 auto=1（立即搜索）和 provider（指定源）
   const [searchParams, setSearchParams] = useSearchParams()
-  const initialKeywordRef = useRef(false)
+  const pendingAutoSearchRef = useRef(null)
   useEffect(() => {
     const urlKeyword = searchParams.get('keyword')
-    if (urlKeyword && !initialKeywordRef.current) {
-      initialKeywordRef.current = true
-      form.setFieldValue('keyword', urlKeyword)
-      // 清除 URL 参数，避免刷新后重复触发
-      setSearchParams({}, { replace: true })
+    if (!urlKeyword) return
+    form.setFieldValue('keyword', urlKeyword)
+    if (searchParams.get('auto') === '1') {
+      pendingAutoSearchRef.current = {
+        keyword: urlKeyword,
+        provider: searchParams.get('provider') || '',
+      }
     }
+    // 清除 URL 参数，避免刷新后重复触发；每次顶栏重新跳转都会带新参数，因此不再只处理首次
+    setSearchParams({}, { replace: true })
   }, [searchParams, form, setSearchParams])
 
   const onInsert = () => {
@@ -74,7 +78,7 @@ export const SearchBar = () => {
     form.setFieldValue('keyword', `${keyword}${formatted}`)
   }
 
-  const onSearch = async (values, page = 1, pageSize = 10) => {
+  const onSearch = async (values, page = 1, pageSize = 10, provider = '') => {
     try {
       if (loading) return
       setLoading(true)
@@ -93,6 +97,7 @@ export const SearchBar = () => {
           keyword: values.keyword,
           page,
           pageSize,
+          providerFilter: provider || undefined,
         },
         onProgress
       )
@@ -100,6 +105,8 @@ export const SearchBar = () => {
       setLastSearchResultData({
         ...(res?.data || {}),
         keyword: values.keyword,
+        // 告诉结果区把来源筛选器同步为指定源；'all' 表示普通全源搜索
+        requestedProvider: provider || 'all',
       })
       if (page === 1) {
         const data = res?.data || {}
@@ -173,6 +180,15 @@ export const SearchBar = () => {
       clearInterval(timer.current)
     }
   }, [])
+
+  // 处理顶栏跳转带来的自动搜索（等 loading 空闲后执行，避免与进行中的搜索冲突）
+  useEffect(() => {
+    const pending = pendingAutoSearchRef.current
+    if (!pending || loading) return
+    pendingAutoSearchRef.current = null
+    onSearch({ keyword: pending.keyword }, 1, 10, pending.provider)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, loading])
 
   return (
     <div>

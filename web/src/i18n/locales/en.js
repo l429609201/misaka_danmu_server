@@ -125,6 +125,7 @@ export default {
 
   // Top bar tools + user menu
   header: {
+    appName: 'Misaka Danmaku Server',
     realtimeLog: 'Realtime Log',
     collapseSidebar: 'Collapse',
     historyLog: 'History Log',
@@ -4039,12 +4040,17 @@ Singer 2024 => {[rules=extra|pure version|preview|behind the scenes]}`,
 
   // Feature search
   featureSearch: {
+    barPlaceholder: 'Search features or danmaku…',
+    searchDanmu: 'Search danmaku: {{keyword}}',
+    allSources: 'All sources',
     tooltip: 'Feature Search (Ctrl/Cmd+K)',
     menuTitle: 'Feature Search',
     placeholder: 'Search features, e.g. "danmaku output", "global filter"…',
     empty: 'No matching feature found',
   },
   features: {
+    homeDashboard: { title: 'Dashboard', desc: 'System health, recent tasks and upcoming shows' },
+    taskSysMetrics: { title: 'System metrics', desc: 'CPU, memory, database and task queue metrics' },
     homeSearch: { title: 'Search Anime', desc: 'Search and import danmaku from all enabled sources' },
     libraryList: { title: 'Danmaku Library', desc: 'Browse and manage imported titles and their sources' },
     libraryBatch: { title: 'Batch Manage', desc: 'Batch manage follow/favorite/finished status of all sources' },

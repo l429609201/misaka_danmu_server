@@ -125,6 +125,7 @@ export default {
 
   // 頂部欄工具 + 使用者選單
   header: {
+    appName: '御坂網路彈幕服務',
     realtimeLog: '即時記錄',
     collapseSidebar: '收起側欄',
     historyLog: '歷史記錄',
@@ -4033,12 +4034,17 @@ export default {
 
   // 全功能搜尋
   featureSearch: {
+    barPlaceholder: '搜尋功能或彈幕…',
+    searchDanmu: '搜尋彈幕：{{keyword}}',
+    allSources: '全部來源',
     tooltip: '功能搜尋 (Ctrl/Cmd+K)',
     menuTitle: '功能搜尋',
     placeholder: '搜尋功能，如「彈幕輸出」「全域過濾」「限速」…',
     empty: '沒有找到相關功能',
   },
   features: {
+    homeDashboard: { title: '首頁儀表板', desc: '查看系統健康、近期任務與即將更新' },
+    taskSysMetrics: { title: '系統指標', desc: '查看 CPU、記憶體、資料庫與任務佇列等執行指標' },
     homeSearch: { title: '搜尋番劇', desc: '從所有啟用的彈幕源搜尋並匯入彈幕' },
     libraryList: { title: '彈幕庫', desc: '瀏覽和管理已收錄的作品及其資料源' },
     libraryBatch: { title: '批次管理', desc: '批次管理所有源的追更、標記、完結狀態' },

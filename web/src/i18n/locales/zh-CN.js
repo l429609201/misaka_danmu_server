@@ -125,6 +125,7 @@ export default {
 
   // 顶部栏工具 + 用户菜单
   header: {
+    appName: '御坂网络弹幕服务',
     realtimeLog: '实时日志',
     collapseSidebar: '收起侧栏',
     historyLog: '历史日志',
@@ -4590,12 +4591,17 @@ export default {
 
   // 全功能搜索
   featureSearch: {
+    barPlaceholder: '搜索功能或弹幕…',
+    searchDanmu: '搜索弹幕：{{keyword}}',
+    allSources: '全部源',
     tooltip: '功能搜索 (Ctrl/Cmd+K)',
     menuTitle: '功能搜索',
     placeholder: '搜索功能，如"弹幕输出""全局过滤""限速"…',
     empty: '没有找到相关功能',
   },
   features: {
+    homeDashboard: { title: '首页仪表盘', desc: '查看系统健康、近期任务与即将更新' },
+    taskSysMetrics: { title: '系统指标', desc: '查看 CPU、内存、数据库与任务队列等运行指标' },
     homeSearch: { title: '搜索番剧', desc: '从所有启用的弹幕源搜索并导入弹幕' },
     libraryList: { title: '弹幕库', desc: '浏览和管理已收录的作品及其数据源' },
     libraryBatch: { title: '批量管理', desc: '批量管理所有源的追更、标记、完结状态' },

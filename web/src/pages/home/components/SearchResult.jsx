@@ -317,7 +317,11 @@ export const SearchResult = () => {
       // 新搜索开始时，清空可用列表（等待新数据）
       setAvailableYears([])
       setAvailableProviders([])
+    } else if (lastSearchResultData.requestedProvider) {
+      // 指定源搜索（顶栏弹幕搜索 / URL provider 参数）：结果加载完后同步来源筛选器
+      setProviderFilter(lastSearchResultData.requestedProvider)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchLoading])
 
   const importModeText = useMemo(() => {

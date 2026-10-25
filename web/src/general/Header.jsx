@@ -22,6 +22,7 @@ import CacheManagerModal from '@/components/CacheManagerModal'
 import HealthOverviewModal from '@/pages/home/components/HealthOverview'
 import HistoryLogModal from '@/components/HistoryLogModal'
 import { FeatureSearch } from '@/components/FeatureSearch'
+import { GlobalSearchBar } from '@/components/GlobalSearchBar'
 import { RateLimitIndicator } from '@/components/RateLimitIndicator'
 import { clearBrowserCache } from '@/utils/clearCache'
 import { useMessage } from '../MessageContext'
@@ -182,7 +183,7 @@ export const getSidebarWidth = (collapsed) => (collapsed ? SIDEBAR_COLLAPSED_WID
  * - 展开态：一级栏目 + 可展开的子页面列表
  * - 折叠态：仅图标，悬停弹出子页面菜单
  */
-const DesktopSidebar = ({ activeKey }) => {
+const DesktopSidebar = ({ activeKey, docsUrl }) => {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
@@ -200,7 +201,12 @@ const DesktopSidebar = ({ activeKey }) => {
         className={classNames('flex items-center h-16 flex-shrink-0', collapsed ? 'justify-center' : 'px-4')}
         onClick={() => navigate(RoutePaths.HOME)}
       >
-        <img src="/images/logo.png" className={classNames('cursor-pointer', collapsed ? 'h-9' : 'h-12')} />
+        <img src="/images/logo.png" className={classNames('cursor-pointer flex-shrink-0', collapsed ? 'h-9' : 'h-12')} />
+        {!collapsed && (
+          <span className="ml-2 text-base font-bold truncate cursor-pointer" title={t('header.appName')}>
+            {t('header.appName')}
+          </span>
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-2 space-y-1">
@@ -293,6 +299,13 @@ const DesktopSidebar = ({ activeKey }) => {
               <TelegramIcon />
             </a>
           </Tooltip>
+          {docsUrl && (
+            <Tooltip title={t('header.docs')} placement="right">
+              <a href={docsUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#8CA1AF', fontSize: 20 }}>
+                <DocsIcon />
+              </a>
+            </Tooltip>
+          )}
         </div>
       </div>
 
@@ -498,11 +511,10 @@ export const Header = () => {
         </>
       ) : (
         <>
-        <DesktopSidebar activeKey={activeKey} />
+        <DesktopSidebar activeKey={activeKey} docsUrl={docsUrl} />
         <DesktopHeader
           activeKey={activeKey}
           version={version}
-          docsUrl={docsUrl}
           hasUpdate={hasUpdate}
           onVersionClick={() => setVersionModalOpen(true)}
           onRealtimeLog={() => setRealtimeLogOpen(true)}
@@ -941,7 +953,7 @@ const MobileHeader = ({ activeKey }) => {
   )
 }
 
-const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick, onRealtimeLog, onHistoryLog }) => {
+const DesktopHeader = ({ activeKey, version, hasUpdate, onVersionClick, onRealtimeLog, onHistoryLog }) => {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const userinfo = useAtomValue(userinfoAtom)
@@ -965,15 +977,16 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
   const [isLoading, setIsLoading] = useState(false)
   const [dockerAvailable, setDockerAvailable] = useState(false)
   const [restartLoading, setRestartLoading] = useState(false)
-  // 全功能搜索面板开关
-  const [featureSearchOpen, setFeatureSearchOpen] = useState(false)
+  // 顶栏搜索栏聚焦信号：每次 +1 触发 GlobalSearchBar 聚焦并展开下拉
+  const [searchFocusSignal, setSearchFocusSignal] = useState(0)
+  const focusGlobalSearch = () => setSearchFocusSignal(n => n + 1)
 
-  // 全局快捷键 Ctrl/Cmd+K 打开/关闭功能搜索
+  // 全局快捷键 Ctrl/Cmd+K 聚焦顶栏搜索栏（原弹窗已改为常驻搜索栏）
   useEffect(() => {
     const onKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
-        setFeatureSearchOpen(prev => !prev)
+        focusGlobalSearch()
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -1062,14 +1075,8 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
         style={{ left: sidebarWidth }}
       >
         <div className="flex justify-start items-center w-full px-6 gap-4 h-12">
-          <div
-            className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer select-none"
-            onClick={() => setFeatureSearchOpen(true)}
-          >
-            <SearchOutlined />
-            <span>{t('featureSearch.menuTitle')}</span>
-            <span className="text-xs">Ctrl/⌘+K</span>
-          </div>
+          {/* 顶栏最左侧：全局搜索栏（功能跳转 + 弹幕搜索，可指定源） */}
+          <GlobalSearchBar focusSignal={searchFocusSignal} />
           <div className="flex items-center justify-center gap-4 ml-auto flex-shrink-0">
             <Tooltip title={t('header.realtimeLog')}>
               <div onClick={onRealtimeLog} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 20 }}>
@@ -1081,18 +1088,6 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                 <HistoryLogIcon />
               </div>
             </Tooltip>
-            {docsUrl && (
-              <Tooltip title={t('header.docs')}>
-                <a
-                  href={docsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: '#8CA1AF', fontSize: 20 }}
-                >
-                  <DocsIcon />
-                </a>
-              </Tooltip>
-            )}
             <Badge dot={hasUpdate} offset={[-5, 5]}>
               <Tag
                 className="cursor-pointer"
@@ -1108,7 +1103,7 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                     key: 'featureSearch',
                     icon: <SearchOutlined style={{ fontSize: 16 }} />,
                     label: (
-                      <div onClick={() => setFeatureSearchOpen(true)} className="text-base">
+                      <div onClick={focusGlobalSearch} className="text-base">
                         {t('featureSearch.menuTitle')}
                         <span className="ml-2 text-xs text-gray-400">Ctrl/⌘+K</span>
                       </div>
@@ -1222,11 +1217,6 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
           </div>
         </div>
       </div>
-
-      <FeatureSearch
-        open={featureSearchOpen}
-        onClose={() => setFeatureSearchOpen(false)}
-      />
 
       <Modal
         title={t('header.changePassword')}
