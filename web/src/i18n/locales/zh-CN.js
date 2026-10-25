@@ -130,6 +130,7 @@ export default {
   header: {
     appName: '御坂网络弹幕服务',
     realtimeLog: '实时日志',
+    openMenu: '打开菜单',
     collapseSidebar: '收起侧栏',
     historyLog: '历史日志',
     github: 'GitHub',

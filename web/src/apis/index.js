@@ -981,60 +981,64 @@ export const getUnimportedCount = (serverId, mediaType) => api.get('/api/ui/medi
 export const importAllUnimported = (data) => api.post('/api/ui/media-items/import-all-unimported', data)
 
 // ==================== 本地弹幕扫描 ====================
+// 与后端 src/api/ui/local_danmaku.py 的 /local-danmaku/* 路由保持一致
 
-/** 浏览本地目录 */
-export const browseDirectory = (fileitem, sort = 'name') => api.post('/api/ui/local-scan/browse', fileitem, { params: { sort } })
+/** 浏览本地目录（后端返回 { items, path }，这里只取 items 以兼容调用方） */
+export const browseDirectory = async (fileitem, sort = 'name') => {
+  const res = await api.get('/api/ui/local-danmaku/browse', { path: fileitem?.path || '/', sort })
+  return { ...res, data: res.data?.items || [] }
+}
 
 /** 获取上次使用的扫描路径 */
-export const getLastScanPath = () => api.get('/api/ui/local-scan/last-path')
+export const getLastScanPath = () => api.get('/api/ui/local-danmaku/last-path')
 
 /** 保存扫描路径 */
-export const saveScanPath = (scanPath) => api.post('/api/ui/local-scan/save-path', { scanPath })
+export const saveScanPath = (scanPath) => api.post('/api/ui/local-danmaku/save-path', { scanPath })
 
 /** 扫描本地弹幕文件 */
-export const scanLocalDanmaku = (scanPath) => api.post('/api/ui/local-scan', { scanPath })
+export const scanLocalDanmaku = (scanPath) => api.post('/api/ui/local-danmaku/scan', { scanPath })
 
 /** 创建文件夹 */
-export const createFolder = (parentPath, folderName) => api.post('/api/ui/local-scan/create-folder', { parentPath, folderName })
+export const createFolder = (parentPath, folderName) => api.post('/api/ui/local-danmaku/folder', { parentPath, folderName })
 
 /** 删除文件夹 */
-export const deleteFolder = (folderPath) => api.delete('/api/ui/local-scan/delete-folder', { params: { folderPath } })
+export const deleteFolder = (folderPath) => api.delete('/api/ui/local-danmaku/folder', { params: { path: folderPath } })
 
 /** 获取本地弹幕项列表 */
-export const getLocalItems = (params) => api.get('/api/ui/local-items', params)
+export const getLocalItems = (params) => api.get('/api/ui/local-danmaku/items', params)
 
 /** 获取本地作品列表(按作品分组) */
-export const getLocalWorks = (params) => api.get('/api/ui/local-works', params)
+export const getLocalWorks = (params) => api.get('/api/ui/local-danmaku/works', params)
 
 /** 获取电影的弹幕文件列表 */
 export const getLocalMovieFiles = (title, year = null, page = 1, pageSize = 100) =>
-  api.get(`/api/ui/local-movies/${encodeURIComponent(title)}/files`, {
+  api.get(`/api/ui/local-danmaku/movies/${encodeURIComponent(title)}/files`, {
     year,
     page,
     page_size: pageSize
   })
 
 /** 获取本地剧集的季度信息 */
-export const getLocalShowSeasons = (title) => api.get(`/api/ui/local-shows/${encodeURIComponent(title)}/seasons`)
+export const getLocalShowSeasons = (title) => api.get(`/api/ui/local-danmaku/shows/${encodeURIComponent(title)}/seasons`)
 
 /** 获取本地某一季的分集列表 */
 export const getLocalSeasonEpisodes = (title, season, page = 1, pageSize = 100) =>
-  api.get(`/api/ui/local-shows/${encodeURIComponent(title)}/seasons/${season}/episodes`, {
+  api.get(`/api/ui/local-danmaku/shows/${encodeURIComponent(title)}/seasons/${season}/episodes`, {
     page,
     page_size: pageSize
   })
 
 /** 更新本地弹幕项 */
-export const updateLocalItem = (itemId, data) => api.put(`/api/ui/local-items/${itemId}`, data)
+export const updateLocalItem = (itemId, data) => api.put(`/api/ui/local-danmaku/items/${itemId}`, data)
 
 /** 删除本地弹幕项 */
-export const deleteLocalItem = (itemId) => api.delete(`/api/ui/local-items/${itemId}`)
+export const deleteLocalItem = (itemId) => api.delete(`/api/ui/local-danmaku/items/${itemId}`)
 
 /** 批量删除本地弹幕项 */
-export const batchDeleteLocalItems = (itemIds) => api.post('/api/ui/local-items/batch-delete', { itemIds })
+export const batchDeleteLocalItems = (itemIds) => api.post('/api/ui/local-danmaku/items/batch-delete', { itemIds })
 
 /** 导入本地弹幕项 */
-export const importLocalItems = (data) => api.post('/api/ui/local-items/import', data)
+export const importLocalItems = (data) => api.post('/api/ui/local-danmaku/import', data)
 
 // ==================== 弹幕存储批量操作 ====================
 

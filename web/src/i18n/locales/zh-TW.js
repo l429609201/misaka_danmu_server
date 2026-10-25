@@ -130,6 +130,7 @@ export default {
   header: {
     appName: '御坂網路彈幕服務',
     realtimeLog: '即時記錄',
+    openMenu: '開啟選單',
     collapseSidebar: '收起側欄',
     historyLog: '歷史記錄',
     github: 'GitHub',

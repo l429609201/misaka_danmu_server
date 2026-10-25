@@ -42,10 +42,11 @@ export const featureUrl = item => {
   return url
 }
 
-/** 弹幕搜索跳转 URL：进入搜索页并自动发起搜索，可指定单个源 */
+/** 弹幕搜索跳转 URL：进入搜索页并自动发起搜索，可指定单个源或源数组（多个源逗号拼接） */
 export const danmuSearchUrl = (keyword, provider) => {
   const params = new URLSearchParams({ keyword: keyword.trim(), auto: '1' })
-  if (provider && provider !== 'all') params.set('provider', provider)
+  const list = (Array.isArray(provider) ? provider : [provider]).filter(p => p && p !== 'all')
+  if (list.length) params.set('provider', list.join(','))
   return `/search?${params.toString()}`
 }
 

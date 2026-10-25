@@ -3,6 +3,7 @@
 处理文件浏览、文件夹创建和删除
 """
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any
 import os
@@ -52,22 +53,16 @@ async def browse_directory_flow(path: str, sort: str = "name") -> List[FileItem]
                 file_stat = entry.stat()
                 is_dir = entry.is_dir()
 
-                # 格式化修改时间
-                mtime = file_stat.st_mtime
-
-                # 获取文件大小(目录显示为0)
-                size = 0 if is_dir else file_stat.st_size
-
-                # 检查是否可读
-                readable = os.access(str(entry), os.R_OK)
-
+                # 按 FileItem 契约构造（type/modify_time），前端目录浏览器依赖这些字段
                 items.append(FileItem(
-                    name=entry.name,
+                    storage="local",
+                    type="dir" if is_dir else "file",
                     path=str(entry),
-                    isDirectory=is_dir,
-                    size=size,
-                    modifiedTime=mtime,
-                    readable=readable
+                    name=entry.name,
+                    basename=entry.name if is_dir else entry.stem,
+                    extension=None if is_dir else (entry.suffix[1:] or None),
+                    size=0 if is_dir else file_stat.st_size,
+                    modify_time=datetime.fromtimestamp(file_stat.st_mtime),
                 ))
             except (PermissionError, OSError) as e:
                 # 如果某个文件无法访问,记录日志但继续处理其他文件
@@ -76,10 +71,10 @@ async def browse_directory_flow(path: str, sort: str = "name") -> List[FileItem]
 
         # 排序
         if sort == "time":
-            items.sort(key=lambda x: x.modifiedTime or 0, reverse=True)
+            items.sort(key=lambda x: x.modify_time or datetime.min, reverse=True)
         else:  # 默认按名称排序
             # 目录在前,文件在后,同类按名称排序
-            items.sort(key=lambda x: (not x.isDirectory, x.name.lower()))
+            items.sort(key=lambda x: (x.type != "dir", x.name.lower()))
 
         return items
 

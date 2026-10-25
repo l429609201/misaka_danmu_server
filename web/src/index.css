@@ -3190,3 +3190,41 @@ html[data-page-style="liquid-glass"].dark .ant-card .ant-table-tbody > tr:hover 
 html[data-page-style="liquid-glass"].dark .ant-card .ant-table-tbody > tr.ant-table-row:hover > td {
   background: rgba(255, 255, 255, calc(0.09 * var(--glass-opacity-scale, 1))) !important;
 }
+
+/* MyIcon 的 SVG 图标：撑满容器，与 iconfont 同尺寸对齐 */
+.my-svg-icon > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 移动端全屏搜索层（参考 MP：近乎不透明的磨砂底，保证任何页面样式/壁纸下都看得清）
+   why：使用独立类而非 bg-base-bg，避免被各样式里的 .bg-base-bg.fixed.top-0 顶栏玻璃规则改成半透明 */
+.global-search-mobile {
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  color: var(--color-text);
+}
+html.dark .global-search-mobile {
+  background: rgba(15, 23, 42, 0.94) !important;
+}
+/* 输入框给实色底和描边，壁纸/玻璃样式下也能一眼看到输入区 */
+.global-search-mobile .ant-input-affix-wrapper {
+  background: #fff !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08) !important;
+}
+html.dark .global-search-mobile .ant-input-affix-wrapper {
+  background: #1e293b !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+.global-search-mobile .ant-input-affix-wrapper input {
+  background: transparent !important;
+}
+
+/* 移动端抽屉菜单：子项图标列与一级图标列对齐，仅向右偏 3px（antd 默认二级缩进 48px 会让图标离得太远）
+   一级项 padding-left 为 inlineIndent=24px，二级 = 24 + 3 */
+.drawer-nav-menu .ant-menu-sub.ant-menu-inline > .ant-menu-item {
+  padding-left: 27px !important;
+}

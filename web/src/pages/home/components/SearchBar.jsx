@@ -70,7 +70,7 @@ export const SearchBar = () => {
       setLastSearchResultData({
         ...(res?.data || {}),
         keyword: values.keyword,
-        // 告诉结果区把来源筛选器同步为指定源；'all' 表示普通全源搜索
+        // 告诉结果区把来源筛选器同步为指定源（多选为逗号串，翻页时继续按这些源过滤）；'all' 表示全源
         requestedProvider: provider || 'all',
       })
       if (page === 1) {

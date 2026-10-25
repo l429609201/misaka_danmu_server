@@ -91,7 +91,8 @@ export const Layout = () => {
           <Header />
           <div
             className={classNames({
-              'w-full min-h-screen px-4 pb-28 pt-14': isMobile,
+              // 移动端已去掉底部标签栏，不再预留底部空白
+              'w-full min-h-screen px-4 pb-6 pt-16': isMobile,
               'min-h-screen transition-[padding] duration-200': !isMobile,
             })}
             style={isMobile ? undefined : { paddingLeft: getSidebarWidth(sidebarCollapsed) }}

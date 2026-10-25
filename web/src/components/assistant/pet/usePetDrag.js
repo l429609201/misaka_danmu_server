@@ -24,25 +24,27 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 const DRAG_THRESHOLD = 5 // px，超过才算拖动
 
+// why：参考 MP 悬浮按钮用 right/bottom 贴边定位的做法，位置改为「锚定最近的左/右边 + 距边像素」，
+// 纵向用比例；这样窗口缩放、手机横竖屏、地址栏伸缩时入口始终贴着同一侧，不会跑出屏幕。
+// 存储格式：{ anchor: 'left'|'right', gap: px, y: 0~1 }
+function fromLegacy(p) {
+  // 兼容旧版（{x,y} 比例或像素），换算成锚点格式
+  if (typeof window === 'undefined') return null
+  const w = window.innerWidth
+  const xPx = p.x > 1 ? p.x : p.x * w
+  const yRatio = p.y > 1 ? p.y / window.innerHeight : p.y
+  return xPx > w / 2
+    ? { anchor: 'right', gap: Math.max(0, w - xPx), y: yRatio }
+    : { anchor: 'left', gap: Math.max(0, xPx), y: yRatio }
+}
+
 function loadStored(key) {
   try {
     const raw = localStorage.getItem(key)
     if (!raw) return null
     const p = JSON.parse(raw)
-    // 兼容旧版：如果存储的是像素值，转换为百分比
-    if (typeof p?.x === 'number' && typeof p?.y === 'number') {
-      // 检查是否为百分比格式（0-1之间）
-      if (p.x > 1 || p.y > 1) {
-        // 旧版像素值，转换为百分比
-        if (typeof window !== 'undefined') {
-          return {
-            x: p.x / window.innerWidth,
-            y: p.y / window.innerHeight,
-          }
-        }
-      }
-      return p
-    }
+    if (p && (p.anchor === 'left' || p.anchor === 'right') && typeof p.gap === 'number' && typeof p.y === 'number') return p
+    if (typeof p?.x === 'number' && typeof p?.y === 'number') return fromLegacy(p)
   } catch {
     /* 忽略解析失败 */
   }
@@ -56,61 +58,60 @@ export function usePetDrag({
   topRatio = 0.4,
   storeKey = 'assistant-pet-pos',
 } = {}) {
-  // 初始位置：优先用存储值（百分比），否则默认靠右、纵向 topRatio 处
-  const [posRatio, setPosRatio] = useState(() => {
-    const stored = loadStored(storeKey)
-    if (stored) return stored
-    if (typeof window === 'undefined') return { x: 0.85, y: topRatio }
-    // 默认位置：右侧、topRatio 处（百分比）
-    const defaultX = (window.innerWidth - width - margin) / window.innerWidth
-    return {
-      x: Math.max(0, Math.min(1, defaultX)),
-      y: topRatio,
-    }
-  })
+  // 初始位置：优先用存储值，否则默认贴右侧、纵向 topRatio 处
+  const [posRatio, setPosRatio] = useState(
+    () => loadStored(storeKey) || { anchor: 'right', gap: margin, y: topRatio }
+  )
+  // 视口尺寸放进 state，缩放/旋转时触发重新渲染
+  const [, setViewportTick] = useState(0)
   const [dragging, setDragging] = useState(false)
   const movedRef = useRef(false)
   // 拖动过程中的临时数据
   const start = useRef({ mx: 0, my: 0, px: 0, py: 0 })
 
-  // 百分比转像素：根据当前视口尺寸计算实际位置
+  // 锚点 → 像素：x 由锚定边与距边像素算出（右锚定时是 left = 视口宽 - 距右边 - 宽度）
   const toPixels = useCallback(
     ratio => {
       if (typeof window === 'undefined') return { x: 0, y: 0 }
-      return {
-        x: Math.round(ratio.x * window.innerWidth),
-        y: Math.round(ratio.y * window.innerHeight),
-      }
+      const x = ratio.anchor === 'right' ? window.innerWidth - ratio.gap - width : ratio.gap
+      return { x: Math.round(x), y: Math.round(ratio.y * window.innerHeight) }
     },
-    []
+    [width]
   )
 
-  // 像素转百分比：存储时转换为相对位置
+  // 像素 → 锚点：按入口中心落在哪半边决定锚定左/右
   const toRatio = useCallback(
     px => {
-      if (typeof window === 'undefined') return { x: 0, y: 0 }
+      if (typeof window === 'undefined') return { anchor: 'right', gap: margin, y: topRatio }
+      const w = window.innerWidth
+      const right = px.x + width / 2 > w / 2
       return {
-        x: px.x / window.innerWidth,
+        anchor: right ? 'right' : 'left',
+        gap: Math.max(0, right ? w - px.x - width : px.x),
         y: px.y / window.innerHeight,
       }
     },
-    []
+    [width, margin, topRatio]
   )
-
-  // 当前像素位置（供渲染使用）
-  const pos = toPixels(posRatio)
 
   const clamp = useCallback(
     (x, y) => {
       const maxX = window.innerWidth - width - margin
       const maxY = window.innerHeight - height - margin
+      // 视口比入口还小时 max 可能小于 margin，此时以 margin 兜底，保证左上角可见
       return {
-        x: Math.max(margin, Math.min(x, maxX)),
-        y: Math.max(margin, Math.min(y, maxY)),
+        x: Math.max(margin, Math.min(x, Math.max(margin, maxX))),
+        y: Math.max(margin, Math.min(y, Math.max(margin, maxY))),
       }
     },
     [width, height, margin]
   )
+
+  // 当前像素位置（供渲染使用）
+  // why：存储的是比例，桌面端存下的靠右比例在窄屏手机上会让入口大半越出右边界，
+  // 再叠加贴边探头平移后完全不可见；渲染前必须约束在视口内。
+  const rawPos = toPixels(posRatio)
+  const pos = typeof window === 'undefined' ? rawPos : clamp(rawPos.x, rawPos.y)
 
   // 统一从鼠标/触摸事件提取坐标（触摸取第一个触点）
   const getPoint = ev => {
@@ -172,19 +173,20 @@ export function usePetDrag({
     [pos.x, pos.y, clamp, storeKey, toRatio]
   )
 
-  // 视口变化时重新计算像素位置（百分比不变，像素位置自动适配）
+  // 视口变化时只触发重渲染：锚点 + 渲染前 clamp 已保证在可视区内，不改写用户存储的位置。
+  // 手机端地址栏伸缩只触发 visualViewport.resize，横竖屏切换补 orientationchange。
   useEffect(() => {
-    const onResize = () => {
-      // 强制重新计算：将当前百分比约束到合法范围
-      setPosRatio(ratio => {
-        const px = toPixels(ratio)
-        const clamped = clamp(px.x, px.y)
-        return toRatio(clamped)
-      })
-    }
+    const onResize = () => setViewportTick(n => n + 1)
+    const vv = window.visualViewport
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [clamp, toPixels, toRatio])
+    window.addEventListener('orientationchange', onResize)
+    vv?.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+      vv?.removeEventListener('resize', onResize)
+    }
+  }, [])
 
   // onMouseDown 保留为别名（兼容旧调用），onPointerDown 同时支持鼠标+触摸
   return { pos, onPointerDown, onMouseDown: onPointerDown, dragging, movedRef }

@@ -10,6 +10,18 @@ from src.services.database_service import DatabaseService
 logger = logging.getLogger(__name__)
 
 
+_ITEM_FIELDS = (
+    "id", "filePath", "title", "mediaType", "season", "episode", "year",
+    "tmdbId", "tvdbId", "imdbId", "posterUrl", "nfoPath", "isImported",
+    "createdAt", "updatedAt",
+)
+
+
+def _serialize_item(item: Any) -> Dict[str, Any]:
+    """将本地弹幕项 ORM 对象转换为可 JSON 序列化的字典。"""
+    return {name: getattr(item, name) for name in _ITEM_FIELDS}
+
+
 async def get_local_items_flow(
     db: DatabaseService,
     is_imported: Optional[bool] = None,
@@ -31,12 +43,14 @@ async def get_local_items_flow(
         本地弹幕项列表及分页信息
     """
     async with db.transaction():
-        result = await db.local_danmaku.get_local_items(
+        # 仓储实际方法为 get_paginated，返回 ORM 对象，需在事务内序列化为字典
+        result = await db.local_danmaku.get_paginated(
             is_imported=is_imported,
             media_type=media_type,
             page=page,
             page_size=page_size
         )
+        result["list"] = [_serialize_item(item) for item in result.pop("items")]
     return result
 
 
@@ -65,7 +79,7 @@ async def get_local_works_flow(
         本地作品列表及分页信息
     """
     async with db.transaction():
-        result = await db.local_danmaku.get_local_works(
+        result = await db.local_danmaku.get_works(
             is_imported=is_imported,
             media_type=media_type,
             year_from=year_from,

@@ -60,7 +60,7 @@ async def search_anime_provider(
     pageSize: int = Query(10, ge=10, le=100, description="每页数量，10-100"),
     typeFilter: Optional[str] = Query(None, description="类型过滤: tv_series, movie"),
     yearFilter: Optional[int] = Query(None, description="年份过滤"),
-    providerFilter: Optional[str] = Query(None, description="来源过滤: bilibili, tencent等"),
+    providerFilter: Optional[str] = Query(None, description="来源过滤: bilibili, tencent等，多个源用逗号分隔"),
     titleFilter: Optional[str] = Query(None, description="标题关键词过滤"),
     manager: ScraperManager = Depends(get_scraper_manager),
     current_user: User = Depends(get_current_user),

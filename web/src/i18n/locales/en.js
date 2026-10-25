@@ -130,6 +130,7 @@ export default {
   header: {
     appName: 'Misaka Danmaku Server',
     realtimeLog: 'Realtime Log',
+    openMenu: 'Open menu',
     collapseSidebar: 'Collapse',
     historyLog: 'History Log',
     github: 'GitHub',

@@ -7,10 +7,10 @@ import { isMobileAtom, userinfoAtom, sidebarCollapsedAtom } from '../../store/in
 import DarkModeToggle from '@/components/DarkModeToggle.jsx';
 import { MyIcon } from '@/components/MyIcon'
 import classNames from 'classnames'
-import { Tag, Dropdown, Modal, Form, Input, Button, Space, Badge, Popconfirm } from 'antd';
+import { Tag, Dropdown, Modal, Form, Input, Button, Space, Badge, Popconfirm, Drawer, Menu } from 'antd';
 import { logout, changePassword, checkAppUpdate, getDockerStatus, restartService, getVersion } from '../apis/index.js'
 import Cookies from 'js-cookie'
-import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
+import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MenuOutlined, SearchOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons'
 import { Tooltip } from 'antd'
 import SessionManager from '@/components/SessionManager'
 import VersionModal from '@/components/VersionModal'
@@ -26,6 +26,7 @@ import { GlobalSearchBar } from '@/components/GlobalSearchBar'
 import { RateLimitIndicator } from '@/components/RateLimitIndicator'
 import { clearBrowserCache } from '@/utils/clearCache'
 import { useMessage } from '../MessageContext'
+import { useThemeMode } from '../ThemeProvider'
 import {
   useFloating,
   autoUpdate,
@@ -449,70 +450,16 @@ export const Header = () => {
   return (
     <>
       {isMobile ? (
-        <>
-          <div className="fixed top-0 left-0 w-full z-50 py-2 bg-base-bg">
-            <div className="flex justify-start items-center px-4 md:px-8">
-              <div onClick={() => navigate(RoutePaths.HOME)}>
-                <img src="/images/logo.png" className="h-12 cursor-pointer" />
-              </div>
-              <div className="flex items-center justify-center gap-3 ml-auto">
-                <RateLimitIndicator />
-                <Tooltip title={t('header.realtimeLog')}>
-                  <div onClick={() => setRealtimeLogOpen(true)} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 18 }}>
-                    <RealtimeLogIcon />
-                  </div>
-                </Tooltip>
-                <Tooltip title={t('header.historyLog')}>
-                  <div onClick={() => setHistoryLogOpen(true)} className="cursor-pointer" style={{ color: '#8B7355', fontSize: 18 }}>
-                    <HistoryLogIcon />
-                  </div>
-                </Tooltip>
-                <Tooltip title="GitHub">
-                  <a
-                    href="https://github.com/l429609201/misaka_danmu_server"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: '#333', fontSize: 18 }}
-                  >
-                    <GithubIcon />
-                  </a>
-                </Tooltip>
-                <Tooltip title="Telegram">
-                  <a
-                    href="https://t.me/misaka_danmaku"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: '#0088cc', fontSize: 18 }}
-                  >
-                    <TelegramIcon />
-                  </a>
-                </Tooltip>
-                {docsUrl && (
-                  <Tooltip title={t('header.docs')}>
-                    <a
-                      href={docsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: '#8CA1AF', fontSize: 18 }}
-                    >
-                      <DocsIcon />
-                    </a>
-                  </Tooltip>
-                )}
-                <Badge dot={hasUpdate} offset={[-5, 5]}>
-                  <Tag
-                    className="cursor-pointer"
-                    onClick={() => setVersionModalOpen(true)}
-                  >
-                    {version}
-                  </Tag>
-                </Badge>
-                <DarkModeToggle />
-              </div>
-            </div>
-          </div>
-          <MobileHeader activeKey={activeKey} />
-        </>
+        // 移动端参考 MP：顶栏（三条杠 / 搜索 / 流控 / 版本 / 头像）+ 左侧抽屉导航，不再使用底部标签栏
+        <MobileHeader
+          activeKey={activeKey}
+          docsUrl={docsUrl}
+          version={version}
+          hasUpdate={hasUpdate}
+          onVersionClick={() => setVersionModalOpen(true)}
+          onRealtimeLog={() => setRealtimeLogOpen(true)}
+          onHistoryLog={() => setHistoryLogOpen(true)}
+        />
       ) : (
         <>
         <DesktopSidebar activeKey={activeKey} docsUrl={docsUrl} />
@@ -549,12 +496,11 @@ export const Header = () => {
   )
 }
 
-const MobileHeader = ({ activeKey }) => {
+const MobileHeader = ({ activeKey, docsUrl, version, hasUpdate, onVersionClick, onRealtimeLog, onHistoryLog }) => {
   const { t } = useTranslation()
-  const mobileNavItems = [
-    ...navItems.slice(0, 3), // 首页、弹幕库、任务管理器直接显示
-    { key: 'user', label: 'nav.my', icon: 'user', children: navItems.slice(3) }, // 其余的放在"我的"菜单下
-  ]
+  const userinfo = useAtomValue(userinfoAtom)
+  const { isDark, toggleDarkMode } = useThemeMode()
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -575,6 +521,8 @@ const MobileHeader = ({ activeKey }) => {
   const [dockerAvailable, setDockerAvailable] = useState(false)
   const [restartLoading, setRestartLoading] = useState(false)
   const [featureSearchOpen, setFeatureSearchOpen] = useState(false)
+  // 移动端全屏全局搜索（参考 MP）
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const messageApi = useMessage()
   const setUserinfo = useSetAtom(userinfoAtom)
 
@@ -648,174 +596,167 @@ const MobileHeader = ({ activeKey }) => {
     }
   }
 
-  const handleMenuItemClick = (item, parentItem) => {
-    if (item.key === 'logout') {
-      onLogout()
-    } else if (item.key === 'feature-search') {
-      setFeatureSearchOpen(true)
-    } else if (item.key === 'change-password') {
-      setIsPasswordModalOpen(true)
-    } else if (item.key === 'session-manager') {
-      setIsSessionModalOpen(true)
-    } else if (item.key === 'theme-color') {
-      setIsThemeColorOpen(true)
-    } else if (item.key === 'page-style') {
-      setIsPageStyleOpen(true)
-    } else if (item.key === 'language') {
-      setIsLanguageOpen(true)
-    } else if (item.key === 'cache-manager') {
-      setIsCacheModalOpen(true)
-    } else if (item.key === 'health-check') {
-      setIsHealthModalOpen(true)
-    } else if (item.key === 'clear-browser-cache') {
-      clearBrowserCache()
-    } else if (item.key === 'restart-service') {
-      // 重启由 Popconfirm 处理，这里不做任何事
-    } else if (parentItem?.key === 'user') {
-      // "我的"菜单的子项是navItems中的页面，其children是子页面
-      // 导航到该页面的第一个子页面
-      const navItem = navItems.find(n => n.key === item.key)
-      if (navItem?.children?.length) {
-        navigate(getChildNavigatePath(navItem, navItem.children[0].key))
-      } else {
-        navigate(item.key)
-      }
-    } else if (parentItem) {
-      // 非"我的"菜单的子项（如任务管理器的子项），导航到父路径+子key
-      navigate(getChildNavigatePath(parentItem, item.key))
-    } else {
-      navigate(item.key)
-    }
+  // 抽屉菜单：导航项用 antd Menu 内联展开；子项 key 用 "父|子" 组合，避免不同分组下同名子 key（如 webhook）冲突
+  const drawerMenuItems = navItems.map(it => ({
+    key: it.key,
+    icon: <i className={`iconfont ${it.iconfontIcon}`} style={navIconStyle(18, it.iconScale)} />,
+    label: t(it.label),
+    // 子项也显示各自图标（与桌面端子菜单同一套 c.icon）；位置由 .drawer-nav-menu 样式控制为比一级图标右移 3px
+    children: it.children?.map(c => ({
+      key: `${it.key}|${c.key}`,
+      icon: (
+        <span className="inline-flex items-center justify-center" style={{ width: 18 }}>
+          <MyIcon icon={c.icon} size={Math.round((c.iconSize || 20) * 0.9)} className={c.iconClassName} />
+        </span>
+      ),
+      label: t(c.label),
+    })),
+  }))
+  const activeNavItem = navItems.find(n => n.key === activeKey)
+  const drawerSelectedKey = activeNavItem?.children
+    ? `${activeNavItem.key}|${getNavChildActiveKey(activeNavItem, location, subKey)}`
+    : activeKey
+  const [drawerOpenKeys, setDrawerOpenKeys] = useState([])
+  // 打开抽屉时自动展开当前所在分组
+  useEffect(() => {
+    if (drawerOpen && activeNavItem?.children) setDrawerOpenKeys([activeNavItem.key])
+  }, [drawerOpen])
+
+  const onDrawerMenuClick = ({ key }) => {
+    const [parentKey, childKey] = key.split('|')
+    const parent = navItems.find(n => n.key === parentKey)
+    navigate(childKey ? getChildNavigatePath(parent, childKey) : parentKey)
+    setDrawerOpen(false)
   }
 
-  // 计算"我的"菜单的显示标签
-  const userMenuItem = mobileNavItems.find(it => it.key === 'user')
-  const activeChildItem = userMenuItem?.children?.find(child => child.key === activeKey)
-  const userMenuLabel = activeChildItem ? t(activeChildItem.label) : t('nav.my')
+  // 头像下拉：个人/系统功能（原底部"我的"菜单中的功能项）
+  const avatarMenuItems = [
+    { key: 'realtime-log', icon: <span style={{ color: '#1890ff' }}><RealtimeLogIcon /></span>, label: t('header.realtimeLog') },
+    { key: 'history-log', icon: <span style={{ color: '#8B7355' }}><HistoryLogIcon /></span>, label: t('header.historyLog') },
+    { key: 'dark-mode', icon: isDark ? <SunOutlined style={{ fontSize: 16 }} /> : <MoonOutlined style={{ fontSize: 16 }} />, label: isDark ? t('common.lightMode') : t('common.darkMode') },
+    { type: 'divider' },
+    { key: 'theme-color', icon: <MyIcon icon="MenuIcon-gexinghua-heise" size={16} />, label: t('header.themeColor') },
+    { key: 'page-style', icon: <MyIcon icon="fengge" size={16} />, label: t('header.pageStyle') },
+    { key: 'language', icon: <MyIcon icon="yuyan" size={16} />, label: t('header.language') },
+    { key: 'session-manager', icon: <MyIcon icon="huihuaguanli" size={16} />, label: t('header.sessionManager') },
+    { key: 'change-password', icon: <MyIcon icon="key" size={16} />, label: t('header.changePassword') },
+    { key: 'cache-manager', icon: <MyIcon icon="refresh" size={16} />, label: t('header.cacheManager') },
+    { key: 'health-check', icon: <MyIcon icon="checksurface" size={16} />, label: t('header.healthCheck') },
+    { key: 'clear-browser-cache', icon: <MyIcon icon="qinglihuancun" size={16} />, label: t('header.clearBrowserCache') },
+    ...(dockerAvailable ? [{
+      key: 'restart-service',
+      icon: <MyIcon icon="zhongqi" size={16} />,
+      label: (
+        <Popconfirm
+          title={t('header.restartConfirmTitle')}
+          description={t('header.restartConfirmDesc')}
+          onConfirm={handleRestart}
+          okText={t('common.confirm')}
+          cancelText={t('common.cancel')}
+        >
+          <span>{t('header.restartService')}</span>
+        </Popconfirm>
+      ),
+    }] : []),
+    { type: 'divider' },
+    { key: 'logout', icon: <MyIcon icon="tuichudenglu" size={16} />, label: t('header.logout'), danger: true },
+  ]
+
+  const onAvatarMenuClick = ({ key }) => {
+    const actions = {
+      'realtime-log': onRealtimeLog,
+      'history-log': onHistoryLog,
+      'dark-mode': toggleDarkMode,
+      'theme-color': () => setIsThemeColorOpen(true),
+      'page-style': () => setIsPageStyleOpen(true),
+      'language': () => setIsLanguageOpen(true),
+      'session-manager': () => setIsSessionModalOpen(true),
+      'change-password': () => setIsPasswordModalOpen(true),
+      'cache-manager': () => setIsCacheModalOpen(true),
+      'health-check': () => setIsHealthModalOpen(true),
+      'clear-browser-cache': clearBrowserCache,
+      'logout': onLogout,
+      // restart-service 由 Popconfirm 处理
+    }
+    actions[key]?.()
+  }
 
   return (
     <>
-      <div className="fixed bottom-5 left-4 right-4 shadow-box z-50 py-2.5 px-2 overflow-hidden bg-base-bg rounded-3xl mobile-nav-floating">
-        <div className="flex justify-evenly items-center">
-          {mobileNavItems.map(it => (
-            <>
-              {!it.children?.length ? (
-                <div
-                  key={it.key}
-                  className="text-center flex-1"
-                  style={it.key === activeKey ? { color: 'var(--color-primary)' } : undefined}
-                  onClick={() => {
-                    navigate(it.key)
-                  }}
-                >
-                  <div>
-                    <MyIcon icon={it.icon} size={26} />
-                  </div>
-                  <div className="text-xs">{t(it.label)}</div>
-                </div>
-              ) : (
-                <FloatingMenu
-                  key={it.key}
-                  trigger={
-                    <div
-                      className="text-center flex-1"
-                      style={
-                        it.children.map(o => o.key).includes(activeKey)
-                          ? { color: 'var(--color-primary)' }
-                          : undefined
-                      }
-                    >
-                      <div>
-                        <MyIcon icon={it.icon} size={26} />
-                      </div>
-                      <div className="text-xs">{it.key === 'user' ? userMenuLabel : t(it.label)}</div>
-                    </div>
-                  }
-                  items={[
-                    ...it.children.map(o => ({
-                      key: o.key,
-                      label: t(o.label),
-                      icon: o.icon,
-                      iconSize: o.iconSize,
-                      iconClassName: o.iconClassName,
-                    })),
-                    ...(it.key === 'user' ? [
-                      {
-                        key: 'feature-search',
-                        label: t('featureSearch.menuTitle'),
-                        icon: 'search',
-                      },
-                      {
-                        key: 'theme-color',
-                        label: t('header.themeColor'),
-                        icon: 'MenuIcon-gexinghua-heise',
-                      },
-                      {
-                        key: 'page-style',
-                        label: t('header.pageStyle'),
-                        icon: 'fengge',
-                      },
-                      {
-                        key: 'language',
-                        label: t('header.language'),
-                        icon: 'yuyan',
-                      },
-                      {
-                        key: 'session-manager',
-                        label: t('header.sessionManager'),
-                        icon: 'huihuaguanli',
-                      },
-                      {
-                        key: 'change-password',
-                        label: t('header.changePassword'),
-                        icon: 'key',
-                      },
-                      {
-                        key: 'cache-manager',
-                        label: t('header.cacheManager'),
-                        icon: 'refresh',
-                      },
-                      {
-                        key: 'health-check',
-                        label: t('header.healthCheck'),
-                        icon: 'checksurface',
-                      },
-                      {
-                        key: 'clear-browser-cache',
-                        label: t('header.clearBrowserCache'),
-                        icon: 'qinglihuancun',
-                      },
-                      ...(dockerAvailable ? [{
-                        key: 'restart-service',
-                        label: (
-                          <Popconfirm
-                            title={t('header.restartConfirmTitle')}
-                            description={t('header.restartConfirmDesc')}
-                            onConfirm={handleRestart}
-                            okText={t('common.confirm')}
-                            cancelText={t('common.cancel')}
-                          >
-                            <span>{t('header.restartService')}</span>
-                          </Popconfirm>
-                        ),
-                        icon: 'zhongqi',
-                      }] : []),
-                      {
-                        key: 'logout',
-                        label: t('header.logout'),
-                        icon: 'tuichudenglu',
-                      },
-                    ] : []),
-                  ]}
-                  onItemClick={(item) => handleMenuItemClick(item, it)}
-                  activeKey={it.key === 'user' ? activeKey : getNavChildActiveKey(it, location, subKey)}
-                />
-              )}
-            </>
-          ))}
+      {/* 移动端顶栏：左侧三条杠 + 搜索；右侧流控 / 版本号 / 头像 */}
+      <div className="fixed top-0 left-0 w-full z-50 bg-base-bg shadow-box mobile-topbar">
+        <div className="flex items-center h-14 px-3 gap-1">
+          <button
+            className="p-2 rounded-full hover:bg-base-hover text-xl leading-none flex items-center"
+            aria-label={t('header.openMenu')}
+            onClick={() => setDrawerOpen(true)}
+          >
+            <MenuOutlined />
+          </button>
+          <button
+            className="p-2 rounded-full hover:bg-base-hover text-xl leading-none flex items-center"
+            aria-label={t('common.search')}
+            onClick={() => setMobileSearchOpen(true)}
+          >
+            <SearchOutlined />
+          </button>
+          {mobileSearchOpen && (
+            <GlobalSearchBar mobile onClose={() => setMobileSearchOpen(false)} />
+          )}
+          <div className="flex items-center gap-2 ml-auto min-w-0">
+            <RateLimitIndicator />
+            <Badge dot={hasUpdate} offset={[-5, 5]}>
+              <Tag className="cursor-pointer m-0" onClick={onVersionClick}>{version}</Tag>
+            </Badge>
+            <Dropdown menu={{ items: avatarMenuItems, onClick: onAvatarMenuClick }} trigger={['click']} placement="bottomRight">
+              <button
+                className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0"
+                style={{ backgroundColor: 'var(--color-primary)' }}
+                aria-label={userinfo?.username || t('nav.my')}
+              >
+                {(userinfo?.username || 'U').slice(0, 1).toUpperCase()}
+              </button>
+            </Dropdown>
+          </div>
         </div>
       </div>
 
+      {/* 左侧抽屉导航：结构与桌面侧栏一致，底部放外链 */}
+      <Drawer
+        placement="left"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        width={272}
+        closable={false}
+        styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column' } }}
+      >
+        <div className="flex items-center h-16 px-4 flex-shrink-0" onClick={() => { navigate(RoutePaths.HOME); setDrawerOpen(false) }}>
+          <img src="/images/logo.png" className="h-10 cursor-pointer" />
+          <span className="ml-2 text-sm font-bold leading-tight line-clamp-2">{t('header.appName')}</span>
+        </div>
+        <Menu
+          mode="inline"
+          className="drawer-nav-menu flex-1 overflow-y-auto !border-e-0 !bg-transparent"
+          items={drawerMenuItems}
+          selectedKeys={[drawerSelectedKey]}
+          openKeys={drawerOpenKeys}
+          onOpenChange={setDrawerOpenKeys}
+          onClick={onDrawerMenuClick}
+        />
+        <div className="flex-shrink-0 border-t border-gray-200/50 dark:border-gray-800/30 py-3 flex items-center justify-center gap-5">
+          <a href="https://github.com/l429609201/misaka_danmu_server" target="_blank" rel="noopener noreferrer" style={{ color: '#333', fontSize: 20 }} aria-label="GitHub">
+            <GithubIcon />
+          </a>
+          <a href="https://t.me/misaka_danmaku" target="_blank" rel="noopener noreferrer" style={{ color: '#0088cc', fontSize: 20 }} aria-label="Telegram">
+            <TelegramIcon />
+          </a>
+          {docsUrl && (
+            <a href={docsUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#8CA1AF', fontSize: 20 }} aria-label={t('header.docs')}>
+              <DocsIcon />
+            </a>
+          )}
+        </div>
+      </Drawer>
       <FeatureSearch
         open={featureSearchOpen}
         onClose={() => setFeatureSearchOpen(false)}

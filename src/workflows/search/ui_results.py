@@ -143,11 +143,13 @@ def build_search_page(data: dict[str, Any], supplemental: list[dict[str, Any]],
     """首搜和翻页共用通用筛选分页，仅对响应副本注入主页标记。"""
     results = data["results"]
     title_kw = title_filter.lower() if title_filter else None
+    # 来源过滤支持逗号分隔的多个源（顶栏多选），空集合表示不过滤
+    providers = {p.strip() for p in (provider_filter or "").split(",") if p.strip()}
 
     def matches_filters(item: dict[str, Any]) -> bool:
         return ((not type_filter or item.get("type") == type_filter)
                 and (not year_filter or item.get("year") == year_filter)
-                and (not provider_filter or item.get("provider") == provider_filter)
+                and (not providers or item.get("provider") in providers)
                 and (not title_kw or title_kw in (item.get("title") or "").lower()))
 
     selection = select_search_results(results, predicate=matches_filters, page=page, page_size=page_size)

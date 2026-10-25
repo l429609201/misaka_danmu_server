@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Input, Select, Empty, InputNumber, Tag } from 'antd'
-import { SearchOutlined, HistoryOutlined } from '@ant-design/icons'
+import { createPortal } from 'react-dom'
+import { Input, Empty, InputNumber, Tag } from 'antd'
+import { SearchOutlined, HistoryOutlined, CloseOutlined } from '@ant-design/icons'
 import { useAtom } from 'jotai'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -22,15 +23,19 @@ const MAX_FEATURES = 8
  * - 第一项：搜索弹幕，可在右侧选择“全部源 / 指定源”，回车跳到搜索页并自动发起搜索。
  * - 其余项：功能索引命中，回车跳转到对应页面 Tab 并高亮锚点。
  * 输入框/下拉框复用 antd 组件，因此 AniBT 等页面样式的输入框外观会自动生效。
- * @param {{ focusSignal: number }} props focusSignal 变化时聚焦输入框（Ctrl/⌘+K）
+ * 移动端（mobile=true）参考 MP：全屏搜索层，顶部搜索框、下方结果列表常显，右下角悬浮关闭按钮。
+ * @param {{ focusSignal?: number, mobile?: boolean, onClose?: () => void }} props
+ *   focusSignal 变化时聚焦输入框（Ctrl/⌘+K）；mobile 全屏模式；onClose 移动端关闭回调
  */
-export const GlobalSearchBar = ({ focusSignal }) => {
+export const GlobalSearchBar = ({ focusSignal, mobile = false, onClose }) => {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [keyword, setKeyword] = useState('')
-  const [open, setOpen] = useState(false)
+  // 移动端全屏层挂载即展开
+  const [open, setOpen] = useState(mobile)
   const [activeIndex, setActiveIndex] = useState(0)
-  const [provider, setProvider] = useState('all')
+  // 选中的数据源列表，空数组表示全部源
+  const [provider, setProvider] = useState([])
   const [providers, setProviders] = useState(null)
   // 精确搜索：填写季/集后在关键词末尾追加 SxxEyy（原搜索页“精确搜索 + 插入”合并到这里）
   const [season, setSeason] = useState(null)
@@ -60,13 +65,18 @@ export const GlobalSearchBar = ({ focusSignal }) => {
 
   // 点击搜索栏外部时收起下拉
   useEffect(() => {
-    if (!open) return
+    if (!open || mobile) return
     const onDown = e => {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
+  }, [open, mobile])
+
+  // 移动端打开时自动聚焦
+  useEffect(() => {
+    if (mobile) inputRef.current?.focus()
+  }, [mobile])
 
   // 首次展开时再拉取启用的搜索源（按显示顺序），失败时只保留“全部源”
   useEffect(() => {
@@ -82,14 +92,6 @@ export const GlobalSearchBar = ({ focusSignal }) => {
       .catch(() => setProviders([]))
   }, [open, providers])
 
-  const providerOptions = useMemo(
-    () => [
-      { value: 'all', label: t('featureSearch.allSources') },
-      ...(providers || []).map(name => ({ value: name, label: name })),
-    ],
-    [providers, t]
-  )
-
   // 实际提交的弹幕搜索关键词：季必填才追加，集可选
   const exactKeyword = useMemo(() => {
     if (!kw || !season) return kw
@@ -104,6 +106,7 @@ export const GlobalSearchBar = ({ focusSignal }) => {
     setSeason(null)
     setEpisode(null)
     inputRef.current?.blur()
+    onClose?.()
   }
 
   // 直接按关键词搜索弹幕（历史记录点击也走这里）
@@ -141,17 +144,25 @@ export const GlobalSearchBar = ({ focusSignal }) => {
       e.preventDefault()
       go(items[activeIndex])
     } else if (e.key === 'Escape') {
+      if (mobile) return close()
       setOpen(false)
       inputRef.current?.blur()
     }
   }
 
-  return (
-    <div ref={wrapRef} className="relative w-[360px] max-w-[40vw]">
+  const content = (
+    <div
+      ref={wrapRef}
+      className={mobile
+        ? 'fixed inset-0 z-[1300] flex flex-col px-3 pt-3 global-search-mobile'
+        : 'relative w-[360px] max-w-[40vw]'}
+    >
       <Input
         ref={inputRef}
         prefix={<SearchOutlined className="text-gray-400" />}
-        suffix={<span className="text-xs text-gray-400">Ctrl/⌘+K</span>}
+        suffix={mobile ? null : <span className="text-xs text-gray-400">Ctrl/⌘+K</span>}
+        size={mobile ? 'large' : undefined}
+        className={mobile ? '!rounded-full flex-shrink-0' : undefined}
         placeholder={t('featureSearch.barPlaceholder')}
         value={keyword}
         onChange={e => {
@@ -163,7 +174,9 @@ export const GlobalSearchBar = ({ focusSignal }) => {
         allowClear
       />
       {open && (
-        <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg shadow-lg bg-base-bg border border-base-hover max-h-[440px] overflow-y-auto py-1">
+        <div className={mobile
+          ? 'flex-1 overflow-y-auto py-2 pb-24'
+          : 'absolute left-0 right-0 top-full mt-1 z-50 rounded-lg shadow-lg bg-base-bg border border-base-hover max-h-[440px] overflow-y-auto py-1'}>
           {/* 搜索历史：参考 MP，点击搜索框即可看到，点一下直接重新搜索 */}
           {historyItems.length > 0 && (
             <div className="px-4 pt-1 pb-2">
@@ -260,19 +273,31 @@ export const GlobalSearchBar = ({ focusSignal }) => {
                           style={{ width: 60 }}
                         />
                       </div>
-                    </div>
-                    {/* 阻止冒泡：选源时不触发跳转 */}
-                    <div onClick={e => e.stopPropagation()}>
-                      <Select
-                        size="small"
-                        value={provider}
-                        onChange={setProvider}
-                        options={providerOptions}
-                        loading={providers === null}
-                        popupMatchSelectWidth={false}
-                        getPopupContainer={() => wrapRef.current}
-                        style={{ minWidth: 110 }}
-                      />
+                      {/* 数据源胶囊多选（参考 MP）：一个都不选 = 全部源；阻止冒泡避免点选时跳转 */}
+                      <div
+                        className="flex flex-wrap items-center gap-1 mt-1"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <Tag.CheckableTag
+                          checked={provider.length === 0}
+                          onChange={() => setProvider([])}
+                        >
+                          {t('featureSearch.allSources')}
+                        </Tag.CheckableTag>
+                        {(providers || []).map(name => (
+                          <Tag.CheckableTag
+                            key={name}
+                            checked={provider.includes(name)}
+                            onChange={checked =>
+                              setProvider(prev =>
+                                checked ? [...prev, name] : prev.filter(p => p !== name)
+                              )
+                            }
+                          >
+                            {name}
+                          </Tag.CheckableTag>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -304,8 +329,22 @@ export const GlobalSearchBar = ({ focusSignal }) => {
           )}
         </div>
       )}
+      {/* 移动端：右下角悬浮关闭按钮（参考 MP） */}
+      {mobile && (
+        <button
+          className="fixed right-5 bottom-6 w-12 h-12 rounded-full shadow-box flex items-center justify-center text-lg text-white"
+          style={{ backgroundColor: 'var(--color-primary)' }}
+          aria-label={t('common.close')}
+          onClick={close}
+        >
+          <CloseOutlined />
+        </button>
+      )}
     </div>
   )
+  // why：顶栏带 backdrop-filter，会成为 fixed 子元素的包含块并困住层级，
+  // 导致全屏层只盖住顶栏、背景透出页面；移动端改为挂到 body 上。
+  return mobile ? createPortal(content, document.body) : content
 }
 
 export default GlobalSearchBar

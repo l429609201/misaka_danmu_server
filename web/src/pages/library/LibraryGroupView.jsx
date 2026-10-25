@@ -139,9 +139,9 @@ const GroupNameEditor = ({ group, onRename }) => {
 const typeIconMap = {
   tv_series: 'tv',
   movie: 'movie',
-  ova: 'tv',
+  ova: 'ova',
   other: 'tv',
-  variety: 'tv',
+  variety: 'variety',
   short_drama: 'tv',
 }
 
