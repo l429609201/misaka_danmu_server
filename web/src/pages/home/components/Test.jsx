@@ -25,6 +25,9 @@ import {
   Switch,
   Collapse,
   Tooltip,
+  Popover,
+  Drawer,
+  Empty,
   message,
 } from 'antd'
 import {
@@ -36,6 +39,8 @@ import {
   ThunderboltOutlined,
   HistoryOutlined,
   ClearOutlined,
+  LinkOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store'
@@ -48,16 +53,67 @@ const TEST_EXAMPLES = {
   fileRecognition: { fileName: '[Nekomoe kissaten] Sousou no Frieren - 05 [1080p].mkv' },
   matchDebug: { debugTitle: '葬送的芙莉莲', debugSeason: 1, debugEpisode: 1 },
 }
-const HISTORY_KEY = 'api_test_history'
-const HISTORY_LIMIT = 8
+// 结果历史：本地只存参数与提取出的可引用值，完整响应只保留在内存里，避免撑爆 localStorage
+const RESULT_HISTORY_KEY = 'api_test_result_history'
+const RESULT_HISTORY_LIMIT = 20
+const REFS_PER_ENTRY_LIMIT = 60
 
-// 读取本地测试历史（按接口分组），解析失败时回退空对象
-const loadHistory = () => {
+// 输入字段 → 可引用的值类型（番剧详情既接受 bangumiId 也接受 animeId）
+const FIELD_REF_TYPES = {
+  fileName: ['fileName'],
+  anime: ['title'],
+  keyword: ['title'],
+  debugTitle: ['title'],
+  bangumiId: ['bangumiId', 'animeId'],
+  episodeId: ['episodeId'],
+  taskId: ['taskId'],
+}
+
+// 读取本地结果历史，解析失败时回退空数组
+const loadResultHistory = () => {
   try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}') || {}
+    const list = JSON.parse(localStorage.getItem(RESULT_HISTORY_KEY) || '[]')
+    return Array.isArray(list) ? list : []
   } catch {
-    return {}
+    return []
   }
+}
+
+// 从请求参数与响应中提取可在后续接口复用的值（按 type+value 去重并限量）
+const extractRefs = (params, data) => {
+  const refs = []
+  const seen = new Set()
+  const add = (type, value, label) => {
+    if (value === undefined || value === null || value === '') return
+    const key = `${type}:${value}`
+    if (seen.has(key) || refs.length >= REFS_PER_ENTRY_LIMIT) return
+    seen.add(key)
+    refs.push({ type, value: String(value), label: label ? String(label) : '' })
+  }
+  if (params?.fileName) add('fileName', params.fileName)
+  // 文件识别结果的标题可直接用于搜索类接口
+  if (data?.result?.title) add('title', data.result.title)
+  // 递归遍历响应，parentTitle 让分集也能显示所属作品名
+  const walk = (node, parentTitle, depth) => {
+    if (!node || typeof node !== 'object' || depth > 6) return
+    if (Array.isArray(node)) {
+      node.forEach(it => walk(it, parentTitle, depth + 1))
+      return
+    }
+    const title = node.animeTitle || parentTitle
+    if (node.animeTitle) add('title', node.animeTitle)
+    if (node.animeId != null) add('animeId', node.animeId, node.animeTitle)
+    if (node.bangumiId != null) add('bangumiId', node.bangumiId, node.animeTitle)
+    if (node.episodeId != null) {
+      add('episodeId', node.episodeId, [title, node.episodeTitle || node.episodeNumber].filter(Boolean).join(' · '))
+    }
+    if (node.taskId != null) add('taskId', node.taskId)
+    Object.values(node).forEach(v => {
+      if (v && typeof v === 'object') walk(v, title, depth + 1)
+    })
+  }
+  walk(data, '', 0)
+  return refs
 }
 
 export const Test = () => {
@@ -75,7 +131,11 @@ export const Test = () => {
   const isMobile = useAtomValue(isMobileAtom)
   // 响应耗时与本地测试历史，便于对比与重复测试
   const [elapsed, setElapsed] = useState(null)
-  const [history, setHistory] = useState(loadHistory)
+  // 结果历史（持久化部分）与本次会话内的完整响应（按历史 id 索引，仅内存）
+  const [resultHistory, setResultHistory] = useState(loadResultHistory)
+  const [resultCache, setResultCache] = useState({})
+  const [activeHistoryId, setActiveHistoryId] = useState(null)
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false)
 
   // 加载 token 列表
   useEffect(() => {
@@ -606,14 +666,35 @@ export const Test = () => {
             { label: t('apiTest.rPlatform'), value: r.platform },
             { label: t('apiTest.rEffect'), value: r.effect },
           ].filter(f => f.value != null && f.value !== '')
+          // 参考 MP 识别页：顶部结果卡片 + 下方可滚动竖线时间轴逐项列出字段
+          const pad = n => String(n).padStart(2, '0')
+          const seLabel = r.is_movie
+            ? null
+            : `${r.season != null ? `S${pad(r.season)}` : ''}${r.episode != null ? `E${pad(r.episode)}` : ''}`
           return (
-            <div>
-              <div className="font-bold text-green-600 mb-2">{t('apiTest.recognitionSuccess')}</div>
-              <div className="space-y-1">
-                {fields.map(f => (
-                  <div key={f.label} className="flex gap-2 text-sm">
-                    <span className="text-gray-500 dark:text-gray-400 w-20 shrink-0">{f.label}:</span>
-                    <span className="font-mono">{String(f.value)}</span>
+            <div className="space-y-3">
+              <div className="rounded-xl p-4 bg-gradient-to-r from-sky-500/15 to-violet-500/10 border border-sky-500/20">
+                <div className="flex items-center gap-2 text-green-600 text-xs mb-1">
+                  <CheckCircleOutlined /> {t('apiTest.recognitionSuccess')}
+                </div>
+                <div className="text-lg font-bold break-all">{r.title || r.original_title || '-'}</div>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {r.year && <Tag>{r.year}</Tag>}
+                  <Tag color={r.is_movie ? 'purple' : 'blue'}>{r.is_movie ? t('apiTest.rMovie') : t('apiTest.rSeries')}</Tag>
+                  {seLabel && <Tag color="green">{seLabel}</Tag>}
+                  {r.resolution && <Tag>{r.resolution}</Tag>}
+                  {r.team && <Tag color="orange">{r.team}</Tag>}
+                </div>
+              </div>
+              <div className="max-h-[360px] overflow-y-auto pl-1">
+                {fields.map((f, i) => (
+                  <div key={f.label} className="relative pl-5 pb-3">
+                    {i < fields.length - 1 && (
+                      <span className="absolute left-[5px] top-3 bottom-0 w-px bg-gray-300 dark:bg-gray-600" />
+                    )}
+                    <span className="absolute left-0 top-1.5 w-[11px] h-[11px] rounded-full border-2 border-sky-500 bg-white dark:bg-gray-900" />
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{f.label}</div>
+                    <div className="font-mono text-sm break-all">{String(f.value)}</div>
                   </div>
                 ))}
               </div>
@@ -709,26 +790,44 @@ export const Test = () => {
 
       const config = testConfigs[activeTab]
       const startedAt = performance.now()
-      // 记录参数历史（不保存 token，避免敏感信息落盘到历史）
+      // 参数中不保存 token，避免敏感信息落盘到历史
       const { apiToken: _ignored, ...params } = values
-      setHistory(prev => {
-        const sig = JSON.stringify(params)
-        const list = (prev[activeTab] || []).filter(it => JSON.stringify(it) !== sig)
-        const next = { ...prev, [activeTab]: [params, ...list].slice(0, HISTORY_LIMIT) }
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(next))
-        return next
-      })
+      let data
+      let ok = true
       try {
         const res = await config.handler({ apiToken: values.apiToken, ...values })
-        setResult(res?.data || res)
-      } finally {
-        setElapsed(Math.round(performance.now() - startedAt))
+        data = res?.data || res
+      } catch (error) {
+        console.error('测试错误:', error)
+        ok = false
+        data = {
+          error: true,
+          message: error?.detail || error?.message || JSON.stringify(error),
+        }
       }
-    } catch (error) {
-      console.error('测试错误:', error)
-      setResult({
-        error: true,
-        message: error?.detail || error?.message || JSON.stringify(error),
+      const cost = Math.round(performance.now() - startedAt)
+      setElapsed(cost)
+      setResult(data)
+      // 写入结果历史：成功的结果才提取可引用值
+      const entry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        tab: activeTab,
+        params,
+        ok: ok && !(data && data.success === false),
+        elapsed: cost,
+        time: Date.now(),
+        refs: ok ? extractRefs(params, data) : [],
+      }
+      setResultCache(prev => ({ ...prev, [entry.id]: data }))
+      setActiveHistoryId(entry.id)
+      setResultHistory(prev => {
+        const next = [entry, ...prev].slice(0, RESULT_HISTORY_LIMIT)
+        try {
+          localStorage.setItem(RESULT_HISTORY_KEY, JSON.stringify(next))
+        } catch {
+          // 存储配额不足时只保留内存态，不影响测试
+        }
+        return next
       })
     } finally {
       setLoading(false)
@@ -763,8 +862,42 @@ export const Test = () => {
     form.resetFields(fieldNames)
     setResult(null)
     setElapsed(null)
+    setActiveHistoryId(null)
     setSearchKeyword('')
     setCurrentPage(1)
+  }
+
+  // 点击历史条目：切到对应接口、回填参数，并显示缓存的结果（刷新页面后缓存不在则提示重新测试）
+  const openHistoryEntry = entry => {
+    if (!testConfigs[entry.tab]) return
+    setActiveTab(entry.tab)
+    form.resetFields(testConfigs[entry.tab].fields.map(f => f.name))
+    form.setFieldsValue(entry.params)
+    setActiveHistoryId(entry.id)
+    setResult(resultCache[entry.id] || null)
+    setElapsed(resultCache[entry.id] ? entry.elapsed : null)
+    setSearchKeyword('')
+    setCurrentPage(1)
+    if (!resultCache[entry.id]) message.info(t('apiTest.historyResultExpired'))
+    setHistoryDrawerOpen(false)
+  }
+
+  const persistResultHistory = next => {
+    setResultHistory(next)
+    try {
+      localStorage.setItem(RESULT_HISTORY_KEY, JSON.stringify(next))
+    } catch {
+      // 忽略存储失败
+    }
+  }
+
+  // 某个输入框可引用的值：按历史条目分组，只列出类型匹配的值
+  const getRefGroups = fieldName => {
+    const types = FIELD_REF_TYPES[fieldName]
+    if (!types) return []
+    return resultHistory
+      .map(entry => ({ entry, refs: entry.refs.filter(r => types.includes(r.type)) }))
+      .filter(g => g.refs.length > 0)
   }
 
   // 监听表单值，实时生成可复制的完整请求地址
@@ -793,13 +926,112 @@ export const Test = () => {
     }
   }
 
-  const tabHistory = history[activeTab] || []
   const example = TEST_EXAMPLES[activeTab]
   const resultCount = isListResult && result && !result.error
     ? (currentConfig.getListData(result) || []).length
     : null
 
   const endpointItems = Object.entries(testConfigs)
+
+  // 「引用」按钮：弹出按历史分组、类型匹配的可复用值，点选即填入该字段
+  const renderRefPicker = field => {
+    if (!FIELD_REF_TYPES[field.name]) return null
+    const groups = getRefGroups(field.name)
+    const content = groups.length === 0 ? (
+      <div className="text-xs text-gray-400 w-60 py-2">{t('apiTest.noRefs')}</div>
+    ) : (
+      <div className="w-72 max-h-80 overflow-y-auto space-y-2">
+        {groups.map(({ entry, refs }) => (
+          <div key={entry.id}>
+            <div className="text-[11px] text-gray-400 mb-1 truncate">
+              {testConfigs[entry.tab]?.label || entry.tab} · {new Date(entry.time).toLocaleTimeString()}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {refs.map(r => (
+                <Tag
+                  key={`${r.type}:${r.value}`}
+                  className="cursor-pointer m-0 max-w-full truncate"
+                  title={r.label ? `${r.value} (${r.label})` : r.value}
+                  onClick={() => form.setFieldValue(field.name, field.component === InputNumber ? Number(r.value) : r.value)}
+                >
+                  <span className="font-mono">{r.value}</span>
+                  {r.label && <span className="text-gray-400 ml-1">{r.label}</span>}
+                </Tag>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+    return (
+      <Popover trigger="click" placement="bottomLeft" title={t('apiTest.pickRef')} content={content}>
+        <Button type="link" size="small" icon={<LinkOutlined />} className="p-0 h-auto text-xs">
+          {t('apiTest.useRef')}
+        </Button>
+      </Popover>
+    )
+  }
+
+  // 结果历史列表：点击条目回看结果并回填参数
+  const historyPanel = (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-medium flex items-center gap-1">
+          <HistoryOutlined /> {t('apiTest.resultHistory')}
+        </span>
+        {resultHistory.length > 0 && (
+          <Tooltip title={t('apiTest.clearHistory')}>
+            <Button size="small" type="text" icon={<ClearOutlined />} onClick={() => persistResultHistory([])} />
+          </Tooltip>
+        )}
+      </div>
+      {resultHistory.length === 0 ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('apiTest.noResultHistory')} />
+      ) : (
+        <div className="space-y-1 max-h-[640px] overflow-y-auto">
+          {resultHistory.map(entry => {
+            const paramText = Object.values(entry.params || {})
+              .filter(v => v !== undefined && v !== '' && v !== null && typeof v !== 'boolean')
+              .join(' / ') || '-'
+            return (
+              <div
+                key={entry.id}
+                onClick={() => openHistoryEntry(entry)}
+                className={`group cursor-pointer rounded px-2 py-1.5 text-xs border transition-colors ${
+                  activeHistoryId === entry.id
+                    ? 'border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950'
+                    : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800'
+                }`}
+              >
+                <div className="flex items-center gap-1">
+                  {entry.ok
+                    ? <CheckCircleOutlined className="text-green-500" />
+                    : <CloseCircleOutlined className="text-red-500" />}
+                  <span className="font-medium truncate flex-1">{testConfigs[entry.tab]?.label || entry.tab}</span>
+                  <span className="text-gray-400">{entry.elapsed}ms</span>
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<DeleteOutlined />}
+                    className="opacity-0 group-hover:opacity-100"
+                    onClick={e => {
+                      e.stopPropagation()
+                      persistResultHistory(resultHistory.filter(it => it.id !== entry.id))
+                    }}
+                  />
+                </div>
+                <div className="text-gray-500 dark:text-gray-400 truncate" title={paramText}>{paramText}</div>
+                <div className="text-gray-400 flex justify-between">
+                  <span>{new Date(entry.time).toLocaleString()}</span>
+                  {entry.refs.length > 0 && <span>{t('apiTest.refCount', { count: entry.refs.length })}</span>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div className="my-4">
@@ -844,40 +1076,18 @@ export const Test = () => {
               </Tooltip>
             </div>
 
-            {/* 快捷操作：填充示例 / 最近测试 */}
-            {(example || tabHistory.length > 0) && (
+            {/* 快捷操作：填充示例；移动端从抽屉打开结果历史 */}
+            {(example || isMobile) && (
               <div className="flex items-center flex-wrap gap-1 mb-3 text-xs">
                 {example && (
                   <Button size="small" icon={<ThunderboltOutlined />} onClick={() => form.setFieldsValue(example)}>
                     {t('apiTest.fillExample')}
                   </Button>
                 )}
-                {tabHistory.length > 0 && (
-                  <>
-                    <HistoryOutlined className="ml-2 text-gray-400" />
-                    {tabHistory.map((params, i) => {
-                      const text = Object.values(params).filter(v => v !== undefined && v !== '' && v !== null && typeof v !== 'boolean').join(' / ') || '-'
-                      return (
-                        <Tag key={i} className="cursor-pointer max-w-[220px] truncate" title={text} onClick={() => form.setFieldsValue(params)}>
-                          {text}
-                        </Tag>
-                      )
-                    })}
-                    <Tooltip title={t('apiTest.clearHistory')}>
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<ClearOutlined />}
-                        onClick={() => {
-                          setHistory(prev => {
-                            const next = { ...prev, [activeTab]: [] }
-                            localStorage.setItem(HISTORY_KEY, JSON.stringify(next))
-                            return next
-                          })
-                        }}
-                      />
-                    </Tooltip>
-                  </>
+                {isMobile && (
+                  <Button size="small" icon={<HistoryOutlined />} onClick={() => setHistoryDrawerOpen(true)}>
+                    {t('apiTest.resultHistory')} ({resultHistory.length})
+                  </Button>
                 )}
               </div>
             )}
@@ -1011,6 +1221,7 @@ export const Test = () => {
                             ({field.apiParam})
                           </span>
                         )}
+                        {renderRefPicker(field)}
                       </div>
                     }
                     tooltip={field.tooltip}
@@ -1162,8 +1373,26 @@ export const Test = () => {
             </div>
           )}
           </div>
+
+          {/* 右侧结果历史栏（桌面端） */}
+          {!isMobile && (
+            <div className="w-72 flex-shrink-0 border-l border-gray-200 dark:border-gray-700 pl-3">
+              {historyPanel}
+            </div>
+          )}
         </div>
       </Card>
+      {isMobile && (
+        <Drawer
+          title={t('apiTest.resultHistory')}
+          placement="bottom"
+          height="70vh"
+          open={historyDrawerOpen}
+          onClose={() => setHistoryDrawerOpen(false)}
+        >
+          {historyPanel}
+        </Drawer>
+      )}
     </div>
   )
 }

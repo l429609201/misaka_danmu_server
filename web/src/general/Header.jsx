@@ -82,7 +82,7 @@ const DocsIcon = () => (
 const navItems = [
   { key: RoutePaths.HOME, label: 'nav.home', icon: 'home', iconfontIcon: 'icon-home' },
   { key: RoutePaths.SEARCH, label: 'nav.search', icon: 'search', iconfontIcon: 'icon-search' },
-  { key: RoutePaths.API_TEST, label: 'nav.apiTest', icon: 'controlapi', iconfontIcon: 'icon-controlapi' },
+  { key: RoutePaths.API_TEST, label: 'nav.apiTest', icon: 'a-Webceshi', iconfontIcon: 'icon-a-Webceshi' },
   { key: RoutePaths.LIBRARY, label: 'nav.library', icon: 'tvlibrary', iconfontIcon: 'icon-tvlibrary', children: [
     { key: 'library', label: 'libraryPage.pageTitle', icon: 'kufangguanli' },
     { key: 'batch', label: 'libraryPage.btnBatchManage', icon: 'piliangguanli' },
@@ -184,15 +184,13 @@ export const getSidebarWidth = (collapsed) => (collapsed ? SIDEBAR_COLLAPSED_WID
 
 /**
  * 桌面端左侧边栏导航（参考 MoviePilot 风格）
- * - 展开态：一级栏目 + 可展开的子页面列表
- * - 折叠态：仅图标，悬停弹出子页面菜单
+ * - 展开态：一级栏目，点击直接进入栏目首页
+ * - 折叠态：仅图标
+ * - 子页面统一由页面内二级 Tab 切换，桌面端不再弹出浮动子菜单
  */
 const DesktopSidebar = ({ activeKey, docsUrl }) => {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const location = useLocation()
-  const [searchParams] = useSearchParams()
-  const subKey = searchParams.get('key')
   const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom)
   const itemBase = 'flex items-center gap-3 rounded-lg cursor-pointer transition-colors select-none'
 
@@ -226,32 +224,17 @@ const DesktopSidebar = ({ activeKey, docsUrl }) => {
             const btn = (
               <div
                 className={classNames(itemBase, 'justify-center p-2', isActive ? 'text-primary bg-[var(--ant-color-primary-bg)]' : 'hover:bg-[var(--ant-color-bg-text-hover)]')}
-                onClick={it.children ? undefined : () => navigate(it.key)}
+                onClick={() => navigate(it.key)}
               >
                 {icon}
               </div>
             )
-            if (!it.children) {
-              return <Tooltip key={it.key} title={t(it.label)} placement="right">{btn}</Tooltip>
-            }
-            // 折叠态同样点击弹出贴侧栏的浮动菜单
-            return (
-              <FloatingMenu
-                key={it.key}
-                trigger={btn}
-                items={it.children.map(c => ({ ...c, label: t(c.label) }))}
-                onItemClick={(child) => navigate(getChildNavigatePath(it, child.key))}
-                activeKey={isActive ? getNavChildActiveKey(it, location, subKey) : null}
-                placement="right-start"
-                offsetPx={12}
-                wrapperClassName=""
-              />
-            )
+            // 桌面端不再弹出子页面浮动菜单：子页面由页面内二级 Tab 切换
+            return <Tooltip key={it.key} title={t(it.label)} placement="right">{btn}</Tooltip>
           }
 
-          // ---- 展开态：无子项 ----
-          if (!it.children) {
-            return (
+          // ---- 展开态：直接跳转栏目首页（子页面由页面内二级 Tab 切换，不再弹浮动菜单） ----
+          return (
               <div
                 key={it.key}
                 className={classNames(itemBase, 'px-3 py-2 text-sm font-semibold', isActive ? 'text-white' : 'hover:bg-[var(--ant-color-bg-text-hover)]')}
@@ -262,31 +245,6 @@ const DesktopSidebar = ({ activeKey, docsUrl }) => {
                 <span className="truncate">{t(it.label)}</span>
               </div>
             )
-          }
-
-          // ---- 展开态：有子项 → 点击弹出贴侧栏浮动菜单 ----
-          const childActive = getNavChildActiveKey(it, location, subKey)
-          const trigger = (
-            <div
-              className={classNames(itemBase, 'px-3 py-2 text-sm font-semibold', isActive ? 'text-white' : 'hover:bg-[var(--ant-color-bg-text-hover)]')}
-              style={isActive ? { backgroundColor: 'var(--color-primary)' } : undefined}
-            >
-              {icon}
-              <span className="truncate">{t(it.label)}</span>
-            </div>
-          )
-          return (
-            <FloatingMenu
-              key={it.key}
-              trigger={trigger}
-              items={it.children.map(c => ({ ...c, label: t(c.label) }))}
-              onItemClick={(child) => navigate(getChildNavigatePath(it, child.key))}
-              activeKey={isActive ? childActive : null}
-              placement="right-start"
-              offsetPx={16}
-              wrapperClassName=""
-            />
-          )
         })}
       </nav>
 
