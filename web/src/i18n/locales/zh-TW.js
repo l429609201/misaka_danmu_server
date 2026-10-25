@@ -3140,7 +3140,7 @@ export default {
     groupTask: '任務佇列',
     groupCache: '快取',
     activeAlerts: '目前告警',
-    noData: '暫無採集資料（採集器每 60 秒採集一次，請稍候重新整理）',
+    noData: '暫無採集資料（採集器每 5 分鐘採集一次，請稍候重新整理）',
     updatedAt: '更新於',
     autoRefreshOn: '自動重新整理',
     autoRefreshOff: '暫停重新整理',

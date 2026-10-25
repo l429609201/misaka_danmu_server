@@ -144,25 +144,32 @@ class TaskNotificationWorkflow:
         if key.startswith("webhook-search-"):
             return f"webhook_import{suffix}"
 
-        # 数据源刷新（含定时"刷新最新集" refresh-latest- 前缀，否则会掉到末尾兜底被误判为导入）
+        # 数据源刷新（含定时"刷新最新集" refresh-latest- 前缀；补全缺集 fill-missing- 同属刷新已有源）
         if (key.startswith("refresh-episode-") or key.startswith("full-refresh-")
-                or key.startswith("bulk-refresh-") or key.startswith("refresh-latest-")):
+                or key.startswith("bulk-refresh-") or key.startswith("refresh-latest-")
+                or key.startswith("fill-missing-")):
             return f"refresh{suffix}"
 
         # 追更刷新（增量刷新 job 提交的导入任务，通过 title 识别）
         if "追更" in title or "增量刷新" in title:
             return f"incremental_refresh{suffix}"
 
-        # 自动导入
-        if key.startswith("auto-import-"):
+        # 自动导入（日历订阅 calendar-subscribe- 提交的同样是 auto_import 任务；
+        # 8dc0ffb0 去掉"有 key 即按导入"兜底后，这类任务曾完全不推送）
+        if key.startswith(("auto-import-", "calendar-subscribe-")):
             return f"auto_import{suffix}"
 
         # 媒体库扫描
         if key.startswith("scan-media-server-"):
-            return "media_scan_complete" if is_success else None
+            return "media_scan_complete" if is_success else "media_scan_failed"
 
         # 通用导入（UI导入、URL导入、手动导入、批量导入、编辑后导入等）
-        if key.startswith(("ui-import-", "url-import-", "manual-import-", "batch-manual-import-", "import-")):
+        # 媒体服务器导入（media-import- / media-import-all-）与日历"立即导入订阅"（scan-import-）同属导入，
+        # 显式列出而非恢复全量兜底，避免维护类任务被误报为"导入成功"
+        if key.startswith((
+            "ui-import-", "url-import-", "manual-import-", "batch-manual-import-", "import-",
+            "media-import-", "scan-import-",
+        )):
             return f"import{suffix}"
 
         # 后备下载/搜索任务 —— 按 title 前缀细分，与 _get_progress_callback 的

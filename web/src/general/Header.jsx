@@ -290,9 +290,8 @@ const DesktopSidebar = ({ activeKey, docsUrl }) => {
         })}
       </nav>
 
-      {/* 侧栏底部：流控面板 + GitHub / Telegram（由顶栏移入） */}
+      {/* 侧栏底部：GitHub / Telegram（流控面板已挪回顶栏右侧） */}
       <div className={classNames('flex-shrink-0 border-t border-gray-200/50 dark:border-gray-800/30 py-2 flex gap-3', collapsed ? 'flex-col items-center' : 'flex-col px-3')}>
-        {!collapsed && <RateLimitIndicator />}
         <div className={classNames('flex items-center gap-4', collapsed ? 'flex-col' : 'justify-center')}>
           <Tooltip title="GitHub" placement="right">
             <a href="https://github.com/l429609201/misaka_danmu_server" target="_blank" rel="noopener noreferrer" style={{ color: '#333', fontSize: 20 }}>
@@ -1023,6 +1022,8 @@ const DesktopHeader = ({ activeKey, version, hasUpdate, onVersionClick, onRealti
           {/* 顶栏最左侧：全局搜索栏（功能跳转 + 弹幕搜索，可指定源） */}
           <GlobalSearchBar focusSignal={searchFocusSignal} />
           <div className="flex items-center justify-center gap-4 ml-auto flex-shrink-0">
+            {/* 流控/下载进度：按用户要求挪回顶栏右上角 */}
+            <RateLimitIndicator />
             <Tooltip title={t('header.realtimeLog')}>
               <div onClick={onRealtimeLog} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 20 }}>
                 <RealtimeLogIcon />

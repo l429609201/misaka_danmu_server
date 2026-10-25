@@ -363,7 +363,8 @@ async def search_supplemental_sources(metadata_manager: Any, keyword: str, user:
                     season=1,
                     year=item.year if hasattr(item, 'year') else None,
                     imageUrl=item.imageUrl,
-                    supportsEpisodeUrls=item.supportsEpisodeUrls
+                    # 搜索结果可能是 MetadataDetailsResponse（无此字段），缺省视为不支持分集URL
+                    supportsEpisodeUrls=getattr(item, 'supportsEpisodeUrls', False)
                 )
                 supplemental_results.append(supp_info)
 

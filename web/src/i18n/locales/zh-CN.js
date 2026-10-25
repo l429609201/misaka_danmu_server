@@ -3681,7 +3681,7 @@ export default {
     groupTask: '任务队列',
     groupCache: '缓存',
     activeAlerts: '当前告警',
-    noData: '暂无采集数据（采集器每 60 秒采集一次，请稍候刷新）',
+    noData: '暂无采集数据（采集器每 5 分钟采集一次，请稍候刷新）',
     updatedAt: '更新于',
     autoRefreshOn: '自动刷新',
     autoRefreshOff: '暂停刷新',

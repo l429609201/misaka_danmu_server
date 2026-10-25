@@ -99,6 +99,8 @@ class NotificationWorkflow:
     # 无 _success/_failed 后缀的特殊事件名 → (操作, 来源, 状态)
     _LEGACY_EVENT_EXACT: Dict[str, tuple] = {
         "media_scan_complete": (TaskOperation.MEDIA_SCAN, TaskSource.MANUAL, TaskStatus.SUCCESS),
+        "media_scan_failed": (TaskOperation.MEDIA_SCAN, TaskSource.MANUAL, TaskStatus.FAILED),
+        # Webhook 触发发生在排队/提交之前，不映射成导入完成事件。
         "scheduled_task_complete": (TaskOperation.SCHEDULED_TASK, TaskSource.SCHEDULER, TaskStatus.SUCCESS),
         "scheduled_task_failed": (TaskOperation.SCHEDULED_TASK, TaskSource.SCHEDULER, TaskStatus.FAILED),
     }
@@ -145,6 +147,8 @@ class NotificationWorkflow:
         context = {
             "message": payload.get("message", ""),
             "task_title": payload.get("task_title", ""),
+            "delayed": payload.get("delayed", False),
+            "delay_hours": payload.get("delay_hours", 0),
             "finished_at": payload.get("finished_at", ""),
             "search_term": payload.get("search_term", ""),
             "search_type": payload.get("search_type", ""),
@@ -429,6 +433,7 @@ class NotificationWorkflow:
         "refresh_success", "refresh_failed",
         "incremental_refresh_success", "incremental_refresh_failed", "incremental_refresh_no_change",
         "scheduled_task_complete", "scheduled_task_failed",
+        "media_scan_complete", "media_scan_failed",
     }
 
     async def emit_event(self, event_type: str, data: Dict[str, Any]):

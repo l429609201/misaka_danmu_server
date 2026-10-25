@@ -93,6 +93,22 @@ const MetricCard = ({ metric, onClick }) => {
   )
 }
 
+/** 指标分组卡片：每个分类单独用卡片包裹，组内为响应式指标网格 */
+const GroupSection = ({ title, metrics, onCardClick }) => {
+  if (!metrics || metrics.length === 0) return null
+  return (
+    <Card size="small" title={title} style={{ marginBottom: 16 }}>
+      <Row gutter={[12, 12]}>
+        {metrics.map((m) => (
+          <Col key={`${m.category}-${m.metricName}`} xs={12} sm={8} md={6} xl={4}>
+            <MetricCard metric={m} onClick={onCardClick} />
+          </Col>
+        ))}
+      </Row>
+    </Card>
+  )
+}
+
 /** 组的显示顺序与标题（key 对应后端 groups 的分类） */
 const GROUP_ORDER = [
   { key: 'system', tKey: 'systemMetrics.groupSystem' },
@@ -118,9 +134,10 @@ export const SystemMetricsPanel = () => {
 
   const fetchData = useCallback(async () => {
     try {
+      // api.get 返回 axios 响应，业务数据在 res.data 下（此前直接读 res.groups 导致页面永远为空）
       const res = await getSystemMetrics()
-      setGroups(res?.groups || {})
-      setAlerts(res?.alerts || [])
+      setGroups(res?.data?.groups || {})
+      setAlerts(res?.data?.alerts || [])
       setUpdatedAt(new Date())
     } catch (e) {
       // 静默：保留上一轮数据，避免刷新失败清空页面
@@ -133,10 +150,10 @@ export const SystemMetricsPanel = () => {
     fetchData()
   }, [fetchData])
 
-  // 自动刷新（60 秒，与采集周期对齐）
+  // 自动刷新（5 分钟，与采集周期对齐）
   useEffect(() => {
     if (autoRefresh) {
-      timerRef.current = setInterval(fetchData, 60000)
+      timerRef.current = setInterval(fetchData, 300000)
       return () => clearInterval(timerRef.current)
     }
   }, [autoRefresh, fetchData])
@@ -146,7 +163,7 @@ export const SystemMetricsPanel = () => {
     setTrendLoading(true)
     try {
       const res = await getSystemMetricHistory(metric.category, metric.metricName, hours)
-      setTrendPoints(res?.points || [])
+      setTrendPoints(res?.data?.points || [])
     } catch (e) {
       setTrendPoints([])
     } finally {
@@ -169,7 +186,7 @@ export const SystemMetricsPanel = () => {
   const hasAnyData = GROUP_ORDER.some((g) => (groups[g.key] || []).length > 0)
 
   return (
-    <div>
+    <Card>
       {/* 顶部：刷新控制 + 更新时间 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <div style={{ fontSize: 12, color: '#9ca3af' }}>
@@ -251,6 +268,6 @@ export const SystemMetricsPanel = () => {
           />
         )}
       </Modal>
-    </div>
+    </Card>
   )
 }
