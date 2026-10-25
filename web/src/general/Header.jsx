@@ -202,9 +202,10 @@ const DesktopSidebar = ({ activeKey, docsUrl }) => {
         className={classNames('flex items-center h-16 flex-shrink-0', collapsed ? 'justify-center' : 'px-4')}
         onClick={() => navigate(RoutePaths.HOME)}
       >
-        <img src="/images/logo.png" className={classNames('cursor-pointer flex-shrink-0', collapsed ? 'h-9' : 'h-12')} />
+        <img src="/images/logo.png" className={classNames('cursor-pointer flex-shrink-0', collapsed ? 'h-9' : 'h-10')} />
         {!collapsed && (
-          <span className="ml-2 text-base font-bold truncate cursor-pointer" title={t('header.appName')}>
+          // 侧栏宽度有限：缩小字号并允许最多两行，避免站点名被截断成"御坂网络弹..."
+          <span className="ml-2 text-sm font-bold leading-tight cursor-pointer line-clamp-2 break-all" title={t('header.appName')}>
             {t('header.appName')}
           </span>
         )}

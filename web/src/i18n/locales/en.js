@@ -865,6 +865,7 @@ export default {
     searchNotifyBody: 'Keyword: {{keyword}}\nResults: {{total}} ({{sources}} sources, {{supplemental}} supplemental)\nTime: {{seconds}}s',
     searchNotifyFailed: '"{{keyword}}" search failed: {{reason}}',
     search: 'Search',
+    searching: 'Searching all sources, please wait...',
     searchAnime: 'Search Anime',
     clearCache: 'Clear Cache',
     clearCacheTitle: 'Clear Cache',
@@ -1018,6 +1019,15 @@ export default {
 
   // API test
   apiTest: {
+    copied: 'Copied',
+    copyFailed: 'Copy failed',
+    copyUrl: 'Copy request URL',
+    copyJson: 'Copy JSON',
+    fillExample: 'Fill example',
+    clearHistory: 'Clear history',
+    statusOk: 'OK',
+    statusFailed: 'Failed',
+    itemCount: '{{count}} items',
     title: 'Test',
     fetchTokenFailed: 'Failed to fetch token list',
     testError: 'Test error',

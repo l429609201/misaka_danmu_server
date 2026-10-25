@@ -865,6 +865,7 @@ export default {
     searchNotifyBody: '关键词：{{keyword}}\n结果：{{total}} 条（{{sources}} 个源，补充 {{supplemental}} 条）\n耗时：{{seconds}} 秒',
     searchNotifyFailed: '「{{keyword}}」搜索失败：{{reason}}',
     search: '搜索',
+    searching: '正在搜索各个源，请稍候...',
     searchAnime: '搜索番剧',
     clearCache: '清除缓存',
     clearCacheTitle: '清除缓存',
@@ -1018,6 +1019,15 @@ export default {
 
   // API 接口测试
   apiTest: {
+    copied: '已复制',
+    copyFailed: '复制失败',
+    copyUrl: '复制请求地址',
+    copyJson: '复制 JSON',
+    fillExample: '填充示例',
+    clearHistory: '清空历史',
+    statusOk: '成功',
+    statusFailed: '失败',
+    itemCount: '{{count}} 条',
     title: '测试',
     fetchTokenFailed: '获取 Token 列表失败',
     testError: '测试错误',

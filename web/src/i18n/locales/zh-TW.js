@@ -865,6 +865,7 @@ export default {
     searchNotifyBody: '關鍵詞：{{keyword}}\n結果：{{total}} 條（{{sources}} 個源，補充 {{supplemental}} 條）\n耗時：{{seconds}} 秒',
     searchNotifyFailed: '「{{keyword}}」搜尋失敗：{{reason}}',
     search: '搜尋',
+    searching: '正在搜尋各個源，請稍候...',
     searchAnime: '搜尋番劇',
     clearCache: '清除快取',
     clearCacheTitle: '清除快取',
@@ -1020,6 +1021,15 @@ export default {
 
   // API 介面測試
   apiTest: {
+    copied: '已複製',
+    copyFailed: '複製失敗',
+    copyUrl: '複製請求地址',
+    copyJson: '複製 JSON',
+    fillExample: '填入範例',
+    clearHistory: '清空歷史',
+    statusOk: '成功',
+    statusFailed: '失敗',
+    itemCount: '{{count}} 筆',
     title: '測試',
     fetchTokenFailed: '取得 Token 清單失敗',
     testError: '測試錯誤',

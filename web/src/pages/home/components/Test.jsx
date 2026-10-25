@@ -24,8 +24,41 @@ import {
   Pagination,
   Switch,
   Collapse,
+  Tooltip,
+  message,
 } from 'antd'
-import { SearchOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
+import {
+  SearchOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  ClockCircleOutlined,
+  CopyOutlined,
+  ThunderboltOutlined,
+  HistoryOutlined,
+  ClearOutlined,
+} from '@ant-design/icons'
+import { useAtomValue } from 'jotai'
+import { isMobileAtom } from '../../../../store'
+
+// 每个测试接口的示例参数：一键填充，降低用户上手成本
+const TEST_EXAMPLES = {
+  match: { fileName: '[ANi] 葬送的芙莉莲 - 01 [1080P][Baha][WEB-DL].mp4' },
+  searchEpisodes: { anime: '葬送的芙莉莲', episode: '1' },
+  searchAnime: { keyword: '葬送的芙莉莲' },
+  fileRecognition: { fileName: '[Nekomoe kissaten] Sousou no Frieren - 05 [1080p].mkv' },
+  matchDebug: { debugTitle: '葬送的芙莉莲', debugSeason: 1, debugEpisode: 1 },
+}
+const HISTORY_KEY = 'api_test_history'
+const HISTORY_LIMIT = 8
+
+// 读取本地测试历史（按接口分组），解析失败时回退空对象
+const loadHistory = () => {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}') || {}
+  } catch {
+    return {}
+  }
+}
 
 export const Test = () => {
   const { t } = useTranslation()
@@ -39,6 +72,10 @@ export const Test = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [showRaw, setShowRaw] = useState(false)
+  const isMobile = useAtomValue(isMobileAtom)
+  // 响应耗时与本地测试历史，便于对比与重复测试
+  const [elapsed, setElapsed] = useState(null)
+  const [history, setHistory] = useState(loadHistory)
 
   // 加载 token 列表
   useEffect(() => {
@@ -671,9 +708,22 @@ export const Test = () => {
       setCurrentPage(1)
 
       const config = testConfigs[activeTab]
-      const res = await config.handler({ apiToken: values.apiToken, ...values })
-
-      setResult(res?.data || res)
+      const startedAt = performance.now()
+      // 记录参数历史（不保存 token，避免敏感信息落盘到历史）
+      const { apiToken: _ignored, ...params } = values
+      setHistory(prev => {
+        const sig = JSON.stringify(params)
+        const list = (prev[activeTab] || []).filter(it => JSON.stringify(it) !== sig)
+        const next = { ...prev, [activeTab]: [params, ...list].slice(0, HISTORY_LIMIT) }
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(next))
+        return next
+      })
+      try {
+        const res = await config.handler({ apiToken: values.apiToken, ...values })
+        setResult(res?.data || res)
+      } finally {
+        setElapsed(Math.round(performance.now() - startedAt))
+      }
     } catch (error) {
       console.error('测试错误:', error)
       setResult({
@@ -706,45 +756,133 @@ export const Test = () => {
     return { pagedList: paged, totalFiltered: filtered.length }
   }, [result, activeTab, searchKeyword, currentPage, pageSize])
 
+  // 切换接口：只重置动态字段，保留 apiToken 选中状态
+  const switchTab = key => {
+    setActiveTab(key)
+    const fieldNames = testConfigs[key].fields.map(f => f.name)
+    form.resetFields(fieldNames)
+    setResult(null)
+    setElapsed(null)
+    setSearchKeyword('')
+    setCurrentPage(1)
+  }
+
+  // 监听表单值，实时生成可复制的完整请求地址
+  const watchedValues = Form.useWatch([], form) || {}
+  const requestUrl = useMemo(() => {
+    const token = watchedValues.apiToken || '{token}'
+    let path = currentConfig.apiPath.replace('{token}', token)
+    if (activeTab === 'bangumiDetail') path = path.replace('{id}', watchedValues.bangumiId ?? '{id}')
+    if (activeTab === 'comment') path = path.replace('{episodeId}', watchedValues.episodeId ?? '{episodeId}')
+    if (activeTab === 'taskcomment') path = path.replace('{taskId}', watchedValues.taskId ?? '{taskId}')
+    const url = new URL(path, window.location.origin)
+    if (activeTab === 'searchEpisodes') {
+      if (watchedValues.anime) url.searchParams.set('anime', watchedValues.anime)
+      if (watchedValues.episode) url.searchParams.set('episode', watchedValues.episode)
+    }
+    if (activeTab === 'searchAnime' && watchedValues.keyword) url.searchParams.set('keyword', watchedValues.keyword)
+    return decodeURI(url.toString())
+  }, [watchedValues, activeTab, currentConfig.apiPath])
+
+  const copyText = async text => {
+    try {
+      await navigator.clipboard.writeText(text)
+      message.success(t('apiTest.copied'))
+    } catch {
+      message.error(t('apiTest.copyFailed'))
+    }
+  }
+
+  const tabHistory = history[activeTab] || []
+  const example = TEST_EXAMPLES[activeTab]
+  const resultCount = isListResult && result && !result.error
+    ? (currentConfig.getListData(result) || []).length
+    : null
+
+  const endpointItems = Object.entries(testConfigs)
+
   return (
     <div className="my-4">
-      <Card title={t('apiTest.title')} extra={
+      <Card title={t('apiTest.title')} extra={isMobile && (
         <Select
           value={activeTab}
-          onChange={key => {
-            setActiveTab(key)
-            const fieldNames = testConfigs[key].fields.map(f => f.name)
-            form.resetFields(fieldNames)
-            setResult(null)
-            setSearchKeyword('')
-            setCurrentPage(1)
-          }}
+          onChange={switchTab}
           style={{ width: 180 }}
-          options={Object.entries(testConfigs).map(([key, config]) => ({
-            value: key,
-            label: config.label,
-          }))}
+          options={endpointItems.map(([key, config]) => ({ value: key, label: config.label }))}
         />
-      }>
-        <Tabs
-          activeKey={activeTab}
-          onChange={key => {
-            setActiveTab(key)
-            // 只重置动态字段，保留 apiToken 选中状态
-            const fieldNames = testConfigs[key].fields.map(f => f.name)
-            form.resetFields(fieldNames)
-            setResult(null)
-            setSearchKeyword('')
-            setCurrentPage(1)
-          }}
-          items={Object.entries(testConfigs).map(([key, config]) => ({
-            key,
-            label: config.label,
-          }))}
-        />
+      )}>
+        <div className="flex gap-4 items-start">
+          {/* 左侧接口列表（桌面端）：方法 + 名称，类似 Postman 的集合栏 */}
+          {!isMobile && (
+            <div className="w-56 flex-shrink-0 space-y-1 border-r border-gray-200 dark:border-gray-700 pr-3">
+              {endpointItems.map(([key, config]) => (
+                <div
+                  key={key}
+                  onClick={() => switchTab(key)}
+                  className={`cursor-pointer rounded px-2 py-1.5 text-sm flex items-center gap-2 transition-colors ${
+                    activeTab === key
+                      ? 'bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 font-medium'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <Tag color={config.method === 'GET' ? 'green' : 'orange'} className="m-0 text-[10px] leading-4 px-1">
+                    {config.method}
+                  </Tag>
+                  <span className="truncate">{config.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
-        <div className="mt-4">
-          <div className="max-w-2xl mx-auto">
+          <div className="flex-1 min-w-0">
+            {/* 请求地址栏：实时拼接完整 URL，可一键复制到浏览器/播放器中测试 */}
+            <div className="flex items-center gap-2 mb-3 p-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+              <Tag color={currentConfig.method === 'GET' ? 'green' : 'orange'} className="m-0">{currentConfig.method}</Tag>
+              <code className="flex-1 min-w-0 truncate text-xs" title={requestUrl}>{requestUrl}</code>
+              <Tooltip title={t('apiTest.copyUrl')}>
+                <Button size="small" icon={<CopyOutlined />} onClick={() => copyText(requestUrl)} />
+              </Tooltip>
+            </div>
+
+            {/* 快捷操作：填充示例 / 最近测试 */}
+            {(example || tabHistory.length > 0) && (
+              <div className="flex items-center flex-wrap gap-1 mb-3 text-xs">
+                {example && (
+                  <Button size="small" icon={<ThunderboltOutlined />} onClick={() => form.setFieldsValue(example)}>
+                    {t('apiTest.fillExample')}
+                  </Button>
+                )}
+                {tabHistory.length > 0 && (
+                  <>
+                    <HistoryOutlined className="ml-2 text-gray-400" />
+                    {tabHistory.map((params, i) => {
+                      const text = Object.values(params).filter(v => v !== undefined && v !== '' && v !== null && typeof v !== 'boolean').join(' / ') || '-'
+                      return (
+                        <Tag key={i} className="cursor-pointer max-w-[220px] truncate" title={text} onClick={() => form.setFieldsValue(params)}>
+                          {text}
+                        </Tag>
+                      )
+                    })}
+                    <Tooltip title={t('apiTest.clearHistory')}>
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<ClearOutlined />}
+                        onClick={() => {
+                          setHistory(prev => {
+                            const next = { ...prev, [activeTab]: [] }
+                            localStorage.setItem(HISTORY_KEY, JSON.stringify(next))
+                            return next
+                          })
+                        }}
+                      />
+                    </Tooltip>
+                  </>
+                )}
+              </div>
+            )}
+
+          <div>
             {/* 接口信息展示（内部工具类接口不显示） */}
             {!currentConfig.noToken && (
             <Alert
@@ -911,7 +1049,17 @@ export const Test = () => {
             <div className="mt-4 px-2">
               {/* 结果标题栏 + 视图切换开关 */}
               <div className="flex items-center justify-between mb-2">
-                <div className="text-sm text-gray-500 dark:text-gray-400">{t('apiTest.testResult')}</div>
+                <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                  <span>{t('apiTest.testResult')}</span>
+                  {result.error
+                    ? <Tag color="error" icon={<CloseCircleOutlined />} className="m-0">{t('apiTest.statusFailed')}</Tag>
+                    : <Tag color="success" icon={<CheckCircleOutlined />} className="m-0">{t('apiTest.statusOk')}</Tag>}
+                  {elapsed !== null && <Tag icon={<ClockCircleOutlined />} className="m-0">{elapsed} ms</Tag>}
+                  {resultCount !== null && <Tag className="m-0">{t('apiTest.itemCount', { count: resultCount })}</Tag>}
+                  <Tooltip title={t('apiTest.copyJson')}>
+                    <Button size="small" type="text" icon={<CopyOutlined />} onClick={() => copyText(JSON.stringify(result, null, 2))} />
+                  </Tooltip>
+                </div>
                 {/* 药丸形视图切换开关 */}
                 <button
                   type="button"
@@ -1013,9 +1161,9 @@ export const Test = () => {
               </div>
             </div>
           )}
+          </div>
         </div>
       </Card>
     </div>
   )
 }
-

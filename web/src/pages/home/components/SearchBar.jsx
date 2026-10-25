@@ -190,23 +190,20 @@ export const SearchBar = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, loading])
 
+  // 搜索结果页顶部的紧凑条件栏：关键词主入口在顶栏，这里只保留可再次调整的条件
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-lg font-semibold">{t('home.searchAnime')}</div>
-        <Button type="primary" loading={cacheLoading} onClick={onClearCache}>
-          {t('home.clearCache')}
-        </Button>
-      </div>
-
       <Form form={form} onFinish={onSearch}>
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-2 flex-wrap">
           <Form.Item
             name="keyword"
-            className="flex-1 mb-0"
+            className="mb-0"
+            style={{ flex: isMobile ? '1 1 100%' : '1 1 240px', maxWidth: isMobile ? '100%' : 360 }}
             rules={[{ required: true, message: t('home.inputAnimeName') }]}
           >
             <Input.Search
+              size="middle"
+              allowClear
               placeholder={t('home.inputAnimeName')}
               enterButton={t('home.search')}
               loading={loading}
@@ -218,49 +215,37 @@ export const SearchBar = () => {
               }}
             />
           </Form.Item>
-        </div>
-
-        {loading && (
-          <div className="mb-4">
-            <Progress percent={percent} />
-          </div>
-        )}
-
-        <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-3 flex-wrap'}`}>
-          <Checkbox
-            checked={exactSearch}
-            onChange={e => setExactSearch(e.target.checked)}
-          >
-            {isMobile ? <span>{t('home.exact')}<br />{t('home.search')}</span> : t('home.exactSearch')}
+          <Checkbox checked={exactSearch} onChange={e => setExactSearch(e.target.checked)}>
+            {t('home.exactSearch')}
           </Checkbox>
-
-          <div className={`flex items-center ${isMobile ? 'gap-2' : 'gap-3'}`}>
-            <div className="flex items-center gap-1">
-              <span className={`leading-8 ${exactSearch ? '' : 'text-gray-400'}`}>{t('home.season')}</span>
-              <Form.Item name="season" noStyle>
-                <InputNumber min={0} placeholder={t('home.season')} disabled={!exactSearch} style={{ width: 80 }} />
-              </Form.Item>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className={`leading-8 ${exactSearch ? '' : 'text-gray-400'}`}>{t('home.episode')}</span>
-              <Form.Item name="episode" noStyle>
-                <InputNumber min={1} placeholder={t('home.episode')} disabled={!exactSearch || !season} style={{ width: 80 }} />
-              </Form.Item>
-            </div>
-            <Button type="primary" onClick={onInsert} size="small" disabled={!exactSearch}>
-              {t('home.insert')}
-            </Button>
-          </div>
-          {!isMobile && (
-            <span className={`text-xs ${exactSearch ? 'text-gray-500' : 'text-gray-300'}`}>
-              {t('home.insertTip')}
-            </span>
-          )}
+          <Form.Item name="season" noStyle>
+            <InputNumber min={0} size="small" placeholder={t('home.season')} disabled={!exactSearch} style={{ width: 64 }} />
+          </Form.Item>
+          <Form.Item name="episode" noStyle>
+            <InputNumber min={1} size="small" placeholder={t('home.episode')} disabled={!exactSearch || !season} style={{ width: 64 }} />
+          </Form.Item>
+          <Button size="small" onClick={onInsert} disabled={!exactSearch} title={t('home.insertTip')}>
+            {t('home.insert')}
+          </Button>
+          <Button size="small" className="ml-auto" loading={cacheLoading} onClick={onClearCache}>
+            {t('home.clearCache')}
+          </Button>
         </div>
       </Form>
 
+      {loading && (
+        // 搜索中：参考 MP，用醒目的进度区替代结果列表
+        <div className="py-10 flex flex-col items-center gap-3">
+          <div className="text-base font-medium">{t('home.searching')}</div>
+          <div className="w-full" style={{ maxWidth: 520 }}>
+            <Progress percent={percent} status="active" />
+          </div>
+          <div className="text-xs opacity-60">{form.getFieldValue('keyword')}</div>
+        </div>
+      )}
+
       {!!searchHistory.length && (
-        <div className="flex items-center flex-wrap gap-2 mt-4">
+        <div className="flex items-center flex-wrap gap-1 mt-2">
           {searchHistory.map((it, index) => (
             <Tag
               key={index}
