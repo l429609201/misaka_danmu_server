@@ -875,6 +875,7 @@ export default {
     clearCacheFailed: '清除缓存失败',
     inputSeason: '请输入季数',
     inputAnimeName: '请输入番剧名称',
+    currentKeyword: '当前搜索：',
     exactSearch: '精确搜索',
     exact: '精确',
     season: '季',

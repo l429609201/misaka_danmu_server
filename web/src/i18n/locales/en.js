@@ -875,6 +875,7 @@ export default {
     clearCacheFailed: 'Failed to clear cache',
     inputSeason: 'Please enter the season number',
     inputAnimeName: 'Please enter the anime name',
+    currentKeyword: 'Searching for:',
     exactSearch: 'Exact Search',
     exact: 'Exact',
     season: 'S',

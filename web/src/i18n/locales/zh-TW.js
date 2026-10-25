@@ -875,6 +875,7 @@ export default {
     clearCacheFailed: '清除快取失敗',
     inputSeason: '請輸入季數',
     inputAnimeName: '請輸入番劇名稱',
+    currentKeyword: '目前搜尋：',
     exactSearch: '精確搜尋',
     exact: '精確',
     season: '季',

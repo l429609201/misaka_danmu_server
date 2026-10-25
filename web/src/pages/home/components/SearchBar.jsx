@@ -190,48 +190,32 @@ export const SearchBar = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, loading])
 
-  // 搜索结果页顶部的紧凑条件栏：关键词主入口在顶栏，这里只保留可再次调整的条件
+  // 搜索结果页：输入框、精确搜索、历史记录统一放到顶栏搜索框（参考 MP），
+  // 这里只保留隐藏表单（onSearch 依赖 form）+ 当前关键词 + 清除缓存 + 进度
+  const currentKeyword = searchParams.get('keyword') || form.getFieldValue('keyword') || ''
   return (
     <div>
-      <Form form={form} onFinish={onSearch}>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Form.Item
-            name="keyword"
-            className="mb-0"
-            style={{ flex: isMobile ? '1 1 100%' : '1 1 240px', maxWidth: isMobile ? '100%' : 360 }}
-            rules={[{ required: true, message: t('home.inputAnimeName') }]}
-          >
-            <Input.Search
-              size="middle"
-              allowClear
-              placeholder={t('home.inputAnimeName')}
-              enterButton={t('home.search')}
-              loading={loading}
-              onSearch={value => {
-                if (value) {
-                  form.setFieldValue('keyword', value)
-                  form.submit()
-                }
-              }}
-            />
-          </Form.Item>
-          <Checkbox checked={exactSearch} onChange={e => setExactSearch(e.target.checked)}>
-            {t('home.exactSearch')}
-          </Checkbox>
-          <Form.Item name="season" noStyle>
-            <InputNumber min={0} size="small" placeholder={t('home.season')} disabled={!exactSearch} style={{ width: 64 }} />
-          </Form.Item>
-          <Form.Item name="episode" noStyle>
-            <InputNumber min={1} size="small" placeholder={t('home.episode')} disabled={!exactSearch || !season} style={{ width: 64 }} />
-          </Form.Item>
-          <Button size="small" onClick={onInsert} disabled={!exactSearch} title={t('home.insertTip')}>
-            {t('home.insert')}
-          </Button>
-          <Button size="small" className="ml-auto" loading={cacheLoading} onClick={onClearCache}>
-            {t('home.clearCache')}
-          </Button>
-        </div>
+      <Form form={form} onFinish={onSearch} style={{ display: 'none' }}>
+        <Form.Item name="keyword" noStyle>
+          <Input />
+        </Form.Item>
+        <Form.Item name="season" noStyle>
+          <InputNumber />
+        </Form.Item>
+        <Form.Item name="episode" noStyle>
+          <InputNumber />
+        </Form.Item>
       </Form>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm opacity-70">{t('home.currentKeyword')}</span>
+        <span className="text-base font-medium truncate" style={{ maxWidth: isMobile ? '60vw' : 480 }}>
+          {currentKeyword || '-'}
+        </span>
+        <Button size="small" className="ml-auto" loading={cacheLoading} onClick={onClearCache}>
+          {t('home.clearCache')}
+        </Button>
+      </div>
 
       {loading && (
         // 搜索中：参考 MP，用醒目的进度区替代结果列表
@@ -240,29 +224,7 @@ export const SearchBar = () => {
           <div className="w-full" style={{ maxWidth: 520 }}>
             <Progress percent={percent} status="active" />
           </div>
-          <div className="text-xs opacity-60">{form.getFieldValue('keyword')}</div>
-        </div>
-      )}
-
-      {!!searchHistory.length && (
-        <div className="flex items-center flex-wrap gap-1 mt-2">
-          {searchHistory.map((it, index) => (
-            <Tag
-              key={index}
-              closable
-              className="cursor-pointer"
-              onClick={() => {
-                form.setFieldsValue({ keyword: it })
-                onSearch({ keyword: it })
-              }}
-              onClose={e => {
-                e.preventDefault()
-                setSearchHistory(history => history.filter(o => o !== it))
-              }}
-            >
-              {it}
-            </Tag>
-          ))}
+          <div className="text-xs opacity-60">{currentKeyword}</div>
         </div>
       )}
     </div>
