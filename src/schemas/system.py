@@ -6,29 +6,36 @@ from pydantic import BaseModel, Field
 
 
 class DatabaseInfoResponse(BaseModel):
-    """数据库和缓存连接信息（含连接池和 Redis 详细指标）"""
+    """数据库和缓存连接信息（含连接池和 Redis 详细指标）
+
+    字段名与 workflow_get_database_info 返回值、前端 DatabaseInfoPanel 保持一致；
+    Redis 未启用或 INFO 获取失败时相关字段为 None，故均为 Optional。
+    """
     # 数据库基本信息
     dbType: str = Field(..., description="数据库类型 (mysql/postgresql/sqlite)")
-    dbHost: str = Field("", description="数据库主机")
-    dbPort: int = Field(0, description="数据库端口")
-    dbName: str = Field("", description="数据库名称")
+    dbHost: Optional[str] = Field(None, description="数据库主机")
+    dbPort: Optional[int] = Field(None, description="数据库端口")
+    dbName: Optional[str] = Field(None, description="数据库名称")
     # 数据库连接池
-    dbPoolType: str = Field("QueuePool", description="连接池类型")
+    dbPoolType: Optional[str] = Field(None, description="连接池类型")
     dbPoolSize: int = Field(0, description="连接池常驻大小")
     dbActiveConnections: int = Field(0, description="活跃连接数 (checkedout)")
+    dbIdleConnections: int = Field(0, description="空闲连接数 (checkedin)")
+    dbOverflow: int = Field(0, description="当前溢出连接数")
     dbMaxOverflow: int = Field(0, description="最大溢出连接数")
-    dbCheckedInConnections: int = Field(0, description="空闲连接数")
-    dbPoolUtilization: float = Field(0.0, description="连接池使用率 (%)")
-    # Redis 信息
-    redisHost: str = Field("", description="Redis 主机")
-    redisPort: int = Field(0, description="Redis 端口")
-    redisDb: int = Field(0, description="Redis 数据库编号")
+    dbPoolRecycle: Optional[int] = Field(None, description="连接回收时间（秒）")
+    # 缓存 / Redis 信息
+    cacheBackend: Optional[str] = Field(None, description="缓存后端类型")
+    redisUrl: Optional[str] = Field(None, description="Redis 地址（已脱敏）")
     redisConnected: bool = Field(False, description="Redis 是否已连接")
-    redisVersion: str = Field("", description="Redis 版本")
-    redisUsedMemory: str = Field("", description="Redis 已用内存")
-    redisMaxMemory: str = Field("", description="Redis 最大内存")
-    redisConnectedClients: int = Field(0, description="Redis 连接客户端数")
-    redisTotalKeys: int = Field(0, description="Redis 总键数")
+    redisVersion: Optional[str] = Field(None, description="Redis 版本")
+    redisMemoryUsed: Optional[str] = Field(None, description="Redis 已用内存（可读）")
+    redisMemoryMax: Optional[str] = Field(None, description="Redis 最大内存（可读）")
+    redisMemoryUsedBytes: Optional[int] = Field(None, description="Redis 已用内存（字节）")
+    redisMemoryMaxBytes: Optional[int] = Field(None, description="Redis 最大内存（字节）")
+    redisTotalKeys: Optional[int] = Field(None, description="Redis 总键数")
+    redisConnectedClients: Optional[int] = Field(None, description="Redis 连接客户端数")
+    redisUptimeSeconds: Optional[int] = Field(None, description="Redis 运行时长（秒）")
 
 
 class VersionCheckResponse(BaseModel):

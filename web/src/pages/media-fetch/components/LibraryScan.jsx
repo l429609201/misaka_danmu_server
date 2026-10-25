@@ -10,7 +10,8 @@ import { getMediaServers, scanMediaServer, getMediaServerLibraries, updateMediaS
 const { Option } = Select;
 const { Title, Text } = Typography;
 
-const LibraryScan = () => {
+// mode: 'connection' 只显示服务器连接配置；'scan' 只显示媒体库选择与扫描结果
+const LibraryScan = ({ mode = 'connection' }) => {
   const { t } = useTranslation();
   const [servers, setServers] = useState([]);
   const [selectedServerId, setSelectedServerId] = useState(null);
@@ -59,6 +60,8 @@ const LibraryScan = () => {
 
   // 褰撻€変腑鐨勬湇鍔″櫒鍙樺寲鏃?鍔犺浇濯掍綋搴撳垪琛?
   useEffect(() => {
+    // 连接配置 Tab 不展示媒体库，无需请求媒体库列表
+    if (mode !== 'scan') return;
     if (selectedServerId) {
       // 妫€鏌ユ湇鍔″櫒鏄惁鍚敤
       const currentServer = servers.find(s => s.id === selectedServerId);
@@ -72,7 +75,7 @@ const LibraryScan = () => {
       setLibraries([]);
       setSelectedLibraryIds([]);
     }
-  }, [selectedServerId, servers]);
+  }, [selectedServerId, servers, mode]);
 
   // 纭繚鑷冲皯閫夋嫨涓€涓獟浣撳簱
   useEffect(() => {
@@ -387,16 +390,37 @@ const LibraryScan = () => {
   const currentServer = servers.find(s => s.id === selectedServerId);
   const isServerDisabled = currentServer && !currentServer.isEnabled;
 
-  return (
-    <div
-      style={{
-        maxWidth: '1200px',
-        margin: '0 auto',
-        padding: '20px'
-      }}
-      className="mobile-reduced-padding"
+  // 服务器下拉：连接配置与媒体项目扫描两个 Tab 共用
+  const serverSelect = (
+    <Select
+      style={{ width: '100%' }}
+      placeholder={t('mediaFetch.libraryScan.selectServerPlaceholder')}
+      value={selectedServerId}
+      onChange={setSelectedServerId}
+      loading={loading}
+      size="large"
     >
-      {/* 鏈嶅姟鍣ㄩ厤缃崱鐗?*/}
+      {servers.map(server => (
+        <Option key={server.id} value={server.id}>
+          <Space>
+            <span>{server.name}</span>
+            <Tag size="small" color={server.isEnabled ? 'green' : 'red'}>
+              {server.providerName}
+            </Tag>
+            {!server.isEnabled && <Tag size="small" color="orange">{t('mediaFetch.libraryScan.disabled')}</Tag>}
+          </Space>
+        </Option>
+      ))}
+    </Select>
+  );
+
+  const isConnectionMode = mode === 'connection';
+  const isScanMode = mode === 'scan';
+
+  return (
+    // 宽度随内容区铺满，与其他页面卡片保持一致
+    <div className="mobile-reduced-padding">
+      {isConnectionMode && (
       <Card
         title={
           <Space>
@@ -452,26 +476,7 @@ const LibraryScan = () => {
               <Text strong style={{ display: 'block', marginBottom: '8px' }}>
                 {t('mediaFetch.libraryScan.selectServer')}
               </Text>
-              <Select
-                style={{ width: '100%' }}
-                placeholder={t('mediaFetch.libraryScan.selectServerPlaceholder')}
-                value={selectedServerId}
-                onChange={setSelectedServerId}
-                loading={loading}
-                size="large"
-              >
-                {servers.map(server => (
-                  <Option key={server.id} value={server.id}>
-                    <Space>
-                      <span>{server.name}</span>
-                      <Tag size="small" color={server.isEnabled ? 'green' : 'red'}>
-                        {server.providerName}
-                      </Tag>
-                      {!server.isEnabled && <Tag size="small" color="orange">{t('mediaFetch.libraryScan.disabled')}</Tag>}
-                    </Space>
-                  </Option>
-                ))}
-              </Select>
+              {serverSelect}
             </div>
 
             {selectedServerId && currentServer && (
@@ -617,18 +622,55 @@ const LibraryScan = () => {
             <div style={{ padding: '20px', borderRadius: '8px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <Title level={4} style={{ marginBottom: '12px' }}>{t('mediaFetch.libraryScan.instructions')}</Title>
               <Space direction="vertical" size="small">
-                <Text>{t('mediaFetch.libraryScan.instruction1')}</Text>
-                <Text>{t('mediaFetch.libraryScan.instruction2')}</Text>
-                <Text>{t('mediaFetch.libraryScan.instruction3')}</Text>
-                <Text>{t('mediaFetch.libraryScan.instruction4')}</Text>
+                {/* 连接配置 Tab 只说明服务器的添加与连接，扫描步骤放到媒体项目扫描 Tab */}
+                <Text>{t('mediaFetch.libraryScan.connInstruction1')}</Text>
+                <Text>{t('mediaFetch.libraryScan.connInstruction2')}</Text>
+                <Text>{t('mediaFetch.libraryScan.connInstruction3')}</Text>
+                <Text>{t('mediaFetch.libraryScan.connInstruction4')}</Text>
               </Space>
             </div>
           </Col>
         </Row>
       </Card>
+      )}
+
+      {/* 媒体项目扫描：先选择服务器，再配置媒体库并扫描 */}
+      {isScanMode && (
+        <Card
+          title={
+            <Space>
+              <SettingOutlined />
+              <span>{t('mediaFetch.libraryScan.selectServer')}</span>
+            </Space>
+          }
+          style={{ marginBottom: '24px' }}
+        >
+          {/* 扫描 Tab 独立的服务器选择，只负责选定扫描目标 */}
+          <Text type="secondary" style={{ display: 'block', marginBottom: '12px' }}>
+            {t('mediaFetch.libraryScan.scanInstructions')}
+          </Text>
+          {servers.length === 0 && !loading ? (
+            <Alert type="info" showIcon message={t('mediaFetch.libraryScan.selectServerPlaceholder')} />
+          ) : serverSelect}
+          {isServerDisabled && (
+            <Alert
+              message={t('mediaFetch.libraryScan.serverDisabledTitle')}
+              description={t('mediaFetch.libraryScan.serverDisabledDesc')}
+              type="warning"
+              showIcon
+              action={
+                <Button size="small" onClick={handleEditServer}>
+                  {t('mediaFetch.libraryScan.configureNow')}
+                </Button>
+              }
+              style={{ marginTop: '16px' }}
+            />
+          )}
+        </Card>
+      )}
 
       {/* 濯掍綋搴撻厤缃崱鐗?*/}
-      {selectedServerId && (
+      {isScanMode && selectedServerId && (
         <Card
           title={
             <Space>
@@ -833,7 +875,7 @@ const LibraryScan = () => {
       )}
 
       {/* 鎵弿缁撴灉 */}
-      {selectedServerId && (
+      {isScanMode && selectedServerId && (
         <Card
           title={
             <Space>

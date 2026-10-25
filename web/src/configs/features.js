@@ -182,12 +182,19 @@ export const FEATURES = [
     path: '/api-test', tabKey: '', icon: 'controlapi',
   },
 
-  // ============ 媒体获取 ============
+  // ============ 媒体服务联动 ============
+  {
+    id: 'media-connection',
+    titleKey: 'features.mediaConnection.title',
+    descKey: 'features.mediaConnection.desc',
+    keywords: ['媒体服务连接', '媒体服务器', 'emby', 'jellyfin', 'plex', '添加服务器', 'server'],
+    path: '/media-fetch', tabKey: 'connection', icon: 'liumeitifuwu',
+  },
   {
     id: 'media-library-scan',
     titleKey: 'features.mediaLibraryScan.title',
     descKey: 'features.mediaLibraryScan.desc',
-    keywords: ['媒体库读取', 'emby', 'jellyfin', 'plex', '扫描', 'scan', '媒体服务器'],
+    keywords: ['媒体项目扫描', '媒体服务扫描', '媒体库读取', 'emby', 'jellyfin', 'plex', '扫描', 'scan'],
     path: '/media-fetch', tabKey: 'library-scan', icon: 'meitiduqu',
   },
   {
@@ -299,7 +306,7 @@ export const FEATURES = [
     titleKey: 'features.settingWebhook.title',
     descKey: 'features.settingWebhook.desc',
     keywords: ['webhook配置', 'webhook', '延时导入', '自动化导入'],
-    path: '/setting', tabKey: 'webhook', icon: 'webhookpeizhi',
+    path: '/media-fetch', tabKey: 'webhook', icon: 'webhookpeizhi',
   },
   {
     id: 'setting-notification',

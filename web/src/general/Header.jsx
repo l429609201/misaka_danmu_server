@@ -101,7 +101,10 @@ const navItems = [
     { key: 'fallback', label: 'nav.bulletFallback', icon: 'sanfangyunpeizhi' },
     { key: 'data-check', label: 'nav.bulletDataCheck', icon: 'renlianshibie_o' },
   ]},
-  { key: RoutePaths.MEDIA_FETCH, label: 'nav.mediaFetch', icon: 'movie', iconfontIcon: 'icon-movie', children: [
+  { key: RoutePaths.MEDIA_FETCH, label: 'nav.mediaFetch', icon: 'liumeitifuwu', iconfontIcon: 'icon-liumeitifuwu', children: [
+    // 媒体服务联动：连接配置 / Webhook / 媒体项目扫描 / 本地扫描
+    { key: 'connection', label: 'nav.mediaConnection', icon: 'liumeitifuwu' },
+    { key: 'webhook', label: 'nav.mediaWebhook', icon: 'webhookpeizhi' },
     { key: 'library-scan', label: 'nav.mediaLibraryScan', icon: 'meitiduqu', iconSize: 28 , iconClassName: 'ml-px' },
     { key: 'local-scan', label: 'nav.mediaLocalScan', icon: 'bendiduqu' },
   ]},
@@ -120,7 +123,6 @@ const navItems = [
   { key: RoutePaths.SETTING, label: 'nav.setting', icon: 'setting', iconfontIcon: 'icon-setting', children: [
     { key: 'parameters', label: 'nav.settingParameters', icon: 'canshupeizhi' },
     { key: 'proxy', label: 'nav.settingProxy', icon: 'dailipeizhi' },
-    { key: 'webhook', label: 'nav.settingWebhook', icon: 'webhookpeizhi' },
     { key: 'notification', label: 'nav.settingNotification', icon: 'jiaohu' },
     { key: 'recognition', label: 'nav.settingRecognition', icon: 'renlianshibie_o' },
     { key: 'automatch', label: 'nav.settingAutomatch', icon: 'ai' },

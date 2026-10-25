@@ -1,4 +1,4 @@
-import { Empty, Spin, Tabs } from 'antd'
+import { Card, Empty, Spin, Tabs } from 'antd'
 import { useState, useEffect } from 'react'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store'
@@ -67,18 +67,22 @@ export const Parameters = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center py-12">
-        <Spin tip={t('parameters.loading')} />
-      </div>
+      <Card>
+        <div className="flex justify-center items-center py-12">
+          <Spin tip={t('parameters.loading')} />
+        </div>
+      </Card>
     )
   }
 
   if (!schema || schema.length === 0) {
     return (
-      <Empty
-        description={t('parameters.noConfig')}
-        className="py-12"
-      />
+      <Card>
+        <Empty
+          description={t('parameters.noConfig')}
+          className="py-12"
+        />
+      </Card>
     )
   }
 
@@ -133,12 +137,15 @@ export const Parameters = () => {
   })
 
   return (
-    <Tabs
-      defaultActiveKey={schema[0]?.key}
-      items={tabItems}
-      tabPosition={isMobile ? 'top' : 'left'}
-      className="parameters-tabs"
-    />
+    // 外层用卡片包裹，与代理、识别词等设置页一致；壁纸过亮或过暗时文字仍有稳定底色
+    <Card>
+      <Tabs
+        defaultActiveKey={schema[0]?.key}
+        items={tabItems}
+        tabPosition={isMobile ? 'top' : 'left'}
+        className="parameters-tabs"
+      />
+    </Card>
   )
 }
 

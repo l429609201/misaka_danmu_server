@@ -81,7 +81,8 @@ async def get_backup_list(
 ):
     """获取所有备份文件列表"""
     try:
-        async with db_service.session() as session:
+        async with db_service.transaction():
+            session = db_service._session
             backups = await list_backups(session)
             return [BackupInfo(**b) for b in backups]
     except Exception as e:
@@ -96,9 +97,9 @@ async def create_backup_now(
 ):
     """立即创建数据库备份"""
     try:
-        async with db_service.session() as session:
+        async with db_service.transaction():
+            session = db_service._session
             result = await create_backup(session)
-            await session.commit()
 
             size_mb = result['size'] / (1024 * 1024)
             return BackupCreateResponse(
@@ -125,7 +126,8 @@ async def download_backup(
     # query parameter 优先（window.open 场景），否则用 header
     final_token = token or header_token
     current_user = await get_current_user(request=request, token=final_token)
-    async with db_service.session() as session:
+    async with db_service.transaction():
+        session = db_service._session
         _ = current_user
         backup_path = await get_backup_path(session)
         filepath = _resolve_backup_file_or_400(backup_path, filename)
@@ -148,7 +150,8 @@ async def delete_backup_file(
 ):
     """删除指定的备份文件"""
     try:
-        async with db_service.session() as session:
+        async with db_service.transaction():
+            session = db_service._session
             await delete_backup(session, filename)
             return {"success": True, "message": f"已删除备份: {filename}"}
     except ValueError as e:
@@ -170,7 +173,8 @@ async def delete_backup_files_batch(
     deleted = []
     errors = []
 
-    async with db_service.session() as session:
+    async with db_service.transaction():
+        session = db_service._session
         for filename in filenames:
             try:
                 await delete_backup(session, filename)
@@ -202,7 +206,8 @@ async def restore_from_backup(
         raise HTTPException(status_code=400, detail="请输入 'RESTORE' 确认还原操作")
 
     try:
-        async with db_service.session() as session:
+        async with db_service.transaction():
+            session = db_service._session
             # 恢复前自动创建快照
             if request.auto_snapshot:
                 logger.info("恢复前自动创建临时快照...")
@@ -216,7 +221,6 @@ async def restore_from_backup(
                 session, request.filename,
                 tables=request.tables,
             )
-            await session.commit()
 
             return {
                 "success": True,
@@ -263,7 +267,8 @@ async def get_backup_config(
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """获取备份相关配置"""
-    async with db_service.session() as session:
+    async with db_service.transaction():
+        session = db_service._session
         backup_path = await get_backup_path(session)
         retention_count = await get_retention_count(session)
 
@@ -286,7 +291,8 @@ async def upload_backup_file(
 
     # 验证文件名格式（可选，允许用户上传任意名称的备份）
     # 为了安全，重命名为标准格式
-    async with db_service.session() as session:
+    async with db_service.transaction():
+        session = db_service._session
         backup_path = await get_backup_path(session)
     backup_path.mkdir(parents=True, exist_ok=True)
 
@@ -332,7 +338,8 @@ async def get_backup_detail(
     db_service: DatabaseService = Depends(get_database_service),
 ):
     """获取备份文件的详细信息，包括各表记录数和元数据。"""
-    async with db_service.session() as session:
+    async with db_service.transaction():
+        session = db_service._session
         backup_path = await get_backup_path(session)
     filepath = _resolve_backup_file_or_400(backup_path, filename)
 
@@ -388,7 +395,8 @@ async def backup_dry_run(
     恢复预检：对比备份文件与当前数据库的差异，不实际执行恢复。
     返回每张表的当前记录数、备份记录数和差异。
     """
-    async with db_service.session() as session:
+    async with db_service.transaction():
+        session = db_service._session
         backup_path = await get_backup_path(session)
         filepath = _resolve_backup_file_or_400(backup_path, request.filename)
 

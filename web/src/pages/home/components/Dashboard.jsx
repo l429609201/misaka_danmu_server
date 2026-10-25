@@ -34,7 +34,7 @@ const LibraryCard = ({ data, t }) => {
   const coverage = data.episode_total ? Math.round((data.episode_with_danmaku / data.episode_total) * 100) : 0
   const byType = Object.entries(data.anime_by_type || {})
   return (
-    <Card title={t('dashboard.library')} className="h-full">
+    <Card title={t('dashboard.library')} type="inner" className="h-full">
       <Row gutter={[16, 16]}>
         <Col xs={12} md={6}><Statistic title={t('dashboard.animeTotal')} value={data.anime_total} suffix={t('dashboard.animeUnit')} /></Col>
         <Col xs={12} md={6}><Statistic title={t('dashboard.episodeTotal')} value={data.episode_total} suffix={t('dashboard.episodeUnit')} /></Col>
@@ -59,7 +59,7 @@ const LibraryCard = ({ data, t }) => {
 }
 
 const SourcesCard = ({ data, t }) => (
-  <Card title={t('dashboard.sources')} className="h-full">
+  <Card title={t('dashboard.sources')} type="inner" className="h-full">
     <Row gutter={16}>
       <Col span={12}><Statistic title={t('dashboard.scrapers')} value={data.scraper_enabled} suffix={`/ ${data.scraper_total} ${t('dashboard.enabled')}`} /></Col>
       <Col span={12}><Statistic title={t('dashboard.metadata')} value={data.metadata_enabled} suffix={`/ ${data.metadata_total} ${t('dashboard.enabled')}`} /></Col>
@@ -68,7 +68,7 @@ const SourcesCard = ({ data, t }) => (
 )
 
 const TasksCard = ({ data, t }) => (
-  <Card title={t('dashboard.tasks')} className="h-full">
+  <Card title={t('dashboard.tasks')} type="inner" className="h-full">
     <Row gutter={16}>
       <Col span={8}><Statistic title={t('dashboard.running')} value={data.running?.length || 0} /></Col>
       <Col span={8}><Statistic title={t('dashboard.pending')} value={data.pendingCount || 0} /></Col>
@@ -87,7 +87,7 @@ const TasksCard = ({ data, t }) => (
 )
 
 const MediaServersCard = ({ data, t }) => (
-  <Card title={t('dashboard.mediaServers')} className="h-full">
+  <Card title={t('dashboard.mediaServers')} type="inner" className="h-full">
     {data.length ? (
       <div className="flex flex-col gap-2">
         {data.map(server => (
@@ -108,7 +108,7 @@ const SystemCard = ({ data, t }) => {
     { key: 'disk', percent: data.diskPercent, detail: `${formatBytes(data.diskUsed)} / ${formatBytes(data.diskTotal)}` },
   ]
   return (
-    <Card title={t('dashboard.system')} className="h-full">
+    <Card title={t('dashboard.system')} type="inner" className="h-full">
       {rows.map(row => (
         <div key={row.key} className="mb-2">
           <div className="flex justify-between text-sm">
@@ -147,14 +147,17 @@ export const Dashboard = () => {
   }, [load])
 
   return (
-    <div className="my-4">
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-lg font-semibold">{t('dashboard.title')}</div>
+    // why：与其他页面统一，整个仪表盘由一张大卡片包裹，标题与刷新放在卡片头部
+    <Card
+      className="my-4"
+      title={t('dashboard.title')}
+      extra={
         <div className="flex items-center gap-3">
           {data?.generatedAt && <span className="text-sm opacity-60">{t('dashboard.updatedAt', { time: dayjs(data.generatedAt).format('HH:mm:ss') })}</span>}
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => load()}>{t('dashboard.refresh')}</Button>
         </div>
-      </div>
+      }
+    >
       {data ? (
         <Row gutter={[16, 16]}>
           <Col xs={24}><LibraryCard data={data.library || {}} t={t} /></Col>
@@ -163,7 +166,7 @@ export const Dashboard = () => {
           <Col xs={24} lg={12}><SourcesCard data={data.sources || {}} t={t} /></Col>
           <Col xs={24} lg={12}><MediaServersCard data={data.mediaServers || []} t={t} /></Col>
         </Row>
-      ) : <Card loading />}
-    </div>
+      ) : <Card type="inner" loading />}
+    </Card>
   )
 }

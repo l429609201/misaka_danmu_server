@@ -76,7 +76,7 @@ const LocalScan = () => {
   };
 
   return (
-    <div style={{ padding: '8px' }}> {/* 添加移动端内边距 */}
+    <div> {/* 外层间距由页面统一控制，与其他卡片同宽 */}
       <Card
         title={<span style={{ fontSize: '16px' }}>{t('mediaFetch.localScan.cardTitle')}</span>}
         extra={

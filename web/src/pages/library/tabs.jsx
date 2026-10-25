@@ -49,17 +49,19 @@ export const LibraryTabsPage = () => {
   }
 
 
-  // why：加 library-tabs-root 钩子，方便在壁纸主题下精准覆盖 ant-tabs-nav 白底
+  // why：二级 Tab 外观统一由 .page-tabs 磨砂胶囊样式负责
   return (
-    <div className="library-tabs-root my-6">
+    <div className="my-6">
       {isMobile ? (
         <MobileTabs
+          className="page-tabs"
           items={tabItems}
           defaultActiveKey={key}
           onChange={handleTabChange}
         />
       ) : (
         <Tabs
+          className="page-tabs"
           activeKey={key}
           items={tabItems}
           onChange={handleTabChange}

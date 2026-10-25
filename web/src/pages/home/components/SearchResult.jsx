@@ -989,8 +989,8 @@ export const SearchResult = () => {
   return (
     <>
       {lastSearchResultData && (
-        <div className="border-t border-base-border mt-6 pt-6">
-          <div className="text-lg font-semibold mb-4">{t('searchResult.searchResultTitle')}</div>
+        // 参考接口测试页：最外层用卡片包住，标题放卡片头，去掉原来的顶部分隔线
+        <Card title={t('searchResult.searchResultTitle')}>
           <div>
             <div className="mb-6">
               {isMobile ? (
@@ -1455,8 +1455,8 @@ export const SearchResult = () => {
           )}
           </div>
           </Spin>
-          {/* 底部分页控件 - 自动加载模式下隐藏 */}
-          {!autoLoadMode && total > pageSize && (
+          {/* 底部分页控件 - 自动加载模式下隐藏；只有一页时也常驻显示，保持布局稳定 */}
+          {!autoLoadMode && total > 0 && (
             <div className="flex justify-center mt-4">
               <Pagination
                 current={currentPage}
@@ -1471,7 +1471,7 @@ export const SearchResult = () => {
             </div>
           )}
         </div>
-        </div>
+        </Card>
       )}
       <Modal
         title={t('searchResult.batchImportConfirmTitle')}

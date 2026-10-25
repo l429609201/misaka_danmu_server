@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Input, Button, Checkbox, Spin, Empty, message, Dropdown, Pagination, Popover, Modal, Tooltip } from 'antd'
+import { Input, Button, Checkbox, Spin, Empty, message, Dropdown, Pagination, Popover, Modal, Tooltip, Card, Space } from 'antd'
 import { DownOutlined } from '@ant-design/icons'
 import { MyIcon } from '../../components/MyIcon'
 import { useAtomValue } from 'jotai'
@@ -201,7 +201,7 @@ export const BatchManagePage = () => {
   // ---- Render ----
   const taskChip = () => {
     if (!taskStatus || !taskStatus.exists) return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border border-gray-300/20 bg-gray-500/8 text-gray-500 dark:text-gray-400">
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border border-gray-300/20 bg-gray-500/15 text-gray-700 dark:text-gray-200">
         <span className="w-1.5 h-1.5 rounded-full bg-current" /> {t('batchManage.taskNotConfigured')}
       </span>
     )
@@ -236,7 +236,7 @@ export const BatchManagePage = () => {
           <h1 className="text-base font-semibold truncate">{t('batchManage.title')}</h1>
           {taskChip()}
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 truncate hidden sm:block m-0">{t('batchManage.pageDesc')}</p>
+        <p className="text-xs text-gray-700 dark:text-gray-200 truncate hidden sm:block m-0">{t('batchManage.pageDesc')}</p>
       </div>
 
 
@@ -252,7 +252,7 @@ export const BatchManagePage = () => {
           <div key={i} className="batch-stat-badge flex-1 flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/6 text-xs cursor-default min-w-0">
             <div className="flex items-center gap-1 min-w-0">
               <MyIcon icon={s.iconName} size={13} color={s.iconColor} />
-              <span className="text-gray-500 dark:text-gray-400 truncate">{s.label}</span>
+              <span className="text-gray-700 dark:text-gray-200 truncate">{s.label}</span>
             </div>
             <span className="font-bold tabular-nums ml-1">{s.value}</span>
           </div>
@@ -273,7 +273,7 @@ export const BatchManagePage = () => {
               const allSelected = allIds.length > 0 && allIds.every(id => selectedSourceIds.includes(id))
               return (
                 <button
-                  className={`px-3.5 py-1 rounded-full text-xs font-medium border transition flex items-center gap-1 ${allSelected ? 'border-transparent shadow-sm' : 'border-gray-200 dark:border-white/6 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                  className={`px-3.5 py-1 rounded-full text-xs font-medium border transition flex items-center gap-1 ${allSelected ? 'border-transparent shadow-sm' : 'border-gray-200 dark:border-white/6 text-gray-700 dark:text-gray-200 hover:text-gray-700 dark:hover:text-gray-200'}`}
                   style={allSelected ? { backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)', color: 'var(--color-primary)', borderColor: 'color-mix(in srgb, var(--color-primary) 30%, transparent)' } : undefined}
                   onClick={() => allSelected ? handleDeselectAll() : handleSelectAll()}
                 >
@@ -286,7 +286,7 @@ export const BatchManagePage = () => {
               { key: 'movie', label: t('batchManage.typeMovie') },
               { key: 'tv_series', label: t('batchManage.typeTV') },
             ], selectedKeys: [typeFilter], onClick: ({ key }) => handleFilterChange('typeFilter', key) }} trigger={['click']}>
-              <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition ${typeFilter !== 'all' ? 'bg-indigo-500/8 text-indigo-400 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+              <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition ${typeFilter !== 'all' ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-700 dark:text-gray-200 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                 {t('incrementalRefresh.type')} ▾
               </button>
             </Dropdown>
@@ -295,7 +295,7 @@ export const BatchManagePage = () => {
               { key: 'enabled', label: t('incrementalRefresh.refreshed') },
               { key: 'disabled', label: t('incrementalRefresh.notRefreshed') },
             ], selectedKeys: [refreshFilter], onClick: ({ key }) => handleFilterChange('refreshFilter', key) }} trigger={['click']}>
-              <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition ${refreshFilter !== 'all' ? 'bg-indigo-500/8 text-indigo-400 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+              <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition ${refreshFilter !== 'all' ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-700 dark:text-gray-200 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                 {t('batchManage.colRefresh')} ▾
               </button>
             </Dropdown>
@@ -304,7 +304,7 @@ export const BatchManagePage = () => {
               { key: 'favorited', label: t('incrementalRefresh.favoritedFilter') },
               { key: 'unfavorited', label: t('incrementalRefresh.unfavorited') },
             ], selectedKeys: [favoriteFilter], onClick: ({ key }) => handleFilterChange('favoriteFilter', key) }} trigger={['click']}>
-              <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition ${favoriteFilter !== 'all' ? 'bg-indigo-500/8 text-indigo-400 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+              <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition ${favoriteFilter !== 'all' ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-700 dark:text-gray-200 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                 {t('batchManage.colFavorite')} ▾
               </button>
             </Dropdown>
@@ -313,13 +313,13 @@ export const BatchManagePage = () => {
               { key: 'finished', label: t('incrementalRefresh.finishedFilter') },
               { key: 'unfinished', label: t('incrementalRefresh.unfinished') },
             ], selectedKeys: [finishedFilter], onClick: ({ key }) => handleFilterChange('finishedFilter', key) }} trigger={['click']}>
-              <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition ${finishedFilter !== 'all' ? 'bg-indigo-500/8 text-indigo-400 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+              <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition ${finishedFilter !== 'all' ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-700 dark:text-gray-200 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                 {t('batchManage.colFinished')} ▾
               </button>
             </Dropdown>
             <div className={isMobile ? 'flex gap-2 items-center w-full mt-1' : 'ml-auto flex gap-2 items-center'}>
               <Popover content={<div style={{ width: 200 }}><Input placeholder={t('incrementalRefresh.searchPlaceholder')} allowClear value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} onPressEnter={e => handleSearch(e.target.value)} autoFocus /></div>} trigger="click" placement="bottom">
-                <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition ${searchKeyword ? 'bg-indigo-500/8 text-indigo-400 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+                <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition ${searchKeyword ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-700 dark:text-gray-200 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                   🔍 {searchKeyword || t('incrementalRefresh.search')}
                 </button>
               </Popover>
@@ -327,7 +327,7 @@ export const BatchManagePage = () => {
                 { key: 'created', label: t('incrementalRefresh.sortCreated') },
                 { key: 'title', label: t('incrementalRefresh.sortTitle') },
               ], selectedKeys: [sortBy], onClick: ({ key }) => handleSortChange(key) }} trigger={['click']}>
-                <button className="px-3.5 py-1 rounded-full text-xs font-medium border border-gray-200 dark:border-white/6 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition">
+                <button className="px-3.5 py-1 rounded-full text-xs font-medium border border-gray-200 dark:border-white/6 text-gray-700 dark:text-gray-200 hover:text-gray-700 dark:hover:text-gray-200 transition">
                   {sortBy === 'created' ? t('incrementalRefresh.sortCreated') : t('incrementalRefresh.sortTitle')} {sortOrder === 'asc' ? '↑' : '↓'}
                 </button>
               </Dropdown>
@@ -346,7 +346,7 @@ export const BatchManagePage = () => {
                   { type: 'divider' },
                   { key: 'delete', label: `🗑️ ${t('batchManage.sidebarBatchDelete')}`, danger: true, disabled: selectedSourceIds.length === 0, onClick: () => { if (selectedSourceIds.length > 0) setDeleteModalOpen(true) } },
                 ] }} trigger={['click']} disabled={operationLoading}>
-                  <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition flex items-center gap-1 ${selectedSourceIds.length > 0 ? 'bg-indigo-500/8 text-indigo-400 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+                  <button className={`px-3.5 py-1 rounded-full text-xs font-medium border transition flex items-center gap-1 ${selectedSourceIds.length > 0 ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30' : 'border-gray-200 dark:border-white/6 text-gray-700 dark:text-gray-200 hover:text-gray-700 dark:hover:text-gray-200'}`}>
                     {t('batchManage.sidebarBatchOps')} {selectedSourceIds.length > 0 && <span className="bg-indigo-500 text-white text-[10px] px-1.5 py-0.5 rounded-full leading-none">{selectedSourceIds.length}</span>} ▾
                   </button>
                 </Dropdown>
@@ -355,15 +355,15 @@ export const BatchManagePage = () => {
 
           {/* why：表头移出滚动容器，固定在列表上方不随内容滚动，不再需要 sticky */}
           {!isMobile && (
-            <div className="flex items-center px-5 py-2.5 mx-2 mt-2 text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400 rounded-full border border-gray-200 dark:border-white/6 batch-manage-header">
+            <div className="flex items-center px-5 py-2.5 mx-2 mt-2 text-[11px] uppercase tracking-wider text-gray-700 dark:text-gray-200 rounded-full border border-gray-200 dark:border-white/6 batch-manage-header">
               <div className="w-[38%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition flex items-center gap-1" onClick={() => handleSortChange('title')}>
-                {t('batchManage.colTitle')} <span className={`text-[10px] ${sortBy === 'title' ? 'text-indigo-400' : 'opacity-30'}`}>{sortBy === 'title' ? (sortOrder === 'asc' ? '↑' : '↓') : '⇅'}</span>
+                {t('batchManage.colTitle')} <span className={`text-[10px] ${sortBy === 'title' ? 'text-indigo-600 dark:text-indigo-300' : 'opacity-40'}`}>{sortBy === 'title' ? (sortOrder === 'asc' ? '↑' : '↓') : '⇅'}</span>
               </div>
-              <div className="w-[10%]">{t('batchManage.colProgress')}</div>
-              <div className="w-[10%]">{t('batchManage.colMissing')}</div>
-              <div className="w-[10%]">{t('batchManage.colRefresh')}</div>
-              <div className="w-[10%]">{t('batchManage.colFavorite')}</div>
-              <div className="w-[10%]">{t('batchManage.colFinished')}</div>
+              <div className="w-[10%] text-center">{t('batchManage.colProgress')}</div>
+              <div className="w-[10%] text-center">{t('batchManage.colMissing')}</div>
+              <div className="w-[10%] text-center">{t('batchManage.colRefresh')}</div>
+              <div className="w-[10%] text-center">{t('batchManage.colFavorite')}</div>
+              <div className="w-[10%] text-center">{t('batchManage.colFinished')}</div>
               <div className="w-[12%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition" onClick={() => handleSortChange('created')}>
                 <div className="flex items-center gap-1">
                   <div className="flex flex-col leading-tight">
@@ -371,8 +371,8 @@ export const BatchManagePage = () => {
                     <span>{t('batchManage.colUpdatedLine2')}</span>
                   </div>
                   <div className="flex flex-col items-center text-[10px] leading-none gap-0.5">
-                    <span className={sortBy === 'created' && sortOrder === 'asc' ? 'text-indigo-400' : 'opacity-30'}>▲</span>
-                    <span className={sortBy === 'created' && sortOrder === 'desc' ? 'text-indigo-400' : 'opacity-30'}>▼</span>
+                    <span className={sortBy === 'created' && sortOrder === 'asc' ? 'text-indigo-600 dark:text-indigo-300' : 'opacity-40'}>▲</span>
+                    <span className={sortBy === 'created' && sortOrder === 'desc' ? 'text-indigo-600 dark:text-indigo-300' : 'opacity-40'}>▼</span>
                   </div>
                 </div>
               </div>
@@ -421,31 +421,31 @@ export const BatchManagePage = () => {
                       <div className="min-w-0 flex-1">
                         <Tooltip title={group.animeTitle} placement="topLeft"><div className="font-semibold text-sm truncate cursor-default">{group.animeTitle}</div></Tooltip>
                         <div className="flex gap-1 mt-1 flex-wrap">
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${group.animeType === 'movie' ? 'bg-purple-500/10 text-purple-400' : 'bg-indigo-500/10 text-indigo-400'}`}>{group.animeType === 'movie' ? t('batchManage.typeMovie') : t('batchManage.typeTV')}</span>
-                          {group.animeType !== 'movie' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400">{t('libraryGroup.seasonTag', { season: group.season })}</span>}
-                          {isMulti && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-500/8 text-indigo-400">{t('batchManage.multiSource', { count: group.sources.length })}</span>}
-                          {!isMulti && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-500/8 text-gray-500 dark:text-gray-400">{s.providerName}</span>}
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${group.animeType === 'movie' ? 'bg-purple-500/15 text-purple-700 dark:text-purple-300' : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'}`}>{group.animeType === 'movie' ? t('batchManage.typeMovie') : t('batchManage.typeTV')}</span>
+                          {group.animeType !== 'movie' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-700 dark:text-cyan-300">{t('libraryGroup.seasonTag', { season: group.season })}</span>}
+                          {isMulti && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-700 dark:text-indigo-300">{t('batchManage.multiSource', { count: group.sources.length })}</span>}
+                          {!isMulti && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-500/15 text-gray-700 dark:text-gray-200">{s.providerName}</span>}
                         </div>
                       </div>
                     </div>
                     {/* 底部：进度 + toggle + 更新时间 */}
                     <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-gray-100 dark:border-white/3">
-                      <span className="text-xs text-gray-500 dark:text-gray-400">{t('splitSource.episodeCountSuffix', { count: isMulti ? Math.max(...group.sources.map(x => x.episodeCount)) : s.episodeCount })}</span>
+                      <span className="text-xs text-gray-700 dark:text-gray-200">{t('splitSource.episodeCountSuffix', { count: isMulti ? Math.max(...group.sources.map(x => x.episodeCount)) : s.episodeCount })}</span>
                       <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                         {isMulti ? (
                           <>
-                            <MultiToggle sources={group.sources} field="incrementalRefreshEnabled" iconName="refresh" color="#4ade80" onToggle={handleToggleRefresh} />
-                            <MultiToggle sources={group.sources} field="isFavorited" iconName="favorites-fill" color="#facc15" onToggle={handleToggleFavorite} />
-                            <MultiToggle sources={group.sources} field="isFinished" iconName="wanjie1" color="#60a5fa" onToggle={handleToggleFinished} />
+                            <MultiToggle sources={group.sources} field="incrementalRefreshEnabled" iconName="refresh" color="#16a34a" onToggle={handleToggleRefresh} />
+                            <MultiToggle sources={group.sources} field="isFavorited" iconName="favorites-fill" color="#ca8a04" onToggle={handleToggleFavorite} />
+                            <MultiToggle sources={group.sources} field="isFinished" iconName="wanjie1" color="#2563eb" onToggle={handleToggleFinished} />
                           </>
                         ) : (
                           <>
-                            <ToggleBtn on={s.incrementalRefreshEnabled} onClick={() => handleToggleRefresh(s.sourceId)} iconName="refresh" color="#4ade80" />
-                            <ToggleBtn on={s.isFavorited} onClick={() => handleToggleFavorite(s.sourceId)} iconName="favorites-fill" color="#facc15" />
-                            <ToggleBtn on={s.isFinished} onClick={() => handleToggleFinished(s.sourceId)} iconName="wanjie1" color="#60a5fa" />
+                            <ToggleBtn on={s.incrementalRefreshEnabled} onClick={() => handleToggleRefresh(s.sourceId)} iconName="refresh" color="#16a34a" />
+                            <ToggleBtn on={s.isFavorited} onClick={() => handleToggleFavorite(s.sourceId)} iconName="favorites-fill" color="#ca8a04" />
+                            <ToggleBtn on={s.isFinished} onClick={() => handleToggleFinished(s.sourceId)} iconName="wanjie1" color="#2563eb" />
                           </>
                         )}
-                        <span className="text-[10px] text-gray-500 ml-1">{latestTime}</span>
+                        <span className="text-[10px] text-gray-700 dark:text-gray-200 ml-1">{latestTime}</span>
                       </div>
                     </div>
                   </div>
@@ -456,7 +456,7 @@ export const BatchManagePage = () => {
               <>
                 {/* 卡片行列表（表头已移出滚动容器，见上方 !isMobile 块） */}
                 {/* why：加 batch-rows-container 钩子，壁纸主题下通过 CSS 消掉间隔行白底 */}
-                <div className="batch-rows-container p-2 space-y-1">
+                <div className="batch-rows-container p-2 divide-y divide-gray-200/70 dark:divide-white/8">
                   {animeGroups.map((group, idx) => {
                     const isMulti = group.sources.length > 1
                     const s = group.sources[0]
@@ -470,7 +470,7 @@ export const BatchManagePage = () => {
                       <div
                         key={isMulti ? group.animeId : s.sourceId}
                         onClick={() => toggleGroupSelection(group)}
-                        className={`relative flex items-center px-5 py-5 rounded-2xl cursor-pointer transition-all select-none ${
+                        className={`relative flex items-center px-5 py-3 rounded-xl cursor-pointer transition-all select-none ${
                           isSelected
                             ? 'ring-2 ring-inset shadow-sm'
                             : idx % 2 === 1
@@ -500,44 +500,44 @@ export const BatchManagePage = () => {
                                 <div className="font-semibold text-sm truncate">{group.animeTitle}</div>
                               </Tooltip>
                               <div className="flex gap-1 mt-0.5 flex-wrap">
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${group.animeType === 'movie' ? 'bg-purple-500/10 text-purple-400' : 'bg-indigo-500/10 text-indigo-400'}`}>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${group.animeType === 'movie' ? 'bg-purple-500/15 text-purple-700 dark:text-purple-300' : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'}`}>
                                   {group.animeType === 'movie' ? t('batchManage.typeMovie') : t('batchManage.typeTV')}
                                 </span>
-                                {group.animeType !== 'movie' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400">{t('libraryGroup.seasonTag', { season: group.season })}</span>}
+                                {group.animeType !== 'movie' && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-cyan-500/15 text-cyan-700 dark:text-cyan-300">{t('libraryGroup.seasonTag', { season: group.season })}</span>}
                                 {isMulti
-                                  ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-indigo-500/8 text-indigo-400">{t('batchManage.multiSource', { count: group.sources.length })}</span>
-                                  : <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-gray-500/8 text-gray-500 dark:text-gray-400">{s.providerName}</span>}
+                                  ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-700 dark:text-indigo-300">{t('batchManage.multiSource', { count: group.sources.length })}</span>
+                                  : <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-gray-500/15 text-gray-700 dark:text-gray-200">{s.providerName}</span>}
                               </div>
                             </div>
                           </div>
                         </div>
                         {/* 进度 */}
-                        <div className="w-[10%] text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                        <div className="w-[10%] text-center text-sm font-medium text-gray-800 dark:text-gray-100 whitespace-nowrap">
                           {t('splitSource.episodeCountSuffix', { count: isMulti ? Math.max(...group.sources.map(x => x.episodeCount)) : s.episodeCount })}
                         </div>
                         {/* 缺失 */}
-                        <div className="w-[10%] text-xs text-gray-500 dark:text-gray-400">{t('batchManage.noMissing')}</div>
+                        <div className="w-[10%] text-center text-sm text-gray-700 dark:text-gray-200">{t('batchManage.noMissing')}</div>
                         {/* 三个 Toggle，阻止冒泡避免触发行选中 */}
-                        <div className="w-[10%]" onClick={e => e.stopPropagation()}>
+                        <div className="w-[10%] flex justify-center" onClick={e => e.stopPropagation()}>
                           {isMulti
-                            ? <MultiToggle sources={group.sources} field="incrementalRefreshEnabled" iconName="refresh" color="#4ade80" onToggle={handleToggleRefresh} />
-                            : <ToggleBtn on={s.incrementalRefreshEnabled} onClick={() => handleToggleRefresh(s.sourceId)} iconName="refresh" color="#4ade80" />}
+                            ? <MultiToggle sources={group.sources} field="incrementalRefreshEnabled" iconName="refresh" color="#16a34a" onToggle={handleToggleRefresh} />
+                            : <ToggleBtn on={s.incrementalRefreshEnabled} onClick={() => handleToggleRefresh(s.sourceId)} iconName="refresh" color="#16a34a" />}
                         </div>
-                        <div className="w-[10%]" onClick={e => e.stopPropagation()}>
+                        <div className="w-[10%] flex justify-center" onClick={e => e.stopPropagation()}>
                           {isMulti
-                            ? <MultiToggle sources={group.sources} field="isFavorited" iconName="favorites-fill" color="#facc15" onToggle={handleToggleFavorite} />
-                            : <ToggleBtn on={s.isFavorited} onClick={() => handleToggleFavorite(s.sourceId)} iconName="favorites-fill" color="#facc15" />}
+                            ? <MultiToggle sources={group.sources} field="isFavorited" iconName="favorites-fill" color="#ca8a04" onToggle={handleToggleFavorite} />
+                            : <ToggleBtn on={s.isFavorited} onClick={() => handleToggleFavorite(s.sourceId)} iconName="favorites-fill" color="#ca8a04" />}
                         </div>
-                        <div className="w-[10%]" onClick={e => e.stopPropagation()}>
+                        <div className="w-[10%] flex justify-center" onClick={e => e.stopPropagation()}>
                           {isMulti
-                            ? <MultiToggle sources={group.sources} field="isFinished" iconName="wanjie1" color="#60a5fa" onToggle={handleToggleFinished} />
-                            : <ToggleBtn on={s.isFinished} onClick={() => handleToggleFinished(s.sourceId)} iconName="wanjie1" color="#60a5fa" />}
+                            ? <MultiToggle sources={group.sources} field="isFinished" iconName="wanjie1" color="#2563eb" onToggle={handleToggleFinished} />
+                            : <ToggleBtn on={s.isFinished} onClick={() => handleToggleFinished(s.sourceId)} iconName="wanjie1" color="#2563eb" />}
                         </div>
                         {/* 最近更新 */}
-                        <div className="w-[12%] text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                        <div className="w-[12%] text-sm text-gray-800 dark:text-gray-100 whitespace-nowrap">
                           {latestTime}
                           {!isMulti && s.incrementalRefreshEnabled && s.incrementalRefreshFailures > 0 && (
-                            <><br /><span className="text-[10px] px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-400">{t('incrementalRefresh.failureCount', { failures: s.incrementalRefreshFailures, max: stats.maxFailures })}</span></>
+                            <><br /><span className="text-[10px] px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-700 dark:text-red-300">{t('incrementalRefresh.failureCount', { failures: s.incrementalRefreshFailures, max: stats.maxFailures })}</span></>
                           )}
                         </div>
                       </div>
@@ -550,7 +550,7 @@ export const BatchManagePage = () => {
 
           {/* 分页 */}
           {stats.total > pageSize && (
-            <div className="px-4 sm:px-5 py-3 border-t border-gray-200 dark:border-white/6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <div className="px-4 sm:px-5 py-3 border-t border-gray-200 dark:border-white/6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-700 dark:text-gray-200">
               <span>{t('incrementalRefresh.totalSources', { count: stats.totalSources })} · {t('incrementalRefresh.selectedCount', { count: selectedSourceIds.length })}</span>
               <div className="flex items-center gap-2">
                 <Pagination current={page} pageSize={pageSize} total={stats.total} onChange={handlePageChange} showSizeChanger={false} size="small" simple={isMobile} />
@@ -563,6 +563,29 @@ export const BatchManagePage = () => {
         </div>
       </div>
       </div>
+
+      {/* why：选中后在底部浮出操作条，批量操作不再藏在下拉菜单里 */}
+      {selectedSourceIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[95vw]">
+          <Card size="small" className="shadow-2xl" styles={{ body: { padding: '8px 12px' } }}>
+            <div className="flex items-center gap-2 flex-wrap justify-center">
+              <span className="text-sm font-semibold mr-1">{t('incrementalRefresh.selectedCount', { count: selectedSourceIds.length })}</span>
+              {[
+                { key: 'refresh', label: t('batchManage.sidebarBatchRefresh'), on: d => batchToggleIncrementalRefresh({ ...d, enabled: true }), off: d => batchToggleIncrementalRefresh({ ...d, enabled: false }), onMsg: 'incrementalRefresh.batchEnableSuccess', offMsg: 'incrementalRefresh.batchDisableSuccess' },
+                { key: 'fav', label: t('batchManage.sidebarBatchFavorite'), on: batchSetFavorite, off: batchUnsetFavorite, onMsg: 'incrementalRefresh.batchFavoriteSuccess', offMsg: 'incrementalRefresh.batchUnfavoriteSuccess' },
+                { key: 'finish', label: t('batchManage.sidebarBatchFinished'), on: batchSetSourceFinished, off: batchUnsetSourceFinished, onMsg: 'incrementalRefresh.batchFinishedSuccess', offMsg: 'incrementalRefresh.batchUnfinishedSuccess' },
+              ].map(op => (
+                <Space.Compact key={op.key} size="small">
+                  <Button disabled={operationLoading} onClick={() => handleBatchOp(op.on, op.onMsg)}>{op.label} · {t('batchManage.enable')}</Button>
+                  <Button disabled={operationLoading} onClick={() => handleBatchOp(op.off, op.offMsg)}>{t('batchManage.disable')}</Button>
+                </Space.Compact>
+              ))}
+              <Button size="small" danger disabled={operationLoading} onClick={() => setDeleteModalOpen(true)}>{t('batchManage.sidebarBatchDelete')}</Button>
+              <Button size="small" type="text" onClick={handleDeselectAll}>{t('batchManage.sidebarDeselectAll')}</Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* 删除确认弹窗 */}
       <Modal title={t('incrementalRefresh.deleteConfirmTitle')} open={deleteModalOpen}
@@ -587,15 +610,15 @@ const ToggleBtn = ({ on, onClick, iconName, color }) => (
     className={`h-7 px-2 rounded-full flex items-center justify-center gap-1 transition-all cursor-pointer text-xs font-medium ${
       on
         ? 'shadow-sm'
-        : 'bg-gray-100 dark:bg-white/6 text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-white/10'
+        : 'border border-gray-400 dark:border-gray-500 text-gray-500 dark:text-gray-400 hover:border-gray-600 dark:hover:border-gray-300'
     }`}
     style={on ? {
-      backgroundColor: `${color}22`,
-      color: color,
-      boxShadow: `0 0 0 1px ${color}44`,
+      // why：开启态用实心色块+白色图标，与关闭态的灰色描边一眼可分
+      backgroundColor: color,
+      color: '#fff',
     } : undefined}
   >
-    <MyIcon icon={iconName} size={13} color={on ? color : undefined} />
+    <MyIcon icon={iconName} size={13} color={on ? '#fff' : undefined} />
   </button>
 )
 
@@ -616,20 +639,19 @@ const MultiToggle = ({ sources, field, iconName, color, onToggle }) => {
         className={`h-7 px-2 rounded-full flex items-center gap-1 transition-all cursor-pointer text-xs font-medium ${
           anyOn
             ? 'shadow-sm'
-            : 'bg-gray-100 dark:bg-white/6 text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-white/10'
+            : 'border border-gray-400 dark:border-gray-500 text-gray-500 dark:text-gray-400 hover:border-gray-600 dark:hover:border-gray-300'
         }`}
         style={anyOn ? {
-          backgroundColor: `${color}22`,
-          color: color,
-          boxShadow: `0 0 0 1px ${color}44`,
+          backgroundColor: color,
+          color: '#fff',
         } : undefined}
         onClick={() => setOpen(!open)}
-      ><MyIcon icon={iconName} size={13} color={anyOn ? color : undefined} /> <span className="text-[9px] opacity-50">▾</span></button>
+      ><MyIcon icon={iconName} size={13} color={anyOn ? '#fff' : undefined} /> <span className="text-[9px] opacity-80">▾</span></button>
       {open && (
         <div className="batch-multitoggle-dropdown absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-white dark:bg-[#1a1e2e] border border-gray-200 dark:border-white/6 rounded-xl p-1.5 shadow-xl z-20 min-w-[140px]">
           {sources.map(s => (
             <div key={s.sourceId} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/3 text-xs">
-              <span className="font-medium text-gray-600 dark:text-gray-300">{s.providerName}</span>
+              <span className="font-medium text-gray-800 dark:text-gray-100">{s.providerName}</span>
               <ToggleBtn on={s[field]} onClick={() => onToggle(s.sourceId)} iconName={iconName} color={color} />
             </div>
           ))}

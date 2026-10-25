@@ -88,7 +88,7 @@ export default {
     library: '彈幕庫',
     task: '任務管理器',
     bullet: '彈幕',
-    mediaFetch: '媒體取得',
+    mediaFetch: '媒體服務聯動',
     source: '搜尋源',
     control: '外部控制',
     setting: '設定',
@@ -104,7 +104,9 @@ export default {
     bulletFallback: '設定',
     bulletDataCheck: '資料體檢',
     apiTest: '介面測試',
-    mediaLibraryScan: '媒體庫讀取',
+    mediaConnection: '媒體服務連線配置',
+    mediaWebhook: 'Webhook',
+    mediaLibraryScan: '媒體項目掃描',
     mediaLocalScan: '本機掃描',
     sourceScrapers: '彈幕搜尋源',
     sourceMetadata: '中繼資料搜尋源',
@@ -2661,7 +2663,9 @@ export default {
 
   // 媒體取得模組
   mediaFetch: {
-    libraryScanTab: '媒體庫讀取',
+    connectionTab: '媒體服務連線配置',
+    webhookTab: 'Webhook',
+    libraryScanTab: '媒體項目掃描',
     localScanTab: '本機掃描',
 
     localScan: {
@@ -2713,6 +2717,11 @@ export default {
       instruction2: '2. 設定要掃描的媒體庫',
       instruction3: '3. 儲存設定並開始掃描',
       instruction4: '4. 查看掃描結果和匯入媒體',
+      connInstruction1: '1. 點擊「新增伺服器」，選擇 Emby / Jellyfin / Plex 類型',
+      connInstruction2: '2. 填寫伺服器位址與 API Key，測試連線後儲存',
+      connInstruction3: '3. 啟用伺服器後，可在「Webhook」中設定自動入庫',
+      connInstruction4: '4. 到「媒體項目掃描」中選擇媒體庫並掃描',
+      scanInstructions: '先選擇要掃描的媒體伺服器，再勾選媒體庫並開始掃描；伺服器的新增與修改請在「媒體服務連線設定」中進行',
       libraryConfig: '媒體庫設定',
       startScan: '開始掃描',
       scan: '掃描',
@@ -4081,7 +4090,8 @@ export default {
     bulletFallback: { title: '後備設定', desc: '匹配後備、搜尋後備（全網搜尋）開關' },
     bulletDataCheck: { title: '資料校驗', desc: '檢查彈幕資料一致性' },
     apiTest: { title: '介面測試', desc: 'match 匹配、分集、彈幕取得、檔案識別測試' },
-    mediaLibraryScan: { title: '媒體庫讀取', desc: '從 Emby/Jellyfin/Plex 等媒體伺服器掃描匯入' },
+    mediaConnection: { title: '媒體服務連線配置', desc: '新增/編輯 Emby/Jellyfin/Plex 等媒體伺服器連線' },
+    mediaLibraryScan: { title: '媒體項目掃描', desc: '從已連線的媒體伺服器掃描媒體庫並匯入' },
     mediaLocalScan: { title: '本地掃描', desc: '掃描本地目錄檔案並匯入彈幕' },
     sourceScrapers: { title: '彈幕搜尋源', desc: '管理 B站/騰訊/愛奇藝等彈幕源、Cookie、代理' },
     sourceMetadata: { title: '元資訊搜尋源', desc: '管理 TMDB/TVDB/Bangumi/IMDb/豆瓣等元資料源' },

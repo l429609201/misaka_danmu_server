@@ -88,7 +88,7 @@ export default {
     library: '弹幕库',
     task: '任务管理器',
     bullet: '弹幕',
-    mediaFetch: '媒体获取',
+    mediaFetch: '媒体服务联动',
     source: '搜索源',
     control: '外部控制',
     setting: '设置',
@@ -104,7 +104,9 @@ export default {
     bulletFallback: '设置',
     bulletDataCheck: '数据体检',
     apiTest: '接口测试',
-    mediaLibraryScan: '媒体库读取',
+    mediaConnection: '媒体服务连接配置',
+    mediaWebhook: 'Webhook',
+    mediaLibraryScan: '媒体项目扫描',
     mediaLocalScan: '本地扫描',
     sourceScrapers: '弹幕搜索源',
     sourceMetadata: '元信息搜索源',
@@ -3201,7 +3203,9 @@ export default {
   // 媒体获取模块
   mediaFetch: {
     // 顶部标签
-    libraryScanTab: '媒体库读取',
+    connectionTab: '媒体服务连接配置',
+    webhookTab: 'Webhook',
+    libraryScanTab: '媒体项目扫描',
     localScanTab: '本地扫描',
 
     // 本地扫描 LocalScan
@@ -3254,6 +3258,11 @@ export default {
       instruction2: '2. 配置要扫描的媒体库',
       instruction3: '3. 保存配置并开始扫描',
       instruction4: '4. 查看扫描结果和导入媒体',
+      connInstruction1: '1. 点击「添加服务器」，选择 Emby / Jellyfin / Plex 类型',
+      connInstruction2: '2. 填写服务器地址与 API Key，测试连接后保存',
+      connInstruction3: '3. 启用服务器后，可在「Webhook」中配置自动入库',
+      connInstruction4: '4. 到「媒体项目扫描」中选择媒体库并扫描',
+      scanInstructions: '先选择要扫描的媒体服务器，再勾选媒体库并开始扫描；服务器的新增与修改请在「媒体服务连接配置」中进行',
       libraryConfig: '媒体库配置',
       startScan: '开始扫描',
       scan: '扫描',
@@ -4638,7 +4647,8 @@ export default {
     bulletFallback: { title: '后备设置', desc: '匹配后备、搜索后备（全网搜索）开关' },
     bulletDataCheck: { title: '数据校验', desc: '检查弹幕数据一致性' },
     apiTest: { title: '接口测试', desc: 'match 匹配、分集、弹幕获取、文件识别测试' },
-    mediaLibraryScan: { title: '媒体库读取', desc: '从 Emby/Jellyfin/Plex 等媒体服务器扫描导入' },
+    mediaConnection: { title: '媒体服务连接配置', desc: '添加/编辑 Emby/Jellyfin/Plex 等媒体服务器连接' },
+    mediaLibraryScan: { title: '媒体项目扫描', desc: '从已连接的媒体服务器扫描媒体库并导入' },
     mediaLocalScan: { title: '本地扫描', desc: '扫描本地目录文件并导入弹幕' },
     sourceScrapers: { title: '弹幕搜索源', desc: '管理 B站/腾讯/爱奇艺等弹幕源、Cookie、代理' },
     sourceMetadata: { title: '元信息搜索源', desc: '管理 TMDB/TVDB/Bangumi/IMDb/豆瓣等元数据源' },

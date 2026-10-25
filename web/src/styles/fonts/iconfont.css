@@ -1,8 +1,8 @@
 @font-face {
   font-family: "iconfont"; /* Project id 4997004 */
-  src: url('iconfont.woff2?t=1780773807416') format('woff2'),
-       url('iconfont.woff?t=1780773807416') format('woff'),
-       url('iconfont.ttf?t=1780773807416') format('truetype');
+  src: url('iconfont.woff2?t=1792911593182') format('woff2'),
+       url('iconfont.woff?t=1792911593182') format('woff'),
+       url('iconfont.ttf?t=1792911593182') format('truetype');
 }
 
 .iconfont {
@@ -11,6 +11,10 @@
   font-style: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.icon-liumeitifuwu:before {
+  content: "\e642";
 }
 
 .icon-anquan:before {
