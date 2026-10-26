@@ -3,6 +3,8 @@ import { Form, Input, InputNumber, Switch, Button, Space, message, Card, Divider
 import { FolderOpenOutlined, CheckCircleOutlined, FileOutlined, SwapOutlined, EditOutlined, SyncOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { getConfig, setConfig, getAnimeLibrary, previewMigrateDanmaku, batchMigrateDanmaku, previewRenameDanmaku, batchRenameDanmaku, previewDanmakuTemplate, applyDanmakuTemplate, getTemplateVariables, getDanmakuLikesFetchEnabled, setDanmakuLikesFetchEnabled, getDanmakuSourceTagEnabled, setDanmakuSourceTagEnabled, getDanmakuSourceTagAlias, setDanmakuSourceTagAlias } from '@/apis';
 import DirectoryBrowser from '../../media-fetch/components/DirectoryBrowser';
+import { STORAGE_TYPES } from '@/configs';
+import { MyIcon } from '@/components/MyIcon';
 import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
@@ -15,19 +17,9 @@ const DanmakuStorage = () => {
   const [loading, setLoading] = useState(false);
   const [customDanmakuPathEnabled, setCustomDanmakuPathEnabled] = useState(false);
 
-  // 电影配置
-  const [movieDanmakuDirectoryPath, setMovieDanmakuDirectoryPath] = useState('/app/config/danmaku/movies');
-  const [movieDanmakuFilenameTemplate, setMovieDanmakuFilenameTemplate] = useState('${title}/${episodeId}');
-  const [moviePreviewPath, setMoviePreviewPath] = useState('');
-
-  // 电视配置
-  const [tvDanmakuDirectoryPath, setTvDanmakuDirectoryPath] = useState('/app/config/danmaku/tv');
-  const [tvDanmakuFilenameTemplate, setTvDanmakuFilenameTemplate] = useState('${animeId}/${episodeId}');
-  const [tvPreviewPath, setTvPreviewPath] = useState('');
-
   // 目录浏览器状态
   const [browserVisible, setBrowserVisible] = useState(false);
-  const [browserTarget, setBrowserTarget] = useState(''); // 'movie' or 'tv'
+  const [browserTarget, setBrowserTarget] = useState(''); // 存储类型 key 或 'migrate'
 
   // Tab状态
   const [activeTab, setActiveTab] = useState('config');
@@ -77,15 +69,37 @@ const DanmakuStorage = () => {
   // 从后端获取的模板变量（统一列表）
   const [templateVariables, setTemplateVariables] = useState([]);
 
-  // 电影/电视配置Tab切换
-  const [activeConfigTab, setActiveConfigTab] = useState('movie');
+  // 存储类型配置Tab切换
+  const [activeConfigTab, setActiveConfigTab] = useState(STORAGE_TYPES[0].key);
   // 快速模板弹窗
   const [quickTemplateModalVisible, setQuickTemplateModalVisible] = useState(false);
-  const [quickTemplateType, setQuickTemplateType] = useState('movie'); // 'movie' or 'tv'
+  const [quickTemplateType, setQuickTemplateType] = useState(STORAGE_TYPES[0].key); // 存储类型 key
 
-  // 输入框引用，用于插入变量到光标位置
-  const movieTemplateInputRef = useRef(null);
-  const tvTemplateInputRef = useRef(null);
+  // 5 个存储类型统一状态：STORAGE_TYPES 为唯一前端数据源，{ [key]: { dir, template } }；
+  // 带 fallback 的类型值留空 = 沿用回退类型（后端 resolve_storage_config 逐项回退）
+  const [storageConfigs, setStorageConfigs] = useState(() =>
+    Object.fromEntries(STORAGE_TYPES.map(({ key, defaultDir, defaultTemplate }) => [key, { dir: defaultDir, template: defaultTemplate }]))
+  );
+  // 单个 ref 持有各类型模板输入框（用于在光标处插入变量），类型数量变化时不违反 Hooks 调用规则
+  const templateInputRefMap = useRef({});
+  const templateInputRefs = Object.fromEntries(STORAGE_TYPES.map(({ key }) => [key, {
+    get current() { return templateInputRefMap.current[key] || null; },
+    set current(el) { templateInputRefMap.current[key] = el; },
+  }]));
+  const updateStorageConfig = (key, field, value) => {
+    setStorageConfigs(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+  };
+  // 取类型的实际生效值：自身留空且有 fallback 时沿用回退类型
+  const effectiveStorageValue = (storageType, field) =>
+    (storageConfigs[storageType.key][field] || '').trim()
+    || (storageType.fallback ? storageConfigs[storageType.fallback][field] : '');
+
+  // 统一取某个 Tab 的模板读写器（变量插入、快速模板共用）
+  const getTemplateAccessor = (tab) => ({
+    ref: templateInputRefs[tab],
+    value: storageConfigs[tab]?.template || '',
+    set: (v) => updateStorageConfig(tab, 'template', v),
+  });
 
   // 预设模板选项
   const presetTemplates = [
@@ -95,8 +109,8 @@ const DanmakuStorage = () => {
     { value: 'plex', label: t('danmakuStorage.tmplPlexStyle'), template: '${title}/${title} - S${season:02d}E${episode:02d}' },
     { value: 'emby', label: t('danmakuStorage.tmplEmbyStyle'), template: '${title}/${title} S${season:02d}/${title} S${season:02d}E${episode:02d}' },
     { value: 'titleBase', label: t('danmakuStorage.tmplTitleBase'), template: '${titleBase}/Season ${season}/${titleBase} - S${season}E${episode}' },
-    { value: 'custom_movie', label: t('danmakuStorage.tmplCustomMovie'), template: movieDanmakuFilenameTemplate || '${title}/${episodeId}' },
-    { value: 'custom_tv', label: t('danmakuStorage.tmplCustomTv'), template: tvDanmakuFilenameTemplate || '${animeId}/${episodeId}' },
+    { value: 'custom_movie', label: t('danmakuStorage.tmplCustomMovie'), template: storageConfigs.movie.template || '${title}/${episodeId}' },
+    { value: 'custom_tv', label: t('danmakuStorage.tmplCustomTv'), template: storageConfigs.tv.template || '${animeId}/${episodeId}' },
   ];
 
   // 多规则重命名 - 规则类型配置
@@ -296,11 +310,6 @@ const DanmakuStorage = () => {
     loadConfig();
   }, []);
 
-  // 更新路径预览
-  useEffect(() => {
-    updatePreview();
-  }, [customDanmakuPathEnabled, movieDanmakuDirectoryPath, movieDanmakuFilenameTemplate, tvDanmakuDirectoryPath, tvDanmakuFilenameTemplate]);
-
   // 监听自定义模板变化，自动预览（防抖）
   const templatePreviewTimerRef = useRef(null);
   useEffect(() => {
@@ -381,30 +390,20 @@ const DanmakuStorage = () => {
 
       // 加载配置
       const enabledRes = await getConfig('customDanmakuPathEnabled');
-      const movieDirRes = await getConfig('movieDanmakuDirectoryPath');
-      const movieTemplateRes = await getConfig('movieDanmakuFilenameTemplate');
-      const tvDirRes = await getConfig('tvDanmakuDirectoryPath');
-      const tvTemplateRes = await getConfig('tvDanmakuFilenameTemplate');
-
       const enabled = enabledRes?.data?.value === 'true';
-      const movieDir = movieDirRes?.data?.value || '/app/config/danmaku/movies';
-      const movieTemplate = movieTemplateRes?.data?.value || '${title}/${episodeId}';
-      const tvDir = tvDirRes?.data?.value || '/app/config/danmaku/tv';
-      const tvTemplate = tvTemplateRes?.data?.value || '${animeId}/${episodeId}';
-
       setCustomDanmakuPathEnabled(enabled);
-      setMovieDanmakuDirectoryPath(movieDir);
-      setMovieDanmakuFilenameTemplate(movieTemplate);
-      setTvDanmakuDirectoryPath(tvDir);
-      setTvDanmakuFilenameTemplate(tvTemplate);
 
-      form.setFieldsValue({
-        customDanmakuPathEnabled: enabled,
-        movieDanmakuDirectoryPath: movieDir,
-        movieDanmakuFilenameTemplate: movieTemplate,
-        tvDanmakuDirectoryPath: tvDir,
-        tvDanmakuFilenameTemplate: tvTemplate,
-      });
+      // 各类型存储配置：未设置时用类型默认值（带 fallback 的类型默认为空 = 沿用回退类型）
+      const storageEntries = await Promise.all(STORAGE_TYPES.map(async ({ key, defaultDir, defaultTemplate }) => {
+        const [dirRes, tplRes] = await Promise.all([
+          getConfig(`${key}DanmakuDirectoryPath`),
+          getConfig(`${key}DanmakuFilenameTemplate`),
+        ]);
+        return [key, { dir: dirRes?.data?.value || defaultDir, template: tplRes?.data?.value || defaultTemplate }];
+      }));
+      setStorageConfigs(Object.fromEntries(storageEntries));
+
+      form.setFieldsValue({ customDanmakuPathEnabled: enabled });
 
       // 获取模板变量列表
       try {
@@ -441,86 +440,40 @@ const DanmakuStorage = () => {
     }
   };
 
-  const updatePreview = () => {
-    if (!customDanmakuPathEnabled) {
-      setMoviePreviewPath('/app/config/danmaku/160/25000160010001.xml (默认路径)');
-      setTvPreviewPath('/app/config/danmaku/160/25000160010001.xml (默认路径)');
-      return;
-    }
-
-    // 电影示例数据
-    const movieExampleContext = {
-      animeId: '160',
-      episodeId: '25000160010001',
-      title: '铃芽之旅 第二季',
-      titleBase: '铃芽之旅',  // 电影标题通常不含季度信息
-      season: '1',
-      episode: '1',
-      year: '2022',
-      provider: 'bilibili',
-      sourceId: '192',
-      tmdbId: '1022789',
-      category: '电影',
-      type: 'movie',
-    };
-
-    // 电视示例数据
-    const tvExampleContext = {
-      animeId: '160',
-      episodeId: '25000160010001',
-      title: '葬送的芙莉莲 第二季',
-      titleBase: '葬送的芙莉莲',  // 标准化标题，去除季度信息
-      season: '1',
-      episode: '1',
-      year: '2023',
-      provider: 'bilibili',
-      sourceId: '192',
-      tmdbId: '209867',
-      category: '电视节目',
-      type: 'tv_series',
-    };
-
-    // 生成电影预览
-    let moviePreview = movieDanmakuFilenameTemplate;
-    moviePreview = moviePreview.replace(/\$\{(\w+):(\w+)\}/g, (match, varName, format) => {
-      const value = movieExampleContext[varName];
-      if (value && format.endsWith('d')) {
-        const num = parseInt(value);
-        const width = parseInt(format.match(/\d+/)?.[0] || '0');
-        return num.toString().padStart(width, '0');
+  // 路径预览：5 个类型统一按示例作品渲染；留空项按 fallback 回退，与后端 resolve_storage_config 一致
+  const storagePreviewPaths = useMemo(() => {
+    const result = {};
+    STORAGE_TYPES.forEach((storageType) => {
+      const { key, category, type, example } = storageType;
+      if (!customDanmakuPathEnabled) {
+        result[key] = '/app/config/danmaku/160/25000160010001.xml (默认路径)';
+        return;
       }
-      return value || match;
+      const ctx = {
+        animeId: '160', episodeId: '25000160010001', season: '1', episode: '1',
+        provider: 'bilibili', sourceId: '192', category, type, ...example,
+      };
+      const template = effectiveStorageValue(storageType, 'template');
+      const dir = effectiveStorageValue(storageType, 'dir').replace(/[/\\]+$/, '');
+      const rendered = template
+        .replace(/\$\{(\w+):(\w+)\}/g, (match, varName, format) => {
+          const value = ctx[varName];
+          if (value && format.endsWith('d')) {
+            const width = parseInt(format.match(/\d+/)?.[0] || '0');
+            return parseInt(value).toString().padStart(width, '0');
+          }
+          return value || match;
+        })
+        .replace(/\$\{(\w+)\}/g, (match, varName) => ctx[varName] || match)
+        .replace(/^[/\\]+/, '');
+      // 检测目录路径使用的分隔符，保持一致
+      const sep = dir.includes('\\') ? '\\' : '/';
+      result[key] = `${dir}${sep}${rendered.replace(/[/\\]/g, sep)}${rendered.endsWith('.xml') ? '' : '.xml'}`;
     });
-    moviePreview = moviePreview.replace(/\$\{(\w+)\}/g, (match, varName) => {
-      return movieExampleContext[varName] || match;
-    });
-    const movieDir = movieDanmakuDirectoryPath.replace(/[/\\]+$/, '');
-    const movieFilename = moviePreview.replace(/^[/\\]+/, '');
-    // 检测目录路径使用的分隔符，保持一致
-    const sep = movieDir.includes('\\') ? '\\' : '/';
-    const movieFullPath = `${movieDir}${sep}${movieFilename.replace(/[/\\]/g, sep)}${movieFilename.endsWith('.xml') ? '' : '.xml'}`;
-    setMoviePreviewPath(movieFullPath);
-
-    // 生成电视预览
-    let tvPreview = tvDanmakuFilenameTemplate;
-    tvPreview = tvPreview.replace(/\$\{(\w+):(\w+)\}/g, (match, varName, format) => {
-      const value = tvExampleContext[varName];
-      if (value && format.endsWith('d')) {
-        const num = parseInt(value);
-        const width = parseInt(format.match(/\d+/)?.[0] || '0');
-        return num.toString().padStart(width, '0');
-      }
-      return value || match;
-    });
-    tvPreview = tvPreview.replace(/\$\{(\w+)\}/g, (match, varName) => {
-      return tvExampleContext[varName] || match;
-    });
-    const tvDir = tvDanmakuDirectoryPath.replace(/[/\\]+$/, '');
-    const tvFilename = tvPreview.replace(/^[/\\]+/, '');
-    const tvSep = tvDir.includes('\\') ? '\\' : '/';
-    const tvFullPath = `${tvDir}${tvSep}${tvFilename.replace(/[/\\]/g, tvSep)}${tvFilename.endsWith('.xml') ? '' : '.xml'}`;
-    setTvPreviewPath(tvFullPath);
-  };
+    return result;
+    // effectiveStorageValue 只依赖 storageConfigs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customDanmakuPathEnabled, storageConfigs]);
 
   const handleSave = async () => {
     try {
@@ -528,10 +481,10 @@ const DanmakuStorage = () => {
 
       // 保存配置
       await setConfig('customDanmakuPathEnabled', customDanmakuPathEnabled ? 'true' : 'false');
-      await setConfig('movieDanmakuDirectoryPath', movieDanmakuDirectoryPath);
-      await setConfig('movieDanmakuFilenameTemplate', movieDanmakuFilenameTemplate);
-      await setConfig('tvDanmakuDirectoryPath', tvDanmakuDirectoryPath);
-      await setConfig('tvDanmakuFilenameTemplate', tvDanmakuFilenameTemplate);
+      for (const { key } of STORAGE_TYPES) {
+        await setConfig(`${key}DanmakuDirectoryPath`, (storageConfigs[key]?.dir || '').trim());
+        await setConfig(`${key}DanmakuFilenameTemplate`, (storageConfigs[key]?.template || '').trim());
+      }
 
       message.success(t('danmakuStorage.saveSuccess'));
     } catch (error) {
@@ -870,14 +823,11 @@ const DanmakuStorage = () => {
 
   // 选择目录
   const handleSelectDirectory = async (path) => {
-    if (browserTarget === 'movie') {
-      setMovieDanmakuDirectoryPath(path);
-      form.setFieldValue('movieDanmakuDirectoryPath', path);
-      message.success(t('danmakuStorage.movieDirSelected', { path }));
-    } else if (browserTarget === 'tv') {
-      setTvDanmakuDirectoryPath(path);
-      form.setFieldValue('tvDanmakuDirectoryPath', path);
-      message.success(t('danmakuStorage.tvDirSelected', { path }));
+    const storageType = STORAGE_TYPES.find(({ key }) => key === browserTarget);
+    if (storageType) {
+      // 存储类型目录选择（5 个类型统一处理）
+      updateStorageConfig(storageType.key, 'dir', path);
+      message.success(storageType.i18n.dirSelected ? t(storageType.i18n.dirSelected, { path }) : `已选择目录: ${path}`);
     } else if (browserTarget === 'migrate') {
       // 迁移目录选择后自动预览
       setMigrateTargetPath(path);
@@ -971,10 +921,7 @@ const DanmakuStorage = () => {
                           disabled={!customDanmakuPathEnabled}
                           onClick={() => {
                             // 根据当前激活的Tab插入到对应的输入框光标处
-                            const inputRef = activeConfigTab === 'movie' ? movieTemplateInputRef : tvTemplateInputRef;
-                            const currentValue = activeConfigTab === 'movie' ? movieDanmakuFilenameTemplate : tvDanmakuFilenameTemplate;
-                            const setValue = activeConfigTab === 'movie' ? setMovieDanmakuFilenameTemplate : setTvDanmakuFilenameTemplate;
-                            const fieldName = activeConfigTab === 'movie' ? 'movieDanmakuFilenameTemplate' : 'tvDanmakuFilenameTemplate';
+                            const { ref: inputRef, value: currentValue, set: setValue } = getTemplateAccessor(activeConfigTab);
 
                             if (inputRef.current && inputRef.current.input) {
                               const input = inputRef.current.input;
@@ -982,7 +929,6 @@ const DanmakuStorage = () => {
                               const end = input.selectionEnd || 0;
                               const newValue = currentValue.slice(0, start) + v.name + currentValue.slice(end);
                               setValue(newValue);
-                              form.setFieldValue(fieldName, newValue);
                               // 设置光标位置
                               setTimeout(() => {
                                 input.focus();
@@ -992,7 +938,6 @@ const DanmakuStorage = () => {
                               // 如果无法获取光标，则追加到末尾
                               const newValue = currentValue + v.name;
                               setValue(newValue);
-                              form.setFieldValue(fieldName, newValue);
                             }
                           }}
                           style={{ fontFamily: 'monospace', fontSize: '12px' }}
@@ -1015,201 +960,104 @@ const DanmakuStorage = () => {
         <Tabs
           activeKey={activeConfigTab}
           onChange={setActiveConfigTab}
-          items={[
-            {
-              key: 'movie',
-              label: <span>{t('danmakuStorage.tabMovie')}</span>,
+          items={STORAGE_TYPES.map((storageType) => {
+            const { key, label, icon, fallback, defaultDir, defaultTemplate, i18n } = storageType;
+            const fallbackConfig = fallback ? storageConfigs[fallback] : null;
+            const fallbackLabel = fallback ? STORAGE_TYPES.find((item) => item.key === fallback)?.label : '';
+            return {
+              key,
+              label: <span className="inline-flex items-center gap-1"><MyIcon icon={icon} size={14} />{i18n.tab ? t(i18n.tab) : label}</span>,
               children: (
                 <div>
+                  {fallback && (
+                    <div style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginBottom: '12px' }}>
+                      留空的项沿用「{fallbackLabel}」配置；填写后该类型作品单独使用此目录/模板。
+                    </div>
+                  )}
+                  {/* 存储目录 */}
+                  <Form.Item label={key === 'movie' ? t('danmakuStorage.labelMovieDir') : t('danmakuStorage.labelTvDir')}>
+                    <div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <Input
+                          value={storageConfigs[key].dir}
+                          onChange={(e) => updateStorageConfig(key, 'dir', e.target.value)}
+                          placeholder={fallbackConfig ? `留空沿用：${fallbackConfig.dir}` : defaultDir}
+                          disabled={!customDanmakuPathEnabled}
+                          allowClear={!!fallback}
+                          style={{ flex: 1 }}
+                        />
+                        <Button
+                          icon={<FolderOpenOutlined />}
+                          onClick={() => handleBrowseDirectory(key)}
+                          disabled={!customDanmakuPathEnabled}
+                        >
+                          {t('danmakuStorage.btnBrowse')}
+                        </Button>
+                      </div>
+                      {i18n.dirDesc && (
+                        <div style={{ color: '#999', fontSize: '12px', marginTop: '4px' }}>
+                          {t(i18n.dirDesc)}
+                        </div>
+                      )}
+                    </div>
+                  </Form.Item>
 
-        {/* 电影存储目录 */}
-        <Form.Item
-          label={t('danmakuStorage.labelMovieDir')}
-          name="movieDanmakuDirectoryPath"
-        >
-          <div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <Input
-                value={movieDanmakuDirectoryPath}
-                onChange={(e) => {
-                  setMovieDanmakuDirectoryPath(e.target.value);
-                  form.setFieldValue('movieDanmakuDirectoryPath', e.target.value);
-                }}
-                placeholder="/app/config/danmaku/movies"
-                disabled={!customDanmakuPathEnabled}
-                style={{ flex: 1 }}
-              />
-              <Button
-                icon={<FolderOpenOutlined />}
-                onClick={() => handleBrowseDirectory('movie')}
-                disabled={!customDanmakuPathEnabled}
-              >
-                {t('danmakuStorage.btnBrowse')}
-              </Button>
-            </div>
-            <div style={{ color: '#999', fontSize: '12px', marginTop: '4px' }}>
-              {t('danmakuStorage.descMovieDir')}
-            </div>
-          </div>
-        </Form.Item>
+                  {/* 命名模板 */}
+                  <Form.Item label={t('danmakuStorage.labelNamingTemplate')}>
+                    <div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <Input
+                          ref={templateInputRefs[key]}
+                          value={storageConfigs[key].template}
+                          onChange={(e) => updateStorageConfig(key, 'template', e.target.value)}
+                          placeholder={fallbackConfig ? `留空沿用：${fallbackConfig.template}` : defaultTemplate}
+                          disabled={!customDanmakuPathEnabled}
+                          allowClear={!!fallback}
+                          style={{ flex: 1 }}
+                        />
+                        <Button
+                          icon={<FileOutlined />}
+                          onClick={() => {
+                            setQuickTemplateType(key);
+                            setQuickTemplateModalVisible(true);
+                          }}
+                          disabled={!customDanmakuPathEnabled}
+                        >
+                          {t('danmakuStorage.btnQuickTemplate')}
+                        </Button>
+                      </div>
+                      {!fallback && (
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginTop: '8px' }}>
+                          {t('danmakuStorage.hintSubdirSupport', { example: defaultTemplate })}
+                        </div>
+                      )}
+                    </div>
+                  </Form.Item>
 
-        {/* 电影命名模板 */}
-        <Form.Item
-          label={t('danmakuStorage.labelNamingTemplate')}
-          name="movieDanmakuFilenameTemplate"
-        >
-          <div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <Input
-                ref={movieTemplateInputRef}
-                value={movieDanmakuFilenameTemplate}
-                onChange={(e) => {
-                  setMovieDanmakuFilenameTemplate(e.target.value);
-                  form.setFieldValue('movieDanmakuFilenameTemplate', e.target.value);
-                }}
-                placeholder="${title}/${episodeId}"
-                disabled={!customDanmakuPathEnabled}
-                style={{ flex: 1 }}
-              />
-              <Button
-                icon={<FileOutlined />}
-                onClick={() => {
-                  setQuickTemplateType('movie');
-                  setQuickTemplateModalVisible(true);
-                }}
-                disabled={!customDanmakuPathEnabled}
-              >
-                {t('danmakuStorage.btnQuickTemplate')}
-              </Button>
-            </div>
-            <div style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginTop: '8px' }}>
-              {t('danmakuStorage.hintSubdirSupport', { example: '${title}/${episodeId}' })}
-            </div>
-          </div>
-        </Form.Item>
-
-        {/* 电影路径预览 */}
-        <Form.Item label={
-          <Space>
-            {t('danmakuStorage.labelPathPreview')}
-          </Space>
-        }>
-          <div style={{
-            padding: '16px',
-            background: 'var(--color-hover)',
-            borderRadius: '8px',
-            border: '1px solid var(--color-border)',
-            fontFamily: 'JetBrains Mono, Consolas, monospace',
-            fontSize: '13px',
-            wordBreak: 'break-all',
-            color: 'var(--color-text)'
-          }}>
-            {moviePreviewPath || t('danmakuStorage.pathPreviewPlaceholder')}
-          </div>
-          <div style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginTop: '8px' }}>
-            {t('danmakuStorage.moviePreviewExample')}
-          </div>
-        </Form.Item>
+                  {/* 路径预览 */}
+                  <Form.Item label={t('danmakuStorage.labelPathPreview')}>
+                    <div style={{
+                      padding: '16px',
+                      background: 'var(--color-hover)',
+                      borderRadius: '8px',
+                      border: '1px solid var(--color-border)',
+                      fontFamily: 'JetBrains Mono, Consolas, monospace',
+                      fontSize: '13px',
+                      wordBreak: 'break-all',
+                      color: 'var(--color-text)'
+                    }}>
+                      {storagePreviewPaths[key] || t('danmakuStorage.pathPreviewPlaceholder')}
+                    </div>
+                    {i18n.previewExample && (
+                      <div style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginTop: '8px' }}>
+                        {t(i18n.previewExample)}
+                      </div>
+                    )}
+                  </Form.Item>
                 </div>
-              )
-            },
-            {
-              key: 'tv',
-              label: <span>{t('danmakuStorage.tabTv')}</span>,
-              children: (
-                <div>
-        {/* 电视存储目录 */}
-        <Form.Item
-          label={t('danmakuStorage.labelTvDir')}
-          name="tvDanmakuDirectoryPath"
-        >
-          <div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <Input
-                value={tvDanmakuDirectoryPath}
-                onChange={(e) => {
-                  setTvDanmakuDirectoryPath(e.target.value);
-                  form.setFieldValue('tvDanmakuDirectoryPath', e.target.value);
-                }}
-                placeholder="/app/config/danmaku/tv"
-                disabled={!customDanmakuPathEnabled}
-                style={{ flex: 1 }}
-              />
-              <Button
-                icon={<FolderOpenOutlined />}
-                onClick={() => handleBrowseDirectory('tv')}
-                disabled={!customDanmakuPathEnabled}
-              >
-                {t('danmakuStorage.btnBrowse')}
-              </Button>
-            </div>
-            <div style={{ color: '#999', fontSize: '12px', marginTop: '4px' }}>
-              {t('danmakuStorage.descTvDir')}
-            </div>
-          </div>
-        </Form.Item>
-
-        {/* 电视命名模板 */}
-        <Form.Item
-          label={t('danmakuStorage.labelNamingTemplate')}
-          name="tvDanmakuFilenameTemplate"
-        >
-          <div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <Input
-                ref={tvTemplateInputRef}
-                value={tvDanmakuFilenameTemplate}
-                onChange={(e) => {
-                  setTvDanmakuFilenameTemplate(e.target.value);
-                  form.setFieldValue('tvDanmakuFilenameTemplate', e.target.value);
-                }}
-                placeholder="${animeId}/${episodeId}"
-                disabled={!customDanmakuPathEnabled}
-                style={{ flex: 1 }}
-              />
-              <Button
-                icon={<FileOutlined />}
-                onClick={() => {
-                  setQuickTemplateType('tv');
-                  setQuickTemplateModalVisible(true);
-                }}
-                disabled={!customDanmakuPathEnabled}
-              >
-                {t('danmakuStorage.btnQuickTemplate')}
-              </Button>
-            </div>
-            <div style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginTop: '8px' }}>
-              {t('danmakuStorage.hintSubdirSupport', { example: '${animeId}/${episodeId}' })}
-            </div>
-          </div>
-        </Form.Item>
-
-        {/* 电视路径预览 */}
-        <Form.Item label={
-          <Space>
-            {t('danmakuStorage.labelPathPreview')}
-          </Space>
-        }>
-          <div style={{
-            padding: '16px',
-            background: 'var(--color-hover)',
-            borderRadius: '8px',
-            border: '1px solid var(--color-border)',
-            fontFamily: 'JetBrains Mono, Consolas, monospace',
-            fontSize: '13px',
-            wordBreak: 'break-all',
-            color: 'var(--color-text)'
-          }}>
-            {tvPreviewPath || t('danmakuStorage.pathPreviewPlaceholder')}
-          </div>
-          <div style={{ color: 'var(--color-text-secondary)', fontSize: '12px', marginTop: '8px' }}>
-            {t('danmakuStorage.tvPreviewExample')}
-          </div>
-        </Form.Item>
-                </div>
-              )
-            }
-          ]}
+              ),
+            };
+          })}
         />
 
             <Button
@@ -1983,13 +1831,7 @@ const DanmakuStorage = () => {
                 alignItems: 'flex-start'
               }}
               onClick={() => {
-                if (quickTemplateType === 'movie') {
-                  setMovieDanmakuFilenameTemplate(tpl.template);
-                  form.setFieldValue('movieDanmakuFilenameTemplate', tpl.template);
-                } else {
-                  setTvDanmakuFilenameTemplate(tpl.template);
-                  form.setFieldValue('tvDanmakuFilenameTemplate', tpl.template);
-                }
+                getTemplateAccessor(quickTemplateType).set(tpl.template);
                 setQuickTemplateModalVisible(false);
                 message.success(t('danmakuStorage.templateApplied', { label: tpl.label }));
               }}

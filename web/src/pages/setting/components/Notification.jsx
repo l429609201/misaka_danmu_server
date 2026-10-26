@@ -453,9 +453,6 @@ export const Notification = () => {
               >
                 <Space direction="vertical" style={{ width: '100%' }}>
                   <Text strong>{template.templateId === 'task_progress' ? t('notificationTemplate.taskProgressName') : template.displayName}</Text>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {template.templateId === 'task_progress' ? t('notificationTemplate.taskProgressDescription') : template.description}
-                  </Text>
                   <Button
                     type="link"
                     size="small"

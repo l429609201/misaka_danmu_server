@@ -1833,7 +1833,7 @@ export default {
     labelCustomPath: '啟用自訂彈幕路徑', descCustomPath: '啟用後將使用下方配置的自訂路徑和命名模板',
     labelAvailableVars: '📂 可用變數', hintClickInsert: '(點擊插入到游標處)',
     hintMovieVarNote: '💡 電影模板中使用季/集變數時將輸出為空',
-    tabMovie: '🎬 電影/劇場版', tabTv: '📺 電視節目',
+    tabMovie: '電影/劇場版', tabTv: '電視節目',
     labelMovieDir: '電影儲存目錄', descMovieDir: '電影/劇場版彈幕檔案的根目錄',
     labelTvDir: '儲存目錄', descTvDir: '電視節目彈幕檔案的根目錄',
     btnBrowse: '瀏覽', labelNamingTemplate: '命名模板', btnQuickTemplate: '快速模板',

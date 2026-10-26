@@ -31,7 +31,12 @@ from string import Template
 logger = logging.getLogger(__name__)
 
 # normalize_title 已迁移至统一模块
-from src.schemas.media_types import get_type_label, is_movie_type
+from src.schemas.media_types import (
+    STORAGE_TYPES,
+    get_storage_spec,
+    get_type_label,
+    storage_config_keys,
+)
 from src.utils.parsing.filename_parser import normalize_title  # noqa: E402
 from src.core.env import is_docker_environment
 
@@ -219,6 +224,35 @@ TEMPLATE_EXAMPLES = {
 
 # ==================== 路径生成函数 ====================
 
+
+async def resolve_storage_config(config_service, anime_type: Optional[str]) -> tuple[str, str]:
+    """按作品类型取弹幕存储根目录与命名模板。
+
+    统一按 STORAGE_TYPES 表解析：电影、电视节目为基础类型；OVA/综艺/短剧目录或模板留空时
+    逐项回退到电视节目配置（why：新增配置默认留空，升级后这些类型的已有路径保持不变）；
+    未列出的类型（other/未知）用电视节目配置。
+
+    Args:
+        config_service: ConfigService 实例。
+        anime_type: 作品类型值，可为 None。
+
+    Returns:
+        (根目录, 命名模板)
+    """
+    spec = get_storage_spec(anime_type)
+    dir_key, template_key = storage_config_keys(spec.prefix)
+    root_directory = await config_service.get(dir_key, spec.default_dir)
+    filename_template = await config_service.get(template_key, spec.default_template)
+    if spec.fallback:
+        # 带回退的类型：自身值留空时逐项沿用回退类型（回退类型本身是基础类型，不会再回退）
+        fallback_spec = STORAGE_TYPES[spec.fallback]
+        fallback_dir_key, fallback_template_key = storage_config_keys(fallback_spec.prefix)
+        if not (root_directory or '').strip():
+            root_directory = await config_service.get(fallback_dir_key, fallback_spec.default_dir)
+        if not (filename_template or '').strip():
+            filename_template = await config_service.get(fallback_template_key, fallback_spec.default_template)
+    return (root_directory or '').strip(), (filename_template or '').strip()
+
 async def generate_danmaku_path(episode, config_service=None) -> tuple[str, Path]:
     """
     生成弹幕文件的完整路径
@@ -246,14 +280,7 @@ async def generate_danmaku_path(episode, config_service=None) -> tuple[str, Path
 
     if custom_path_enabled and config_service:
         try:
-            # 根据类型选择不同的配置
-            # movie 类型使用电影配置,其他类型使用电视配置
-            if is_movie_type(anime_type):
-                root_directory = await config_service.get('movieDanmakuDirectoryPath', '/app/config/danmaku/movies')
-                filename_template = await config_service.get('movieDanmakuFilenameTemplate', '${title}/${episodeId}')
-            else:
-                root_directory = await config_service.get('tvDanmakuDirectoryPath', '/app/config/danmaku/tv')
-                filename_template = await config_service.get('tvDanmakuFilenameTemplate', '${animeId}/${episodeId}')
+            root_directory, filename_template = await resolve_storage_config(config_service, anime_type)
 
             # 创建路径模板上下文
             # 注意：season 可能为 0（特别篇/SP），不能使用 or 1 来设置默认值

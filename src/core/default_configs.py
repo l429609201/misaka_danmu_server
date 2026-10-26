@@ -5,6 +5,14 @@
 注意: 某些配置需要在运行时动态生成(如jwtSecretKey),这些配置在main.py中单独处理
 """
 
+from src.schemas.media_types import (
+    STORAGE_TEMPLATE_VARIABLES_DESC,
+    STORAGE_TYPES,
+    get_type_label,
+    storage_config_keys,
+)
+
+
 def get_default_configs(settings=None, ai_prompts=None):
     """
     获取默认配置字典
@@ -112,10 +120,7 @@ def get_default_configs(settings=None, ai_prompts=None):
 
         # 弹幕文件路径配置
         'customDanmakuPathEnabled': ('false', '是否启用自定义弹幕文件保存路径。'),
-        'movieDanmakuDirectoryPath': ('/app/config/danmaku/movies', '电影/剧场版弹幕文件存储的根目录。'),
-        'movieDanmakuFilenameTemplate': ('${title}/${episodeId}', '电影/剧场版弹幕文件命名模板。支持变量：${title}, ${titleBase}(标准化标题，去除季度信息), ${season}, ${episode}, ${year}, ${provider}, ${animeId}, ${episodeId}, ${sourceId}, ${tmdbId}(TMDB ID), ${category}(类型名), ${type}(类型值)。支持子目录。.xml后缀会自动添加。'),
-        'tvDanmakuDirectoryPath': ('/app/config/danmaku/tv', '电视节目弹幕文件存储的根目录。'),
-        'tvDanmakuFilenameTemplate': ('${animeId}/${episodeId}', '电视节目弹幕文件命名模板。支持变量：${title}, ${titleBase}(标准化标题，去除季度信息), ${season}, ${episode}, ${year}, ${provider}, ${animeId}, ${episodeId}, ${sourceId}, ${tmdbId}(TMDB ID), ${category}(类型名), ${type}(类型值)。支持子目录。.xml后缀会自动添加。'),
+        # 电影/电视节目/OVA/综艺/短剧 的目录与模板统一由 src.schemas.media_types.STORAGE_TYPES 派生（见文件末尾）
 
         'iqiyiUseProtobuf': ('false', '（爱奇艺）是否使用新的Protobuf弹幕接口（实验性）。'),
         'gamerUserAgent': ('', '用于访问巴哈姆特动画疯的User-Agent。'),
@@ -172,6 +177,21 @@ def get_default_configs(settings=None, ai_prompts=None):
         # 留空时壁纸主题仅显示本地渐变兜底，不向外部发起请求。
         'wallpaperAcgUrl': ('https://www.loliapi.com/acg/pc/', '二次元壁纸图源地址。「二次元壁纸」页面样式的背景图将从此地址获取。留空则仅显示渐变兜底。'),
     }
+
+    # 按类型的弹幕存储配置（STORAGE_TYPES 唯一数据源）：
+    # 基础类型（电影/电视节目）带默认值；带回退的类型默认留空 = 沿用回退类型，保证升级后已有路径不变
+    for media_type, spec in STORAGE_TYPES.items():
+        label = get_type_label(media_type)
+        dir_key, template_key = storage_config_keys(spec.prefix)
+        if spec.fallback:
+            fallback_label = get_type_label(spec.fallback)
+            dir_desc = f'{label}弹幕文件存储的根目录；留空则使用{fallback_label}目录。'
+            template_desc = f'{label}弹幕文件命名模板，变量同{fallback_label}模板；留空则使用{fallback_label}模板。'
+        else:
+            dir_desc = f'{label}弹幕文件存储的根目录。'
+            template_desc = f'{label}弹幕文件命名模板。{STORAGE_TEMPLATE_VARIABLES_DESC}'
+        configs[dir_key] = (spec.default_dir, dir_desc)
+        configs[template_key] = (spec.default_template, template_desc)
 
     # 添加需要settings的配置
     if settings:

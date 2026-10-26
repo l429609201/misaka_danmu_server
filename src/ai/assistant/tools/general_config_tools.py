@@ -18,6 +18,13 @@ context 依赖：
 import logging
 from typing import Any, Dict
 
+from src.schemas.media_types import (
+    STORAGE_TEMPLATE_VARIABLES_DESC,
+    STORAGE_TYPES,
+    get_type_label,
+    storage_config_keys,
+)
+
 from ..security_gateway import ToolPermission, is_forbidden_control_identifier
 from .base import Tool, registry
 
@@ -143,22 +150,7 @@ ASSISTANT_CONFIG_WHITELIST = {
         "type": "boolean",
         "description": "是否启用自定义弹幕文件路径（关闭时下面四项均无效）",
     },
-    "movieDanmakuDirectoryPath": {
-        "type": "string",
-        "description": "电影/剧场版弹幕文件根目录",
-    },
-    "movieDanmakuFilenameTemplate": {
-        "type": "string",
-        "description": "电影命名模板，可用变量 ${title} ${titleBase} ${season} ${episode} ${year} ${provider} ${animeId} ${episodeId} ${sourceId} ${tmdbId} ${category} ${type}",
-    },
-    "tvDanmakuDirectoryPath": {
-        "type": "string",
-        "description": "电视节目弹幕文件根目录",
-    },
-    "tvDanmakuFilenameTemplate": {
-        "type": "string",
-        "description": "电视节目命名模板，变量同电影模板；必须含唯一标识避免文件互相覆盖",
-    },
+    # 电影/电视节目/OVA/综艺/短剧 存储配置统一由 STORAGE_TYPES 派生（见本字典之后）
     # ---------- AI 功能开关 ----------
     "aiMatchEnabled": {
         "type": "boolean",
@@ -255,6 +247,21 @@ ASSISTANT_CONFIG_WHITELIST = {
         "description": "是否为助手启用代理（复用全局 proxyUrl）",
     },
 }
+
+# 按类型的独立弹幕存储配置（与 default_configs 同源派生，新增类型无需改这里）
+for _media_type, _spec in STORAGE_TYPES.items():
+    _label = get_type_label(_media_type)
+    _dir_key, _template_key = storage_config_keys(_spec.prefix)
+    if _spec.fallback:
+        _fallback_label = get_type_label(_spec.fallback)
+        _dir_desc = f"{_label} 弹幕根目录，留空沿用{_fallback_label}目录"
+        _template_desc = f"{_label} 命名模板，留空沿用{_fallback_label}模板"
+    else:
+        _dir_desc = f"{_label} 弹幕文件根目录"
+        # 基础类型模板必须含唯一标识（如 ${episodeId}），否则不同分集会互相覆盖
+        _template_desc = f"{_label} 命名模板，必须含唯一标识避免文件互相覆盖。{STORAGE_TEMPLATE_VARIABLES_DESC}"
+    ASSISTANT_CONFIG_WHITELIST[_dir_key] = {"type": "string", "description": _dir_desc}
+    ASSISTANT_CONFIG_WHITELIST[_template_key] = {"type": "string", "description": _template_desc}
 
 # 密钥类配置键：即使有人误加进白名单，读取时也一律脱敏，绝不回灌明文给模型。
 # 这些键当前都不在 ASSISTANT_CONFIG_WHITELIST 里（读不到），此处是纵深防御——

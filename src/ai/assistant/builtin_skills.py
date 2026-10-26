@@ -315,11 +315,13 @@ BUILTIN_SKILLS: Dict[str, Skill] = {
 - 设计意图：避免对已抓全的热门剧反复刷新
 
 ### 文件保存路径与命名
-- `customDanmakuPathEnabled`（默认 `false`）：**关闭时下面 4 项全部无效**
+- `customDanmakuPathEnabled`（默认 `false`）：**关闭时下面各项全部无效**
 - `movieDanmakuDirectoryPath`（默认 `/app/config/danmaku/movies`）
 - `movieDanmakuFilenameTemplate`（默认 `${title}/${episodeId}`）
 - `tvDanmakuDirectoryPath`（默认 `/app/config/danmaku/tv`）
 - `tvDanmakuFilenameTemplate`（默认 `${animeId}/${episodeId}`）
+- OVA/综艺/短剧各有一套 `ova*`/`variety*`/`shortDrama*` + `DanmakuDirectoryPath`/`DanmakuFilenameTemplate`，
+  默认留空，留空的那项沿用电视节目配置；`other` 类型始终用电视节目配置
 
 **12 个模板变量**：`${title}`、`${titleBase}`（标准化标题，去除季度信息）、`${season}`、
 `${episode}`、`${year}`、`${provider}`、`${animeId}`、`${episodeId}`、`${sourceId}`、`${tmdbId}`、

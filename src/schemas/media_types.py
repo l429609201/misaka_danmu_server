@@ -9,7 +9,7 @@ why：类型枚举扩充（新增综艺 variety、短剧 short_drama）后，原
     from src.schemas.media_types import ANIME_TYPES, is_series_type, is_movie_type
 """
 
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 # ---- 具体类型值（与数据库 ENUM anime_type 一一对应）----
 MEDIA_TYPE_TV_SERIES = "tv_series"      # 电视节目（电视剧/动漫/纪录片等连续剧集）
@@ -43,6 +43,54 @@ ANIME_TYPE_LABELS = {
 def get_type_label(media_type: Any) -> str:
     """返回类型的中文名，未知或空类型返回「其他」。"""
     return ANIME_TYPE_LABELS.get(media_type, ANIME_TYPE_LABELS[MEDIA_TYPE_OTHER])
+
+
+class StorageTypeSpec(NamedTuple):
+    """弹幕存储类型定义。
+
+    Attributes:
+        prefix: config 表键前缀（{prefix}DanmakuDirectoryPath / {prefix}DanmakuFilenameTemplate）
+        default_dir: 默认根目录；空串 = 留空沿用 fallback 类型
+        default_template: 默认命名模板；空串 = 留空沿用 fallback 类型
+        fallback: 目录/模板留空时逐项回退到的类型；None 表示基础类型、不回退
+    """
+
+    prefix: str
+    default_dir: str
+    default_template: str
+    fallback: Optional[str] = None
+
+
+# 弹幕存储类型（唯一数据源，与前端 web/src/configs/index.js 的 STORAGE_TYPES 一一对应）
+# why：电影/电视与 OVA/综艺/短剧统一为一张表，默认配置、AI 助手配置工具、路径解析都从这里派生，
+# 不再特判电影/电视；新增类型只需在此追加一行。OVA/综艺/短剧默认留空回退电视节目，保证升级后路径不变。
+STORAGE_TYPES = {
+    MEDIA_TYPE_MOVIE: StorageTypeSpec("movie", "/app/config/danmaku/movies", "${title}/${episodeId}"),
+    MEDIA_TYPE_TV_SERIES: StorageTypeSpec("tv", "/app/config/danmaku/tv", "${animeId}/${episodeId}"),
+    MEDIA_TYPE_OVA: StorageTypeSpec("ova", "", "", MEDIA_TYPE_TV_SERIES),
+    MEDIA_TYPE_VARIETY: StorageTypeSpec("variety", "", "", MEDIA_TYPE_TV_SERIES),
+    MEDIA_TYPE_SHORT_DRAMA: StorageTypeSpec("shortDrama", "", "", MEDIA_TYPE_TV_SERIES),
+}
+
+# 未列出的类型（other/未知/None）使用的存储类型
+DEFAULT_STORAGE_TYPE = MEDIA_TYPE_TV_SERIES
+
+# 命名模板可用变量说明（默认配置描述、AI 助手白名单共用）
+STORAGE_TEMPLATE_VARIABLES_DESC = (
+    "支持变量：${title}, ${titleBase}(标准化标题，去除季度信息), ${season}, ${episode}, ${year}, "
+    "${provider}, ${animeId}, ${episodeId}, ${sourceId}, ${tmdbId}(TMDB ID), ${category}(类型名), "
+    "${type}(类型值)。支持子目录。.xml后缀会自动添加。"
+)
+
+
+def get_storage_spec(media_type: Any) -> StorageTypeSpec:
+    """返回类型对应的弹幕存储定义，未列出的类型返回电视节目定义。"""
+    return STORAGE_TYPES.get(media_type, STORAGE_TYPES[DEFAULT_STORAGE_TYPE])
+
+
+def storage_config_keys(prefix: str) -> tuple[str, str]:
+    """返回某配置前缀对应的 (根目录配置键, 命名模板配置键)。"""
+    return f"{prefix}DanmakuDirectoryPath", f"{prefix}DanmakuFilenameTemplate"
 
 
 # 按「剧集形态」处理的类型：分季、多集、弹幕路径走 tv 模板

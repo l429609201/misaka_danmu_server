@@ -1831,7 +1831,7 @@ export default {
     labelCustomPath: 'Enable Custom Danmaku Path', descCustomPath: 'When enabled, uses the custom path and naming template configured below',
     labelAvailableVars: '📂 Available Variables', hintClickInsert: '(click to insert at cursor)',
     hintMovieVarNote: '💡 Season/episode variables in movie templates will output empty',
-    tabMovie: '🎬 Movie / Theater', tabTv: '📺 TV Shows',
+    tabMovie: 'Movie / Theater', tabTv: 'TV Shows',
     labelMovieDir: 'Movie Storage Directory', descMovieDir: 'Root directory for movie/theater danmaku files',
     labelTvDir: 'Storage Directory', descTvDir: 'Root directory for TV show danmaku files',
     btnBrowse: 'Browse', labelNamingTemplate: 'Naming Template', btnQuickTemplate: 'Quick Template',
