@@ -647,8 +647,10 @@ export const Test = () => {
         },
       ],
       renderResult: data => {
-        if (data?.success && data.result) {
-          const r = data.result
+        // 后端直接返回 ParseResult 平铺对象（无 success/result 包装），识别失败时为 null；
+        // 同时兼容旧版 {success, result} 包装格式
+        const r = data?.result ?? (data && typeof data === 'object' && 'title' in data ? data : null)
+        if (r && (r.title || r.original_title)) {
           const fields = [
             { label: t('apiTest.rTitle'), value: r.title },
             { label: t('apiTest.rOriginalTitle'), value: r.original_title },

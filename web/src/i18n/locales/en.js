@@ -852,6 +852,8 @@ export default {
     last24h: 'Last 24h',
     noRunning: 'No running tasks',
     mediaServers: 'Media servers',
+    quickActions: 'Quick actions',
+    quickDanmuApi: 'Danmaku API',
     noMediaServer: 'No media server configured',
     system: 'System',
     cpu: 'CPU',

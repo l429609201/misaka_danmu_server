@@ -852,6 +852,8 @@ export default {
     last24h: '近 24 小時',
     noRunning: '暫無執行中的任務',
     mediaServers: '媒體伺服器',
+    quickActions: '快捷操作',
+    quickDanmuApi: '彈幕API',
     noMediaServer: '未設定媒體伺服器',
     system: '系統資源',
     cpu: 'CPU',

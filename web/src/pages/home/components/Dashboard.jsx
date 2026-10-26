@@ -3,7 +3,38 @@ import { Button, Card, Col, Empty, Progress, Row, Statistic, Tag, message } from
 import { ReloadOutlined } from '@ant-design/icons'
 import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
+import { useNavigate } from 'react-router-dom'
 import { getDashboardOverview } from '@/apis'
+import { MyIcon } from '@/components/MyIcon'
+import { featureUrl } from '@/components/FeatureSearch'
+import { FEATURES } from '@/configs/features'
+
+// 快捷操作：直接复用全功能搜索的功能索引（标题/图标/跳转目标单一数据源）
+const QUICK_ACTION_IDS = [
+  'bullet-token', 'subscriptions', 'setting-webhook', 'task-schedule',
+  'source-scrapers', 'setting-notification', 'setting-recognition', 'setting-proxy',
+]
+// 个别入口在快捷卡片里用更口语的名字
+const QUICK_LABEL_KEYS = { 'bullet-token': 'dashboard.quickDanmuApi' }
+const QUICK_ACTIONS = QUICK_ACTION_IDS.map(id => FEATURES.find(f => f.id === id)).filter(Boolean)
+
+const QuickActionsCard = ({ t }) => {
+  const navigate = useNavigate()
+  return (
+    <Card title={t('dashboard.quickActions')} type="inner">
+      <Row gutter={[12, 12]}>
+        {QUICK_ACTIONS.map(f => (
+          <Col key={f.id} xs={12} sm={8} md={6} lg={3}>
+            <Button block className="!h-auto !py-3 flex flex-col items-center gap-1" onClick={() => navigate(featureUrl(f))}>
+              <MyIcon icon={f.icon} size={22} />
+              <span className="text-xs whitespace-normal leading-tight">{t(QUICK_LABEL_KEYS[f.id] || f.titleKey)}</span>
+            </Button>
+          </Col>
+        ))}
+      </Row>
+    </Card>
+  )
+}
 
 // 自动刷新间隔（毫秒）
 const REFRESH_INTERVAL = 30000
@@ -160,6 +191,7 @@ export const Dashboard = () => {
     >
       {data ? (
         <Row gutter={[16, 16]}>
+          <Col xs={24}><QuickActionsCard t={t} /></Col>
           <Col xs={24}><LibraryCard data={data.library || {}} t={t} /></Col>
           <Col xs={24} lg={12}><TasksCard data={data.tasks || {}} t={t} /></Col>
           <Col xs={24} lg={12}><SystemCard data={data.system || {}} t={t} /></Col>

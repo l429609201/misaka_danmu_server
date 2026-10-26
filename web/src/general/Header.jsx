@@ -193,6 +193,8 @@ const DesktopSidebar = ({ activeKey, docsUrl }) => {
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom)
   const itemBase = 'flex items-center gap-3 rounded-lg cursor-pointer transition-colors select-none'
+  // 底部图标横排（展开态）时气泡放上方，避免盖住相邻图标；竖排（折叠态）时向右弹出
+  const footerTipPlacement = collapsed ? 'right' : 'top'
 
   return (
     <aside
@@ -248,21 +250,21 @@ const DesktopSidebar = ({ activeKey, docsUrl }) => {
         })}
       </nav>
 
-      {/* 侧栏底部：GitHub / Telegram（流控面板已挪回顶栏右侧） */}
+      {/* 侧栏底部：GitHub / Telegram（流控面板已挪回顶栏右侧）；提示气泡：展开态在上方，折叠态向右弹出 */}
       <div className={classNames('flex-shrink-0 border-t border-gray-200/50 dark:border-gray-800/30 py-2 flex gap-3', collapsed ? 'flex-col items-center' : 'flex-col px-3')}>
         <div className={classNames('flex items-center gap-4', collapsed ? 'flex-col' : 'justify-center')}>
-          <Tooltip title="GitHub" placement="right">
+          <Tooltip title="GitHub" placement={footerTipPlacement}>
             <a href="https://github.com/l429609201/misaka_danmu_server" target="_blank" rel="noopener noreferrer" style={{ color: '#333', fontSize: 20 }}>
               <GithubIcon />
             </a>
           </Tooltip>
-          <Tooltip title="Telegram" placement="right">
+          <Tooltip title="Telegram" placement={footerTipPlacement}>
             <a href="https://t.me/misaka_danmaku" target="_blank" rel="noopener noreferrer" style={{ color: '#0088cc', fontSize: 20 }}>
               <TelegramIcon />
             </a>
           </Tooltip>
           {docsUrl && (
-            <Tooltip title={t('header.docs')} placement="right">
+            <Tooltip title={t('header.docs')} placement={footerTipPlacement}>
               <a href={docsUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#8CA1AF', fontSize: 20 }}>
                 <DocsIcon />
               </a>
