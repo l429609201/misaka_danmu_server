@@ -70,13 +70,19 @@ def register_code_tools() -> None:
         ('code_search', '按字面关键词搜索项目源码。传prefix缩小目录；不检索运行配置、二进制或受保护内容。',
          {'type': 'object', 'properties': {'query': {'type': 'string'}, 'prefix': {'type': 'string'}},
           'required': ['query']}, _search, '正在检索项目源码', False),
-        ('code_read', '分段读取允许的源码和项目规则，每次最多120行；返回sha256用于补丁冲突检测。',
+        ('code_read', '分段读取允许的源码和项目规则，每次最多300行；返回sha256用于补丁冲突检测。',
          {'type': 'object', 'properties': {'path': {'type': 'string'}, 'start_line': {'type': 'integer', 'minimum': 1}},
           'required': ['path']}, _read, '正在读取源码片段', False),
-        ('code_prepare_patch', '为已读取的源码准备补丁草稿，不修改真实项目。提供完整新内容及读取时的sha256；新增文件sha256为null。',
+        ('code_prepare_patch', ('为已读取的源码准备补丁草稿，不修改真实项目。修改已有文件优先用 edits 局部替换'
+                                '（old 须与原文逐字一致且唯一出现）；新增文件用 content 并令 sha256 为 null。sha256 取自 code_read。'),
          {'type': 'object', 'properties': {'changes': {'type': 'array', 'minItems': 1, 'maxItems': 8,
-          'items': {'type': 'object', 'properties': {'path': {'type': 'string'}, 'content': {'type': 'string'},
-          'sha256': {'type': ['string', 'null']}}, 'required': ['path', 'content', 'sha256'], 'additionalProperties': False}}},
+          'items': {'type': 'object', 'properties': {
+              'path': {'type': 'string'},
+              'content': {'type': 'string'},
+              'edits': {'type': 'array', 'minItems': 1, 'maxItems': 30, 'items': {
+                  'type': 'object', 'properties': {'old': {'type': 'string'}, 'new': {'type': 'string'}},
+                  'required': ['old', 'new'], 'additionalProperties': False}},
+              'sha256': {'type': ['string', 'null']}}, 'required': ['path', 'sha256'], 'additionalProperties': False}}},
           'required': ['changes']}, _prepare, '正在准备修复补丁', False),
         ('code_validate_patch', '在隔离容器验证服务端补丁。profile为python_syntax/python_tests/frontend_build/frontend_lint；未配置容器时拒绝执行。',
          {'type': 'object', 'properties': {'draft_id': {'type': 'string'}, 'profile': {'type': 'string',

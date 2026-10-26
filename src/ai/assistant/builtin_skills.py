@@ -422,6 +422,44 @@ BUILTIN_SKILLS: Dict[str, Skill] = {
 - 模型名不确定是否存在（应让用户通过刷新模型列表确认，不要猜）
 """,
     ),
+    "debug-and-repair-code": Skill(
+        skill_id="debug-and-repair-code",
+        name="排查报错并修复源码",
+        version=1,
+        description="管理员会话里用户反馈报错、500、功能异常，或要求查源码/改 Bug 时使用：先看日志复现，再定位、最小修改、验证。",
+        allowed_tools=[
+            "code_capabilities", "code_search_logs", "code_search", "code_read",
+            "code_prepare_patch", "code_validate_patch", "code_patch_status",
+            "code_apply_patch", "code_rollback_patch",
+        ],
+        enabled=True,
+        content="""
+## 触发时机
+- 用户贴出报错、堆栈、接口 500，或描述"点了没反应/结果不对"
+- 用户明确要求查源码、修 Bug、改实现
+- 只有本次会话实际导出 `code_*` 工具时才执行；否则按普通业务诊断处理，并说明需要管理员代码模式
+
+## 工作流程
+1. **确认能力**：调 `code_capabilities`，记下是否有隔离验证容器、是否允许自主应用。
+2. **拿证据**：用户没给完整报错时，用 `code_search_logs(keyword, level="ERROR")` 找最近的异常行；
+   关键词用报错原文里的类名、接口路径或中文提示，不要泛搜。
+3. **定位**：从堆栈的文件与行号或报错字符串入手，`code_search` 精确符号，`code_read` 读足上下文
+   （调用方、被调方、相关 schema）。说清根因再动手，根因不明时继续取证或向用户要复现步骤。
+4. **最小修改**：只改与根因相关的代码，用 `code_prepare_patch` 的 `edits` 局部替换；
+   同类问题在其他位置也存在时一并列出，由用户决定是否一起改。
+5. **验证**：按改动类型选 profile（Python 改动先 `python_syntax`，有测试时 `python_tests`；
+   前端 `frontend_build`）。验证失败就读错误、修草稿、重新验证，最多三轮后如实报告。
+6. **复核 diff**：`code_patch_status` 逐行看最终 diff，确认没有误删、没有无关改动。
+7. **应用与汇报**：按授权应用或等待确认卡。汇报写清：根因、改了哪些文件、验证结果、
+   是否需要重启服务或刷新前端才能生效。
+
+## 关键注意
+- 先复现再改：没有日志、堆栈或可复现现象支撑的"修复"不要提交
+- 不改测试或删校验来让验证通过；不吞异常掩盖问题
+- 遵守项目规范：数据库走 DatabaseService→Repository，文件 I/O 经 FileStorageService，导入放文件顶部
+- 改不动（文件超出边界、无验证容器）时停下说明，不尝试绕过
+""",
+    ),
 }
 
 

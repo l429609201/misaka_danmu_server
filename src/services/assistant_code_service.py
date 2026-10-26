@@ -40,6 +40,10 @@ SENSITIVE_LITERAL = re.compile(
 MAX_FILE = 262144
 MAX_DRAFTS = 20
 TTL = 1800
+# 单次读取行数与搜索命中上限：过小会让模型反复分页、浪费工具轮数
+READ_LINES = 300
+MAX_HITS = 100
+MAX_SCAN = 3000
 
 
 def code_authorized(context: dict[str, Any]) -> bool:
@@ -216,25 +220,43 @@ class AssistantCodeService:
                     for number, line in enumerate(text.splitlines(), 1):
                         if query.casefold() in line.casefold():
                             hits.append({'path': name, 'line': number, 'text': line[:400]})
-                            if len(hits) >= 40:
+                            if len(hits) >= MAX_HITS:
                                 break
             except (OSError, PermissionError, UnicodeError, ValueError):
                 continue
-            if len(hits) >= 40 or scanned >= 1000:
+            if len(hits) >= MAX_HITS or scanned >= MAX_SCAN:
                 break
-        return {'matches': hits[:40], 'scanned': scanned,
-                'limited': len(hits) >= 40 or scanned >= 1000}
+        return {'matches': hits[:MAX_HITS], 'scanned': scanned,
+                'limited': len(hits) >= MAX_HITS or scanned >= MAX_SCAN}
 
     async def read(self, name: str, start: int, context: dict[str, Any]) -> dict[str, Any]:
-        """返回最多一百二十行及真实哈希，修正必须携带该哈希。"""
+        """返回最多 READ_LINES 行及真实哈希，修正必须携带该哈希。"""
         self._require(context)
         if start < 1:
             raise ValueError('行号必须大于零')
         text, digest = await self._read(name)
         lines = text.splitlines()
         return {'path': name, 'sha256': digest, 'startLine': start,
-                'totalLines': len(lines), 'content': '\n'.join(lines[start - 1:start + 119]),
-                'nextLine': start + 120 if len(lines) >= start + 120 else None}
+                'totalLines': len(lines), 'content': '\n'.join(lines[start - 1:start - 1 + READ_LINES]),
+                'nextLine': start + READ_LINES if len(lines) >= start + READ_LINES else None}
+
+    @staticmethod
+    def _apply_edits(original: str, edits: Any) -> str:
+        """按顺序执行局部替换；old 必须在当前文本中恰好出现一次，避免改错位置。"""
+        if not original:
+            raise ValueError('新增文件请用 content 提供完整内容')
+        if not isinstance(edits, list) or not 1 <= len(edits) <= 30:
+            raise ValueError('edits 需要一到三十处替换')
+        text = original
+        for index, edit in enumerate(edits, 1):
+            old, new = (edit or {}).get('old'), (edit or {}).get('new')
+            if not isinstance(old, str) or not old or not isinstance(new, str):
+                raise ValueError(f'第{index}处替换缺少 old/new')
+            count = text.count(old)
+            if count != 1:
+                raise ValueError(f'第{index}处替换的 old 在文件中出现 {count} 次，需恰好一次；请扩大上下文或重新读取')
+            text = text.replace(old, new, 1)
+        return text
 
     async def prepare(self, changes: list[dict[str, Any]], context: dict[str, Any]) -> dict[str, Any]:
         """创建有限量替换或新增补丁，不删除文件且不直接写真实项目。"""
@@ -249,10 +271,6 @@ class AssistantCodeService:
             if name in names:
                 raise ValueError('补丁路径重复')
             names.add(name)
-            content = change['content']
-            if not isinstance(content, str) or len(content.encode('utf-8')) > MAX_FILE:
-                raise ValueError('补丁内容超限')
-            self._check_patch(name, content)
             expected = change.get('sha256')
             if self.fs.exists(target):
                 old, digest = await self._read(name, True)
@@ -262,6 +280,11 @@ class AssistantCodeService:
                 if expected is not None:
                     raise ValueError('新增文件哈希必须为 null')
                 old, digest = '', None
+            # 两种写法二选一：content 整文件替换；edits 局部替换（old 必须在原文中唯一出现）
+            content = self._apply_edits(old, change['edits']) if change.get('edits') is not None else change.get('content')
+            if not isinstance(content, str) or len(content.encode('utf-8')) > MAX_FILE:
+                raise ValueError('补丁内容超限或缺少 content/edits')
+            self._check_patch(name, content)
             if old == content:
                 raise ValueError('补丁没有实际变更')
             prepared.append({'path': name, 'content': content, 'original': old,
