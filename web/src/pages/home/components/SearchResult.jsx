@@ -1245,7 +1245,9 @@ export const SearchResult = () => {
           <div
             ref={scrollContainerRef}
             className="overflow-y-auto overflow-x-hidden border border-gray-200 rounded-lg px-1 py-1"
-            style={{ maxHeight: '600px' }}
+            // 原先固定 600px：大屏下每页 10 条只露出 5 条，分页下方留出一大块空白。
+            // 改为随视口高度伸展（扣除顶栏、工具栏、统计行与分页约 340px），最低保留 400px。
+            style={{ maxHeight: isMobile ? 'none' : 'max(400px, calc(100vh - 340px))' }}
           >
           {renderData?.length ? (
             <List
