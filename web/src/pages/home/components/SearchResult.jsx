@@ -7,6 +7,7 @@ import {
   previewEpisodeOffset,
   getSearchResult,
   getAnimeLibrary,
+  clearSearchCache,
 } from '../../../apis'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
@@ -101,6 +102,34 @@ export const SearchResult = () => {
 
   const modalApi = useModal()
   const messageApi = useMessage()
+  const [cacheLoading, setCacheLoading] = useState(false)
+
+  // 清除搜索/分集临时缓存：原按钮随旧搜索栏一起被移除（6246d2c6），这里放回结果卡片头部
+  const onClearCache = () => {
+    modalApi.confirm({
+      title: t('home.clearCacheTitle'),
+      content: (
+        <div>
+          {t('home.clearCacheContent')}
+          <br />
+          {t('home.clearCacheDesc')}
+        </div>
+      ),
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
+      onOk: async () => {
+        try {
+          setCacheLoading(true)
+          const res = await clearSearchCache()
+          messageApi.success(res.data?.message || t('home.cacheCleared'))
+        } catch (err) {
+          messageApi.error(`${t('home.clearCacheFailed')}: ${err.message || err}`)
+        } finally {
+          setCacheLoading(false)
+        }
+      },
+    })
+  }
 
   /** 编辑导入相关 */
   const [editImportOpen, setEditImportOpen] = useState(false)
@@ -990,8 +1019,19 @@ export const SearchResult = () => {
     <>
       {lastSearchResultData && (
         // 参考接口测试页：最外层用卡片包住，标题放卡片头，去掉原来的顶部分隔线
-        <Card title={t('searchResult.searchResultTitle')}>
-          <div>
+        // 桌面端：卡片高度锁定为视口剩余高度（扣除布局上下内边距 pt-18/pb-10 与页面 my-4 共 144px），
+        // 页面本身不再滚动，只让中间结果列表滚动；移动端保持自然高度
+        <Card
+          title={t('searchResult.searchResultTitle')}
+          extra={
+            <Button size="small" icon={<ClearOutlined />} loading={cacheLoading} onClick={onClearCache}>
+              {t('home.clearCache')}
+            </Button>
+          }
+          style={isMobile ? undefined : { height: 'calc(100vh - 144px)', minHeight: 480, display: 'flex', flexDirection: 'column' }}
+          styles={isMobile ? undefined : { body: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } }}
+        >
+          <div className={isMobile ? undefined : 'flex flex-col flex-1 min-h-0'}>
             <div className="mb-6">
               {isMobile ? (
                 /* 移动端：两行布局 */
@@ -1241,13 +1281,12 @@ export const SearchResult = () => {
             </div>
           </div>
           {/* 固定高度滚动区域 */}
-          <Spin spinning={paginationLoading}>
+          <Spin spinning={paginationLoading} wrapperClassName={isMobile ? undefined : 'search-result-fill'}>
           <div
             ref={scrollContainerRef}
             className="overflow-y-auto overflow-x-hidden border border-gray-200 rounded-lg px-1 py-1"
-            // 原先固定 600px：大屏下每页 10 条只露出 5 条，分页下方留出一大块空白。
-            // 改为随视口高度伸展（扣除顶栏、工具栏、统计行与分页约 340px），最低保留 400px。
-            style={{ maxHeight: isMobile ? 'none' : 'max(400px, calc(100vh - 340px))' }}
+            // 桌面端填满卡片剩余空间，结果在框内滚动（原固定 600px 会在大屏留白、小屏把分页挤出视口）
+            style={isMobile ? { maxHeight: 'none' } : { height: '100%' }}
           >
           {renderData?.length ? (
             <List

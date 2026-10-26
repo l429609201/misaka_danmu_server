@@ -3228,3 +3228,12 @@ html.dark .global-search-mobile .ant-input-affix-wrapper {
 .drawer-nav-menu .ant-menu-sub.ant-menu-inline > .ant-menu-item {
   padding-left: 27px !important;
 }
+
+/* 搜索结果页：Spin 包裹层参与卡片 flex 布局，使结果列表填满剩余高度并在内部滚动 */
+.search-result-fill {
+  flex: 1;
+  min-height: 0;
+}
+.search-result-fill > .ant-spin-container {
+  height: 100%;
+}
