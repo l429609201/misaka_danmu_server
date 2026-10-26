@@ -38,6 +38,8 @@ from .security_gateway import contains_forbidden_control_content
 from .mcp import McpManager, McpToolSpec
 from .tools import registry
 from .steering import steering_registry
+from .memory_store import build_memory_prompt
+from .completion_guard import CONTINUATION_NUDGE, MAX_CONTINUATION_NUDGES, trailing_continue_intent
 from ..ai_metrics import AIMetricsCollector, AICallMetrics
 
 logger = logging.getLogger(__name__)
@@ -365,6 +367,14 @@ class AssistantAgent:
         if summary:
             messages[0]["content"] += ("\n\n以下是本会话较早对话的摘要（原文已省略），回答时据此保持上下文连续：\n"
                                        + summary)
+        # 跨会话长期记忆：读取失败不影响本轮对话
+        try:
+            memory_prompt = build_memory_prompt()
+        except Exception as e:
+            self.logger.warning(f"加载御坂长期记忆失败: {e}")
+            memory_prompt = ""
+        if memory_prompt:
+            messages[0]["content"] += "\n\n" + memory_prompt
         if not include_write_tools:
             messages[0]["content"] += "\n\n当前渠道只有只读工具，不支持确认卡或代办写操作；需要修改数据时请引导用户到 Web 界面。"
         # 提示词、目录和执行阶段必须复用同一份已初始化的可信上下文。
@@ -389,6 +399,8 @@ class AssistantAgent:
         call_counts: Dict[str, int] = {}
         failed_rounds = 0
         steer_session = context.get("session_id")
+        # 完成度护栏：模型以“接下来我会……”结尾却没调用工具时的已催促次数
+        continuation_nudges = 0
 
         try:
             for _round in range(20 if allow_code_write else _MAX_TOOL_ROUNDS):
@@ -482,6 +494,15 @@ class AssistantAgent:
                         yield {"type": "_round_end", "status": "error"}
                         yield {"type": "done"}
                         return
+                    if (content.strip() and continuation_nudges < MAX_CONTINUATION_NUDGES
+                            and trailing_continue_intent(content)):
+                        # 完成度护栏：只说要做却未发起工具调用，展示原话后催促模型继续执行
+                        continuation_nudges += 1
+                        yield {"type": "delta", "content": content + "\n\n"}
+                        messages.append({"role": "assistant", "content": content})
+                        messages.append({"role": "system", "content": CONTINUATION_NUDGE})
+                        yield {"type": "_round_end", "status": "ok"}
+                        continue
                     if content.strip():
                         # 已有正常答案无需再次请求，避免无工具重生成丢失原答案。
                         yield {"type": "delta", "content": content}

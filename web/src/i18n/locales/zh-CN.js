@@ -2733,6 +2733,7 @@ export default {
     descHybrid: '混合模式：内存 L1 + 数据库 L2',
     descMemory: '纯内存缓存模式',
     descDatabase: '数据库缓存模式',
+    descRedisUnavailable: 'Redis 模式：未能获取 Redis 连接信息',
   },
 
   // AI 自动匹配设置
@@ -4674,7 +4675,7 @@ export default {
     settingProxy: { title: '代理配置', desc: 'HTTP/SOCKS 代理、加速代理设置' },
     proxySpeedtest: { title: '代理测速', desc: '测试各弹幕源通过代理的连通性与延迟' },
     settingWebhook: { title: 'Webhook 配置', desc: 'Webhook 接收、延时导入设置' },
-    settingNotification: { title: '通知配置', desc: 'Telegram/Bark 等消息推送设置' },
+    settingNotification: { title: '通知与交互配置', desc: 'Telegram/Bark 等消息推送设置' },
     settingRecognition: { title: '识别词配置', desc: '自定义标题识别、集数偏移规则' },
     recognitionTest: { title: '识别词测试', desc: '输入标题实时预览识别词匹配与转换结果' },
     settingAutomatch: { title: '自动匹配', desc: 'AI 匹配、季度映射、剧集组选择' },

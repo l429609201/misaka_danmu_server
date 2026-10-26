@@ -312,7 +312,7 @@ export const FEATURES = [
     id: 'setting-notification',
     titleKey: 'features.settingNotification.title',
     descKey: 'features.settingNotification.desc',
-    keywords: ['通知', 'notification', 'telegram', '消息推送', 'bark'],
+    keywords: ['通知', '通知配置', '交互', 'notification', 'telegram', '消息推送', 'bark'],
     path: '/setting', tabKey: 'notification', icon: 'jiaohu',
   },
   {

@@ -233,6 +233,11 @@ async def unified_search(
 
     # 优化1: 并行执行别名获取和全网搜索
     alias_task = None
+    # 分段耗时（毫秒），用于排查缓存命中仍然慢的问题
+    stage_started = time.perf_counter()
+    stage_ms: Dict[str, int] = {}
+    # 本次实际使用的完整别名与类型映射，随原始结果一起写入缓存，供下次命中时免等辅助源
+    resolved_alias_payload: Dict[str, Any] = {}
     search_task = None
 
     if use_alias_expansion and metadata_manager:
@@ -264,6 +269,7 @@ async def unified_search(
                 else:
                     cached_alias_list = _cached_payload
                     cached_aux_type_map = {}
+                resolved_alias_payload = {"aliases": list(cached_alias_list), "aux_type_map": cached_aux_type_map}
 
                 # 使用 ensure_ascii=False 来正确显示中文
                 aliases_display = json.dumps(cached_alias_list, ensure_ascii=False, separators=(',', ':'))
@@ -314,7 +320,10 @@ async def unified_search(
                     _backend = get_cache_service()
                     if _backend is not None:
                         try:
-                            await _backend.set(alias_cache_key, alias_data, ttl=3600, region="search")
+                            # why: 别名缓存寿命与原始搜索结果缓存对齐（默认 3 小时）。
+                            #      原先固定 1 小时，过期后即便原始结果缓存命中，也要等辅助源联网取别名，
+                            #      导致"搜过的东西"仍需 1~3 秒才返回。
+                            await _backend.set(alias_cache_key, alias_data, ttl=shared_search_cache_ttl, region="search")
                             log.info(f"已缓存'{core_title}'的别名: {len(all_possible_aliases)}个")
                         except Exception as e:
                             log.warning(f"别名缓存写入失败（忽略）: {e}")
@@ -343,6 +352,8 @@ async def unified_search(
     # 别名增强：把离线库命中的全语言译名（尤其繁中）也加入搜索关键词，解决「官方主名 vs 平台译名」不一致。
     # 注：id 直链补充源已迁移到 bangumi 元数据源的 supplement_search 模板（仅弹幕源空结果时兜底，全入口统一）。
 
+    stage_ms["配置读取"] = int((time.perf_counter() - stage_started) * 1000)
+
     async def get_bangumi_aliases():
         """并行获取 bangumi-data 别名"""
         try:
@@ -357,7 +368,9 @@ async def unified_search(
     bangumi_task = asyncio.create_task(get_bangumi_aliases())
 
     # 等待 bangumi 别名完成并构建搜索关键词
+    bangumi_started = time.perf_counter()
     bgm_aliases = await bangumi_task
+    stage_ms["bangumi别名"] = int((time.perf_counter() - bangumi_started) * 1000)
     search_keywords = [search_term]
     seen_kw = {search_term.replace(" ", "")}
 
@@ -383,15 +396,25 @@ async def unified_search(
     if shared_cache_key_out is not None:
         shared_cache_key_out["key"] = shared_cache_key
 
+    # 原始缓存命中时附带的别名快照（None 表示未命中或旧格式缓存）
+    raw_cache_hit: Dict[str, Any] = {}
+
     async def perform_search():
-        """优先读取通用原始结果缓存，未命中时才访问各弹幕源。"""
+        """优先读取通用原始结果缓存，未命中时才访问各弹幕源（写缓存推迟到别名就绪后）。"""
+        search_started = time.perf_counter()
         try:
             cached = await read_search_results(shared_cache_key, region="search")
+            stage_ms["原始缓存读取"] = int((time.perf_counter() - search_started) * 1000)
             if cached is not None:
                 cached_items = cached.get("results", cached) if isinstance(cached, dict) else cached
                 if isinstance(cached_items, list):
                     # 本轮未执行源站搜索，避免报告沿用上一轮的源耗时。
                     scraper_manager.last_search_timing = []
+                    stage_ms["原始缓存命中"] = 1
+                    raw_cache_hit["hit"] = True
+                    if isinstance(cached, dict) and isinstance(cached.get("aliases"), list):
+                        raw_cache_hit["aliases"] = cached["aliases"]
+                        raw_cache_hit["aux_type_map"] = cached.get("aux_type_map") or {}
                     log.info("命中通用原始搜索缓存: %s（%d 条）", shared_cache_key, len(cached_items))
                     return [
                         item if isinstance(item, ProviderSearchInfo) else ProviderSearchInfo(**item)
@@ -400,29 +423,39 @@ async def unified_search(
         except Exception as exc:
             log.warning("读取通用原始搜索缓存失败，将访问源站: %s", exc)
 
+        source_started = time.perf_counter()
         results = await search_all(
             scraper_manager, search_keywords,
             episode_info=episode_info,
             max_results_per_source=max_results_per_source,
             metadata_manager=metadata_manager,
         )
-        if results:
-            try:
-                await write_search_results(
-                    shared_cache_key,
-                    [item.model_dump() for item in results],
-                    ttl=shared_search_cache_ttl,
-                    region="search",
-                )
-            except Exception as exc:
-                log.warning("写入通用原始搜索缓存失败: %s", exc)
+        stage_ms["弹幕源搜索"] = int((time.perf_counter() - source_started) * 1000)
         return results
 
     search_task = asyncio.create_task(perform_search())
 
     # 等待别名和搜索任务完成
     if alias_task:
-        all_possible_aliases, all_results = await asyncio.gather(alias_task, search_task)
+        wait_started = time.perf_counter()
+        all_results = await search_task
+        if raw_cache_hit.get("aliases") is not None:
+            # why: 原始结果缓存命中且带别名快照时，直接用快照过滤，不再阻塞等待辅助源联网。
+            #      取消 alias_task：快照与原始结果同寿命，过期后整次搜索会重新联网，无需后台刷新；
+            #      也避免任务在函数返回后继续改写调用方的出参容器。
+            alias_task.cancel()
+            all_possible_aliases = set(raw_cache_hit["aliases"])
+            if aux_title_type_map_out is not None and raw_cache_hit.get("aux_type_map"):
+                aux_title_type_map_out.update(raw_cache_hit["aux_type_map"])
+            log.info("原始缓存命中，使用缓存的别名快照（%d 个），辅助源在后台刷新", len(all_possible_aliases))
+        else:
+            all_possible_aliases = await alias_task
+        resolved_alias_payload = {
+            "aliases": list(all_possible_aliases),
+            "aux_type_map": dict(aux_title_type_map_out or {}),
+        }
+        # 别名未命中缓存时需联网取辅助源；原始缓存命中时这一步就是主要耗时
+        stage_ms["等待别名+搜索"] = int((time.perf_counter() - wait_started) * 1000)
 
         # 验证别名相似度（使用核心标题进行比较，与获取别名时保持一致）
         if use_alias_filtering:
@@ -445,8 +478,23 @@ async def unified_search(
     else:
         all_results = await search_task
 
+    # 原始结果缓存写入推迟到这里：别名已就绪，可一并保存别名快照
+    if all_results and not raw_cache_hit.get("hit"):
+        try:
+            await write_search_results(
+                shared_cache_key,
+                [item.model_dump() for item in all_results],
+                ttl=shared_search_cache_ttl,
+                region="search",
+                context=resolved_alias_payload or None,
+            )
+        except Exception as exc:
+            log.warning("写入通用原始搜索缓存失败: %s", exc)
+
     await progress_callback(40, "搜索完成...")
     log.info(f"直接搜索完成，找到 {len(all_results)} 个原始结果。")
+    stage_ms["别名缓存命中"] = 0 if alias_task else 1
+    post_started = time.perf_counter()
 
     # 3. 使用标题过滤（如果启用）
     filtered_results = all_results
@@ -658,6 +706,10 @@ async def unified_search(
             reverse=True
         )
 
+    stage_ms["过滤排序"] = int((time.perf_counter() - post_started) * 1000)
+    stage_ms["总计"] = int((time.perf_counter() - stage_started) * 1000)
+    # 别名缓存/原始缓存取值 1=命中 0=未命中，其余为毫秒
+    log.info("统一搜索分段耗时: %s", json.dumps(stage_ms, ensure_ascii=False))
     return sorted_results
 
 

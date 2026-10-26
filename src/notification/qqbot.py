@@ -5,10 +5,11 @@ QQ 官方 Bot 通知渠道实现（WebSocket Gateway）
 官方文档：https://bot.q.qq.com/wiki/
 """
 
+import asyncio
 import base64
 import json
 import logging
-import threading
+from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
 import aiohttp
@@ -79,13 +80,16 @@ class QQBotChannel(BaseNotificationChannel):
         # 管理员白名单（可选）
         self.admin_whitelist = config.get("admin_whitelist", "")
 
-        # Bot 客户端实例
+        # Bot 客户端实例；WebSocket 在主事件循环中以任务形式运行
+        # （原先在子线程调用 botpy.run() 会因复用已运行的主循环而抛 "This event loop is already running"，收消息从未生效）
         self._bot_client = None
-        self._bot_thread: Optional[threading.Thread] = None
+        self._bot_task: Optional[asyncio.Task] = None
         self._should_stop = False
 
-        # 事件循环（用于异步操作）
-        self._event_loop = None
+        # 已处理的事件 ID（botpy RESUME 后可能重放事件，按 ID 去重，容量有限防止无限增长）
+        self._seen_event_ids: "OrderedDict[str, None]" = OrderedDict()
+        # 被动回复的 msg_seq 计数：同一 msg_id + msg_seq 重复发送会被平台拒绝
+        self._reply_seq: "OrderedDict[str, int]" = OrderedDict()
 
     def _is_log_raw(self) -> bool:
         """检查是否启用原始日志"""
@@ -100,7 +104,38 @@ class QQBotChannel(BaseNotificationChannel):
                 f"{'─' * 60}"
             )
 
-    def _start_bot_client(self):
+    _MAX_TRACKED_IDS = 1000
+
+    def _is_duplicate_event(self, event_id: Optional[str]) -> bool:
+        """判断事件是否已处理过（首次出现时登记并返回 False）"""
+        if not event_id:
+            return False
+        if event_id in self._seen_event_ids:
+            return True
+        self._seen_event_ids[event_id] = None
+        while len(self._seen_event_ids) > self._MAX_TRACKED_IDS:
+            self._seen_event_ids.popitem(last=False)
+        return False
+
+    def _next_reply_seq(self, reply_id: str) -> int:
+        """为同一条被动回复目标分配递增的 msg_seq（从 1 开始）"""
+        seq = self._reply_seq.pop(reply_id, 0) + 1
+        self._reply_seq[reply_id] = seq
+        while len(self._reply_seq) > self._MAX_TRACKED_IDS:
+            self._reply_seq.popitem(last=False)
+        return seq
+
+    def _is_allowed(self, user_openid: Optional[str]) -> bool:
+        """管理员白名单校验（未配置白名单时全部放行）"""
+        if not self.admin_whitelist:
+            return True
+        allowed_users = [u.strip() for u in self.admin_whitelist.split(",") if u.strip()]
+        if user_openid in allowed_users:
+            return True
+        logger.warning(f"用户 {user_openid} 不在管理员白名单中，忽略消息")
+        return False
+
+    async def _start_bot_client(self):
         """启动 Bot WebSocket 客户端（用于接收消息和事件）"""
         if not self.app_id or not self.app_secret:
             logger.warning("QQ Bot 配置不完整，无法启动消息接收")
@@ -138,28 +173,29 @@ class QQBotChannel(BaseNotificationChannel):
                     await self.parent_channel._handle_interaction(interaction)
 
             self._bot_client = MessageBot(self)
-
-            # 在新线程中启动 Bot
-            def run_bot():
-                try:
-                    # botpy 的 run() 方法会自动创建和管理事件循环
-                    # 不需要手动创建 event loop，否则会导致 "event loop is already running" 错误
-                    self._bot_client.run(
-                        appid=self.app_id,
-                        secret=self.app_secret,
-                    )
-                except Exception as e:
-                    logger.error(f"QQ Bot 运行异常: {e}")
-
-            self._bot_thread = threading.Thread(target=run_bot, daemon=True)
-            self._bot_thread.start()
+            # 在当前运行中的主循环初始化 botpy 的异步对象，保证 client.loop 与事件分发所在循环一致
+            await self._bot_client._async_setup_hook()
+            self._bot_task = asyncio.create_task(
+                self._run_bot(), name=f"qqbot-ws-{self.channel_id}"
+            )
             logger.info("QQ Bot WebSocket 客户端已启动")
 
         except Exception as e:
             logger.error(f"QQ Bot 启动失败: {e}")
 
+    async def _run_bot(self):
+        """运行 botpy WebSocket 主协程；异常时记录日志而不是静默吞掉"""
+        try:
+            await self._bot_client.start(appid=self.app_id, secret=self.app_secret)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"QQ Bot WebSocket 运行异常: {e}", exc_info=True)
+
     async def _handle_c2c_message(self, message):
         """处理单聊（C2C）消息"""
+        if self._is_duplicate_event(getattr(message, "id", None)):
+            return
         try:
             # 记录原始消息
             self._log_raw("⬇️ 收到单聊消息", {
@@ -174,11 +210,8 @@ class QQBotChannel(BaseNotificationChannel):
             msg_id = message.id
 
             # 检查管理员权限（如果配置了白名单）
-            if self.admin_whitelist:
-                allowed_users = [u.strip() for u in self.admin_whitelist.split(",")]
-                if user_openid not in allowed_users:
-                    logger.warning(f"用户 {user_openid} 不在管理员白名单中，忽略消息")
-                    return
+            if not self._is_allowed(user_openid):
+                return
 
             # 判断是命令还是普通消息
             if content.startswith('/'):
@@ -234,27 +267,28 @@ class QQBotChannel(BaseNotificationChannel):
 
     async def _handle_group_message(self, message):
         """处理群聊 @机器人 消息"""
+        if self._is_duplicate_event(getattr(message, "id", None)):
+            return
         try:
+            # 群消息的 author 只有 member_openid（没有 user_openid），白名单与会话都按它判断
+            user_openid = getattr(message.author, "member_openid", None)
+
             # 记录原始消息
             self._log_raw("⬇️ 收到群聊消息", {
                 "message_id": message.id,
                 "group_openid": message.group_openid,
-                "user_openid": message.author.user_openid,
+                "member_openid": user_openid,
                 "content": message.content,
                 "timestamp": message.timestamp if hasattr(message, 'timestamp') else None,
             })
 
-            content = message.content.strip()
-            user_openid = message.author.user_openid
+            content = (message.content or "").strip()
             group_openid = message.group_openid
             msg_id = message.id
 
             # 检查管理员权限（如果配置了白名单）
-            if self.admin_whitelist:
-                allowed_users = [u.strip() for u in self.admin_whitelist.split(",")]
-                if user_openid not in allowed_users:
-                    logger.warning(f"用户 {user_openid} 不在管理员白名单中，忽略消息")
-                    return
+            if not self._is_allowed(user_openid):
+                return
 
             # 判断是命令还是普通消息
             if content.startswith('/'):
@@ -310,21 +344,164 @@ class QQBotChannel(BaseNotificationChannel):
             logger.error(f"QQ Bot 处理群聊消息失败: {e}", exc_info=True)
 
     async def _handle_interaction(self, interaction):
-        """处理按钮交互回调"""
+        """处理按钮交互回调：先 ACK（否则客户端提示操作失败），再交给统一回调分发并回复结果"""
+        if self._is_duplicate_event(getattr(interaction, "id", None)):
+            return
+        resolved = interaction.data.resolved
+        callback_data = resolved.button_data or ""
+        group_openid = getattr(interaction, "group_openid", None)
+        # 单聊用 user_openid，群聊用 group_member_openid
+        user_openid = (
+            getattr(interaction, "group_member_openid", None) if group_openid
+            else getattr(interaction, "user_openid", None)
+        ) or resolved.user_id
+
+        self._log_raw("⬇️ 收到按钮回调", {
+            "interaction_id": interaction.id,
+            "user_openid": user_openid,
+            "group_openid": group_openid,
+            "callback_data": callback_data,
+        })
+
+        allowed = self._is_allowed(user_openid)
         try:
-            # 记录原始交互（仅在开启 log_raw 时）
-            self._log_raw("⬇️ 收到按钮回调", {
-                "user_openid": interaction.data.resolved.user_id,
-                "callback_data": interaction.data.resolved.button_data,
-            })
+            # code: 0 成功，4 没有权限
+            await self._bot_client.api.on_interaction_result(interaction.id, 0 if allowed else 4)
+        except Exception as ack_err:
+            logger.warning(f"QQ Bot 按钮回调 ACK 失败: {ack_err}")
 
-            # TODO: 处理按钮回调逻辑
-            # callback_data = interaction.data.resolved.button_data
-            # user_openid = interaction.data.resolved.user_id
-            # 可以调用 notification_service.handle_callback() 或其他处理方法
+        if not allowed or not callback_data:
+            return
 
+        try:
+            result = await self.service.handle_callback(
+                callback_data, user_openid, self,
+                chat_id=group_openid or user_openid,
+                message_id=resolved.message_id,
+            )
+            text = (result.text if result else None) or (result.answer_callback_text if result else None)
+            if not text:
+                return
+            keyboard = None
+            if result.reply_markup:
+                keyboard = self._build_keyboard_from_markup(result.reply_markup)
+            # 按钮回调没有可引用的 msg_id，使用 event_id 进行被动回复
+            event_id = getattr(interaction, "event_id", None)
+            if group_openid:
+                await self._send_group_message(
+                    group_openid=group_openid, content=text, keyboard=keyboard, event_id=event_id,
+                )
+            else:
+                await self._send_c2c_message(
+                    user_openid=user_openid, content=text, keyboard=keyboard, event_id=event_id,
+                )
         except Exception as e:
             logger.error(f"QQ Bot 处理按钮回调失败: {e}", exc_info=True)
+
+    @staticmethod
+    def _is_markdown_denied(err: Exception) -> bool:
+        """判断错误是否为“未开通 Markdown 权限 / 不支持 Markdown”（参考 MP：11244、markdown、权限）"""
+        msg = str(err)
+        return "11244" in msg or "markdown" in msg.lower() or "权限" in msg
+
+    async def _send_to_target(
+        self,
+        is_group: bool,
+        target: str,
+        content: Optional[str] = None,
+        keyboard: Optional[Dict] = None,
+        image_url: Optional[str] = None,
+        msg_id: Optional[str] = None,
+        markdown: bool = True,
+        event_id: Optional[str] = None,
+    ) -> bool:
+        """单聊/群聊共用的发送实现，返回是否全部发送成功
+
+        - 图片：先上传（/files，返回 dict），再以 msg_type=7 + media 发送
+        - 被动回复：图片与文字都带 msg_id/event_id，并按引用递增 msg_seq（同一 msg_id+msg_seq 重复会被拒绝）
+        - Markdown 未开通权限时自动回退纯文本（并去掉按钮，按钮依赖 Markdown）
+        - botpy 超时会返回 None，视为失败
+        """
+        kind = "群聊" if is_group else "单聊"
+        if not self._bot_client:
+            logger.error("Bot 客户端未初始化")
+            return False
+
+        api = self._bot_client.api
+        if is_group:
+            upload = lambda **kw: api.post_group_file(group_openid=target, **kw)
+            post = lambda **kw: api.post_group_message(group_openid=target, **kw)
+        else:
+            upload = lambda **kw: api.post_c2c_file(openid=target, **kw)
+            post = lambda **kw: api.post_c2c_message(openid=target, **kw)
+
+        reply_ref = msg_id or event_id
+
+        def with_reply(data: Dict) -> Dict:
+            """为被动回复补齐 msg_id/event_id 与递增的 msg_seq"""
+            if msg_id:
+                data["msg_id"] = msg_id
+            elif event_id:
+                data["event_id"] = event_id
+            if reply_ref:
+                data["msg_seq"] = self._next_reply_seq(reply_ref)
+            return data
+
+        ok = True
+        # 第一步：如果有图片，先上传并发送图片消息
+        if image_url:
+            try:
+                self._log_raw(f"⬆️ 上传{kind}图片", {"target": target, "image_url": image_url})
+                media = await upload(file_type=1, url=image_url, srv_send_msg=False)
+                # botpy 返回的是 dict，原先用 hasattr 判断恒为 False，图片一直被跳过
+                if isinstance(media, dict) and media.get("file_info"):
+                    resp = await post(**with_reply({"msg_type": 7, "media": media}))
+                    if resp is None:
+                        ok = False
+                        logger.warning(f"QQ Bot {kind}图片发送无响应（可能超时）: {target}")
+                    else:
+                        logger.info(f"QQ Bot {kind}图片发送成功: {target}")
+                else:
+                    ok = False
+                    logger.warning(f"QQ Bot {kind}图片上传失败，跳过图片: {image_url} -> {media}")
+            except Exception as img_err:
+                ok = False
+                logger.error(f"QQ Bot {kind}图片发送失败，将只发送文本: {img_err}")
+
+        # 第二步：如果有文本内容，发送文本/Markdown 消息
+        if content:
+            MarkdownPayload = _get_markdown_payload()
+            data: Dict[str, Any] = {"content": content, "msg_type": 0}
+            use_md = False
+            if markdown and MarkdownPayload:
+                try:
+                    data["markdown"] = MarkdownPayload(content=content)
+                    data["msg_type"] = 2
+                    use_md = True
+                except Exception as md_err:
+                    logger.warning(f"Markdown 创建失败，降级为纯文本: {md_err}")
+            if keyboard:
+                data["keyboard"] = keyboard
+
+            try:
+                self._log_raw(f"⬆️ 发送{kind}消息", {"target": target, "message_data": data})
+                try:
+                    resp = await post(**with_reply(dict(data)))
+                except Exception as send_err:
+                    if not (use_md and self._is_markdown_denied(send_err)):
+                        raise
+                    logger.warning(f"QQ Bot Markdown 发送被拒（{send_err}），回退纯文本")
+                    resp = await post(**with_reply({"content": content, "msg_type": 0}))
+                if resp is None:
+                    ok = False
+                    logger.warning(f"QQ Bot {kind}文本发送无响应（可能超时）: {target}")
+                else:
+                    self._log_raw(f"✅ {kind}消息发送成功", {"target": target})
+                    logger.info(f"QQ Bot {kind}文本发送成功: {target}")
+            except Exception as e:
+                ok = False
+                logger.error(f"QQ Bot {kind}消息发送失败: {e}")
+        return ok
 
     async def _send_c2c_message(
         self,
@@ -334,100 +511,12 @@ class QQBotChannel(BaseNotificationChannel):
         image_url: Optional[str] = None,
         msg_id: Optional[str] = None,
         markdown: bool = True,
-    ):
-        """发送单聊消息（通过 botpy API）
-
-        图片发送流程：
-        1. 先调用 post_c2c_file 上传图片获取 Media 对象
-        2. 再以 msg_type=7, media=Media 发送图片消息
-        3. 文本/Markdown 与图片拆分为独立消息
-
-        :param markdown: 是否使用 Markdown 格式（默认 True）
-        """
-        if not self._bot_client:
-            logger.error("Bot 客户端未初始化")
-            return
-
-        try:
-            # 第一步：如果有图片，先上传并发送图片消息
-            if image_url:
-                try:
-                    self._log_raw("⬆️ 上传单聊图片", {
-                        "user_openid": user_openid,
-                        "image_url": image_url,
-                    })
-
-                    # 上传图片获取 Media 对象
-                    media_response = await self._bot_client.api.post_c2c_file(
-                        openid=user_openid,
-                        file_type=1,  # 1=图片
-                        url=image_url,
-                        srv_send_msg=False,  # 不自动发送，手动控制
-                    )
-
-                    if media_response and hasattr(media_response, 'file_info'):
-                        # 发送图片消息
-                        image_message_data = {
-                            "msg_type": 7,  # 7=富媒体消息
-                            "media": media_response,
-                        }
-                        if msg_id:
-                            image_message_data["msg_id"] = msg_id
-
-                        await self._bot_client.api.post_c2c_message(
-                            openid=user_openid,
-                            **image_message_data
-                        )
-
-                        logger.info(f"QQ Bot 单聊图片发送成功: user={user_openid}")
-                    else:
-                        logger.warning(f"QQ Bot 单聊图片上传失败，跳过图片: {image_url}")
-
-                except Exception as img_err:
-                    logger.error(f"QQ Bot 单聊图片发送失败，将只发送文本: {img_err}", exc_info=True)
-
-            # 第二步：如果有文本内容，发送文本/Markdown 消息
-            if content:
-                MarkdownPayload = _get_markdown_payload()
-                message_data = {"content": content}
-
-                # QQ API 消息类型必须与消息字段匹配：2=Markdown，0=纯文本
-                if markdown and MarkdownPayload:
-                    try:
-                        message_data["msg_type"] = 2
-                        message_data["markdown"] = MarkdownPayload(content=content)
-                    except Exception as md_err:
-                        logger.warning(f"Markdown 创建失败，降级为纯文本: {md_err}")
-                        message_data["msg_type"] = 0
-                else:
-                    message_data["msg_type"] = 0
-
-                # 只在 keyboard 非空时才传递
-                if keyboard and len(keyboard) > 0:
-                    message_data["keyboard"] = keyboard
-                if msg_id and not image_url:  # 如果已经在图片消息中使用了 msg_id，这里不重复
-                    message_data["msg_id"] = msg_id
-
-                # 记录发送请求
-                self._log_raw("⬆️ 发送单聊消息", {
-                    "user_openid": user_openid,
-                    "message_data": message_data,
-                })
-
-                await self._bot_client.api.post_c2c_message(
-                    openid=user_openid,
-                    **message_data
-                )
-
-                # 记录发送成功
-                self._log_raw("✅ 单聊消息发送成功", {
-                    "user_openid": user_openid,
-                })
-
-                logger.info(f"QQ Bot 单聊文本发送成功: user={user_openid}")
-
-        except Exception as e:
-            logger.error(f"QQ Bot 单聊消息发送失败: {e}", exc_info=True)
+        event_id: Optional[str] = None,
+    ) -> bool:
+        """发送单聊消息（通过 botpy API），返回是否成功"""
+        return await self._send_to_target(
+            False, user_openid, content, keyboard, image_url, msg_id, markdown, event_id,
+        )
 
     async def _send_group_message(
         self,
@@ -437,100 +526,12 @@ class QQBotChannel(BaseNotificationChannel):
         image_url: Optional[str] = None,
         msg_id: Optional[str] = None,
         markdown: bool = True,
-    ):
-        """发送群聊消息（通过 botpy API）
-
-        图片发送流程：
-        1. 先调用 post_group_file 上传图片获取 Media 对象
-        2. 再以 msg_type=7, media=Media 发送图片消息
-        3. 文本/Markdown 与图片拆分为独立消息
-
-        :param markdown: 是否使用 Markdown 格式（默认 True）
-        """
-        if not self._bot_client:
-            logger.error("Bot 客户端未初始化")
-            return
-
-        try:
-            # 第一步：如果有图片，先上传并发送图片消息
-            if image_url:
-                try:
-                    self._log_raw("⬆️ 上传群聊图片", {
-                        "group_openid": group_openid,
-                        "image_url": image_url,
-                    })
-
-                    # 上传图片获取 Media 对象
-                    media_response = await self._bot_client.api.post_group_file(
-                        group_openid=group_openid,
-                        file_type=1,  # 1=图片
-                        url=image_url,
-                        srv_send_msg=False,  # 不自动发送，手动控制
-                    )
-
-                    if media_response and hasattr(media_response, 'file_info'):
-                        # 发送图片消息
-                        image_message_data = {
-                            "msg_type": 7,  # 7=富媒体消息
-                            "media": media_response,
-                        }
-                        if msg_id:
-                            image_message_data["msg_id"] = msg_id
-
-                        await self._bot_client.api.post_group_message(
-                            group_openid=group_openid,
-                            **image_message_data
-                        )
-
-                        logger.info(f"QQ Bot 群聊图片发送成功: group={group_openid}")
-                    else:
-                        logger.warning(f"QQ Bot 群聊图片上传失败，跳过图片: {image_url}")
-
-                except Exception as img_err:
-                    logger.error(f"QQ Bot 群聊图片发送失败，将只发送文本: {img_err}", exc_info=True)
-
-            # 第二步：如果有文本内容，发送文本/Markdown 消息
-            if content:
-                MarkdownPayload = _get_markdown_payload()
-                message_data = {"content": content}
-
-                # QQ API 消息类型必须与消息字段匹配：2=Markdown，0=纯文本
-                if markdown and MarkdownPayload:
-                    try:
-                        message_data["msg_type"] = 2
-                        message_data["markdown"] = MarkdownPayload(content=content)
-                    except Exception as md_err:
-                        logger.warning(f"Markdown 创建失败，降级为纯文本: {md_err}")
-                        message_data["msg_type"] = 0
-                else:
-                    message_data["msg_type"] = 0
-
-                # 只在 keyboard 非空时才传递
-                if keyboard and len(keyboard) > 0:
-                    message_data["keyboard"] = keyboard
-                if msg_id and not image_url:  # 如果已经在图片消息中使用了 msg_id，这里不重复
-                    message_data["msg_id"] = msg_id
-
-                # 记录发送请求
-                self._log_raw("⬆️ 发送群聊消息", {
-                    "group_openid": group_openid,
-                    "message_data": message_data,
-                })
-
-                await self._bot_client.api.post_group_message(
-                    group_openid=group_openid,
-                    **message_data
-                )
-
-                # 记录发送成功
-                self._log_raw("✅ 群聊消息发送成功", {
-                    "group_openid": group_openid,
-                })
-
-                logger.info(f"QQ Bot 群聊文本发送成功: group={group_openid}")
-
-        except Exception as e:
-            logger.error(f"QQ Bot 群聊消息发送失败: {e}", exc_info=True)
+        event_id: Optional[str] = None,
+    ) -> bool:
+        """发送群聊消息（通过 botpy API），返回是否成功"""
+        return await self._send_to_target(
+            True, group_openid, content, keyboard, image_url, msg_id, markdown, event_id,
+        )
 
     # ========== BaseNotificationChannel 实现 ==========
 
@@ -569,14 +570,14 @@ class QQBotChannel(BaseNotificationChannel):
         target_openid = openid or self.user_openid or self.group_openid
         if not target_openid:
             logger.error("QQ Bot 发送失败：未配置用户 OpenID 或群组 OpenID")
-            return
+            return False
 
         # 判断是单聊还是群聊
         is_group = (openid == self.group_openid) if openid else (self.group_openid and not self.user_openid)
 
         # 发送消息
         if is_group:
-            await self._send_group_message(
+            return await self._send_group_message(
                 group_openid=target_openid,
                 content=full_text,
                 keyboard=keyboard,
@@ -584,7 +585,7 @@ class QQBotChannel(BaseNotificationChannel):
                 msg_id=msg_id,
             )
         else:
-            await self._send_c2c_message(
+            return await self._send_c2c_message(
                 user_openid=target_openid,
                 content=full_text,
                 keyboard=keyboard,
@@ -596,12 +597,15 @@ class QQBotChannel(BaseNotificationChannel):
         """从通用按钮格式转换为 QQ Bot 按钮格式"""
         # reply_markup 格式: [[{"text": "按钮1", "callback_data": "action:param"}]]
         rows = []
+        # 按钮 id 使用自增序号：原先截取 callback_data 前 20 字符，前缀相同的按钮会撞 id
+        btn_seq = 0
 
         for row_buttons in reply_markup:
             button_row = []
             for btn in row_buttons:
+                btn_seq += 1
                 button_obj = {
-                    "id": btn.get("callback_data", btn["text"])[:20],
+                    "id": str(btn_seq),
                     "render_data": {
                         "label": btn["text"],
                         "visited_label": btn.get("text", btn["text"]),
@@ -652,8 +656,8 @@ class QQBotChannel(BaseNotificationChannel):
     async def start(self):
         """启动渠道"""
         await super().start()
-        # 启动 Bot WebSocket 客户端
-        self._start_bot_client()
+        # 启动 Bot WebSocket 客户端（主循环中的后台任务）
+        await self._start_bot_client()
 
         # 注册菜单命令
         menu_commands = self.service.get_menu_commands()
@@ -683,8 +687,20 @@ class QQBotChannel(BaseNotificationChannel):
         if self._bot_client:
             try:
                 await self._bot_client.close()
-            except:
+            except Exception as e:
+                logger.debug(f"QQ Bot 客户端关闭异常: {e}")
+
+        # botpy.close() 只关闭 HTTP，不会结束 WebSocket 协程，需要取消后台任务
+        task, self._bot_task = self._bot_task, None
+        if task and not task.done():
+            task.cancel()
+            try:
+                await asyncio.wait_for(task, timeout=10)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
+            except Exception as e:
+                logger.debug(f"QQ Bot WebSocket 任务结束异常: {e}")
+        self._bot_client = None
 
         await super().stop()
         logger.info(f"QQ Bot 渠道已停止: {self.name}")
@@ -782,24 +798,21 @@ class QQBotChannel(BaseNotificationChannel):
     # 单张图片下载上限（超过则只给文字描述，不喂给 vision 模型）
     _VISION_MAX_BYTES = 4 * 1024 * 1024
 
-    async def _download_photo_data_url(self, file_id: str) -> Optional[str]:
+    async def _download_photo_data_url(self, file_url: str) -> Optional[str]:
         """
         把 QQ 图片下载为 data URL（base64），供 vision 模型识别。
 
-        :param file_id: QQ 图片的 file_id
+        :param file_url: 附件自带的下载地址（botpy 没有 get_file_info 接口，附件对象直接提供 url）
         :return: data URL 或 None（失败时）
         """
         try:
-            if not self._bot_client:
+            if not file_url:
                 return None
-
-            # QQ Bot API 获取文件下载 URL
-            file_info = await self._bot_client.api.get_file_info(file_id)
-            if not file_info or not file_info.get("url"):
-                logger.warning(f"[QQ 图片] 无法获取文件信息: file_id={file_id}")
-                return None
-
-            file_url = file_info["url"]
+            # 部分附件 url 不带协议头
+            if file_url.startswith("//"):
+                file_url = "https:" + file_url
+            elif not file_url.startswith(("http://", "https://")):
+                file_url = "https://" + file_url
 
             # 下载图片
             async with aiohttp.ClientSession() as session:
@@ -854,11 +867,11 @@ class QQBotChannel(BaseNotificationChannel):
         if attachments and len(attachments) > 0:
             parts.append("[用户发来图片]")
             for attach in attachments:
-                # QQ Bot API 的图片附件结构
-                if attach.get("content_type", "").startswith("image/"):
-                    file_id = attach.get("id") or attach.get("file_id")
-                    if file_id:
-                        data_url = await self._download_photo_data_url(file_id)
+                # botpy 的附件是 _Attachments 对象，只能按属性访问（没有 .get()）
+                if (getattr(attach, "content_type", None) or "").startswith("image/"):
+                    file_url = getattr(attach, "url", None)
+                    if file_url:
+                        data_url = await self._download_photo_data_url(file_url)
                         if data_url:
                             images.append(data_url)
                         else:
@@ -910,6 +923,7 @@ class QQBotChannel(BaseNotificationChannel):
                 stream_callback=None,  # QQ 不支持流式
                 rich_text=False,  # QQ 不支持富文本
                 rich_message=False,
+                channel=self,
             )
 
             # 提取响应文本
@@ -978,6 +992,7 @@ class QQBotChannel(BaseNotificationChannel):
                 stream_callback=None,  # QQ 不支持流式
                 rich_text=False,  # QQ 不支持富文本
                 rich_message=False,
+                channel=self,
             )
 
             # 提取响应文本

@@ -101,6 +101,11 @@ class CacheService:
         return self._backend_type
 
     @property
+    def redis_backend(self) -> Optional[RedisBackend]:
+        """Redis 驱动实例（仅 redis 模式非 None），供系统信息页读取连接指标"""
+        return self._redis if self._backend_type == "redis" else None
+
+    @property
     def is_hybrid(self) -> bool:
         """是否为混合 L1/L2 模式"""
         return self._backend_type == "hybrid"

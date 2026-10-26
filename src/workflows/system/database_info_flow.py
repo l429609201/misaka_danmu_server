@@ -7,6 +7,7 @@ from fastapi import Request
 
 from src.core.config import settings
 from src.core.cache import RedisBackend
+from src.services.cache_service import get_cache_service
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +46,12 @@ async def workflow_get_database_info(request: Request) -> Dict[str, Any]:
     redis_clients = None
     redis_uptime = None
 
+    # 实际运行的缓存后端以全局 CacheService 为准：旧 app.state.cache_backend 已不再初始化，
+    # 继续读取它会导致 Redis 模式下 redisConnected 恒为 False，页面误显示"数据库缓存模式"
+    cache_service = get_cache_service()
+    cache_backend_type = cache_service.backend_type if cache_service is not None else cache_cfg.backend
     try:
-        # 从 app.state 获取缓存后端
-        backend = getattr(request.app.state, 'cache_backend', None)
+        backend = cache_service.redis_backend if cache_service is not None else None
         if isinstance(backend, RedisBackend):
             redis_connected = True
             redis_url = backend._safe_url
@@ -85,7 +89,7 @@ async def workflow_get_database_info(request: Request) -> Dict[str, Any]:
         "dbOverflow": overflow,
         "dbMaxOverflow": db_cfg.max_overflow,
         "dbPoolRecycle": db_cfg.pool_recycle,
-        "cacheBackend": cache_cfg.backend,
+        "cacheBackend": cache_backend_type,
         "redisUrl": redis_url,
         "redisConnected": redis_connected,
         "redisVersion": redis_version,

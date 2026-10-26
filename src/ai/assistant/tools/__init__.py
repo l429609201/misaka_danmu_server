@@ -7,6 +7,7 @@ from .metadata_tools import register_metadata_tools
 from .config_tools import register_config_tools
 from .general_config_tools import register_general_config_tools
 from .skill_tools import register_skill_tools
+from .memory_tools import register_memory_tools
 from .log_tools import register_log_tools
 from .doc_tools import register_doc_tools
 from .database_tools import register_database_tools
@@ -21,6 +22,8 @@ register_metadata_tools()
 register_config_tools()
 register_general_config_tools()
 register_skill_tools()
+# 跨会话长期记忆：写入/删除走确认卡
+register_memory_tools()
 register_log_tools()
 register_doc_tools()
 register_database_tools()
@@ -33,7 +36,7 @@ __all__ = [
     "Tool", "ToolRegistry", "registry",
     "register_readonly_tools", "register_write_tools",
     "register_metadata_tools", "register_config_tools",
-    "register_general_config_tools", "register_skill_tools",
+    "register_general_config_tools", "register_skill_tools", "register_memory_tools",
     "register_log_tools", "register_doc_tools",
     "register_api_gateway_tools", "register_host_tools",
     "ContainerRuntimeContract", "execute_host_tool",

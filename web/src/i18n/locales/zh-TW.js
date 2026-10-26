@@ -2193,7 +2193,7 @@ export default {
     labelVersion: '版本', labelMemUsed: '已用記憶體', labelMemMax: '記憶體上限', labelMemMaxUnlimited: '無限制',
     labelCacheBackend: '快取後端', labelCacheMode: '配置模式',
     cacheModeRedis: '純 Redis', cacheModeHybrid: '混合模式',
-    descHybrid: '混合模式：記憶體 L1 + 資料庫 L2', descMemory: '純記憶體快取模式', descDatabase: '資料庫快取模式',
+    descHybrid: '混合模式：記憶體 L1 + 資料庫 L2', descMemory: '純記憶體快取模式', descDatabase: '資料庫快取模式', descRedisUnavailable: 'Redis 模式：無法取得 Redis 連線資訊',
   },
 
   // AI 自動匹配設定
@@ -4117,7 +4117,7 @@ export default {
     settingProxy: { title: '代理配置', desc: 'HTTP/SOCKS 代理、加速代理設定' },
     proxySpeedtest: { title: '代理測速', desc: '測試各彈幕源透過代理的連通性與延遲' },
     settingWebhook: { title: 'Webhook 配置', desc: 'Webhook 接收、延時匯入設定' },
-    settingNotification: { title: '通知配置', desc: 'Telegram/Bark 等訊息推送設定' },
+    settingNotification: { title: '通知與互動配置', desc: 'Telegram/Bark 等訊息推送設定' },
     settingRecognition: { title: '識別詞配置', desc: '自訂標題識別、集數偏移規則' },
     recognitionTest: { title: '識別詞測試', desc: '輸入標題即時預覽識別詞匹配與轉換結果' },
     settingAutomatch: { title: '自動匹配', desc: 'AI 匹配、季度映射、劇集組選擇' },

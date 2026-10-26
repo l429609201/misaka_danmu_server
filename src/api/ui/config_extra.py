@@ -1001,7 +1001,7 @@ async def get_ai_metrics(
     # 添加已有实例的缓存统计。
     cache_stats = None
     if matcher and matcher.cache:
-        cache_stats = matcher.cache.get_stats()
+        cache_stats = await matcher.cache.get_stats()
 
     return {
         "ai_stats": stats,
@@ -1029,7 +1029,7 @@ async def clear_ai_cache(
     if not matcher.cache:
         raise HTTPException(status_code=400, detail="AI缓存未启用")
 
-    matcher.cache.clear()
+    await matcher.cache.clear()
 
     return {
         "success": True,

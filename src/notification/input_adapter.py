@@ -57,6 +57,10 @@ class NotificationInputAdapter(
         self.rate_limiter = None
         self.title_recognition_manager = None
         self.ai_service = None
+        # 渠道 LLM 会话状态（LlmChatMixin）：按实例持有，避免类属性可变字典被共享
+        self._llm_histories = {}
+        self._llm_pending_choices = {}
+        self._llm_pending_confirms = {}
 
     def set_dependencies(self, **kwargs: Any) -> None:
         """由组合根为菜单业务注入协作者。"""
@@ -271,7 +275,7 @@ class NotificationInputAdapter(
             # 无活跃命令流程 → 交给御坂 LLM 对话兜底（渠道端纯问答+只读工具，非流式）。
             # 渠道若支持伪流式（Telegram），会在渠道层用 stream_callback 覆盖此路径。
             logger.info(f"[文本输入] user={user_id} 无活跃对话，转御坂 LLM")
-            return await self.handle_llm_chat(text, user_id)
+            return await self.handle_llm_chat(text, user_id, channel=channel)
         state = conv.state
         logger.info(f"[文本输入] user={user_id} state={state}")
         text_handler_map = {

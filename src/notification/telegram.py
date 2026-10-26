@@ -965,6 +965,7 @@ class TelegramChannel(BaseNotificationChannel):
                 text, user_id, stream_callback=on_stream, images=images,
                 rich_text=self.get_capabilities().supports(ChannelCapability.RICH_TEXT),
                 rich_message=self._use_rich_message(),
+                channel=self,
             )
             final = (result.text if result else "") or "……"
             final_markup = self._build_inline_markup(result.reply_markup) if result and result.reply_markup else None

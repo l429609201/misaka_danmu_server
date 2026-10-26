@@ -2191,7 +2191,7 @@ export default {
     labelVersion: 'Version', labelMemUsed: 'Memory Used', labelMemMax: 'Memory Limit', labelMemMaxUnlimited: 'Unlimited',
     labelCacheBackend: 'Cache Backend', labelCacheMode: 'Config Mode',
     cacheModeRedis: 'Pure Redis', cacheModeHybrid: 'Hybrid',
-    descHybrid: 'Hybrid: Memory L1 + Database L2', descMemory: 'Pure Memory Cache', descDatabase: 'Database Cache',
+    descHybrid: 'Hybrid: Memory L1 + Database L2', descMemory: 'Pure Memory Cache', descDatabase: 'Database Cache', descRedisUnavailable: 'Redis mode: unable to read Redis connection info',
   },
 
   // AI auto match settings
@@ -4123,7 +4123,7 @@ Singer 2024 => {[rules=extra|pure version|preview|behind the scenes]}`,
     settingProxy: { title: 'Proxy Settings', desc: 'HTTP/SOCKS proxy and acceleration proxy settings' },
     proxySpeedtest: { title: 'Proxy Speed Test', desc: 'Test connectivity and latency of each source through the proxy' },
     settingWebhook: { title: 'Webhook Settings', desc: 'Webhook receiving and delayed import settings' },
-    settingNotification: { title: 'Notifications', desc: 'Telegram/Bark message push settings' },
+    settingNotification: { title: 'Notifications & Interaction', desc: 'Telegram/Bark message push settings' },
     settingRecognition: { title: 'Recognition Words', desc: 'Custom title recognition and episode offset rules' },
     recognitionTest: { title: 'Recognition Test', desc: 'Enter a title to preview recognition matching and conversion results' },
     settingAutomatch: { title: 'Auto Match', desc: 'AI matching, season mapping, episode group selection' },

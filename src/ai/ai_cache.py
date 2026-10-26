@@ -1,59 +1,52 @@
 """
 AI 响应缓存模块
 
-提供 AI 调用结果的缓存功能,减少重复调用,降低成本
+AI 调用结果走统一缓存服务（CacheService，region="ai_response"），
+跟随全局缓存后端（内存 / Redis / 数据库 / 混合），重启和多实例都能命中。
+统一缓存尚未初始化时（如启动早期、独立脚本）回退到进程内字典。
 """
 
 import hashlib
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
+
+from src.services.cache_service import get_cache_service
 
 logger = logging.getLogger(__name__)
 
+AI_CACHE_REGION = "ai_response"
+
+
+def _get_unified_cache():
+    """获取统一缓存服务；尚未初始化时返回 None（走进程内兜底）。"""
+    return get_cache_service()
+
 
 class AIResponseCache:
-    """AI 响应缓存"""
-    
+    """AI 响应缓存（统一缓存优先，进程内字典兜底）"""
+
     def __init__(self, ttl_seconds: int = 3600, max_size: int = 1000):
         """
-        初始化缓存
-        
         Args:
-            ttl_seconds: 缓存过期时间(秒),默认1小时
-            max_size: 最大缓存条目数
+            ttl_seconds: 缓存过期时间(秒)，默认 1 小时
+            max_size: 兜底内存缓存的最大条目数（统一缓存由其后端自行管理容量）
         """
-        self._cache: Dict[str, tuple[Any, datetime]] = {}
+        self._fallback: Dict[str, tuple[Any, datetime]] = {}
         self.ttl_seconds = ttl_seconds
         self.max_size = max_size
         self.logger = logging.getLogger(self.__class__.__name__)
-        
-        # 统计信息
         self._hits = 0
         self._misses = 0
-    
+
     def _generate_cache_key(self, method: str, **kwargs) -> str:
-        """
-        生成缓存键
-        
-        Args:
-            method: 方法名
-            **kwargs: 方法参数
-        
-        Returns:
-            缓存键(MD5哈希)
-        """
-        # 构建缓存数据
+        """根据方法名和参数生成缓存键(MD5)。"""
         cache_data = {"method": method}
-        
-        # 添加参数,确保可序列化
         for key, value in kwargs.items():
             if hasattr(value, 'to_dict'):
-                # 如果对象有 to_dict 方法,使用它
                 cache_data[key] = value.to_dict()
             elif isinstance(value, (list, tuple)):
-                # 列表/元组,尝试转换每个元素
                 cache_data[key] = [
                     item.to_dict() if hasattr(item, 'to_dict') else str(item)
                     for item in value
@@ -61,99 +54,89 @@ class AIResponseCache:
             elif isinstance(value, dict):
                 cache_data[key] = value
             else:
-                # 其他类型转为字符串
                 cache_data[key] = str(value)
-        
-        # 生成 JSON 字符串并计算 MD5
-        cache_str = json.dumps(cache_data, sort_keys=True, ensure_ascii=False)
+        cache_str = json.dumps(cache_data, sort_keys=True, ensure_ascii=False, default=str)
         return hashlib.md5(cache_str.encode()).hexdigest()
-    
-    def get(self, method: str, **kwargs) -> Optional[Any]:
-        """
-        从缓存获取结果
-        
-        Args:
-            method: 方法名
-            **kwargs: 方法参数
-        
-        Returns:
-            缓存的结果,如果不存在或已过期则返回 None
-        """
+
+    async def get(self, method: str, **kwargs) -> Optional[Any]:
+        """读取缓存，不存在或已过期返回 None。"""
         cache_key = self._generate_cache_key(method, **kwargs)
-        
-        if cache_key in self._cache:
-            result, timestamp = self._cache[cache_key]
-            
-            # 检查是否过期
-            if datetime.now() - timestamp < timedelta(seconds=self.ttl_seconds):
-                self._hits += 1
-                self.logger.debug(f"AI缓存命中: {method} | key={cache_key[:8]}...")
-                return result
-            else:
-                # 过期,删除
-                del self._cache[cache_key]
-                self.logger.debug(f"AI缓存过期: {method} | key={cache_key[:8]}...")
-        
+        result = None
+        service = _get_unified_cache()
+        if service is not None:
+            try:
+                result = await service.get(cache_key, region=AI_CACHE_REGION)
+            except Exception as e:
+                # 缓存故障只影响命中率，不能阻断 AI 调用
+                self.logger.warning(f"AI缓存读取失败，按未命中处理: {e}")
+                result = None
+        else:
+            entry = self._fallback.get(cache_key)
+            if entry is not None:
+                value, timestamp = entry
+                if datetime.now() - timestamp < timedelta(seconds=self.ttl_seconds):
+                    result = value
+                else:
+                    del self._fallback[cache_key]
+
+        if result is not None:
+            self._hits += 1
+            self.logger.debug(f"AI缓存命中: {method} | key={cache_key[:8]}...")
+            return result
         self._misses += 1
         return None
-    
-    def set(self, result: Any, method: str, **kwargs):
-        """
-        设置缓存
-        
-        Args:
-            result: 要缓存的结果
-            method: 方法名
-            **kwargs: 方法参数
-        """
+
+    async def set(self, result: Any, method: str, **kwargs) -> None:
+        """写入缓存。"""
         cache_key = self._generate_cache_key(method, **kwargs)
-        
-        # 如果缓存已满,删除最旧的条目
-        if len(self._cache) >= self.max_size:
-            oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k][1])
-            del self._cache[oldest_key]
-            self.logger.debug(f"AI缓存已满,删除最旧条目: {oldest_key[:8]}...")
-        
-        self._cache[cache_key] = (result, datetime.now())
-        self.logger.debug(f"AI缓存设置: {method} | key={cache_key[:8]}...")
-    
-    def clear(self):
-        """清空缓存"""
-        self._cache.clear()
+        service = _get_unified_cache()
+        if service is not None:
+            try:
+                await service.set(cache_key, result, ttl=self.ttl_seconds, region=AI_CACHE_REGION)
+                self.logger.debug(f"AI缓存设置: {method} | key={cache_key[:8]}...")
+            except Exception as e:
+                self.logger.warning(f"AI缓存写入失败: {e}")
+            return
+
+        if cache_key not in self._fallback and len(self._fallback) >= self.max_size:
+            oldest_key = min(self._fallback, key=lambda k: self._fallback[k][1])
+            del self._fallback[oldest_key]
+        self._fallback[cache_key] = (result, datetime.now())
+        self.logger.debug(f"AI缓存设置(内存兜底): {method} | key={cache_key[:8]}...")
+
+    async def clear(self) -> int:
+        """清空 AI 缓存（只清 ai_response 区域，不影响其他业务缓存）。"""
+        count = len(self._fallback)
+        self._fallback.clear()
+        service = _get_unified_cache()
+        if service is not None:
+            try:
+                count += await service.clear(region=AI_CACHE_REGION)
+            except Exception as e:
+                self.logger.warning(f"AI缓存清空失败: {e}")
         self._hits = 0
         self._misses = 0
         self.logger.info("AI缓存已清空")
-    
-    def get_stats(self) -> Dict:
-        """
-        获取缓存统计信息
-        
-        Returns:
-            统计信息字典
-        """
-        total_requests = self._hits + self._misses
-        hit_rate = self._hits / total_requests if total_requests > 0 else 0.0
-        
+        return count
+
+    async def get_stats(self) -> Dict:
+        """缓存统计（命中/未命中为本进程计数）。"""
+        service = _get_unified_cache()
+        size = len(self._fallback)
+        backend = "memory-fallback"
+        if service is not None:
+            backend = "unified"
+            try:
+                size = len(await service.keys("*", region=AI_CACHE_REGION))
+            except Exception as e:
+                self.logger.debug(f"AI缓存条目统计失败: {e}")
+        total = self._hits + self._misses
         return {
-            "size": len(self._cache),
+            "size": size,
             "max_size": self.max_size,
             "ttl_seconds": self.ttl_seconds,
             "hits": self._hits,
             "misses": self._misses,
-            "hit_rate": hit_rate
+            "hit_rate": self._hits / total if total > 0 else 0.0,
+            "backend": backend,
         }
-    
-    def cleanup_expired(self):
-        """清理过期的缓存条目"""
-        now = datetime.now()
-        expired_keys = [
-            key for key, (_, timestamp) in self._cache.items()
-            if now - timestamp >= timedelta(seconds=self.ttl_seconds)
-        ]
-        
-        for key in expired_keys:
-            del self._cache[key]
-        
-        if expired_keys:
-            self.logger.info(f"清理了 {len(expired_keys)} 个过期的AI缓存条目")
-

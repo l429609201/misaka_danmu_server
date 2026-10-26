@@ -519,7 +519,7 @@ class AIMatcher:
 
             # 尝试从缓存获取
             if self.cache:
-                cached_result = self.cache.get(
+                cached_result = await self.cache.get(
                     "select_best_match",
                     query=query,
                     results=results_data
@@ -597,7 +597,7 @@ class AIMatcher:
                 logger.info(f"AI匹配: 未找到合适的匹配 (reason: {reason})")
                 # 缓存负结果
                 if self.cache:
-                    self.cache.set(
+                    await self.cache.set(
                         response_data,
                         "select_best_match",
                         query=query,
@@ -610,7 +610,7 @@ class AIMatcher:
 
             # 缓存结果
             if self.cache:
-                self.cache.set(
+                await self.cache.set(
                     response_data,
                     "select_best_match",
                     query=query,
@@ -721,7 +721,7 @@ class AIMatcher:
         try:
             # 尝试从缓存获取
             if self.cache:
-                cached_result = self.cache.get(
+                cached_result = await self.cache.get(
                     "recognize_title",
                     title=title,
                     year=year,
@@ -776,7 +776,7 @@ class AIMatcher:
 
             # 缓存结果
             if self.cache:
-                self.cache.set(
+                await self.cache.set(
                     response_data,
                     "recognize_title",
                     title=title,

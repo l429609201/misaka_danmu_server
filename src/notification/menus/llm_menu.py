@@ -12,7 +12,7 @@ LLM 对话 Mixin — 通知渠道接入御坂 Agent
 
 import logging
 import secrets
-from typing import Callable, Dict, List, Optional, Awaitable
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from src.notification.base import CommandResult
 from src.ai.assistant import AssistantAgent, DEFAULT_PERSONA
@@ -29,10 +29,19 @@ _LLM_HISTORY_LIMIT = 12
 class LlmChatMixin:
     """为 NotificationService 提供御坂 LLM 对话能力（渠道端）。"""
 
-    # 渠道 LLM 对话历史：{user_id: [{"role","content"}, ...]}（内存滑动窗口）
-    # 渠道 Agent 的一次性选择票据：{user_id: {token: choice}}，不持久化敏感内容。
-    _llm_pending_choices: Dict[str, Dict[str, dict]] = {}
-    _llm_pending_confirms: Dict[str, Dict[str, dict]] = {}
+    # 以下状态由 NotificationInputAdapter.__init__ 按实例初始化（全局唯一实例，所有渠道共用）。
+    # 键为 _llm_session_key()：「渠道ID:用户ID」，避免不同渠道里同号用户串会话。
+    # 渠道 LLM 对话历史：{session_key: [{"role","content"}, ...]}（内存滑动窗口）
+    _llm_histories: Dict[str, List[dict]]
+    # 渠道 Agent 的一次性选择/确认票据：{session_key: {...}}，不持久化敏感内容。
+    _llm_pending_choices: Dict[str, Dict[str, Any]]
+    _llm_pending_confirms: Dict[str, Dict[str, Any]]
+
+    @staticmethod
+    def _llm_session_key(user_id: str, channel: Any = None) -> str:
+        """生成渠道会话键：有渠道时按「渠道ID:用户ID」隔离，否则退回用户ID。"""
+        channel_id = getattr(channel, "channel_id", None)
+        return f"{channel_id}:{user_id}" if channel_id is not None else str(user_id)
 
     def _agent_context_extra(self) -> dict:
         """写类工具执行所需的管理器（渠道端）。"""
@@ -63,21 +72,21 @@ class LlmChatMixin:
         cfg = await agent._load_ai_config()
         return bool(cfg["api_key"] and cfg["model"] and cfg["base_url"])
 
-    def _get_llm_history(self, user_id: str) -> List[dict]:
-        return self._llm_histories.setdefault(user_id, [])
+    def _get_llm_history(self, session_key: str) -> List[dict]:
+        return self._llm_histories.setdefault(session_key, [])
 
-    def _append_llm_history(self, user_id: str, role: str, content: str):
-        hist = self._get_llm_history(user_id)
+    def _append_llm_history(self, session_key: str, role: str, content: str):
+        hist = self._get_llm_history(session_key)
         hist.append({"role": role, "content": content})
         # 只保留最近 N 条
         if len(hist) > _LLM_HISTORY_LIMIT:
             del hist[: len(hist) - _LLM_HISTORY_LIMIT]
 
-    def _save_llm_choice(self, user_id: str, choice: dict) -> List[List[dict]]:
+    def _save_llm_choice(self, session_key: str, choice: dict) -> List[List[dict]]:
         """保存一次性渠道选择并生成平台无关按钮。"""
         token = secrets.token_urlsafe(9)
         options = choice.get("options") or []
-        self._llm_pending_choices[user_id] = {
+        self._llm_pending_choices[session_key] = {
             "token": token,
             "options": options,
             "title": choice.get("title") or "请选择下一步",
@@ -92,7 +101,8 @@ class LlmChatMixin:
         """消费渠道 Agent 的选择按钮，并继续同一用户的对话。"""
         if len(params) < 2:
             return CommandResult(text="选项已失效，请重新描述需求。")
-        pending = self._llm_pending_choices.get(user_id) or {}
+        session_key = self._llm_session_key(user_id, channel)
+        pending = self._llm_pending_choices.get(session_key) or {}
         if pending.get("token") != params[0]:
             return CommandResult(text="选项已失效，请重新描述需求。")
         try:
@@ -100,19 +110,20 @@ class LlmChatMixin:
             option = pending["options"][index]
         except (ValueError, IndexError, TypeError):
             return CommandResult(text="选项已失效，请重新描述需求。")
-        self._llm_pending_choices.pop(user_id, None)
+        self._llm_pending_choices.pop(session_key, None)
         label = str(option.get("label") or "")
-        return await self.handle_llm_chat(label, user_id, rich_text=False, rich_message=False)
+        return await self.handle_llm_chat(label, user_id, rich_text=False, rich_message=False, channel=channel)
 
     async def cb_llm_confirm(self, params, user_id: str, channel, **kwargs) -> CommandResult:
         """消费渠道写操作确认，并执行已保存的单次动作。"""
         if len(params) < 2:
             return CommandResult(text="确认已失效，请重新发起操作。")
-        pending = self._llm_pending_confirms.get(user_id) or {}
+        session_key = self._llm_session_key(user_id, channel)
+        pending = self._llm_pending_confirms.get(session_key) or {}
         if pending.get("token") != params[0]:
             return CommandResult(text="确认已失效，请重新发起操作。")
         approved = params[1] == "yes"
-        self._llm_pending_confirms.pop(user_id, None)
+        self._llm_pending_confirms.pop(session_key, None)
         if not approved:
             return CommandResult(text="已取消本次操作。")
         username = await self.config_service.get("assistantChannelUsername", "admin")
@@ -145,6 +156,7 @@ class LlmChatMixin:
         images: Optional[List[str]] = None,
         rich_text: bool = False,
         rich_message: bool = False,
+        channel: Any = None,
     ) -> Optional[CommandResult]:
         """
         用御坂 Agent 处理一句自然语言。
@@ -156,6 +168,7 @@ class LlmChatMixin:
         - rich_message：目标渠道是否走结构化富消息（Telegram 的 sendRichMessage）。
           由渠道按 ChannelCapability.RICH_MESSAGE 并结合运行时可用性传入；
           默认 False，未支持的渠道行为不变。
+        - channel：来源渠道实例，用于按「渠道ID:用户ID」隔离会话；不传时退回按用户ID。
         - 返回最终 CommandResult（完整文本），供渠道兜底一次性发送。
         """
         if not await self.is_llm_chat_enabled():
@@ -172,7 +185,8 @@ class LlmChatMixin:
         current_turn = {"role": "user", "content": text}
         if images:
             current_turn["images"] = images
-        history = self._get_llm_history(user_id) + [current_turn]
+        session_key = self._llm_session_key(user_id, channel)
+        history = self._get_llm_history(session_key) + [current_turn]
 
         reply = ""
         try:
@@ -198,23 +212,23 @@ class LlmChatMixin:
                         note = f"🔧 {event.get('label', '处理中')}…"
                         await stream_callback(reply + ("\n" + note if reply else note))
                 elif etype == "choice":
-                    buttons = self._save_llm_choice(user_id, event)
+                    buttons = self._save_llm_choice(session_key, event)
                     title = event.get("title") or "请选择下一步"
                     prompt = event.get("prompt") or "请选择一个选项："
                     reply = f"{title}\n{prompt}"
                     result = CommandResult(text=reply, reply_markup=buttons)
-                    self._append_llm_history(user_id, "user", text)
-                    self._append_llm_history(user_id, "assistant", reply)
+                    self._append_llm_history(session_key, "user", text)
+                    self._append_llm_history(session_key, "assistant", reply)
                     return result
                 elif etype == "confirm":
                     token = secrets.token_urlsafe(9)
-                    self._llm_pending_confirms[user_id] = {
+                    self._llm_pending_confirms[session_key] = {
                         "token": token, "name": event.get("name"),
                         "arguments": event.get("arguments") or {},
                     }
                     reply = f"确认操作：{event.get('description') or event.get('label') or '执行此操作'}"
-                    self._append_llm_history(user_id, "user", text)
-                    self._append_llm_history(user_id, "assistant", reply)
+                    self._append_llm_history(session_key, "user", text)
+                    self._append_llm_history(session_key, "assistant", reply)
                     return CommandResult(text=reply, reply_markup=[[
                         {"text": "确认执行", "callback_data": f"llm_confirm:{token}:yes"},
                         {"text": "取消", "callback_data": f"llm_confirm:{token}:no"},
@@ -228,10 +242,10 @@ class LlmChatMixin:
 
         reply = reply.strip() or "……（御坂御坂想不出该说什么）"
         # 写入内存历史（用户问 + 御坂答）
-        self._append_llm_history(user_id, "user", text)
-        self._append_llm_history(user_id, "assistant", reply)
+        self._append_llm_history(session_key, "user", text)
+        self._append_llm_history(session_key, "assistant", reply)
         return CommandResult(text=reply)
 
-    def clear_llm_history(self, user_id: str):
-        """清除某用户的渠道 LLM 对话历史。"""
-        self._llm_histories.pop(user_id, None)
+    def clear_llm_history(self, user_id: str, channel: Any = None):
+        """清除某用户（在指定渠道）的渠道 LLM 对话历史。"""
+        self._llm_histories.pop(self._llm_session_key(user_id, channel), None)
