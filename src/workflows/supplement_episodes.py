@@ -2,6 +2,7 @@
 import logging
 from typing import Any, Callable, List, Optional
 
+from src.services.cache_service import get_cache_service
 from src.services.service_container import get_metadata_service
 from src.utils.parsing.filename_parser import parse_supplement_media_id
 from src.utils.parsing.episode_filter import apply_global_episode_title_filter
@@ -9,6 +10,39 @@ from src.utils.parsing.episode_filter import apply_global_episode_title_filter
 from src.schemas import ProviderEpisodeInfo
 
 logger = logging.getLogger(__name__)
+
+
+
+# 编辑导入"不导入"列表：分集列表命中弹幕源缓存时不会重新过滤，
+# 因此把最近一次黑名单过滤明细与分集缓存一样存入统一缓存（由缓存后端负责 TTL 与淘汰）。
+_FILTERED_CACHE_REGION = "episode_filtered"
+_FILTERED_CACHE_TTL = 3600
+
+
+def _filtered_cache_key(provider: str, media_id: str) -> str:
+    """生成过滤明细缓存键。"""
+    return f"{provider}:{media_id}"
+
+
+async def _remember_source_filtered(provider: str, media_id: str, filtered: list) -> None:
+    """将弹幕源过滤明细 [(分集, 原因)] 序列化后写入统一缓存。"""
+    cache = get_cache_service()
+    if not cache:
+        return
+    payload = [{"episode": ep.model_dump(), "reason": reason} for ep, reason in filtered]
+    await cache.set(_filtered_cache_key(provider, media_id), payload,
+                    ttl=_FILTERED_CACHE_TTL, region=_FILTERED_CACHE_REGION)
+
+
+async def _recall_source_filtered(provider: str, media_id: str) -> list:
+    """从统一缓存读取过滤明细并还原为 [(ProviderEpisodeInfo, 原因)]；无记录返回空列表。"""
+    cache = get_cache_service()
+    if not cache:
+        return []
+    payload = await cache.get(_filtered_cache_key(provider, media_id), region=_FILTERED_CACHE_REGION)
+    if not isinstance(payload, list):
+        return []
+    return [(ProviderEpisodeInfo(**item["episode"]), item["reason"]) for item in payload]
 
 
 async def fetch_supplement_episodes(
@@ -138,13 +172,12 @@ async def get_episodes_routed(
             db_media_type=db_media_type
         )
         # 弹幕源内部已完成自身黑名单过滤；编辑导入需要取回其过滤明细。
-        filtered_key = (provider, str(media_id))
         source_filtered = list(getattr(scraper, '_last_logged_filtered_out', []))
         scraper._last_logged_filtered_out = []
         if source_filtered:
-            scraper_manager._episode_filtered_details[filtered_key] = source_filtered
+            await _remember_source_filtered(provider, media_id, source_filtered)
         elif return_filtered:
-            source_filtered = list(scraper_manager._episode_filtered_details.get(filtered_key, []))
+            source_filtered = await _recall_source_filtered(provider, media_id)
         # 兜底全局分集标题过滤（统一收口，对所有调用路径生效）
         global_result = await apply_global_episode_title_filter(
             episodes, scraper_manager.config_service, provider, media_id,

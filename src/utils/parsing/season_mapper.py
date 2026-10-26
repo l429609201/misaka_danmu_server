@@ -186,6 +186,7 @@ def title_contains_season_name(
 
 
 
+
 class SeasonMapper:
     """
     季度映射器
@@ -204,7 +205,6 @@ class SeasonMapper:
     ):
         self.metadata_manager = metadata_manager
         self.session_factory = session_factory
-        self._cache = {}
 
     async def get_seasons_from_source(
         self,
@@ -226,12 +226,7 @@ class SeasonMapper:
             if not self.metadata_manager:
                 return []
 
-            # 检查缓存
-            cache_key = f"{provider}:{media_id}"
-            if not force_refresh and cache_key in self._cache:
-                return self._cache[cache_key]
-
-            # 从元数据源获取详情
+            # 从元数据源获取详情（详情已由元数据源写入统一缓存，此处不再另设进程内缓存）
             details = await self.metadata_manager.get_details(
                 provider, media_id, user, mediaType="tv"
             )
@@ -241,9 +236,6 @@ class SeasonMapper:
 
             # 提取季度信息
             seasons = self._extract_seasons_from_details(details)
-
-            # 缓存结果
-            self._cache[cache_key] = seasons
 
             return seasons
 
@@ -299,10 +291,6 @@ class SeasonMapper:
             mapped.append(mapped_ep)
         return mapped
 
-    def clear_cache(self):
-        """清空缓存"""
-        self._cache.clear()
-        logger.info("季度映射缓存已清空")
 
 
 

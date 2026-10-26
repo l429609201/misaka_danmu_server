@@ -24,6 +24,7 @@ from src.utils.runtime.transport_manager import TransportManager
 from src.services.file_storage_service import get_file_storage_service
 
 
+
 @dataclass
 class ScraperPaths:
     """爬虫目录路径配置"""
@@ -93,8 +94,6 @@ class ScraperManager:
         # 存储最后一次 search_all 的单源耗时信息: [(provider_name, duration_ms, result_count), ...]
         self.last_search_timing: List[Tuple[str, float, int]] = []
         self.last_search_errors: List[str] = []
-        # 编辑导入展示用：分集列表命中源缓存时，仍保留最近一次黑名单过滤明细。
-        self._episode_filtered_details: Dict[Tuple[str, str], list] = {}
         self._webhook_search_locks: set[str] = set()  # Webhook 搜索锁（基于 animeTitle-season）
         self._lock = asyncio.Lock()
         self.config_service = config_service
