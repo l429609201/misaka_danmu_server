@@ -86,13 +86,14 @@ async def get_scraper_settings(
             full_setting_data['configurableFields'] = configurable_fields
             full_setting_data['actions'] = getattr(scraper_class, 'actions', [])
             # 从 ScraperManager 获取版本号
-            full_setting_data['version'] = manager.get_scraper_version(provider_name)
+            # 版本缺失时回落 "unknown"，与 schema 默认值一致，避免 None 校验失败导致源被跳过
+            full_setting_data['version'] = manager.get_scraper_version(provider_name) or "unknown"
         else:
             # Provide defaults if scraper_class is not found to prevent validation errors
             full_setting_data['isLoggable'] = False
             full_setting_data['configurableFields'] = {}
             full_setting_data['actions'] = []
-            full_setting_data['version'] = None
+            full_setting_data['version'] = "unknown"
 
         full_setting_data['verificationEnabled'] = verification_enabled
 

@@ -1,4 +1,4 @@
-﻿import {
+import {
   Button,
   Card,
   Alert,
@@ -2997,7 +2997,8 @@ export const Scrapers = () => {
                   {Object.entries(loadCheck.skipped).map(([name, ver]) => (
                     <div key={name} className="flex items-center gap-2 text-sm py-1 border-b last:border-b-0" style={{ borderColor: 'var(--color-border)' }}>
                       <ExclamationCircleFilled style={{ color: '#faad14', flexShrink: 0 }} />
-                      <span>{t('scrapers.loadCheckItem', { name, version: ver })}</span>
+                      {/* 值以数字开头是最低版本号；否则是后端给出的原因（如旧版搜索源不兼容），直接展示 */}
+                      <span>{/^\d/.test(String(ver)) ? t('scrapers.loadCheckItem', { name, version: ver }) : `${name}：${ver}`}</span>
                     </div>
                   ))}
                 </div>

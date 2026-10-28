@@ -87,6 +87,29 @@ class BaseMetadataSource(ABC):
         self.cache_service = get_cache_service()
         self.logger = logging.getLogger(self.__class__.__name__)
 
+    # why：C3.2 删除 cache_manager 后 tmdb/anibt 仍调用 self.cache_manager，搜索直接 500。
+    # 统一走这两个容错封装：缓存不可用或读写异常时降级为不缓存，不影响主流程。
+    async def _cache_get(self, region: str, key: str) -> Optional[Any]:
+        """读取元数据源缓存，失败或缓存未初始化时返回 None。"""
+        backend = self.cache_service or get_cache_service()
+        if backend is None:
+            return None
+        try:
+            return await backend.get(key, region=region)
+        except Exception as e:
+            self.logger.debug(f"缓存读取失败 region={region} key={key}: {e}")
+            return None
+
+    async def _cache_set(self, region: str, key: str, value: Any, ttl: int) -> None:
+        """写入元数据源缓存，失败时仅记录调试日志。"""
+        backend = self.cache_service or get_cache_service()
+        if backend is None:
+            return
+        try:
+            await backend.set(key, value, ttl=ttl, region=region)
+        except Exception as e:
+            self.logger.debug(f"缓存写入失败 region={region} key={key}: {e}")
+
     @classmethod
     def _build_provider_to_platforms(cls) -> Dict[str, List[str]]:
         """反转 PLATFORM_TO_PROVIDER 映射：弹幕源 provider → [内部平台名列表]

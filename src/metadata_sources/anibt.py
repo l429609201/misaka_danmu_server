@@ -193,15 +193,15 @@ class AniBTMetadataSource(BaseMetadataSource):
         if not keyword:
             return []
         cache_key = f"season_query_v2:{mediaType or 'all'}:{keyword[:120]}"
-        cached = await self.cache_manager.get("anibt_search", cache_key)
+        cached = await self._cache_get("anibt_search", cache_key)
         if isinstance(cached, list):
             return [MetadataDetailsResponse(**row) for row in cached]
         results = await self._search_endpoint(keyword, user)
         if mediaType:
             results = [item for item in results if item.type == mediaType]
-        await self.cache_manager.set(
+        await self._cache_set(
             "anibt_search", cache_key, [r.model_dump() for r in results],
-            ttl_seconds=1800 if results else 60,
+            ttl=1800 if results else 60,
         )
         return results
 
@@ -210,7 +210,7 @@ class AniBTMetadataSource(BaseMetadataSource):
         if not bgm_id.isdigit():
             return None
         cache_key = f"v2:{bgm_id}"
-        cached = await self.cache_manager.get("anibt_details", cache_key)
+        cached = await self._cache_get("anibt_details", cache_key)
         if isinstance(cached, dict):
             return MetadataDetailsResponse(**cached)
         async with await self._client() as client:
@@ -222,7 +222,7 @@ class AniBTMetadataSource(BaseMetadataSource):
         if not anime:
             return None
         result = await self._to_result(anime)
-        await self.cache_manager.set("anibt_details", cache_key, result.model_dump(), ttl_seconds=21600)
+        await self._cache_set("anibt_details", cache_key, result.model_dump(), ttl=21600)
         return result
 
     async def search_aliases(self, keyword: str, user: User) -> Set[str]:

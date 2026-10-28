@@ -236,7 +236,7 @@ class BangumiMetadataSource(BaseMetadataSource):
         db = get_database_service()
         async with self._session_factory() as session:
             async with db.transaction(session):
-                return await db.cache.get_cache(key)
+                return await db.cache.get_json(key)
 
     async def _set_to_cache(self, key: str, value: Any, ttl_key: str, default_ttl: int):
         """将数据设置到缓存中，并从配置中读取TTL。"""
@@ -256,12 +256,12 @@ class BangumiMetadataSource(BaseMetadataSource):
                 db = get_database_service()
                 async with self._session_factory() as session:
                     async with db.transaction(session):
-                        await db.cache.set_cache(key, value, ttl_seconds)
+                        await db.cache.set_json(key, value, ttl_seconds)
         else:
             db = get_database_service()
             async with self._session_factory() as session:
                 async with db.transaction(session):
-                    await db.cache.set_cache(key, value, ttl_seconds)
+                    await db.cache.set_json(key, value, ttl_seconds)
 
     async def _ensure_config(self):
         """从数据库配置中加载个人访问令牌。"""

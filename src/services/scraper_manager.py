@@ -504,6 +504,17 @@ class ScraperManager:
 
         except TypeError as e:
             self._handle_module_load_error(module_name, module_name_stem, e, is_type_error=True)
+        except (ImportError, NameError, AttributeError) as e:
+            # 旧版（API v1）搜索源依赖已删除的 src.db.crud / src.db.models / ConfigManager 等，
+            # 导入即报"名字不存在"。不恢复旧接口（违反架构），而是记录为版本不兼容，
+            # 让前端兼容性提示可见，并给出明确的升级指引，替代整段堆栈。
+            self._version_skipped[module_name_stem] = (
+                f"旧版搜索源不兼容当前服务端 (API v{SCRAPER_API_VERSION})，请更新搜索源：{e}"
+            )
+            logging.getLogger(__name__).warning(
+                "跳过搜索源 %s：疑似旧版搜索源，依赖的接口已移除（%s: %s）。请在「搜索源」页更新到最新版本。",
+                module_name_stem, type(e).__name__, e,
+            )
         except Exception as e:
             self._handle_module_load_error(module_name, module_name_stem, e, is_type_error=False)
 
@@ -593,8 +604,11 @@ class ScraperManager:
         self._scraper_classes[provider_name] = scraper_class
 
         # 版本号优先从 manifest 读取（因为 .so 模块无法热更新）
-        if provider_name in versions_from_file:
-            self._scraper_versions[provider_name] = versions_from_file[provider_name].get("version")
+        # manifest 中该源条目存在但 version 为空（如 test 分支包只扫描到文件、未带版本）时，
+        # 回退模块自身版本，避免把 None 写入后导致搜索源列表校验失败、整个列表为空
+        manifest_version = (versions_from_file.get(provider_name) or {}).get("version")
+        if manifest_version:
+            self._scraper_versions[provider_name] = manifest_version
         elif module_version:
             self._scraper_versions[provider_name] = module_version
 

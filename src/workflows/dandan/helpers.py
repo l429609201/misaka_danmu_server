@@ -65,7 +65,7 @@ async def get_db_cache(session: AsyncSession, prefix: str, key: str) -> Optional
     # 回退：直接走数据库
     db = get_database_service()
     async with db.transaction(session=session):
-        cached_data = await db.cache.get_cache(cache_key)
+        cached_data = await db.cache.get_json(cache_key)  # why：仓储无 get_cache，get_json 已含过期判定与反序列化
     if cached_data:
         if not isinstance(cached_data, str):
             return _fix_bangumi_mapping(cached_data)
@@ -119,10 +119,10 @@ async def set_db_cache(session: AsyncSession, prefix: str, key: str, value: Any,
             logger.warning(f"缓存服务写入失败，回退到数据库: {cache_key}, 错误: {e}")
 
     try:
-        json_value = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
         db = get_database_service()
         async with db.transaction(session=session):
-            await db.cache.set_cache(cache_key, json_value, ttl_seconds)
+            # why：仓储无 set_cache；set_json 内部负责序列化，这里传原值避免二次序列化
+            await db.cache.set_json(cache_key, value, ttl_seconds)
         logger.debug(f"设置缓存(数据库回退): {cache_key}")
     except Exception as e:
         logger.error(f"设置缓存失败: {cache_key}, 错误: {e}")

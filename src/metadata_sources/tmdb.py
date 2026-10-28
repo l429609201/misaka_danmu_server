@@ -134,7 +134,7 @@ class TmdbMetadataSource(BaseMetadataSource):
         cache_prefix = "tmdb_poster_"
         cache_key = str(tmdb_id)
         try:
-            cached = await self.cache_manager.get(cache_prefix, cache_key)
+            cached = await self._cache_get(cache_prefix, cache_key)
             if cached:
                 return cached
         except Exception:
@@ -148,7 +148,7 @@ class TmdbMetadataSource(BaseMetadataSource):
                         image_base_url = await self._get_robust_image_base_url()
                         poster_url = f"{image_base_url}{poster_path}"
                         try:
-                            await self.cache_manager.set(cache_prefix, cache_key, poster_url, ttl_seconds=604800)
+                            await self._cache_set(cache_prefix, cache_key, poster_url, ttl=604800)
                         except Exception:
                             pass
                         return poster_url
@@ -165,7 +165,7 @@ class TmdbMetadataSource(BaseMetadataSource):
         cache_prefix = "tmdb_titleyear_"
         cache_key = str(tmdb_id)
         try:
-            cached = await self.cache_manager.get(cache_prefix, cache_key)
+            cached = await self._cache_get(cache_prefix, cache_key)
             if cached:
                 return cached
         except Exception:
@@ -180,7 +180,7 @@ class TmdbMetadataSource(BaseMetadataSource):
                     result = {"title": data.get("name"), "year": year}
                     if result["title"]:
                         try:
-                            await self.cache_manager.set(cache_prefix, cache_key, result, ttl_seconds=604800)
+                            await self._cache_set(cache_prefix, cache_key, result, ttl=604800)
                         except Exception:
                             pass
                         return result
@@ -245,7 +245,7 @@ class TmdbMetadataSource(BaseMetadataSource):
         cache_prefix = "tmdb_details_"
         cache_key = f"{mediaType}_{item_id}"
         try:
-            cached = await self.cache_manager.get(cache_prefix, cache_key)
+            cached = await self._cache_get(cache_prefix, cache_key)
             if cached and isinstance(cached, dict):
                 self.logger.debug(f"TMDB 别名获取: 缓存命中 ({mediaType}/{item_id})")
                 return MetadataDetailsResponse(**cached)
@@ -317,7 +317,7 @@ class TmdbMetadataSource(BaseMetadataSource):
 
                 # 存入缓存（1小时）
                 try:
-                    await self.cache_manager.set(cache_prefix, cache_key, result.model_dump(), ttl_seconds=3600)
+                    await self._cache_set(cache_prefix, cache_key, result.model_dump(), ttl=3600)
                 except Exception:
                     pass
 
