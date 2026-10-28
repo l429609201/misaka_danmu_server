@@ -930,7 +930,15 @@ class ScraperDownloadExecutor:
                 self._log("检测到首次下载弹幕源，正在热加载...")
                 logger.info(f"用户 '{self.current_user.username}' 首次下载了 {deploy_count} 个弹幕源，正在热加载")
                 await self.scraper_manager.load_and_sync_scrapers()
-                self._log(f"✓ 成功加载了 {deploy_count} 个弹幕源")
+                # 按实际加载结果报告，不再用部署数冒充加载数（曾出现"成功加载 17 个"实际 0 个）
+                loaded_count = len(self.scraper_manager.scrapers)
+                if loaded_count < deploy_count:
+                    self._log(
+                        f"⚠ 部署 {deploy_count} 个，实际加载 {loaded_count} 个，未加载的原因见弹幕源列表/日志",
+                        "warning",
+                    )
+                else:
+                    self._log(f"✓ 成功加载了 {loaded_count} 个弹幕源")
 
                 # 先清理临时目录（在设置 COMPLETED 之前，确保 SSE 发送的最后消息是完成消息）
                 if get_file_storage_service().resource_exists(temp_dir):
@@ -1452,12 +1460,21 @@ class ScraperDownloadExecutor:
 
         # 2. 从 backup 目录的两个文件提取信息，生成完整的 scraper_manifest.json
         try:
-            manifest = await asyncio.to_thread(
+            candidate = await asyncio.to_thread(
                 ScraperVersionManager.extract_manifest_from_legacy,
                 backup_package_file,
                 backup_versions_file,
                 scrapers_dir
             )
+            # 列表内文件校验通过（至少一个）才生成权威文件；一个都没有则不生成
+            manifest, rejected = await asyncio.to_thread(
+                ScraperVersionManager.finalize_verified_manifest, candidate, scrapers_dir
+            )
+            for name, reason in rejected.items():
+                self._log(f"✗ 弹幕源 {name} 校验未通过：{reason}", "error")
+            if manifest is None:
+                self._log("✗ 没有任何通过校验的弹幕源，未生成权威文件 scraper_manifest.json", "error")
+                return
 
             # 保存到 scrapers 目录（权威文件）
             await asyncio.to_thread(ScraperVersionManager.save_manifest, manifest, scrapers_dir)

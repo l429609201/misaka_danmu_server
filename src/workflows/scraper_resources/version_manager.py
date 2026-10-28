@@ -187,8 +187,12 @@ class ScraperVersionManager:
                     if isinstance(scraper_info, dict):
                         source_entry: Dict[str, Any] = {
                             "version": scraper_info.get("version"),
-                            "min_server_version": scraper_info.get("min_server_version"),
                         }
+                        # 单源最低服务端版本是可选字段：包里没声明就不写键。
+                        # why：写入 None 会让加载器把"键存在但为空"判为非法，导致全部源被拒。
+                        src_min_ver = scraper_info.get("min_server_version")
+                        if src_min_ver:
+                            source_entry["min_server_version"] = src_min_ver
 
                         # 提取多架构哈希值（package.json 的 hashes 是 {平台键: 哈希}）
                         hashes = scraper_info.get("hashes", {})
@@ -238,8 +242,10 @@ class ScraperVersionManager:
                     if isinstance(version_info, dict):
                         if not manifest["sources"][scraper_name].get("version"):
                             manifest["sources"][scraper_name]["version"] = version_info.get("version")
-                        if not manifest["sources"][scraper_name].get("min_server_version"):
-                            manifest["sources"][scraper_name]["min_server_version"] = version_info.get("min_server_version")
+                        # 同上：仅在 versions.json 明确声明时才写入，避免写入 None
+                        if not manifest["sources"][scraper_name].get("min_server_version") \
+                                and version_info.get("min_server_version"):
+                            manifest["sources"][scraper_name]["min_server_version"] = version_info["min_server_version"]
                     elif not manifest["sources"][scraper_name].get("version"):
                         manifest["sources"][scraper_name]["version"] = version_info
 

@@ -464,7 +464,9 @@ class ScraperManager:
             if not isinstance(manifest_info, dict):
                 raise ValueError(f"manifest 来源信息必须为对象，实际为 {type(manifest_info).__name__}")
             manifest_min_version = manifest_info.get("min_server_version")
-            if "min_server_version" in manifest_info:
+            # 单源最低版本为可选字段：null/缺省 = 不限制（兼容旧生成器写入的 None）；
+            # 但声明了就必须是非空字符串，类型错误仍按非法拒绝。
+            if manifest_min_version is not None:
                 if not isinstance(manifest_min_version, str) or not manifest_min_version.strip():
                     raise ValueError("manifest min_server_version 必须为非空字符串")
                 if not _version_satisfies(APP_VERSION, manifest_min_version):
