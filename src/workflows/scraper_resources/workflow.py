@@ -1274,9 +1274,16 @@ async def load_resource_events(payload: Dict[str, Any], current_user: Any, confi
                                             "hash": hashes_data.get(scraper_name)
                                         }
 
-                                    # 保存 manifest 到运行目录
-                                    ScraperVersionManager.save_manifest(manifest, scrapers_dir)
-                                    logger.info(f"已生成 scraper_manifest.json: {len(versions_data)} 个源")
+                                    # 列表内文件校验通过（至少一个）才生成权威文件
+                                    manifest, _ = ScraperVersionManager.finalize_verified_manifest(
+                                        manifest, scrapers_dir
+                                    )
+                                    if manifest is None:
+                                        logger.error("没有任何通过校验的弹幕源，未生成 scraper_manifest.json")
+                                    else:
+                                        # 保存 manifest 到运行目录
+                                        ScraperVersionManager.save_manifest(manifest, scrapers_dir)
+                                        logger.info(f"已生成 scraper_manifest.json: {len(manifest['sources'])} 个源")
 
                                     # 删除运行目录中的 legacy 文件（如果存在）
                                     for legacy_file in ["package.json", "versions.json"]:

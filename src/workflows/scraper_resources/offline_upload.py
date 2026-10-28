@@ -148,9 +148,15 @@ def _prepare_manifest(extract_dir: Path) -> Dict[str, Any]:
             'min_server_version': versions_data.get('min_server_version'),
         }, indent=2, ensure_ascii=False), encoding='utf-8')
     try:
-        return ScraperVersionManager.extract_manifest_from_legacy(package_file, versions_file, extract_dir)
+        candidate = ScraperVersionManager.extract_manifest_from_legacy(package_file, versions_file, extract_dir)
     except Exception as exc:
         raise OfflineUploadError(500, f"生成 manifest 失败: {exc}") from exc
+    # 列表内文件校验通过（至少一个）才生成权威文件，否则拒绝部署
+    manifest, rejected = ScraperVersionManager.finalize_verified_manifest(candidate, extract_dir)
+    if manifest is None:
+        detail = "；".join(f"{k}: {v}" for k, v in rejected.items()) or "包内无弹幕源"
+        raise OfflineUploadError(400, f"离线包校验未通过，未部署：{detail}")
+    return manifest
 
 
 async def _reload_scrapers(manager: Any, progress_callback: Any) -> None:

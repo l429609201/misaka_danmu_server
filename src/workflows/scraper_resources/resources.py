@@ -316,11 +316,15 @@ async def ensure_manifest_in_dir(check_dir: Path) -> Optional[Dict[str, Any]]:
         check_dir / "versions.json",
         check_dir,
     )
-    if manifest and manifest.get("sources"):
+    # 列表内文件校验通过（至少一个）才生成权威文件
+    manifest, _ = await asyncio.to_thread(
+        ScraperVersionManager.finalize_verified_manifest, manifest, check_dir
+    )
+    if manifest:
         await asyncio.to_thread(ScraperVersionManager.save_manifest, manifest, check_dir)
         return manifest
 
-    logger.warning(f"{check_dir.name} 无法生成权威文件（无源文件或 legacy 配置）")
+    logger.error(f"{check_dir.name} 无通过校验的弹幕源，不生成权威文件")
     return None
 
 
@@ -523,6 +527,15 @@ async def restore_scrapers(
         # 读取备份的 manifest
         manifest = json.loads(get_file_storage_service().resource_read_text(backup_manifest_file, encoding="utf-8"))
         logger.info(f"备份信息: 版本 {manifest.get('version')}, 平台 {manifest.get('platform')}, {len(manifest.get('sources', {}))} 个源")
+
+        # 从备份还原前先按备份权威文件校验其二进制，一个都不通过则拒绝还原
+        backup_valid, backup_rejected = await asyncio.to_thread(
+            ScraperVersionManager.verify_sources, BACKUP_DIR, manifest
+        )
+        for name, reason in backup_rejected.items():
+            logger.error(f"备份中的弹幕源 {name} 校验未通过：{reason}")
+        if not backup_valid:
+            raise ValueError("备份中没有任何通过校验的弹幕源，已拒绝还原")
 
         # 还原文件（使用统一搬运工具）
         # 原来通配 .json 会把 backup_metadata.json 一并还原到运行目录，造成污染
@@ -873,6 +886,11 @@ def _persist_new_version_to_backup(
                         manifest["sources"][scraper_name]["hash"] = hashes[platform_key]
 
             logger.info(f"全量包内无版本文件，已用远端 package.json 兜底生成 manifest（{len(manifest['sources'])} 个源）")
+
+        # 列表内文件校验通过（至少一个）才生成权威文件，否则整包拒绝
+        manifest, _ = ScraperVersionManager.finalize_verified_manifest(manifest, extract_dir)
+        if manifest is None:
+            raise ValueError("更新包内没有任何通过校验的弹幕源（不在列表/缺版本/哈希或架构不符）")
 
         # 保存 manifest 到临时目录（后续会被复制）
         ScraperVersionManager.save_manifest(manifest, extract_dir)

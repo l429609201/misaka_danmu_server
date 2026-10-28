@@ -276,8 +276,12 @@ class ScraperVersionManager:
                 # 提取弹幕源名称（文件名第一个点之前的部分）
                 scraper_name = file_path.name.split('.')[0]
 
+                # 不在列表内的文件不得进入权威文件
+                # why：此前会为目录里任意二进制自动建条目，等于"文件自己给自己发证"，
+                # 未声明的错误版本也能被加载。
                 if scraper_name not in manifest["sources"]:
-                    manifest["sources"][scraper_name] = {}
+                    logger.warning(f"{file_path.name} 不在版本文件列表中，不纳入权威文件")
+                    continue
 
                 entry = manifest["sources"][scraper_name]
                 entry["filename"] = file_path.name
@@ -288,16 +292,99 @@ class ScraperVersionManager:
                 if detected_arch:
                     entry["arch"] = detected_arch
 
-                # 当前平台哈希：legacy 未提供时从文件实算，确保 manifest 自洽完整
-                if "hashes" not in entry or not isinstance(entry.get("hashes"), dict):
-                    entry["hashes"] = {}
-                if not entry["hashes"].get(platform_key):
-                    try:
-                        entry["hashes"][platform_key] = get_file_storage_service().calculate_file_hash(file_path)
-                    except Exception as e:
-                        logger.warning(f"计算 {file_path.name} 哈希失败: {e}")
+                # 不再从文件实算补哈希：期望哈希只能来自列表，否则校验形同虚设。
+                # 缺哈希的条目会在 finalize_verified_manifest 中被拒绝并报错。
 
         return manifest
+
+    @staticmethod
+    def verify_sources(
+        directory: Path,
+        manifest: Optional[Dict[str, Any]],
+    ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
+        """以版本文件列表为基准，逐个校验目录内的弹幕源二进制。
+
+        校验项：在列表内 / 有版本号 / 有本平台期望哈希 / 架构一致 / 哈希一致。
+
+        Returns:
+            (通过校验的 {源名: 条目}, 未通过的 {源名: 原因})
+        """
+        fs = get_file_storage_service()
+        platform_key = ScraperVersionManager.get_platform_key()
+        expected_arch = ScraperVersionManager.normalize_arch(platform_key)
+        sources = manifest.get("sources") if isinstance(manifest, dict) else None
+
+        valid: Dict[str, Dict[str, Any]] = {}
+        rejected: Dict[str, str] = {}
+        if not fs.resource_exists(directory):
+            return valid, rejected
+
+        for file_path in sorted(fs.resource_iterdir(directory)):
+            if not ScraperVersionManager.is_scraper_binary(file_path):
+                continue
+            name = file_path.name.split('.')[0]
+
+            if not isinstance(sources, dict):
+                rejected[name] = "缺少权威版本文件"
+                continue
+            entry = sources.get(name)
+            if not isinstance(entry, dict):
+                rejected[name] = "不在版本文件列表中"
+                continue
+
+            version = entry.get("version")
+            if not isinstance(version, str) or not version.strip():
+                rejected[name] = "版本文件中缺少该源的版本号"
+                continue
+
+            hashes = entry.get("hashes")
+            expected_hash = hashes.get(platform_key) if isinstance(hashes, dict) else None
+            expected_hash = expected_hash or entry.get("hash")
+            if not expected_hash:
+                rejected[name] = f"版本文件中缺少本平台({platform_key})哈希"
+                continue
+
+            actual_arch = fs.detect_binary_arch(file_path)
+            if actual_arch and expected_arch and \
+                    ScraperVersionManager.normalize_arch(actual_arch) != expected_arch:
+                rejected[name] = f"架构不符：本机 {expected_arch}，文件 {actual_arch}"
+                continue
+
+            try:
+                actual_hash = fs.calculate_file_hash(file_path)
+            except OSError as e:
+                rejected[name] = f"无法读取文件计算哈希：{e}"
+                continue
+            if actual_hash != expected_hash:
+                rejected[name] = (
+                    f"哈希不符：期望 {expected_hash[:12]}…，实际 {actual_hash[:12]}…"
+                )
+                continue
+
+            valid[name] = entry
+
+        return valid, rejected
+
+    @staticmethod
+    def finalize_verified_manifest(
+        manifest: Optional[Dict[str, Any]],
+        directory: Path,
+    ) -> Tuple[Optional[Dict[str, Any]], Dict[str, str]]:
+        """生成权威文件前的最终校验：只保留通过校验的源。
+
+        至少一个源通过才返回可保存的 manifest；一个都没有则返回 None（调用方不得生成）。
+        """
+        valid, rejected = ScraperVersionManager.verify_sources(directory, manifest)
+        for name, reason in rejected.items():
+            logger.error(f"弹幕源 {name} 校验未通过，不写入权威文件：{reason}")
+
+        if not valid:
+            logger.error(f"{directory} 内没有任何弹幕源通过校验，不生成权威版本文件")
+            return None, rejected
+
+        result = dict(manifest or {})
+        result["sources"] = valid
+        return result, rejected
 
     @staticmethod
     def save_manifest(manifest: Dict[str, Any], target_dir: Path) -> bool:
@@ -488,11 +575,17 @@ class ScraperVersionManager:
                 package_json = scrapers_dir / "package.json"
                 versions_json = scrapers_dir / "versions.json"
 
-                scrapers_manifest = ScraperVersionManager.extract_manifest_from_legacy(
+                candidate = ScraperVersionManager.extract_manifest_from_legacy(
                     package_json,
                     versions_json,
                     scrapers_dir
                 )
+                # 列表内文件校验通过后才生成权威文件
+                scrapers_manifest, _ = ScraperVersionManager.finalize_verified_manifest(
+                    candidate, scrapers_dir
+                )
+                if scrapers_manifest is None:
+                    return False
 
                 # 保存到 scrapers 目录
                 ScraperVersionManager.save_manifest(scrapers_manifest, scrapers_dir)

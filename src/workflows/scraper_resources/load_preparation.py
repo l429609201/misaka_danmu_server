@@ -36,7 +36,27 @@ class ScraperLoadPreparation:
         if ScraperVersionManager.validate_manifest(manifest):
             self._cleanup_legacy_version_files(scrapers_dir)
         self._check_version_file_integrity(scrapers_dir)
-        return manifest
+        return self._verify_for_loading(scrapers_dir, manifest)
+
+    def _verify_for_loading(
+        self, scrapers_dir: Path, manifest: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """加载前按权威文件逐个校验运行目录二进制，结果只用于本轮加载（不改写文件）。
+
+        why：权威文件存在不代表目录内文件可信（手动替换、备份恢复、半途失败都会错配）。
+        未通过的源写入内存键 rejected，由加载器跳过并在前端显示原因。
+        """
+        _, rejected = ScraperVersionManager.verify_sources(scrapers_dir, manifest)
+        logger = logging.getLogger(__name__)
+        for name, reason in rejected.items():
+            logger.error(f"弹幕源 {name} 校验未通过，本次不加载：{reason}")
+        if manifest is None:
+            if not rejected:
+                return None
+            manifest = {"version": "unknown", "sources": {}}
+        loading_view = dict(manifest)
+        loading_view["rejected"] = rejected
+        return loading_view
 
     def _restore_from_backup_if_needed(self, paths: ScraperPaths) -> None:
         """检查并从备份恢复爬虫文件（如果需要）"""
@@ -54,13 +74,27 @@ class ScraperLoadPreparation:
         should_restore = False
         restore_reason = ""
 
-        if not has_scrapers and self._fs.resource_exists(backup_dir):
-            # 情况1: scrapers 目录为空但有备份
-            backup_files = list(self._fs.resource_glob(backup_dir, "*.so")) + list(self._fs.resource_glob(backup_dir, "*.pyd"))
-            if backup_files:
-                should_restore = True
-                restore_reason = f"scrapers 目录为空但存在备份 ({len(backup_files)} 个文件)"
-        elif has_scrapers and self._fs.resource_exists(backup_dir):
+        if not self._fs.resource_exists(backup_dir):
+            return
+
+        # 从备份读取前先校验：备份权威文件与其二进制一致（列表内、版本、哈希、架构），
+        # 一个都不通过则不恢复，避免把错误版本搬进运行目录。
+        backup_manifest_for_check = ScraperVersionManager.load_manifest(backup_dir)
+        backup_valid, backup_rejected = ScraperVersionManager.verify_sources(
+            backup_dir, backup_manifest_for_check
+        )
+        for name, reason in backup_rejected.items():
+            logging.getLogger(__name__).error(f"备份中的弹幕源 {name} 校验未通过：{reason}")
+        if not backup_valid:
+            if backup_rejected or backup_manifest_for_check is not None:
+                logging.getLogger(__name__).error("备份目录没有任何通过校验的弹幕源，跳过从备份恢复")
+            return
+
+        if not has_scrapers:
+            # 情况1: scrapers 目录为空但有已校验的备份
+            should_restore = True
+            restore_reason = f"scrapers 目录为空但存在已校验的备份 ({len(backup_valid)} 个源)"
+        else:
             # 情况2: 备份目录有更新的版本（通过比较 manifest）
             scrapers_manifest = ScraperVersionManager.load_manifest(scrapers_dir)
             backup_manifest = ScraperVersionManager.load_manifest(backup_dir)
@@ -145,11 +179,16 @@ class ScraperLoadPreparation:
             return
 
         try:
-            manifest = ScraperVersionManager.extract_manifest_from_legacy(
+            candidate = ScraperVersionManager.extract_manifest_from_legacy(
                 scrapers_dir / "package.json",
                 scrapers_dir / "versions.json",
                 scrapers_dir
             )
+            # 列表内文件校验通过（至少一个）才生成权威文件；一个都没有则不生成
+            manifest, _ = ScraperVersionManager.finalize_verified_manifest(candidate, scrapers_dir)
+            if manifest is None:
+                logger.error("运行目录无通过校验的弹幕源，未生成 scraper_manifest.json")
+                return
             if not ScraperVersionManager.save_manifest(manifest, scrapers_dir):
                 logger.warning("生成 manifest 失败，保留 legacy 文件供下次恢复")
                 return

@@ -172,8 +172,15 @@ class ScraperUpdateManager:
                         self.scrapers_dir / "versions.json",
                         self.scrapers_dir
                     )
-                    ScraperVersionManager.save_manifest(manifest, self.scrapers_dir)
-                    logger.info("已生成 scraper_manifest.json")
+                    # 列表内文件校验通过（至少一个）才生成权威文件
+                    manifest, _ = ScraperVersionManager.finalize_verified_manifest(
+                        manifest, self.scrapers_dir
+                    )
+                    if manifest is None:
+                        logger.error("没有任何通过校验的弹幕源，未生成 scraper_manifest.json")
+                    else:
+                        ScraperVersionManager.save_manifest(manifest, self.scrapers_dir)
+                        logger.info("已生成 scraper_manifest.json")
                 except Exception as e:
                     logger.warning(f"生成 manifest 失败: {e}")
 

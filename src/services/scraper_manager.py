@@ -354,6 +354,10 @@ class ScraperManager:
 
         # 从 manifest 读取各源版本号
         versions_from_file = self._load_versions_from_manifest(scrapers_dir)
+        # 加载准备阶段按权威文件校验未通过的二进制源（不在列表/缺版本/哈希或架构不符）
+        rejected_sources: Dict[str, str] = {}
+        if isinstance(self._load_manifest, dict):
+            rejected_sources = self._load_manifest.get("rejected") or {}
 
         # 扫描信息与加载失败分开记录，便于识别空目录、工作目录偏移和契约拒绝。
         module_files = sorted(get_file_storage_service().resource_iterdir(scrapers_dir))
@@ -375,6 +379,15 @@ class ScraperManager:
 
             module_name_stem = file_path.stem.split('.')[0]
             if module_name_stem.startswith("_") or module_name_stem == "base":
+                continue
+
+            # 二进制源未通过权威文件校验：拒绝加载并在前端显示原因，不再静默使用错误版本
+            if file_path.name.endswith((".so", ".pyd")) and module_name_stem in rejected_sources:
+                reason = rejected_sources[module_name_stem]
+                self._version_skipped[module_name_stem] = f"校验未通过：{reason}"
+                logging.getLogger(__name__).error(
+                    "拒绝加载 %s：未通过权威版本文件校验（%s）", module_name_stem, reason,
+                )
                 continue
 
             # 加载单个模块
@@ -604,8 +617,8 @@ class ScraperManager:
         self._scraper_classes[provider_name] = scraper_class
 
         # 版本号优先从 manifest 读取（因为 .so 模块无法热更新）
-        # manifest 中该源条目存在但 version 为空（如 test 分支包只扫描到文件、未带版本）时，
-        # 回退模块自身版本，避免把 None 写入后导致搜索源列表校验失败、整个列表为空
+        # 二进制源已在加载准备阶段强制校验（缺版本会被拒绝），能走到这里的二进制必有 manifest 版本；
+        # 回退模块自身版本只对开发态 .py 源码生效（源码无哈希/权威条目）
         manifest_version = (versions_from_file.get(provider_name) or {}).get("version")
         if manifest_version:
             self._scraper_versions[provider_name] = manifest_version
