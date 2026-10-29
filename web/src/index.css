@@ -3237,3 +3237,14 @@ html.dark .global-search-mobile .ant-input-affix-wrapper {
 .search-result-fill > .ant-spin-container {
   height: 100%;
 }
+
+/* 文本选中高亮：浏览器默认是蓝底，主题色为蓝色时选中内容与主题色背景/文字混在一起看不清。
+   改为主题色的浅色底 + 正常文字色，任何主题色下都保持可读。 */
+html body ::selection {
+  background: color-mix(in srgb, var(--color-primary) 28%, #ffffff);
+  color: #111827;
+}
+html.dark body ::selection {
+  background: color-mix(in srgb, var(--color-primary) 45%, #000000);
+  color: #f9fafb;
+}

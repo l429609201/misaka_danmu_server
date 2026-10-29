@@ -136,12 +136,13 @@ class TaskNotificationWorkflow:
         )):
             return None
 
+        # Webhook 搜索任务成功只代表"已创建导入任务"，真正结果由导入子任务推送；
+        # 两条都发会先收到一条"创建导入任务"的假成功通知。搜索失败（没找到源）仍推送。
+        if task.task_type == "webhook_search" or key.startswith("webhook-search-"):
+            return None if is_success else "webhook_import_failed"
+
         # 结构化来源优先，搜索派发后的导入子任务仍属于 Webhook。
         if (task.task_parameters or {}).get("webhookSource"):
-            return f"webhook_import{suffix}"
-
-        # Webhook 导入
-        if key.startswith("webhook-search-"):
             return f"webhook_import{suffix}"
 
         # 数据源刷新（含定时"刷新最新集" refresh-latest- 前缀；补全缺集 fill-missing- 同属刷新已有源）
