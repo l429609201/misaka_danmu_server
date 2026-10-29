@@ -3697,6 +3697,19 @@ Singer 2024 => {[rules=extra|pure version|preview|behind the scenes]}`,
   },
 
   // Bangumi OAuth callback page
+  // Generic OAuth callback page
+  oauthCallback: {
+    stateMissing: 'State parameter is missing, please re-authorize',
+    authSuccess: 'Authorization successful',
+    authFailed: 'Authorization failed',
+    requestFailed: 'Request failed, please try again',
+    authorizing: 'Completing authorization...',
+    successTitle: 'Authorization Successful',
+    autoClose: 'Window will close automatically...',
+    closeWindow: 'Close Window',
+    failedTitle: 'Authorization Failed',
+  },
+
   bgmOAuth: {
     codeEmpty: 'Authorization code is empty, please re-authorize',
     stateMissing: 'State parameter is missing, please re-authorize',

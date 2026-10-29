@@ -4233,6 +4233,19 @@ export default {
   },
 
   // Bangumi OAuth 回调页面
+  // 通用 OAuth 回调页
+  oauthCallback: {
+    stateMissing: 'state 参数缺失，请重新授权',
+    authSuccess: '授权成功',
+    authFailed: '授权失败',
+    requestFailed: '请求失败，请重试',
+    authorizing: '正在完成授权...',
+    successTitle: '授权成功',
+    autoClose: '窗口将自动关闭...',
+    closeWindow: '关闭窗口',
+    failedTitle: '授权失败',
+  },
+
   bgmOAuth: {
     codeEmpty: '授权码为空，请重新授权',
     stateMissing: 'state 参数缺失，请重新授权',

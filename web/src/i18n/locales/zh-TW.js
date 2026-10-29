@@ -3691,6 +3691,19 @@ export default {
   },
 
   // Bangumi OAuth 回呼頁面
+  // 通用 OAuth 回調頁
+  oauthCallback: {
+    stateMissing: 'state 參數缺失，請重新授權',
+    authSuccess: '授權成功',
+    authFailed: '授權失敗',
+    requestFailed: '請求失敗，請重試',
+    authorizing: '正在完成授權...',
+    successTitle: '授權成功',
+    autoClose: '視窗將自動關閉...',
+    closeWindow: '關閉視窗',
+    failedTitle: '授權失敗',
+  },
+
   bgmOAuth: {
     codeEmpty: '授權碼為空，請重新授權',
     stateMissing: 'state 參數缺失，請重新授權',
