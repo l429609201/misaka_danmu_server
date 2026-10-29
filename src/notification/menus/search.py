@@ -1,14 +1,14 @@
 """
 /search 菜单 Mixin — 搜索弹幕源、编辑导入流程
 """
-import re
 import logging
-from typing import TYPE_CHECKING
+import re
 
-from src.notification.base import CommandResult
+from src.notification.base import ChannelCapability, CommandResult
+from src.utils.misc.poster_collage import build_poster_collage
+from src.workflows.search import unified_search
 
-if TYPE_CHECKING:
-    pass
+from src.workflows.supplement_episodes import get_episodes_routed
 
 logger = logging.getLogger(__name__)
 
@@ -86,18 +86,16 @@ class SearchMenuMixin:
             await tracker.update(progress, _DESC_MAP.get(description, description))
 
         try:
-            async with self._session_factory() as session:
-                from src.services.search import unified_search
-                results = await unified_search(
-                    search_term=keyword,
-                    session=session,
-                    scraper_manager=self.scraper_manager,
-                    metadata_manager=self.metadata_manager,
-                    use_alias_filtering=False,
-                    use_title_filtering=True,
-                    use_source_priority_sorting=True,
-                    progress_callback=_search_progress,
-                )
+            results = await unified_search(
+                search_term=keyword,
+                session=None,
+                scraper_manager=self.scraper_manager,
+                metadata_manager=self.metadata_manager,
+                use_alias_filtering=False,
+                use_title_filtering=True,
+                use_source_priority_sorting=True,
+                progress_callback=_search_progress,
+            )
             if not results:
                 return CommandResult(
                     text=f"🔍 未找到与「{keyword}」相关的结果。",
@@ -150,7 +148,6 @@ class SearchMenuMixin:
         why：内联按钮每行最多 7 个，支持内联按钮的渠道（TG）可以排两行共 10 条；
         不支持按钮的渠道只能文字交互，7 条一页已经足够，超出反而难以阅读。
         """
-        from src.notification.base import ChannelCapability
         if channel.get_capabilities().supports(ChannelCapability.INLINE_BUTTONS):
             return 10  # TG：2 行 × 5 个按钮
         return 7       # 文字渠道：1 行 × 5 个按钮
@@ -216,7 +213,7 @@ class SearchMenuMixin:
         任何异常都吞掉并返回 None，保证搜索结果正常文字展示不受影响。
         """
         try:
-            cfg = getattr(self, "config_manager", None)
+            cfg = getattr(self, "config_service", None)
             if cfg is not None:
                 enabled = await cfg.get("telegramSearchPosterCollage", "true")
                 if str(enabled).lower() != "true":
@@ -225,10 +222,9 @@ class SearchMenuMixin:
             if not any(it.get("imageUrl") for it in page_items):
                 return None
 
-            # 读取代理配置（与 image_utils 下载逻辑保持一致）
+            # 拼贴图片请求沿用当前渠道的代理与 TLS 配置。
             proxy, ssl_verify = await self._get_proxy_for_collage()
 
-            from src.utils.poster_collage import build_poster_collage
             items = [
                 {"imageUrl": it.get("imageUrl") or "", "index": start + i + 1}
                 for i, it in enumerate(page_items)
@@ -241,7 +237,7 @@ class SearchMenuMixin:
     async def _get_proxy_for_collage(self):
         """读取全局代理配置，返回 (proxy_url 或 None, ssl_verify)。"""
         try:
-            cfg = getattr(self, "config_manager", None)
+            cfg = getattr(self, "config_service", None)
             if cfg is None:
                 return None, True
             proxy_enabled = (await cfg.get("proxyEnabled", "false")).lower() == "true"
@@ -482,7 +478,7 @@ class SearchMenuMixin:
         if not self.scraper_manager:
             return CommandResult(text="", answer_callback_text="搜索服务未就绪")
         try:
-            episodes = await self.scraper_manager.get_episodes_routed(provider, media_id, db_media_type=item.get("type"))
+            episodes = await get_episodes_routed(self.scraper_manager, provider, media_id, db_media_type=item.get("type"))
             if not episodes:
                 return CommandResult(text="", answer_callback_text="未获取到分集列表")
             ep_list = []
@@ -506,7 +502,7 @@ class SearchMenuMixin:
                 "episodes": ep_list,
                 "selected": selected,
                 "title": item.get("title", ""),
-                "type": item.get("type", "tv_series"),
+                "type": item.get("type") or "tv_series",  # 类型未知(None)时默认按剧集导入，可在编辑页切换
                 "season": item.get("season", 1),
                 "_search_snapshot": conv.data,
             }
@@ -524,7 +520,7 @@ class SearchMenuMixin:
         selected = set(edit_data.get("selected", []))
         item = edit_data.get("item", {})
         title = edit_data.get("title", item.get("title", ""))
-        media_type = edit_data.get("type", "tv_series")
+        media_type = edit_data.get("type") or "tv_series"
         season = edit_data.get("season", 1)
         type_label = "📺 电视剧" if media_type == "tv_series" else "🎬 电影"
 
@@ -675,7 +671,7 @@ class SearchMenuMixin:
         selected: list = conv.data.get("selected", [])
         item = conv.data.get("item", {})
         title = conv.data.get("title", item.get("title", ""))
-        media_type = conv.data.get("type", "tv_series")
+        media_type = conv.data.get("type") or "tv_series"
         season = conv.data.get("season", 1)
 
         if not selected:

@@ -54,8 +54,9 @@ export const SubscriptionPage = () => {
     } catch { message.error(t('calendar.clearCacheFailed')) }
   }
 
+  // 去掉 container/px-4：与其他二级 Tab 内容同宽，间距由 .page-tabs 统一控制
   return (
-    <div className="container mx-auto px-4 my-6">
+    <div className="my-6">
       <Card>
         {/* 页头 */}
         <div className="mb-4">

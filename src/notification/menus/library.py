@@ -2,7 +2,12 @@
 /refresh 菜单 Mixin — 弹幕库管理（浏览、刷新、删除源/分集）
 """
 import logging
+
 from src.notification.base import CommandResult
+from src.services.database_service import DatabaseService
+from src.services.service_container import get_database_service
+from src.tasks import delete_bulk_episodes_task, delete_source_task, full_refresh_task, refresh_bulk_episodes_task
+from src.utils.parsing.filename_parser import parse_episode_ranges
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +16,22 @@ PAGE_SIZE = 5
 
 class LibraryMenuMixin:
     """处理 /refresh 命令及弹幕库管理所有 cmd_/cb_/_text_/_do_ 方法"""
+
+    @staticmethod
+    async def _get_source_episodes(db: DatabaseService, source_id: int) -> list[dict]:
+        """在调用方事务内分页获取完整分集，供选集与批量操作使用。"""
+        episodes = []
+        page = 1
+        # 查询默认最多返回 5000 集；必须收齐分页，避免全选和范围操作遗漏后续分集。
+        while True:
+            result = await db.episode.get_episodes_by_source(
+                source_id, page=page, page_size=5000,
+            )
+            page_episodes = result["list"]
+            episodes.extend(page_episodes)
+            if not page_episodes or len(episodes) >= result["total"]:
+                return episodes
+            page += 1
 
     # ── /refresh 入口 ──
 
@@ -26,10 +47,11 @@ class LibraryMenuMixin:
                                    edit_message_id: int = None, **kw) -> CommandResult:
         """构建弹幕库管理分页列表"""
         try:
-            from src.db import crud
-            async with self._session_factory() as session:
-                result = await crud.get_library_anime(
-                    session, page=page + 1, page_size=PAGE_SIZE,
+            db = get_database_service()
+            async with db.transaction():
+                result = await db.anime.get_library_list(
+                    page=page + 1,
+                    page_size=PAGE_SIZE
                 )
             total = result.get("total", 0)
             items = result.get("list", [])
@@ -82,10 +104,12 @@ class LibraryMenuMixin:
                                        **kw) -> CommandResult:
         """在媒体库中搜索"""
         try:
-            from src.db import crud
-            async with self._session_factory() as session:
-                result = await crud.get_library_anime(
-                    session, keyword=keyword, page=page + 1, page_size=PAGE_SIZE,
+            db = get_database_service()
+            async with db.transaction():
+                result = await db.anime.get_library_list(
+                    keyword=keyword,
+                    page=page + 1,
+                    page_size=PAGE_SIZE
                 )
             total = result.get("total", 0)
             items = result.get("list", [])
@@ -151,10 +175,10 @@ class LibraryMenuMixin:
         """选择作品 → 显示数据源列表（刷新 + 删除）"""
         anime_id = int(params[0]) if params else 0
         try:
-            from src.db import crud
-            async with self._session_factory() as session:
-                sources = await crud.get_anime_sources(session, anime_id)
-                details = await crud.get_anime_full_details(session, anime_id)
+            db = get_database_service()
+            async with db.transaction():
+                sources = await db.source.get_anime_sources(anime_id)
+                details = await db.anime.get_full_details(anime_id)
             title = details.get("title", "未知") if details else "未知"
             if not sources:
                 return CommandResult(
@@ -198,12 +222,13 @@ class LibraryMenuMixin:
         anime_id = int(params[0]) if len(params) > 0 else 0
         source_id = int(params[1]) if len(params) > 1 else 0
         try:
-            from src.db import crud
-            async with self._session_factory() as session:
-                ep_result = await crud.get_episodes_for_source(session, source_id)
-                source_info = await crud.get_anime_source_info(session, source_id)
-            episodes = ep_result.get("episodes", [])
-            total = ep_result.get("total", 0)
+            db = get_database_service()
+            async with db.transaction():
+                # 预览仅取前 8 集，集数统计使用查询返回的总数而非当前页长度。
+                ep_result = await db.episode.get_episodes_by_source(source_id, page=1, page_size=8)
+                source_info = await db.source.get_source_info(source_id)
+            episodes = ep_result["list"]
+            total = ep_result["total"]
             provider = source_info.get("providerName", "未知") if source_info else "未知"
             title = source_info.get("title", "未知") if source_info else "未知"
 
@@ -214,8 +239,8 @@ class LibraryMenuMixin:
 
             lines = [f"📂 {title} [{provider}]\n共 {total} 集\n"]
             for ep in episodes[:8]:
-                idx = ep.get("episodeIndex", "?")
-                ep_title = ep.get("title", "")
+                idx = ep.get("episodeNumber", "?")
+                ep_title = ep.get("episodeTitle", "")
                 count = ep.get("commentCount", 0)
                 lines.append(f"  第{idx}集 {ep_title} ({count}条弹幕)")
             if total > 8:
@@ -250,21 +275,20 @@ class LibraryMenuMixin:
         if mode == "input":
             # 获取分集列表，构建内联键盘选集界面
             try:
-                from src.db import crud
-                async with self._session_factory() as session:
-                    ep_result = await crud.get_episodes_for_source(session, source_id)
-                episodes = ep_result.get("episodes", [])
+                db = get_database_service()
+                async with db.transaction():
+                    episodes = await self._get_source_episodes(db, source_id)
                 if not episodes:
                     return CommandResult(text="暂无分集数据。", edit_message_id=kw.get("message_id"))
                 conv = self.get_conversation(user_id)
                 data = conv.data if conv else {}
                 data["source_id"] = source_id
                 data["episodes"] = [
-                    {"idx": e.get("episodeIndex", 0), "id": e["episodeId"],
-                     "title": e.get("title", ""), "count": e.get("commentCount", 0)}
+                    {"idx": e.get("episodeNumber", 0), "id": e["episodeId"],
+                     "title": e.get("episodeTitle", ""), "count": e.get("commentCount", 0)}
                     for e in episodes
                 ]
-                data["selected"] = []  # 选中的 episodeIndex 列表
+                data["selected"] = []  # 选中的集数列表
                 data["ep_page"] = 0
                 data["mode"] = "refresh"
                 self.set_conversation(user_id, "ep_select", data, chat_id=kw.get("chat_id"))
@@ -279,38 +303,35 @@ class LibraryMenuMixin:
         if not self.task_manager:
             return CommandResult(success=False, text="任务管理器未就绪。")
         try:
-            from src.db import crud
-            async with self._session_factory() as session:
-                source_info = await crud.get_anime_source_info(session, source_id)
+            db = get_database_service()
+            async with db.transaction():
+                source_info = await db.source.get_source_info(source_id)
             if not source_info:
                 return CommandResult(text="数据源未找到。")
             provider = source_info.get("providerName", "未知")
             title = source_info.get("title", "未知")
 
             if episode_range:
-                from src.tasks import parse_episode_ranges, refresh_bulk_episodes_task
                 indices = parse_episode_ranges(episode_range)
-                async with self._session_factory() as session:
-                    ep_result = await crud.get_episodes_for_source(session, source_id)
-                episodes = ep_result.get("episodes", [])
+                async with db.transaction():
+                    episodes = await self._get_source_episodes(db, source_id)
                 ep_ids = [e["episodeId"] for e in episodes
-                          if e.get("episodeIndex") in indices]
+                          if e.get("episodeNumber") in indices]
                 if not ep_ids:
                     return CommandResult(text=f"未找到匹配的集数: {episode_range}")
                 ep_desc = episode_range
                 task_title = f"TG刷新: {title} [{provider}] (E{ep_desc})"
                 task_coro = lambda session, cb: refresh_bulk_episodes_task(
                     ep_ids, session, self.scraper_manager,
-                    self.rate_limiter, cb, self.config_manager,
+                    self.rate_limiter, cb, self.config_service,
                 )
             else:
-                from src.tasks import full_refresh_task
                 ep_desc = "全部"
                 task_title = f"TG刷新: {title} [{provider}] (全部)"
                 task_coro = lambda session, cb: full_refresh_task(
                     source_id, session, self.scraper_manager,
                     self.task_manager, self.rate_limiter, cb,
-                    self.metadata_manager, self.config_manager,
+                    self.metadata_manager, self.config_service,
                 )
 
             task_id, _ = await self.task_manager.submit_task(
@@ -571,9 +592,9 @@ class LibraryMenuMixin:
         anime_id = int(params[0]) if len(params) > 0 else 0
         source_id = int(params[1]) if len(params) > 1 else 0
         try:
-            from src.db import crud
-            async with self._session_factory() as session:
-                source_info = await crud.get_anime_source_info(session, source_id)
+            db = get_database_service()
+            async with db.transaction():
+                source_info = await db.source.get_source_info(source_id)
             if not source_info:
                 return CommandResult(text="", answer_callback_text="数据源不存在")
             provider = source_info.get("providerName", "未知")
@@ -601,10 +622,9 @@ class LibraryMenuMixin:
         if not self.task_manager:
             return CommandResult(text="任务管理器未就绪")
         try:
-            from src.db import crud
-            from src import tasks
-            async with self._session_factory() as session:
-                source_info = await crud.get_anime_source_info(session, source_id)
+            db = get_database_service()
+            async with db.transaction():
+                source_info = await db.source.get_source_info(source_id)
             if not source_info:
                 return CommandResult(text="数据源不存在")
             provider = source_info.get("providerName", "未知")
@@ -613,7 +633,7 @@ class LibraryMenuMixin:
             unique_key = f"delete-source-{source_id}"
 
             async def _task_coro(session, cb):
-                return await tasks.delete_source_task(source_id, session, cb)
+                return await delete_source_task(source_id, session, cb)
 
             task_id, _ = await self.task_manager.submit_task(
                 coro_factory=_task_coro, title=task_title,
@@ -643,10 +663,9 @@ class LibraryMenuMixin:
         if not self.task_manager:
             return CommandResult(text="任务管理器未就绪")
         try:
-            from src.db import crud
-            from src import tasks
-            async with self._session_factory() as session:
-                source_info = await crud.get_anime_source_info(session, source_id)
+            db = get_database_service()
+            async with db.transaction():
+                source_info = await db.source.get_source_info(source_id)
             if not source_info:
                 return CommandResult(text="数据源不存在")
             provider = source_info.get("providerName", "未知")
@@ -654,12 +673,14 @@ class LibraryMenuMixin:
             task_title = f"TG删除弹幕: {title} [{provider}] (全部)"
             unique_key = f"delete-bulk-sources-{source_id}-all"
 
+            async with db.transaction():
+                episodes = await self._get_source_episodes(db, source_id)
+            ep_ids = [e["episodeId"] for e in episodes]
+            if not ep_ids:
+                return CommandResult(text="数据源暂无分集。")
+
             async def _task_coro(session, cb):
-                ep_result = await crud.get_episodes_for_source(session, source_id)
-                ep_ids = [e["episodeId"] for e in ep_result.get("episodes", [])]
-                if not ep_ids:
-                    return
-                return await tasks.delete_bulk_episodes_task(ep_ids, session, cb)
+                return await delete_bulk_episodes_task(ep_ids, session, cb)
 
             task_id, _ = await self.task_manager.submit_task(
                 coro_factory=_task_coro, title=task_title,
@@ -683,18 +704,17 @@ class LibraryMenuMixin:
         """「选择删除」→ 内联键盘选集界面"""
         source_id = int(params[0]) if params else 0
         try:
-            from src.db import crud
-            async with self._session_factory() as session:
-                ep_result = await crud.get_episodes_for_source(session, source_id)
-            episodes = ep_result.get("episodes", [])
+            db = get_database_service()
+            async with db.transaction():
+                episodes = await self._get_source_episodes(db, source_id)
             if not episodes:
                 return CommandResult(text="暂无分集数据。", edit_message_id=kw.get("message_id"))
             conv = self.get_conversation(user_id)
             data = conv.data if conv else {}
             data["source_id"] = source_id
             data["episodes"] = [
-                {"idx": e.get("episodeIndex", 0), "id": e["episodeId"],
-                 "title": e.get("title", ""), "count": e.get("commentCount", 0)}
+                {"idx": e.get("episodeNumber", 0), "id": e["episodeId"],
+                 "title": e.get("episodeTitle", ""), "count": e.get("commentCount", 0)}
                 for e in episodes
             ]
             data["selected"] = []
@@ -721,26 +741,23 @@ class LibraryMenuMixin:
         if not self.task_manager:
             return CommandResult(text="任务管理器未就绪")
         try:
-            from src.db import crud
-            from src import tasks
-            async with self._session_factory() as session:
-                source_info = await crud.get_anime_source_info(session, source_id)
+            db = get_database_service()
+            async with db.transaction():
+                source_info = await db.source.get_source_info(source_id)
             if not source_info:
                 return CommandResult(text="数据源不存在")
             provider = source_info.get("providerName", "未知")
             title = source_info.get("title", "未知")
 
-            async with self._session_factory() as session:
-                ep_result = await crud.get_episodes_for_source(session, source_id)
-            episodes = ep_result.get("episodes", [])
+            async with db.transaction():
+                episodes = await self._get_source_episodes(db, source_id)
 
             if episode_range.lower() == "all":
                 ep_ids = [e["episodeId"] for e in episodes]
                 ep_desc = "全部"
             else:
-                from src.tasks import parse_episode_ranges
                 indices = parse_episode_ranges(episode_range)
-                ep_ids = [e["episodeId"] for e in episodes if e.get("episodeIndex") in indices]
+                ep_ids = [e["episodeId"] for e in episodes if e.get("episodeNumber") in indices]
                 ep_desc = episode_range
 
             if not ep_ids:
@@ -750,7 +767,7 @@ class LibraryMenuMixin:
             unique_key = f"delete-bulk-sources-{source_id}-{ep_desc}"
 
             async def _task_coro(session, cb):
-                return await tasks.delete_bulk_episodes_task(ep_ids, session, cb)
+                return await delete_bulk_episodes_task(ep_ids, session, cb)
 
             task_id, _ = await self.task_manager.submit_task(
                 coro_factory=_task_coro, title=task_title,

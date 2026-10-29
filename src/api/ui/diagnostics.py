@@ -11,20 +11,16 @@ import re
 import sys
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import get_db_session
-from src.core import get_now
-from src.core.cache import get_cache_backend
 from src._version import APP_VERSION
-from src.api.dependencies import get_config_manager
-from src.db import ConfigManager
-from src.db.database import get_db_type
+from src.core import get_now
+from src.services.cache_service import get_cache_service
 from src.core.env import is_docker_environment
+from src.db.database import get_db_type
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -86,10 +82,8 @@ ERROR_PATTERNS = [
 
 
 @router.get("/diagnostics/environment", response_model=EnvironmentInfo, summary="运行环境诊断")
-async def get_environment_info(
-    request: Request,
-    config_manager: ConfigManager = Depends(get_config_manager),
-):
+async def get_environment_info(request: Request) -> EnvironmentInfo:
+    """读取实际运行环境，不注入未使用的配置服务。"""
     config_dir = os.path.join(os.getcwd(), "config")
     logs_dir = os.path.join(config_dir, "logs")
     is_docker = is_docker_environment()
@@ -109,16 +103,10 @@ async def get_environment_info(
     except Exception:
         pass
 
-    # 运行时读取：从全局缓存实例类名获取真实后端类型
-    _BACKEND_LABELS = {
-        "MemoryBackend": "memory",
-        "RedisBackend": "redis",
-        "DatabaseBackend": "database",
-        "HybridBackend": "hybrid",
-    }
+    # 从服务公开属性读取实际后端，兼容服务协调的混合缓存模式。
     try:
-        backend = get_cache_backend()
-        cache_backend = _BACKEND_LABELS.get(type(backend).__name__, type(backend).__name__)
+        cache_service = get_cache_service()
+        cache_backend = cache_service.backend_type if cache_service is not None else "unknown"
     except Exception:
         cache_backend = "unknown"
     tz_name = time.tzname[0] if time.tzname else "Unknown"
@@ -202,11 +190,9 @@ async def analyze_logs(
 # ==================== 综合诊断 ====================
 
 @router.get("/diagnostics/full", response_model=DiagnosticSummary, summary="完整诊断报告")
-async def get_full_diagnostics(
-    request: Request,
-    config_manager: ConfigManager = Depends(get_config_manager),
-):
-    env = await get_environment_info(request, config_manager)
+async def get_full_diagnostics(request: Request) -> DiagnosticSummary:
+    """汇总环境和日志诊断，直接复用环境查询而不传递配置依赖。"""
+    env = await get_environment_info(request)
     log_items = await analyze_logs(hours=24)
 
     checks = []

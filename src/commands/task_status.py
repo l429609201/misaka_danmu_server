@@ -3,17 +3,12 @@
 提供 @CXRW 指令，查询进行中的任务状态
 """
 import logging
-from typing import List, TYPE_CHECKING
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from datetime import datetime
+from typing import List
 
-from .base import CommandHandler
-from src.db.orm_models import TaskHistory
 from src.core.timezone import get_now
-
-if TYPE_CHECKING:
-    from src.api.dandan import DandanSearchAnimeResponse
+from src.schemas.dandan import DandanSearchAnimeResponse
+from src.services.service_container import get_database_service
+from .base import CommandHandler
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +34,11 @@ class TaskStatusCommand(CommandHandler):
             ]
         )
     
-    async def execute(self, token: str, args: List[str], session: AsyncSession,
-                     config_manager, **kwargs) -> "DandanSearchAnimeResponse":
+    async def execute(self, token: str, args: List[str], session: object,
+                     config_service, **kwargs) -> "DandanSearchAnimeResponse":
         """执行任务状态查询"""
         # 获取图片URL
-        image_url = await self.get_image_url(config_manager)
+        image_url = await self.get_image_url(config_service)
 
         # 解析参数 - 使用简短标识符
         # 格式规则：
@@ -99,39 +94,10 @@ class TaskStatusCommand(CommandHandler):
                     if parts[1] in queue_map:
                         queue_filter = queue_map[parts[1]]
 
-        # 构建查询
-        stmt = select(
-            TaskHistory.taskId,
-            TaskHistory.title,
-            TaskHistory.status,
-            TaskHistory.progress,
-            TaskHistory.description,
-            TaskHistory.createdAt,
-            TaskHistory.updatedAt,
-            TaskHistory.queueType
-        )
-
-        # 应用状态过滤
-        if status_filter == 'RUNNING':
-            stmt = stmt.where(TaskHistory.status.in_(['排队中', '运行中', '已暂停']))
-        elif status_filter == 'COMPLETED':
-            stmt = stmt.where(TaskHistory.status == '已完成')
-        elif status_filter == 'FAILED':
-            stmt = stmt.where(TaskHistory.status == '失败')
-        elif status_filter == 'PENDING':
-            stmt = stmt.where(TaskHistory.status == '排队中')
-        elif status_filter == 'PAUSED':
-            stmt = stmt.where(TaskHistory.status == '已暂停')
-        # ALL 不添加状态过滤
-
-        # 应用队列过滤
-        if queue_filter:
-            stmt = stmt.where(TaskHistory.queueType == queue_filter)
-
-        stmt = stmt.order_by(TaskHistory.updatedAt.desc()).limit(5)
-        
-        result = await session.execute(stmt)
-        tasks = result.mappings().all()
+        db = get_database_service()
+        async with db.transaction():
+            task_result = await db.task.get_command_task_status(status_filter, queue_filter)
+        tasks = task_result["tasks"]
 
         # 状态和队列的中文标签
         status_labels = {
@@ -196,25 +162,7 @@ class TaskStatusCommand(CommandHandler):
             )
         )
 
-        # 第二项：任务总览
-        # 构建统计查询（与主查询条件一致）
-        total_stmt = select(func.count()).select_from(TaskHistory)
-
-        if status_filter == 'RUNNING':
-            total_stmt = total_stmt.where(TaskHistory.status.in_(['排队中', '运行中', '已暂停']))
-        elif status_filter == 'COMPLETED':
-            total_stmt = total_stmt.where(TaskHistory.status == '已完成')
-        elif status_filter == 'FAILED':
-            total_stmt = total_stmt.where(TaskHistory.status == '失败')
-        elif status_filter == 'PENDING':
-            total_stmt = total_stmt.where(TaskHistory.status == '排队中')
-        elif status_filter == 'PAUSED':
-            total_stmt = total_stmt.where(TaskHistory.status == '已暂停')
-
-        if queue_filter:
-            total_stmt = total_stmt.where(TaskHistory.queueType == queue_filter)
-
-        total_count = (await session.execute(total_stmt)).scalar_one()
+        total_count = task_result["total"]
 
         overview_desc = (
             f"筛选条件:\n"

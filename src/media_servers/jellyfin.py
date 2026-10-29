@@ -3,6 +3,7 @@ Jellyfin媒体服务器实现
 """
 
 from typing import List, Dict, Any, Optional
+from urllib.parse import quote
 from .base import BaseMediaServer, MediaLibrary, MediaItem
 
 
@@ -111,6 +112,42 @@ class JellyfinMediaServer(BaseMediaServer):
             return items
         except Exception as e:
             self.logger.error(f"获取Jellyfin媒体库项失败: {e}")
+            return []
+
+    async def search_items(
+        self,
+        keyword: str,
+        media_type: Optional[str] = None,
+        limit: int = 50
+    ) -> List[MediaItem]:
+        """按关键词搜索顶层条目，使用 Jellyfin 原生 searchTerm 参数（单次请求，不展开分集）。"""
+        try:
+            # 默认只搜剧集与电影两类顶层条目
+            include_types = 'Series,Movie'
+            if media_type == 'movie':
+                include_types = 'Movie'
+            elif media_type == 'tv_series':
+                include_types = 'Series'
+
+            params = {
+                'searchTerm': keyword,
+                'includeItemTypes': include_types,
+                'recursive': 'true',
+                'fields': 'ProviderIds,ProductionYear',
+                'limit': limit,
+            }
+            data = await self._request('GET', '/Items', params=params)
+
+            items = []
+            for item in (data or {}).get('Items', []):
+                item_type = item.get('Type')
+                if item_type == 'Movie':
+                    items.append(self._parse_movie(item))
+                elif item_type == 'Series':
+                    items.append(self._parse_series(item))
+            return items
+        except Exception as e:
+            self.logger.error(f"Jellyfin 原生搜索失败: {e}")
             return []
 
     async def get_item_details(self, item_id: str) -> Optional[MediaItem]:
@@ -257,9 +294,12 @@ class JellyfinMediaServer(BaseMediaServer):
         return f"{self.url}/Items/{item_id}/Images/{image_type}"
 
     def _get_headers(self) -> Dict[str, str]:
-        """获取请求头"""
+        """使用新旧 Jellyfin 均支持的标准 MediaBrowser 鉴权头。"""
+        # 新版关闭旧鉴权后不再读取 X-Emby-Token；令牌只放请求头，不放 URL。
+        # 服务端按 URL 解码字段，编码引号等字符可避免破坏鉴权头结构。
+        token = quote(self.api_token, safe='')
         return {
-            'X-Emby-Token': self.api_token,  # Jellyfin兼容Emby的Token头
+            'Authorization': f'MediaBrowser Token="{token}"',
             'Accept': 'application/json',
         }
 

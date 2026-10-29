@@ -41,8 +41,8 @@ control_router.include_router(episode_group_router)
 control_router.include_router(scraper_router)
 control_router.include_router(log_router)
 
-# 导出模型和依赖项供外部使用
-from .models import (
+# 导出模型和依赖项供外部使用 - 从 schemas 导入
+from src.schemas.control import (
     AutoImportSearchType, AutoImportMediaType,
     ControlActionResponse, ControlTaskResponse, ControlSearchResponse,
     ControlDirectImportRequest, ControlAnimeCreateRequest,

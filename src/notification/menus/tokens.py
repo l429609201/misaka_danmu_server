@@ -4,6 +4,7 @@
 import secrets
 import logging
 from src.notification.base import CommandResult
+from src.services.service_container import get_database_service
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +17,9 @@ class TokensMenuMixin:
 
     async def _build_tokens_result(self, edit_message_id: int = None) -> CommandResult:
         try:
-            from src.db import crud
-            async with self._session_factory() as session:
-                tokens = await crud.get_all_api_tokens(session)
+            db = get_database_service()
+            async with db.transaction():
+                tokens = await db.api_token.get_all_as_dict()
             if not tokens:
                 return CommandResult(
                     text="🔑 当前没有 API Token。",
@@ -56,11 +57,12 @@ class TokensMenuMixin:
     async def cb_token_toggle(self, params, user_id, channel, **kw):
         token_id = int(params[0]) if params else 0
         try:
-            from src.db import crud
-            async with self._session_factory() as session:
-                new_status = await crud.toggle_api_token(session, token_id)
-            if new_status is None:
+            db = get_database_service()
+            async with db.transaction():
+                token = await db.api_token.toggle_enable(token_id)
+            if token is None:
                 return CommandResult(text="", answer_callback_text="Token未找到")
+            new_status = token.isEnabled
             msg = "已启用" if new_status else "已禁用"
             result = await self._build_tokens_result(edit_message_id=kw.get("message_id"))
             result.answer_callback_text = f"Token {msg}"
@@ -83,9 +85,9 @@ class TokensMenuMixin:
     async def cb_token_confirm_delete(self, params, user_id, channel, **kw):
         token_id = int(params[0]) if params else 0
         try:
-            from src.db import crud
-            async with self._session_factory() as session:
-                ok = await crud.delete_api_token(session, token_id)
+            db = get_database_service()
+            async with db.transaction():
+                ok = await db.api_token.delete(token_id)
             if not ok:
                 return CommandResult(text="", answer_callback_text="Token未找到")
             result = await self._build_tokens_result(edit_message_id=kw.get("message_id"))
@@ -136,10 +138,10 @@ class TokensMenuMixin:
         token_name = conv.data.get("token_name", "未命名")
         self.clear_conversation(user_id)
         try:
-            from src.db import crud
             token_str = secrets.token_urlsafe(16)
-            async with self._session_factory() as session:
-                await crud.create_api_token(session, token_name, token_str, validity, 0)
+            db = get_database_service()
+            async with db.transaction():
+                await db.api_token.create(token_name, token_str, validity, 0)
             result = await self._build_tokens_result(edit_message_id=kw.get("message_id"))
             result.answer_callback_text = f"Token「{token_name}」创建成功"
             return result

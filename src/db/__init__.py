@@ -3,9 +3,9 @@
 
 使用方式:
     from src.db import get_db_session, get_db_type
-    from src.db import crud, models, orm_models
-    from src.db import init_db_tables, close_db_engine, create_initial_admin_user
-    from src.db import ConfigManager, CacheManager
+    , orm_models
+    from src.db import init_db_tables, close_db_engine
+    # C6: ConfigService 已迁移到 services.config_service.ConfigService
 """
 
 # 数据库连接
@@ -17,12 +17,8 @@ from .database import (
     _get_db_url,
     init_db_tables,
     close_db_engine,
-    create_initial_admin_user,
     DatabaseStartupError,
 )
-
-# Pydantic 模型
-from . import models
 
 # SQLAlchemy ORM 模型
 from . import orm_models
@@ -34,12 +30,13 @@ from .migrations import run_migrations
 # 数据库维护
 from .db_maintainer import sync_database_schema
 
-# CRUD 操作
-from . import crud
+# 数据访问层（Repository）
+# why：不在此处预导入 crud —— crud 已废弃且在导入时抛 DeprecationWarning，
+# 预导入会让每次 `import src.db` 都触发告警，掩盖真实的存量调用点。
+# 存量代码仍可通过 `from src.db.crud.<模块> import <函数>` 显式导入。
+from . import repositories
 
-# 管理器（依赖 crud，所以放在 crud 之后）
-from .config_manager import ConfigManager
-from .cache_manager import CacheManager
+# C6: ConfigService 已迁移到 services.config_service.ConfigService
 
 __all__ = [
     # 数据库连接
@@ -50,19 +47,15 @@ __all__ = [
     '_get_db_url',
     'init_db_tables',
     'close_db_engine',
-    'create_initial_admin_user',
     # 模型
-    'models',
     'orm_models',
     'Base',
     # 迁移
     'run_migrations',
     # 维护
     'sync_database_schema',
-    # CRUD
-    'crud',
-    # 管理器
-    'ConfigManager',
-    'CacheManager',
+    # 数据访问层
+    'repositories',
+    # C6: ConfigService 已移除，请使用 services.config_service.get_config_service()
 ]
 

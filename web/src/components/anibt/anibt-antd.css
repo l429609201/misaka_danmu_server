@@ -1,0 +1,387 @@
+/*
+ * AniBT 页面样式：把全站 antd 组件改成 AniBT UI 的外观。
+ * 仅在 <html data-page-style="anibt"> 时生效；颜色全部取自 anibt.css 的变量，
+ * 白樱 / 夜樱随 html.dark 自动切换。
+ * why：项目 118 个文件依赖 antd，逐个替换组件成本过高，统一用皮肤覆盖。
+ */
+
+html[data-page-style="anibt"] body {
+  background-color: var(--ab-background);
+  color: var(--ab-foreground);
+}
+
+/* ---------- Progress：糖果/流水渐变条 + 内凹轨道 ---------- */
+html[data-page-style="anibt"] body .ant-progress-inner {
+  background-color: var(--ab-muted) !important;
+  box-shadow: inset 0 0 0 1px var(--ab-border), inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  border-radius: 999px !important;
+}
+html[data-page-style="anibt"] body .ant-progress-bg {
+  background-color: var(--anibt-water-edge) !important;
+  background-image: var(--anibt-water) !important;
+  border-radius: 999px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+html[data-page-style="anibt"] body .ant-progress-status-success .ant-progress-bg {
+  background-color: var(--anibt-ok) !important;
+  background-image: none !important;
+}
+html[data-page-style="anibt"] body .ant-progress-status-exception .ant-progress-bg {
+  background-color: var(--ab-destructive) !important;
+  background-image: none !important;
+}
+html[data-page-style="anibt"] body .ant-progress-text {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--anibt-ink2);
+}
+html[data-page-style="anibt"] body .ant-progress-circle .ant-progress-circle-path {
+  stroke: var(--ab-primary) !important;
+}
+html[data-page-style="anibt"] body .ant-progress-circle .ant-progress-circle-trail {
+  stroke: var(--ab-muted) !important;
+}
+
+/* ---------- Button：贴纸按钮（1.5px 底边投影，按下下沉） ---------- */
+html[data-page-style="anibt"] body .ant-btn {
+  font-weight: 600;
+  transition: transform 0.14s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.14s cubic-bezier(0.2, 0.7, 0.2, 1),
+    background-color 0.14s, color 0.14s, filter 0.14s;
+}
+html[data-page-style="anibt"] body .ant-btn-default:not(:disabled) {
+  border-color: transparent;
+  background-color: var(--ab-card);
+  color: var(--ab-foreground);
+  box-shadow: inset 0 0 0 1px var(--ab-input), 0 1.5px 0 var(--ab-input);
+}
+html[data-page-style="anibt"] body .ant-btn-default:not(:disabled):hover {
+  border-color: transparent;
+  color: var(--ab-accent-foreground);
+  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1px var(--anibt-wash-line), 0 2.5px 0 var(--anibt-wash-line);
+}
+html[data-page-style="anibt"] body .ant-btn-default:not(:disabled):active {
+  background-color: var(--ab-accent);
+  transform: translateY(1.5px);
+  box-shadow: inset 0 0 0 1px var(--anibt-wash-line);
+}
+html[data-page-style="anibt"] body .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous) {
+  border-color: transparent;
+  background-color: var(--anibt-candy-edge) !important;
+  background-image: var(--anibt-candy);
+  color: var(--anibt-candy-ink) !important;
+  text-shadow: var(--anibt-candy-text-shadow);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 1.5px 0 var(--anibt-candy-edge),
+    0 4px 10px -4px var(--anibt-candy-glow);
+}
+html[data-page-style="anibt"] body .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):hover {
+  transform: translateY(-1px);
+  filter: saturate(1.08) brightness(1.03);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2.5px 0 var(--anibt-candy-edge),
+    0 8px 16px -6px var(--anibt-candy-glow);
+}
+html[data-page-style="anibt"] body .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):active {
+  transform: translateY(1.5px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 2px var(--anibt-candy-glow);
+}
+
+/* ---------- Tag：小方圆标签 ---------- */
+html[data-page-style="anibt"] body .ant-tag {
+  border-radius: 6px;
+  font-weight: 600;
+}
+html[data-page-style="anibt"] body .ant-tag:not([class*="ant-tag-"]),
+html[data-page-style="anibt"] body .ant-tag.ant-tag-default {
+  background-color: var(--ab-muted);
+  border-color: var(--ab-border);
+  color: var(--anibt-ink2);
+}
+
+/* ---------- Card：纸片（细描边 + 柔和投影） ---------- */
+html[data-page-style="anibt"] body .ant-card {
+  border: 0;
+  border-radius: 14px;
+  background-color: var(--ab-card);
+  box-shadow: 0 0 0 1px var(--ab-border), var(--anibt-shadow-panel);
+}
+html[data-page-style="anibt"] body .ant-card .ant-card-head {
+  border-bottom: 1px dashed var(--ab-border);
+}
+
+/* ---------- Tabs / Segmented / Switch：主色跟随樱粉 ---------- */
+html[data-page-style="anibt"] body .ant-segmented {
+  background-color: var(--ab-muted);
+  box-shadow: inset 0 0 0 1px var(--ab-border);
+  border-radius: 10px;
+}
+html[data-page-style="anibt"] body .ant-segmented .ant-segmented-item-selected {
+  background-color: var(--ab-card);
+  color: var(--ab-primary);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--ab-input), 0 1.5px 0 var(--ab-input);
+}
+
+/* ---------- 页面底：AniBT 点阵纸面 ---------- */
+html[data-page-style="anibt"] body {
+  background-image: var(--anibt-dots);
+  background-size: 24px 24px;
+  background-attachment: fixed;
+}
+/* 顶栏：半透明纸面 + 缝线底边（Header.jsx 固定顶栏） */
+html[data-page-style="anibt"] .bg-base-bg.fixed.top-0 {
+  background: color-mix(in oklab, var(--ab-background) 86%, transparent) !important;
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  box-shadow: none !important;
+  border-bottom: 0 !important;
+  background-image: var(--anibt-stitch) !important;
+  background-repeat: repeat-x !important;
+  background-position: bottom !important;
+  background-size: 8px 1px !important;
+}
+html[data-page-style="anibt"] .mobile-nav-floating,
+html[data-page-style="anibt"] .floating-menu-panel {
+  background-color: var(--ab-card) !important;
+  border: 0 !important;
+  box-shadow: 0 0 0 1px var(--ab-border), var(--anibt-shadow-pop) !important;
+}
+
+/* ---------- Input / InputNumber / Select / Picker：内描边字段 ---------- */
+html[data-page-style="anibt"] body :is(.ant-input-outlined, .ant-input-affix-wrapper.ant-input-outlined, .ant-input-number-outlined, .ant-picker-outlined, .ant-select-outlined:not(.ant-select-customize-input) .ant-select-selector) {
+  border-color: transparent !important;
+  background-color: var(--ab-card);
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--ab-input);
+  transition: box-shadow 0.14s, background-color 0.14s;
+}
+html[data-page-style="anibt"] body .ant-input-affix-wrapper > input.ant-input {
+  box-shadow: none !important;
+  background: transparent;
+}
+html[data-page-style="anibt"] body :is(.ant-input-outlined, .ant-input-number-outlined, .ant-picker-outlined):hover,
+html[data-page-style="anibt"] body .ant-select-outlined:not(.ant-select-disabled):hover .ant-select-selector {
+  box-shadow: inset 0 0 0 1px var(--anibt-wash-line);
+}
+html[data-page-style="anibt"] body :is(.ant-input-outlined:focus, .ant-input-outlined:focus-within, .ant-input-number-outlined:focus-within, .ant-picker-outlined.ant-picker-focused),
+html[data-page-style="anibt"] body .ant-select-outlined.ant-select-focused .ant-select-selector {
+  box-shadow: inset 0 0 0 1.5px var(--ab-ring), var(--anibt-ring-pink) !important;
+}
+html[data-page-style="anibt"] body .ant-input-search .ant-input-search-button {
+  border-radius: 0 10px 10px 0 !important;
+}
+
+/* ---------- 下拉 / 弹层：贴纸浮层 ---------- */
+html[data-page-style="anibt"] .ant-select-dropdown,
+html[data-page-style="anibt"] .ant-dropdown .ant-dropdown-menu,
+html[data-page-style="anibt"] .ant-picker-dropdown .ant-picker-panel-container,
+html[data-page-style="anibt"] .ant-popover .ant-popover-inner {
+  border-radius: 14px !important;
+  padding: 4px;
+  box-shadow: 0 0 0 1px var(--ab-border), var(--anibt-shadow-pop) !important;
+}
+html[data-page-style="anibt"] .ant-select-dropdown .ant-select-item,
+html[data-page-style="anibt"] .ant-dropdown .ant-dropdown-menu-item {
+  border-radius: 10px !important;
+  min-height: 32px;
+}
+html[data-page-style="anibt"] .ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-selected),
+html[data-page-style="anibt"] .ant-dropdown .ant-dropdown-menu-item-active {
+  background-color: var(--ab-accent) !important;
+  color: var(--ab-accent-foreground) !important;
+}
+html[data-page-style="anibt"] .ant-select-dropdown .ant-select-item-option-selected .ant-select-item-option-state {
+  color: var(--anibt-mark);
+}
+
+/* ---------- Tooltip：便签纸 ---------- */
+html[data-page-style="anibt"] .ant-tooltip .ant-tooltip-inner {
+  background: var(--anibt-tip) !important;
+  color: var(--anibt-tip-ink) !important;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 12px;
+  box-shadow: var(--anibt-shadow-sticker);
+}
+html[data-page-style="anibt"] .ant-tooltip .ant-tooltip-arrow::before {
+  background: var(--anibt-tip) !important;
+}
+
+/* ---------- Tabs：缝线底 + 胶带选中 ---------- */
+html[data-page-style="anibt"] body .ant-tabs-top > .ant-tabs-nav::before {
+  border-bottom: 0 !important;
+  height: 1px;
+  background-image: var(--anibt-stitch);
+  background-size: 8px 1px;
+}
+html[data-page-style="anibt"] body .ant-tabs .ant-tabs-tab {
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-weight: 600;
+  transition: background-color 0.14s, color 0.14s;
+}
+html[data-page-style="anibt"] body .ant-tabs .ant-tabs-tab + .ant-tabs-tab {
+  margin-left: 4px;
+}
+html[data-page-style="anibt"] body .ant-tabs-line .ant-tabs-tab:hover {
+  background-color: var(--ab-accent);
+}
+html[data-page-style="anibt"] body .ant-tabs .ant-tabs-tab.ant-tabs-tab-active {
+  position: relative;
+}
+html[data-page-style="anibt"] body .ant-tabs-top .ant-tabs-tab.ant-tabs-tab-active::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: -2px;
+  left: 8px;
+  height: 6px;
+  pointer-events: none;
+  background: var(--anibt-tape-fill);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 2px) 50%, 100% 100%, 0 100%, 2px 50%);
+  transform: rotate(-1.5deg);
+}
+html[data-page-style="anibt"] body .ant-tabs-card > .ant-tabs-nav .ant-tabs-tab {
+  border-color: transparent !important;
+  background: var(--ab-muted) !important;
+}
+html[data-page-style="anibt"] body .ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active {
+  background: var(--ab-card) !important;
+  box-shadow: inset 0 0 0 1px var(--ab-border), var(--anibt-shadow-sticker);
+}
+
+/* ---------- Switch / Checkbox / Radio：糖果填充 ---------- */
+html[data-page-style="anibt"] body .ant-switch {
+  background: var(--ab-muted);
+  box-shadow: inset 0 0 0 1.5px var(--ab-input);
+}
+html[data-page-style="anibt"] body .ant-switch.ant-switch-checked {
+  background-color: var(--anibt-candy-edge) !important;
+  background-image: var(--anibt-candy);
+  box-shadow: 0 1px 0 var(--anibt-candy-edge);
+}
+html[data-page-style="anibt"] body .ant-switch .ant-switch-handle::before {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), inset 0 0 0 1px var(--ab-border);
+}
+html[data-page-style="anibt"] body .ant-checkbox .ant-checkbox-inner {
+  border-radius: 6px;
+  border-color: var(--ab-input);
+  border-width: 1.5px;
+}
+html[data-page-style="anibt"] body .ant-checkbox-checked .ant-checkbox-inner,
+html[data-page-style="anibt"] body .ant-checkbox-indeterminate .ant-checkbox-inner {
+  background-color: var(--anibt-candy-edge) !important;
+  background-image: var(--anibt-candy);
+  border-color: var(--anibt-candy-edge) !important;
+}
+html[data-page-style="anibt"] body .ant-radio-wrapper .ant-radio-checked .ant-radio-inner {
+  background-color: var(--anibt-candy-edge);
+  background-image: var(--anibt-candy);
+  border-color: var(--anibt-candy-edge);
+}
+html[data-page-style="anibt"] body .ant-radio-button-wrapper {
+  font-weight: 600;
+}
+html[data-page-style="anibt"] body .ant-radio-button-wrapper:first-child { border-radius: 10px 0 0 10px; }
+html[data-page-style="anibt"] body .ant-radio-button-wrapper:last-child { border-radius: 0 10px 10px 0; }
+
+/* ---------- Table：缝线行 ---------- */
+html[data-page-style="anibt"] body .ant-table-wrapper .ant-table {
+  background: transparent;
+}
+html[data-page-style="anibt"] body .ant-table-wrapper .ant-table-thead > tr > :is(th, td) {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-bottom: 0 !important;
+  background-image: var(--anibt-stitch);
+  background-repeat: repeat-x;
+  background-position: bottom;
+  background-size: 8px 1px;
+}
+html[data-page-style="anibt"] body .ant-table-wrapper .ant-table-tbody > tr > td {
+  border-bottom: 1px dashed var(--ab-border) !important;
+}
+html[data-page-style="anibt"] body .ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > td {
+  background: var(--ab-accent) !important;
+}
+
+/* ---------- Pagination：方圆按钮 + 贴纸选中 ---------- */
+html[data-page-style="anibt"] body .ant-pagination .ant-pagination-item,
+html[data-page-style="anibt"] body .ant-pagination :is(.ant-pagination-prev, .ant-pagination-next) .ant-pagination-item-link {
+  border-radius: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+html[data-page-style="anibt"] body .ant-pagination .ant-pagination-item-active {
+  border-color: transparent !important;
+  background: var(--ab-card);
+  box-shadow: inset 0 0 0 1.5px var(--ab-primary), 0 1.5px 0 var(--ab-primary);
+}
+
+/* ---------- Modal / Drawer：纸片 + 缝线标题 ---------- */
+html[data-page-style="anibt"] .ant-modal .ant-modal-content {
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px var(--ab-border), var(--anibt-shadow-pop);
+}
+html[data-page-style="anibt"] .ant-modal .ant-modal-header {
+  padding-bottom: 10px;
+  background-image: var(--anibt-stitch);
+  background-repeat: repeat-x;
+  background-position: bottom;
+  background-size: 8px 1px;
+}
+html[data-page-style="anibt"] .ant-modal .ant-modal-title,
+html[data-page-style="anibt"] .ant-drawer .ant-drawer-title {
+  font-weight: 800;
+}
+html[data-page-style="anibt"] .ant-drawer .ant-drawer-content {
+  background-color: var(--ab-card);
+}
+html[data-page-style="anibt"] .ant-drawer .ant-drawer-header {
+  border-bottom: 1px dashed var(--ab-border);
+}
+
+/* ---------- Menu：圆角条目 + 选中贴纸 ---------- */
+html[data-page-style="anibt"] body .ant-menu .ant-menu-item,
+html[data-page-style="anibt"] body .ant-menu .ant-menu-submenu-title {
+  border-radius: 10px;
+}
+html[data-page-style="anibt"] body .ant-menu-light .ant-menu-item-selected {
+  font-weight: 700;
+}
+
+/* ---------- Collapse / Alert / Empty / Badge ---------- */
+html[data-page-style="anibt"] body .ant-collapse {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 0;
+  box-shadow: 0 0 0 1px var(--ab-border), var(--anibt-shadow-panel);
+  background: var(--ab-card);
+}
+html[data-page-style="anibt"] body .ant-collapse > .ant-collapse-item {
+  border-bottom: 1px dashed var(--ab-border);
+}
+html[data-page-style="anibt"] body .ant-alert {
+  border-radius: 12px;
+  border-style: dashed;
+}
+html[data-page-style="anibt"] body .ant-badge .ant-badge-count {
+  box-shadow: 0 0 0 2px var(--anibt-sticker-edge);
+  font-weight: 700;
+}
+html[data-page-style="anibt"] body .ant-card .ant-card-head-title {
+  font-weight: 800;
+}
+html[data-page-style="anibt"] body .ant-card-hoverable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 1px var(--anibt-wash-line), var(--anibt-shadow-lift);
+}
+html[data-page-style="anibt"] body .ant-btn-dangerous.ant-btn-default:not(:disabled) {
+  background: var(--anibt-danger-wash);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--anibt-danger-line), 0 1.5px 0 var(--anibt-danger-line);
+}
+html[data-page-style="anibt"] body .ant-btn-text:not(:disabled):hover,
+html[data-page-style="anibt"] body .ant-btn-link:not(:disabled):hover {
+  background-color: var(--ab-accent);
+}

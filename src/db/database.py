@@ -1,5 +1,7 @@
-import secrets
-import string
+# 注意：本模块位于最底层数据库层，禁止反向依赖 services 层。
+# get_session_factory 由本文件自身定义（见下方），不得从 service_container 导入。
+# 注意：不得在模块顶层导入 src.db.crud —— crud 已废弃，且其包内部会 import 本模块，
+#      顶层导入会形成循环导入。数据访问统一走 repositories。
 import logging
 from fastapi import FastAPI, Request
 from sqlalchemy.engine.url import URL
@@ -242,7 +244,7 @@ async def _create_db_if_not_exists():
 
 async def get_db_session(request: Request) -> AsyncSession:
     """依赖项：从应用状态获取数据库会话"""
-    session_factory = request.app.state.db_session_factory
+    session_factory = get_session_factory()
     session = session_factory()
     try:
         yield session
@@ -273,48 +275,6 @@ async def close_db_engine(app: FastAPI):
     if hasattr(app.state, "db_engine"):
         await app.state.db_engine.dispose()
         logger.info("数据库引擎已关闭。")
-
-async def create_initial_admin_user(app: FastAPI):
-    """在应用启动时创建初始管理员用户（如果已配置且不存在）"""
-    # 将导入移到函数内部以避免循环导入
-    from . import crud
-    from . import models
-
-    admin_user = settings.admin.initial_user
-    if not admin_user:
-        return
-
-    session_factory = app.state.db_session_factory
-    async with session_factory() as session:
-        existing_user = await crud.get_user_by_username(session, admin_user)
-
-    if existing_user:
-        logger.info(f"管理员用户 '{admin_user}' 已存在，跳过创建。")
-        return
-
-    # 用户不存在，开始创建
-    admin_pass = settings.admin.initial_password
-    if not admin_pass:
-        # 生成一个安全的16位随机密码
-        alphabet = string.ascii_letters + string.digits
-        admin_pass = ''.join(secrets.choice(alphabet) for _ in range(16))
-        logger.info("未提供初始管理员密码，已生成随机密码。")
-
-    user_to_create = models.UserCreate(username=admin_user, password=admin_pass)
-    async with session_factory() as session:
-        await crud.create_user(session, user_to_create)
-
-    # 打印凭据信息。
-    # 注意：，
-    # 以确保敏感的初始密码只输出到控制台，而不会被写入到持久化的日志文件中，从而提高安全性。     
-    logger.info("\n" + "="*60)
-    logger.info(f"=== 初始管理员账户已创建 (用户: {admin_user}) ".ljust(56) + "===")
-    logger.info(f"=== 请使用以下随机生成的密码登录: {admin_pass} ".ljust(56) + "===")
-    logger.info("="*60 + "\n")
-    print("\n" + "="*60)
-    print(f"=== 初始管理员账户已创建 (用户: {admin_user}) ".ljust(56) + "===")
-    print(f"=== 请使用以下随机生成的密码登录: {admin_pass} ".ljust(56) + "===")
-    print("="*60 + "\n")
 
 async def _is_fresh_database(engine) -> bool:
     """

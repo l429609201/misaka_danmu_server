@@ -7,8 +7,12 @@ from sqlalchemy import (
     String, TEXT, TypeDecorator, UniqueConstraint, DECIMAL, func
 )
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, validates
 from src.core.timezone import get_now
+
+# anime.type 的数据库枚举取值，写死在 ORM 中，不从业务层导入（避免循环依赖）；
+# 增删类型时需同步修改此处并新增迁移。
+ANIME_TYPE_VALUES = ('tv_series', 'movie', 'ova', 'other', 'variety', 'short_drama')
 
 class NaiveDateTime(TypeDecorator):
     """
@@ -47,11 +51,14 @@ class AnimeGroup(Base):
     animes: Mapped[List["Anime"]] = relationship(back_populates="group")
 
 
+# anime.type 允许的枚举值：统一定义在 src/schemas/media_types.py（新增综艺 variety、短剧 short_drama）
+
+
 class Anime(Base):
     __tablename__ = "anime"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(500), index=True)
-    type: Mapped[str] = mapped_column(Enum('tv_series', 'movie', 'ova', 'other', name="anime_type"), default='tv_series')
+    type: Mapped[str] = mapped_column(Enum(*ANIME_TYPE_VALUES, name="anime_type"), default='tv_series')
     imageUrl: Mapped[Optional[str]] = mapped_column("image_url", String(512))
     localImagePath: Mapped[Optional[str]] = mapped_column("local_image_path", String(512))
     season: Mapped[int] = mapped_column(Integer, default=1)
@@ -68,6 +75,14 @@ class Anime(Base):
     __table_args__ = (
         Index('idx_title_fulltext', 'title'),
     )
+
+    @validates("type")
+    def _normalize_type(self, _key: str, value: Optional[str]) -> str:
+        """入库兜底：搜索阶段允许类型为 None（交给元数据/AI 判定），
+        但 anime.type 为 NOT NULL 枚举，未判定或非法值统一落为 tv_series。"""
+        if value in ANIME_TYPE_VALUES:
+            return value
+        return "tv_series"
 
 class AnimeSource(Base):
     __tablename__ = "anime_sources"
@@ -228,23 +243,19 @@ class BangumiDataIndex(Base):
     """
     __tablename__ = "bangumi_data_index"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    # 该番在 bangumi 站点的 subject id（sites 中 site==bangumi 的 id），用于与库内 bangumiId 桥接
     bangumiId: Mapped[Optional[str]] = mapped_column("bangumi_id", String(32), index=True)
     titleMain: Mapped[str] = mapped_column("title_main", String(500), index=True)  # 日文原名（title 字段）
-    # 全语言别名扁平化（换行分隔），供 SQL LIKE 跨语言模糊匹配
     titlesAll: Mapped[Optional[str]] = mapped_column("titles_all", TEXT().with_variant(MEDIUMTEXT, "mysql"))
     titleZh: Mapped[Optional[str]] = mapped_column("title_zh", String(500))   # 首选简体中文译名
     titleEn: Mapped[Optional[str]] = mapped_column("title_en", String(500))   # 首选英文名
     type: Mapped[Optional[str]] = mapped_column("type", String(32))            # tv / movie / ova / ...
     beginYear: Mapped[Optional[int]] = mapped_column("begin_year", Integer)    # 放送开始年份（保留，兼容旧逻辑）
-    # 新增：补全源 data.json 的完整字段，避免信息丢失（why：原仅存年份/精简映射，无法支撑详情展示与反向解析）
     lang: Mapped[Optional[str]] = mapped_column("lang", String(16))            # 原始语言（如 ja）
     officialSite: Mapped[Optional[str]] = mapped_column("official_site", String(500))  # 官方网站
     beginDate: Mapped[Optional[str]] = mapped_column("begin_date", String(40))  # 完整开播时间（ISO 字符串，原样保留）
     endDate: Mapped[Optional[str]] = mapped_column("end_date", String(40))      # 完结时间（ISO 字符串，原样保留）
     broadcast: Mapped[Optional[str]] = mapped_column("broadcast", String(100))  # 放送周期规则（如 R/2022-...P7D）
     comment: Mapped[Optional[str]] = mapped_column("comment", TEXT)             # 备注
-    # sites 改存「原始 sites 数组」JSON（保留每个站点的 begin/broadcast 子字段），不再重组为 {platform:id}
     sites: Mapped[Optional[str]] = mapped_column("sites", TEXT)                # JSON：原始 sites 数组
     updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime, default=get_now, nullable=False)
 
@@ -394,8 +405,20 @@ class TaskHistory(Base):
     # 任务恢复相关字段：在提交时保存，用于重启后恢复排队中的任务
     taskType: Mapped[Optional[str]] = mapped_column("task_type", String(500), nullable=True)
     taskParameters: Mapped[Optional[str]] = mapped_column("task_parameters", TEXT().with_variant(MEDIUMTEXT, "mysql"), nullable=True)
+    # 父任务ID（用于记录任务派发关系，如搜索任务 → 下载任务）
+    parentTaskId: Mapped[Optional[str]] = mapped_column(
+        "parent_task_id",
+        String(500),
+        ForeignKey("task_history.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="父任务ID（如搜索任务ID）"
+    )
 
-    __table_args__ = (Index('idx_task_history_created_at', 'created_at'),)
+    __table_args__ = (
+        Index('idx_task_history_created_at', 'created_at'),
+        Index('idx_parent_task', 'parent_task_id'),
+    )
 
 class TaskStateCache(Base):
     """任务状态缓存表，用于存储正在执行任务的参数，支持服务重启后的任务恢复"""
@@ -407,6 +430,7 @@ class TaskStateCache(Base):
     updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime)
 
     __table_args__ = (Index('idx_task_type', 'task_type'),)
+
 
 class ExternalApiLog(Base):
     __tablename__ = "external_api_logs"
@@ -711,3 +735,255 @@ class SubscriptionCandidateItem(Base):
         Index('idx_candidate_parent', 'parent_id'),
     )
 
+
+class AssistantSession(Base):
+    """御坂助手会话表（P4：多会话历史）"""
+    __tablename__ = "assistant_sessions"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # 客户端生成的会话唯一标识（web-xxx）
+    sessionId: Mapped[str] = mapped_column("session_id", String(128), unique=True, index=True, nullable=False)
+    # 旧全局会话保持 NULL，不推断归属；所有授权查询均要求匹配用户 id。
+    ownerId: Mapped[Optional[int]] = mapped_column(
+        "owner_id", BigInteger, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    persona: Mapped[str] = mapped_column(String(64), default="misaka_20001", nullable=False)
+    # 是否正在处理中（断流恢复用：SSE 期间为 True，完成置 False）
+    isProcessing: Mapped[bool] = mapped_column("is_processing", Boolean, default=False, nullable=False)
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False)
+    updatedAt: Mapped[datetime] = mapped_column("updated_at", NaiveDateTime, default=get_now, onupdate=get_now, nullable=False)
+
+    messages: Mapped[List["AssistantMessage"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+
+
+class AssistantMessage(Base):
+    """御坂助手消息表（P4：会话内消息）"""
+    __tablename__ = "assistant_messages"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    sessionDbId: Mapped[int] = mapped_column(
+        "session_db_id", BigInteger,
+        ForeignKey("assistant_sessions.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False)  # user / bot
+    content: Mapped[str] = mapped_column(TEXT().with_variant(MEDIUMTEXT, "mysql"), default="", nullable=False)
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False)
+
+    session: Mapped["AssistantSession"] = relationship(back_populates="messages")
+
+    __table_args__ = (
+        Index('idx_assistant_msg_session', 'session_db_id'),
+    )
+
+
+class AssistantPendingAction(Base):
+    """助手写工具的一次性确认记录，仅存确认令牌哈希。"""
+    __tablename__ = "assistant_pending_actions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ownerId: Mapped[int] = mapped_column(
+        "owner_id", BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    sessionId: Mapped[str] = mapped_column("session_id", String(128), nullable=False)
+    toolName: Mapped[str] = mapped_column("tool_name", String(128), nullable=False)
+    argumentsJson: Mapped[str] = mapped_column("arguments_json", TEXT, nullable=False)
+    tokenHash: Mapped[str] = mapped_column("token_hash", String(64), unique=True, nullable=False)
+    expiresAt: Mapped[datetime] = mapped_column("expires_at", NaiveDateTime, nullable=False)
+    consumedAt: Mapped[Optional[datetime]] = mapped_column("consumed_at", NaiveDateTime)
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False)
+
+
+class PerformanceMetric(Base):
+    """性能监测指标表"""
+    __tablename__ = 'performance_metrics'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    # 指标分类
+    category: Mapped[str] = mapped_column(String(50), nullable=False, index=True, comment='指标分类: db_pool/task_queue/slow_query/cache/api_response')
+    metricName: Mapped[str] = mapped_column("metric_name", String(100), nullable=False, index=True, comment='指标名称')
+
+    # 指标值（至少一个字段有值）
+    metricValue: Mapped[Optional[float]] = mapped_column("metric_value", DECIMAL(20, 4), nullable=True, comment='数值型指标值')
+    metricText: Mapped[Optional[str]] = mapped_column("metric_text", TEXT, nullable=True, comment='文本型指标值')
+    metricJson: Mapped[Optional[str]] = mapped_column("metric_json", TEXT, nullable=True, comment='JSON型指标值（复杂数据）')
+
+    # 状态标记
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='normal', comment='状态: normal/warning/critical')
+    thresholdWarning: Mapped[Optional[float]] = mapped_column("threshold_warning", DECIMAL(20, 4), nullable=True, comment='警告阈值')
+    thresholdCritical: Mapped[Optional[float]] = mapped_column("threshold_critical", DECIMAL(20, 4), nullable=True, comment='严重阈值')
+
+    # 元数据
+    serverInstance: Mapped[Optional[str]] = mapped_column("server_instance", String(100), nullable=True, comment='服务器实例标识')
+    tags: Mapped[Optional[str]] = mapped_column(TEXT, nullable=True, comment='标签JSON（用于分组和过滤）')
+    description: Mapped[Optional[str]] = mapped_column(TEXT, nullable=True, comment='详细说明')
+
+    # 时间戳
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False, comment='记录时间')
+
+    # 索引优化
+    __table_args__ = (
+        Index('idx_perf_category_created', 'category', 'created_at'),
+        Index('idx_perf_metric_name_created', 'metric_name', 'created_at'),
+        Index('idx_perf_status_created', 'status', 'created_at'),
+        {'comment': '性能监测指标表'}
+    )
+
+
+class PerformanceAlert(Base):
+    """性能告警记录表"""
+    __tablename__ = 'performance_alerts'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    # 关联指标
+    metricCategory: Mapped[str] = mapped_column("metric_category", String(50), nullable=False, index=True, comment='指标分类')
+    metricName: Mapped[str] = mapped_column("metric_name", String(100), nullable=False, index=True, comment='指标名称')
+
+    # 告警信息
+    alertLevel: Mapped[str] = mapped_column("alert_level", String(20), nullable=False, comment='告警级别: warning/critical')
+    alertMessage: Mapped[str] = mapped_column("alert_message", TEXT, nullable=False, comment='告警消息')
+    currentValue: Mapped[Optional[float]] = mapped_column("current_value", DECIMAL(20, 4), nullable=True, comment='当前值')
+    thresholdValue: Mapped[Optional[float]] = mapped_column("threshold_value", DECIMAL(20, 4), nullable=True, comment='阈值')
+
+    # 状态
+    isResolved: Mapped[int] = mapped_column("is_resolved", Integer, nullable=False, default=0, comment='是否已解决: 0=未解决, 1=已解决')
+    resolvedAt: Mapped[Optional[datetime]] = mapped_column("resolved_at", NaiveDateTime, nullable=True, comment='解决时间')
+    resolutionNote: Mapped[Optional[str]] = mapped_column("resolution_note", TEXT, nullable=True, comment='解决说明')
+
+    # 时间戳
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime, default=get_now, nullable=False, comment='告警时间')
+
+    # 索引
+    __table_args__ = (
+        Index('idx_alert_status', 'is_resolved', 'created_at'),
+        Index('idx_alert_level', 'alert_level', 'created_at'),
+        {'comment': '性能告警记录表'}
+    )
+
+
+class SystemMetric(Base):
+    """
+    系统指标通用表
+
+    采用宽表设计，支持记录各类系统性能和运行指标：
+    - 数据库连接池状态
+    - 任务队列状态
+    - 慢查询记录
+    - 缓存命中率
+    - API响应时间
+    - CPU/内存使用率
+    - 自定义业务指标
+
+    设计理念：
+    - 通用性：支持任意类型的指标记录
+    - 灵活性：多种数值类型 + JSON扩展字段
+    - 可查询：按分类、时间范围高效检索
+    - 可告警：内置阈值和状态判断
+    """
+    __tablename__ = 'system_metrics'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    # ===== 指标标识 =====
+    category: Mapped[str] = mapped_column(
+        String(50), nullable=False,
+        comment='指标大类: database/task/cache/api/system/custom'
+    )
+    subcategory: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True,
+        comment='指标子类: pool/queue/slow_query/hit_rate/response_time/cpu/memory等'
+    )
+    metricName: Mapped[str] = mapped_column(
+        "metric_name", String(100), nullable=False,
+        comment='指标名称（唯一标识符）'
+    )
+    displayName: Mapped[Optional[str]] = mapped_column(
+        "display_name", String(200), nullable=True,
+        comment='显示名称（用于前端展示）'
+    )
+
+    # ===== 指标值（多类型支持）=====
+    # 数值型指标（支持整数、浮点数、百分比）
+    valueInt: Mapped[Optional[int]] = mapped_column(
+        "value_int", BigInteger, nullable=True,
+        comment='整数值（如：连接数、任务数、请求数）'
+    )
+    valueFloat: Mapped[Optional[float]] = mapped_column(
+        "value_float", DECIMAL(20, 4), nullable=True,
+        comment='浮点值（如：CPU使用率、响应时间、命中率）'
+    )
+    # 文本型指标
+    valueText: Mapped[Optional[str]] = mapped_column(
+        "value_text", TEXT, nullable=True,
+        comment='文本值（如：SQL语句、错误信息、状态描述）'
+    )
+    # JSON扩展字段（复杂数据结构）
+    valueJson: Mapped[Optional[str]] = mapped_column(
+        "value_json", TEXT, nullable=True,
+        comment='JSON值（如：完整的慢查询详情、连接池状态快照）'
+    )
+
+    # ===== 单位和格式化 =====
+    unit: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True,
+        comment='单位: ms/s/count/percent/MB/GB等'
+    )
+
+    # ===== 阈值和状态 =====
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default='normal',
+        comment='状态: normal/warning/critical/unknown'
+    )
+    thresholdWarning: Mapped[Optional[float]] = mapped_column(
+        "threshold_warning", DECIMAL(20, 4), nullable=True,
+        comment='警告阈值（超过此值 status=warning）'
+    )
+    thresholdCritical: Mapped[Optional[float]] = mapped_column(
+        "threshold_critical", DECIMAL(20, 4), nullable=True,
+        comment='严重阈值（超过此值 status=critical）'
+    )
+
+    # ===== 元数据和标签 =====
+    serverInstance: Mapped[Optional[str]] = mapped_column(
+        "server_instance", String(100), nullable=True,
+        comment='服务器实例标识（多实例部署时区分）'
+    )
+    tags: Mapped[Optional[str]] = mapped_column(
+        TEXT, nullable=True,
+        comment='标签JSON（用于分组、过滤、聚合）格式: {"env":"prod","region":"us-east"}'
+    )
+    source: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True,
+        comment='数据来源: auto_collect/manual/external_monitor'
+    )
+
+    # ===== 详细说明 =====
+    description: Mapped[Optional[str]] = mapped_column(
+        TEXT, nullable=True,
+        comment='详细说明（用于前端提示或告警消息）'
+    )
+    context: Mapped[Optional[str]] = mapped_column(
+        TEXT, nullable=True,
+        comment='上下文信息（如：慢查询的完整SQL、堆栈跟踪）'
+    )
+
+    # ===== 时间戳 =====
+    collectedAt: Mapped[datetime] = mapped_column(
+        "collected_at", NaiveDateTime, default=get_now, nullable=False, index=True,
+        comment='指标采集时间'
+    )
+    createdAt: Mapped[datetime] = mapped_column(
+        "created_at", NaiveDateTime, default=get_now, nullable=False,
+        comment='记录创建时间'
+    )
+
+    # ===== 复合索引 =====
+    # why：原有 17 个索引（大量重复前缀）使每行写入/删除需维护十余个索引条目，
+    # 清理历史数据时打满数据库 IO。保留 collected_at 单列索引（清理/时间范围）
+    # 与 (category, metric_name, collected_at)（趋势/最新值查询，前缀覆盖按分类查询）。
+    __table_args__ = (
+        Index('idx_metric_cat_name_time', 'category', 'metric_name', 'collected_at'),
+        {'comment': '系统性能指标通用表'}
+    )

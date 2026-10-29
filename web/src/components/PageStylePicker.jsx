@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { CheckOutlined, PictureOutlined } from '@ant-design/icons'
-import { Input } from 'antd'
+import { Input, Segmented, Slider } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { useThemeMode, PAGE_STYLES, WALLPAPER_STYLE_KEYS } from '../ThemeProvider'
+import { GLASS_APPEARANCES, GLASS_PARAM_KEYS, GLASS_STRENGTH_MAX, GLASS_STRENGTH_MIN, getGlassPreset } from '../utils/glassOptics.js'
 import { ResponsiveModal } from './ResponsiveModal'
 
 // 每种风格的缩略图预览样式
@@ -125,6 +126,19 @@ const PREVIEW_STYLES = {
     },
     badge: { emoji: '💎', label: '玻璃' },
   },
+  anibt: {
+    wrap: {
+      background: 'radial-gradient(circle at 20% 20%, rgba(255,111,156,0.18), transparent 45%), #f7f5fa',
+      border: '1px solid #ebe6f0',
+    },
+    card: {
+      background: '#fff',
+      borderRadius: 14,
+      border: '1px solid #ebe6f0',
+      boxShadow: '0 2px 0 #ebe6f0',
+    },
+    badge: { emoji: '🌸', label: 'AniBT' },
+  },
 }
 
 // 徽标配色：统一走主题粉色（页面样式不再覆写配色，无需按风格分色）
@@ -144,11 +158,12 @@ const STYLE_TIP_KEYS = {
   calendar:        'calendarTip',
   github:          'githubTip',
   material:        'materialTip',
+  anibt:           'anibtTip',
 }
 
 const PageStylePicker = ({ open, onClose }) => {
   const { t } = useTranslation()
-  const { pageStyle, setPageStyle, wallpaperUrl, setWallpaperUrl } = useThemeMode()
+  const { pageStyle, setPageStyle, wallpaperUrl, setWallpaperUrl, glassSettings, setGlassSettings } = useThemeMode()
 
   // 仅在选中需要背景图的风格时显示地址输入框
   const needsWallpaper = WALLPAPER_STYLE_KEYS.includes(pageStyle)
@@ -247,6 +262,55 @@ const PageStylePicker = ({ open, onClose }) => {
             )
           })}
         </div>
+
+        {/* 液态玻璃专属配置（参考 MoviePilot 标准档）：材质 + 通透度/透射亮度/反射亮度，改动实时生效 */}
+        {pageStyle === 'liquid-glass' && (
+          <div
+            className="mt-4 rounded-xl border p-3"
+            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-hover)' }}
+          >
+            <div className="mb-2 flex items-center justify-between text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              <span>{t('pageStyle.glassConfigTitle')}</span>
+              <a
+                className="text-xs font-normal"
+                onClick={() => setGlassSettings(getGlassPreset(glassSettings.appearance))}
+              >
+                {t('pageStyle.glassReset')}
+              </a>
+            </div>
+            <div className="mb-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              {t('pageStyle.glassAppearance')}
+            </div>
+            {/* why：切换材质时套用该材质的预设值，与 MP 行为一致 */}
+            <Segmented
+              block
+              value={glassSettings.appearance}
+              onChange={appearance => setGlassSettings({ appearance, ...getGlassPreset(appearance) })}
+              options={GLASS_APPEARANCES.map(v => ({ value: v, label: t(`pageStyle.glassAppearance_${v}`) }))}
+            />
+            <div className="mt-1 text-xs leading-5" style={{ color: 'var(--color-text-secondary)' }}>
+              {t('pageStyle.glassAppearanceHint')}
+            </div>
+            {GLASS_PARAM_KEYS.map(key => (
+              <div key={key} className="mt-3">
+                <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {t(`pageStyle.glass_${key}`)}：{glassSettings[key]}%
+                </div>
+                <Slider
+                  min={GLASS_STRENGTH_MIN}
+                  max={GLASS_STRENGTH_MAX}
+                  step={1}
+                  value={glassSettings[key]}
+                  tooltip={{ formatter: v => `${v}%` }}
+                  onChange={value => setGlassSettings({ [key]: value })}
+                />
+              </div>
+            ))}
+            <div className="text-xs leading-5" style={{ color: 'var(--color-text-secondary)' }}>
+              {t('pageStyle.glassConfigHint')}
+            </div>
+          </div>
+        )}
 
         {/* why：壁纸配置独立成面板，避免它与主题卡片、状态说明混成同一层级。 */}
         {needsWallpaper && (

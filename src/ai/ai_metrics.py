@@ -1,25 +1,21 @@
-"""
-AI 调用监控和统计模块
+"""AI 调用监控和统计模块。"""
 
-提供 AI 调用的性能监控、成本统计和错误追踪功能
-支持数据持久化到数据库
-"""
-
-import logging
 import asyncio
-from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Callable, Any
+import logging
 from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Awaitable, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class AICallMetrics:
-    """AI 调用指标"""
+    """AI 调用指标。"""
+
     timestamp: datetime
-    method: str  # select_best_match, recognize_title, validate_aliases, etc.
+    method: str
     success: bool
     duration_ms: int
     tokens_used: int
@@ -29,89 +25,46 @@ class AICallMetrics:
 
 
 class AIMetricsCollector:
-    """AI 指标收集器（支持数据库持久化）"""
+    """只负责维护 AI 指标内存统计，并向上层发出指标事件。"""
 
-    def __init__(self, max_history: int = 1000, db_session_factory: Optional[Callable] = None):
-        """
-        初始化指标收集器
-
-        Args:
-            max_history: 内存中最大保留的历史记录数（用于快速查询）
-            db_session_factory: 数据库会话工厂函数（用于持久化）
-        """
+    def __init__(
+        self,
+        max_history: int = 1000,
+        on_record: Optional[Callable[[AICallMetrics], Awaitable[None]]] = None,
+    ) -> None:
+        """初始化指标收集器。"""
         self.metrics: List[AICallMetrics] = []
         self.max_history = max_history
+        self._on_record = on_record
         self.logger = logging.getLogger(self.__class__.__name__)
-        self._db_session_factory = db_session_factory
-        self._pending_writes: List[AICallMetrics] = []  # 待写入数据库的记录
-        self._write_lock = asyncio.Lock()
 
-    def set_db_session_factory(self, factory: Callable):
-        """设置数据库会话工厂（延迟初始化）"""
-        self._db_session_factory = factory
-
-    def record(self, metric: AICallMetrics):
-        """
-        记录一次 AI 调用（同步方法，异步写入数据库）
-
-        Args:
-            metric: AI 调用指标
-        """
-        # 添加到内存列表
+    def record(self, metric: AICallMetrics) -> None:
+        """记录指标并通知上层，不接触数据库或事务。"""
         self.metrics.append(metric)
-
-        # 限制内存中的历史记录数量
         if len(self.metrics) > self.max_history:
             self.metrics = self.metrics[-self.max_history:]
 
-        # 添加到待写入队列
-        self._pending_writes.append(metric)
+        if self._on_record is not None:
+            asyncio.create_task(self._notify(metric))
 
-        # 异步写入数据库
-        if self._db_session_factory:
-            asyncio.create_task(self._write_to_db(metric))
-
-        # 记录到日志
         if metric.success:
             self.logger.debug(
-                f"AI调用成功: {metric.method} | "
-                f"耗时: {metric.duration_ms}ms | "
-                f"Tokens: {metric.tokens_used} | "
-                f"缓存: {'命中' if metric.cache_hit else '未命中'}"
+                f"AI调用成功: {metric.method} | 耗时: {metric.duration_ms}ms | "
+                f"Tokens: {metric.tokens_used} | 缓存: {'命中' if metric.cache_hit else '未命中'}"
             )
         else:
             self.logger.warning(
-                f"AI调用失败: {metric.method} | "
-                f"耗时: {metric.duration_ms}ms | "
-                f"错误: {metric.error}"
+                f"AI调用失败: {metric.method} | 耗时: {metric.duration_ms}ms | 错误: {metric.error}"
             )
 
-    async def _write_to_db(self, metric: AICallMetrics):
-        """异步写入数据库"""
-        if not self._db_session_factory:
-            return
-
+    async def _notify(self, metric: AICallMetrics) -> None:
+        """向业务服务发送指标事件，事件失败不影响 AI 主流程。"""
         try:
-            async with self._write_lock:
-                async with self._db_session_factory() as session:
-                    from src.db.crud.ai_metrics import create_ai_metrics_log
-                    await create_ai_metrics_log(
-                        session=session,
-                        timestamp=metric.timestamp,
-                        method=metric.method,
-                        success=metric.success,
-                        duration_ms=metric.duration_ms,
-                        tokens_used=metric.tokens_used,
-                        model=metric.model,
-                        error=metric.error,
-                        cache_hit=metric.cache_hit
-                    )
-                # 从待写入队列移除
-                if metric in self._pending_writes:
-                    self._pending_writes.remove(metric)
-        except Exception as e:
-            self.logger.error(f"写入 AI 调用日志到数据库失败: {e}")
-    
+            if self._on_record is not None:
+                await self._on_record(metric)
+        except Exception:
+            self.logger.exception("AI指标事件发送失败")
+
     def get_stats(self, hours: int = 24) -> Dict:
         """
         获取统计数据

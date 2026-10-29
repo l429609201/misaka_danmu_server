@@ -38,7 +38,7 @@ async def batch_recognize_titles_for_tmdb(
         items.append({
             "title": show.get("title", ""),
             "year": show.get("year"),
-            "type": show.get("type", "tv_series")
+            "type": show.get("type") or "tv_series"
         })
         anime_id_map[idx] = show.get("animeId")
     
@@ -101,7 +101,7 @@ async def optimize_tmdb_scraping_with_batch(
             processed_results[anime_id] = {
                 "search_title": recognition.get("search_title"),
                 "search_year": recognition.get("year"),
-                "search_type": recognition.get("type", "tv_series"),
+                "search_type": recognition.get("type") or "tv_series",
                 "use_episode_group": recognition.get("use_episode_group", False),
                 "recognized_season": recognition.get("season")
             }
@@ -115,7 +115,7 @@ async def optimize_tmdb_scraping_with_batch(
                 processed_results[anime_id] = {
                     "search_title": original_show.get("title"),
                     "search_year": original_show.get("year"),
-                    "search_type": original_show.get("type", "tv_series"),
+                    "search_type": original_show.get("type") or "tv_series",
                     "use_episode_group": False,
                     "recognized_season": None
                 }
@@ -152,7 +152,7 @@ for show in shows_to_update:
         # 使用原始信息
         search_title = show['title']
         search_year = show.get('year')
-        search_type = show.get('type', 'tv_series')
+        search_type = show.get('type') or 'tv_series'
         use_episode_group = False
         recognized_season = None
     

@@ -1,3 +1,4 @@
+from src.services.service_container import get_database_service
 import logging
 import asyncio
 from datetime import datetime
@@ -6,9 +7,9 @@ from typing import Callable, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from src.db import crud, orm_models, models
+from src.db import orm_models
 from .base import BaseJob
-from src.services import TaskSuccess
+from src.utils.diagnostics.task_exceptions import TaskSuccess
 
 
 class AutoFinishJob(BaseJob):
@@ -47,7 +48,10 @@ class AutoFinishJob(BaseJob):
         delay_days = int(task_config.get("delayDays", 2))
 
         await progress_callback(0, "正在获取所有启用追更的源...")
-        source_ids = await crud.get_sources_with_incremental_refresh_enabled(session)
+        db = get_database_service()
+        # 仅为源列表读取开启短事务，避免后续 TMDB 请求长期占用数据库连接。
+        async with db.transaction():
+            source_ids = await db.source.get_sources_with_incremental_refresh_enabled()
         total = len(source_ids)
         if not total:
             raise TaskSuccess("没有找到任何启用追更的源，任务结束。")

@@ -52,12 +52,14 @@ export const Domain = ({ domain: propDomain, onDomainChange }) => {
     <div className="my-6">
       <Card id="feat-custom-domain" title={t('bullet.domainTitle')}>
         <div>{t('bullet.domainDesc')}</div>
-        <div className="flex items-center justify-start mt-4 gap-2">
-          <Input
-            placeholder={t('bullet.domainPlaceholder')}
-            value={domain}
-            onChange={e => { setDomain(e.target.value); setProbeResult(null) }}
-          />
+        {/* 输入框独占一行，避免窄屏下域名被按钮挤到只剩几个字符 */}
+        <Input
+          className="mt-4"
+          placeholder={t('bullet.domainPlaceholder')}
+          value={domain}
+          onChange={e => { setDomain(e.target.value); setProbeResult(null) }}
+        />
+        <div className="flex items-center justify-start mt-3 gap-2">
           <Button type="primary" loading={saving} onClick={handleEdit}>
             {t('bullet.domainSave')}
           </Button>

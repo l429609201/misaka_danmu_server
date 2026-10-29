@@ -238,11 +238,14 @@ export const DatabaseInfoPanel = () => {
               </>
             ) : (
               <div className="py-4 text-center text-gray-400">
-                {info.cacheBackend === 'hybrid'
-                  ? t('dbInfo.descHybrid')
-                  : info.cacheBackend === 'memory'
-                    ? t('dbInfo.descMemory')
-                    : t('dbInfo.descDatabase')}
+                {/* 配置为 redis 但未连通时如实提示，不能落到"数据库缓存模式"误导用户 */}
+                {info.cacheBackend === 'redis'
+                  ? t('dbInfo.descRedisUnavailable')
+                  : info.cacheBackend === 'hybrid'
+                    ? t('dbInfo.descHybrid')
+                    : info.cacheBackend === 'memory'
+                      ? t('dbInfo.descMemory')
+                      : t('dbInfo.descDatabase')}
               </div>
             )}
           </Card>

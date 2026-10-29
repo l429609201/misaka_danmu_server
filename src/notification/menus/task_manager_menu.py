@@ -4,14 +4,15 @@
 与 tasks_menu.py（定时任务）区分：
 - 本文件负责「任务管理器」，即 TaskHistory 里正在执行/历史的后台任务
 - tasks_menu.py 负责「定时任务」，即 scheduler_manager 管理的 cron 任务
+C8：crud 层已废弃，改用 DatabaseService
 """
 import asyncio
 import hashlib
 import logging
 from typing import Any, Dict, List, Optional
 
-from src.db import crud
 from src.notification.base import CommandResult, _progress_bar_str
+from src.services.service_container import get_database_service
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ TM_REFRESH_INTERVAL = 3.0   # 刷新间隔（秒）
 TM_REFRESH_MAX_ROUNDS = 100  # 最多刷新轮数（3s x 100 = 5 分钟）
 TM_PAGE_SIZE = 5             # 每页任务数
 
-# 进行中的状态集合（与 crud.get_tasks_from_history 的 in_progress 过滤保持一致）
+# 进行中的状态集合（与 TaskQueryRepository.get_tasks_from_history 的 in_progress 过滤保持一致）
 TM_RUNNING_STATES = ("排队中", "运行中", "已暂停")
 
 _STATUS_ICONS = {
@@ -44,10 +45,13 @@ class TaskManagerMenuMixin:
         return _STATUS_ICONS.get(status, "❓")
 
     async def _tm_fetch(self, status_filter: str, page: int) -> Dict[str, Any]:
-        """查询后台任务列表"""
-        async with self._session_factory() as session:
-            return await crud.get_tasks_from_history(
-                session, None, status_filter, "all", page, TM_PAGE_SIZE
+        """查询后台任务列表 - C8：使用 DatabaseService + TaskQueryRepository"""
+        db = get_database_service()
+        async with db.transaction():
+            # 菜单翻页依赖 total/list，不能调用仅返回列表的历史查询接口。
+            return await db.task.get_paginated_tasks(
+                search=None, status_filter=status_filter, queue_type="all",
+                page=page, page_size=TM_PAGE_SIZE,
             )
 
     async def _tm_count_running(self) -> int:
@@ -336,8 +340,10 @@ class TaskManagerMenuMixin:
         if not task_id or not self.task_manager:
             return CommandResult(text="", answer_callback_text="任务服务未就绪")
         try:
-            async with self._session_factory() as session:
-                detail = await crud.get_task_details_from_history(session, task_id)
+            # C8：使用 DatabaseService + TaskQueryRepository
+            db = get_database_service()
+            async with db.transaction():
+                detail = await db.task.get_task_details_from_history(task_id)
             status = (detail or {}).get("status", "")
             if status == "排队中":
                 ok = await self.task_manager.cancel_pending_task(task_id)

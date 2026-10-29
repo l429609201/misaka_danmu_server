@@ -5,29 +5,43 @@ Telegram 通知渠道实现
 """
 
 import asyncio
+import base64
+import io
 import json
 import logging
 import threading
 import time
 from typing import Any, Dict, List, Optional
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
+
+try:
+    import telebot
+except ImportError:
+    telebot = None
+
 from src._version import APP_VERSION
 
 from src.notification.base import (
     BaseNotificationChannel, CommandResult,
     ChannelCapability, ChannelCapabilities, IMAGE_MODE_FIELD,
 )
+from src.notification.markdown_converter import (
+    markdown_to_v2, strip_markdown, escape_v2, normalize_rich_linebreaks,
+)
+from src.services.file_storage_service import CONFIG_DIR, get_file_storage_service
+from src.workflows.image_resources import load_image_bytes
+from src.utils.misc.image_processing import encode_notification_image
 
 logger = logging.getLogger(__name__)
 bot_raw_logger = logging.getLogger("bot_raw")
 
 
 def _get_telebot():
-    """延迟导入 telebot，避免未安装时影响启动"""
-    try:
-        import telebot
-        return telebot
-    except ImportError:
+    """获取 Telegram SDK，缺少可选依赖时提供安装提示。"""
+    if telebot is None:
         raise ImportError("请安装 pyTelegramBotAPI: pip install pyTelegramBotAPI")
+    return telebot
 
 
 class TelegramChannel(BaseNotificationChannel):
@@ -45,6 +59,7 @@ class TelegramChannel(BaseNotificationChannel):
             ChannelCapability.MESSAGE_DELETION,
             ChannelCapability.CALLBACK_QUERIES,
             ChannelCapability.RICH_TEXT,
+            ChannelCapability.RICH_MESSAGE,
             ChannelCapability.IMAGES,
             ChannelCapability.LINKS,
         },
@@ -59,49 +74,26 @@ class TelegramChannel(BaseNotificationChannel):
         self._polling_thread: Optional[threading.Thread] = None
         self._running = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None  # 主事件循环引用
+        self._bot_username: str = ""
+        self._bot_id: Optional[int] = None
+        self._rich_message_available: Optional[bool] = None
+
+    # ── Markdown 格式转换（薄封装，实际逻辑在 markdown_converter 模块）──
 
     @staticmethod
     def _escape_markdown_v2(text: str) -> str:
-        """转义 MarkdownV2 特殊字符（用于把纯文本 title 安全嵌入 MarkdownV2）"""
-        if not text:
-            return ""
-        special = r'_*[]()~`>#+-=|{}.!'
-        out = []
-        for ch in str(text):
-            if ch in special:
-                out.append("\\" + ch)
-            else:
-                out.append(ch)
-        return "".join(out)
+        """转义 MarkdownV2 保留字符。"""
+        return escape_v2(text)
+
+    @classmethod
+    def _markdown_to_v2(cls, text: str) -> str:
+        """标准 Markdown → Telegram MarkdownV2。"""
+        return markdown_to_v2(text)
 
     @staticmethod
     def _strip_markdown_v2(text: str) -> str:
-        """将 MarkdownV2 文本清洗为纯文本（去转义反斜杠、引用块 > 前缀、加粗/代码符号、Markdown 链接）"""
-        if not text:
-            return ""
-        import re as _re
-        # 先把 [显示文字](URL) 替换为"显示文字"，避免 send_photo 图片 URL 非 HTTPS 失败时
-        # 降级发纯文本却把 Markdown 链接语法原样打印给用户（TG 不渲染无 parse_mode 的链接）。
-        # why：_strip 只处理反斜杠转义和 */` 符号，[text](url) 完全不处理，是泄漏根源。
-        text = _re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', str(text))
-        lines = []
-        for line in text.split("\n"):
-            if line.startswith(">"):
-                line = line[1:]
-            out = []
-            i = 0
-            while i < len(line):
-                ch = line[i]
-                if ch == "\\" and i + 1 < len(line):
-                    out.append(line[i + 1])
-                    i += 2
-                elif ch in ("*", "`"):
-                    i += 1
-                else:
-                    out.append(ch)
-                    i += 1
-            lines.append("".join(out))
-        return "\n".join(lines)
+        """清洗 Markdown 符号，返回纯文本。"""
+        return strip_markdown(text)
 
     @staticmethod
     def get_config_schema() -> list:
@@ -275,6 +267,21 @@ class TelegramChannel(BaseNotificationChannel):
         telebot.apihelper.READ_TIMEOUT = 15
 
         self._bot = telebot.TeleBot(bot_token, threaded=False)
+
+        # 缓存 bot 自身信息（id / username）。
+        # why：剥离群聊里的 "@BotName" 提及、以及判断"用户引用的是不是机器人自己的回复"，
+        # 都要用到 bot username/id。telebot 的 bot.user 属性需先调用过 get_me 才有值，
+        # 这里主动取一次并存下来，失败则降级（提及不剥离，功能不中断）。
+        self._bot_username = ""
+        self._bot_id = None
+        try:
+            me = await asyncio.to_thread(self._bot.get_me)
+            self._bot_username = getattr(me, "username", "") or ""
+            self._bot_id = getattr(me, "id", None)
+            self.logger.info(f"Telegram Bot 身份: @{self._bot_username} (id={self._bot_id})")
+        except Exception as e:
+            self.logger.warning(f"获取 Bot 身份失败（@提及剥离将不生效）: {e}")
+
         self._register_handlers()
 
         mode = self.config.get("mode", "polling")
@@ -373,6 +380,31 @@ class TelegramChannel(BaseNotificationChannel):
                 self._handle_async_text(message), loop
             )
 
+        # ── 非文本消息处理（贴纸/图片/语音/文件/位置等）──
+        # why：原先只注册 ['text']，其余类型被 telebot 直接丢弃，用户发贴纸或图片时
+        # 机器人毫无反应。这里统一收下，交给 _normalize_incoming 翻译成 LLM 可理解的描述。
+        @bot.message_handler(
+            func=lambda m: True,
+            content_types=[
+                'sticker', 'photo', 'voice', 'audio', 'video', 'video_note',
+                'animation', 'document', 'location', 'venue', 'contact',
+                'poll', 'dice',
+            ],
+        )
+        def handle_rich_message(message):
+            self._log_raw("⬇ 收到富消息", {
+                "from": message.from_user.id,
+                "type": message.content_type,
+                "chat_id": message.chat.id,
+            })
+            if not self._is_allowed(message.from_user.id):
+                return
+            loop = self._get_event_loop()
+            if loop is None:
+                return
+            asyncio.run_coroutine_threadsafe(
+                self._handle_async_rich_message(message), loop
+            )
 
 
     def _get_event_loop(self):
@@ -420,19 +452,534 @@ class TelegramChannel(BaseNotificationChannel):
         chat_id = message.chat.id
         text = (message.text or "").strip()
         try:
+            # 若无活跃命令流程且御坂 LLM 可用 → 走伪流式对话（Telegram 支持 edit）
+            conv = self.service.get_conversation(user_id)
+            if not conv and await self.service.is_llm_chat_enabled():
+                # 纯文本也可能带引用/@提及/转发标记，统一规范化后再交给 LLM，
+                # 否则「引用某条消息 + 追问」时模型不知道用户在指哪条
+                llm_text, images = await self._normalize_incoming(message)
+                await self._llm_chat_stream(
+                    llm_text or text, user_id, chat_id, message.message_id, images=images
+                )
+                return
+
             result: CommandResult = await self.service.handle_text_input(
                 text, user_id, self, chat_id=chat_id
             )
             if result is None:
-                # 无活跃对话状态，记录调试信息
-                conv = self.service.get_conversation(user_id)
-                if conv:
-                    self.logger.warning(f"[文本处理] 用户 {user_id} 状态 '{conv.state}' 无匹配处理器")
                 return
             if result and result.text:
                 await self._render_result(result, chat_id, reply_to_message_id=message.message_id)
         except Exception as e:
             self.logger.error(f"[文本处理] 处理失败 user={user_id}: {e}", exc_info=True)
+
+    async def _handle_async_rich_message(self, message):
+        """
+        异步处理非纯文本消息（贴纸/图片/语音/文件/位置/联系人等）。
+
+        统一交给 _normalize_incoming 翻译成「文本描述 + 可选图片」，再走 LLM 对话。
+        why：原先 handler 只注册 content_types=['text']，其余类型直接被 telebot 丢弃，
+        用户发贴纸或图片时机器人完全无反应，看起来像卡死。
+        """
+        user_id = str(message.from_user.id)
+        chat_id = message.chat.id
+        try:
+            # 非文本消息不参与命令对话状态机（状态机只认文本输入），
+            # 有活跃流程时提示用户先完成或取消，避免静默吞掉消息
+            conv = self.service.get_conversation(user_id)
+            if conv:
+                await asyncio.to_thread(
+                    self._bot.send_message, chat_id,
+                    "当前有正在进行的操作，请先完成或发送 /cancel 取消，之后再发送这类消息。",
+                    reply_to_message_id=message.message_id,
+                )
+                return
+
+            if not await self.service.is_llm_chat_enabled():
+                return
+
+            text, images = await self._normalize_incoming(message)
+            if not text and not images:
+                return
+            await self._llm_chat_stream(
+                text, user_id, chat_id, message.message_id, images=images
+            )
+        except Exception as e:
+            self.logger.error(f"[富消息处理] 处理失败 user={user_id}: {e}", exc_info=True)
+
+    # 单张图片下载上限（超过则只给文字描述，不喂给 vision 模型）
+    _VISION_MAX_BYTES = 4 * 1024 * 1024
+
+    async def _download_photo_data_url(self, file_id: str) -> Optional[str]:
+        """
+        把 Telegram 图片下载为 data URL（base64），供 vision 模型识别。
+
+        why：Telegram 的文件直链带 bot token 且有时效，不能直接给第三方 LLM；
+        统一转 data URL 内联，既避免泄露 token，也不依赖外网可达性。
+        失败返回 None，由调用方降级为纯文字描述。
+        """
+        try:
+            info = await asyncio.to_thread(self._bot.get_file, file_id)
+            size = getattr(info, "file_size", 0) or 0
+            if size and size > self._VISION_MAX_BYTES:
+                self.logger.info(f"[富消息] 图片超过 {self._VISION_MAX_BYTES // 1024 // 1024}MB，跳过识别")
+                return None
+            raw = await asyncio.to_thread(self._bot.download_file, info.file_path)
+            if not raw or len(raw) > self._VISION_MAX_BYTES:
+                return None
+            path = (info.file_path or "").lower()
+            if path.endswith(".png"):
+                mime = "image/png"
+            elif path.endswith(".webp"):
+                mime = "image/webp"
+            elif path.endswith(".gif"):
+                mime = "image/gif"
+            else:
+                mime = "image/jpeg"
+            return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+        except Exception as e:
+            self.logger.warning(f"[富消息] 下载图片失败: {e}")
+            return None
+
+    @staticmethod
+    def _describe_user(user) -> str:
+        """把 Telegram User 对象描述成「昵称(@username)」，供引用/转发场景标注来源。"""
+        if not user:
+            return "某人"
+        name = " ".join(
+            p for p in (getattr(user, "first_name", ""), getattr(user, "last_name", "")) if p
+        ).strip()
+        uname = getattr(user, "username", "")
+        if name and uname:
+            return f"{name}(@{uname})"
+        return name or (f"@{uname}" if uname else "某人")
+
+    @classmethod
+    def _summarize_message(cls, msg) -> str:
+        """
+        把任意 Telegram 消息概括成一行文本，供「引用消息」标注被引内容。
+
+        只概括被引消息本身，不再递归展开它的引用/转发链：对 LLM 理解无益，
+        还会撑大 token。
+        """
+        if msg is None:
+            return ""
+        # 有文字/图片说明就直接用，这是最常见情况
+        body = (getattr(msg, "text", "") or getattr(msg, "caption", "") or "").strip()
+        if body:
+            return body if len(body) <= 300 else body[:300] + "…"
+        # 无文字则按媒体类型给个占位描述
+        if getattr(msg, "sticker", None):
+            emoji = getattr(msg.sticker, "emoji", "") or ""
+            return f"[贴纸 {emoji}]".replace(" ]", "]")
+        if getattr(msg, "photo", None):
+            return "[图片]"
+        if getattr(msg, "voice", None):
+            return "[语音]"
+        if getattr(msg, "video", None):
+            return "[视频]"
+        if getattr(msg, "animation", None):
+            return "[GIF 动图]"
+        if getattr(msg, "audio", None):
+            return "[音频]"
+        if getattr(msg, "document", None):
+            return f"[文件 {getattr(msg.document, 'file_name', '') or ''}]".replace(" ]", "]")
+        if getattr(msg, "location", None):
+            return "[位置]"
+        if getattr(msg, "contact", None):
+            return "[联系人名片]"
+        if getattr(msg, "poll", None):
+            return f"[投票 {getattr(msg.poll, 'question', '') or ''}]".replace(" ]", "]")
+        return "[非文本消息]"
+
+    async def _normalize_incoming(self, message) -> tuple:
+        """
+        把一条 Telegram 消息规范化为 (给 LLM 的文本, 图片 data URL 列表)。
+
+        设计原则：LLM 只认文本和图片，所以其余类型统一翻译成「带方括号标注的
+        自然语言描述」，让模型知道用户发了什么、能接着聊，而不是收到空字符串。
+
+        处理的类型：
+        - 引用消息(reply_to_message)：把被引内容作为上下文前置，让 LLM 知道在说哪条
+        - @提及：剥掉 @机器人用户名，只留真正的诉求（群里 @Bot 提问的标准姿势）
+        - 贴纸：给出 emoji 与贴纸集名；静态贴纸额外下载图像交 vision 识别
+        - 图片：下载交 vision 识别，caption 作为提问文本
+        - 语音/音频/视频/动图/文件/位置/联系人/投票：给出文字描述与元信息
+        - 转发消息：标注原作者
+        """
+        parts: List[str] = []
+        images: List[str] = []
+
+        # ── 引用消息：把被引内容作为上下文前置 ──
+        replied = getattr(message, "reply_to_message", None)
+        if replied:
+            who = self._describe_user(getattr(replied, "from_user", None))
+            # 被引的是机器人自己 → 说明用户在追问上一条回复
+            me_id = getattr(self, "_bot_id", None)
+            replied_uid = getattr(getattr(replied, "from_user", None), "id", None)
+            if me_id and replied_uid == me_id:
+                parts.append(f"[用户引用了你之前的回复]「{self._summarize_message(replied)}」")
+            else:
+                parts.append(f"[用户引用了 {who} 的消息]「{self._summarize_message(replied)}」")
+
+        # ── 转发消息：标注原始来源 ──
+        fwd_from = getattr(message, "forward_from", None)
+        fwd_chat = getattr(message, "forward_from_chat", None)
+        if fwd_from or fwd_chat:
+            src = (
+                self._describe_user(fwd_from) if fwd_from
+                else (getattr(fwd_chat, "title", "") or "某频道")
+            )
+            parts.append(f"[这是从 {src} 转发的消息]")
+
+        text = (getattr(message, "text", "") or "").strip()
+        caption = (getattr(message, "caption", "") or "").strip()
+
+        # ── 剥离 @机器人提及：群聊里 "@MyBot 帮我查X" 应只把 "帮我查X" 交给 LLM ──
+        bot_username = getattr(self, "_bot_username", "")
+        if bot_username:
+            mention = f"@{bot_username}"
+            text = text.replace(mention, "").strip()
+            caption = caption.replace(mention, "").strip()
+
+        # ── 各媒体类型：翻译成描述，必要时下载图像 ──
+        sticker = getattr(message, "sticker", None)
+        if sticker:
+            emoji = getattr(sticker, "emoji", "") or ""
+            set_name = getattr(sticker, "set_name", "") or ""
+            desc = "[用户发来一张贴纸"
+            if emoji:
+                desc += f"，对应表情 {emoji}"
+            if set_name:
+                desc += f"，来自贴纸包「{set_name}」"
+            desc += "]"
+            parts.append(desc)
+            # 动态贴纸(webm/tgs)无法作为静态图识别，只有静态 webp 才喂 vision
+            if not getattr(sticker, "is_animated", False) and not getattr(sticker, "is_video", False):
+                data_url = await self._download_photo_data_url(sticker.file_id)
+                if data_url:
+                    images.append(data_url)
+            # 纯贴纸无文字时，给 LLM 一个明确的行为指引，避免它答"我看不到图"
+            if not text and not caption:
+                parts.append("请结合这张贴纸的情绪自然回应用户。")
+
+        photos = getattr(message, "photo", None)
+        if photos:
+            parts.append("[用户发来一张图片]")
+            # telebot 的 photo 是不同尺寸列表，取最后一个（分辨率最高）
+            data_url = await self._download_photo_data_url(photos[-1].file_id)
+            if data_url:
+                images.append(data_url)
+            else:
+                parts.append("（图片过大或下载失败，无法识别内容，请让用户改用文字描述）")
+
+        voice = getattr(message, "voice", None)
+        if voice:
+            parts.append(
+                f"[用户发来一条语音，时长 {getattr(voice, 'duration', 0)} 秒]"
+                "（你无法收听语音，请礼貌请用户改用文字）"
+            )
+
+        audio = getattr(message, "audio", None)
+        if audio:
+            title = getattr(audio, "title", "") or getattr(audio, "file_name", "") or "未命名"
+            parts.append(f"[用户发来一个音频文件「{title}」]（你无法收听音频内容）")
+
+        video = getattr(message, "video", None)
+        if video:
+            parts.append(
+                f"[用户发来一段视频，时长 {getattr(video, 'duration', 0)} 秒]"
+                "（你无法观看视频内容）"
+            )
+
+        video_note = getattr(message, "video_note", None)
+        if video_note:
+            parts.append("[用户发来一条圆形视频消息]（你无法观看视频内容）")
+
+        animation = getattr(message, "animation", None)
+        if animation:
+            parts.append("[用户发来一个 GIF 动图]（你无法观看动图内容）")
+
+        document = getattr(message, "document", None)
+        # 注意：GIF/视频类消息也会带 document 字段，已被上面的 animation/video 分支覆盖，
+        # 这里只处理真正的文件，避免同一条消息被描述两次
+        if document and not animation and not video:
+            fname = getattr(document, "file_name", "") or "未命名文件"
+            fsize = getattr(document, "file_size", 0) or 0
+            size_txt = f"，约 {fsize // 1024} KB" if fsize else ""
+            parts.append(f"[用户发来一个文件「{fname}」{size_txt}]（你无法读取文件内容）")
+
+        location = getattr(message, "location", None)
+        if location:
+            parts.append(
+                f"[用户分享了一个位置，经纬度 "
+                f"{getattr(location, 'latitude', '?')},{getattr(location, 'longitude', '?')}]"
+            )
+
+        contact = getattr(message, "contact", None)
+        if contact:
+            cname = " ".join(
+                p for p in (
+                    getattr(contact, "first_name", ""), getattr(contact, "last_name", "")
+                ) if p
+            ).strip() or "某人"
+            parts.append(f"[用户分享了「{cname}」的联系人名片]")
+
+        poll = getattr(message, "poll", None)
+        if poll:
+            parts.append(f"[用户发来一个投票：{getattr(poll, 'question', '') or ''}]")
+
+        dice = getattr(message, "dice", None)
+        if dice:
+            parts.append(
+                f"[用户投出了一个骰子，表情 {getattr(dice, 'emoji', '🎲')}，"
+                f"点数 {getattr(dice, 'value', '?')}]"
+            )
+
+        # ── 用户自己的文字放最后，作为真正的诉求 ──
+        body = text or caption
+        if body:
+            parts.append(body)
+
+        # 什么都没识别出来时给个兜底，至少让 LLM 能回应
+        if not parts:
+            parts.append("[用户发来一条无法识别的消息]（请让用户改用文字说明需求）")
+
+        return "\n".join(parts), images
+
+    # ── 富消息发送（Bot API 10.1） ──
+
+    # 判定"服务端不支持富消息"的错误特征。
+    # why：telebot 抛的是通用 ApiTelegramException，只能靠 description 文本区分
+    # "服务端没这个能力"（应永久降级）和"这条内容有问题/网络抖动"（下一帧还能试）。
+    # 注意：不能把宽泛的 "not found" 放进来——"message to edit not found"（用户删了
+    # 占位消息）与富消息能力无关，误判会让整个进程错误地永久降级。
+    _RICH_UNSUPPORTED_SIGNS = (
+        "method not found",           # 服务端未部署 sendRichMessage
+        "unknown method",
+        "method is not available",
+        "unsupported parameter",      # 旧版服务端不认 rich_message 字段
+        "unknown parameter",
+        "unknown field",
+        'field "rich_message"',
+    )
+
+    def _use_rich_message(self) -> bool:
+        """当前是否应该走结构化富消息。
+
+        库层声明能力 ∧ 运行时未被判定不可用。首次调用时 _rich_message_available
+        为 None（未探测），按"乐观尝试"返回 True，由实际发送结果来确认。
+        """
+        if not self.get_capabilities().supports(ChannelCapability.RICH_MESSAGE):
+            return False
+        return self._rich_message_available is not False
+
+    def _build_rich_message(self, markdown: str, image_url: str = ""):
+        """把 Markdown 文本包装成 InputRichMessage。
+
+        why：富消息的 markdown 字段与 GitHub Flavored Markdown 兼容，标准 Markdown
+        （**粗体**、# 标题、- 列表、``` 代码块、> 引用、| 表格 |）可以零转换直传。
+
+        :param image_url: 可选的图片 HTTPS URL。非空时以媒体块内嵌到正文顶部。
+            注意只支持 HTTP(S) URL——telebot 的 send_rich_message/edit_message_text
+            走的是 params（表单编码），没有 multipart 通道，本地字节流无法上传。
+
+        skip_entity_detection 不启用：让 Telegram 自动识别 URL、@提及、/命令等，
+        回复里出现的链接和命令能直接点击。
+        """
+        telebot = _get_telebot()
+        # 富消息按标准 Markdown 解析，单个换行会被合并成空格，需转成硬换行。
+        markdown = normalize_rich_linebreaks(markdown)
+        if image_url:
+            # 媒体块必须独立成段（官方："Media can be specified only as a separate block"）
+            markdown = f"![]({image_url})\n\n{markdown}"
+        return telebot.types.InputRichMessage(markdown=markdown)
+
+    def _note_rich_failure(self, err: Exception, context: str) -> bool:
+        """归类一次富消息发送失败，维护 _rich_message_available 标志。
+
+        :return: True 表示"服务端不支持"（已永久降级），False 表示属于内容/网络层
+            问题（能力判定不变，仅本条降级）。
+        """
+        err_str = str(err).lower()
+        if any(sign in err_str for sign in self._RICH_UNSUPPORTED_SIGNS):
+            if self._rich_message_available is not False:
+                self._rich_message_available = False
+                self.logger.warning(
+                    "Telegram 服务端不支持富消息（sendRichMessage），"
+                    f"已降级为传统发送方式：{err}"
+                )
+            return True
+        self.logger.warning(f"{context}富消息发送失败，本条降级处理: {err}")
+        return False
+
+    def _mark_rich_ok(self) -> None:
+        """标记富消息通路可用（首次成功时记一条日志，便于排查）。"""
+        if self._rich_message_available is None:
+            self._rich_message_available = True
+            self.logger.info(
+                "Telegram 富消息（sendRichMessage）可用，已启用结构化排版"
+            )
+
+    async def _rich_edit(self, chat_id, msg_id: int, markdown: str,
+                         image_url: str = "", markup=None) -> bool:
+        """用富消息编辑已有消息。返回是否成功；失败时已完成能力标志维护。
+
+        markup 必须一并传入：editMessageText 不带 reply_markup 会清空原有按钮。
+        """
+        if not self._use_rich_message():
+            return False
+        try:
+            await asyncio.to_thread(
+                self._bot.edit_message_text,
+                chat_id=chat_id, message_id=msg_id,
+                rich_message=self._build_rich_message(markdown, image_url),
+                reply_markup=markup,
+            )
+            self._mark_rich_ok()
+            return True
+        except Exception as err:
+            # 内容与当前完全一致：Telegram 报 not modified，实质是成功（通路也正常）
+            if "not modified" in str(err).lower():
+                self._mark_rich_ok()
+                return True
+            self._note_rich_failure(err, "编辑消息")
+            return False
+
+    async def _rich_send(self, chat_id, markdown: str, image_url: str = "",
+                         markup=None, reply_to_message_id: Optional[int] = None):
+        """用富消息发送新消息。返回 Message 对象，失败返回 None。"""
+        if not self._use_rich_message():
+            return None
+        try:
+            telebot = _get_telebot()
+            reply_params = None
+            if reply_to_message_id:
+                # 富消息没有 reply_to_message_id 参数，只接受 ReplyParameters 对象
+                reply_params = telebot.types.ReplyParameters(
+                    message_id=reply_to_message_id
+                )
+            sent = await asyncio.to_thread(
+                self._bot.send_rich_message,
+                chat_id,
+                self._build_rich_message(markdown, image_url),
+                reply_markup=markup,
+                reply_parameters=reply_params,
+            )
+            self._mark_rich_ok()
+            return sent
+        except Exception as err:
+            self._note_rich_failure(err, "发送消息")
+            return None
+
+    async def _edit_llm_frame(
+        self, chat_id, msg_id: int, content: str, is_final: bool = False,
+        reply_markup=None,
+    ) -> bool:
+        """把一帧 LLM 回复内容写入占位消息。
+
+        两级：富消息（标准 Markdown 直传）→ 纯文本兜底。
+        中间不再插 MarkdownV2 一级——LLM 输出的就是标准 Markdown，富消息原生吃下；
+        富消息不可用时说明服务端版本过旧，直接给纯文本，不为此维护第三套转义。
+
+        :param is_final: 是否为最终定稿帧。中途帧失败属正常（限流、内容未变），
+            静默跳过；最终帧失败要记警告，因为用户会看到不完整的回复。
+        :return: 是否成功写入
+        """
+        if await self._rich_edit(chat_id, msg_id, content, markup=reply_markup):
+            return True
+
+        # 纯文本兜底：剥掉 Markdown 符号，避免用户看到裸露的 ** 和 [文字](URL)。
+        # 必须先过 _markdown_to_v2 再 strip，不能直接 strip——
+        # why：_strip_markdown_v2 只处理转义反斜杠和 */` 符号，不认表格。
+        # 直接 strip 会把 | 源 | 集数 | 和 |:---|---:| 原样留下，
+        # 正是最初要解决的"裸竖线堆叠"问题。表格降级逻辑在 _markdown_to_v2
+        # 的 _convert_table 里，走一遍才能转成「每条一段」列表。
+        try:
+            await asyncio.to_thread(
+                self._bot.edit_message_text,
+                self._strip_markdown_v2(self._markdown_to_v2(content)),
+                chat_id, msg_id,
+                reply_markup=reply_markup,
+            )
+            return True
+        except Exception as err:
+            if is_final:
+                self.logger.warning(f"LLM 回复发送失败: {err}")
+            return False
+
+    async def _llm_chat_stream(
+        self, text: str, user_id: str, chat_id, reply_to_id: int,
+        images: Optional[List[str]] = None,
+    ):
+        """御坂 LLM 伪流式：先发占位消息，随增量限流 edit 更新（Telegram 专属）。
+
+        images：图片 data URL 列表（贴纸/图片消息经 _normalize_incoming 提取），
+        透传给 Agent 交 vision 模型识别。
+        """
+        # ① 先发 typing action，让用户看到"正在输入…"状态
+        typing_task = None
+        typing_active = {"stop": False}
+
+        async def maintain_typing():
+            """后台任务：每 4.5 秒重发 typing，直到占位消息发出（typing 状态维持 5 秒）"""
+            while not typing_active["stop"]:
+                try:
+                    await asyncio.to_thread(self._bot.send_chat_action, chat_id, "typing")
+                except Exception as e:
+                    self.logger.debug(f"[Typing] 发送失败: {e}")
+                await asyncio.sleep(4.5)
+
+        try:
+            # 启动 typing 维持任务
+            typing_task = asyncio.create_task(maintain_typing())
+
+            # ② 发占位消息拿 message_id（此时 typing 任务已在后台运行）
+            placeholder = await asyncio.to_thread(
+                self._bot.send_message, chat_id, "御坂御坂正在思考…", reply_to_message_id=reply_to_id
+            )
+            msg_id = placeholder.message_id
+
+            # 占位消息已发出，但 LLM 首个 token 可能仍需数秒，
+            # 故 typing 状态持续维持，直到首次真正把增量内容 edit 进占位消息为止。
+
+            last_edit = {"t": 0.0, "shown": ""}
+
+            async def on_stream(partial: str):
+                # 限流：距上次 edit ≥1.3s 才更新，避免触发 Telegram 速率限制
+                now = time.monotonic()
+                if now - last_edit["t"] < 1.3 or partial == last_edit["shown"]:
+                    return
+                last_edit["t"] = now
+                last_edit["shown"] = partial
+                # 首次成功刷出增量内容后停止 typing（用户已看到实际内容在生成）
+                typing_active["stop"] = True
+                # 中途帧允许失败：这一帧刷不出去，下一帧或最终定稿会补上，
+                # 故不记录警告日志，避免流式过程中刷屏。
+                await self._edit_llm_frame(chat_id, msg_id, partial or "…", is_final=False)
+
+            # rich_message 反映"结构化富消息是否真正可用"：库层能力 ∧ 运行时未被判定不可用。
+            # 富消息的 markdown 与 GFM 兼容，表格/标题/公式全部原生支持，
+            # 因此这里为 True 时 prompt 会放开表格；若运行时探测到不可用会自动收紧。
+            result = await self.service.handle_llm_chat(
+                text, user_id, stream_callback=on_stream, images=images,
+                rich_text=self.get_capabilities().supports(ChannelCapability.RICH_TEXT),
+                rich_message=self._use_rich_message(),
+                channel=self,
+            )
+            final = (result.text if result else "") or "……"
+            final_markup = self._build_inline_markup(result.reply_markup) if result and result.reply_markup else None
+            # 最终定稿：这一帧必须成功，失败会逐级降级并记录日志
+            await self._edit_llm_frame(chat_id, msg_id, final, is_final=True, reply_markup=final_markup)
+        finally:
+            # 确保 typing 任务被清理
+            typing_active["stop"] = True
+            if typing_task and not typing_task.done():
+                typing_task.cancel()
+                try:
+                    await typing_task
+                except asyncio.CancelledError:
+                    pass
 
     # ── 渲染引擎 ──
 
@@ -510,7 +1057,6 @@ class TelegramChannel(BaseNotificationChannel):
         采用「先删旧消息，再发新图」策略，保证每页都能换成对应的九宫格海报。
         caption 长度上限 1024，超出时截断。
         """
-        import io as _io
         caption = result.text or ""
         if len(caption) > 1024:
             caption = caption[:1021] + "..."
@@ -526,8 +1072,7 @@ class TelegramChannel(BaseNotificationChannel):
 
         sent = None
         try:
-            photo = _io.BytesIO(result.image_bytes)
-            photo.name = "poster.png"
+            photo = await self._prepare_photo(result.image_bytes)
             sent = await asyncio.to_thread(
                 self._bot.send_photo, chat_id, photo,
                 caption=caption, reply_markup=markup,
@@ -538,8 +1083,7 @@ class TelegramChannel(BaseNotificationChannel):
             if "can't parse entities" in err_str:
                 # caption 解析失败：去掉 parse_mode 重发
                 try:
-                    photo = _io.BytesIO(result.image_bytes)
-                    photo.name = "poster.png"
+                    photo = await self._prepare_photo(result.image_bytes)
                     sent = await asyncio.to_thread(
                         self._bot.send_photo, chat_id, photo,
                         caption=caption, reply_markup=markup,
@@ -623,10 +1167,16 @@ class TelegramChannel(BaseNotificationChannel):
                     self._log_raw("⬆ 发送图文消息", {"chat_id": chat_id, "photo": cover_url, "text": result.text[:200]})
                     caption_text = result.text[:1024] if len(result.text) > 1024 else result.text
                     try:
+                        photo = cover_url
+                        if cover_url.startswith(("/data/images/", "file://")) or cover_url.split("?", 1)[0].lower().endswith(".webp"):
+                            raw = await load_image_bytes(cover_url)
+                            if not raw:
+                                raise ValueError("海报读取失败")
+                            photo = await self._prepare_photo(raw)
                         sent = await asyncio.to_thread(
                             self._bot.send_photo,
                             chat_id,
-                            cover_url,
+                            photo,
                             caption=caption_text,
                             reply_markup=markup,
                             parse_mode=parse_mode,
@@ -676,9 +1226,8 @@ class TelegramChannel(BaseNotificationChannel):
             return
 
         # 压制 telebot / urllib3 的 SSL 瞬断噪音日志（这类错误 infinity_polling 会自动重试）
-        import logging as _logging
-        _logging.getLogger("urllib3.connectionpool").setLevel(_logging.CRITICAL)
-        _logging.getLogger("telebot").setLevel(_logging.WARNING)
+        logging.getLogger("urllib3.connectionpool").setLevel(logging.CRITICAL)
+        logging.getLogger("telebot").setLevel(logging.WARNING)
 
         def polling_worker():
             self.logger.info("Telegram 轮询已启动")
@@ -731,6 +1280,13 @@ class TelegramChannel(BaseNotificationChannel):
         self._bot = None
         self.logger.info("Telegram 渠道已停止")
 
+    async def _prepare_photo(self, raw: bytes) -> io.BytesIO:
+        """在线程中编码海报并构建带真实后缀的 multipart 文件。"""
+        data, suffix, _ = await asyncio.to_thread(encode_notification_image, raw)
+        photo = io.BytesIO(data)
+        photo.name = f"poster{suffix}"
+        return photo
+
     async def send_message(self, title: str, text: str, **kwargs):
         if not self._bot:
             return
@@ -741,12 +1297,39 @@ class TelegramChannel(BaseNotificationChannel):
         image: str = kwargs.get("image", "") or ""
         # image_bytes：聚合海报 PNG 字节（如后备搜索九宫格），优先级高于单图 URL
         image_bytes: Optional[bytes] = kwargs.get("image_bytes")
-        # caption：title 已是纯文本（to_markdown 返回的 title 去掉了 *），需转义后再套 *粗体*
-        # body(text) 已是合法 MarkdownV2，直接拼接
-        safe_title = self._escape_markdown_v2(title) if title else ""
-        caption = f"*{safe_title}*\n{text}" if title else text
-        # 纯文本兜底版（解析失败时使用，去掉所有 markdown 符号）
-        plain_caption = f"{title}\n{self._strip_markdown_v2(text)}" if title else self._strip_markdown_v2(text)
+        # 历史相对缓存路径不是 Telegram file_id，需由文件服务确认并转为字节。
+        if image and not urlsplit(image).scheme and not image.startswith("/data/images/"):
+            path = Path(unquote(urlsplit(image).path))
+            candidates = (path,) if path.is_absolute() else (CONFIG_DIR / path, CONFIG_DIR / "image" / path.name)
+            for cached in candidates:
+                if get_file_storage_service().exists(cached):
+                    image = cached.resolve().as_uri()
+                    break
+        if image.startswith("//"):
+            image = "https:" + image
+        # 本地 web 路径不是 Telegram file_id；WebP 海报也必须作为兼容字节上传。
+        if image and (image.startswith(("/data/images/", "file://")) or image.split("?", 1)[0].lower().endswith(".webp")):
+            try:
+                image_bytes = image_bytes or await load_image_bytes(image)
+            except Exception:
+                self.logger.warning("海报读取失败，继续发送文本", exc_info=True)
+            image = ""
+
+        # ── 正文格式约定 ──
+        # 入参 text 一律是**标准 Markdown**（由 to_markdown / render_progress_text
+        # 等上游产出），title 是纯文本。平台专属的转义只在这里做一次：
+        #   md_body    → 标准 Markdown，直接喂富消息的 markdown 字段
+        #   caption    → MarkdownV2，喂 send_photo/sendMessage 的 parse_mode
+        #   plain_*    → 纯文本兜底，解析失败时用
+        # why：过去 text 进来就已经是 MarkdownV2，等于把平台方言当成了模块间的
+        # 传输格式，换发送方式就得反向还原一遍。现在统一为标准 Markdown 入、
+        # 各自转义出，新增发送方式不必再关心历史包袱。
+        md_body = f"**{title}**\n{text}" if title else text
+        # 空模板不能交给 Telegram，也不能被上层记录成发送成功。
+        if not md_body.strip() and not (image or image_bytes):
+            raise ValueError("Telegram 通知标题和正文均为空")
+        caption = self._markdown_to_v2(md_body)
+        plain_caption = self._strip_markdown_v2(caption)
         # edit_message_id：有则 edit 已有消息，无则发新消息
         edit_message_id: Optional[int] = kwargs.get("edit_message_id")
         # _msg_id_out：调用方传入的列表，发新消息后把 message_id 写进去
@@ -757,15 +1340,23 @@ class TelegramChannel(BaseNotificationChannel):
         # image_separate：图片模式 — 图片与文字分两条消息发送。
         # why: 先单独发图（无 caption），再走下方纯文本分支发文字，
         # 观感与企业微信的「图片模式」一致。
-        if kwargs.get("image_separate") and (image or image_bytes) and not edit_message_id:
+        # Telegram caption 上限为 1024 字符；长正文拆图文，不能因模板较长而丢图。
+        separate_image = kwargs.get("image_separate") or len(plain_caption.encode("utf-16-le")) // 2 > 1024
+        if separate_image and (image or image_bytes):
             try:
                 if image_bytes:
-                    import io as _sep_io
-                    _photo = _sep_io.BytesIO(image_bytes)
-                    _photo.name = "poster.png"
+                    _photo = await self._prepare_photo(image_bytes)
                     await asyncio.to_thread(self._bot.send_photo, chat_id, _photo)
                 else:
-                    await asyncio.to_thread(self._bot.send_photo, chat_id, image)
+                    try:
+                        await asyncio.to_thread(self._bot.send_photo, chat_id, image)
+                    except Exception:
+                        # 分离图文模式同样允许本机代抓远端海报，读取失败仍保留正文。
+                        raw = await load_image_bytes(image)
+                        if not raw:
+                            raise
+                        _photo = await self._prepare_photo(raw)
+                        await asyncio.to_thread(self._bot.send_photo, chat_id, _photo)
             except Exception as sep_err:
                 self.logger.warning(f"图片模式单独发图失败，改为仅发文本: {sep_err}")
             # 图片已单独发出，后续按纯文本处理
@@ -778,11 +1369,16 @@ class TelegramChannel(BaseNotificationChannel):
             # Telegram 无法把纯文本消息 edit 成图片消息，需改为"先删旧消息再发新图"，
             # 落入下方 image_bytes / image 分支处理。
             if edit_message_id and not (image or image_bytes):
-                # 尝试 edit 已有消息（带重试）
-                success = await self._edit_with_retry(
-                    chat_id, edit_message_id, caption,
-                    markup=markup, parse_mode="MarkdownV2",
+                # 优先富消息（标准 Markdown 直传，进度条的 `[███░░]` 45% 无需转义）；
+                # 不可用时回落到 MarkdownV2 带重试编辑
+                success = await self._rich_edit(
+                    chat_id, edit_message_id, md_body, markup=markup
                 )
+                if not success:
+                    success = await self._edit_with_retry(
+                        chat_id, edit_message_id, caption,
+                        markup=markup, parse_mode="MarkdownV2",
+                    )
                 if not success:
                     # 重试全部失败，降级为发新消息（纯文本，不带 parse_mode）
                     self.logger.warning(f"edit_message_text 重试全部失败，降级为发纯文本新消息")
@@ -804,10 +1400,8 @@ class TelegramChannel(BaseNotificationChannel):
                         )
                     except Exception as del_err:
                         self.logger.debug(f"删除旧进度消息失败（忽略）: {del_err}")
-                import io as _io
                 try:
-                    photo = _io.BytesIO(image_bytes)
-                    photo.name = "poster.png"
+                    photo = await self._prepare_photo(image_bytes)
                     sent = await asyncio.to_thread(
                         self._bot.send_photo, chat_id, photo, caption=caption,
                         parse_mode="MarkdownV2", reply_markup=markup,
@@ -816,8 +1410,7 @@ class TelegramChannel(BaseNotificationChannel):
                     photo_err_str = str(photo_err).lower()
                     if "can't parse entities" in photo_err_str:
                         self.logger.warning(f"send_photo(bytes) MarkdownV2 解析失败，降级纯文本caption: {photo_err}")
-                        photo = _io.BytesIO(image_bytes)
-                        photo.name = "poster.png"
+                        photo = await self._prepare_photo(image_bytes)
                         sent = await asyncio.to_thread(
                             self._bot.send_photo, chat_id, photo,
                             caption=plain_caption, reply_markup=markup,
@@ -831,7 +1424,7 @@ class TelegramChannel(BaseNotificationChannel):
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)
             elif image:
-                # 有封面图：发带图片的消息，正文作为 caption
+                # 有封面图（HTTPS URL）：优先富消息，图片以媒体块内嵌到正文顶部。
                 # why：若带 edit_message_id（完成消息取代原进度消息），先删旧进度消息，
                 # 因为图片消息无法由文本消息 edit 而来，只能"先删后发"。
                 if edit_message_id:
@@ -841,6 +1434,16 @@ class TelegramChannel(BaseNotificationChannel):
                         )
                     except Exception as del_err:
                         self.logger.debug(f"删除旧进度消息失败（忽略）: {del_err}")
+                # 富消息只支持 HTTP(S) URL 的媒体（无 multipart 通道），
+                # 非 http 开头的地址（如本地路径）仍走 send_photo
+                if image.startswith("http"):
+                    sent = await self._rich_send(
+                        chat_id, md_body, image_url=image, markup=markup
+                    )
+                    if sent:
+                        if msg_id_out is not None:
+                            msg_id_out.append(sent.message_id)
+                        return
                 try:
                     sent = await asyncio.to_thread(self._bot.send_photo, chat_id, image, caption=caption, parse_mode="MarkdownV2", reply_markup=markup)
                 except Exception as photo_err:
@@ -855,7 +1458,25 @@ class TelegramChannel(BaseNotificationChannel):
                         # why：外层 except 的 _strip_markdown_v2 不处理 [text](url) 链接语法，
                         # 会把 [海报](URL) 原样打印到消息里（TG 纯文本不渲染 Markdown 链接）。
                         # 改为就地降级，plain_caption 已经过 _strip_markdown_v2 完整清洗。
-                        self.logger.warning(f"send_photo 图片发送失败，降级为纯文字消息（图片 URL 可能不可访问）: {photo_err}")
+                        # Telegram 无法抓取 URL 时由服务器读取再上传，避免直接丢掉海报。
+                        self.logger.warning(f"send_photo URL 发送失败，尝试字节上传: {photo_err}")
+                        raw = None
+                        if image.startswith(("http://", "https://")):
+                            try:
+                                raw = await load_image_bytes(image)
+                            except Exception:
+                                self.logger.warning("远端海报代抓失败，继续发送文本", exc_info=True)
+                        if raw:
+                            try:
+                                photo = await self._prepare_photo(raw)
+                                sent = await asyncio.to_thread(
+                                    self._bot.send_photo, chat_id, photo, caption=plain_caption, reply_markup=markup,
+                                )
+                                if msg_id_out is not None and sent:
+                                    msg_id_out.append(sent.message_id)
+                                return
+                            except Exception as upload_err:
+                                self.logger.warning(f"图片字节上传失败，继续发送文本: {upload_err}")
                         try:
                             # 尝试发送带 markup 的纯文本消息
                             sent = await asyncio.to_thread(self._bot.send_message, chat_id, plain_caption, reply_markup=markup)
@@ -866,6 +1487,12 @@ class TelegramChannel(BaseNotificationChannel):
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)
             else:
+                # 无图纯文本：优先富消息（标准 Markdown 直传，表格/标题原生渲染）
+                sent = await self._rich_send(chat_id, md_body, markup=markup)
+                if sent:
+                    if msg_id_out is not None:
+                        msg_id_out.append(sent.message_id)
+                    return
                 try:
                     sent = await asyncio.to_thread(self._bot.send_message, chat_id, caption, parse_mode="MarkdownV2", reply_markup=markup)
                 except Exception as send_err:
@@ -879,27 +1506,33 @@ class TelegramChannel(BaseNotificationChannel):
                     msg_id_out.append(sent.message_id)
         except Exception as e:
             self.logger.error(f"发送消息失败: {e}")
-            # 降级为纯文本（清洗掉 MarkdownV2 符号，避免显示反斜杠和 > 前缀）
+            # 降级为纯文本。直接复用上面算好的 plain_caption，
+            # 它是 _strip_markdown_v2(_markdown_to_v2(md_body)) 的产物——
+            # why：不能对原始 text 直接 strip，那样表格的 | 和 |---| 会原样留下
+            # （_strip_markdown_v2 不认表格，表格降级在 _markdown_to_v2 里）。
             try:
-                plain = f"{title}\n{self._strip_markdown_v2(text)}" if title else self._strip_markdown_v2(text)
-                sent = await asyncio.to_thread(self._bot.send_message, chat_id, plain)
+                sent = await asyncio.to_thread(
+                    self._bot.send_message, chat_id, plain_caption
+                )
                 if msg_id_out is not None and sent:
                     msg_id_out.append(sent.message_id)
-            except Exception:
-                pass
+            except Exception as fallback_error:
+                # 最后一次兜底也失败时向上传播，编排层才能正确记录渠道发送失败。
+                raise RuntimeError("Telegram 消息发送及纯文本兜底均失败") from fallback_error
 
     def render_progress_text(self, progress: int, description: str) -> str:
-        """渲染 MarkdownV2 进度条。
+        """渲染进度条，产出**标准 Markdown**。
 
-        why：进度条本体用反引号 code 包裹（█░ 不含 MarkdownV2 保留字符），
-        但百分比和描述必须转义——description 里的 "..." 含保留字符 "."，
-        未转义会导致 edit 时解析失败 → 降级发新消息 → 进度刷屏。
+        why：本方法过去直接产出 MarkdownV2（用 _escape_markdown_v2 转义百分号和
+        描述里的 "."），导致 MarkdownV2 这个平台专属方言泄漏成了模块间的传输格式，
+        下游想改用别的发送方式就得先反向还原一遍。
+        现在统一约定：**上游一律产出标准 Markdown，转义只在 send_message 里
+        按目标 API 做一次**。进度条本体用反引号包裹（█░ 无需转义），
+        百分比和描述直接写，交由发送层处理。
         """
         filled = max(0, min(10, int(progress / 10)))
         bar = "█" * filled + "░" * (10 - filled)
-        pct = self._escape_markdown_v2(f"{progress}%")
-        desc = self._escape_markdown_v2(description)
-        return f"`[{bar}]` {pct}\n• {desc}"
+        return f"`[{bar}]` {progress}%\n• {description}"
 
     async def send_quick(self, text: str, chat_id=None) -> Optional[int]:
         """发送一条快速消息，返回 message_id 供后续 edit 使用"""
@@ -929,7 +1562,7 @@ class TelegramChannel(BaseNotificationChannel):
             elif self.proxy_url:
                 telebot.apihelper.proxy = {"https": self.proxy_url}
                 telebot.apihelper.API_URL = "https://api.telegram.org/bot{0}/{1}"
-            else: 
+            else:
                 telebot.apihelper.proxy = None
                 telebot.apihelper.API_URL = "https://api.telegram.org/bot{0}/{1}"
             telebot.apihelper.CONNECT_TIMEOUT = 10
@@ -965,4 +1598,3 @@ class TelegramChannel(BaseNotificationChannel):
         update = telebot.types.Update.de_json(update_json)
         self._bot.process_new_updates([update])
         return True
-    

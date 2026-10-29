@@ -1,4 +1,5 @@
 import warnings
+import socket
 warnings.filterwarnings("ignore", message="urllib3.*doesn't match a supported version")
 import uvicorn
 import httpx
@@ -30,12 +31,14 @@ def _load_step(_desc: str):
 # 内部模块导入
 from src.core import settings
 _load_step("核心配置已加载")
-from src.api import api_router, control_router
+from src.api.router import api_router
+from src.api.control import control_router
 _load_step("API 路由与搜索源/元数据源已加载")
 from src.api.dandan import dandan_router
 from src.api.mcp import setup_mcp
+from src.routes.notification_template import router as notification_template_router
 from src.frontend import register_pwa_routes
-from src.utils.asgi_middleware import NotFoundGuardMiddleware, CaptureApiResponseMiddleware
+from src.utils.runtime.asgi_middleware import NotFoundGuardMiddleware, CaptureApiResponseMiddleware
 from src.api.control.openapi_docs import register_control_api_docs
 from src.core.env import is_docker_environment as _is_docker_environment
 from src.core.app_lifecycle import run_startup, run_shutdown
@@ -123,19 +126,22 @@ app.include_router(dandan_router, prefix="/api/v1", tags=["DanDanPlay Compatible
 # 包含所有非 dandanplay 的 API 路由
 app.include_router(api_router, prefix="/api")
 
+# 包含通知模板 API 路由
+app.include_router(notification_template_router)
+
 # --- MCP Server 初始化 ---
 # 必须在所有路由注册完毕后调用，这样 fastapi-mcp 才能扫描到所有外部控制 API
 setup_mcp(app)
 
 # --- 挂载 Swagger UI 的静态文件目录 ---
-def _get_static_dir():
+def _get_static_dir() -> Path:
     """获取静态文件目录，根据运行环境自动调整"""
     if _is_docker_environment():
         # 容器环境
         return Path("/app/static/swagger-ui")
     else:
-        # 源码运行环境
-        return Path("static/swagger-ui")
+        # 包内只读资源按源码位置定位，不随独立弹幕落盘目录变化。
+        return Path(__file__).resolve().parent.parent / "static/swagger-ui"
 
 STATIC_DIR = _get_static_dir()
 app.mount("/static/swagger-ui", StaticFiles(directory=STATIC_DIR), name="swagger-ui-static")
@@ -143,8 +149,6 @@ app.mount("/static/swagger-ui", StaticFiles(directory=STATIC_DIR), name="swagger
 # 添加一个运行入口，以便直接从配置启动
 # 这样就可以通过 `python -m src.main` 来运行，并自动使用 config.yml 中的端口和主机
 if __name__ == "__main__":
-    import socket
-
     port = settings.server.port
     ipv6_enabled = getattr(settings.server, 'ipv6', True)
     is_reload = settings.environment == "development"

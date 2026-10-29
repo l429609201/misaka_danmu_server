@@ -2,6 +2,7 @@
 /auto 菜单 Mixin — 自动导入（多平台）
 """
 import logging
+from src.schemas.media_types import is_movie_type
 from src.notification.base import CommandResult
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ class AutoMenuMixin:
         if not conv:
             return CommandResult(text="", answer_callback_text="操作已过期")
         search_term = conv.data.get("search_term", "")
-        if media_type == "movie":
+        if is_movie_type(media_type):
             self.clear_conversation(user_id)
             return await self._submit_auto_import(
                 search_type=conv.data.get("search_type", "keyword"), search_term=search_term,
@@ -111,7 +112,7 @@ class AutoMenuMixin:
         if not conv:
             return CommandResult(text="", answer_callback_text="操作已过期")
         search_term = conv.data.get("search_term", "")
-        media_type = conv.data.get("media_type", "tv_series")
+        media_type = conv.data.get("media_type") or "tv_series"
         search_type = conv.data.get("search_type", "keyword")
         self.clear_conversation(user_id)
         return await self._submit_auto_import(

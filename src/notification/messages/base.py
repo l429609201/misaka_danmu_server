@@ -46,6 +46,7 @@ class NotificationMessage:
     # 用于聚合分桶
     aggregation_key: str = ""
     aggregation_policy: AggregationPolicy = AggregationPolicy.NONE
+    image_enabled: bool = True
 
     def to_markdown(self) -> tuple:
         """输出 (title, body) Markdown 内容。子类覆写。"""
@@ -92,8 +93,14 @@ class NotificationMessage:
         return []
 
     def image(self) -> str:
-        """输出可选图片地址。默认空。"""
-        return self.payload.get("image_url", "") or ""
+        """输出可选图片地址，兼容事件主体和历史顶层载荷两种结构。"""
+        if not self.image_enabled:
+            return ""
+        image_url = self.payload.get("image_url", "") or ""
+        if not image_url:
+            subject = self.payload.get("subject") or {}
+            image_url = subject.get("image_url", "") or ""
+        return image_url
 
     async def build_image_bytes(self, proxy: Optional[str] = None,
                                 ssl_verify: bool = True) -> Optional[bytes]:

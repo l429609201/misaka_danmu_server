@@ -138,7 +138,9 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
         {groups.map((group, gi) => (
           <div key={gi} className="border rounded-lg p-3 dark:border-gray-700">
             <div className="font-medium mb-2 flex items-center gap-2">
-              <Tag color="blue">TMDB: {group.tmdbId}</Tag>
+              {group.tmdbId
+                ? <Tag color="blue">TMDB: {group.tmdbId}</Tag>
+                : <Tag color="purple">{group.provider}: {group.mediaId}</Tag>}
               {group.season != null && <Tag>Season {String(group.season).padStart(2, '0')}</Tag>}
               <Text type="secondary" className="text-xs">{t('scanDuplicates.itemCount', { count: group.items.length })}</Text>
             </div>
@@ -194,7 +196,7 @@ export const ScanDuplicatesModal = ({ open, onCancel, onSuccess }) => {
           const sources = group.items.filter(i => i.animeId !== selections[gi])
           return (
             <div key={gi} className="border rounded p-2 dark:border-gray-700 text-sm">
-              <div className="font-medium">{gi + 1}. {target?.title || t('scanDuplicates.unknown')} (TMDB: {group.tmdbId})</div>
+              <div className="font-medium">{gi + 1}. {target?.title || t('scanDuplicates.unknown')} ({group.tmdbId ? `TMDB: ${group.tmdbId}` : `${group.provider}: ${group.mediaId}`})</div>
               <div className="text-gray-500 ml-4">
                 {sources.map(s => `ID:${s.animeId} ${s.title}`).join('、')} → {t('scanDuplicates.mergeTo')} → ID:{target?.animeId}
               </div>

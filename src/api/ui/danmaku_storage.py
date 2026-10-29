@@ -6,12 +6,13 @@ import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import models, get_db_session, ConfigManager
-from src import security
-from src.db.crud import danmaku_storage as crud
-from src.api.dependencies import get_config_manager
+from src.api.auth import get_current_user
+from src.services.database_service import DatabaseService
+from src.services.service_container import get_database_service
+from src.services.config_service import ConfigService
+from src.api.dependencies import get_config_service
+from src.schemas.auth import User
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -121,12 +122,14 @@ TEMPLATE_VARIABLES = [
     {"name": "${episodeId}", "desc": "分集ID", "example": "25000234010001"},
     {"name": "${sourceId}", "desc": "数据源ID", "example": "1"},
     {"name": "${tmdbId}", "desc": "TMDB ID（未关联时为空）", "example": "209867"},
+    {"name": "${category}", "desc": "类型名(电视节目/电影/OVA/其他/综艺/短剧)", "example": "电视节目"},
+    {"name": "${type}", "desc": "类型原始值(tv_series/movie/variety/short_drama等)", "example": "tv_series"},
 ]
 
 
 @router.get("/template-variables", summary="获取模板变量列表")
 async def get_template_variables(
-    current_user: models.User = Depends(security.get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取所有可用的模板变量列表，用于前端动态渲染变量按钮。
@@ -138,8 +141,8 @@ async def get_template_variables(
 @router.post("/preview-migrate", response_model=MigratePreviewResult, summary="预览批量迁移")
 async def preview_migrate(
     request: MigratePreviewRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(get_current_user),
+    db: DatabaseService = Depends(get_database_service)
 ):
     """预览迁移结果，不实际执行"""
     result = await crud.preview_migrate_danmaku(
@@ -153,8 +156,8 @@ async def preview_migrate(
 @router.post("/batch-migrate", response_model=BatchOperationResult, summary="批量迁移弹幕文件")
 async def batch_migrate(
     request: BatchMigrateRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(get_current_user),
+    db: DatabaseService = Depends(get_database_service)
 ):
     """将选中条目的弹幕文件迁移到新目录"""
     result = await crud.batch_migrate_danmaku(
@@ -170,8 +173,8 @@ async def batch_migrate(
 @router.post("/preview-rename", response_model=RenamePreviewResult, summary="预览批量重命名")
 async def preview_rename(
     request: RenamePreviewRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(get_current_user),
+    db: DatabaseService = Depends(get_database_service)
 ):
     """预览重命名结果，不实际执行"""
     result = await crud.preview_rename_danmaku(
@@ -189,8 +192,8 @@ async def preview_rename(
 @router.post("/batch-rename", response_model=BatchOperationResult, summary="批量重命名弹幕文件")
 async def batch_rename(
     request: BatchRenameRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session)
+    current_user: User = Depends(get_current_user),
+    db: DatabaseService = Depends(get_database_service)
 ):
     """批量重命名选中条目的弹幕文件"""
     # 转换直接重命名列表格式
@@ -214,9 +217,9 @@ async def batch_rename(
 @router.post("/preview-template", response_model=TemplatePreviewResult, summary="预览应用模板")
 async def preview_template(
     request: TemplatePreviewRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(get_current_user),
+    db: DatabaseService = Depends(get_database_service),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """预览模板应用结果，不实际执行"""
     result = await crud.preview_apply_template(
@@ -224,7 +227,7 @@ async def preview_template(
         anime_ids=request.animeIds,
         template_type=request.templateType,
         custom_template=request.customTemplate,
-        config_manager=config_manager
+        config_service=config_service
     )
     return TemplatePreviewResult(**result)
 
@@ -232,9 +235,9 @@ async def preview_template(
 @router.post("/apply-template", response_model=BatchOperationResult, summary="应用新模板")
 async def apply_template(
     request: ApplyTemplateRequest,
-    current_user: models.User = Depends(security.get_current_user),
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager)
+    current_user: User = Depends(get_current_user),
+    db: DatabaseService = Depends(get_database_service),
+    config_service: ConfigService = Depends(get_config_service)
 ):
     """按新的存储模板重新组织弹幕文件"""
     result = await crud.apply_danmaku_template(
@@ -242,7 +245,7 @@ async def apply_template(
         anime_ids=request.animeIds,
         template_type=request.templateType,
         custom_template=request.customTemplate,
-        config_manager=config_manager
+        config_service=config_service
     )
     return BatchOperationResult(**result)
 

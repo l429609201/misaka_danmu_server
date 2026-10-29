@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useState, useRef, useLayoutEffect, useCallback } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RoutePaths } from './RoutePaths.jsx'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { isMobileAtom, userinfoAtom } from '../../store/index.js'
+import { isMobileAtom, userinfoAtom, sidebarCollapsedAtom } from '../../store/index.js'
 import DarkModeToggle from '@/components/DarkModeToggle.jsx';
 import { MyIcon } from '@/components/MyIcon'
 import classNames from 'classnames'
-import { Tag, Dropdown, Modal, Form, Input, Button, Space, Badge, Popconfirm } from 'antd';
+import { Tag, Dropdown, Modal, Form, Input, Button, Space, Badge, Popconfirm, Drawer, Menu } from 'antd';
 import { logout, changePassword, checkAppUpdate, getDockerStatus, restartService, getVersion } from '../apis/index.js'
 import Cookies from 'js-cookie'
-import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, SearchOutlined } from '@ant-design/icons'
+import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MenuOutlined, SearchOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons'
 import { Tooltip } from 'antd'
 import SessionManager from '@/components/SessionManager'
 import VersionModal from '@/components/VersionModal'
@@ -22,9 +22,11 @@ import CacheManagerModal from '@/components/CacheManagerModal'
 import HealthOverviewModal from '@/pages/home/components/HealthOverview'
 import HistoryLogModal from '@/components/HistoryLogModal'
 import { FeatureSearch } from '@/components/FeatureSearch'
+import { GlobalSearchBar } from '@/components/GlobalSearchBar'
 import { RateLimitIndicator } from '@/components/RateLimitIndicator'
 import { clearBrowserCache } from '@/utils/clearCache'
 import { useMessage } from '../MessageContext'
+import { useThemeMode } from '../ThemeProvider'
 import {
   useFloating,
   autoUpdate,
@@ -79,6 +81,8 @@ const DocsIcon = () => (
 
 const navItems = [
   { key: RoutePaths.HOME, label: 'nav.home', icon: 'home', iconfontIcon: 'icon-home' },
+  { key: RoutePaths.SEARCH, label: 'nav.search', icon: 'search', iconfontIcon: 'icon-search' },
+  { key: RoutePaths.API_TEST, label: 'nav.apiTest', icon: 'a-Webceshi', iconfontIcon: 'icon-a-Webceshi' },
   { key: RoutePaths.LIBRARY, label: 'nav.library', icon: 'tvlibrary', iconfontIcon: 'icon-tvlibrary', children: [
     { key: 'library', label: 'libraryPage.pageTitle', icon: 'kufangguanli' },
     { key: 'batch', label: 'libraryPage.btnBatchManage', icon: 'piliangguanli' },
@@ -98,7 +102,10 @@ const navItems = [
     { key: 'fallback', label: 'nav.bulletFallback', icon: 'sanfangyunpeizhi' },
     { key: 'data-check', label: 'nav.bulletDataCheck', icon: 'renlianshibie_o' },
   ]},
-  { key: RoutePaths.MEDIA_FETCH, label: 'nav.mediaFetch', icon: 'movie', iconfontIcon: 'icon-movie', children: [
+  { key: RoutePaths.MEDIA_FETCH, label: 'nav.mediaFetch', icon: 'liumeitifuwu', iconfontIcon: 'icon-liumeitifuwu', children: [
+    // 媒体服务联动：连接配置 / Webhook / 媒体项目扫描 / 本地扫描
+    { key: 'connection', label: 'nav.mediaConnection', icon: 'liumeitifuwu' },
+    { key: 'webhook', label: 'nav.mediaWebhook', icon: 'webhookpeizhi' },
     { key: 'library-scan', label: 'nav.mediaLibraryScan', icon: 'meitiduqu', iconSize: 28 , iconClassName: 'ml-px' },
     { key: 'local-scan', label: 'nav.mediaLocalScan', icon: 'bendiduqu' },
   ]},
@@ -117,7 +124,6 @@ const navItems = [
   { key: RoutePaths.SETTING, label: 'nav.setting', icon: 'setting', iconfontIcon: 'icon-setting', children: [
     { key: 'parameters', label: 'nav.settingParameters', icon: 'canshupeizhi' },
     { key: 'proxy', label: 'nav.settingProxy', icon: 'dailipeizhi' },
-    { key: 'webhook', label: 'nav.settingWebhook', icon: 'webhookpeizhi' },
     { key: 'notification', label: 'nav.settingNotification', icon: 'jiaohu' },
     { key: 'recognition', label: 'nav.settingRecognition', icon: 'renlianshibie_o' },
     { key: 'automatch', label: 'nav.settingAutomatch', icon: 'ai' },
@@ -171,15 +177,122 @@ const getNavChildActiveKey = (parentItem, location, subKey) => {
 }
 
 
-const FloatingMenu = ({ trigger, items, onItemClick, activeKey }) => {
+// 桌面端左侧边栏宽度（展开/折叠），Layout 与顶栏共用，保持对齐
+export const SIDEBAR_WIDTH = 208
+export const SIDEBAR_COLLAPSED_WIDTH = 64
+export const getSidebarWidth = (collapsed) => (collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH)
+
+/**
+ * 桌面端左侧边栏导航（参考 MoviePilot 风格）
+ * - 展开态：一级栏目，点击直接进入栏目首页
+ * - 折叠态：仅图标
+ * - 子页面统一由页面内二级 Tab 切换，桌面端不再弹出浮动子菜单
+ */
+const DesktopSidebar = ({ activeKey, docsUrl }) => {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const [collapsed, setCollapsed] = useAtom(sidebarCollapsedAtom)
+  const itemBase = 'flex items-center gap-3 rounded-lg cursor-pointer transition-colors select-none'
+  // 底部图标横排（展开态）时气泡放上方，避免盖住相邻图标；竖排（折叠态）时向右弹出
+  const footerTipPlacement = collapsed ? 'right' : 'top'
+
+  return (
+    <aside
+      className="fixed top-0 left-0 h-screen z-50 bg-base-bg shadow-box flex flex-col transition-[width] duration-200"
+      style={{ width: getSidebarWidth(collapsed) }}
+    >
+      <div
+        className={classNames('flex items-center h-16 flex-shrink-0', collapsed ? 'justify-center' : 'px-4')}
+        onClick={() => navigate(RoutePaths.HOME)}
+      >
+        <img src="/images/logo.png" className={classNames('cursor-pointer flex-shrink-0', collapsed ? 'h-9' : 'h-10')} />
+        {!collapsed && (
+          // 侧栏宽度有限：缩小字号并允许最多两行，避免站点名被截断成"御坂网络弹..."
+          <span className="ml-2 text-sm font-bold leading-tight cursor-pointer line-clamp-2 break-all" title={t('header.appName')}>
+            {t('header.appName')}
+          </span>
+        )}
+      </div>
+
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-2 space-y-1">
+        {navItems.map(it => {
+          const isActive = activeKey === it.key
+          const icon = (
+            <i className={`iconfont ${it.iconfontIcon}`} style={navIconStyle(collapsed ? 22 : 18, it.iconScale, true)} />
+          )
+
+          // ---- 折叠态：仅图标 ----
+          if (collapsed) {
+            const btn = (
+              <div
+                className={classNames(itemBase, 'justify-center p-2', isActive ? 'text-primary bg-[var(--ant-color-primary-bg)]' : 'hover:bg-[var(--ant-color-bg-text-hover)]')}
+                onClick={() => navigate(it.key)}
+              >
+                {icon}
+              </div>
+            )
+            // 桌面端不再弹出子页面浮动菜单：子页面由页面内二级 Tab 切换
+            return <Tooltip key={it.key} title={t(it.label)} placement="right">{btn}</Tooltip>
+          }
+
+          // ---- 展开态：直接跳转栏目首页（子页面由页面内二级 Tab 切换，不再弹浮动菜单） ----
+          return (
+              <div
+                key={it.key}
+                className={classNames(itemBase, 'px-3 py-2 text-sm font-semibold', isActive ? 'text-white' : 'hover:bg-[var(--ant-color-bg-text-hover)]')}
+                style={isActive ? { backgroundColor: 'var(--color-primary)' } : undefined}
+                onClick={() => navigate(it.key)}
+              >
+                {icon}
+                <span className="truncate">{t(it.label)}</span>
+              </div>
+            )
+        })}
+      </nav>
+
+      {/* 侧栏底部：GitHub / Telegram（流控面板已挪回顶栏右侧）；提示气泡：展开态在上方，折叠态向右弹出 */}
+      <div className={classNames('flex-shrink-0 border-t border-gray-200/50 dark:border-gray-800/30 py-2 flex gap-3', collapsed ? 'flex-col items-center' : 'flex-col px-3')}>
+        <div className={classNames('flex items-center gap-4', collapsed ? 'flex-col' : 'justify-center')}>
+          <Tooltip title="GitHub" placement={footerTipPlacement}>
+            <a href="https://github.com/l429609201/misaka_danmu_server" target="_blank" rel="noopener noreferrer" style={{ color: '#333', fontSize: 20 }}>
+              <GithubIcon />
+            </a>
+          </Tooltip>
+          <Tooltip title="Telegram" placement={footerTipPlacement}>
+            <a href="https://t.me/misaka_danmaku" target="_blank" rel="noopener noreferrer" style={{ color: '#0088cc', fontSize: 20 }}>
+              <TelegramIcon />
+            </a>
+          </Tooltip>
+          {docsUrl && (
+            <Tooltip title={t('header.docs')} placement={footerTipPlacement}>
+              <a href={docsUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#8CA1AF', fontSize: 20 }}>
+                <DocsIcon />
+              </a>
+            </Tooltip>
+          )}
+        </div>
+      </div>
+
+      {/* 底部折叠按钮 */}
+      <div
+        className={classNames('flex items-center h-12 flex-shrink-0 cursor-pointer text-gray-400 hover:text-primary border-t border-gray-200/50 dark:border-gray-800/30', collapsed ? 'justify-center' : 'px-5 gap-2')}
+        onClick={() => setCollapsed(!collapsed)}
+      >
+        {collapsed ? <MenuUnfoldOutlined /> : <><MenuFoldOutlined /><span className="text-sm">{t('header.collapseSidebar')}</span></>}
+      </div>
+    </aside>
+  )
+}
+
+const FloatingMenu = ({ trigger, items, onItemClick, activeKey, placement = 'top', offsetPx = 8, wrapperClassName = 'flex-1' }) => {
   const [isOpen, setIsOpen] = useState(false)
 
   const { refs, floatingStyles, context } = useFloating({
     open: isOpen,
     onOpenChange: setIsOpen,
-    placement: 'top', // 强制向上展开
+    placement, // 移动端底栏向上展开；桌面侧栏向右贴边展开
     middleware: [
-      offset(8),
+      offset(offsetPx),
       shift({ padding: 8 }),
     ],
     whileElementsMounted: autoUpdate,
@@ -194,7 +307,7 @@ const FloatingMenu = ({ trigger, items, onItemClick, activeKey }) => {
       <div
         ref={refs.setReference}
         {...getReferenceProps()}
-        className="flex-1"
+        className={wrapperClassName}
       >
         {trigger}
       </div>
@@ -296,80 +409,28 @@ export const Header = () => {
   return (
     <>
       {isMobile ? (
-        <>
-          <div className="fixed top-0 left-0 w-full z-50 py-2 bg-base-bg">
-            <div className="flex justify-start items-center px-4 md:px-8">
-              <div onClick={() => navigate(RoutePaths.HOME)}>
-                <img src="/images/logo.png" className="h-12 cursor-pointer" />
-              </div>
-              <div className="flex items-center justify-center gap-3 ml-auto">
-                <RateLimitIndicator />
-                <Tooltip title={t('header.realtimeLog')}>
-                  <div onClick={() => setRealtimeLogOpen(true)} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 18 }}>
-                    <RealtimeLogIcon />
-                  </div>
-                </Tooltip>
-                <Tooltip title={t('header.historyLog')}>
-                  <div onClick={() => setHistoryLogOpen(true)} className="cursor-pointer" style={{ color: '#8B7355', fontSize: 18 }}>
-                    <HistoryLogIcon />
-                  </div>
-                </Tooltip>
-                <Tooltip title="GitHub">
-                  <a
-                    href="https://github.com/l429609201/misaka_danmu_server"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: '#333', fontSize: 18 }}
-                  >
-                    <GithubIcon />
-                  </a>
-                </Tooltip>
-                <Tooltip title="Telegram">
-                  <a
-                    href="https://t.me/misaka_danmaku"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: '#0088cc', fontSize: 18 }}
-                  >
-                    <TelegramIcon />
-                  </a>
-                </Tooltip>
-                {docsUrl && (
-                  <Tooltip title={t('header.docs')}>
-                    <a
-                      href={docsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: '#8CA1AF', fontSize: 18 }}
-                    >
-                      <DocsIcon />
-                    </a>
-                  </Tooltip>
-                )}
-                <Badge dot={hasUpdate} offset={[-5, 5]}>
-                  <Tag
-                    className="cursor-pointer"
-                    onClick={() => setVersionModalOpen(true)}
-                  >
-                    {version}
-                  </Tag>
-                </Badge>
-                <DarkModeToggle />
-              </div>
-            </div>
-          </div>
-          <MobileHeader activeKey={activeKey} />
-        </>
-      ) : (
-        <DesktopHeader
+        // 移动端参考 MP：顶栏（三条杠 / 搜索 / 流控 / 版本 / 头像）+ 左侧抽屉导航，不再使用底部标签栏
+        <MobileHeader
           activeKey={activeKey}
-          version={version}
           docsUrl={docsUrl}
+          version={version}
           hasUpdate={hasUpdate}
           onVersionClick={() => setVersionModalOpen(true)}
           onRealtimeLog={() => setRealtimeLogOpen(true)}
           onHistoryLog={() => setHistoryLogOpen(true)}
         />
+      ) : (
+        <>
+        <DesktopSidebar activeKey={activeKey} docsUrl={docsUrl} />
+        <DesktopHeader
+          activeKey={activeKey}
+          version={version}
+          hasUpdate={hasUpdate}
+          onVersionClick={() => setVersionModalOpen(true)}
+          onRealtimeLog={() => setRealtimeLogOpen(true)}
+          onHistoryLog={() => setHistoryLogOpen(true)}
+        />
+        </>
       )}
 
       {/* 版本信息弹窗 */}
@@ -394,12 +455,11 @@ export const Header = () => {
   )
 }
 
-const MobileHeader = ({ activeKey }) => {
+const MobileHeader = ({ activeKey, docsUrl, version, hasUpdate, onVersionClick, onRealtimeLog, onHistoryLog }) => {
   const { t } = useTranslation()
-  const mobileNavItems = [
-    ...navItems.slice(0, 3), // 首页、弹幕库、任务管理器直接显示
-    { key: 'user', label: 'nav.my', icon: 'user', children: navItems.slice(3) }, // 其余的放在"我的"菜单下
-  ]
+  const userinfo = useAtomValue(userinfoAtom)
+  const { isDark, toggleDarkMode } = useThemeMode()
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -420,6 +480,8 @@ const MobileHeader = ({ activeKey }) => {
   const [dockerAvailable, setDockerAvailable] = useState(false)
   const [restartLoading, setRestartLoading] = useState(false)
   const [featureSearchOpen, setFeatureSearchOpen] = useState(false)
+  // 移动端全屏全局搜索（参考 MP）
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const messageApi = useMessage()
   const setUserinfo = useSetAtom(userinfoAtom)
 
@@ -493,174 +555,167 @@ const MobileHeader = ({ activeKey }) => {
     }
   }
 
-  const handleMenuItemClick = (item, parentItem) => {
-    if (item.key === 'logout') {
-      onLogout()
-    } else if (item.key === 'feature-search') {
-      setFeatureSearchOpen(true)
-    } else if (item.key === 'change-password') {
-      setIsPasswordModalOpen(true)
-    } else if (item.key === 'session-manager') {
-      setIsSessionModalOpen(true)
-    } else if (item.key === 'theme-color') {
-      setIsThemeColorOpen(true)
-    } else if (item.key === 'page-style') {
-      setIsPageStyleOpen(true)
-    } else if (item.key === 'language') {
-      setIsLanguageOpen(true)
-    } else if (item.key === 'cache-manager') {
-      setIsCacheModalOpen(true)
-    } else if (item.key === 'health-check') {
-      setIsHealthModalOpen(true)
-    } else if (item.key === 'clear-browser-cache') {
-      clearBrowserCache()
-    } else if (item.key === 'restart-service') {
-      // 重启由 Popconfirm 处理，这里不做任何事
-    } else if (parentItem?.key === 'user') {
-      // "我的"菜单的子项是navItems中的页面，其children是子页面
-      // 导航到该页面的第一个子页面
-      const navItem = navItems.find(n => n.key === item.key)
-      if (navItem?.children?.length) {
-        navigate(getChildNavigatePath(navItem, navItem.children[0].key))
-      } else {
-        navigate(item.key)
-      }
-    } else if (parentItem) {
-      // 非"我的"菜单的子项（如任务管理器的子项），导航到父路径+子key
-      navigate(getChildNavigatePath(parentItem, item.key))
-    } else {
-      navigate(item.key)
-    }
+  // 抽屉菜单：导航项用 antd Menu 内联展开；子项 key 用 "父|子" 组合，避免不同分组下同名子 key（如 webhook）冲突
+  const drawerMenuItems = navItems.map(it => ({
+    key: it.key,
+    icon: <i className={`iconfont ${it.iconfontIcon}`} style={navIconStyle(18, it.iconScale)} />,
+    label: t(it.label),
+    // 子项也显示各自图标（与桌面端子菜单同一套 c.icon）；位置由 .drawer-nav-menu 样式控制为比一级图标右移 3px
+    children: it.children?.map(c => ({
+      key: `${it.key}|${c.key}`,
+      icon: (
+        <span className="inline-flex items-center justify-center" style={{ width: 18 }}>
+          <MyIcon icon={c.icon} size={Math.round((c.iconSize || 20) * 0.9)} className={c.iconClassName} />
+        </span>
+      ),
+      label: t(c.label),
+    })),
+  }))
+  const activeNavItem = navItems.find(n => n.key === activeKey)
+  const drawerSelectedKey = activeNavItem?.children
+    ? `${activeNavItem.key}|${getNavChildActiveKey(activeNavItem, location, subKey)}`
+    : activeKey
+  const [drawerOpenKeys, setDrawerOpenKeys] = useState([])
+  // 打开抽屉时自动展开当前所在分组
+  useEffect(() => {
+    if (drawerOpen && activeNavItem?.children) setDrawerOpenKeys([activeNavItem.key])
+  }, [drawerOpen])
+
+  const onDrawerMenuClick = ({ key }) => {
+    const [parentKey, childKey] = key.split('|')
+    const parent = navItems.find(n => n.key === parentKey)
+    navigate(childKey ? getChildNavigatePath(parent, childKey) : parentKey)
+    setDrawerOpen(false)
   }
 
-  // 计算"我的"菜单的显示标签
-  const userMenuItem = mobileNavItems.find(it => it.key === 'user')
-  const activeChildItem = userMenuItem?.children?.find(child => child.key === activeKey)
-  const userMenuLabel = activeChildItem ? t(activeChildItem.label) : t('nav.my')
+  // 头像下拉：个人/系统功能（原底部"我的"菜单中的功能项）
+  const avatarMenuItems = [
+    { key: 'realtime-log', icon: <span style={{ color: '#1890ff' }}><RealtimeLogIcon /></span>, label: t('header.realtimeLog') },
+    { key: 'history-log', icon: <span style={{ color: '#8B7355' }}><HistoryLogIcon /></span>, label: t('header.historyLog') },
+    { key: 'dark-mode', icon: isDark ? <SunOutlined style={{ fontSize: 16 }} /> : <MoonOutlined style={{ fontSize: 16 }} />, label: isDark ? t('common.lightMode') : t('common.darkMode') },
+    { type: 'divider' },
+    { key: 'theme-color', icon: <MyIcon icon="MenuIcon-gexinghua-heise" size={16} />, label: t('header.themeColor') },
+    { key: 'page-style', icon: <MyIcon icon="fengge" size={16} />, label: t('header.pageStyle') },
+    { key: 'language', icon: <MyIcon icon="yuyan" size={16} />, label: t('header.language') },
+    { key: 'session-manager', icon: <MyIcon icon="huihuaguanli" size={16} />, label: t('header.sessionManager') },
+    { key: 'change-password', icon: <MyIcon icon="key" size={16} />, label: t('header.changePassword') },
+    { key: 'cache-manager', icon: <MyIcon icon="refresh" size={16} />, label: t('header.cacheManager') },
+    { key: 'health-check', icon: <MyIcon icon="checksurface" size={16} />, label: t('header.healthCheck') },
+    { key: 'clear-browser-cache', icon: <MyIcon icon="qinglihuancun" size={16} />, label: t('header.clearBrowserCache') },
+    ...(dockerAvailable ? [{
+      key: 'restart-service',
+      icon: <MyIcon icon="zhongqi" size={16} />,
+      label: (
+        <Popconfirm
+          title={t('header.restartConfirmTitle')}
+          description={t('header.restartConfirmDesc')}
+          onConfirm={handleRestart}
+          okText={t('common.confirm')}
+          cancelText={t('common.cancel')}
+        >
+          <span>{t('header.restartService')}</span>
+        </Popconfirm>
+      ),
+    }] : []),
+    { type: 'divider' },
+    { key: 'logout', icon: <MyIcon icon="tuichudenglu" size={16} />, label: t('header.logout'), danger: true },
+  ]
+
+  const onAvatarMenuClick = ({ key }) => {
+    const actions = {
+      'realtime-log': onRealtimeLog,
+      'history-log': onHistoryLog,
+      'dark-mode': toggleDarkMode,
+      'theme-color': () => setIsThemeColorOpen(true),
+      'page-style': () => setIsPageStyleOpen(true),
+      'language': () => setIsLanguageOpen(true),
+      'session-manager': () => setIsSessionModalOpen(true),
+      'change-password': () => setIsPasswordModalOpen(true),
+      'cache-manager': () => setIsCacheModalOpen(true),
+      'health-check': () => setIsHealthModalOpen(true),
+      'clear-browser-cache': clearBrowserCache,
+      'logout': onLogout,
+      // restart-service 由 Popconfirm 处理
+    }
+    actions[key]?.()
+  }
 
   return (
     <>
-      <div className="fixed bottom-5 left-4 right-4 shadow-box z-50 py-2.5 px-2 overflow-hidden bg-base-bg rounded-3xl mobile-nav-floating">
-        <div className="flex justify-evenly items-center">
-          {mobileNavItems.map(it => (
-            <>
-              {!it.children?.length ? (
-                <div
-                  key={it.key}
-                  className="text-center flex-1"
-                  style={it.key === activeKey ? { color: 'var(--color-primary)' } : undefined}
-                  onClick={() => {
-                    navigate(it.key)
-                  }}
-                >
-                  <div>
-                    <MyIcon icon={it.icon} size={26} />
-                  </div>
-                  <div className="text-xs">{t(it.label)}</div>
-                </div>
-              ) : (
-                <FloatingMenu
-                  key={it.key}
-                  trigger={
-                    <div
-                      className="text-center flex-1"
-                      style={
-                        it.children.map(o => o.key).includes(activeKey)
-                          ? { color: 'var(--color-primary)' }
-                          : undefined
-                      }
-                    >
-                      <div>
-                        <MyIcon icon={it.icon} size={26} />
-                      </div>
-                      <div className="text-xs">{it.key === 'user' ? userMenuLabel : t(it.label)}</div>
-                    </div>
-                  }
-                  items={[
-                    ...it.children.map(o => ({
-                      key: o.key,
-                      label: t(o.label),
-                      icon: o.icon,
-                      iconSize: o.iconSize,
-                      iconClassName: o.iconClassName,
-                    })),
-                    ...(it.key === 'user' ? [
-                      {
-                        key: 'feature-search',
-                        label: t('featureSearch.menuTitle'),
-                        icon: 'search',
-                      },
-                      {
-                        key: 'theme-color',
-                        label: t('header.themeColor'),
-                        icon: 'MenuIcon-gexinghua-heise',
-                      },
-                      {
-                        key: 'page-style',
-                        label: t('header.pageStyle'),
-                        icon: 'fengge',
-                      },
-                      {
-                        key: 'language',
-                        label: t('header.language'),
-                        icon: 'yuyan',
-                      },
-                      {
-                        key: 'session-manager',
-                        label: t('header.sessionManager'),
-                        icon: 'huihuaguanli',
-                      },
-                      {
-                        key: 'change-password',
-                        label: t('header.changePassword'),
-                        icon: 'key',
-                      },
-                      {
-                        key: 'cache-manager',
-                        label: t('header.cacheManager'),
-                        icon: 'refresh',
-                      },
-                      {
-                        key: 'health-check',
-                        label: t('header.healthCheck'),
-                        icon: 'checksurface',
-                      },
-                      {
-                        key: 'clear-browser-cache',
-                        label: t('header.clearBrowserCache'),
-                        icon: 'qinglihuancun',
-                      },
-                      ...(dockerAvailable ? [{
-                        key: 'restart-service',
-                        label: (
-                          <Popconfirm
-                            title={t('header.restartConfirmTitle')}
-                            description={t('header.restartConfirmDesc')}
-                            onConfirm={handleRestart}
-                            okText={t('common.confirm')}
-                            cancelText={t('common.cancel')}
-                          >
-                            <span>{t('header.restartService')}</span>
-                          </Popconfirm>
-                        ),
-                        icon: 'zhongqi',
-                      }] : []),
-                      {
-                        key: 'logout',
-                        label: t('header.logout'),
-                        icon: 'tuichudenglu',
-                      },
-                    ] : []),
-                  ]}
-                  onItemClick={(item) => handleMenuItemClick(item, it)}
-                  activeKey={it.key === 'user' ? activeKey : getNavChildActiveKey(it, location, subKey)}
-                />
-              )}
-            </>
-          ))}
+      {/* 移动端顶栏：左侧三条杠 + 搜索；右侧流控 / 版本号 / 头像 */}
+      <div className="fixed top-0 left-0 w-full z-50 bg-base-bg shadow-box mobile-topbar">
+        <div className="flex items-center h-14 px-3 gap-1">
+          <button
+            className="p-2 rounded-full hover:bg-base-hover text-xl leading-none flex items-center"
+            aria-label={t('header.openMenu')}
+            onClick={() => setDrawerOpen(true)}
+          >
+            <MenuOutlined />
+          </button>
+          <button
+            className="p-2 rounded-full hover:bg-base-hover text-xl leading-none flex items-center"
+            aria-label={t('common.search')}
+            onClick={() => setMobileSearchOpen(true)}
+          >
+            <SearchOutlined />
+          </button>
+          {mobileSearchOpen && (
+            <GlobalSearchBar mobile onClose={() => setMobileSearchOpen(false)} />
+          )}
+          <div className="flex items-center gap-2 ml-auto min-w-0">
+            <RateLimitIndicator />
+            <Badge dot={hasUpdate} offset={[-5, 5]}>
+              <Tag className="cursor-pointer m-0" onClick={onVersionClick}>{version}</Tag>
+            </Badge>
+            <Dropdown menu={{ items: avatarMenuItems, onClick: onAvatarMenuClick }} trigger={['click']} placement="bottomRight">
+              <button
+                className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0"
+                style={{ backgroundColor: 'var(--color-primary)' }}
+                aria-label={userinfo?.username || t('nav.my')}
+              >
+                {(userinfo?.username || 'U').slice(0, 1).toUpperCase()}
+              </button>
+            </Dropdown>
+          </div>
         </div>
       </div>
 
+      {/* 左侧抽屉导航：结构与桌面侧栏一致，底部放外链 */}
+      <Drawer
+        placement="left"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        width={272}
+        closable={false}
+        styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column' } }}
+      >
+        <div className="flex items-center h-16 px-4 flex-shrink-0" onClick={() => { navigate(RoutePaths.HOME); setDrawerOpen(false) }}>
+          <img src="/images/logo.png" className="h-10 cursor-pointer" />
+          <span className="ml-2 text-sm font-bold leading-tight line-clamp-2">{t('header.appName')}</span>
+        </div>
+        <Menu
+          mode="inline"
+          className="drawer-nav-menu flex-1 overflow-y-auto !border-e-0 !bg-transparent"
+          items={drawerMenuItems}
+          selectedKeys={[drawerSelectedKey]}
+          openKeys={drawerOpenKeys}
+          onOpenChange={setDrawerOpenKeys}
+          onClick={onDrawerMenuClick}
+        />
+        <div className="flex-shrink-0 border-t border-gray-200/50 dark:border-gray-800/30 py-3 flex items-center justify-center gap-5">
+          <a href="https://github.com/l429609201/misaka_danmu_server" target="_blank" rel="noopener noreferrer" style={{ color: '#333', fontSize: 20 }} aria-label="GitHub">
+            <GithubIcon />
+          </a>
+          <a href="https://t.me/misaka_danmaku" target="_blank" rel="noopener noreferrer" style={{ color: '#0088cc', fontSize: 20 }} aria-label="Telegram">
+            <TelegramIcon />
+          </a>
+          {docsUrl && (
+            <a href={docsUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#8CA1AF', fontSize: 20 }} aria-label={t('header.docs')}>
+              <DocsIcon />
+            </a>
+          )}
+        </div>
+      </Drawer>
       <FeatureSearch
         open={featureSearchOpen}
         onClose={() => setFeatureSearchOpen(false)}
@@ -802,8 +857,8 @@ const MobileHeader = ({ activeKey }) => {
   )
 }
 
-const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick, onRealtimeLog, onHistoryLog }) => {
-  const { t, i18n } = useTranslation()
+const DesktopHeader = ({ activeKey, version, hasUpdate, onVersionClick, onRealtimeLog, onHistoryLog }) => {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const userinfo = useAtomValue(userinfoAtom)
   const location = useLocation()
@@ -826,51 +881,25 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
   const [isLoading, setIsLoading] = useState(false)
   const [dockerAvailable, setDockerAvailable] = useState(false)
   const [restartLoading, setRestartLoading] = useState(false)
-  // 全功能搜索面板开关
-  const [featureSearchOpen, setFeatureSearchOpen] = useState(false)
+  // 顶栏搜索栏聚焦信号：每次 +1 触发 GlobalSearchBar 聚焦并展开下拉
+  const [searchFocusSignal, setSearchFocusSignal] = useState(0)
+  const focusGlobalSearch = () => setSearchFocusSignal(n => n + 1)
 
-  // 全局快捷键 Ctrl/Cmd+K 打开/关闭功能搜索
+  // 全局快捷键 Ctrl/Cmd+K 聚焦顶栏搜索栏（原弹窗已改为常驻搜索栏）
   useEffect(() => {
     const onKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
-        setFeatureSearchOpen(prev => !prev)
+        focusGlobalSearch()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  // ---- 导航挤压检测 ----
-  const [compactNav, setCompactNav] = useState(false)
-  const navContainerRef = useRef(null)
-  const navMeasureRef = useRef(null)
-
-  // 检测导航是否需要切换到 icon-only 模式
-  const checkNavCompact = useCallback(() => {
-    const container = navContainerRef.current
-    const measure = navMeasureRef.current
-    if (!container || !measure) return
-    const available = container.clientWidth
-    const natural = measure.scrollWidth
-    setCompactNav(available < natural)
-  }, [])
-
-  useEffect(() => {
-    const container = navContainerRef.current
-    if (!container) return
-
-    const ro = new ResizeObserver(checkNavCompact)
-    ro.observe(container)
-    if (container.parentElement) ro.observe(container.parentElement)
-    return () => ro.disconnect()
-  }, [checkNavCompact])
-
-  // 语言切换时重新检测导航宽度（文字长度变化）
-  useEffect(() => {
-    // 延迟一帧让 DOM 先更新完文字内容
-    requestAnimationFrame(checkNavCompact)
-  }, [i18n.language, checkNavCompact])
+  // 桌面端导航已移至左侧边栏：顶栏起点跟随侧栏宽度（折叠/展开）
+  const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom)
+  const sidebarWidth = getSidebarWidth(sidebarCollapsed)
 
   // 检查 Docker 套接字是否可用
   useEffect(() => {
@@ -944,160 +973,15 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
 
   return (
     <>
-      <div className="fixed top-0 left-0 w-full shadow-box z-50 py-2 bg-base-bg">
-        <div className="flex justify-start items-center max-w-[1200px] mx-auto w-full px-6 gap-4">
-          <div onClick={() => navigate(RoutePaths.HOME)} className="flex-shrink-0">
-            <img src="/images/logo.png" className="h-12 cursor-pointer" />
-          </div>
-          {/* 隐藏的测量行：icon+文字完整渲染，用于计算自然宽度 */}
-          <div
-            ref={navMeasureRef}
-            className="flex items-center"
-            style={{ position: 'absolute', visibility: 'hidden', whiteSpace: 'nowrap', pointerEvents: 'none', height: 0, overflow: 'hidden' }}
-            aria-hidden="true"
-          >
-            {navItems.map(it => (
-              <div key={it.key} className="flex items-center gap-1 mx-1 text-sm font-semibold whitespace-nowrap">
-                <i
-                  className={`iconfont ${it.iconfontIcon}`}
-                  style={navIconStyle(16, it.iconScale)}
-                />
-                <span>{t(it.label)}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* 实际导航 */}
-          <div ref={navContainerRef} className="flex items-center justify-center min-w-0 flex-1">
-            {navItems.map(it => {
-              const isActive = activeKey === it.key
-
-              // ---- 挤压态：icon-only ----
-              if (compactNav) {
-                if (it.children) {
-                  // 有子项时用 Dropdown，顶部显示分类标题
-                  return (
-                    <Dropdown
-                      key={it.key}
-                      menu={{
-                        items: [
-                          { key: '_title', type: 'group', label: (<div className="font-bold text-sm" style={{ color: 'var(--ant-color-text)' }}>{t(it.label)}</div>) },
-                          { type: 'divider' },
-                          ...it.children.map(child => ({
-                            key: child.key,
-                            label: (
-                              <span className="inline-flex items-center gap-2">
-                                {child.icon && (
-                                  <span className="inline-flex w-7 shrink-0 items-center justify-center">
-                                    <MyIcon icon={child.icon} size={child.iconSize || 20} className={child.iconClassName} />
-                                  </span>
-                                )}
-                                <span>{t(child.label)}</span>
-                              </span>
-                            ),
-                          })),
-                        ],
-                        selectedKeys: [getNavChildActiveKey(it, location, subKey)],
-                        onClick: ({ key: childKey }) => {
-                          if (childKey !== '_title') navigate(getChildNavigatePath(it, childKey))
-                        },
-                      }}
-                    >
-                      <div
-                        className={classNames(
-                          'cursor-pointer mx-0.5 p-1.5 rounded-md transition-colors hover:bg-[var(--ant-color-bg-text-hover)]',
-                          { 'text-primary': isActive }
-                        )}
-                        onClick={() => navigate(it.key)}
-                      >
-                        <i
-                          className={`iconfont ${it.iconfontIcon}`}
-                          style={navIconStyle(22, it.iconScale, true)}
-                        />
-                      </div>
-                    </Dropdown>
-                  )
-                }
-                // 无子项时用 Tooltip
-                return (
-                  <Tooltip key={it.key} title={t(it.label)}>
-                    <div
-                      className={classNames(
-                        'cursor-pointer mx-0.5 p-1.5 rounded-md transition-colors hover:bg-[var(--ant-color-bg-text-hover)]',
-                        { 'text-primary': isActive }
-                      )}
-                      onClick={() => navigate(it.key)}
-                    >
-                      <i
-                        className={`iconfont ${it.iconfontIcon}`}
-                        style={navIconStyle(22, it.iconScale, true)}
-                      />
-                    </div>
-                  </Tooltip>
-                )
-              }
-
-              // ---- 正常态：icon + 文字 ----
-              if (it.children) {
-                return (
-                  <Dropdown
-                    key={it.key}
-                    menu={{
-                      items: it.children.map(child => ({
-                        key: child.key,
-                        label: (
-                          <span className="inline-flex items-center gap-2">
-                            {child.icon && (
-                              <span className="inline-flex w-7 shrink-0 items-center justify-center">
-                                <MyIcon icon={child.icon} size={child.iconSize || 20} className={child.iconClassName} />
-                              </span>
-                            )}
-                            <span>{t(child.label)}</span>
-                          </span>
-                        ),
-                      })),
-                      selectedKeys: [getNavChildActiveKey(it, location, subKey)],
-                      onClick: ({ key: childKey }) => {
-                        navigate(getChildNavigatePath(it, childKey))
-                      },
-                    }}
-                  >
-                    <div
-                      className={classNames(
-                        'text-sm font-semibold cursor-pointer mx-1 flex items-center gap-1 whitespace-nowrap',
-                        { 'text-primary': isActive }
-                      )}
-                      onClick={() => navigate(it.key)}
-                    >
-                      <i
-                        className={`iconfont ${it.iconfontIcon}`}
-                        style={navIconStyle(16, it.iconScale)}
-                      />
-                      <span>{t(it.label)}</span>
-                    </div>
-                  </Dropdown>
-                )
-              }
-              return (
-                <div
-                  key={it.key}
-                  className={classNames(
-                    'text-sm font-semibold cursor-pointer mx-1 flex items-center gap-1 whitespace-nowrap',
-                    { 'text-primary': isActive }
-                  )}
-                  onClick={() => navigate(it.key)}
-                >
-                  <i
-                    className={`iconfont ${it.iconfontIcon}`}
-                    style={navIconStyle(16, it.iconScale)}
-                  />
-                  <span>{t(it.label)}</span>
-                </div>
-              )
-            })}
-          </div>
+      {/* 桌面端顶栏：导航已移至左侧边栏，这里只保留工具区；left 跟随侧栏宽度 */}
+      <div
+        className="fixed top-0 right-0 shadow-box z-40 py-2 bg-base-bg transition-[left] duration-200"
+        style={{ left: sidebarWidth }}
+      >
+        <div className="flex justify-start items-center w-full px-6 gap-4 h-12">
+          {/* 顶栏最左侧：全局搜索栏（功能跳转 + 弹幕搜索，可指定源） */}
+          <GlobalSearchBar focusSignal={searchFocusSignal} />
           <div className="flex items-center justify-center gap-4 ml-auto flex-shrink-0">
-            <RateLimitIndicator />
             <Tooltip title={t('header.realtimeLog')}>
               <div onClick={onRealtimeLog} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 20 }}>
                 <RealtimeLogIcon />
@@ -1108,38 +992,8 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                 <HistoryLogIcon />
               </div>
             </Tooltip>
-            <Tooltip title="GitHub">
-              <a
-                href="https://github.com/l429609201/misaka_danmu_server"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: '#333', fontSize: 20 }}
-              >
-                <GithubIcon />
-              </a>
-            </Tooltip>
-            <Tooltip title="Telegram">
-              <a
-                href="https://t.me/misaka_danmaku"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: '#0088cc', fontSize: 20 }}
-              >
-                <TelegramIcon />
-              </a>
-            </Tooltip>
-            {docsUrl && (
-              <Tooltip title={t('header.docs')}>
-                <a
-                  href={docsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: '#8CA1AF', fontSize: 20 }}
-                >
-                  <DocsIcon />
-                </a>
-              </Tooltip>
-            )}
+            {/* 顶栏右侧顺序（按用户要求）：实时日志 → 历史日志 → 深浅色切换 → 版本号 → 流控 → 头像+用户名 */}
+            <DarkModeToggle />
             <Badge dot={hasUpdate} offset={[-5, 5]}>
               <Tag
                 className="cursor-pointer"
@@ -1148,19 +1002,11 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                 {version}
               </Tag>
             </Badge>
+            {/* 流控/下载进度 */}
+            <RateLimitIndicator />
             <Dropdown
               menu={{
                 items: [
-                  {
-                    key: 'featureSearch',
-                    icon: <SearchOutlined style={{ fontSize: 16 }} />,
-                    label: (
-                      <div onClick={() => setFeatureSearchOpen(true)} className="text-base">
-                        {t('featureSearch.menuTitle')}
-                        <span className="ml-2 text-xs text-gray-400">Ctrl/⌘+K</span>
-                      </div>
-                    ),
-                  },
                   {
                     key: 'themeColor',
                     icon: <MyIcon icon="MenuIcon-gexinghua-heise" size={16} />,
@@ -1265,15 +1111,9 @@ const DesktopHeader = ({ activeKey, version, docsUrl, hasUpdate, onVersionClick,
                 {userinfo?.username}
               </div>
             </Dropdown>
-            <DarkModeToggle />
           </div>
         </div>
       </div>
-
-      <FeatureSearch
-        open={featureSearchOpen}
-        onClose={() => setFeatureSearchOpen(false)}
-      />
 
       <Modal
         title={t('header.changePassword')}

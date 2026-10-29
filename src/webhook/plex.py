@@ -1,10 +1,10 @@
 import logging
 import json
-import re
-from typing import Any, Dict, List
+from typing import Dict
 from fastapi import Request, HTTPException, status
 
 from .base import BaseWebhook
+from src.utils.parsing.filename_parser import parse_episode_ranges
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ class PlexWebhook(BaseWebhook):
             guid_list = metadata.get("Guid", [])
             provider_ids = self._extract_provider_ids(guid_list)
 
-            await self.dispatch_task(
+            self.add_import(
                 task_title=f"{series_title} S{season_number:02d}E{episode_number:02d}",
                 unique_key=f"plex_episode_{series_title}_{season_number}_{episode_number}_{user_name}",
                 payload={
@@ -154,7 +154,7 @@ class PlexWebhook(BaseWebhook):
             guid_list = metadata.get("Guid", [])
             provider_ids = self._extract_provider_ids(guid_list)
 
-            await self.dispatch_task(
+            self.add_import(
                 task_title=f"{movie_title} ({year})" if year else movie_title,
                 unique_key=f"plex_movie_{movie_title}_{year}_{user_name}",
                 payload={
@@ -226,60 +226,74 @@ class PlexWebhook(BaseWebhook):
                 self.logger.error(f"无法解析季数 '{season_raw}'，webhook 数据格式错误")
                 return
 
+            # 年份作为匹配参考透传；缺失或无效时不猜测，也不阻断导入。
+            year = None
+            for year_value in (payload.get("year"), payload.get("release_date")):
+                year_text = str(year_value or "").strip().split("-", 1)[0]
+                if len(year_text) == 4 and year_text.isdigit() and int(year_text) > 0:
+                    year = int(year_text)
+                    break
             episode_raw = payload.get("episode", 1)
 
             # 检查是否为多集格式（包含逗号或连字符）
             if isinstance(episode_raw, str) and (("," in episode_raw) or ("-" in episode_raw and not episode_raw.isdigit())):
-                # 多集格式，解析所有集数
-                episodes = self._parse_episode_ranges(episode_raw)
-                self.logger.info(f"Tautulli Webhook: 检测到多集格式 - {title} S{season:02d} 包含 {len(episodes)} 集")
+                # 合集一次派发并透传所选集数，避免逐集重复搜索和创建任务。
+                episodes = sorted(set(parse_episode_ranges(episode_raw)))
+                if not episodes:
+                    self.logger.warning(f"Tautulli Webhook: 无有效集数，忽略合集 '{title}'，原始集数='{episode_raw}'")
+                    return
+                episode_scope = ",".join(str(number) for number in episodes)
+                if episodes == list(range(episodes[0], episodes[-1] + 1)):
+                    episode_label = f"E{episodes[0]:02d}-E{episodes[-1]:02d}" if len(episodes) > 1 else f"E{episodes[0]:02d}"
+                else:
+                    episode_label = ",".join(f"E{number:02d}" for number in episodes)
+                task_title = f"{title} S{season:02d} {episode_label}"
+                self.logger.info(f"Tautulli Webhook: 解析合集 - {task_title}，共 {len(episodes)} 集，参考年份={year}")
 
-                # 为每一集创建单独的任务
-                for episode_num in episodes:
-                    self.logger.info(f"Tautulli Webhook: 处理剧集 - {title} S{season:02d}E{episode_num:02d}")
-
-                    try:
-                        await self.dispatch_task(
-                            task_title=f"{title} S{season:02d}E{episode_num:02d}",
-                            unique_key=f"tautulli_episode_{title}_{season}_{episode_num}_{user_name}",
-                            payload={
-                                "animeTitle": title,
-                                "mediaType": "tv_series",
-                                "season": season,
-                                "currentEpisodeIndex": episode_num,
-                                "year": None,
-                                "searchKeyword": f"{title} S{season:02d}E{episode_num:02d}",
-                                "doubanId": None,
-                                "tmdbId": None,
-                                "imdbId": None,
-                                "tvdbId": None,
-                                "bangumiId": None,
-                                "mediaServerType": "plex",
-                                "mediaServerSeriesId": tautulli_grandparent_key,
-                                "mediaServerSeasonId": tautulli_parent_key,
-                                "mediaServerEpisodeId": tautulli_rating_key,
-                            },
-                            webhook_source=webhook_source
-                        )
-                        self.logger.info(f"Tautulli Webhook: 成功创建任务 - {title} S{season:02d}E{episode_num:02d}")
-                    except Exception as e:
-                        self.logger.error(f"Tautulli Webhook: 创建任务失败 - {title} S{season:02d}E{episode_num:02d}: {e}", exc_info=True)
-                        raise
+                try:
+                    self.add_import(
+                        task_title=task_title,
+                        unique_key=f"tautulli_collection_{title}_{season}_{episode_scope}_{year}_{user_name}",
+                        payload={
+                            "animeTitle": title,
+                            "mediaType": "tv_series",
+                            "season": season,
+                            "currentEpisodeIndex": None,
+                            "selectedEpisodes": episodes,
+                            "year": year,
+                            "searchKeyword": f"{title} S{season:02d}",
+                            "doubanId": None,
+                            "tmdbId": None,
+                            "imdbId": None,
+                            "tvdbId": None,
+                            "bangumiId": None,
+                            "mediaServerType": "plex",
+                            # 季级通知的父级是剧集，ratingKey 是季度，不能作为分集 ID。
+                            "mediaServerSeriesId": tautulli_parent_key if media_type == "season" else tautulli_grandparent_key,
+                            "mediaServerSeasonId": tautulli_rating_key if media_type == "season" else tautulli_parent_key,
+                            "mediaServerEpisodeId": None,
+                        },
+                        webhook_source=webhook_source
+                    )
+                    self.logger.info(f"Tautulli Webhook: 已解析合集事件 - {task_title}")
+                except Exception as e:
+                    self.logger.error(f"Tautulli Webhook: 创建合集任务失败 - {task_title}: {e}", exc_info=True)
+                    raise
             else:
                 # 单集格式
                 episode = int(episode_raw) if isinstance(episode_raw, str) and episode_raw.isdigit() else episode_raw
-                self.logger.info(f"Tautulli Webhook: 处理剧集 - {title} S{season:02d}E{episode:02d}")
+                self.logger.info(f"Tautulli Webhook: 处理剧集 - {title} S{season:02d}E{episode:02d}，参考年份={year}")
 
                 try:
-                    await self.dispatch_task(
+                    self.add_import(
                         task_title=f"{title} S{season:02d}E{episode:02d}",
-                        unique_key=f"tautulli_episode_{title}_{season}_{episode}_{user_name}",
+                        unique_key=f"tautulli_episode_{title}_{season}_{episode}_{year}_{user_name}",
                         payload={
                             "animeTitle": title,
                             "mediaType": "tv_series",
                             "season": season,
                             "currentEpisodeIndex": episode,
-                            "year": None,
+                            "year": year,
                             "searchKeyword": f"{title} S{season:02d}E{episode:02d}",
                             "doubanId": None,
                             "tmdbId": None,
@@ -293,7 +307,7 @@ class PlexWebhook(BaseWebhook):
                         },
                         webhook_source=webhook_source
                     )
-                    self.logger.info(f"Tautulli Webhook: 成功创建任务 - {title} S{season:02d}E{episode:02d}")
+                    self.logger.info(f"Tautulli Webhook: 已解析单集事件 - {title} S{season:02d}E{episode:02d}")
                 except Exception as e:
                     self.logger.error(f"Tautulli Webhook: 创建任务失败 - {title} S{season:02d}E{episode:02d}: {e}", exc_info=True)
                     raise
@@ -311,7 +325,7 @@ class PlexWebhook(BaseWebhook):
             self.logger.info(f"Tautulli Webhook: 处理电影 - {title} ({year})")
 
             try:
-                await self.dispatch_task(
+                self.add_import(
                     task_title=f"{title} ({year})" if year else title,
                     unique_key=f"tautulli_movie_{title}_{year}_{user_name}",
                     payload={
@@ -333,7 +347,7 @@ class PlexWebhook(BaseWebhook):
                     },
                     webhook_source=webhook_source
                 )
-                self.logger.info(f"Tautulli Webhook: 成功创建任务 - {title} ({year})")
+                self.logger.info(f"Tautulli Webhook: 已解析电影事件 - {title} ({year})")
             except Exception as e:
                 self.logger.error(f"Tautulli Webhook: 创建任务失败 - {title} ({year}): {e}", exc_info=True)
                 raise
@@ -357,8 +371,3 @@ class PlexWebhook(BaseWebhook):
                 provider_ids["bangumi"] = guid_id.replace("bangumi://", "")
         
         return provider_ids
-
-    def _parse_episode_ranges(self, episode_str: str) -> List[int]:
-        """解析集数范围字符串 — 委托给统一模块"""
-        from src.utils.filename_parser import parse_episode_ranges
-        return parse_episode_ranges(episode_str)

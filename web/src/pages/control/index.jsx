@@ -55,12 +55,14 @@ export const Control = () => {
     <div className="my-6">
       {isMobile ? (
         <MobileTabs
+          className="page-tabs"
           items={tabItems}
           defaultActiveKey={key}
           onChange={handleTabChange}
         />
       ) : (
         <Tabs
+          className="page-tabs"
           activeKey={key}
           items={tabItems}
           onChange={handleTabChange}

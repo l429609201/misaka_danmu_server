@@ -1,0 +1,709 @@
+/* ============================================================
+ * 看板娘助手样式
+ * 命名前缀统一 assistant-，避免与 antd / 业务样式冲突
+ * ============================================================ */
+
+/* ---------- 形象与伪动效 ---------- */
+.assistant-pet-stage {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  pointer-events: none; /* 形象本身不拦截点击，交给外层入口 */
+}
+.assistant-pet-img {
+  display: block;
+  user-select: none;
+  transition: opacity 0.18s ease;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.22));
+}
+.assistant-pet-img.is-visible {
+  opacity: 1;
+}
+.assistant-pet-img.is-hidden {
+  opacity: 0;
+}
+
+/* 呼吸浮动：待命时上下轻微起伏。
+ * 注意：动画必须作用在"整个形象容器"上，让身体与眼睛层一起浮动；
+ * 若只让身体图(.assistant-pet-img)浮动，绝对定位的眼睛层不会跟着动，
+ * 就会出现"身体一呼一吸、眼睛相对脸上下漂移"的错觉。 */
+@keyframes assistantBreathe {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+.assistant-pet-stage.pet-anim-breathe {
+  animation: assistantBreathe 3s ease-in-out infinite;
+}
+
+/* 说话弹动：回复时快速小幅上下（同样作用在整个容器上） */
+@keyframes assistantTalk {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+.assistant-pet-stage.pet-anim-talk {
+  animation: assistantTalk 0.5s ease-in-out infinite;
+}
+
+@keyframes assistantGreet {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  35% { transform: translateY(-7px) rotate(-5deg); }
+  70% { transform: translateY(-3px) rotate(4deg); }
+}
+@keyframes assistantCelebrate {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  30%, 65% { transform: translateY(-8px) rotate(-4deg); }
+  48% { transform: translateY(-3px) rotate(4deg); }
+}
+@keyframes assistantConcern {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  25%, 75% { transform: translateY(2px) rotate(-3deg); }
+  50% { transform: translateY(2px) rotate(3deg); }
+}
+.assistant-pet-stage.pet-anim-greet { animation: assistantGreet 0.8s ease-out 1; }
+.assistant-pet-stage.pet-anim-celebrate { animation: assistantCelebrate 0.95s ease-out 1; }
+.assistant-pet-stage.pet-anim-concern { animation: assistantConcern 0.8s ease-in-out 1; }
+
+@keyframes assistantQueue {
+  0%, 100% { transform: rotate(-2deg) translateY(0); }
+  50% { transform: rotate(2deg) translateY(-2px); }
+}
+@keyframes assistantWork {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-3px) rotate(-1deg); }
+}
+.assistant-pet-stage.pet-anim-queued {
+  animation: assistantQueue 2.4s ease-in-out infinite;
+}
+.assistant-pet-stage.pet-anim-working {
+  animation: assistantWork 1.25s ease-in-out infinite;
+}
+@keyframes assistantTool {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  30% { transform: translateY(2px) rotate(-2deg); }
+  60% { transform: translateY(-2px) rotate(1deg); }
+}
+@keyframes assistantCurious {
+  from { transform: translateY(0) rotate(0); }
+  to { transform: translateY(-4px) rotate(4deg); }
+}
+.assistant-pet-stage.pet-anim-tool {
+  animation: assistantTool 1.4s ease-in-out infinite;
+}
+@media (hover: hover) {
+  .assistant-fab:not(.is-dragging):hover .assistant-pet-stage.pet-anim-breathe {
+    animation: assistantCurious 0.55s ease-out both;
+  }
+}
+.assistant-pet-stage.pet-anim-paused {
+  opacity: 0.8;
+}
+.assistant-pet-stage.is-page-hidden {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .assistant-pet-stage { animation: none !important; }
+  .assistant-fab.is-walking .assistant-pet-stage { visibility: visible !important; }
+  .assistant-pet-walk-frames { display: none !important; }
+  .assistant-fab:is(.is-pressed, .is-tapping, .is-dragging, .is-released) .assistant-pet-dock-motion {
+    animation: none !important;
+    transform: none !important;
+  }
+  .assistant-pet-img, .assistant-fab { transition: none !important; }
+  .assistant-fab-bubble { animation: none; }
+}
+
+@keyframes assistantGeminiWalkFrames {
+  0%, 14.28% { background-position: 0% 0; }
+  14.29%, 28.56% { background-position: 16.667% 0; }
+  28.57%, 42.85% { background-position: 33.333% 0; }
+  42.86%, 57.13% { background-position: 50% 0; }
+  57.14%, 71.42% { background-position: 66.667% 0; }
+  71.43%, 85.70% { background-position: 83.333% 0; }
+  85.71%, 100% { background-position: 100% 0; }
+}
+.assistant-pet-dock-motion {
+  position: relative;
+  transform-origin: 50% 80%;
+  transition: transform 0.16s ease-out;
+}
+@keyframes assistantTap {
+  0%, 100% { transform: translateY(0) rotate(0) scale(1); }
+  42% { transform: translateY(5px) rotate(-5deg) scale(0.92); }
+  72% { transform: translateY(-4px) rotate(3deg) scale(1.04); }
+}
+@keyframes assistantCarry {
+  from { transform: translateY(0) rotate(-5deg); }
+  to { transform: translateY(-5px) rotate(5deg); }
+}
+@keyframes assistantRelease {
+  0% { transform: translateY(-5px) scale(1.04); }
+  52% { transform: translateY(4px) scale(0.95); }
+  100% { transform: translateY(0) scale(1); }
+}
+.assistant-fab.is-pressed:not(.is-dragging):not(.is-tapping) .assistant-pet-dock-motion {
+  transform: translateY(3px) scale(0.95);
+}
+.assistant-fab.is-tapping .assistant-pet-dock-motion {
+  animation: assistantTap 0.32s ease-out both;
+}
+.assistant-fab.is-dragging .assistant-pet-dock-motion {
+  animation: assistantCarry 0.5s ease-in-out infinite alternate;
+}
+.assistant-fab.is-released .assistant-pet-dock-motion {
+  animation: assistantRelease 0.48s ease-out both;
+}
+.assistant-pet-walk-frames {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  background-repeat: no-repeat;
+  background-size: 700% 100%;
+  pointer-events: none;
+  animation: assistantGeminiWalkFrames 0.56s steps(1, end) both;
+}
+.assistant-pet-walk-frames.is-mirrored {
+  transform: scaleX(-1);
+}
+.assistant-fab.is-walking .assistant-pet-stage { visibility: hidden; }
+
+
+.assistant-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1200;
+  cursor: pointer;
+  transition: transform 0.25s ease;
+}
+/* 默认悬浮模式的 hover 上浮（贴边模式不套用，避免 transform 冲突） */
+.assistant-fab:not(.is-dock):hover {
+  transform: translateY(-6px) scale(1.04);
+}
+/* 移动端缩小并靠边，避免遮挡底部 Tab（仅非 dock 时用固定定位；
+ * dock 模式下位置由 JS 的 left/top inline 样式控制，可拖动+贴边隐入） */
+.assistant-fab.is-mobile:not(.is-dock) {
+  right: 12px;
+  bottom: 76px;
+}
+
+/* 移动端对话占满可见页面，标题和输入栏避开系统安全区。 */
+.assistant-panel-mobile .ant-drawer-content-wrapper {
+  width: 100vw !important;
+  height: 100dvh;
+}
+.assistant-panel-mobile .ant-drawer-header {
+  padding-top: max(12px, env(safe-area-inset-top));
+}
+.assistant-panel-mobile .ant-drawer-body {
+  min-height: 0;
+}
+
+/* 左右进出都正序播放七帧步态，再按行进方向镜像人物；停住后显示探头图。 */
+.assistant-fab.is-dock {
+  right: auto;
+  bottom: auto;
+  cursor: grab;
+  transition: transform 0.55s cubic-bezier(0.34, 1.32, 0.5, 1);
+  will-change: transform;
+}
+/* 展开：完整、无旋转 */
+.assistant-fab.is-dock.is-expanded {
+  transform: rotate(0deg) translate(0, 0);
+}
+/* 左右走入时平移；停住后改为各自的探头图，不再倾斜整个人。 */
+.assistant-fab.is-dock.is-hide-left {
+  transform: translateX(calc(-1 * var(--slide, 68%)));
+}
+.assistant-fab.is-dock.is-hide-right {
+  transform: translateX(var(--slide, 68%));
+}
+.assistant-pet-peek {
+  position: absolute;
+  top: 0;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 5px 9px rgba(0, 0, 0, 0.16));
+}
+.assistant-fab.is-hide-left .assistant-pet-peek {
+  left: auto;
+  right: -50%;
+}
+.assistant-fab.is-hide-right .assistant-pet-peek {
+  left: -50%;
+  right: auto;
+}
+.assistant-fab:is(.is-hide-left, .is-hide-right):not(.is-walking) .assistant-pet-stage {
+  visibility: hidden;
+}
+/* 贴底墙：向下滑进墙，只露头顶 */
+.assistant-fab.is-dock.is-hide-bottom {
+  transform: translateY(calc((1 - var(--peek-top, 0.32)) * 100%));
+}
+/* 拖动中：抓取光标、去掉过渡跟手 */
+.assistant-fab.is-dock.is-dragging {
+  cursor: grabbing;
+  transition: none;
+  user-select: none;
+}
+/* 收起态隐藏气泡 */
+.assistant-fab.is-dock:not(.is-expanded) .assistant-fab-bubble {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 只在贴边收起时露出状态点，避免气泡覆盖页面内容。 */
+.assistant-fab-status {
+  position: absolute;
+  z-index: 1;
+  top: 24px;
+  right: 4px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #448567;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  pointer-events: none;
+}
+.assistant-fab.task-queued .assistant-fab-status { background: #be8b29; }
+.assistant-fab.task-paused .assistant-fab-status { background: #778891; }
+.assistant-fab.is-hide-left .assistant-fab-status,
+.assistant-fab.is-hide-right .assistant-fab-status,
+.assistant-fab.is-hide-bottom .assistant-fab-status { opacity: 1; }
+.assistant-fab.is-hide-right .assistant-fab-status { left: 4px; right: auto; }
+.assistant-fab.is-hide-bottom .assistant-fab-status { top: 4px; }
+
+/* 入口气泡 */
+.assistant-fab-bubble {
+  position: absolute;
+  right: 100%;
+  top: 20px;
+  margin-right: 10px;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 130px));
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: var(--assistant-bubble-bg, #ffffff);
+  color: var(--assistant-bubble-color, #2c3e50);
+  padding: 7px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  animation: assistantBreathe 2.8s ease-in-out infinite;
+}
+/* 状态用文字和颜色双重区分，长详情不挤出视口。 */
+.assistant-notice-title {
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.45;
+  margin-bottom: 5px;
+}
+.assistant-notice-title.is-done { color: #087f42; }
+.assistant-notice-title.is-failed { color: #c62828; }
+.assistant-notice-title.is-start { color: #1565c0; }
+.assistant-notice-body {
+  line-height: 1.5;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.assistant-fab-bubble::after {
+  content: '';
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 6px solid transparent;
+  border-left-color: var(--assistant-bubble-bg, #ffffff);
+}
+
+/* 人物靠近左边界时，把气泡放到右侧。 */
+.assistant-fab.is-bubble-right .assistant-fab-bubble {
+  left: 100%;
+  right: auto;
+  margin-left: 10px;
+  margin-right: 0;
+}
+.assistant-fab.is-bubble-right .assistant-fab-bubble::after {
+  left: -6px;
+  right: auto;
+  border-left-color: transparent;
+  border-right-color: var(--assistant-bubble-bg, #ffffff);
+}
+
+/* 面板内顶部大立绘展示区已移除，仅保留标题栏小头像（antd Avatar） */
+
+/* 工具、思考和正文沿消息自然流布局，不额外嵌套卡片。 */
+.assistant-thinking,
+.assistant-tool-entry,
+.assistant-tool-total {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--assistant-meta-color, #626b73);
+}
+.assistant-thinking,
+.assistant-tool-entry { margin: 2px 0 6px; }
+.assistant-tool-entry { padding-left: 8px; border-left: 2px solid #778891; }
+.assistant-tool-entry.running { border-color: #317cab; }
+.assistant-tool-entry.error,
+.assistant-thinking.error { color: #bd463e; border-color: #bd463e; }
+.assistant-tool-entry.done { border-color: #448567; }
+.assistant-tool-entry span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.assistant-tool-entry small { flex: none; font-size: 11px; }
+.assistant-tool-failure { margin-top: 3px; font-size: 11px; }
+.assistant-tool-failure summary { cursor: pointer; width: fit-content; }
+.assistant-tool-failure div { margin-top: 3px; overflow-wrap: anywhere; }
+.assistant-tool-total { margin: 0 0 6px; font-weight: 600; }
+.assistant-timeline-text { min-width: 0; overflow-wrap: anywhere; }
+.assistant-msg.bot.structured { width: 100%; max-width: 100%; }
+.assistant-choice { margin-top: 10px; border-top: 1px solid var(--assistant-table-border, rgba(0,0,0,.12)); padding-top: 8px; font-size: 13px; }
+.assistant-choice p { margin: 4px 0 8px; }
+.assistant-choice-expired { margin-left: 8px; color: #a64c39; font-size: 12px; font-weight: 500; }
+.assistant-choice-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.assistant-choice-options .ant-btn { max-width: 100%; height: auto; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+
+/* 写类工具二次确认卡 */
+.assistant-code-preview { margin: 8px 0; min-width: 0; font-size: 12px; }
+.assistant-code-status { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.assistant-code-status.is-passed { color: #087f42; }
+.assistant-code-status.is-blocked { color: #c62828; }
+.assistant-code-status small { color: var(--assistant-text-muted, #718096); }
+.assistant-code-files { padding-left: 18px; max-height: 140px; overflow: auto; overflow-wrap: anywhere; }
+.assistant-code-preview .ant-collapse-header { padding: 4px 0 !important; }
+.assistant-code-preview .ant-collapse-content-box { padding: 4px 0 !important; }
+.assistant-code-diff { margin: 0; padding: 8px; width: 100%; max-width: 100%; max-height: 260px; overflow: auto; white-space: pre; word-break: normal; overflow-wrap: normal; background: var(--assistant-input-bg, #f7f8fa); color: var(--assistant-text, #2c3e50); font-size: 11px; }
+
+.assistant-confirm-card {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(250, 173, 20, 0.4);
+  background: rgba(250, 173, 20, 0.08);
+}
+.assistant-confirm-desc {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: rgba(0, 0, 0, 0.75);
+  overflow-wrap: anywhere;
+}
+.assistant-confirm-warning {
+  display: block;
+  margin-top: 4px;
+  color: #a44f12;
+}
+.assistant-confirm-args {
+  display: block;
+  margin-top: 4px;
+  color: #777;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.assistant-confirm-btns {
+  display: flex;
+  gap: 8px;
+}
+
+/* 消息复制按钮：默认淡，hover 消息时显现 */
+.assistant-msg-copy {
+  display: inline-block;
+  margin-left: 6px;
+  opacity: 0;
+  cursor: pointer;
+  color: var(--assistant-accent, #d9a441);
+  font-size: 13px;
+  transition: opacity 0.2s;
+  vertical-align: middle;
+}
+.assistant-msg.bot:hover .assistant-msg-copy {
+  opacity: 0.7;
+}
+.assistant-msg-copy:hover {
+  opacity: 1 !important;
+}
+
+/* "正在输入"三点跳动动画（替代原竖条光标） */
+.assistant-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+}
+.assistant-typing-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--assistant-accent, #d9a441);
+  opacity: 0.4;
+  animation: assistant-typing-bounce 1.2s infinite ease-in-out;
+}
+.assistant-typing-dots i:nth-child(2) { animation-delay: 0.15s; }
+.assistant-typing-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes assistant-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* 消息中的图片附件 */
+.assistant-msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.assistant-msg-image {
+  max-width: 160px;
+  max-height: 160px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+/* 授权按钮独立占一行，避免窄屏输入框被工具挤压。 */
+.assistant-input-tools {
+  display: flex;
+  align-items: center;
+  margin-top: 10px;
+}
+.assistant-code-repair-toggle {
+  flex: none;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 待发送图片预览 */
+.assistant-pending-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.03);
+}
+.assistant-pending-image {
+  position: relative;
+}
+.assistant-pending-image img {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.assistant-pending-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* 标题栏头像：使用专门的 avatar 图，轻微放大填满圆形即可，避免过度裁切。 */
+.assistant-title-avatar img {
+  object-fit: cover;
+  object-position: center;
+  transform: scale(1.05);
+  transform-origin: center;
+}
+
+/* ---------- 聊天消息 ---------- */
+.assistant-msg {
+  max-width: 82%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.assistant-msg.bot {
+  align-self: flex-start;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  background: transparent;
+}
+/* 轮次消息的浅深主题变量只作用于助手面板，不改变页面主题。 */
+.assistant-panel {
+  --assistant-msg-bot-bg: rgba(0, 0, 0, 0.045);
+  --assistant-meta-color: #626b73;
+}
+.dark .assistant-panel {
+  --assistant-msg-bot-bg: rgba(255, 255, 255, 0.07);
+  --assistant-meta-color: #afb5bd;
+}
+.assistant-round { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; margin-bottom: 10px; }
+.assistant-round:last-child { margin-bottom: 0; }
+.assistant-round-bubble {
+  max-width: 92%;
+  padding: 10px 13px;
+  border-radius: 12px 12px 12px 4px;
+  background: var(--assistant-msg-bot-bg, rgba(0, 0, 0, 0.04));
+}
+.assistant-round-bubble pre { max-width: 100%; overflow-x: auto; white-space: pre; }
+.assistant-round-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 2px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--assistant-meta-color, #626b73);
+  overflow-wrap: anywhere;
+}
+.assistant-round-status > .anticon { flex: 0 0 16px; width: 16px; height: 16px; font-size: 16px; color: #448567; }
+.assistant-round-status.running > .anticon { color: #8864c8; }
+.assistant-round-status:is(.error, .interrupted) > .anticon { color: #bd463e; }
+.assistant-round-status > span:last-child { min-width: 0; }
+.assistant-round-details { width: 100%; min-width: 0; }
+.assistant-round-details > summary { cursor: pointer; list-style: none; }
+.assistant-round-details > summary::-webkit-details-marker { display: none; }
+.assistant-round-details > summary::after { content: '\203A'; flex: none; margin-left: 2px; font-size: 16px; transform: rotate(0deg); }
+.assistant-round-details[open] > summary::after { transform: rotate(90deg); }
+.assistant-round-tools { margin: 6px 0 0 22px; }
+.assistant-round-tool-summary { color: var(--assistant-meta-color, #626b73); }
+/* 固定环形图标大小，避免 flex 压缩或主题样式令等待提示不可见。 */
+.assistant-loading-ring.anticon { display: inline-flex; flex: 0 0 16px; width: 16px; height: 16px; font-size: 16px; }
+.assistant-loading-ring svg { width: 16px; height: 16px; animation: assistant-ring-spin 1s linear infinite; }
+@keyframes assistant-ring-spin { to { transform: rotate(360deg); } }
+.assistant-header-text { min-width: 0; }
+.assistant-header-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-panel .ant-drawer-header-title { min-width: 0; }
+.assistant-panel .ant-drawer-title { min-width: 0; }
+.assistant-panel .ant-drawer-extra { flex-shrink: 0; }
+@media (max-width: 500px) {
+  .assistant-panel .ant-drawer-header { padding-left: 12px; padding-right: 12px; gap: 4px; }
+  .assistant-panel .ant-drawer-extra .ant-btn { width: 28px; min-width: 28px; padding: 0; }
+  .assistant-panel .assistant-title-avatar { flex-shrink: 0; }
+  .assistant-round-bubble { max-width: 96%; }
+  .assistant-msg-copy { opacity: .65; }
+}
+.assistant-msg.user {
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+  background: #8864c8;
+  color: #fff;
+}
+.assistant-msg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px;
+}
+/* 让 markdown 段落间距更紧凑 */
+.assistant-msg p {
+  margin: 0 0 6px;
+}
+.assistant-msg p:last-child {
+  margin-bottom: 0;
+}
+
+
+/* ---------- Markdown 表格（remark-gfm 渲染产物） ----------
+ * why：助手常用表格对比"多个配置项 × 多个字段"，无边框时几乎不可读。
+ * 面板宽度有限，故给表格套横向滚动容器，避免列多时撑破气泡。
+ * 颜色统一走 CSS 变量，随主题（浅色/深色）自动适配。
+ */
+.assistant-msg table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.assistant-msg table th,
+.assistant-msg table td {
+  border: 1px solid var(--assistant-table-border, rgba(0, 0, 0, 0.12));
+  padding: 5px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+.assistant-msg table th {
+  background: var(--assistant-table-head-bg, rgba(0, 0, 0, 0.05));
+  font-weight: 600;
+}
+/* 斑马纹：长表格里更容易横向对齐读数 */
+.assistant-msg table tbody tr:nth-child(even) {
+  background: var(--assistant-table-even-bg, rgba(0, 0, 0, 0.02));
+}
+/* 用户气泡是深蓝底，需要反色边框才看得见 */
+.assistant-msg.user table th,
+.assistant-msg.user table td {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.assistant-msg.user table th {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* 深色主题下的表格配色（项目用 .dark 类策略，见 index.css） */
+.dark .assistant-msg table th,
+.dark .assistant-msg table td {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.dark .assistant-msg table th {
+  background: rgba(255, 255, 255, 0.08);
+}
+.dark .assistant-msg table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* 桌面端全屏：去掉侧边阴影，消息与输入区居中限宽，避免超宽屏下一行过长（参考 MoviePilot） */
+.assistant-panel.is-fullscreen .ant-drawer-content-wrapper { box-shadow: none; }
+.assistant-panel.is-fullscreen .ant-drawer-body {
+  padding-inline: max(16px, calc((100% - 72rem) / 2)) !important;
+}
+.assistant-panel.is-fullscreen .assistant-msg { max-width: 64rem; }
+
+/* 斜杠命令菜单：输入以 / 开头时出现在输入框上方 */
+.assistant-slash-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 4px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  background: var(--color-card, #fff);
+}
+.assistant-slash-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.assistant-slash-item:hover,
+.assistant-slash-item:focus-visible {
+  background: rgba(127, 127, 127, 0.12);
+  outline: none;
+}
+.assistant-slash-item span { opacity: 0.7; font-size: 12px; }

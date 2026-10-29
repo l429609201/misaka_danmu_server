@@ -17,8 +17,10 @@ const getImageSrc = (record) => {
 const typeIconMap = {
   tv_series: 'tv',
   movie: 'movie',
-  ova: 'tv',
+  ova: 'ova',
   other: 'tv',
+  variety: 'variety',
+  short_drama: 'tv',
 }
 
 const AnimeCard = ({ record, onEdit, onDelete, onNavigate, onFavorite, onIncremental, onFinished }) => {

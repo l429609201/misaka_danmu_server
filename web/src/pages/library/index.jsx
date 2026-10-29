@@ -7,7 +7,6 @@ import {
   InputNumber,
   List,
   Modal,
-  Pagination,
   Radio,
   Select,
   Space,
@@ -29,6 +28,8 @@ import {
   getAnimeDetail,
   getAnimeInfoAsSource,
   getAnimeLibrary,
+  getTaskList,
+  getTaskDetail,
   getBgmSearch,
   getDoubanSearch,
   getEgidSearch,
@@ -50,10 +51,13 @@ import {
   renameAnimeGroup,
   deleteAnimeGroup,
   setAnimeGroupMembership,
+  getMediaServers,
+  lookupMediaServerItems,
+  bindMediaServerToAnime,
 } from '../../apis'
 import LibraryGroupView from './LibraryGroupView'
 import { MyIcon } from '@/components/MyIcon'
-import { DANDAN_TYPE_DESC_MAPPING, DANDAN_TYPE_MAPPING } from '../../configs'
+import { ANIME_TYPE_OPTIONS, DANDAN_TYPE_DESC_MAPPING, DANDAN_TYPE_MAPPING } from '../../configs'
 import dayjs from 'dayjs'
 import { useNavigate } from 'react-router-dom'
 import { CreateAnimeModal } from '../../components/CreateAnimeModal'
@@ -66,6 +70,7 @@ import PosterSearchModal from '../media-fetch/components/PosterSearchModal'
 import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../store/index.js'
 import { useDefaultPageSize } from '../../hooks/useDefaultPageSize'
+import { StickyPagination } from '@/components/StickyPagination'
 
 import { useTranslation } from 'react-i18next'
 
@@ -99,8 +104,17 @@ export const Library = () => {
 
   const [loading, setLoading] = useState(true)
   const [list, setList] = useState([])
+  const [deletingAnimeIds, setDeletingAnimeIds] = useState(() => new Set())
+  const deletingAnimeIdsRef = useRef(new Set())
+  const submittingDeleteIdsRef = useRef(new Set())
+  const pendingDeleteSyncIdsRef = useRef(new Set())
+  const deleteTasksRef = useRef(new Map())
+  const deleteRefreshRequestedRef = useRef(false)
+  const deletePollingCallbacksRef = useRef(null)
   // 从 sessionStorage 恢复上次的搜索关键词
   const [keyword, setKeyword] = useState(() => sessionStorage.getItem('lib_keyword') || '')
+  // 类型筛选（空串=全部），同样记在 sessionStorage，返回页面时保留
+  const [typeFilter, setTypeFilter] = useState(() => sessionStorage.getItem('lib_type') || '')
   // null 表示未从 DB 初始化，防止初始化前触发 getList
   const [sortBy, setSortBy] = useState(null)
   const [sortOrder, setSortOrder] = useState(null)
@@ -235,9 +249,20 @@ export const Library = () => {
   const [downloadingLocal, setDownloadingLocal] = useState(false)
   const [previewVisible, setPreviewVisible] = useState(false)
 
+  // 媒体服务器反查绑定状态
+  const [msLookupOpen, setMsLookupOpen] = useState(false) // 反查弹窗开关
+  const [msServers, setMsServers] = useState([]) // 已配置的媒体服务器列表
+  const [msSelectedServer, setMsSelectedServer] = useState(null) // 当前选中的服务器 ID
+  const [msKeyword, setMsKeyword] = useState('') // 反查关键词
+  const [msResults, setMsResults] = useState([]) // 反查候选结果
+  const [msLoading, setMsLoading] = useState(false) // 反查请求中
+  const [msBinding, setMsBinding] = useState(false) // 绑定请求中
+  const msServerType = Form.useWatch('mediaServerType', form)
+  const msSeriesId = Form.useWatch('mediaServerSeriesId', form)
+
   const modalApi = useModal()
   const messageApi = useMessage()
-  const deleteFilesRef = useRef(true) // 删除时是否同时删除弹幕文件，默认为 true
+  const deletePollingMountedRef = useRef(false)
 
   // 源选择弹窗状态（用于标记和追更操作）
   const [sourceSelectOpen, setSourceSelectOpen] = useState(false)
@@ -251,15 +276,19 @@ export const Library = () => {
       setLoading(true)
       const res = await getAnimeLibrary({
         keyword: keyword,
+        type: typeFilter || undefined,
         page: pagination.current,
         pageSize: pagination.pageSize,
         sortBy,
         sortOrder,
       })
+      const total = res.data?.total || 0
+      const lastPage = Math.max(1, Math.ceil(total / pagination.pageSize))
       setList(res.data?.list || [])
       setPagination(prev => ({
         ...prev,
-        total: res.data?.total || 0,
+        current: prev.current === pagination.current && pagination.current > lastPage ? lastPage : prev.current,
+        total,
       }))
     } catch (error) {
       setList([])
@@ -285,13 +314,13 @@ export const Library = () => {
         current: 1,
       }
     })
-  }, [keyword])
+  }, [keyword, typeFilter])
 
   useEffect(() => {
     // sortBy/sortOrder 未从 DB 初始化完成时不触发
     if (sortBy === null || sortOrder === null) return
     getList()
-  }, [keyword, pagination.current, pagination.pageSize, sortBy, sortOrder])
+  }, [keyword, typeFilter, pagination.current, pagination.pageSize, sortBy, sortOrder])
 
   // mount 时从 DB 读取上次保存的排序配置，读完后才触发 getList
   // sessionStorage 中若有缓存的排序状态，优先使用（返回弹幕库时恢复）
@@ -410,6 +439,12 @@ export const Library = () => {
       title: t('libraryPage.colName'),
       dataIndex: 'title',
       key: 'title',
+      render: (value, record) => (
+        <Space wrap>
+          <span>{value}</span>
+          {deletingAnimeIds.has(record.animeId) && <Tag color="processing">{t('libraryPage.deletePending')}</Tag>}
+        </Space>
+      ),
     },
     {
       title: t('libraryPage.colType'),
@@ -437,6 +472,7 @@ export const Library = () => {
         const hasFavorited = record.sources?.some(s => s.isFavorited)
         const hasIncremental = record.sources?.some(s => s.incrementalRefreshEnabled)
         const allFinished = record.sources?.length > 0 && record.sources.every(s => s.isFinished)
+        const isDeleting = deletingAnimeIds.has(record.animeId)
         return (
           <Space>
             <Tooltip title={t('libraryPage.tipEdit')}>
@@ -472,11 +508,11 @@ export const Library = () => {
                 <MyIcon icon="book" size={20} />
               </span>
             </Tooltip>
-            <Tooltip title={t('libraryPage.tipDelete')}>
-              <span className="cursor-pointer hover:text-primary"
-                onClick={(e) => { e.stopPropagation(); handleDelete(record) }}>
-                <MyIcon icon="delete" size={20} />
-              </span>
+            <Tooltip title={t(isDeleting ? 'libraryPage.deletePending' : 'libraryPage.tipDelete')}>
+              <Button type="text" size="small" disabled={isDeleting}
+                aria-label={t(isDeleting ? 'libraryPage.deletePending' : 'libraryPage.tipDelete')}
+                onClick={(e) => { e.stopPropagation(); handleDelete(record) }}
+                icon={<MyIcon icon="delete" size={20} />} />
             </Tooltip>
           </Space>
         )
@@ -598,14 +634,110 @@ export const Library = () => {
     }
   }
 
+  // 轮询始终使用当前搜索、分页和文案，避免挂载时闭包过期。
+  deletePollingCallbacksRef.current = { getList, loadGroups, messageApi, t }
+
+  useEffect(() => {
+    let disposed = false
+    let timer
+    deletePollingMountedRef.current = true
+    const pageSize = 100
+    const terminalStatuses = ['已完成', '失败', '超时', '已取消', 'completed', 'failed', 'cancelled']
+
+    const fetchActiveTasks = async () => {
+      const tasks = []
+      for (let page = 1; !disposed; page += 1) {
+        const res = await getTaskList({ status: 'in_progress', page, pageSize, sortBy: 'createdAt' })
+        if (disposed) return []
+        const items = res.data?.list || []
+        tasks.push(...items)
+        if (!items.length || page * pageSize >= (res.data?.total || 0)) break
+      }
+      return tasks
+    }
+
+    const poll = async () => {
+      let refresh = deleteRefreshRequestedRef.current
+      deleteRefreshRequestedRef.current = false
+      try {
+        // 先保存本轮要检查的任务，提交中的新任务留到下一轮，防止竞态解锁。
+        const trackedTasks = new Map(deleteTasksRef.current)
+        const pendingSyncIds = new Set(pendingDeleteSyncIdsRef.current)
+        const activeTasks = await fetchActiveTasks()
+        if (disposed) return
+        const activeTaskIds = new Set(activeTasks.map(task => task.taskId))
+        const activeAnimeIds = new Set()
+        for (const task of activeTasks) {
+          const match = /^delete-anime-(\d+)$/.exec(task.uniqueKey || '')
+          if (!match) continue
+          const id = Number(match[1])
+          activeAnimeIds.add(id)
+          deleteTasksRef.current.set(task.taskId, id)
+        }
+
+        const missingIds = new Set([...trackedTasks.keys()].filter(id => !activeTaskIds.has(id)))
+        if (missingIds.size) {
+          // 逐个确认已知任务，避免历史分页变化漏掉瞬间完成的任务。
+          const history = []
+          for (const taskId of missingIds) {
+            try {
+              const res = await getTaskDetail(taskId)
+              if (disposed) return
+              history.push({ taskId, task: res.data })
+            } catch (error) {
+              if (disposed) return
+              if (error.code !== 404) throw error
+              history.push({ taskId, task: null })
+            }
+          }
+          for (const { taskId, task } of history) {
+            if (task && !terminalStatuses.includes(task.status)) continue
+            deleteTasksRef.current.delete(taskId)
+            refresh = true
+            if (task && !['已完成', 'completed'].includes(task.status)) {
+              const { messageApi: currentMessage, t: currentT } = deletePollingCallbacksRef.current
+              currentMessage.error(currentT('libraryPage.deleteFailed', { error: task.description || task.status }))
+            }
+          }
+        }
+
+        for (const id of pendingSyncIds) pendingDeleteSyncIdsRef.current.delete(id)
+        const nextIds = new Set([...activeAnimeIds, ...submittingDeleteIdsRef.current, ...pendingDeleteSyncIdsRef.current, ...deleteTasksRef.current.values()])
+        deletingAnimeIdsRef.current = nextIds
+        setDeletingAnimeIds(nextIds)
+        if (refresh) {
+          const callbacks = deletePollingCallbacksRef.current
+          await Promise.all([callbacks.getList(), callbacks.loadGroups()])
+        }
+      } catch (error) {
+        if (refresh) deleteRefreshRequestedRef.current = true
+        // 网络失败不解除锁，下轮继续确认后端状态。
+      } finally {
+        if (!disposed) timer = window.setTimeout(poll, 1500)
+      }
+    }
+    poll()
+    return () => {
+      disposed = true
+      deletePollingMountedRef.current = false
+      window.clearTimeout(timer)
+    }
+  }, [])
+
   const handleDelete = async record => {
-    deleteFilesRef.current = true // 重置为默认值
+    const id = Number(record.animeId)
+    if (deletingAnimeIdsRef.current.has(id)) {
+      messageApi.warning(t('libraryPage.deleteAlreadyRunning'))
+      return
+    }
+    // 每个确认框独立保存文件选项，多个确认框不会互相覆盖。
+    let deleteFiles = true
     modalApi.confirm({
       title: t('libraryPage.deleteTitle'),
       zIndex: 1002,
       content: (
         <div>
-          {t('libraryPage.deleteConfirmMsg', { name: record.name })}
+          {t('libraryPage.deleteConfirmMsg', { name: record.title || record.name })}
           <br />
           {t('libraryPage.deleteHintBg')}
           <div className="flex items-center gap-2 mt-3">
@@ -613,7 +745,7 @@ export const Library = () => {
             <Switch
               defaultChecked={true}
               onChange={checked => {
-                deleteFilesRef.current = checked
+                deleteFiles = checked
               }}
             />
           </div>
@@ -622,11 +754,39 @@ export const Library = () => {
       okText: t('common.confirm'),
       cancelText: t('common.cancel'),
       onOk: async () => {
+        if (!deletePollingMountedRef.current) return
+        if (deletingAnimeIdsRef.current.has(id)) {
+          messageApi.warning(t('libraryPage.deleteAlreadyRunning'))
+          return
+        }
+        // 同步加锁，React 下一次渲染前的连续点击也不能重复提交。
+        deletingAnimeIdsRef.current.add(id)
+        submittingDeleteIdsRef.current.add(id)
+        setDeletingAnimeIds(new Set(deletingAnimeIdsRef.current))
         try {
-          const res = await deleteAnime({ animeId: record.animeId, deleteFiles: deleteFilesRef.current })
-          goTask(res)
+          const res = await deleteAnime({ animeId: id, deleteFiles })
+          if (!deletePollingMountedRef.current) return
+          const task = res.data
+          if (task?.taskId) deleteTasksRef.current.set(task.taskId, id)
+          else {
+            pendingDeleteSyncIdsRef.current.add(id)
+            deleteRefreshRequestedRef.current = true
+          }
+          goTask(task || {})
         } catch (error) {
-          messageApi.error(t('libraryPage.deleteSubmitFailed'))
+          if (!deletePollingMountedRef.current) return
+          if (error.code === 409) {
+            // 保留禁用状态直到下一轮同步后端活跃任务，不能把409当成解锁。
+            pendingDeleteSyncIdsRef.current.add(id)
+            deleteRefreshRequestedRef.current = true
+            messageApi.warning(t('libraryPage.deleteAlreadyRunning'))
+          } else {
+            deletingAnimeIdsRef.current.delete(id)
+            setDeletingAnimeIds(new Set(deletingAnimeIdsRef.current))
+            messageApi.error(t('libraryPage.deleteSubmitFailed'))
+          }
+        } finally {
+          submittingDeleteIdsRef.current.delete(id)
         }
       },
     })
@@ -649,7 +809,7 @@ export const Library = () => {
         navigate(`${RoutePaths.TASK}?status=all`)
       },
       onCancel: () => {
-        getList()
+        if (deletePollingMountedRef.current) deletePollingCallbacksRef.current.getList()
       },
     })
   }
@@ -679,6 +839,99 @@ export const Library = () => {
     if (!str) return false
     // 此正则表达式匹配日文假名和常见的CJK统一表意文字
     return /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(str)
+  }
+
+  /** ========== 媒体服务器反查与绑定 ========== */
+
+  /** 打开反查弹窗：加载服务器列表，预填当前作品标题 */
+  const handleOpenMsLookup = async () => {
+    try {
+      const res = await getMediaServers()
+      const servers = res?.data || []
+      if (!servers.length) {
+        messageApi.warning('尚未配置媒体服务器，请先到「媒体获取」页面添加')
+        return
+      }
+      setMsServers(servers)
+      // 默认选中第一个启用的服务器
+      const firstEnabled = servers.find(s => s.isEnabled) || servers[0]
+      setMsSelectedServer(firstEnabled?.id ?? null)
+      setMsKeyword(title || '')
+      setMsResults([])
+      setMsLookupOpen(true)
+    } catch (error) {
+      messageApi.error(`加载媒体服务器列表失败：${error.message || error.detail}`)
+    }
+  }
+
+  /** 执行反查：在选中的服务器里按关键词搜索候选条目 */
+  const handleMsLookup = async () => {
+    if (!msSelectedServer) {
+      messageApi.warning('请先选择媒体服务器')
+      return
+    }
+    if (!msKeyword?.trim()) {
+      messageApi.warning('请输入搜索关键词')
+      return
+    }
+    try {
+      setMsLoading(true)
+      const res = await lookupMediaServerItems(msSelectedServer, {
+        keyword: msKeyword.trim(),
+        // 按当前作品类型过滤，提高命中精度
+        mediaType: type === DANDAN_TYPE_MAPPING.tvseries ? 'tv_series' : 'movie',
+      })
+      const items = res?.data || []
+      setMsResults(items)
+      if (!items.length) {
+        messageApi.info('未找到匹配的条目，可尝试调整关键词')
+      }
+    } catch (error) {
+      messageApi.error(`反查失败：${error.detail || error.message}`)
+    } finally {
+      setMsLoading(false)
+    }
+  }
+
+  /** 绑定选中的候选条目到当前作品 */
+  const handleMsBind = async item => {
+    if (!animeId) {
+      messageApi.error('缺少作品 ID，无法绑定')
+      return
+    }
+    try {
+      setMsBinding(true)
+      // seriesId 优先用候选项的 seriesId，电影类型回落到 itemId 自身
+      const seriesId = item.seriesId || item.itemId
+      await bindMediaServerToAnime(animeId, {
+        serverId: msSelectedServer,
+        seriesId,
+        seasonId: item.seasonId || null,
+      })
+      // 同步回填表单，让用户立即看到绑定结果
+      const server = msServers.find(s => s.id === msSelectedServer)
+      form.setFieldsValue({
+        mediaServerType: server?.providerName || null,
+        mediaServerSeriesId: seriesId,
+        mediaServerSeasonId: item.seasonId || null,
+      })
+      messageApi.success(`已绑定到《${item.title}》`)
+      setMsLookupOpen(false)
+    } catch (error) {
+      messageApi.error(`绑定失败：${error.detail || error.message}`)
+    } finally {
+      setMsBinding(false)
+    }
+  }
+
+  /** 解除绑定：清空三个字段（需点击保存才生效） */
+  const handleMsUnbind = () => {
+    form.setFieldsValue({
+      mediaServerType: null,
+      mediaServerSeriesId: null,
+      mediaServerSeasonId: null,
+    })
+    messageApi.info('已清空绑定信息，点击「保存」后生效')
   }
 
   /** 搜索相关 */
@@ -1168,6 +1421,23 @@ export const Library = () => {
     setKeyword(searchInputValue)
   }
 
+  const handleTypeFilterChange = (value) => {
+    const next = value || ''
+    sessionStorage.setItem('lib_type', next)
+    setTypeFilter(next)
+  }
+
+  const typeFilterSelect = (style) => (
+    <Select
+      allowClear
+      placeholder={t('libraryPage.labelType')}
+      value={typeFilter || undefined}
+      onChange={handleTypeFilterChange}
+      options={ANIME_TYPE_OPTIONS}
+      style={style}
+    />
+  )
+
   const handleReset = () => {
     setKeyword('')
     setSearchInputValue('')
@@ -1258,6 +1528,7 @@ export const Library = () => {
                 allowClear
                 style={{ width: 300 }}
               />
+              {typeFilterSelect({ width: 130 })}
               {keyword && (
                 <Button onClick={handleReset}>
                   {t('libraryPage.btnReset')}
@@ -1337,6 +1608,7 @@ export const Library = () => {
               )}
             </div>
             <div className="space-y-2">
+              {typeFilterSelect({ width: '100%' })}
               <div className="flex gap-2">
                 <Button
                   block
@@ -1403,6 +1675,7 @@ export const Library = () => {
             setEditOpen(true)
           }}
           onDelete={handleDelete}
+          deletingAnimeIds={deletingAnimeIds}
           onNavigate={(record) => navigate(`/anime/${record.animeId}`)}
           onFavorite={(record) => handleFavorite(record)}
           onIncremental={(record) => handleIncremental(record)}
@@ -1414,24 +1687,23 @@ export const Library = () => {
           onDeleteGroupSilent={handleDeleteGroupSilent}
         />
 
-        {/* 分页器：在 LibraryGroupView 外部统一显示 */}
+        {/* 分页器：桌面端吸底卡片，移动端自动切换为悬浮按钮 + 底部抽屉 */}
         {pagination.total > 0 && (
-          <div className="mt-4 flex justify-end">
-            <Pagination
-              current={pagination.current}
-              pageSize={pagination.pageSize}
-              total={pagination.total}
-              showTotal={total => t('libraryPage.totalItems', { total })}
-              showSizeChanger
-              hideOnSinglePage
-              onChange={(page, pageSize) => {
-                setPagination(n => ({ ...n, current: page, pageSize }))
-              }}
-              onShowSizeChange={(_, size) => {
-                setPagination(n => ({ ...n, pageSize: size }))
-              }}
-            />
-          </div>
+          <StickyPagination
+            current={pagination.current}
+            pageSize={pagination.pageSize}
+            total={pagination.total}
+            showTotal={total => t('libraryPage.totalItems', { total })}
+            showSizeChanger
+            showQuickJumper
+            showScrollButtons
+            onChange={(page, pageSize) => {
+              setPagination(n => ({ ...n, current: page, pageSize }))
+            }}
+            onShowSizeChange={(_, size) => {
+              setPagination(n => ({ ...n, pageSize: size }))
+            }}
+          />
         )}
       </Card>
       <CreateAnimeModal
@@ -1471,18 +1743,8 @@ export const Library = () => {
             label={t('libraryPage.labelType')}
             rules={[{ required: true, message: t('libraryPage.ruleType') }]}
           >
-            <Select
-              options={[
-                {
-                  value: 'tv_series',
-                  label: DANDAN_TYPE_DESC_MAPPING['tv_series'],
-                },
-                {
-                  value: 'movie',
-                  label: DANDAN_TYPE_DESC_MAPPING['movie'],
-                },
-              ]}
-            />
+            {/* 编辑类型下拉：覆盖全部类型（含综艺/短剧） */}
+            <Select options={ANIME_TYPE_OPTIONS} />
           </Form.Item>
           <Form.Item name="season" label={t('libraryPage.labelSeason')}>
             <InputNumber style={{ width: '100%' }} placeholder={t('libraryPage.placeholderSeason')} />
@@ -1867,10 +2129,191 @@ export const Library = () => {
           >
             <Switch />
           </Form.Item>
+
+          {/* 媒体服务器绑定：用于 webhook 删除联动，可手动反查或编辑 */}
+          <Collapse
+            ghost
+            className="-mx-3"
+            items={[
+              {
+                key: 'mediaServer',
+                label: (
+                  <Space size={8}>
+                    <LinkOutlined />
+                    <span>媒体服务器绑定</span>
+                    {msServerType ? (
+                      <Tag color="green">{msServerType}</Tag>
+                    ) : (
+                      <Tag>未绑定</Tag>
+                    )}
+                  </Space>
+                ),
+                children: (
+                  <>
+                    <div className="mb-3 text-xs opacity-60">
+                      绑定后，媒体服务器删除该条目时可自动清理对应弹幕。
+                      通常由 webhook 入库时自动填充，也可在此手动反查绑定。
+                    </div>
+                    <Form.Item name="mediaServerType" label="服务器类型">
+                      <Select
+                        allowClear
+                        placeholder="未绑定"
+                        options={[
+                          { value: 'emby', label: 'Emby' },
+                          { value: 'jellyfin', label: 'Jellyfin' },
+                          { value: 'plex', label: 'Plex' },
+                        ]}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      name="mediaServerSeriesId"
+                      label={
+                        <Space>
+                          <span>Series / Movie ID</span>
+                          <Tooltip title="剧集为 SeriesId，电影为条目自身 ID。Plex 对应 ratingKey。">
+                            <QuestionCircleOutlined />
+                          </Tooltip>
+                        </Space>
+                      }
+                    >
+                      <Input placeholder="未绑定" allowClear />
+                    </Form.Item>
+                    <Form.Item
+                      name="mediaServerSeasonId"
+                      label={
+                        <Space>
+                          <span>Season ID</span>
+                          <Tooltip title="剧集分季时的季度 ID，电影留空。">
+                            <QuestionCircleOutlined />
+                          </Tooltip>
+                        </Space>
+                      }
+                    >
+                      <Input placeholder="未绑定（电影留空）" allowClear />
+                    </Form.Item>
+                    <div className="flex gap-2">
+                      <Button
+                        icon={<SearchOutlined />}
+                        onClick={handleOpenMsLookup}
+                      >
+                        从媒体服务器反查
+                      </Button>
+                      <Button
+                        danger
+                        disabled={!msServerType && !msSeriesId}
+                        onClick={handleMsUnbind}
+                      >
+                        解除绑定
+                      </Button>
+                    </div>
+                  </>
+                ),
+              },
+            ]}
+          />
           <Form.Item name="animeId" hidden>
             <Input />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 媒体服务器条目反查弹窗 */}
+      <Modal
+        title="从媒体服务器反查条目"
+        open={msLookupOpen}
+        footer={null}
+        width={720}
+        zIndex={120}
+        onCancel={() => setMsLookupOpen(false)}
+      >
+        <div className="mb-3 flex gap-2">
+          <Select
+            value={msSelectedServer}
+            onChange={setMsSelectedServer}
+            style={{ width: 180 }}
+            placeholder="选择服务器"
+            options={msServers.map(s => ({
+              value: s.id,
+              label: `${s.name}（${s.providerName}）`,
+              disabled: !s.isEnabled,
+            }))}
+          />
+          <Input.Search
+            value={msKeyword}
+            onChange={e => setMsKeyword(e.target.value)}
+            onSearch={handleMsLookup}
+            enterButton="搜索"
+            loading={msLoading}
+            placeholder="输入作品标题"
+            allowClear
+          />
+        </div>
+        <List
+          dataSource={msResults}
+          loading={msLoading}
+          locale={{ emptyText: '输入关键词后点击搜索' }}
+          style={{ maxHeight: 420, overflowY: 'auto' }}
+          renderItem={item => (
+            <List.Item
+              actions={[
+                <Button
+                  key="bind"
+                  type="primary"
+                  size="small"
+                  loading={msBinding}
+                  onClick={() => handleMsBind(item)}
+                >
+                  绑定
+                </Button>,
+              ]}
+            >
+              <List.Item.Meta
+                avatar={
+                  item.posterUrl ? (
+                    <Image
+                      src={item.posterUrl}
+                      width={48}
+                      height={68}
+                      style={{ objectFit: 'cover', borderRadius: 4 }}
+                      preview={false}
+                      fallback="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+                    />
+                  ) : null
+                }
+                title={
+                  <Space size={6} wrap>
+                    <span>{item.title}</span>
+                    {item.year ? <Tag>{item.year}</Tag> : null}
+                    {item.mediaType ? (
+                      <Tag color="blue">
+                        {item.mediaType === 'movie' ? '电影' : '剧集'}
+                      </Tag>
+                    ) : null}
+                    {item.season != null ? (
+                      <Tag color="purple">S{item.season}</Tag>
+                    ) : null}
+                  </Space>
+                }
+                description={
+                  <div className="text-xs opacity-70">
+                    <div>
+                      ItemId: {item.itemId}
+                      {item.seriesId ? ` · SeriesId: ${item.seriesId}` : ''}
+                      {item.seasonId ? ` · SeasonId: ${item.seasonId}` : ''}
+                    </div>
+                    {item.tmdbId || item.imdbId ? (
+                      <div>
+                        {item.tmdbId ? `TMDB: ${item.tmdbId}` : ''}
+                        {item.tmdbId && item.imdbId ? ' · ' : ''}
+                        {item.imdbId ? `IMDb: ${item.imdbId}` : ''}
+                      </div>
+                    ) : null}
+                  </div>
+                }
+              />
+            </List.Item>
+          )}
+        />
       </Modal>
       <Modal
         title={t('libraryPage.searchTmdbTitle', { title })}

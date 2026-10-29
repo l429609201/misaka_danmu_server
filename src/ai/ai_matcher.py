@@ -2,19 +2,31 @@
 # -*- coding: utf-8 -*-
 """AI智能匹配模块 - 用于自动选择最佳搜索结果"""
 
+import asyncio
 import json
 import logging
-import asyncio
-import httpx
-from typing import List, Dict, Any, Optional
+import re
 from datetime import datetime
-from src.db import models
-from .ai_metrics import AIMetricsCollector, AICallMetrics
-from .ai_cache import AIResponseCache
-from .ai_providers import get_provider_config, is_provider_supported
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-# 从 models 导入需要的类
-ProviderSearchInfo = models.ProviderSearchInfo
+import httpx
+
+from src.schemas.search import ProviderEpisodeInfo
+from src.schemas.ui.search import ProviderSearchInfo
+from src.utils.parsing.season_mapper import title_contains_season_name
+
+from .ai_cache import AIResponseCache
+from .ai_metrics import AICallMetrics, AIMetricsCollector
+from .ai_providers import get_provider_config, is_provider_supported
+from .ai_prompts import (
+    DEFAULT_AI_ALIAS_EXPANSION_PROMPT,
+    DEFAULT_AI_ALIAS_VALIDATION_PROMPT,
+    DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT,
+    DEFAULT_AI_MATCH_PROMPT,
+    DEFAULT_AI_RECOGNITION_PROMPT,
+    DEFAULT_AI_SEASON_MAPPING_PROMPT,
+    DEFAULT_AI_SEASON_MATCH_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 ai_responses_logger = logging.getLogger("ai_responses")
@@ -32,17 +44,6 @@ def _get_max_tokens_param(model: str, n: int, provider: str = "") -> dict:
     if provider.lower() in third_party_providers:
         return {"max_tokens": n}
     return {"max_completion_tokens": n}
-
-# 从 ai_prompts 导入提示词
-from .ai_prompts import (
-    DEFAULT_AI_MATCH_PROMPT,
-    DEFAULT_AI_SEASON_MAPPING_PROMPT,
-    DEFAULT_AI_RECOGNITION_PROMPT,
-    DEFAULT_AI_ALIAS_EXPANSION_PROMPT,
-    DEFAULT_AI_ALIAS_VALIDATION_PROMPT,
-    DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT,
-)
-
 
 def _extract_openai_content(response) -> Optional[str]:
     """从 OpenAI 响应中安全提取内容
@@ -84,7 +85,6 @@ def _safe_json_loads(text: str, log_raw_response: bool = False) -> Optional[Dict
             ai_responses_logger.warning(f"JSON直接解析失败: {e}。尝试智能修复...")
 
         # 尝试从markdown代码块中提取JSON
-        import re
         match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
         if match:
             json_str = match.group(1)
@@ -130,7 +130,11 @@ except ImportError:
 class AIMatcher:
     """AI智能匹配器"""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        on_metric_record: Optional[Callable[[AICallMetrics], Awaitable[None]]] = None,
+    ) -> None:
         """
         初始化AI匹配器
 
@@ -172,8 +176,8 @@ class AIMatcher:
         if not self.model:
             raise ValueError("AI Matcher: 模型名称未配置")
 
-        # 初始化监控和缓存
-        self.metrics = AIMetricsCollector()
+        # 初始化监控和缓存；指标持久化由上层 AIService 通过事件回调负责。
+        self.metrics = AIMetricsCollector(on_record=on_metric_record)
 
         cache_enabled = config.get("ai_cache_enabled", True)
         cache_ttl = config.get("ai_cache_ttl", 3600)
@@ -515,13 +519,15 @@ class AIMatcher:
 
             # 尝试从缓存获取
             if self.cache:
-                cached_result = self.cache.get(
+                cached_result = await self.cache.get(
                     "select_best_match",
                     query=query,
                     results=results_data
                 )
                 if cached_result is not None:
                     cache_hit = True
+                    # 旧缓存也必须校验；校验失败归为缓存失败，不冒充新的网络调用。
+                    cached_index = self._validate_match_index(cached_result, len(results))
                     duration = (datetime.now() - start_time).total_seconds() * 1000
 
                     # 记录缓存命中
@@ -535,7 +541,7 @@ class AIMatcher:
                         cache_hit=True
                     ))
 
-                    return cached_result.get("index", -1) if isinstance(cached_result, dict) else cached_result
+                    return None if cached_index == -1 else cached_index
 
             input_data = {
                 "query": query,
@@ -591,7 +597,7 @@ class AIMatcher:
                 logger.info(f"AI匹配: 未找到合适的匹配 (reason: {reason})")
                 # 缓存负结果
                 if self.cache:
-                    self.cache.set(
+                    await self.cache.set(
                         response_data,
                         "select_best_match",
                         query=query,
@@ -604,7 +610,7 @@ class AIMatcher:
 
             # 缓存结果
             if self.cache:
-                self.cache.set(
+                await self.cache.set(
                     response_data,
                     "select_best_match",
                     query=query,
@@ -631,118 +637,67 @@ class AIMatcher:
             logger.error(f"AI匹配过程中发生错误: {e}", exc_info=True)
             return None
 
+    @staticmethod
+    def _validate_match_index(response_data: Any, result_count: int) -> int:
+        """严格校验搜索匹配响应；-1 是唯一合法的无匹配标记。"""
+        if not isinstance(response_data, dict):
+            raise ValueError("AI匹配响应为空、JSON无效或不是对象")
+        index = response_data.get("index")
+        # bool 是 int 的子类，必须排除，避免 true/false 被当作候选下标。
+        if type(index) is not int or index < -1 or index >= result_count:
+            raise ValueError("AI匹配响应的 index 缺失、类型错误或越界")
+        return index
+
     async def _match_openai(self, input_data: Dict[str, Any]) -> Optional[Dict]:
-        """使用 OpenAI 接口进行匹配（自动选择 Responses API / Chat Completions）"""
-        if not self.client:
-            return None
-
-        start_time = datetime.now()
-
-        try:
-            user_prompt = json.dumps(input_data, ensure_ascii=False, indent=2)
-            content, tokens = await self._call_openai_json(
-                system_prompt=self.match_prompt,
-                user_prompt=user_prompt,
-                method_name="select_best_match",
-            )
-
-            if content is None:
-                return None
-            logger.debug(f"AI原始响应: {content}")
-
-            parsed_data = _safe_json_loads(content, log_raw_response=self.log_raw_response)
-            if parsed_data:
-                logger.debug(f"解析后的数据类型: {type(parsed_data).__name__}, 内容: {parsed_data}")
-
-            # 记录成功调用
-            duration = (datetime.now() - start_time).total_seconds() * 1000
-            self.metrics.record(AICallMetrics(
-                timestamp=datetime.now(),
-                method="select_best_match",
-                success=True,
-                duration_ms=int(duration),
-                tokens_used=tokens,
-                model=self.model,
-                cache_hit=False
-            ))
-
-            return parsed_data
-
-        except Exception as e:
-            # 记录失败调用
-            duration = (datetime.now() - start_time).total_seconds() * 1000
-            self.metrics.record(AICallMetrics(
-                timestamp=datetime.now(),
-                method="select_best_match",
-                success=False,
-                duration_ms=int(duration),
-                tokens_used=0,
-                model=self.model,
-                error=str(e),
-                cache_hit=False
-            ))
-
-            logger.error(f"OpenAI匹配调用失败: {e}")
-            return None
+        """使用 OpenAI 兼容接口匹配，复用统一的校验和统计边界。"""
+        return await self._request_match(input_data, use_gemini=False)
 
     async def _match_gemini(self, input_data: Dict[str, Any]) -> Optional[Dict]:
-        """使用Gemini官方SDK进行匹配"""
+        """使用 Gemini 官方接口匹配，复用统一的校验和统计边界。"""
+        return await self._request_match(input_data, use_gemini=True)
+
+    async def _request_match(
+        self, input_data: Dict[str, Any], *, use_gemini: bool,
+    ) -> Optional[Dict[str, Any]]:
+        """完成一次搜索匹配请求；校验通过后才记成功，合法无匹配也算有效响应。"""
         if not self.client:
             return None
-
         start_time = datetime.now()
-
+        tokens = 0
+        error = None
+        parsed_data = None
         try:
             user_prompt = json.dumps(input_data, ensure_ascii=False, indent=2)
-            full_prompt = f"{self.match_prompt}\n\n{user_prompt}"
-
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
-                model=self.model,
-                contents=full_prompt,
-                config={
-                    "temperature": 0.0,
-                    "response_mime_type": "application/json"
-                }
-            )
-
-            content = response.text
-            logger.debug(f"Gemini原始响应: {content}")
-
+            if use_gemini:
+                response = await asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model=self.model,
+                    contents=f"{self.match_prompt}\n\n{user_prompt}",
+                    config={"temperature": 0.0, "response_mime_type": "application/json"},
+                )
+                usage = getattr(response, "usage_metadata", None)
+                tokens = getattr(usage, "total_token_count", 0) or 0
+                content = response.text
+            else:
+                content, tokens = await self._call_openai_json(
+                    system_prompt=self.match_prompt,
+                    user_prompt=user_prompt,
+                    method_name="select_best_match",
+                )
             parsed_data = _safe_json_loads(content, log_raw_response=self.log_raw_response)
-            if parsed_data:
-                logger.debug(f"解析后的数据类型: {type(parsed_data).__name__}, 内容: {parsed_data}")
+            self._validate_match_index(parsed_data, len(input_data["results"]))
+        except Exception as exc:
+            error = str(exc)
+            parsed_data = None
+            logger.warning("AI搜索匹配调用或响应校验失败: %s", exc)
 
-            # 记录成功调用
-            duration = (datetime.now() - start_time).total_seconds() * 1000
-            self.metrics.record(AICallMetrics(
-                timestamp=datetime.now(),
-                method="select_best_match",
-                success=True,
-                duration_ms=int(duration),
-                tokens_used=0,  # Gemini SDK 不直接提供 token 统计
-                model=self.model,
-                cache_hit=False
-            ))
-
-            return parsed_data
-
-        except Exception as e:
-            # 记录失败调用
-            duration = (datetime.now() - start_time).total_seconds() * 1000
-            self.metrics.record(AICallMetrics(
-                timestamp=datetime.now(),
-                method="select_best_match",
-                success=False,
-                duration_ms=int(duration),
-                tokens_used=0,
-                model=self.model,
-                error=str(e),
-                cache_hit=False
-            ))
-
-            logger.error(f"Gemini匹配调用失败: {e}")
-            return None
+        # 请求与响应校验共用一个统计出口，避免非法索引先记成功、再记失败。
+        self.metrics.record(AICallMetrics(
+            timestamp=datetime.now(), method="select_best_match", success=error is None,
+            duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+            tokens_used=tokens, model=self.model, error=error, cache_hit=False,
+        ))
+        return parsed_data
 
     async def recognize_title(self, title: str, year: Optional[int] = None, anime_type: str = "tv_series") -> Optional[Dict[str, Any]]:
         """
@@ -766,7 +721,7 @@ class AIMatcher:
         try:
             # 尝试从缓存获取
             if self.cache:
-                cached_result = self.cache.get(
+                cached_result = await self.cache.get(
                     "recognize_title",
                     title=title,
                     year=year,
@@ -821,7 +776,7 @@ class AIMatcher:
 
             # 缓存结果
             if self.cache:
-                self.cache.set(
+                await self.cache.set(
                     response_data,
                     "recognize_title",
                     title=title,
@@ -849,13 +804,32 @@ class AIMatcher:
             logger.error(f"AI识别过程中发生错误: {e}", exc_info=True)
             return None
 
+    def _record_recognition_response(
+        self, content: Optional[str], tokens: int, start_time: datetime,
+    ) -> Optional[Dict[str, Any]]:
+        """验证标题识别响应后记录一次指标，避免把无效 JSON 计为成功。"""
+        parsed_data = _safe_json_loads(content, log_raw_response=self.log_raw_response)
+        error = None
+        if not isinstance(parsed_data, dict):
+            error = "AI识别响应为空、JSON无效或不是对象"
+        elif not isinstance(parsed_data.get("search_title"), str) or not parsed_data["search_title"].strip():
+            error = "AI识别响应缺少有效的 search_title"
+        self.metrics.record(AICallMetrics(
+            timestamp=datetime.now(), method="recognize_title", success=error is None,
+            duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+            tokens_used=tokens, model=self.model, error=error, cache_hit=False,
+        ))
+        if error:
+            logger.warning("%s", error)
+            return None
+        return parsed_data
+
     async def _recognize_openai(self, input_data: Dict[str, Any]) -> Optional[Dict]:
-        """使用 OpenAI 接口进行识别（自动选择 Responses API / Chat Completions）"""
+        """使用 OpenAI 接口识别，并根据响应有效性记录成功或失败。"""
         if not self.client:
             return None
-
         start_time = datetime.now()
-
+        tokens = 0
         try:
             user_prompt = json.dumps(input_data, ensure_ascii=False, indent=2)
             content, tokens = await self._call_openai_json(
@@ -863,104 +837,46 @@ class AIMatcher:
                 user_prompt=user_prompt,
                 method_name="recognize_title",
             )
-
-            if content is None:
-                return None
-            logger.debug(f"AI识别原始响应: {content}")
-
-            parsed_data = _safe_json_loads(content, log_raw_response=self.log_raw_response)
-            if parsed_data:
-                logger.debug(f"解析后的数据类型: {type(parsed_data).__name__}, 内容: {parsed_data}")
-
-            # 记录成功调用
-            duration = (datetime.now() - start_time).total_seconds() * 1000
+            # 空响应也进入统一校验，不再提前返回而漏记失败。
+            return self._record_recognition_response(content, tokens, start_time)
+        except Exception as exc:
             self.metrics.record(AICallMetrics(
-                timestamp=datetime.now(),
-                method="recognize_title",
-                success=True,
-                duration_ms=int(duration),
-                tokens_used=tokens,
-                model=self.model,
-                cache_hit=False
+                timestamp=datetime.now(), method="recognize_title", success=False,
+                duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+                tokens_used=tokens, model=self.model, error=str(exc), cache_hit=False,
             ))
-
-            return parsed_data
-
-        except Exception as e:
-            # 记录失败调用
-            duration = (datetime.now() - start_time).total_seconds() * 1000
-            self.metrics.record(AICallMetrics(
-                timestamp=datetime.now(),
-                method="recognize_title",
-                success=False,
-                duration_ms=int(duration),
-                tokens_used=0,
-                model=self.model,
-                error=str(e),
-                cache_hit=False
-            ))
-
-            logger.error(f"OpenAI识别调用失败: {e}")
+            logger.error("OpenAI识别调用失败: %s", exc)
             return None
 
     async def _recognize_gemini(self, input_data: Dict[str, Any]) -> Optional[Dict]:
-        """使用Gemini官方SDK进行识别"""
+        """使用 Gemini 官方 SDK 识别，按同一规则校验响应并记录用量。"""
         if not self.client:
             return None
-
         start_time = datetime.now()
-
+        tokens = 0
         try:
-            import json
             user_prompt = json.dumps(input_data, ensure_ascii=False, indent=2)
             full_prompt = f"{self.recognition_prompt}\n\n{user_prompt}"
-
             response = await asyncio.to_thread(
                 self.client.models.generate_content,
                 model=self.model,
                 contents=full_prompt,
                 config={
                     "temperature": 0.0,
-                    "response_mime_type": "application/json"
-                }
+                    "response_mime_type": "application/json",
+                },
             )
-
-            content = response.text
-            logger.debug(f"Gemini识别原始响应: {content}")
-
-            parsed_data = _safe_json_loads(content, log_raw_response=self.log_raw_response)
-            if parsed_data:
-                logger.debug(f"解析后的数据类型: {type(parsed_data).__name__}, 内容: {parsed_data}")
-
-            # 记录成功调用
-            duration = (datetime.now() - start_time).total_seconds() * 1000
+            # 与名称转换入口一致，读取 SDK 提供的实际用量，缺失时回退为零。
+            usage = getattr(response, "usage_metadata", None)
+            tokens = getattr(usage, "total_token_count", 0) or 0
+            return self._record_recognition_response(response.text, tokens, start_time)
+        except Exception as exc:
             self.metrics.record(AICallMetrics(
-                timestamp=datetime.now(),
-                method="recognize_title",
-                success=True,
-                duration_ms=int(duration),
-                tokens_used=0,  # Gemini SDK 不直接提供 token 统计
-                model=self.model,
-                cache_hit=False
+                timestamp=datetime.now(), method="recognize_title", success=False,
+                duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+                tokens_used=tokens, model=self.model, error=str(exc), cache_hit=False,
             ))
-
-            return parsed_data
-
-        except Exception as e:
-            # 记录失败调用
-            duration = (datetime.now() - start_time).total_seconds() * 1000
-            self.metrics.record(AICallMetrics(
-                timestamp=datetime.now(),
-                method="recognize_title",
-                success=False,
-                duration_ms=int(duration),
-                tokens_used=0,
-                model=self.model,
-                error=str(e),
-                cache_hit=False
-            ))
-
-            logger.error(f"Gemini识别调用失败: {e}")
+            logger.error("Gemini识别调用失败: %s", exc)
             return None
 
     async def expand_aliases(
@@ -1066,7 +982,6 @@ class AIMatcher:
             return None
 
         try:
-            import json
 
             # 获取别名扩展提示词
             alias_expansion_prompt = self.config.get("ai_alias_expansion_prompt", "")
@@ -1202,8 +1117,6 @@ class AIMatcher:
         Returns:
             识别结果列表,与输入顺序对应
         """
-        import asyncio
-
         semaphore = asyncio.Semaphore(max_concurrent)
 
         async def recognize_with_limit(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -1211,7 +1124,7 @@ class AIMatcher:
                 return await self.recognize_title(
                     item.get("title", ""),
                     item.get("year"),
-                    item.get("type", "tv_series")
+                    item.get("type") or "tv_series"
                 )
 
         logger.info(f"批量识别: 开始处理 {len(items)} 个标题 (最大并发: {max_concurrent})")
@@ -1233,6 +1146,71 @@ class AIMatcher:
 
         return processed_results
 
+    async def classify_media_types(self, items: List[Dict[str, Any]]) -> Dict[int, str]:
+        """批量判定类型未知的搜索结果是电影还是剧集。
+
+        源站无法明确给出类型时，搜索结果 type 为 None；这里交给 AI 依据标题、年份、
+        集数、源站原始分类判断。AI 无把握的条目不返回，保持 None，由入库时兜底。
+
+        Args:
+            items: 待判定条目，每项含 index/title/year/episodeCount/sourceType。
+
+        Returns:
+            {index: "movie" | "tv_series"}，只包含 AI 明确判定的条目。
+        """
+        if not items or not self.client:
+            return {}
+        system_prompt = (
+            "你是影视作品类型判定助手。根据标题、年份、集数、源站分类，判断每个条目是"
+            "电影(movie，含剧场版/单部电影)还是剧集(tv_series，含番剧/电视剧/综艺/纪录片系列)。"
+            "无法确定时输出 null，不要猜测。"
+            '只输出 JSON：{"results":[{"index":0,"type":"movie|tv_series|null"}]}'
+        )
+        user_prompt = json.dumps({"items": items}, ensure_ascii=False)
+        start_time = datetime.now()
+        tokens = 0
+        try:
+            if self.provider == "gemini":
+                response = await asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model=self.model,
+                    contents=f"{system_prompt}\n\n{user_prompt}",
+                    config={"temperature": 0.0, "response_mime_type": "application/json"},
+                )
+                usage = getattr(response, "usage_metadata", None)
+                tokens = getattr(usage, "total_token_count", 0) or 0
+                content = response.text
+            else:
+                content, tokens = await self._call_openai_json(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    method_name="classify_media_types",
+                )
+            data = json.loads(content) if content else {}
+            valid_indexes = {item.get("index") for item in items}
+            result: Dict[int, str] = {}
+            for row in (data.get("results") or []) if isinstance(data, dict) else []:
+                if not isinstance(row, dict):
+                    continue
+                index, media_type = row.get("index"), row.get("type")
+                # 只接受合法索引与两种明确类型，其余一律视为未判定
+                if index in valid_indexes and media_type in ("movie", "tv_series"):
+                    result[index] = media_type
+            self.metrics.record(AICallMetrics(
+                timestamp=datetime.now(), method="classify_media_types", success=True,
+                duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+                tokens_used=tokens, model=self.model, cache_hit=False,
+            ))
+            return result
+        except Exception as exc:
+            self.metrics.record(AICallMetrics(
+                timestamp=datetime.now(), method="classify_media_types", success=False,
+                duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+                tokens_used=tokens, model=self.model, error=str(exc), cache_hit=False,
+            ))
+            logger.warning("AI类型判定失败 (%s): %s", self.provider, exc)
+            return {}
+
     async def select_best_season_for_title(
         self,
         title: str,
@@ -1253,8 +1231,6 @@ class AIMatcher:
 
         try:
             # V2.1.6: 先使用算法相似度匹配
-            from src.utils.season_mapper import title_contains_season_name
-
             best_confidence = 0.0
             best_season = None
             best_season_name = ""
@@ -1291,7 +1267,6 @@ class AIMatcher:
                 options_text += f"{i+1}. 第{season_num}季: {season_name}{alias_text}\n"
 
             # 使用公共AI季度匹配提示词（仅用于 Gemini，OpenAI 路径通过 _season_match_universal 传 input_data 处理）
-            from .ai_prompts import DEFAULT_AI_SEASON_MATCH_PROMPT
             _ = DEFAULT_AI_SEASON_MATCH_PROMPT.format(
                 title=title,
                 options_text=options_text
@@ -1307,7 +1282,6 @@ class AIMatcher:
             ai_response = response_data.get("response", "").strip()
 
             # 尝试提取数字
-            import re
             match = re.search(r'\d+', ai_response)
             if match:
                 selected_season = int(match.group(0))
@@ -1465,7 +1439,6 @@ class AIMatcher:
                 options_text += f"{i+1}. 第{season_num}季: {season_name}{alias_text}\n"
 
             # 使用公共AI季度匹配提示词
-            from .ai_prompts import DEFAULT_AI_SEASON_MATCH_PROMPT
             season_match_prompt = DEFAULT_AI_SEASON_MATCH_PROMPT.format(
                 title=title,
                 options_text=options_text
@@ -1593,7 +1566,8 @@ class AIMatcher:
                 "episode_groups": groups_for_ai,
             }
 
-            system_prompt = DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT
+            # 优先使用配置服务提供的自定义提示词，空配置保留默认行为。
+            system_prompt = self.config.get("ai_episode_group_prompt") or DEFAULT_AI_EPISODE_GROUP_SELECT_PROMPT
             user_prompt = json.dumps(input_data, ensure_ascii=False, indent=2)
 
             # 根据提供商调用不同的API
@@ -1643,6 +1617,85 @@ class AIMatcher:
 
         except Exception as e:
             logger.error(f"剧集组选择(AI)失败: {e}", exc_info=True)
+            return None
+
+
+    async def convert_title(self, title: str, custom_prompt: Optional[str] = None) -> Optional[str]:
+        """转换为官方中文标题，复用共享客户端并记录调用耗时和用量。"""
+        if not self.client or not title.strip():
+            return None
+
+        system_prompt = custom_prompt or (
+            "请将以下非中文标题翻译为其官方中文名称。如果是日本动漫/电视剧，"
+            "请提供其官方中文译名。只返回中文名称，不要其他内容。"
+        )
+        user_prompt = f"标题: {title}"
+        start_time = datetime.now()
+        tokens_used = 0
+        try:
+            # 名称转换要求纯文本，不复用强制 JSON 输出的匹配接口。
+            if self.provider == "gemini":
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.client.models.generate_content,
+                        model=self.model,
+                        contents=f"{system_prompt}\n\n{user_prompt}",
+                    ),
+                    timeout=self.call_timeout,
+                )
+                content = response.text
+                usage = getattr(response, "usage_metadata", None)
+                tokens_used = getattr(usage, "total_token_count", 0) or 0
+            elif self._use_responses_api:
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.client.responses.create,
+                        model=self.model,
+                        instructions=system_prompt,
+                        input=user_prompt,
+                        timeout=self.call_timeout,
+                        store=False,
+                    ),
+                    timeout=self.call_timeout,
+                )
+                self._log_reasoning_content_responses(response, "convert_title")
+                content = response.output_text
+                tokens_used = response.usage.total_tokens if response.usage else 0
+            else:
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.client.chat.completions.create,
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        timeout=self.call_timeout,
+                        **self._get_deepseek_thinking_extra(),
+                    ),
+                    timeout=self.call_timeout,
+                )
+                self._log_reasoning_content(response, "convert_title")
+                content = _extract_openai_content(response)
+                usage = getattr(response, "usage", None)
+                tokens_used = getattr(usage, "total_tokens", 0) or 0
+
+            content = content.strip() if isinstance(content, str) else ""
+            self.metrics.record(AICallMetrics(
+                timestamp=datetime.now(), method="convert_title", success=bool(content),
+                duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+                tokens_used=tokens_used, model=self.model,
+                error=None if content else "AI名称转换返回空响应",
+            ))
+            return content or None
+        except Exception as exc:
+            self.metrics.record(AICallMetrics(
+                timestamp=datetime.now(), method="convert_title", success=False,
+                duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+                tokens_used=tokens_used, model=self.model,
+                error="AI名称转换超时" if isinstance(exc, asyncio.TimeoutError) else str(exc),
+            ))
+            logger.warning("AI名称转换失败: %s", exc)
             return None
 
 

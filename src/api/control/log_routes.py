@@ -9,7 +9,7 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from src.services import get_logs, list_log_files, read_log_file
+from src.services.log_manager import get_logs, list_log_files, read_log_file
 
 logger = logging.getLogger(__name__)
 

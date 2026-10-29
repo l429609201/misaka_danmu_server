@@ -1,7 +1,7 @@
 """订阅能力统一入口：负责源解析、统一契约调用与扫描结果持久化。"""
 from typing import Any, Dict, List, Optional
 
-from src.db.crud import external_calendar as ext_cal_crud
+from src.services.service_container import get_database_service
 
 
 class SubscriptionManager:
@@ -10,6 +10,7 @@ class SubscriptionManager:
     def __init__(self, scraper_manager, metadata_manager):
         self.scraper_manager = scraper_manager
         self.metadata_manager = metadata_manager
+        self._db = get_database_service()
 
     def resolve_source(self, provider: str) -> Optional[Any]:
         """统一找源：弹幕源优先，找不到再查元数据源。"""
@@ -45,7 +46,7 @@ class SubscriptionManager:
             raise ValueError(f"订阅源 '{provider}' 未加载或不支持订阅")
         return await source.validate_subscription_payload(subscription_type, payload)
 
-    async def scan_target(self, target: Dict[str, Any], session=None) -> Dict[str, Any]:
+    async def scan_target(self, target: Dict[str, Any]) -> Dict[str, Any]:
         """统一扫描入口；兼容旧源直接返回候选列表。"""
         provider = target.get("provider") or ""
         source = self.resolve_source(provider)
@@ -55,33 +56,28 @@ class SubscriptionManager:
         # why：各家特殊增量规则由源自己归一化，统一入口只负责调用抽象钩子。
         normalize = getattr(source, "normalize_subscription_scan_result", None)
         if normalize is not None:
-            result = await normalize(session, target, result)
+            result = await normalize(None, target, result)
         if isinstance(result, dict) and result.get("mode"):
             return {"source": source, "mode": result["mode"], "items": result.get("items") or []}
         return {"source": source, "mode": "candidates", "items": result or []}
 
-    async def persist_scan_result(self, session, target: Dict[str, Any], result: Dict[str, Any]) -> int:
+    async def persist_scan_result(self, target: Dict[str, Any], result: Dict[str, Any]) -> int:
         """统一持久化扫描出的作品订阅；候选项仍由候选池模块写入。"""
         if result.get("mode") != "subscriptions":
             return 0
         count = 0
-        try:
+        async with self._db.transaction():
             for item in result.get("items") or []:
-                await ext_cal_crud.upsert_subscription_target(
-                    session,
+                await self._db.external_calendar.upsert_subscription_target(
                     provider=item["provider"],
                     external_id=str(item["externalId"]),
                     title=item.get("title") or "",
                     subscription_type=item.get("subscriptionType") or "subject",
-                    extra={**(item.get("extraData") or {}), "animeType": item.get("animeType", "tv_series")},
+                    extra={
+                        **(item.get("extraData") or {}),
+                        "animeType": item.get("animeType", "tv_series"),
+                    },
                     status=item.get("status") or "pending",
-                    commit=False,
                 )
                 count += 1
-            if count:
-                # why：一次扫描展开的目标属于同一批结果，必须全部成功后一次提交。
-                await session.commit()
-        except BaseException:
-            await session.rollback()
-            raise
         return count

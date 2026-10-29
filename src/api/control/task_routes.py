@@ -7,54 +7,50 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import crud, models, get_db_session
-from src.services import TaskManager, TaskStatus
+from src.services.service_container import get_database_service
+from src.schemas.ui_models import TaskInfo
+from src.services.task_manager import TaskManager, TaskStatus
 
-from .models import ControlActionResponse
+from src.schemas.control import ControlActionResponse, ExecutionTaskResponse
 from .dependencies import get_task_manager
+
+# 数据库访问统一在路由内开启事务，不把依赖工厂作为 session 传入。
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-class ExecutionTaskResponse(BaseModel):
-    schedulerTaskId: str
-    executionTaskId: Optional[str] = None
-    status: Optional[str] = None
-
-
-@router.get("/tasks", response_model=List[models.TaskInfo], summary="获取后台任务列表")
+@router.get("/tasks", response_model=List[TaskInfo], summary="获取后台任务列表")
 async def get_tasks(
     search: Optional[str] = Query(None, description="按标题搜索"),
     status: str = Query("all", description="按状态过滤: all, in_progress, completed"),
-    session: AsyncSession = Depends(get_db_session),
-):
-    """获取后台任务的列表和状态，支持按标题搜索和按状态过滤。"""
-    paginated_result = await crud.get_tasks_from_history(session, search, status, queue_type_filter="all", page=1, page_size=1000)
-    return [models.TaskInfo.model_validate(t) for t in paginated_result["list"]]
+) -> List[TaskInfo]:
+    """获取后台任务列表，保持外部 API 的列表响应契约。"""
+    db = get_database_service()
+    async with db.transaction():
+        paginated_result = await db.task.get_paginated_tasks(
+            search=search, status_filter=status, queue_type="all", page=1, page_size=1000,
+        )
+    return [TaskInfo.model_validate(t) for t in paginated_result["list"]]
 
 
-@router.get("/tasks/{taskId}", response_model=models.TaskInfo, summary="获取单个任务状态")
-async def get_task_status(
-    taskId: str,
-    session: AsyncSession = Depends(get_db_session)
-):
+@router.get("/tasks/{taskId}", response_model=TaskInfo, summary="获取单个任务状态")
+async def get_task_status(taskId: str) -> TaskInfo:
     """获取单个后台任务的详细状态。"""
-    task_details = await crud.get_task_details_from_history(session, taskId)
+    db = get_database_service()
+    async with db.transaction():
+        task_details = await db.task.get_task_details_from_history(taskId)
     if not task_details:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务未找到。")
-    return models.TaskInfo.model_validate(task_details)
+    return TaskInfo.model_validate(task_details)
 
 
 @router.delete("/tasks/{taskId}", response_model=ControlActionResponse, summary="删除一个历史任务")
 async def delete_task(
     taskId: str,
     force: bool = False,
-    session: AsyncSession = Depends(get_db_session),
     task_manager: TaskManager = Depends(get_task_manager),
 ):
     """
@@ -65,7 +61,9 @@ async def delete_task(
     - **已完成/失败**: 从历史记录中删除。
     - **force=true**: 强制删除，跳过中止逻辑直接删除历史记录。
     """
-    task = await crud.get_task_from_history_by_id(session, taskId)
+    db = get_database_service()
+    async with db.transaction():
+        task = await db.task.get_task_by_id(taskId)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务未找到。")
 
@@ -73,7 +71,9 @@ async def delete_task(
 
     if force:
         logger.info(f"强制删除任务 {taskId}，状态: {task_status}")
-        if await crud.force_delete_task_from_history(session, taskId):
+        async with db.transaction():
+            deleted = await db.task.force_delete_task(taskId)
+        if deleted:
             return {"message": f"强制删除任务 {taskId} 成功。"}
         else:
             return {"message": "强制删除失败，任务可能已被处理。"}
@@ -85,7 +85,9 @@ async def delete_task(
         if await task_manager.abort_current_task(taskId):
             logger.info(f"已发送中止信号到任务 {taskId}。")
 
-    if await crud.delete_task_from_history(session, taskId):
+    async with db.transaction():
+        deleted = await db.task.delete_task(taskId)
+    if deleted:
         return {"message": f"删除任务 {taskId} 的请求已处理。"}
     else:
         return {"message": "任务可能已被处理或不存在于历史记录中。"}
@@ -96,7 +98,6 @@ async def abort_task(
     taskId: str,
     force: bool = False,
     task_manager: TaskManager = Depends(get_task_manager),
-    session: AsyncSession = Depends(get_db_session)
 ):
     """
     尝试中止一个当前正在运行或已暂停的任务。
@@ -104,12 +105,15 @@ async def abort_task(
     - force=true: 强制中止，直接将任务标记为失败状态
     """
     if force:
-        task = await crud.get_task_from_history_by_id(session, taskId)
+        db = get_database_service()
+        async with db.transaction():
+            task = await db.task.get_task_by_id(taskId)
         if not task:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务不存在")
 
         await task_manager.abort_current_task(taskId)
-        success = await crud.force_fail_task(session, taskId)
+        async with db.transaction():
+            success = await db.task.force_fail_task(taskId)
         if success:
             return {"message": "任务已强制标记为失败状态。"}
         else:
@@ -137,10 +141,7 @@ async def resume_task(taskId: str, task_manager: TaskManager = Depends(get_task_
 
 
 @router.get("/tasks/{taskId}/execution", response_model=ExecutionTaskResponse, summary="获取调度任务触发的执行任务ID和状态")
-async def get_execution_task_id(
-    taskId: str,
-    session: AsyncSession = Depends(get_db_session)
-):
+async def get_execution_task_id(taskId: str) -> ExecutionTaskResponse:
     """
     在调用 `/import/auto` 等接口后，使用返回的调度任务ID来查询其触发的、
     真正执行下载导入工作的任务ID和状态。
@@ -159,6 +160,7 @@ async def get_execution_task_id(
 
     您可以轮询此接口，直到获取到 `executionTaskId` 和最终状态。
     """
-    execution_id, exec_status = await crud.get_execution_task_id_from_scheduler_task(session, taskId)
+    db = get_database_service()
+    async with db.transaction():
+        execution_id, exec_status = await db.task.get_execution_task_id_from_scheduler_task(taskId)
     return ExecutionTaskResponse(schedulerTaskId=taskId, executionTaskId=execution_id, status=exec_status)
-

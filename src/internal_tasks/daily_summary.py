@@ -3,6 +3,8 @@
 
 定时汇总系统运行情况，保存到 config 表。
 """
+from src.db.database import get_session_factory
+from src.services.config_service import get_config_service
 import json
 import logging
 from datetime import datetime, timedelta
@@ -48,8 +50,8 @@ async def _daily_summary_handler(app: FastAPI) -> None:
     if _daily_summary_handler._last_date == today:
         return
 
-    session_factory = app.state.db_session_factory
-    config_manager = app.state.config_manager
+    session_factory = get_session_factory()
+    config_service = get_config_service()
 
     try:
         async with session_factory() as session:
@@ -84,7 +86,7 @@ async def _daily_summary_handler(app: FastAPI) -> None:
         lines.extend(["", f"💬 新增弹幕分集: {new_danmaku}", f"⚠️ 零弹幕分集: {zero_count}"])
         summary_text = "\n".join(lines)
 
-        await config_manager.setValue("last_daily_summary", json.dumps({
+        await config_service.set("last_daily_summary", json.dumps({
             "text": summary_text,
             "generatedAt": now.isoformat(),
             "taskStats": task_stats,

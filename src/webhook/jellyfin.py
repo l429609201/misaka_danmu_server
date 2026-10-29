@@ -1,11 +1,10 @@
 import logging
 import json
 from datetime import datetime
-from typing import Any, Dict
+from urllib.parse import parse_qs
 from fastapi import Request, HTTPException, status
 
 from .base import BaseWebhook
-from src.services import ScraperManager
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +22,6 @@ class JellyfinWebhook(BaseWebhook):
 
         try:
             if "application/x-www-form-urlencoded" in content_type:
-                from urllib.parse import parse_qs
                 form_data = parse_qs(raw_body.decode())
                 if 'payload' in form_data:
                     payload_str = form_data['payload'][0]
@@ -142,15 +140,14 @@ class JellyfinWebhook(BaseWebhook):
             "mediaServerEpisodeId": str(jf_item_id) if jf_item_id and item_type in ("Episode", "Movie") else None,
         }
 
-        await self.dispatch_task(
+        self.add_import(
             task_title=task_title, unique_key=unique_key,
-            payload=task_payload, webhook_source=webhook_source
+            payload=task_payload, webhook_source=webhook_source,
         )
 
-    async def _handle_delete(self, payload: dict, webhook_source: str):
+    async def _handle_delete(self, payload: dict, _webhook_source: str):
         """处理 Jellyfin ItemRemoved 事件，联动删除弹幕数据。"""
-        from src.tasks.webhook_delete import handle_webhook_delete
-
+        del _webhook_source
         item_type = payload.get("ItemType")
         if item_type not in ["Episode", "Season", "Series", "Movie"]:
             logger.info(f"Jellyfin Webhook 删除: 忽略非 Episode/Season/Series/Movie 类型 (类型: {item_type})")
@@ -163,16 +160,12 @@ class JellyfinWebhook(BaseWebhook):
         title = payload.get("SeriesName") or payload.get("Name") or str(item_id)
 
         logger.info(f"Jellyfin Webhook 删除: 收到 {item_type} 删除事件 - '{title}' (ItemId={item_id})")
-
-        async with self._session_factory() as session:
-            await handle_webhook_delete(
-                session=session,
-                config_manager=self.config_manager,
-                server_type="jellyfin",
-                item_type=item_type,
-                item_id=str(item_id),
-                series_id=str(series_id) if series_id else None,
-                season_id=str(season_id) if season_id else None,
-                season_number=season_number,
-                title=title,
-            )
+        self.add_delete(
+            server_type="jellyfin",
+            item_type=item_type,
+            item_id=str(item_id),
+            series_id=str(series_id) if series_id else None,
+            season_id=str(season_id) if season_id else None,
+            season_number=season_number,
+            title=title,
+        )

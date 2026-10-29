@@ -3,13 +3,10 @@
 提供 @HELP 或 @ 指令，展示所有可用指令
 """
 import logging
-from typing import List, TYPE_CHECKING
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
 
-from .base import CommandHandler
-
-if TYPE_CHECKING:
-    from src.api.dandan import DandanSearchAnimeResponse, DandanSearchAnimeItem
+from src.schemas.dandan import DandanSearchAnimeResponse
+from .base import CommandHandler, COMMAND_HANDLERS
 
 logger = logging.getLogger(__name__)
 
@@ -26,17 +23,11 @@ class HelpCommand(CommandHandler):
             examples=["@", "@HELP", "@help"]
         )
 
-    async def execute(self, token: str, args: List[str], session: AsyncSession,
-                     config_manager, **kwargs) -> "DandanSearchAnimeResponse":
+    async def execute(self, token: str, args: List[str], session: object,
+                     config_service, **kwargs) -> "DandanSearchAnimeResponse":
         """展示所有可用指令"""
-        from src.api.dandan import DandanSearchAnimeItem
-        
-        # 获取图片URL
-        image_url = await self.get_image_url(config_manager)
-        
-        # 获取所有注册的指令
-        from . import get_all_handlers
-        all_handlers = get_all_handlers()
+        image_url = await self.get_image_url(config_service)
+        all_handlers = COMMAND_HANDLERS
         
         # 收集所有指令（排除 HELP 自己）
         commands_list = []

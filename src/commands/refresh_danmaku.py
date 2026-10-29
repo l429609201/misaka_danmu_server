@@ -9,22 +9,15 @@
 """
 import re
 import logging
-from typing import List, Dict, TYPE_CHECKING
+from typing import List, Dict
 from datetime import datetime
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from .base import CommandHandler, _get_db_cache, _set_db_cache
-from src.db import crud
-from src.db.orm_models import Anime, AnimeSource, Episode
+from src.schemas.dandan import DandanSearchAnimeResponse
 from src.services.task_manager import TaskManager
 from src.services.scraper_manager import ScraperManager
-from src.rate_limiter import RateLimiter
-from src import tasks
-from src.utils.image_utils import get_custom_domain
-
-if TYPE_CHECKING:
-    from src.api.dandan import DandanSearchAnimeResponse, DandanSearchAnimeItem
+from src.services.service_container import get_database_service
+from src.workflows.image_public_url import get_custom_domain
+from .base import CommandHandler, _get_db_cache, _set_db_cache
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +52,13 @@ class RefreshDanmakuCommand(CommandHandler):
             ]
         )
 
-    async def execute(self, token: str, args: List[str], session: AsyncSession,
-                     config_manager, **kwargs) -> "DandanSearchAnimeResponse":
+    async def execute(self, token: str, args: List[str], session: object,
+                     config_service, **kwargs) -> "DandanSearchAnimeResponse":
         """执行刷新指令"""
 
         # 获取图片URL
-        image_url = await self.get_image_url(config_manager)
-        custom_domain = await get_custom_domain(config_manager)
+        image_url = await self.get_image_url(config_service)
+        custom_domain = await get_custom_domain(config_service)
 
         # 获取会话状态（用于缓存番剧和分集信息）
         session_key = f"cmd_session_{token}"
@@ -94,7 +87,7 @@ class RefreshDanmakuCommand(CommandHandler):
             # 获取依赖
             task_manager: TaskManager = kwargs.get('task_manager')
             scraper_manager: ScraperManager = kwargs.get('scraper_manager')
-            rate_limiter: RateLimiter = kwargs.get('rate_limiter')
+            rate_limiter = kwargs.get('rate_limiter')
 
             if not all([task_manager, scraper_manager, rate_limiter]):
                 return self.error_response(
@@ -106,7 +99,7 @@ class RefreshDanmakuCommand(CommandHandler):
             return await self._trigger_refresh_by_label(
                 token, session, session_key, session_state,
                 label, episode_number,
-                task_manager, scraper_manager, rate_limiter, config_manager,
+                task_manager, scraper_manager, rate_limiter, config_service,
                 custom_domain, image_url
             )
 
@@ -129,7 +122,7 @@ class RefreshDanmakuCommand(CommandHandler):
     async def _show_anime_list(
         self,
         token: str,
-        session: AsyncSession,
+        session: object,
         session_key: str,
         custom_domain: str,
         image_url: str
@@ -155,19 +148,15 @@ class RefreshDanmakuCommand(CommandHandler):
             )
             return self.build_response([item])
 
-        # 查询每部番剧的总集数
-        anime_list = []
-        for idx, record in enumerate(history[:5]):  # 只显示最近5部
-            anime_id = record["animeId"]
-
-            # 查询总集数（通过 AnimeSource 关联）
-            stmt = (
-                select(func.count(Episode.id))
-                .join(AnimeSource, Episode.sourceId == AnimeSource.id)
-                .where(AnimeSource.animeId == anime_id)
+        db = get_database_service()
+        async with db.transaction():
+            episode_counts = await db.episode.count_by_anime_ids(
+                [record["animeId"] for record in history[:5]]
             )
-            result = await session.execute(stmt)
-            total_episodes = result.scalar() or 0
+        anime_list = []
+        for idx, record in enumerate(history[:5]):
+            anime_id = record["animeId"]
+            total_episodes = episode_counts.get(anime_id, 0)
 
             logger.info(
                 f"@SXDM 查询番剧集数: animeId={anime_id}, "
@@ -240,7 +229,7 @@ class RefreshDanmakuCommand(CommandHandler):
     async def _show_episode_list(
         self,
         token: str,
-        session: AsyncSession,
+        session: object,
         session_key: str,
         session_state: Dict,
         selected_label: str,
@@ -267,30 +256,15 @@ class RefreshDanmakuCommand(CommandHandler):
 
         anime_id = selected_anime["animeId"]
 
-        # 查询番剧的海报信息
-        anime_stmt = select(Anime.imageUrl, Anime.localImagePath).where(Anime.id == anime_id)
-        anime_result = await session.execute(anime_stmt)
-        anime_row = anime_result.first()
-        anime_image_url = None
-        if anime_row:
-            anime_image_url = anime_row[0] or anime_row[1]  # imageUrl 或 localImagePath
-            # 处理本地路径
-            if anime_image_url and not anime_image_url.startswith(("http://", "https://", "/")):
-                anime_image_url = f"{custom_domain}/{anime_image_url}" if custom_domain else f"/{anime_image_url}"
-
-        # 如果没有找到番剧海报，使用默认图片
+        db = get_database_service()
+        async with db.transaction():
+            anime = await db.anime.get_by_id(anime_id)
+            anime_image_url = anime.imageUrl or anime.localImagePath if anime else None
+            episodes = await db.episode.list_by_anime_id_for_command(anime_id)
+        if anime_image_url and not anime_image_url.startswith(("http://", "https://", "/")):
+            anime_image_url = f"{custom_domain}/{anime_image_url}" if custom_domain else f"/{anime_image_url}"
         if not anime_image_url:
             anime_image_url = image_url
-
-        # 查询分集列表（通过 AnimeSource 关联，按集数排序）
-        stmt = (
-            select(Episode)
-            .join(AnimeSource, Episode.sourceId == AnimeSource.id)
-            .where(AnimeSource.animeId == anime_id)
-            .order_by(Episode.episodeIndex)
-        )
-        result = await session.execute(stmt)
-        episodes = result.scalars().all()
 
         if not episodes:
             return self.error_response(
@@ -302,12 +276,12 @@ class RefreshDanmakuCommand(CommandHandler):
         # 构建分集信息（使用 Episode.commentCount 字段）
         episode_list = []
         for ep in episodes:
-            count = ep.commentCount or 0
+            count = ep["commentCount"] or 0
             status = "已缓存" if count > 0 else "未缓存"
             episode_list.append({
                 "index": len(episode_list) + 1,
-                "episodeId": ep.id,
-                "episodeTitle": ep.title or f"第{ep.episodeIndex}话",
+                "episodeId": ep["id"],
+                "episodeTitle": ep["title"] or f"第{ep['episodeIndex']}话",
                 "commentCount": count,
                 "status": status
             })
@@ -359,7 +333,7 @@ class RefreshDanmakuCommand(CommandHandler):
     async def _trigger_refresh_by_label(
         self,
         token: str,
-        session: AsyncSession,
+        session: object,
         session_key: str,
         session_state: Dict,
         label: str,
@@ -367,7 +341,7 @@ class RefreshDanmakuCommand(CommandHandler):
         task_manager,
         scraper_manager,
         rate_limiter,
-        config_manager,
+        config_service,
         custom_domain: str,
         image_url: str
     ) -> "DandanSearchAnimeResponse":
@@ -420,15 +394,9 @@ class RefreshDanmakuCommand(CommandHandler):
         anime_id = selected_anime["animeId"]
         anime_title = selected_anime["animeTitle"]
 
-        # 查询该番剧的所有分集（按集数排序）
-        stmt = (
-            select(Episode)
-            .join(AnimeSource, Episode.sourceId == AnimeSource.id)
-            .where(AnimeSource.animeId == anime_id)
-            .order_by(Episode.episodeIndex)
-        )
-        result = await session.execute(stmt)
-        episodes = result.scalars().all()
+        db = get_database_service()
+        async with db.transaction():
+            episodes = await db.episode.list_by_anime_id_for_command(anime_id)
 
         if not episodes:
             return self.error_response(
@@ -445,13 +413,12 @@ class RefreshDanmakuCommand(CommandHandler):
                 image_url
             )
 
-        # 获取对应分集
         selected_episode = episodes[ep_num - 1]
-        episode_id = selected_episode.id
-        episode_title = selected_episode.title or f"第{selected_episode.episodeIndex}话"
+        episode_id = selected_episode["id"]
+        episode_title = selected_episode["title"] or f"第{selected_episode['episodeIndex']}话"
 
-        # 验证分集存在
-        info = await crud.get_episode_for_refresh(session, episode_id)
+        async with db.transaction():
+            info = await db.episode.get_episode_for_refresh(episode_id)
         if not info:
             return self.error_response(
                 "分集信息异常",
@@ -464,8 +431,10 @@ class RefreshDanmakuCommand(CommandHandler):
             unique_key = f"refresh-episode-{episode_id}"
 
             task_id, _ = await task_manager.submit_task(
-                lambda s, cb: tasks.refresh_episode_task(
-                    episode_id, s, scraper_manager, rate_limiter, cb, config_manager
+                task_manager.build_task_coro_factory(
+                    "refresh_episode", episodeId=episode_id,
+                    manager=scraper_manager, rate_limiter=rate_limiter,
+                    config_service=config_service,
                 ),
                 f"指令刷新: {anime_title} - {episode_title}",
                 unique_key=unique_key

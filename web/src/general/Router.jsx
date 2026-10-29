@@ -7,6 +7,8 @@ import { LayoutLogin } from './LayoutLogin.jsx'
 
 import { Home } from '@/pages/home'
 import { Login } from '@/pages/login'
+import { Search } from '@/pages/search'
+import { ApiTest } from '@/pages/api-test'
 import { Task } from '@/pages/task'
 import { LibraryTabsPage } from '../pages/library/tabs.jsx'
 import { Setting } from '../pages/setting/index.jsx'
@@ -17,8 +19,7 @@ import { CommentDetail } from '../pages/comment/[id].jsx'
 import { Control } from '../pages/control/index.jsx'
 import { Bullet } from '../pages/bullet/index.jsx'
 import MediaFetch from '../pages/media-fetch/index.jsx'
-import BgmOAuthCallback from '../pages/bgm-oauth-callback/index.jsx'
-import TraktOAuthCallback from '../pages/trakt-oauth-callback/index.jsx'
+import OAuthCallback from '../pages/oauth-callback/index.jsx'
 
 export const router = createBrowserRouter([
   {
@@ -32,6 +33,14 @@ export const router = createBrowserRouter([
       {
         index: true,
         element: <Home />,
+      },
+      {
+        path: RoutePaths.SEARCH,
+        element: <Search />,
+      },
+      {
+        path: RoutePaths.API_TEST,
+        element: <ApiTest />,
       },
       {
         path: RoutePaths.TASK,
@@ -94,14 +103,19 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    // Bangumi OAuth 回调页面（弹窗中打开，不需要 Layout）
-    path: RoutePaths.BGM_OAUTH_CALLBACK,
-    element: <BgmOAuthCallback />,
+    // 通用 OAuth 回调页面（弹窗中打开，不需要 Layout），平台由路径参数决定
+    path: RoutePaths.OAUTH_CALLBACK,
+    element: <OAuthCallback />,
   },
   {
-    // Trakt OAuth 回调页面（弹窗中打开，不需要 Layout）
+    // 兼容旧回调地址：Bangumi 开发者后台已登记该地址，改动需用户同步修改平台配置
+    path: RoutePaths.BGM_OAUTH_CALLBACK,
+    element: <OAuthCallback provider="bangumi" />,
+  },
+  {
+    // 兼容旧回调地址：保留已有 Trakt Worker 回跳路径
     path: RoutePaths.TRAKT_OAUTH_CALLBACK,
-    element: <TraktOAuthCallback />,
+    element: <OAuthCallback provider="trakt" />,
   },
   {
     path: '*',

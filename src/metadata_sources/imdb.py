@@ -9,8 +9,9 @@ import httpx
 from pydantic import BaseModel, Field
 from fastapi import HTTPException, Request
 
-from src.db import models
-from src.db import crud
+# Pydantic 契约取自 src.schemas（唯一事实来源），不再经 src.db.models 过渡转发层
+from src.schemas import User, MetadataDetailsResponse
+from src.services.service_container import get_database_service
 from .base import BaseMetadataSource
 
 logger = logging.getLogger(__name__)
@@ -229,7 +230,7 @@ class ImdbMetadataSource(BaseMetadataSource):
         }
 
         db_key = config_key_map.get(key, key)
-        value_str = await self.config_manager.get(db_key, str(default))
+        value_str = await self.config_service.get(db_key, str(default))
 
         # 转换为布尔值
         if isinstance(default, bool):
@@ -239,11 +240,12 @@ class ImdbMetadataSource(BaseMetadataSource):
     async def _get_api_dev_client(self) -> ImdbApiDevClient:
         """Get or create the third-party IMDb API client"""
         if self._api_dev_client is None:
-            proxy_url = await self.config_manager.get("proxyUrl", "")
-            proxy_enabled_globally = (await self.config_manager.get("proxyEnabled", "false")).lower() == 'true'
+            proxy_url = await self.config_service.get("proxyUrl", "")
+            proxy_enabled_globally = (await self.config_service.get("proxyEnabled", "false")).lower() == 'true'
 
-            async with self._session_factory() as session:
-                metadata_settings = await crud.get_all_metadata_source_settings(session)
+            db = get_database_service()
+            async with db.transaction():
+                metadata_settings = await db.metadata_source.get_all_metadata_source_settings()
 
             provider_setting = next((s for s in metadata_settings if s['providerName'] == self.provider_name), None)
             use_proxy_for_this_provider = provider_setting.get('useProxy', False) if provider_setting else False
@@ -257,11 +259,11 @@ class ImdbMetadataSource(BaseMetadataSource):
         """Get or create the HTML parsing client"""
         if self._html_client is None:
             # 获取代理模式
-            proxy_mode = await self.config_manager.get("proxyMode", "none")
+            proxy_mode = await self.config_service.get("proxyMode", "none")
 
             # 兼容旧配置：如果 proxyMode 为 none 但 proxyEnabled 为 true，则使用 http_socks 模式
             if proxy_mode == "none":
-                proxy_enabled_globally = (await self.config_manager.get("proxyEnabled", "false")).lower() == 'true'
+                proxy_enabled_globally = (await self.config_service.get("proxyEnabled", "false")).lower() == 'true'
                 if proxy_enabled_globally:
                     proxy_mode = "http_socks"
 
@@ -269,10 +271,11 @@ class ImdbMetadataSource(BaseMetadataSource):
 
             # 只有 http_socks 模式才需要设置 httpx 的 proxy 参数
             if proxy_mode == "http_socks":
-                proxy_url = await self.config_manager.get("proxyUrl", "")
+                proxy_url = await self.config_service.get("proxyUrl", "")
                 if proxy_url:
-                    async with self._session_factory() as session:
-                        metadata_settings = await crud.get_all_metadata_source_settings(session)
+                    db = get_database_service()
+                    async with db.transaction():
+                        metadata_settings = await db.metadata_source.get_all_metadata_source_settings()
 
                     provider_setting = next((s for s in metadata_settings if s['providerName'] == self.provider_name), None)
                     use_proxy_for_this_provider = provider_setting.get('useProxy', False) if provider_setting else False
@@ -303,7 +306,7 @@ class ImdbMetadataSource(BaseMetadataSource):
         }
         return type_mapping.get(imdb_type)
 
-    async def _search_via_html(self, keyword: str, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
+    async def _search_via_html(self, keyword: str, mediaType: Optional[str] = None) -> List[MetadataDetailsResponse]:
         """使用HTML解析方式搜索 (官方网站)"""
         self.logger.info(f"IMDb: 正在使用HTML解析搜索 '{keyword}'")
         formatted_keyword = keyword.strip().lower()
@@ -328,7 +331,7 @@ class ImdbMetadataSource(BaseMetadataSource):
                 if item.s:
                     details_parts.append(f"演员: {item.s}")
 
-                results.append(models.MetadataDetailsResponse(
+                results.append(MetadataDetailsResponse(
                     id=item.id,
                     imdbId=item.id,
                     title=item.l,
@@ -349,7 +352,7 @@ class ImdbMetadataSource(BaseMetadataSource):
             self.logger.error(f"IMDb HTML 搜索失败: {e}")
             raise HTTPException(status_code=500, detail=f"IMDb HTML 搜索失败: {e}")
 
-    async def _get_details_via_html(self, item_id: str, mediaType: Optional[str] = None) -> Optional[models.MetadataDetailsResponse]:
+    async def _get_details_via_html(self, item_id: str, mediaType: Optional[str] = None) -> Optional[MetadataDetailsResponse]:
         """使用HTML解析方式获取详情 (官方网站)"""
         self.logger.info(f"IMDb: 正在使用HTML解析获取详情 item_id={item_id}")
         details_url = f"https://www.imdb.com/title/{item_id}/"
@@ -421,7 +424,7 @@ class ImdbMetadataSource(BaseMetadataSource):
                 self.logger.error(f"IMDb: 无法从详情页解析出标题 (item_id={item_id})")
                 return None
 
-            return models.MetadataDetailsResponse(
+            return MetadataDetailsResponse(
                 id=item_id,
                 imdbId=item_id,
                 title=name_en,
@@ -433,7 +436,7 @@ class ImdbMetadataSource(BaseMetadataSource):
             self.logger.error(f"解析 IMDb 详情页时发生错误: {e}")
             return None
 
-    async def _search_via_api(self, keyword: str, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
+    async def _search_via_api(self, keyword: str, mediaType: Optional[str] = None) -> List[MetadataDetailsResponse]:
         """使用第三方API搜索 (api.imdbapi.dev)
 
         Raises:
@@ -468,7 +471,7 @@ class ImdbMetadataSource(BaseMetadataSource):
                 if title.rating and title.rating.aggregate_rating:
                     details_parts.append(f"评分: {title.rating.aggregate_rating:.1f}")
 
-                results.append(models.MetadataDetailsResponse(
+                results.append(MetadataDetailsResponse(
                     id=title.id,
                     imdbId=title.id,
                     title=title.primary_title or title.original_title or "",
@@ -486,7 +489,7 @@ class ImdbMetadataSource(BaseMetadataSource):
             self.logger.error(f"IMDb 第三方API 搜索失败: {e}")
             raise HTTPException(status_code=500, detail=f"IMDb 第三方API 搜索失败: {str(e)}")
 
-    async def _get_details_via_api(self, item_id: str, mediaType: Optional[str] = None) -> Optional[models.MetadataDetailsResponse]:
+    async def _get_details_via_api(self, item_id: str, mediaType: Optional[str] = None) -> Optional[MetadataDetailsResponse]:
         """使用第三方API获取详情 (api.imdbapi.dev)
 
         Raises:
@@ -518,7 +521,7 @@ class ImdbMetadataSource(BaseMetadataSource):
             # Remove duplicates while preserving order
             aliases_cn = list(dict.fromkeys(filter(None, aliases_cn)))
 
-            return models.MetadataDetailsResponse(
+            return MetadataDetailsResponse(
                 id=item_id,
                 imdbId=item_id,
                 title=title.primary_title or title.original_title or "",
@@ -535,7 +538,7 @@ class ImdbMetadataSource(BaseMetadataSource):
             self.logger.error(f"获取 IMDb 第三方API详情时发生错误: {e}")
             return None
 
-    async def search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
+    async def search(self, keyword: str, user: User, mediaType: Optional[str] = None) -> List[MetadataDetailsResponse]:
         """搜索标题 (支持双模式和兜底，遇到Cloudflare 403自动降级)"""
         use_api = await self._get_config("useApi", True)
         enable_fallback = await self._get_config("enableFallback", True)
@@ -583,7 +586,7 @@ class ImdbMetadataSource(BaseMetadataSource):
             else:
                 raise
 
-    async def get_details(self, item_id: str, user: models.User, mediaType: Optional[str] = None) -> Optional[models.MetadataDetailsResponse]:
+    async def get_details(self, item_id: str, user: User, mediaType: Optional[str] = None) -> Optional[MetadataDetailsResponse]:
         """获取详情 (支持双模式和兜底，遇到Cloudflare 403自动降级)"""
         use_api = await self._get_config("useApi", True)
         enable_fallback = await self._get_config("enableFallback", True)
@@ -624,7 +627,7 @@ class ImdbMetadataSource(BaseMetadataSource):
                 self.logger.error(f"获取 IMDb 详情时发生错误: {e}")
                 return None
 
-    async def search_aliases(self, keyword: str, user: models.User) -> Set[str]:
+    async def search_aliases(self, keyword: str, user: User) -> Set[str]:
         self.logger.info(f"IMDb: 正在为 '{keyword}' 搜索别名")
         local_aliases: Set[str] = set()
         try:
@@ -659,6 +662,6 @@ class ImdbMetadataSource(BaseMetadataSource):
         except Exception as e:
             return {"code": "error", "message": f"配置检查失败: {e}"}
 
-    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: models.User, request: Request) -> Any:
+    async def execute_action(self, action_name: str, payload: Dict[str, Any], user: User, request: Request) -> Any:
         """IMDb source does not support custom actions."""
         raise NotImplementedError(f"源 '{self.provider_name}' 不支持任何自定义操作。")

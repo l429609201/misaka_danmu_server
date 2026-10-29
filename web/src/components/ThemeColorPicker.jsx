@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Modal, Tooltip } from 'antd'
 import { CheckOutlined } from '@ant-design/icons'
@@ -15,10 +15,22 @@ const ThemeColorPicker = ({ open, onClose }) => {
     setCustomColor(color)
   }
 
+  // why：长按拖动原生取色板时 input 事件每秒触发几十次，每次都 setThemeColor 会重算整套 AntD 主题
+  // 并写 localStorage，导致拖动卡顿。这里只即时更新本地色块，主题应用合并到每帧最多一次。
+  const pendingColorRef = useRef(null)
+  const rafRef = useRef(0)
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), [])
+
   const handleCustomColorChange = (e) => {
     const color = e.target.value
     setCustomColor(color)
-    setThemeColor(color)
+    pendingColorRef.current = color
+    if (!rafRef.current) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0
+        if (pendingColorRef.current) setThemeColor(pendingColorRef.current)
+      })
+    }
   }
 
   return (

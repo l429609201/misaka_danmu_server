@@ -8,13 +8,11 @@ GET /taskcomment/{taskId} — 轮询弹幕下载任务状态。
 import logging
 from typing import Optional
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, Path
 
-from src.db import get_db_session
-from src.db import models
-from src.db.orm_models import TaskHistory
-from sqlalchemy import select
+# 轮询响应使用协议 Schema，不再依赖已删除的数据库模型兼容层。
+from src.schemas.dandan import comment as models
+from src.services.service_container import get_database_service
 
 from .route_handler import get_token_from_path, DandanApiRoute
 
@@ -45,7 +43,6 @@ def _parse_episode_id_from_unique_key(unique_key: Optional[str]) -> Optional[int
 async def poll_danmaku_task(
     taskId: str = Path(..., description="由 /comment/{episodeId}?async=1 返回的任务ID"),
     token: str = Depends(get_token_from_path),
-    session: AsyncSession = Depends(get_db_session),
 ):
     """
     轮询弹幕下载任务状态，不返回弹幕内容。
@@ -54,10 +51,10 @@ async def poll_danmaku_task(
     - **completed**：任务完成，返回 episodeId，客户端用此 ID 调 /comment/{episodeId} 获取弹幕
     - **failed**：任务失败，返回 description 说明原因
     """
-    # 查询任务记录
-    stmt = select(TaskHistory).where(TaskHistory.taskId == taskId)
-    result = await session.execute(stmt)
-    task = result.scalar_one_or_none()
+    # 通过 DatabaseService 查询任务记录
+    db = get_database_service()
+    async with db.transaction():
+        task = await db.task.get_by_id(taskId)
 
     if not task:
         return models.TaskCommentResponse(

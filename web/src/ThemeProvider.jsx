@@ -1,8 +1,9 @@
-﻿import { createContext, useContext, useEffect, useState, useMemo } from 'react'
+import { createContext, useContext, useEffect, useState, useMemo } from 'react'
 import { ConfigProvider } from 'antd'
 import { theme } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { getConfig, setConfig } from './apis/index.js'
+import { GLASS_APPEARANCES, GLASS_PARAM_KEYS, getGlassCssVariables, getGlassPreset, normalizeGlassStrength } from './utils/glassOptics.js'
 
 import zhCN from 'antd/locale/zh_CN'
 import zhTW from 'antd/locale/zh_TW'
@@ -127,21 +128,112 @@ function getCardHeaderBg(pageStyle) {
 export const PAGE_STYLES = [
   { key: 'normal',        name: '常规' },
   { key: 'liquid-glass',  name: '液态玻璃' },
-  { key: 'glass',         name: '云海玻璃' },
-  { key: 'acg-glass',     name: '二次元玻璃' },
   { key: 'wallpaper-acg', name: '二次元壁纸' },
-  { key: 'sakura',        name: '樱花物语' },
-  { key: 'paper',         name: '纸感极简' },
-  { key: 'calendar',      name: '挂历' },
-  { key: 'github',        name: '代码仓库' },
-  { key: 'material',      name: '质感设计' },
+  { key: 'anibt',         name: 'AniBT' },
 ]
+
+// AniBT「白樱 / 夜樱」配色（取自 OpenAniBT/ui 主题，见 components/anibt/anibt.css）。
+// why：AniBT 是完整主题而非纯布局皮肤，需要连同 antd token 一起换色；
+// 其余页面样式仍遵守「不覆写颜色」的约定。
+const ANIBT_STYLE = 'anibt'
+const ANIBT_PALETTE = {
+  light: { primary: '#c22a62', hover: '#a8204f', bg: '#f7f5fa', card: '#ffffff', fill: '#f3f0f7', border: '#ebe6f0', input: '#dad3e3', text: '#1f1c28', text2: '#6e6a78', onPrimary: '#ffffff' },
+  dark: { primary: '#ffa3c3', hover: '#ff8db3', bg: '#13111a', card: '#1c1926', fill: '#252130', border: '#2b2738', input: '#3b354a', text: '#f3f0f8', text2: '#9690a6', onPrimary: '#1f1c28' },
+}
+// 暗色基础主题里写死的 slate 色 → 夜樱对应色
+const ANIBT_DARK_REMAP = { '#0f172a': '#13111a', '#1e293b': '#1c1926', '#273449': '#252130', '#334155': '#2b2738' }
+
+/**
+ * 在现有 antd 主题上叠加 AniBT 配色与圆角（不改动原主题对象）。
+ * @param {object} base 原 light/dark 主题配置
+ * @param {boolean} dark 是否夜樱
+ * @returns {object} 新主题配置
+ */
+function applyAnibtTheme(base, dark) {
+  const c = dark ? ANIBT_PALETTE.dark : ANIBT_PALETTE.light
+  const remap = value => {
+    if (Array.isArray(value)) return value.map(remap)
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, remap(v)]))
+    }
+    if (dark && typeof value === 'string') return ANIBT_DARK_REMAP[value.toLowerCase()] || value
+    return value
+  }
+  const token = remap(base.token)
+  const comps = remap(base.components || {})
+  return {
+    ...base,
+    // 组件级 token 必须放在 components 下（放进 token 里 antd 不认），AniBT 规格：控件高 32、圆角 10、卡片 14
+    components: {
+      ...comps,
+      Button: { ...comps.Button, borderRadius: 10, controlHeight: 32, primaryShadow: 'none', defaultShadow: 'none', dangerShadow: 'none', fontWeight: 600 },
+      Card: { ...comps.Card, borderRadiusLG: 14 },
+      Tag: { ...comps.Tag, borderRadiusSM: 6 },
+      Progress: { ...comps.Progress, defaultColor: c.primary, remainingColor: c.fill },
+      Input: { ...comps.Input, borderRadius: 10, activeShadow: 'none' },
+      InputNumber: { ...comps.InputNumber, borderRadius: 10, activeShadow: 'none' },
+      Select: { ...comps.Select, borderRadius: 10, optionSelectedBg: dark ? '#3a2232' : '#fdeef4', optionSelectedFontWeight: 600 },
+      Tabs: { ...comps.Tabs, inkBarColor: 'transparent', itemSelectedColor: c.text, itemHoverColor: c.primary, itemColor: c.text2 },
+      Table: { ...comps.Table, headerBg: 'transparent', headerSplitColor: 'transparent', borderColor: c.border, rowHoverBg: c.fill, headerColor: c.text2 },
+      Modal: { ...comps.Modal, borderRadiusLG: 16, contentBg: c.card, headerBg: c.card },
+      Menu: { ...comps.Menu, itemBorderRadius: 10, itemSelectedBg: dark ? '#3a2232' : '#fdeef4', itemSelectedColor: c.primary },
+      Pagination: { ...comps.Pagination, itemActiveBg: c.card, borderRadius: 10 },
+      Segmented: { ...comps.Segmented, borderRadius: 10, borderRadiusSM: 6, itemSelectedBg: c.card, trackBg: c.fill },
+    },
+    token: {
+      ...token,
+      colorPrimary: c.primary,
+      colorPrimaryHover: c.hover,
+      colorPrimaryActive: c.hover,
+      colorLink: c.primary,
+      colorInfo: dark ? '#6cb4ff' : '#1a64bf',
+      colorBgBase: c.bg,
+      colorBgLayout: c.bg,
+      colorBgContainer: c.card,
+      colorBgElevated: c.card,
+      colorFillSecondary: c.fill,
+      colorBorder: c.input,
+      colorBorderSecondary: c.border,
+      colorSplit: c.border,
+      colorTextBase: c.text,
+      colorText: c.text,
+      colorTextSecondary: c.text2,
+      colorTextLightSolid: c.onPrimary,
+      borderRadius: 10,
+      controlHeight: 32,
+    },
+  }
+}
 const DEFAULT_PAGE_STYLE = 'normal'
 
 // 已移除的页面样式：读到这些历史值时回落到 normal，避免旧 localStorage 卡在无 CSS 的空样式
 const REMOVED_PAGE_STYLES = new Set([
   'terminal', 'neon', 'acg-starry', 'acg-peach', 'acg-cyber', 'bing-mist', 'bing-night',
+  // 精简为四种样式（常规/液态玻璃/二次元壁纸/AniBT），其余回落默认；CSS 暂留便于恢复
+  'glass', 'acg-glass', 'sakura', 'paper', 'calendar', 'github', 'material',
 ])
+
+// 液态玻璃配置（移植 MoviePilot 标准档）：材质 + 通透度/透射亮度/反射亮度，均为 0–100
+const GLASS_SETTINGS_KEY = 'liquidGlassSettings'
+/**
+ * 规整液态玻璃配置，越界或非法值回落到所选材质的预设。
+ * @param {object} raw 原始配置（旧版 {level, opacity, blur} 会回落到默认）
+ * @returns {{appearance: string, transparency: number, transmission: number, reflection: number}}
+ */
+function normalizeGlassSettings(raw) {
+  const appearance = GLASS_APPEARANCES.includes(raw?.appearance) ? raw.appearance : 'clear'
+  const preset = getGlassPreset(appearance)
+  const next = { appearance }
+  for (const key of GLASS_PARAM_KEYS) next[key] = normalizeGlassStrength(raw?.[key], preset[key])
+  return next
+}
+function loadGlassSettings() {
+  try {
+    return normalizeGlassSettings(JSON.parse(localStorage.getItem(GLASS_SETTINGS_KEY) || '{}'))
+  } catch {
+    return normalizeGlassSettings({})
+  }
+}
 
 // 需要背景图的页面样式：未配置地址时仅显示渐变兜底
 export const WALLPAPER_STYLE_KEYS = ['wallpaper-acg']
@@ -203,7 +295,11 @@ export function ThemeProvider({ children }) {
   }, [language])
 
   // 根据主色生成派生色
-  const colors = useMemo(() => generateThemeColors(themeColor), [themeColor])
+  // AniBT 样式下主色固定为樱粉（明暗各一），其余样式跟随用户主题色
+  const effectiveThemeColor = pageStyle === ANIBT_STYLE
+    ? (isDark ? ANIBT_PALETTE.dark.primary : ANIBT_PALETTE.light.primary)
+    : themeColor
+  const colors = useMemo(() => generateThemeColors(effectiveThemeColor), [effectiveThemeColor])
 
   // 动态更新 CSS 变量
   const applyCssVariables = (isDarkMode, colorScheme) => {
@@ -250,10 +346,29 @@ export function ThemeProvider({ children }) {
     else localStorage.removeItem('wallpaperUrl')
   }
 
+  // 液态玻璃光学参数（参考 MoviePilot 玻璃设置的标准档）
+  const [glassSettings, setGlassSettingsState] = useState(loadGlassSettings)
+  const setGlassSettings = (patch) => {
+    setGlassSettingsState(prev => {
+      const next = normalizeGlassSettings({ ...prev, ...patch })
+      localStorage.setItem(GLASS_SETTINGS_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
   // 把 pageStyle 写到 <html> 的 data-page-style 属性，全局 CSS 据此切换
   useEffect(() => {
     document.documentElement.setAttribute('data-page-style', pageStyle)
   }, [pageStyle])
+
+  // why：参数经 MP 响应曲线换算成 CSS 变量下发，index.css 中液态玻璃规则统一消费，其它样式不受影响
+  useEffect(() => {
+    const root = document.documentElement
+    root.setAttribute('data-glass-appearance', glassSettings.appearance)
+    for (const [name, value] of Object.entries(getGlassCssVariables(glassSettings))) {
+      root.style.setProperty(name, value)
+    }
+  }, [glassSettings])
 
   // 壁纸地址 → CSS 变量 --ani-wallpaper
   // why：壁纸主题的 background-image 直接用 var(--ani-wallpaper)，不带任何内置默认值。
@@ -289,7 +404,15 @@ export function ThemeProvider({ children }) {
   // 当 isDark 或 themeColor 变化时，更新 CSS 变量
   useEffect(() => {
     applyCssVariables(isDark, colors)
-  }, [isDark, colors])
+    if (pageStyle === ANIBT_STYLE) {
+      // AniBT：页面底色/边框改用白樱/夜樱色，保证 Tailwind bg-base-* 类同步
+      const c = isDark ? ANIBT_PALETTE.dark : ANIBT_PALETTE.light
+      const root = document.documentElement
+      root.style.setProperty('--color-bg', c.bg)
+      root.style.setProperty('--color-hover', c.fill)
+      root.style.setProperty('--color-border', c.border)
+    }
+  }, [isDark, colors, pageStyle])
 
   // 切换暗黑模式
   const toggleDarkMode = () => {
@@ -467,9 +590,15 @@ export function ThemeProvider({ children }) {
     },
   }), [colors, pageStyle])
 
+  // AniBT 样式在原主题上叠加配色；其余样式原样使用
+  const antdTheme = useMemo(() => {
+    const base = isDark ? darkTheme : lightTheme
+    return pageStyle === ANIBT_STYLE ? applyAnibtTheme(base, isDark) : base
+  }, [isDark, darkTheme, lightTheme, pageStyle])
+
   return (
-    <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle, wallpaperUrl, setWallpaperUrl, language, setLanguage }}>
-      <ConfigProvider locale={ANTD_LOCALES[language] || zhCN} theme={isDark ? darkTheme : lightTheme}>
+    <ThemeContext.Provider value={{ isDark, toggleDarkMode, themeColor, setThemeColor, pageStyle, setPageStyle, wallpaperUrl, setWallpaperUrl, glassSettings, setGlassSettings, language, setLanguage }}>
+      <ConfigProvider locale={ANTD_LOCALES[language] || zhCN} theme={antdTheme}>
         {children}
       </ConfigProvider>
     </ThemeContext.Provider>

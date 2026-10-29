@@ -16,11 +16,12 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from sqlalchemy import update, delete
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-from src.db import crud, _get_db_url
-from src.db.orm_models import User, UserPassKey
+from src.db import _get_db_url
+from src.db.orm_models import UserPassKey
+from src.db.repositories import UserRepository
 from src.core import settings
 
 
@@ -38,8 +39,11 @@ async def reset_mfa(username: str, reset_totp: bool = True, reset_passkey: bool 
     session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
     async with session_factory() as session:
+        # 本脚本自建 engine，不走 DatabaseService，故直接实例化仓储并显式提交
+        user_repo = UserRepository(session)
+
         # 检查用户是否存在
-        user = await crud.get_user_by_username(session, username)
+        user = await user_repo.get_by_username(username)
         if not user:
             print(f"❌ 错误: 未找到用户 '{username}'。")
             await engine.dispose()
@@ -49,15 +53,13 @@ async def reset_mfa(username: str, reset_totp: bool = True, reset_passkey: bool 
 
         # 清空 TOTP
         if reset_totp:
-            stmt = update(User).where(User.username == username).values(
-                isOtp=False, otpSecret=None
-            )
-            await session.execute(stmt)
+            await user_repo.disable_otp(username)
             actions.append("TOTP 两步验证")
 
         # 清空 PassKey
         if reset_passkey:
-            stmt = delete(UserPassKey).where(UserPassKey.userId == user["id"])
+            # 仓储返回 ORM 对象（原 crud 返回字典），故改用属性访问
+            stmt = delete(UserPassKey).where(UserPassKey.userId == user.id)
             result = await session.execute(stmt)
             count = result.rowcount
             actions.append(f"PassKey ({count} 个)")

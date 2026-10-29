@@ -6,12 +6,15 @@ why：从 main.py 抽离，main.py 只负责注册路由。为外部控制 API �
 """
 
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse, HTMLResponse
+
+# 工具已迁入 misc，顶层导入以便提前发现路径错误。
+from src.utils.misc.swagger_cn import get_swagger_ui_html_cn
 
 
 def build_control_api_openapi(app: FastAPI) -> dict:
     """生成仅包含外部控制 API 路由和 API Key 认证的独立 OpenAPI schema（带缓存）。"""
-    from fastapi.openapi.utils import get_openapi
 
     if getattr(app, "_control_openapi_schema", None):
         return app._control_openapi_schema
@@ -30,8 +33,9 @@ def build_control_api_openapi(app: FastAPI) -> dict:
         # 解析 3.1.0 的 paths 失败，导致文档页显示 "No operations defined in spec!"。
         openapi_version="3.0.3",
         description="用于外部自动化和集成的API。支持两种鉴权方式：\n"
-                    "1. **查询参数**：`?api_key=<你的密钥>`\n"
-                    "2. **请求头**：`X-API-KEY: <你的密钥>`（推荐，也用于 MCP 连接）",
+                    "1. **查询参数**：`?api_key=<你的密钥>`（仅适用于 /api/control）\n"
+                    "2. **请求头**：`X-API-KEY: <你的密钥>`（推荐，适用于 /api/control 和 /api/mcp）\n"
+                    "注意：MCP 的查询参数名称是 `apikey`，不是 `api_key`。",
         routes=control_routes,
     )
 
@@ -69,7 +73,6 @@ def register_control_api_docs(app: FastAPI) -> None:
     @app.get("/api/control/docs", include_in_schema=False)
     async def custom_swagger_ui_html() -> HTMLResponse:
         """提供一个使用本地静态资源、部分汉化的 Swagger UI 页面。"""
-        from src.utils.swagger_cn import get_swagger_ui_html_cn
         return get_swagger_ui_html_cn(
             openapi_url="/api/control/openapi.json",
             title="Misaka Danmaku 外部控制 API 文档",

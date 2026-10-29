@@ -3,6 +3,8 @@
 媒体服务器映射修复工具 (18)
 """
 import logging
+from src.services.database_service import DatabaseService
+from src.services.service_container import get_database_service
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -11,7 +13,6 @@ from sqlalchemy import func, select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.db import crud, get_db_session, orm_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -27,7 +28,7 @@ class DataCheckResult(BaseModel):
 
 @router.get("/data-check/scan", summary="媒体库数据体检扫描")
 async def scan_data_issues(
-    session: AsyncSession = Depends(get_db_session),
+    db_service: DatabaseService = Depends(get_database_service),
     limit: int = Query(50, ge=1, le=200),
 ):
     results = []
@@ -114,7 +115,7 @@ async def scan_data_issues(
 
 
 @router.post("/data-check/fix-orphans", summary="清理孤立分集")
-async def fix_orphan_episodes(session: AsyncSession = Depends(get_db_session)):
+async def fix_orphan_episodes(db_service: DatabaseService = Depends(get_database_service)):
     q = select(orm_models.Episode).where(
         ~orm_models.Episode.sourceId.in_(select(orm_models.AnimeSource.id))
     )
@@ -127,7 +128,7 @@ async def fix_orphan_episodes(session: AsyncSession = Depends(get_db_session)):
 
 
 @router.post("/data-check/clear-mapping", summary="清除无效媒体服务器映射")
-async def clear_broken_mappings(session: AsyncSession = Depends(get_db_session)):
+async def clear_broken_mappings(db_service: DatabaseService = Depends(get_database_service)):
     q = select(orm_models.AnimeMetadata).where(
         orm_models.AnimeMetadata.mediaServerType != None,
         orm_models.AnimeMetadata.mediaServerSeriesId == None,

@@ -5,7 +5,8 @@ from typing import Any, Dict, List, Optional, Set
 import httpx
 from fastapi import HTTPException, status
 
-from src.db import crud, models
+from src.schemas import MetadataDetailsResponse, User
+from src.services.service_container import get_database_service
 from .base import BaseMetadataSource, HTTPStatusError
 
 logger = logging.getLogger(__name__)
@@ -21,8 +22,8 @@ class TvdbMetadataSource(BaseMetadataSource):
         参考Bangumi源的实现：主动监测token有效性，当剩余天数<=7天时提前刷新。
         """
         # 1. 尝试从数据库配置中获取缓存的token和过期时间
-        token = await self.config_manager.get("tvdbJwtToken")
-        expires_at_str = await self.config_manager.get("tvdbTokenExpiresAt")
+        token = await self.config_service.get("tvdbJwtToken")
+        expires_at_str = await self.config_service.get("tvdbTokenExpiresAt")
 
         if token and expires_at_str:
             try:
@@ -44,7 +45,7 @@ class TvdbMetadataSource(BaseMetadataSource):
                 self.logger.warning("TVDB: 数据库中的过期时间格式无效，将重新获取token。")
         else:
             self.logger.info("TVDB token 未找到，正在请求新的令牌。")
-        api_key = await self.config_manager.get("tvdbApiKey", "")
+        api_key = await self.config_service.get("tvdbApiKey", "")
         if not api_key:
             raise ValueError("TVDB API Key 未配置。")
 
@@ -58,8 +59,8 @@ class TvdbMetadataSource(BaseMetadataSource):
 
             # 令牌有效期为一个月，我们设置一个29天的缓存
             new_expires_at = datetime.utcnow() + timedelta(days=29)
-            await self.config_manager.setValue("tvdbJwtToken", new_token)
-            await self.config_manager.setValue("tvdbTokenExpiresAt", new_expires_at.isoformat())
+            await self.config_service.set("tvdbJwtToken", new_token)
+            await self.config_service.set("tvdbTokenExpiresAt", new_expires_at.isoformat())
             
             self.logger.info("成功获取并缓存新的TVDB令牌。")
             return new_token
@@ -69,11 +70,13 @@ class TvdbMetadataSource(BaseMetadataSource):
 
     async def _create_client(self) -> httpx.AsyncClient:
         # 1. 获取代理配置
-        async with self._session_factory() as session:
-            proxy_url = await crud.get_config_value(session, "proxyUrl", "")
-            proxy_enabled_str = await crud.get_config_value(session, "proxyEnabled", "false")
-            proxy_enabled_globally = proxy_enabled_str.lower() == 'true'
-            metadata_settings = await crud.get_all_metadata_source_settings(session)
+        # 已迁移：配置读取统一走 config_service，与其他元数据源保持一致
+        proxy_url = await self.config_service.get("proxyUrl", "")
+        proxy_enabled_str = await self.config_service.get("proxyEnabled", "false")
+        proxy_enabled_globally = proxy_enabled_str.lower() == 'true'
+        db = get_database_service()
+        async with db.transaction():
+            metadata_settings = await db.metadata_source.get_all_metadata_source_settings()
         provider_setting = next((s for s in metadata_settings if s['providerName'] == self.provider_name), None)
         use_proxy_for_this_provider = provider_setting.get('useProxy', False) if provider_setting else False
 
@@ -92,7 +95,7 @@ class TvdbMetadataSource(BaseMetadataSource):
         })
         return base_client
 
-    async def search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
+    async def search(self, keyword: str, user: User, mediaType: Optional[str] = None) -> List[MetadataDetailsResponse]:
         try:
             async with await self._create_client() as client:
                 params = {"query": keyword}
@@ -105,7 +108,7 @@ class TvdbMetadataSource(BaseMetadataSource):
 
                 results = []
                 for item in data:
-                    results.append(models.MetadataDetailsResponse(
+                    results.append(MetadataDetailsResponse(
                         id=item['tvdb_id'], tvdbId=item['tvdb_id'],
                         title=item.get('name'), imageUrl=item.get('image_url'),
                         details=f"Year: {item.get('year')}",
@@ -128,10 +131,10 @@ class TvdbMetadataSource(BaseMetadataSource):
             self.logger.warning(f"TVDB搜索失败，发生意外错误: {e}")
             return []
 
-    async def get_details(self, item_id: str, user: models.User, mediaType: Optional[str] = None) -> Optional[models.MetadataDetailsResponse]:
+    async def get_details(self, item_id: str, user: User, mediaType: Optional[str] = None) -> Optional[MetadataDetailsResponse]:
         try:
             async with await self._create_client() as client:
-                async def _fetch_and_parse(entity_type: str) -> Optional[models.MetadataDetailsResponse]:
+                async def _fetch_and_parse(entity_type: str) -> Optional[MetadataDetailsResponse]:
                     try:
                         self.logger.info(f"TVDB: 正在尝试将ID {item_id} 作为 '{entity_type}' 获取...")
                         response = await client.get(f"/{entity_type}/{item_id}/extended")
@@ -145,7 +148,7 @@ class TvdbMetadataSource(BaseMetadataSource):
                         if remote_ids := details.get('remoteIds'):
                             imdb_entry = next((rid for rid in remote_ids if rid.get('sourceName') == 'IMDB'), None)
                             if imdb_entry: imdb_id = imdb_entry.get('id')
-                        return models.MetadataDetailsResponse(
+                        return MetadataDetailsResponse(
                             id=str(details['id']), tvdbId=str(details['id']), title=details.get('name'),
                             imageUrl=details.get('image'), details=details.get('overview'), imdbId=imdb_id,
                             type='movie' if entity_type == 'movies' else 'tv_series',
@@ -176,13 +179,13 @@ class TvdbMetadataSource(BaseMetadataSource):
             self.logger.error(f"TVDB获取详情失败: {e}", exc_info=True)
             return None
 
-    async def search_aliases(self, keyword: str, user: models.User) -> Set[str]:
+    async def search_aliases(self, keyword: str, user: User) -> Set[str]:
         return set()
 
     async def check_connectivity(self) -> Dict[str, str]:
         """检查TVDB源配置状态"""
         try:
-            api_key = await self.config_manager.get("tvdbApiKey", "")
+            api_key = await self.config_service.get("tvdbApiKey", "")
             if not api_key or api_key.strip() == "":
                 return {"code": "unconfigured", "message": "未配置 (缺少TVDB API Key)"}
 
@@ -193,6 +196,6 @@ class TvdbMetadataSource(BaseMetadataSource):
             return {"code": "ok", "message": "配置正常"}
         except Exception as e:
             return {"code": "error", "message": f"配置检查失败: {e}"}
-    async def execute_action(self, action_name: str, payload: Dict, user: models.User) -> Any:
+    async def execute_action(self, action_name: str, payload: Dict, user: User) -> Any:
         """TVDB source does not support custom actions."""
         raise NotImplementedError(f"源 '{self.provider_name}' 不支持任何自定义操作。")

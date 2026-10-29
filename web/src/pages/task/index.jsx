@@ -3,6 +3,7 @@ import { ScheduleTask } from './components/ScheduleTask'
 import { RateLimitPanel } from './components/RateLimitPanel'
 import { WebhookTasks } from './components/WebhookTasks'
 import { TaskProfilePanel } from './components/TaskProfilePanel'
+import { SystemMetricsPanel } from './components/SystemMetricsPanel'
 import { Tabs } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -43,6 +44,11 @@ export const Task = () => {
       key: 'profile',
       children: <TaskProfilePanel />,
     },
+    {
+      label: t('taskPage.tabSystemMetrics'),
+      key: 'sysmetrics',
+      children: <SystemMetricsPanel />,
+    },
   ]
 
   const handleTabChange = (newKey) => {
@@ -55,12 +61,14 @@ export const Task = () => {
     <div className="my-6">
       {isMobile ? (
         <MobileTabs
+          className="page-tabs"
           items={tabItems}
           defaultActiveKey={key}
           onChange={handleTabChange}
         />
       ) : (
         <Tabs
+          className="page-tabs"
           activeKey={key}
           items={tabItems}
           onChange={handleTabChange}

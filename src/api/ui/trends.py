@@ -10,12 +10,10 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select, text
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import get_db_session, orm_models, ConfigManager
+from src.services.service_container import get_database_service
 from src.core import get_now
-from src.api.dependencies import get_config_manager
+from src.services.config_service import ConfigService, get_config_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -37,16 +35,12 @@ class TaskProfile(BaseModel):
 @router.get("/task-profile/summary", summary="任务画像概览")
 async def get_task_profiles(
     days: int = Query(7, ge=1, le=90),
-    session: AsyncSession = Depends(get_db_session),
-):
+) -> List[TaskProfile]:
+    """从仓储读取标量快照，事务外计算任务画像。"""
     since = get_now() - timedelta(days=days)
-    q = select(
-        orm_models.TaskHistory.title,
-        orm_models.TaskHistory.status,
-        orm_models.TaskHistory.createdAt,
-        orm_models.TaskHistory.finishedAt,
-    ).where(orm_models.TaskHistory.createdAt >= since).order_by(orm_models.TaskHistory.createdAt.desc())
-    rows = (await session.execute(q)).all()
+    db = get_database_service()
+    async with db.transaction():
+        rows = await db.health_query.get_task_profile_rows(since)
 
     profiles: Dict[str, Dict] = {}
     for title, status, created, finished in rows:
@@ -83,29 +77,29 @@ async def get_task_profiles(
 
 
 @router.get("/task-profile/timeline", summary="单次任务时间线详情")
-async def get_task_timeline(
-    task_id: str = Query(...),
-    session: AsyncSession = Depends(get_db_session),
-):
-    q = select(orm_models.TaskHistory).where(orm_models.TaskHistory.taskId == task_id)
-    task = (await session.execute(q)).scalar_one_or_none()
+async def get_task_timeline(task_id: str = Query(...)) -> Dict[str, Any]:
+    """从仓储读取任务快照，不在接口层构造 SQL 或持有 ORM 对象。"""
+    db = get_database_service()
+    async with db.transaction():
+        task = await db.health_query.get_task_timeline_record(task_id)
     if not task:
         return {"error": "not found"}
     steps = []
-    if task.description:
+    if task["description"]:
         try:
-            desc_data = json.loads(task.description)
+            desc_data = json.loads(task["description"])
             if isinstance(desc_data, dict) and "steps" in desc_data:
                 steps = desc_data["steps"]
         except (json.JSONDecodeError, TypeError):
             pass
+    created, finished = task["createdAt"], task["finishedAt"]
     return {
-        "taskId": task.taskId,
-        "title": task.title,
-        "status": task.status,
-        "createdAt": task.createdAt.isoformat() if task.createdAt else "",
-        "finishedAt": task.finishedAt.isoformat() if task.finishedAt else "",
-        "durationSec": (task.finishedAt - task.createdAt).total_seconds() if task.finishedAt and task.createdAt else 0,
+        "taskId": task["taskId"],
+        "title": task["title"],
+        "status": task["status"],
+        "createdAt": created.isoformat() if created else "",
+        "finishedAt": finished.isoformat() if finished else "",
+        "durationSec": (finished - created).total_seconds() if finished and created else 0,
         "steps": steps,
     }
 
@@ -114,9 +108,10 @@ async def get_task_timeline(
 
 @router.get("/trends/capacity", summary="数据库/缓存容量趋势")
 async def get_capacity_trends(
-    config_manager: ConfigManager = Depends(get_config_manager),
-):
-    raw = await config_manager.get("capacity_trend_data", "[]")
+    config_service: ConfigService = Depends(get_config_service),
+) -> List[Dict[str, Any]]:
+    """通过配置服务读取容量趋势数据。"""
+    raw = await config_service.get("capacity_trend_data", "[]")
     try:
         data = json.loads(raw) if isinstance(raw, str) else raw
     except (json.JSONDecodeError, TypeError):
@@ -125,22 +120,11 @@ async def get_capacity_trends(
 
 
 @router.get("/trends/current", summary="当前容量快照")
-async def get_current_capacity(
-    session: AsyncSession = Depends(get_db_session),
-):
-    counts = {}
-    tables = [
-        ("anime", orm_models.Anime),
-        ("episode", orm_models.Episode),
-        ("anime_sources", orm_models.AnimeSource),
-        ("task_history", orm_models.TaskHistory),
-        ("cache_data", orm_models.CacheData),
-        ("media_items", orm_models.MediaItem),
-    ]
-    for name, model in tables:
-        pk = list(model.__table__.primary_key.columns)[0]
-        q = select(func.count(pk))
-        counts[name] = (await session.execute(q)).scalar() or 0
+async def get_current_capacity() -> Dict[str, Any]:
+    """通过健康查询仓储统计容量，文件访问放在数据库事务之外。"""
+    db = get_database_service()
+    async with db.transaction():
+        counts = await db.health_query.get_capacity_counts()
 
     # 数据库文件大小
     db_size = 0

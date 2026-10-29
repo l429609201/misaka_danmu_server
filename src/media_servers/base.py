@@ -119,6 +119,32 @@ class BaseMediaServer(ABC):
     async def get_item_details(self, item_id: str) -> Optional[MediaItem]:
         """获取单个媒体项的详细信息"""
         pass
+
+    async def search_items(
+        self,
+        keyword: str,
+        media_type: Optional[str] = None,
+        limit: int = 50
+    ) -> List[MediaItem]:
+        """
+        按关键词搜索顶层媒体条目（Series / Movie），走服务端原生搜索。
+
+        与 get_library_items 的区别：
+        - 只返回顶层条目，不展开季度与分集，请求数恒定
+        - 由媒体服务器完成匹配，无需拉全库到内存过滤
+
+        子类应重写此方法以使用各自的原生搜索接口。默认实现返回空列表。
+
+        Args:
+            keyword: 搜索关键词
+            media_type: 限定类型 (movie / tv_series)，None 表示两者都要
+            limit: 最多返回条数
+
+        Returns:
+            匹配的顶层媒体条目列表
+        """
+        self.logger.warning(f"{self.__class__.__name__} 未实现原生搜索，返回空结果")
+        return []
     
     @abstractmethod
     async def get_tv_seasons(self, series_id: str) -> List[Dict[str, Any]]:

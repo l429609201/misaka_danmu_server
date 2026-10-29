@@ -1,0 +1,14 @@
+{
+  "format": "misaka-rate-limit-package",
+  "format_version": 1,
+  "manifest": {
+    "product": "misaka_danmu_server",
+    "policy_version": 1,
+    "signing_uid": "e18dd79fdf224437c379e744d09fea04",
+    "public_key_hex": "04f7b32a0f394007116b481c31d063edf9c49031519bfc7672772b834264b7885a5d3b6c2f1e07960fde09c74a6fb8ef67dd41144986ff2d33eb96146c45bfe101",
+    "created_at": "2026-10-25T10:19:13.153971+00:00"
+  },
+  "nonce": "nv0ci2inGhfCtB0q",
+  "ciphertext": "SUaMt7nAfZ67846FJLyopw5Otndat8Oh65KBJ0Y8V07nA7PwO7zNcTlDkn50rtKDEFkJRdGztc9pXpkBR2n0blfO0MkW+3Qm50LaR5l851r6mZxtESokl26IKUY7F+s0WIhJT+Q3qH0s9OnP135CNvSVLGyD1jMOlDGQHGnGWVvWcywPCb2DHs/HOyFR4fVj2B9k3AtKb9/AV8dv/pf0qrX5wdEdkl7yqFSVyBNsCq8Cq/Ln2TQlLeYrckJNMeWivPPeloNreBjv3EzUYISyOyjToovdySqfN3viK612x5upGmSpe8S5LCH0ZPaChjepGPqwmfZZgy3HnWj1SvhkPVak75BsZz/VVFZEn2ZUrMdzaekEZTBeGCvpBHI+S/JGuBSz0byO97KOjgECQvpcsUvHwNeJXIcGTFK5H4Rd/eXKUAWPD3+8aIdCm2qASwXJH621KTeH/L/nbaPEOwD7pueEI3QfLkykd/AD9BstEdeHimld51CorwUbOepKk2Jhyu+VTotPLP36T2NgpJaNoaXQIcZKXUZF7K/zWIbC/k9xQm8+u3WlmayDJzrjrS4tAmFOAdaPnMFOJcCMpMVisRETdk/Wv6YzTBAmZSQ7r91Bl1/DE7m9k9+liOXo7UZR4+Uk0Ivgesnq2XQ8ZnfFA52pTZxYN4AQWQW+JcKbOOmsnBPWgcwSFfDWTHFf+OwmQsAgneSPnBll/ZlanbAuwyL6odH8G7bwKs8gyZDQX4qUSr8PABLu77rYlynIMIVDXteQKoX9Tgytt7+WFY7WvQqiaNNYfem1uCwILwe7ReHMO0oIC0m+DV7VkPjvNfTFNufsOr0kQv32odfWaqF1DNjud1PWGcfHsPlp3Z/OAswbYXQtj8gT/kh1nW0ddvjPbnxyJ+eLtLAqNxcALgL53J5q1YHIxII0mLDuZ+Bwe3tA6dPbwpQFYkDSl7KJ0ab/3hB0YrsxW/CEMWWVFRdBk862IpRBaqyV/k4qg8QZb4Gbr0K2qriPx7X0TPte5pxxwLJjcgblshAX2btF4UKDM6SppxnIP8obJlL+Gvnt5yAAn9ccsJiODrTJbo/qM6BrCC2+qEgmNlS7gyCxdOiU7gMFVsz/0cLhHgkUuNWoI1E9rv0HmxPP+y4+p3FB9QTgri7lo73OhBvnURMHn/DjxJsiX6EomsPoqpHywqe4wxLeIlwtGK1aBI7EIUq0pSAToM5YEts35P7cEsZNo91F/CmbHNtVSHDCgiZBRssxM6NyAyUCNsRuzw==",
+  "signature": "2502a30617822e05497ba4f1c6fc1b6df0b7e22e93e95404044479b666c0382742417079fce2a7258c31c28cdb403a8312ee2bf30c429dd65ee2d210ba99326c"
+}

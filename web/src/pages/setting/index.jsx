@@ -1,5 +1,5 @@
 import { Tabs } from 'antd'
-import { Webhook } from './components/Webhook'
+import { Navigate } from 'react-router-dom'
 import { Proxy } from './components/Proxy'
 import { Parameters } from './components/Parameters'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -19,10 +19,14 @@ export const Setting = () => {
   const navigate = useNavigate()
   const isMobile = useAtomValue(isMobileAtom)
 
+  // Webhook 配置已迁到「媒体服务联动」，旧链接自动跳转
+  if (key === 'webhook') {
+    return <Navigate to="/media-fetch?key=webhook" replace />
+  }
+
   const tabItems = [
     { label: t('settingPage.parameters'), key: 'parameters', children: <Parameters /> },
     { label: t('settingPage.proxy'), key: 'proxy', children: <Proxy /> },
-    { label: t('settingPage.webhook'), key: 'webhook', children: <Webhook /> },
     { label: t('settingPage.notification'), key: 'notification', children: <Notification /> },
     { label: t('settingPage.recognition'), key: 'recognition', children: <Recognition /> },
     { label: t('settingPage.automatch'), key: 'automatch', children: <AutoMatchSetting /> },
@@ -39,12 +43,14 @@ export const Setting = () => {
     <div className="my-6">
       {isMobile ? (
         <MobileTabs
+          className="page-tabs"
           items={tabItems}
           defaultActiveKey={key}
           onChange={handleTabChange}
         />
       ) : (
         <Tabs
+          className="page-tabs"
           activeKey={key}
           items={tabItems}
           onChange={handleTabChange}

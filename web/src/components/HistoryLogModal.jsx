@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Modal, Drawer, Button, Tooltip, message, Empty, Input, Spin, Select, Card } from 'antd'
+import { Modal, Drawer, Button, Tooltip, message, Empty, Input, Spin, Select, Segmented } from 'antd'
 import { CopyOutlined, ExportOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { getLogs, getLogFiles, getLogFileContent } from '../apis'
@@ -14,25 +14,27 @@ const BATCH_SIZE = 200
 
 // ─── 模块级工具函数 ─────────────────────────────────────────────────────────
 
+const LOG_HEADER_RE = /^\s*\[(\d{4}-\d\d-\d\d\s+\d\d:\d\d:\d\d)\]\s*(?:\[([^\]]+)\]\s*)?\[(DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL)\]\s*/
+const LEVEL_INCLUDES = {
+  INFO: new Set(['INFO', 'WARNING', 'ERROR', 'CRITICAL']),
+  WARN: new Set(['WARNING', 'ERROR', 'CRITICAL']),
+  DEBUG: new Set(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']),
+}
+
+const getLineLevel = (line) => {
+  const level = line.match(LOG_HEADER_RE)?.[3] || line.match(/^\[(DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL)\]/)?.[1]
+  return level === 'WARN' ? 'WARNING' : level
+}
+
 const getLevelColors = (line) => {
-  const m = line.match(/\[(DEBUG|INFO|WARNING|ERROR)\]/)
-  if (!m) return {}
-  switch (m[1]) {
-    case 'ERROR':   return { border: '#ef4444', bg: 'rgba(239,68,68,0.06)' }
+  switch (getLineLevel(line)) {
+    case 'CRITICAL':
+    case 'ERROR': return { border: '#ef4444', bg: 'rgba(239,68,68,0.06)' }
     case 'WARNING': return { border: '#f59e0b', bg: 'rgba(245,158,11,0.06)' }
-    case 'DEBUG':   return { border: '#1d4ed8', bg: 'rgba(29,78,216,0.06)' }
+    case 'DEBUG': return { border: '#1d4ed8', bg: 'rgba(29,78,216,0.06)' }
     default: return {}
   }
 }
-
-// 隐去级别标签。why：合并后一个条目可能含多行（缓冲块内每条子日志都带
-// 自己的标签），故逐行各去一次，而非全局 replace —— 全局会误伤正文里
-// 恰好出现的 [INFO] 等字样。
-const stripLevelTag = (text) =>
-  text
-    .split('\n')
-    .map(line => line.replace(/\s*\[(DEBUG|INFO|WARNING|ERROR)\]\s*/, ' '))
-    .join('\n')
 
 // 一条完整日志的起始行特征：以 [YYYY-MM-DD HH:mm:ss] 时间戳开头
 const LOG_HEAD_RE = /^\s*\[\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/
@@ -82,7 +84,7 @@ const groupLogLines = (lines) => {
       // 若上一条无时间戳前缀则视为同属一条，否则另起新卡片
       if (!LOG_HEAD_RE.test(line) && entries.length > 0) appendToLast(line)
       else entries.push(line)
-      inBlock = true
+      inBlock = !isBlockEnd
       continue
     }
 
@@ -98,23 +100,55 @@ const groupLogLines = (lines) => {
   return entries
 }
 
+const filterLogEntry = (entry, level) => {
+  if (level === 'DEBUG') return entry
+  const allowed = LEVEL_INCLUDES[level]
+  if (!entry.includes(BLOCK_START) && !entry.includes(BLOCK_END)) {
+    const detected = getLineLevel(entry)
+    return (allowed.has(detected) || (level === 'INFO' && !detected)) ? entry : null
+  }
+  let keep = false
+  let visible = false
+  const filtered = entry.split('\n').filter(line => {
+    if (line.includes(BLOCK_START) || line.includes(BLOCK_END) || !line.trim()) return true
+    if (LOG_HEAD_RE.test(line)) {
+      keep = allowed.has(getLineLevel(line))
+      if (keep) visible = true
+    }
+    return keep
+  })
+  return visible ? filtered.join('\n') : (level === 'INFO' && !entry.split('\n').some(line => LOG_HEADER_RE.test(line)) ? entry : null)
+}
+
+const highlightText = (text, keyword) => {
+  if (!keyword) return text
+  const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+  return text.split(regex).map((part, index) =>
+    regex.test(part) ? <mark key={index} className="bg-yellow-300 dark:bg-yellow-600 px-0.5 rounded">{part}</mark> : part
+  )
+}
+
 // ─── 日志列表（全展开 + 滚动到顶触发加载更多）────────────────────────────────
-function LogList({ lines, hasMore, loadingMore, onLoadMore, isMobile, onCopyLine, copyLabel }) {
+function LogList({ entries, hasMore, loadingMore, onLoadMore, isMobile, onCopyLine, copyLabel, keyword, loadMoreLabel, emptyLabel }) {
   const containerRef = useRef(null)
-  // 把扁平行合并为逻辑条目，使多行日志（计时报告/异常堆栈）显示为一张卡片
-  const entries = useMemo(() => groupLogLines(lines), [lines])
+  const didScrollToLatestRef = useRef(false)
   // 记录上次 loadMore 时的滚动高度，加载完成后还原位置，避免列表跳动
   const prevScrollHeightRef = useRef(0)
 
-  // why：新数据 prepend 到顶部后，浏览器会把视口定位到新内容顶部（滚动位置归零），
-  // 需要手动把 scrollTop 恢复为"旧内容顶端"的位置，实现无感加载。
+  // 分页 prepend 恢复旧视口；新查询首次得到结果时展示最新记录。
   useEffect(() => {
     const el = containerRef.current
-    if (!el || !prevScrollHeightRef.current) return
+    if (!el || !entries.length) return
+    if (!didScrollToLatestRef.current) {
+      el.scrollTop = el.scrollHeight
+      didScrollToLatestRef.current = true
+      return
+    }
+    if (!prevScrollHeightRef.current) return
     const diff = el.scrollHeight - prevScrollHeightRef.current
     if (diff > 0) el.scrollTop = diff
     prevScrollHeightRef.current = 0
-  }, [lines])
+  }, [entries])
 
   const handleScroll = useCallback(() => {
     const el = containerRef.current
@@ -131,40 +165,46 @@ function LogList({ lines, hasMore, loadingMore, onLoadMore, isMobile, onCopyLine
       ref={containerRef}
       className={isMobile
         ? 'flex-1 min-h-0 overflow-y-auto overflow-x-hidden'
-        : 'max-h-[55vh] overflow-y-auto overflow-x-hidden'}
+        : 'h-[min(55vh,560px)] overflow-y-auto overflow-x-hidden'}
       onScroll={handleScroll}
     >
       {/* 顶部加载更多指示器 */}
       {(hasMore || loadingMore) && (
-        <div className="flex justify-center py-2 text-xs text-gray-400">
-          {loadingMore ? <Spin size="small" /> : <span className="opacity-50">↑ 向上滚动加载更多</span>}
+        <div className="flex justify-center py-1">
+          <Button size="small" type="text" onClick={onLoadMore} loading={loadingMore}>{loadMoreLabel}</Button>
         </div>
       )}
+      {entries.length === 0 && <div className="flex items-center justify-center h-full min-h-[200px]">
+        <Empty description={emptyLabel} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      </div>}
       {entries.map((line, i) => {
-        const lc = getLevelColors(line)
-        const displayText = stripLevelTag(line)
+        const colors = getLevelColors(line)
+        const match = line.match(LOG_HEADER_RE)
+        const [datePart, clockPart] = match ? match[1].split(/\s+/) : ['—', '--:--:--']
+        const source = match?.[2]
+        const detectedLevel = getLineLevel(line)
+        const level = match?.[3] || detectedLevel || '—'
+        const text = match ? line.slice(match[0].length) : line
         return (
           <div
             key={i}
-            className={`my-1 rounded border-l-2 group ${isMobile ? 'text-xs' : 'text-sm'} ${lc.border ? '' : 'bg-base-hover border-primary'} hover:bg-base-hover-hover transition-colors`}
-            style={{
-              ...(lc.border ? { borderLeftColor: lc.border } : {}),
-              ...(lc.bg ? { backgroundColor: lc.bg } : {}),
-            }}
+            className={`group relative flex flex-wrap sm:flex-nowrap gap-x-2 gap-y-1 items-start my-1 pl-2 pr-9 py-2 rounded border-l-2 text-xs ${!detectedLevel ? 'border-border' : colors.border ? '' : 'border-primary bg-base-hover'} hover:brightness-95`}
+            style={colors.border ? { borderLeftColor: colors.border, backgroundColor: colors.bg } : undefined}
           >
-            <div className="flex items-start gap-2 px-2 py-2 justify-between">
-              <pre className="m-0 min-w-0 flex-1 font-mono whitespace-pre-wrap break-all overflow-x-auto">
-                {displayText}
-              </pre>
-              <Button
-                type="text"
-                size="small"
-                icon={<CopyOutlined />}
-                className={`shrink-0 opacity-0 group-hover:opacity-100 transition-opacity${isMobile ? ' opacity-60' : ''}`}
-                onClick={(e) => { e.stopPropagation(); onCopyLine(line) }}
-                title={copyLabel}
-              />
-            </div>
+            <time className="self-center shrink-0 w-[86px] flex flex-col text-center font-mono text-gray-500 leading-4 whitespace-nowrap" dateTime={match?.[1]?.replace(/\s+/, 'T')}>
+              <span>{highlightText(datePart, keyword)}</span>
+              <span>{highlightText(clockPart, keyword)}</span>
+            </time>
+            <span className="self-center shrink-0 font-mono text-[11px] w-[66px] text-center rounded-sm leading-5" style={colors.border ? { color: colors.border } : undefined}>{highlightText(level, keyword)}</span>
+            {source && <span className="min-w-0 max-w-[130px] truncate font-mono text-gray-500 leading-5" title={source}>{highlightText(source, keyword)}</span>}
+            <pre className="m-0 min-w-0 flex-1 basis-full sm:basis-0 whitespace-pre-wrap break-words font-mono leading-5">{highlightText(text, keyword)}</pre>
+            <Tooltip title={copyLabel}><Button
+              type="text"
+              size="small"
+              icon={<CopyOutlined />}
+              className={`absolute right-1 top-1 ${isMobile ? 'opacity-70' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`}
+              onClick={() => onCopyLine(line)}
+            /></Tooltip>
           </div>
         )
       })}
@@ -186,81 +226,100 @@ export default function HistoryLogModal({ open, onClose }) {
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const searchTimerRef = useRef(null)
+  const requestIdRef = useRef(0)
   const [logFiles, setLogFiles] = useState([])
   const [selectedFile, setSelectedFile] = useState(MEMORY_LOG_KEY)
+  const [logLevel, setLogLevel] = useState('INFO')
+  const [listVersion, setListVersion] = useState(0)
   const [messageApi, contextHolder] = message.useMessage()
   const isMobile = useAtomValue(isMobileAtom)
+  const entries = useMemo(() => groupLogLines(logs), [logs])
+  const visibleEntries = useMemo(() => entries.map(entry => filterLogEntry(entry, logLevel)).filter(Boolean), [entries, logLevel])
 
   // 加载日志文件列表
-  const fetchLogFiles = () => {
+  const fetchLogFiles = useCallback(() => {
     getLogFiles()
       .then(res => {
         const files = Array.isArray(res) ? res : (res?.data ?? [])
         setLogFiles(files)
       })
       .catch(() => {})
-  }
+  }, [])
 
   // 首次/切换文件/切换关键词时的全新加载（offset=0，替换列表）
   const fetchLogs = useCallback((file = selectedFile, kw = search) => {
+    const requestId = ++requestIdRef.current
+    setListVersion(prev => prev + 1)
     setLoading(true)
+    setLoadingMore(false)
     setLogs([])
     setHasMore(false)
     setTotal(0)
     if (file === MEMORY_LOG_KEY) {
       getLogs()
         .then(res => {
+          if (requestId !== requestIdRef.current) return
           const lines = Array.isArray(res) ? res : (res?.data ?? [])
-          // 内存日志全量返回，前端做一次关键词过滤即可
+          // 内存日志全量返回，前端做一次关键词过滤即可。
           const filtered = kw ? lines.filter(l => l.toLowerCase().includes(kw.toLowerCase())) : lines
           setLogs(filtered)
           setTotal(filtered.length)
           setHasMore(false)
         })
-        .catch(() => messageApi.error(t('historyLog.fetchFailed')))
-        .finally(() => setLoading(false))
+        .catch(() => { if (requestId === requestIdRef.current) messageApi.error(t('historyLog.fetchFailed')) })
+        .finally(() => { if (requestId === requestIdRef.current) setLoading(false) })
     } else {
       getLogFileContent(file, { tail: BATCH_SIZE, keyword: kw, offset: 0 })
         .then(res => {
+          if (requestId !== requestIdRef.current) return
           const data = res?.data ?? res
           setLogs(data?.lines ?? [])
           setHasMore(data?.hasMore ?? false)
           setTotal(data?.total ?? 0)
         })
-        .catch(() => messageApi.error(t('historyLog.fetchFileFailed')))
-        .finally(() => setLoading(false))
+        .catch(() => { if (requestId === requestIdRef.current) messageApi.error(t('historyLog.fetchFileFailed')) })
+        .finally(() => { if (requestId === requestIdRef.current) setLoading(false) })
     }
-  }, [selectedFile, search])
+  }, [selectedFile, search, messageApi, t])
 
   // 加载更多（滚动到顶时追加更旧的数据，offset = 已加载行数）
   const fetchMore = useCallback(() => {
-    if (loadingMore || !hasMore || selectedFile === MEMORY_LOG_KEY) return
+    if (loading || loadingMore || !hasMore || selectedFile === MEMORY_LOG_KEY) return
+    const requestId = requestIdRef.current
     setLoadingMore(true)
     getLogFileContent(selectedFile, { tail: BATCH_SIZE, keyword: search, offset: logs.length })
       .then(res => {
+        if (requestId !== requestIdRef.current) return
         const data = res?.data ?? res
         const newLines = data?.lines ?? []
-        // prepend 到列表头部（更旧的在上方）
+        // prepend 到列表头部（更旧的在上方）。
         setLogs(prev => [...newLines, ...prev])
-        setHasMore(data?.hasMore ?? false)
+        setHasMore(newLines.length > 0 && (data?.hasMore ?? false))
         setTotal(data?.total ?? 0)
       })
       .catch(() => {})
-      .finally(() => setLoadingMore(false))
-  }, [loadingMore, hasMore, selectedFile, search, logs.length])
+      .finally(() => { if (requestId === requestIdRef.current) setLoadingMore(false) })
+  }, [loading, loadingMore, hasMore, selectedFile, search, logs.length])
 
   useEffect(() => {
+    const requestVersion = requestIdRef
+    const searchTimer = searchTimerRef
     if (open) {
       setSelectedFile(MEMORY_LOG_KEY)
       setSearchInput('')
       setSearch('')
+      setLogLevel('INFO')
       fetchLogFiles()
     }
-  }, [open])
+    return () => {
+      ++requestVersion.current
+      clearTimeout(searchTimer.current)
+    }
+  }, [open, fetchLogFiles])
 
   useEffect(() => {
     if (open) fetchLogs(selectedFile, search)
-  }, [open, selectedFile, search])
+  }, [open, selectedFile, search, fetchLogs])
 
   // 搜索输入防抖 300ms 后触发后端查询
   const handleSearchChange = (e) => {
@@ -306,7 +365,7 @@ export default function HistoryLogModal({ open, onClose }) {
 
   const copyAll = async () => {
     try {
-      await navigator.clipboard.writeText(logs.join('\n'))
+      await navigator.clipboard.writeText(visibleEntries.join('\n'))
       messageApi.success(t('historyLog.copiedAll'))
     } catch { messageApi.error(t('historyLog.copyFailed')) }
   }
@@ -324,35 +383,28 @@ export default function HistoryLogModal({ open, onClose }) {
   const actionButtons = (
     <div className="flex gap-1">
       <Tooltip title={t('historyLog.refresh')}><Button size="small" type="text" icon={<ReloadOutlined />} onClick={handleRefresh} loading={loading} /></Tooltip>
-      <Tooltip title={t('historyLog.copyAll')}><Button size="small" type="text" icon={<CopyOutlined />} onClick={copyAll} /></Tooltip>
-      <Tooltip title={t('historyLog.export')}><Button size="small" type="text" icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
+      <Tooltip title={t('historyLog.copyAll')}><Button size="small" type="text" icon={<CopyOutlined />} onClick={copyAll} disabled={!visibleEntries.length} /></Tooltip>
+      <Tooltip title={t('historyLog.export')}><Button size="small" type="text" icon={<ExportOutlined />} onClick={exportLogs} disabled={!logs.length} /></Tooltip>
     </div>
   )
 
   const footerNode = (
-    <div className="flex items-center justify-between">
-      <span className="text-xs text-gray-400">
-        {t('historyLog.loadedCount', { count: logs.length, total })}
-      </span>
-      {!isMobile && (
-        <div className="flex gap-2">
-          <Tooltip title={t('historyLog.refresh')}><Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={loading} /></Tooltip>
-          <Tooltip title={t('historyLog.copyAll')}><Button icon={<CopyOutlined />} onClick={copyAll} /></Tooltip>
-          <Tooltip title={t('historyLog.export')}><Button icon={<ExportOutlined />} onClick={exportLogs} /></Tooltip>
-        </div>
-      )}
-    </div>
+    <span className="text-xs text-gray-500">{t('historyLog.loadedCount', { count: logs.length, total })}</span>
   )
 
+  const segColor = { WARN: '#f59e0b', DEBUG: '#1d4ed8' }[logLevel]
+
   const logContent = (
-    <>
-      <div className={isMobile ? 'flex gap-1.5 mb-1.5' : 'flex gap-2 mb-3'}>
+    <div className={isMobile ? 'flex-1 min-h-0 flex flex-col gap-2' : 'flex flex-col gap-2'}>
+      {segColor && <style>{`.history-log-levels .ant-segmented-item-selected { background: ${segColor} !important; color: #fff !important; }`}</style>}
+      <div className="flex items-center gap-2 flex-wrap">
         <Select
           value={selectedFile}
           onChange={setSelectedFile}
           options={fileOptions}
-          size={isMobile ? 'small' : 'middle'}
-          style={isMobile ? { flex: '1 1 0', minWidth: 0 } : { minWidth: 240 }}
+          size="small"
+          className={isMobile ? 'min-w-[130px] flex-1' : ''}
+          style={isMobile ? undefined : { width: 220 }}
         />
         <Input
           placeholder={t('historyLog.searchPlaceholder')}
@@ -361,40 +413,31 @@ export default function HistoryLogModal({ open, onClose }) {
           onChange={handleSearchChange}
           allowClear
           onClear={() => { setSearchInput(''); setSearch('') }}
-          size={isMobile ? 'small' : 'middle'}
-          style={isMobile ? { flex: '1 1 0', minWidth: 0 } : undefined}
+          size="small"
+          className="min-w-[140px] flex-1"
+        />
+        <div className="history-log-levels"><Segmented size="small" options={['INFO', 'WARN', 'DEBUG']} value={logLevel} onChange={setLogLevel} /></div>
+        <span className="text-xs text-gray-500 whitespace-nowrap">{t('historyLog.visibleCount', { count: visibleEntries.length })}</span>
+        {!isMobile && actionButtons}
+        {isMobile && <div className="w-full flex justify-end">{actionButtons}</div>}
+      </div>
+      <div className={`relative min-h-0 border border-solid border-border rounded bg-base-card p-2 ${isMobile ? 'flex-1 flex flex-col' : ''}`}>
+        {loading && <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-card/70"><Spin /></div>}
+        <LogList
+          key={listVersion}
+          entries={visibleEntries}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          onLoadMore={fetchMore}
+          isMobile={isMobile}
+          onCopyLine={copyLogLine}
+          copyLabel={t('historyLog.copyLog')}
+          keyword={search}
+          loadMoreLabel={t('historyLog.loadMore')}
+          emptyLabel={logs.length === 0 && !search ? t('historyLog.noLog') : t('historyLog.noMatchLog')}
         />
       </div>
-      <Card className={isMobile ? 'flex-1 min-h-0 flex flex-col' : ''} styles={{ body: { padding: isMobile ? 8 : 12, ...(isMobile ? { flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' } : {}) } }}>
-        {logs.length === 0 ? (
-          <div className="relative flex items-center justify-center" style={{ height: '30vh' }}>
-            {loading && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.04)' }}>
-                <Spin />
-              </div>
-            )}
-            <Empty description={<span className="text-gray-400">{search ? t('historyLog.noMatchLog') : t('historyLog.noLog')}</span>} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-          </div>
-        ) : (
-          <div className="relative">
-            {loading && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.04)', minHeight: '4rem' }}>
-                <Spin />
-              </div>
-            )}
-            <LogList
-              lines={logs}
-              hasMore={hasMore}
-              loadingMore={loadingMore}
-              onLoadMore={fetchMore}
-              isMobile={isMobile}
-              onCopyLine={copyLogLine}
-              copyLabel={t('historyLog.copyLog')}
-            />
-          </div>
-        )}
-      </Card>
-    </>
+    </div>
   )
 
   return (
@@ -407,7 +450,6 @@ export default function HistoryLogModal({ open, onClose }) {
           height="85%"
           open={open}
           onClose={onClose}
-          extra={actionButtons}
           footer={footerNode}
           destroyOnClose
           styles={{ body: { overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: 12 } }}

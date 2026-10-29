@@ -4,47 +4,57 @@
 """
 
 import logging
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import crud, get_db_session, ConfigManager
+from src.services.service_container import get_database_service, get_title_recognition_service
+from src.services.config_service import ConfigService
 
-from .models import ControlActionResponse, DanmakuOutputSettings
-from .dependencies import get_config_manager, get_title_recognition_manager
+from src.schemas.control import (
+    ControlActionResponse,
+    ConfigItem,
+    ConfigUpdateRequest,
+    ConfigResponse,
+    HelpResponse,
+)
+# 明确使用含合并输出字段的模型，避免同名导出覆盖接口契约。
+from src.schemas.control.common import DanmakuOutputSettings
+from .dependencies import get_config_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-# --- 设置管理 ---
+# --- 弹幕输出设置 ---
 
 @router.get("/settings/danmaku-output", response_model=DanmakuOutputSettings, summary="获取弹幕输出设置")
-async def get_danmaku_output_settings(session: AsyncSession = Depends(get_db_session)):
-    """获取全局的弹幕输出设置，如输出上限和是否合并输出。"""
-    limit = await crud.get_config_value(session, 'danmakuOutputLimitPerSource', '-1')
-    merge_enabled = await crud.get_config_value(session, 'danmakuMergeOutputEnabled', 'false')
+async def get_danmaku_output_settings() -> DanmakuOutputSettings:
+    """获取每个源的弹幕输出上限及合并输出开关。"""
+    db = get_database_service()
+    async with db.transaction():
+        limit = await db.config.get_value('danmakuOutputLimitPerSource', '-1')
+        merge_enabled = await db.config.get_value('danmakuMergeOutputEnabled', 'false')
     return DanmakuOutputSettings(limit_per_source=int(limit), merge_output_enabled=(merge_enabled.lower() == 'true'))
 
 
 @router.put("/settings/danmaku-output", response_model=ControlActionResponse, summary="更新弹幕输出设置")
 async def update_danmaku_output_settings(
     payload: DanmakuOutputSettings,
-    session: AsyncSession = Depends(get_db_session),
-    config_manager: ConfigManager = Depends(get_config_manager)
-):
-    """更新全局的弹幕输出设置，包括输出上限和合并输出选项。"""
+    config_service: ConfigService = Depends(get_config_service)
+) -> dict[str, str]:
+    """原子更新输出设置，提交成功后再失效配置缓存。"""
     config_values = {
         'danmakuOutputLimitPerSource': str(payload.limitPerSource),
         'danmakuMergeOutputEnabled': str(payload.mergeOutputEnabled).lower(),
     }
-    await crud.update_config_values_atomic(session, config_values)
+    db = get_database_service()
+    # 自持短事务保证先提交再清缓存，避免并发请求回填尚未提交的旧值。
+    async with db.transaction():
+        await db.config.upsert_batch(config_values)
     for key in config_values:
-        config_manager.invalidate(key)
+        config_service.invalidate(key)
     return {"message": "弹幕输出设置已更新。"}
 
 
@@ -70,33 +80,11 @@ ALLOWED_CONFIG_KEYS = {
 }
 
 
-class ConfigItem(BaseModel):
-    key: str
-    value: str
-    type: str
-    description: str
-
-
-class ConfigUpdateRequest(BaseModel):
-    key: str
-    value: str
-
-
-class ConfigResponse(BaseModel):
-    configs: List[ConfigItem]
-
-
-class HelpResponse(BaseModel):
-    available_keys: List[str]
-    description: str
-
-
 @router.get("/config", response_model=Union[ConfigResponse, HelpResponse], summary="获取可配置的参数列表或帮助信息")
 async def get_allowed_configs(
     type: Optional[str] = Query(None, description="请求类型，使用 'help' 获取可用配置项列表"),
-    config_manager: ConfigManager = Depends(get_config_manager),
-    title_recognition_manager=Depends(get_title_recognition_manager),
-    session: AsyncSession = Depends(get_db_session)
+    config_service: ConfigService = Depends(get_config_service),
+    title_recognition_service=Depends(get_title_recognition_service)
 ):
     """
     获取所有可通过外部API管理的配置项及其当前值。
@@ -116,11 +104,8 @@ async def get_allowed_configs(
 
     for key, meta in ALLOWED_CONFIG_KEYS.items():
         if key == "titleRecognition":
-            if title_recognition_manager:
-                from src.db import orm_models
-                result = await session.execute(select(orm_models.TitleRecognition).limit(1))
-                title_recognition = result.scalar_one_or_none()
-                current_value = title_recognition.content if title_recognition else ""
+            if title_recognition_service:
+                current_value = await title_recognition_service.get_content()
             else:
                 current_value = ""
         else:
@@ -131,7 +116,7 @@ async def get_allowed_configs(
             else:
                 default_value = ""
 
-            current_value = await config_manager.get(key, default_value)
+            current_value = await config_service.get(key, default_value)
 
         configs.append(ConfigItem(
             key=key,
@@ -146,11 +131,11 @@ async def get_allowed_configs(
 @router.put("/config", status_code=status.HTTP_204_NO_CONTENT, summary="更新指定配置项")
 async def update_config(
     request: ConfigUpdateRequest,
-    config_manager: ConfigManager = Depends(get_config_manager),
-    title_recognition_manager=Depends(get_title_recognition_manager)
+    config_service: ConfigService = Depends(get_config_service),
+    title_recognition_service=Depends(get_title_recognition_service)
 ):
     """
-    更新指定的配置项。
+    更新指定配置项。
     只允许更新白名单中定义的配置项。
     """
     if request.key not in ALLOWED_CONFIG_KEYS:
@@ -177,16 +162,16 @@ async def update_config(
             )
 
     if request.key == "titleRecognition":
-        if title_recognition_manager is None:
+        if title_recognition_service is None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="识别词管理器未初始化")
 
-        warnings = await title_recognition_manager.update_recognition_rules(request.value)
+        warnings = await title_recognition_service.update_recognition_rules(request.value)
         if warnings:
             logger.warning(f"外部API更新识别词配置时发现 {len(warnings)} 个警告: {warnings}")
 
-        logger.info(f"外部API更新了识别词配置，共 {len(title_recognition_manager.recognition_rules)} 条规则")
+        logger.info(f"外部API更新了识别词配置，共 {len(await title_recognition_service.get_rules_snapshot())} 条规则")
     else:
-        await config_manager.setValue(request.key, request.value)
+        await config_service.set(request.key, request.value)
         logger.info(f"外部API更新了配置项 '{request.key}' 为 '{request.value}'")
 
     return

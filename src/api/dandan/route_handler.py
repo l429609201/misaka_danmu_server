@@ -2,7 +2,9 @@
 弹弹Play 兼容 API 的路由处理器
 
 使用方式:
-    from src.api.dandan.route_handler import DandanApiRoute, get_token_from_path
+    from src.services.database_service import DatabaseService
+from src.services.service_container import get_database_service
+from src.api.dandan.route_handler import DandanApiRoute, get_token_from_path
 """
 
 import re
@@ -13,12 +15,15 @@ from typing import Callable
 from fastapi import HTTPException, Path, Request, Response, status, Depends
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import crud, get_db_session, ConfigManager
 from src.core import get_now, get_app_timezone
 from src.api.middleware import normalize_ip
-from src.utils.audit_logging import build_audit_request_headers, capture_audit_request_body
+# 审计工具已迁移至 diagnostics 子包。
+from src.utils.diagnostics.audit_logging import build_audit_request_headers, capture_audit_request_body
+from src.services.service_container import get_database_service
+from src.services.config_service import ConfigService
+# FastAPI 在注册依赖时需要解析真实的服务类型。
+from src.services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +73,7 @@ class DandanApiRoute(APIRoute):
 async def get_token_from_path(
     request: Request,
     token: str = Path(..., description="路径中的API授权令牌"),
-    session: AsyncSession = Depends(get_db_session),
+    db_service: DatabaseService = Depends(get_database_service),
 ):
     """
     一个 FastAPI 依赖项，用于验证路径中的 token。
@@ -77,8 +82,8 @@ async def get_token_from_path(
     """
     # --- 新增：解析真实客户端IP ---
     # --- 新增：解析真实客户端IP，支持CIDR ---
-    config_manager: ConfigManager = request.app.state.config_manager
-    trusted_proxies_str = await config_manager.get("trustedProxies", "")
+    config_service: ConfigService = request.app.state.config_service
+    trusted_proxies_str = await config_service.get("trustedProxies", "")
     trusted_networks = []
     if trusted_proxies_str:
         for proxy_entry in trusted_proxies_str.split(','):
@@ -86,7 +91,7 @@ async def get_token_from_path(
                 trusted_networks.append(ipaddress.ip_network(proxy_entry.strip()))
             except ValueError:
                 logger.warning(f"无效的受信任代理IP或CIDR: '{proxy_entry.strip()}'，已忽略。")
-    
+
     client_ip_str = request.client.host if request.client else "127.0.0.1"
     client_ip_str = normalize_ip(client_ip_str)  # ::ffff:x.x.x.x → x.x.x.x
     is_trusted = False
@@ -109,71 +114,90 @@ async def get_token_from_path(
     request_path = request.url.path
     log_path = re.sub(r'^/api/v1/[^/]+', '', request_path)  # 从路径中移除 /api/v1/{token} 部分
 
-    token_info = await crud.validate_api_token(session, token=token)
-    if not token_info: 
-        # 尝试记录失败的访问
-        token_record = await crud.get_api_token_by_token_str(session, token)
-        if token_record:
-            expires_at = token_record.get('expiresAt')
-            is_expired = False
-            if expires_at:
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=get_app_timezone())
-                is_expired = expires_at < get_now()
-            status_to_log = 'denied_expired' if is_expired else 'denied_disabled'
-            crud.create_token_access_log(session, token_record['id'], client_ip_str, request.headers.get("user-agent"), log_status=status_to_log, path=log_path)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API token")
+    # 复用依赖注入提供的 DatabaseService；此依赖没有提供名为 session 的外部会话。
+    db = db_service
 
-    # 2. UA 过滤
-    ua_filter_mode = await crud.get_config_value(session, 'uaFilterMode', 'off')
-    user_agent = request.headers.get("user-agent", "")
+    async with db.transaction():
+        token_info = await db.api_token.validate(token)
+        if not token_info:
+            # 尝试记录失败的访问
+            token_orm = await db.api_token.get_by_token_str(token)
+            if token_orm:
+                # 将 ORM 对象转为字典
+                token_record = {
+                    'id': token_orm.id,
+                    'expiresAt': token_orm.expiresAt,
+                }
+                expires_at = token_record.get('expiresAt')
+                is_expired = False
+                if expires_at:
+                    if expires_at.tzinfo is None:
+                        expires_at = expires_at.replace(tzinfo=get_app_timezone())
+                    is_expired = expires_at < get_now()
+                status_to_log = 'denied_expired' if is_expired else 'denied_disabled'
+                await db.token_log.create_access_log(
+                    token_record['id'], client_ip_str, request.headers.get("user-agent"),
+                    log_status=status_to_log, path=log_path
+                )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API token")
 
-    if ua_filter_mode != 'off':
-        ua_rules = await crud.get_ua_rules(session)
-        ua_list = [rule['uaString'] for rule in ua_rules]
-        
-        is_matched = any(rule in user_agent for rule in ua_list)
+        # 2. UA 过滤
+        ua_filter_mode = await config_service.get('uaFilterMode', 'off')
+        user_agent = request.headers.get("user-agent", "")
 
-        if ua_filter_mode == 'blacklist' and is_matched:
-            crud.create_token_access_log(session, token_info['id'], client_ip_str, user_agent, log_status='denied_ua_blacklist', path=log_path)
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User-Agent is blacklisted")
+        if ua_filter_mode != 'off':
+            ua_rules_orm = await db.ua_rule.get_all()
+            # 将 ORM 对象列表转为字典列表
+            ua_list = [rule.uaString for rule in ua_rules_orm]
 
-        if ua_filter_mode == 'whitelist' and not is_matched:
-            crud.create_token_access_log(session, token_info['id'], client_ip_str, user_agent, log_status='denied_ua_whitelist', path=log_path)
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User-Agent not in whitelist")
+            is_matched = any(rule in user_agent for rule in ua_list)
 
-    # 3. 增加调用计数（后台异步执行，不阻塞请求）
-    await crud.increment_token_call_count(session, token_info['id'])
+            if ua_filter_mode == 'blacklist' and is_matched:
+                await db.token_log.create_access_log(
+                    token_info['id'], client_ip_str, user_agent,
+                    log_status='denied_ua_blacklist', path=log_path
+                )
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User-Agent is blacklisted")
 
-    # 4. 记录成功访问（含请求头、请求体和方法）
-    # 跳过高频轮询接口（taskcomment），避免日志刷屏
-    _skip_log_paths = ('/taskcomment/', '/api/v2/taskcomment/')
-    should_log = not any(skip in log_path for skip in _skip_log_paths)
+            if ua_filter_mode == 'whitelist' and not is_matched:
+                await db.token_log.create_access_log(
+                    token_info['id'], client_ip_str, user_agent,
+                    log_status='denied_ua_whitelist', path=log_path
+                )
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User-Agent not in whitelist")
 
-    if should_log:
-        # 与外部控制 API 共用审计脱敏策略，避免 Token 接口日志落入凭据。
-        try:
-            request_headers_str = build_audit_request_headers(request)
-        except Exception:
-            request_headers_str = None
+        # 3. 增加调用计数（后台异步执行，不阻塞请求）
+        await db.api_token.increment_call_count(token_info['id'])
 
-        try:
-            request_body_str = (
-                await capture_audit_request_body(request)
-                if request.method in ("POST", "PUT", "PATCH") else None
+        # 4. 记录成功访问（含请求头、请求体和方法）
+        # 跳过高频轮询接口（taskcomment），避免日志刷屏
+        _skip_log_paths = ('/taskcomment/', '/api/v2/taskcomment/')
+        should_log = not any(skip in log_path for skip in _skip_log_paths)
+
+        if should_log:
+            # 与外部控制 API 共用审计脱敏策略，避免 Token 接口日志落入凭据。
+            try:
+                request_headers_str = build_audit_request_headers(request)
+            except Exception:
+                request_headers_str = None
+
+            try:
+                request_body_str = (
+                    await capture_audit_request_body(request)
+                    if request.method in ("POST", "PUT", "PATCH") else None
+                )
+            except Exception:
+                request_body_str = None
+
+            # 创建访问日志并获取 log_id，供中间件回填响应
+            log_id = await db.token_log.create_access_log(
+                token_info['id'], client_ip_str, user_agent,
+                log_status='allowed', path=log_path,
+                method=request.method,
+                request_headers=request_headers_str,
+                request_body=request_body_str,
             )
-        except Exception:
-            request_body_str = None
-
-        # 使用 awaited 版本获取 log_id，供中间件回填响应
-        log_id = await crud.create_token_access_log_awaited(
-            token_info['id'], client_ip_str, user_agent,
-            log_status='allowed', path=log_path,
-            method=request.method,
-            request_headers=request_headers_str,
-            request_body=request_body_str,
-        )
-        request.state.token_log_id = log_id
+            request.state.token_log_id = log_id
 
     return token
 

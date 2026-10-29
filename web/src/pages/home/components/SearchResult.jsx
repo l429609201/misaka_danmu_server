@@ -7,6 +7,7 @@ import {
   previewEpisodeOffset,
   getSearchResult,
   getAnimeLibrary,
+  clearSearchCache,
 } from '../../../apis'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
@@ -101,6 +102,34 @@ export const SearchResult = () => {
 
   const modalApi = useModal()
   const messageApi = useMessage()
+  const [cacheLoading, setCacheLoading] = useState(false)
+
+  // 清除搜索/分集临时缓存：原按钮随旧搜索栏一起被移除（6246d2c6），这里放回结果卡片头部
+  const onClearCache = () => {
+    modalApi.confirm({
+      title: t('home.clearCacheTitle'),
+      content: (
+        <div>
+          {t('home.clearCacheContent')}
+          <br />
+          {t('home.clearCacheDesc')}
+        </div>
+      ),
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
+      onOk: async () => {
+        try {
+          setCacheLoading(true)
+          const res = await clearSearchCache()
+          messageApi.success(res.data?.message || t('home.cacheCleared'))
+        } catch (err) {
+          messageApi.error(`${t('home.clearCacheFailed')}: ${err.message || err}`)
+        } finally {
+          setCacheLoading(false)
+        }
+      },
+    })
+  }
 
   /** 编辑导入相关 */
   const [editImportOpen, setEditImportOpen] = useState(false)
@@ -317,7 +346,11 @@ export const SearchResult = () => {
       // 新搜索开始时，清空可用列表（等待新数据）
       setAvailableYears([])
       setAvailableProviders([])
+    } else if (lastSearchResultData.requestedProvider) {
+      // 指定源搜索（顶栏弹幕搜索 / URL provider 参数）：结果加载完后同步来源筛选器
+      setProviderFilter(lastSearchResultData.requestedProvider)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchLoading])
 
   const importModeText = useMemo(() => {
@@ -670,6 +703,11 @@ export const SearchResult = () => {
     } : null)
   }
 
+  // 分集唯一键：episodeId 可能为空（历史脏数据），回退到 集号+标题 避免误判重复
+  // why：若统一用空 episodeId 去重，多条被过滤分集会被判为同一条而互相覆盖丢失。
+  const episodeKey = ep =>
+    ep?.episodeId ? `id:${ep.episodeId}` : `fallback:${ep?.episodeIndex}:${ep?.title}`
+
   // 按当前排序方向对分集列表排序（加回/移入时保持顺序一致）
   const sortEpisodes = list => {
     return [...list].sort((a, b) =>
@@ -681,18 +719,20 @@ export const SearchResult = () => {
 
   // 待导入列表：点击删除 → 移入「不导入」列表（不再彻底丢弃）
   const handleDelete = item => {
-    setEditEpisodeList(list => list.filter(o => o.episodeId !== item.episodeId))
+    const key = episodeKey(item)
+    setEditEpisodeList(list => list.filter(o => episodeKey(o) !== key))
     setExcludedEpisodeList(list => {
-      if (list.some(o => o.episodeId === item.episodeId)) return list
+      if (list.some(o => episodeKey(o) === key)) return list
       return sortEpisodes([...list, item])
     })
   }
 
   // 不导入列表：点击删除 → 移回「待导入」列表
   const handleRestore = item => {
-    setExcludedEpisodeList(list => list.filter(o => o.episodeId !== item.episodeId))
+    const key = episodeKey(item)
+    setExcludedEpisodeList(list => list.filter(o => episodeKey(o) !== key))
     setEditEpisodeList(list => {
-      if (list.some(o => o.episodeId === item.episodeId)) return list
+      if (list.some(o => episodeKey(o) === key)) return list
       return sortEpisodes([...list, item])
     })
   }
@@ -703,8 +743,8 @@ export const SearchResult = () => {
       const toExclude = list.filter(predicate)
       if (toExclude.length === 0) return list
       setExcludedEpisodeList(prev => {
-        const existed = new Set(prev.map(o => o.episodeId))
-        const merged = [...prev, ...toExclude.filter(o => !existed.has(o.episodeId))]
+        const existed = new Set(prev.map(episodeKey))
+        const merged = [...prev, ...toExclude.filter(o => !existed.has(episodeKey(o)))]
         return sortEpisodes(merged)
       })
       return list.filter(it => !predicate(it))
@@ -978,9 +1018,20 @@ export const SearchResult = () => {
   return (
     <>
       {lastSearchResultData && (
-        <div className="border-t border-base-border mt-6 pt-6">
-          <div className="text-lg font-semibold mb-4">{t('searchResult.searchResultTitle')}</div>
-          <div>
+        // 参考接口测试页：最外层用卡片包住，标题放卡片头，去掉原来的顶部分隔线
+        // 桌面端：卡片高度锁定为视口剩余高度（扣除布局上下内边距 pt-18/pb-10 与页面 my-4 共 144px），
+        // 页面本身不再滚动，只让中间结果列表滚动；移动端保持自然高度
+        <Card
+          title={t('searchResult.searchResultTitle')}
+          extra={
+            <Button size="small" icon={<ClearOutlined />} loading={cacheLoading} onClick={onClearCache}>
+              {t('home.clearCache')}
+            </Button>
+          }
+          style={isMobile ? undefined : { height: 'calc(100vh - 144px)', minHeight: 480, display: 'flex', flexDirection: 'column' }}
+          styles={isMobile ? undefined : { body: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } }}
+        >
+          <div className={isMobile ? undefined : 'flex flex-col flex-1 min-h-0'}>
             <div className="mb-6">
               {isMobile ? (
                 /* 移动端：两行布局 */
@@ -1230,11 +1281,12 @@ export const SearchResult = () => {
             </div>
           </div>
           {/* 固定高度滚动区域 */}
-          <Spin spinning={paginationLoading}>
+          <Spin spinning={paginationLoading} wrapperClassName={isMobile ? undefined : 'search-result-fill'}>
           <div
             ref={scrollContainerRef}
             className="overflow-y-auto overflow-x-hidden border border-gray-200 rounded-lg px-1 py-1"
-            style={{ maxHeight: '600px' }}
+            // 桌面端填满卡片剩余空间，结果在框内滚动（原固定 600px 会在大屏留白、小屏把分页挤出视口）
+            style={isMobile ? { maxHeight: 'none' } : { height: '100%' }}
           >
           {renderData?.length ? (
             <List
@@ -1444,8 +1496,8 @@ export const SearchResult = () => {
           )}
           </div>
           </Spin>
-          {/* 底部分页控件 - 自动加载模式下隐藏 */}
-          {!autoLoadMode && total > pageSize && (
+          {/* 底部分页控件 - 自动加载模式下隐藏；只有一页时也常驻显示，保持布局稳定 */}
+          {!autoLoadMode && total > 0 && (
             <div className="flex justify-center mt-4">
               <Pagination
                 current={currentPage}
@@ -1460,7 +1512,7 @@ export const SearchResult = () => {
             </div>
           )}
         </div>
-        </div>
+        </Card>
       )}
       <Modal
         title={t('searchResult.batchImportConfirmTitle')}
@@ -1972,7 +2024,7 @@ export const SearchResult = () => {
                         locale={{ emptyText: t('searchResult.noExcludeEpisodes') }}
                         dataSource={excludedEpisodeList.slice((excludedPage - 1) * episodePageSize, excludedPage * episodePageSize)}
                         renderItem={item => (
-                          <List.Item key={item.episodeId}>
+                          <List.Item key={episodeKey(item)}>
                             <div className="w-full flex items-center justify-between gap-3">
                               <span className="shrink-0 text-gray-500 dark:text-gray-400">
                                 {t('searchResult.episodeIndexShort', { index: item.episodeIndex })}

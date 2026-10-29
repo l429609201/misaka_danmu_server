@@ -45,6 +45,7 @@ import { useTranslation } from 'react-i18next'
 import { useAtom } from 'jotai'
 import { isMobileAtom } from '../../../../store'
 import { ResponsiveTable } from '@/components/ResponsiveTable'
+import { StickyPagination } from '@/components/StickyPagination'
 
 export const ImportTask = () => {
   const { t } = useTranslation()
@@ -423,6 +424,10 @@ export const ImportTask = () => {
     items: [
       { key: 'in_progress', label: t('importTask.filterInProgress') },
       { key: 'completed', label: t('importTask.filterCompleted') },
+      { key: 'failed', label: t('importTask.filterFailed') },
+      { key: 'paused', label: t('importTask.filterPaused') },
+      { key: 'pending', label: t('importTask.filterPending') },
+      { key: 'running', label: t('importTask.filterRunning') },
       { key: 'all', label: t('importTask.filterAll') },
     ],
     onClick: ({ key }) => {
@@ -794,43 +799,8 @@ export const ImportTask = () => {
                 itemLayout="vertical"
                 size="small"
                 dataSource={taskList}
-                pagination={{
-                  ...pagination,
-                  showLessItems: true,
-                  align: 'center',
-                  onChange: (page, pageSize) => {
-                    setPagination(n => {
-                      return {
-                        ...n,
-                        current: page,
-                        pageSize,
-                      }
-                    })
-                  },
-                  onShowSizeChange: (_, size) => {
-                    setPagination(n => {
-                      return {
-                        ...n,
-                        pageSize: size,
-                      }
-                    })
-                  },
-                  hideOnSinglePage: true,
-                  showSizeChanger: true,
-                  showTotal: (total, range) => t('importTask.paginationTotal', { from: range[0], to: range[1], total }),
-                  locale: {
-                    items_per_page: t('importTask.itemsPerPage'),
-                    jump_to: t('importTask.jumpTo'),
-                    jump_to_confirm: t('importTask.jumpConfirm'),
-                    page: t('importTask.page'),
-                    prev_page: t('importTask.prevPage'),
-                    next_page: t('importTask.nextPage'),
-                    prev_5: t('importTask.prev5'),
-                    next_5: t('importTask.next5'),
-                    prev_3: t('importTask.prev3'),
-                    next_3: t('importTask.next3'),
-                  },
-                }}
+                // 分页器移至外部独立卡片，List 内部不再渲染分页
+                pagination={false}
                 renderItem={(item, index) => {
                   const isActive = selectList.some(
                     it => it.taskId === item.taskId
@@ -946,6 +916,45 @@ export const ImportTask = () => {
             <Empty description={t('importTask.emptyDesc')} />
           )}
         </div>
+
+        {/* 吸底分页器：任务有数据时才显示，避免空列表时出现孤零零的分页卡片 */}
+        {!!taskList?.length && (
+          <StickyPagination
+            current={pagination.current}
+            pageSize={pagination.pageSize}
+            total={pagination.total}
+            showTotal={(total, range) => t('importTask.paginationTotal', { from: range[0], to: range[1], total })}
+            showSizeChanger
+            showQuickJumper
+            showLessItems
+            showScrollButtons
+            onChange={(page, pageSize) => {
+              setPagination(n => ({
+                ...n,
+                current: page,
+                pageSize,
+              }))
+            }}
+            onShowSizeChange={(_, size) => {
+              setPagination(n => ({
+                ...n,
+                pageSize: size,
+              }))
+            }}
+            locale={{
+              items_per_page: t('importTask.itemsPerPage'),
+              jump_to: t('importTask.jumpTo'),
+              jump_to_confirm: t('importTask.jumpConfirm'),
+              page: t('importTask.page'),
+              prev_page: t('importTask.prevPage'),
+              next_page: t('importTask.nextPage'),
+              prev_5: t('importTask.prev5'),
+              next_5: t('importTask.next5'),
+              prev_3: t('importTask.prev3'),
+              next_3: t('importTask.next3'),
+            }}
+          />
+        )}
       </Card>
     </div>
   )

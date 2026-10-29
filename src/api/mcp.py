@@ -25,11 +25,11 @@ import secrets
 import ipaddress
 
 from fastapi import FastAPI, Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from src.db import crud, get_db_session, ConfigManager
+from src.services.database_service import DatabaseService
+from src.services.service_container import get_database_service
+from src.services.config_service import ConfigService
 from src.api.middleware import normalize_ip
-from src.utils.audit_logging import build_audit_request_headers, capture_audit_request_body
+from src.utils.diagnostics.audit_logging import build_audit_request_headers, capture_audit_request_body
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def _resolve_client_ip(request: Request, trusted_networks: list) -> str:
 
 async def _verify_mcp_api_key(
     request: Request,
-    session: AsyncSession = Depends(get_db_session),
+    db_service: DatabaseService = Depends(get_database_service),
 ) -> None:
     """
     MCP 认证依赖：验证 X-API-KEY 请求头或 apikey 查询参数。
@@ -66,10 +66,10 @@ async def _verify_mcp_api_key(
     1. 请求头: X-API-KEY: <API_TOKEN>
     2. 查询参数: ?apikey=<API_TOKEN>
     """
-    config_manager: ConfigManager = request.app.state.config_manager
+    config_service: ConfigService = request.app.state.config_service
 
     # --- 解析真实客户端 IP ---
-    trusted_proxies_str = await config_manager.get("trustedProxies", "")
+    trusted_proxies_str = await config_service.get("trustedProxies", "")
     trusted_networks = []
     if trusted_proxies_str:
         for proxy_entry in trusted_proxies_str.split(','):
@@ -94,42 +94,34 @@ async def _verify_mcp_api_key(
     # --- 认证逻辑 ---
     api_key = request.headers.get("x-api-key") or request.query_params.get("apikey")
 
+    error_detail = None
     if not api_key:
-        log_entry = await crud.create_external_api_log(
-            session, client_ip_str, endpoint, status.HTTP_401_UNAUTHORIZED,
-            "MCP: API Key缺失",
+        message = "MCP: API Key缺失"
+        error_detail = "MCP 认证失败: 缺少 API Key。请通过 X-API-KEY 请求头或 ?apikey= 查询参数提供。"
+    else:
+        stored_key = await config_service.get("externalApiKey", "")
+        if not stored_key or not secrets.compare_digest(api_key, stored_key):
+            message = "MCP: 无效的API密钥"
+            error_detail = "MCP 认证失败: 无效的 API Key。"
+        else:
+            message = "MCP: API Key验证通过"
+
+    status_code = status.HTTP_401_UNAUTHORIZED if error_detail else status.HTTP_200_OK
+    # 经 DatabaseService → ExternalApiLogRepository 写审计记录（transaction() 产出的是服务本身，
+    # 没有 session.add，旧写法导致所有 MCP 请求 500）；先提交再抛鉴权异常，避免拒绝日志被回滚
+    async with db_service.transaction():
+        log_entry = await db_service.external_log.create(
+            ip_address=client_ip_str,
+            endpoint=endpoint,
+            status_code=status_code,
+            message=message,
             request_headers=request_headers_str,
             request_body=request_body_str,
         )
-        request.state.external_log_id = log_entry.id
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="MCP 认证失败: 缺少 API Key。请通过 X-API-KEY 请求头或 ?apikey= 查询参数提供。",
-        )
-
-    stored_key = await config_manager.get("externalApiKey", "")
-
-    if not stored_key or not secrets.compare_digest(api_key, stored_key):
-        log_entry = await crud.create_external_api_log(
-            session, client_ip_str, endpoint, status.HTTP_401_UNAUTHORIZED,
-            "MCP: 无效的API密钥",
-            request_headers=request_headers_str,
-            request_body=request_body_str,
-        )
-        request.state.external_log_id = log_entry.id
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="MCP 认证失败: 无效的 API Key。",
-        )
-
-    # 记录成功的认证
-    log_entry = await crud.create_external_api_log(
-        session, client_ip_str, endpoint, status.HTTP_200_OK,
-        "MCP: API Key验证通过",
-        request_headers=request_headers_str,
-        request_body=request_body_str,
-    )
-    request.state.external_log_id = log_entry.id
+        log_id = log_entry.id
+    request.state.external_log_id = log_id
+    if error_detail:
+        raise HTTPException(status_code=status_code, detail=error_detail)
 
 
 def setup_mcp(app: FastAPI) -> None:

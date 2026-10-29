@@ -4,69 +4,55 @@
 """
 import time
 import logging
-from typing import Optional, Tuple, List, Any, TYPE_CHECKING
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional, Tuple, List, Any
 
-from src.db import crud
-from src.core.cache import get_cache_backend
-from src.utils.image_utils import get_custom_domain
-
-if TYPE_CHECKING:
-    from src.api.dandan import DandanSearchAnimeResponse, DandanSearchAnimeItem
+from src.schemas.dandan import DandanSearchAnimeResponse, DandanSearchAnimeItem
+from src.services.cache_service import get_cache_service
+from src.workflows.image_public_url import get_custom_domain
 
 logger = logging.getLogger(__name__)
+COMMAND_HANDLERS: dict[str, "CommandHandler"] = {}
 
 
-async def _get_db_cache(session: AsyncSession, prefix: str, key: str) -> Optional[Any]:
-    """
-    从缓存中获取数据（优先走缓存后端，回退到数据库）
+# ═══════════ 缓存读写薄壳（已收口至 CacheService） ═══════════
+# why: 实现已迁移到 CacheService.get_with_prefix / set_with_prefix，
+#      服务层内部自持驱动与数据库回退，不再需要显式 session。
+#      此处保留 session 形参仅为兼容既有调用签名，函数体内不使用。
+
+
+async def _get_db_cache(session: object, prefix: str, key: str) -> Optional[Any]:
+    """从缓存读取数据（前缀式组合键）。
 
     Args:
-        session: 数据库会话
+        session: 保留形参以兼容既有调用点，实际不使用
         prefix: 缓存键前缀
-        key: 缓存键
+        key: 业务键
 
     Returns:
-        缓存值或None
+        缓存值；未命中或缓存服务未初始化时返回 None
     """
-    cache_key = f"{prefix}{key}"
-    backend = get_cache_backend()
-    if backend is not None:
-        try:
-            return await backend.get(cache_key, region="default")
-        except Exception as e:
-            logger.warning(f"缓存后端读取失败，回退到数据库: {cache_key}, 错误: {e}")
-
-    cache_entry = await crud.get_cache(session, cache_key)
-    if cache_entry:
-        if hasattr(cache_entry, 'value'):
-            return cache_entry.value
-        else:
-            return cache_entry
-    return None
+    cache = get_cache_service()
+    if cache is None:
+        logger.debug(f"缓存服务未初始化，读取降级为 None: {prefix}{key}")
+        return None
+    return await cache.get_with_prefix(prefix, key)
 
 
-async def _set_db_cache(session: AsyncSession, prefix: str, key: str, value: Any, ttl: int):
-    """
-    设置缓存（优先走缓存后端，回退到数据库）
+async def _set_db_cache(session: object, prefix: str, key: str, value: Any, ttl: int) -> None:
+    """写入缓存（前缀式组合键）。
 
     Args:
-        session: 数据库会话
+        session: 保留形参以兼容既有调用点，实际不使用
         prefix: 缓存键前缀
-        key: 缓存键
-        value: 缓存值
+        key: 业务键
+        value: 待缓存的值
         ttl: 过期时间（秒）
     """
-    cache_key = f"{prefix}{key}"
-    backend = get_cache_backend()
-    if backend is not None:
-        try:
-            await backend.set(cache_key, value, ttl=ttl, region="default")
-            return
-        except Exception as e:
-            logger.warning(f"缓存后端写入失败，回退到数据库: {cache_key}, 错误: {e}")
-
-    await crud.set_cache(session, cache_key, value, ttl)
+    cache = get_cache_service()
+    if cache is None:
+        logger.debug(f"缓存服务未初始化，跳过写入: {prefix}{key}")
+        return
+    await cache.set_with_prefix(prefix, key, value, ttl)
 
 
 def parse_command(search_term: str) -> Optional[Tuple[str, List[str]]]:
@@ -118,13 +104,13 @@ class CommandHandler:
         self.usage = usage or f"@{name}"
         self.examples = examples or []
 
-    async def can_execute(self, token: str, session: AsyncSession) -> Tuple[bool, int]:
+    async def can_execute(self, token: str, session: object) -> Tuple[bool, int]:
         """
         检查是否可以执行指令（冷却检查）
 
         Args:
             token: 用户token
-            session: 数据库会话
+            session: 保留的兼容参数，命令不直接操作会话
 
         Returns:
             (是否可执行, 剩余冷却秒数)
@@ -143,16 +129,16 @@ class CommandHandler:
 
         return remaining == 0, remaining
 
-    async def execute(self, token: str, args: List[str], session: AsyncSession,
-                     config_manager, **kwargs):
+    async def execute(self, token: str, args: List[str], session: object,
+                     config_service, **kwargs):
         """
         执行指令，子类需要实现
 
         Args:
             token: 用户token
             args: 指令参数
-            session: 数据库会话
-            config_manager: 配置管理器
+            session: 保留的兼容参数，命令不直接操作会话
+            config_service: 配置服务
             **kwargs: 其他依赖
 
         Returns:
@@ -160,29 +146,29 @@ class CommandHandler:
         """
         raise NotImplementedError
 
-    async def record_execution(self, token: str, session: AsyncSession):
+    async def record_execution(self, token: str, session: object):
         """
         记录执行时间
 
         Args:
             token: 用户token
-            session: 数据库会话
+            session: 保留的兼容参数，命令不直接操作会话
         """
         if self.cooldown_seconds > 0:
             cache_key = f"{token}_{self.name}"
             await _set_db_cache(session, "command_cooldown_", cache_key, time.time(), self.cooldown_seconds)
 
-    async def get_image_url(self, config_manager) -> str:
+    async def get_image_url(self, config_service) -> str:
         """
         获取图片URL（logo 地址，域名允许 http/https，格式不合规时降级为相对路径）
 
         Args:
-            config_manager: 配置管理器
+            config_service: 配置服务
 
         Returns:
             图片URL
         """
-        custom_domain = await get_custom_domain(config_manager)
+        custom_domain = await get_custom_domain(config_service)
         return f"{custom_domain}/static/logo.png" if custom_domain else "/static/logo.png"
 
     def build_response_item(self, anime_id: int, title: str, description: str,
@@ -200,8 +186,6 @@ class CommandHandler:
         Returns:
             DandanSearchAnimeItem
         """
-        from src.api.dandan import DandanSearchAnimeItem
-
         return DandanSearchAnimeItem(
             animeId=anime_id,
             bangumiId=str(anime_id),
@@ -226,8 +210,6 @@ class CommandHandler:
         Returns:
             DandanSearchAnimeResponse
         """
-        from src.api.dandan import DandanSearchAnimeResponse
-
         return DandanSearchAnimeResponse(animes=items)
 
     def success_response(self, title: str, description: str, image_url: str,

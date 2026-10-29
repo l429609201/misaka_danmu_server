@@ -14,22 +14,42 @@ import {
 } from '@ant-design/icons'
 import {
   getBangumiConfig,
-  getBangumiAuth,
-  getBangumiAuthUrl,
-  logoutBangumiAuth,
-  refreshBangumiAuth,
+  getOAuthStatus,
+  revokeOAuth,
+  refreshOAuth,
   getBangumiDataStatus,
   syncBangumiData,
   clearBangumiData,
   getTmdbConfig,
   getTvdbConfig,
   getDoubanConfig,
-  getTraktAuthStatus,
-  logoutTraktAuth,
 } from '../../../apis'
 import { useMessage } from '../../../MessageContext'
+import { openOAuthPopup, getOAuthStateKey, isOAuthCompleteMessage } from '../../../utils/oauth'
 import { useModal } from '../../../ModalContext'
 import dayjs from 'dayjs'
+
+/**
+ * 通用 OAuth 登录：打开弹窗并把错误转换为界面提示，各来源只需传入平台名与回调路径。
+ * @param {{current: Window|null}} popupRef 保存弹窗引用，用于校验完成消息来源
+ * @param {string} provider 后端注册的平台名
+ * @param {string} callbackPath 回调路径，必须与平台登记的地址一致
+ */
+async function startOAuthLogin(popupRef, provider, callbackPath, messageApi, t) {
+  try {
+    popupRef.current = await openOAuthPopup({ provider, callbackPath })
+  } catch (error) {
+    popupRef.current = null
+    if (error.code === 'popup-blocked') {
+      messageApi.error(t('metadataConfig.popupBlocked'))
+    } else if (error.code === 'empty-url') {
+      messageApi.error(t('metadataConfig.getAuthUrlFailedEmpty'))
+    } else {
+      const detail = error.response?.data?.detail || error.message
+      messageApi.error(`${t('metadataConfig.getAuthUrlFailed')}: ${detail}`)
+    }
+  }
+}
 
 /**
  * Bangumi 配置组件
@@ -67,7 +87,8 @@ export function BangumiConfig({ form }) {
 
     // 监听 OAuth 完成消息
     const handleMessage = (event) => {
-      if (event.data === 'BANGUMI-OAUTH-COMPLETE') {
+      if (isOAuthCompleteMessage(event, 'bangumi', oauthPopupRef.current)) {
+        sessionStorage.removeItem(getOAuthStateKey('bangumi'))
         if (oauthPopupRef.current) {
           oauthPopupRef.current.close()
         }
@@ -93,7 +114,7 @@ export function BangumiConfig({ form }) {
     try {
       const [configRes, authRes] = await Promise.all([
         getBangumiConfig(),
-        getBangumiAuth()
+        getOAuthStatus('bangumi')
       ])
 
       const config = configRes.data || configRes
@@ -176,53 +197,13 @@ export function BangumiConfig({ form }) {
   }
 
   const handleOAuthLogin = async () => {
-    try {
-      // 如果弹窗已存在且未关闭,聚焦到弹窗
-      if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
-        oauthPopupRef.current.focus()
-        return
-      }
-
-      // ani-rss 模式：前端用 location.origin 生成 redirect_uri
-      const redirectUri = `${window.location.origin}/bgm-oauth-callback`
-
-      const res = await getBangumiAuthUrl({ redirect_uri: redirectUri })
-      const authUrl = res.data?.url || res.url
-      if (!authUrl) {
-        messageApi.error(t('metadataConfig.getAuthUrlFailedEmpty'))
-        return
-      }
-
-      // 计算弹窗位置 (居中)
-      const width = 600
-      const height = 700
-      const left = window.screen.width / 2 - width / 2
-      const top = window.screen.height / 2 - height / 2
-
-      // 打开弹窗
-      oauthPopupRef.current = window.open(
-        authUrl,
-        'BangumiAuth',
-        `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`
-      )
-
-      // 检测弹窗是否被拦截
-      if (!oauthPopupRef.current || oauthPopupRef.current.closed) {
-        messageApi.error(t('metadataConfig.popupBlocked'))
-        return
-      }
-
-      // 定期检查弹窗是否被关闭
-      const checkInterval = setInterval(() => {
-        if (oauthPopupRef.current && oauthPopupRef.current.closed) {
-          clearInterval(checkInterval)
-          oauthPopupRef.current = null
-        }
-      }, 500)
-    } catch (error) {
-      const detail = error.response?.data?.detail || error.message
-      messageApi.error(`${t('metadataConfig.getAuthUrlFailed')}: ${detail}`)
+    // 弹窗已存在且未关闭时直接聚焦
+    if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
+      oauthPopupRef.current.focus()
+      return
     }
+    // Bangumi 开发者后台登记的是旧回调地址，必须保持一致
+    await startOAuthLogin(oauthPopupRef, 'bangumi', '/bgm-oauth-callback', messageApi, t)
   }
 
   const handleLogout = () => {
@@ -231,7 +212,7 @@ export function BangumiConfig({ form }) {
       content: t('metadataConfig.confirmLogoutBangumi'),
       onOk: async () => {
         try {
-          await logoutBangumiAuth()
+          await revokeOAuth('bangumi')
           loadConfig()
           messageApi.success(t('metadataConfig.loggedOut'))
         } catch (error) {
@@ -246,7 +227,7 @@ export function BangumiConfig({ form }) {
   const handleRefreshToken = async () => {
     try {
       setRefreshing(true)
-      const res = await refreshBangumiAuth()
+      const res = await refreshOAuth('bangumi')
       if (res.data?.success) {
         messageApi.success(t('metadataConfig.authRenewed'))
         loadConfig()
@@ -842,20 +823,23 @@ export function ImdbConfig({ form }) {
 /**
  * Trakt 配置组件 — CF Worker OAuth 认证方式
  */
-const TRAKT_OAUTH_WORKER_URL = 'https://danmu-api.misaka10876.top'
 
 export function TraktConfig({ form }) {
   const { t } = useTranslation()
   const messageApi = useMessage()
   const { confirm: showModal } = useModal()
   const [authInfo, setAuthInfo] = useState({})
+  const oauthPopupRef = useRef(null)
 
   useEffect(() => {
     loadAuth()
 
     // 监听 OAuth 回调弹窗的完成消息
     const handleMessage = (event) => {
-      if (event.data === 'TRAKT-OAUTH-COMPLETE') {
+      if (isOAuthCompleteMessage(event, 'trakt', oauthPopupRef.current)) {
+        sessionStorage.removeItem(getOAuthStateKey('trakt'))
+        if (oauthPopupRef.current && !oauthPopupRef.current.closed) oauthPopupRef.current.close()
+        oauthPopupRef.current = null
         loadAuth()
         messageApi.success(t('metadataConfig.traktAuthSuccess'))
       }
@@ -869,20 +853,18 @@ export function TraktConfig({ form }) {
 
   const loadAuth = async () => {
     try {
-      const res = await getTraktAuthStatus()
+      const res = await getOAuthStatus('trakt')
       setAuthInfo(res.data || res)
     } catch (e) { console.error('Failed to load Trakt auth:', e) }
   }
 
-  const handleOAuthLogin = () => {
-    const redirectUri = `${window.location.origin}/trakt-oauth-callback`
-    const loginUrl = `${TRAKT_OAUTH_WORKER_URL}/oauth/login?provider=trakt&redirect_uri=${encodeURIComponent(redirectUri)}`
-
-    const width = 600
-    const height = 700
-    const left = window.screen.width / 2 - width / 2
-    const top = window.screen.height / 2 - height / 2
-    window.open(loginUrl, 'trakt-oauth', `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`)
+  const handleOAuthLogin = async () => {
+    if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
+      oauthPopupRef.current.focus()
+      return
+    }
+    // 沿用已有 Trakt 回调路径，Worker 侧无需调整
+    await startOAuthLogin(oauthPopupRef, 'trakt', '/trakt-oauth-callback', messageApi, t)
   }
 
   const handleLogout = () => {
@@ -891,7 +873,7 @@ export function TraktConfig({ form }) {
       content: t('metadataConfig.confirmLogoutTrakt'),
       onOk: async () => {
         try {
-          await logoutTraktAuth()
+          await revokeOAuth('trakt')
           loadAuth()
           messageApi.success(t('metadataConfig.loggedOut'))
         } catch (e) { messageApi.error(e.message) }

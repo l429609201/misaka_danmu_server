@@ -1,15 +1,21 @@
 import asyncio
+import base64
+import hashlib
+import hmac
 import logging
 import re
 import urllib.parse
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
+from urllib.parse import quote
 
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import HTTPException, status
 from pydantic import BaseModel, ValidationError, field_validator
 
-from src.db import crud, models
+from src.schemas import MetadataDetailsResponse, User
+from src.services.service_container import get_database_service
 from .base import BaseMetadataSource, HTTPStatusError
 
 logger = logging.getLogger(__name__)
@@ -47,7 +53,7 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
     supports_episode_urls = True  # 支持获取分集URL
     async def _create_client(self) -> httpx.AsyncClient:
         """Creates an httpx.AsyncClient with Douban cookie and proxy settings."""
-        cookie = await self.config_manager.get("doubanCookie", "")
+        cookie = await self.config_service.get("doubanCookie", "")
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
@@ -56,11 +62,11 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
             headers["Cookie"] = cookie
 
         # 获取代理模式
-        proxy_mode = await self.config_manager.get("proxyMode", "none")
+        proxy_mode = await self.config_service.get("proxyMode", "none")
 
         # 兼容旧配置：如果 proxyMode 为 none 但 proxyEnabled 为 true，则使用 http_socks 模式
         if proxy_mode == "none":
-            proxy_enabled_globally = (await self.config_manager.get("proxyEnabled", "false")).lower() == 'true'
+            proxy_enabled_globally = (await self.config_service.get("proxyEnabled", "false")).lower() == 'true'
             if proxy_enabled_globally:
                 proxy_mode = "http_socks"
 
@@ -68,10 +74,11 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
 
         # 只有 http_socks 模式才需要设置 httpx 的 proxy 参数
         if proxy_mode == "http_socks":
-            proxy_url = await self.config_manager.get("proxyUrl", "")
+            proxy_url = await self.config_service.get("proxyUrl", "")
             if proxy_url:
-                async with self._session_factory() as session:
-                    metadata_settings = await crud.get_all_metadata_source_settings(session)
+                db = get_database_service()
+                async with db.transaction():
+                    metadata_settings = await db.metadata_source.get_all_metadata_source_settings()
 
                 provider_setting = next((s for s in metadata_settings if s['providerName'] == self.provider_name), None)
                 use_proxy_for_this_provider = provider_setting.get('useProxy', False) if provider_setting else False
@@ -80,7 +87,7 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
 
         return httpx.AsyncClient(headers=headers, timeout=20.0, follow_redirects=True, proxy=proxy_to_use)
 
-    async def search(self, keyword: str, user: models.User, mediaType: Optional[str] = None) -> List[models.MetadataDetailsResponse]:
+    async def search(self, keyword: str, user: User, mediaType: Optional[str] = None) -> List[MetadataDetailsResponse]:
         self.logger.info(f"豆瓣: 正在使用JSON API搜索 '{keyword}'")
         try:
             provider_setting = await self._get_provider_setting()
@@ -136,7 +143,7 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
                 results = []
                 for subject in all_subjects:
                     if subject.id not in seen_ids:
-                        results.append(models.MetadataDetailsResponse(
+                        results.append(MetadataDetailsResponse(
                             id=subject.id, doubanId=subject.id, title=subject.title,
                             details=f"评分: {subject.rate}", imageUrl=subject.cover,
                             type=subject_types.get(subject.id, "unknown"),  # 从记录的类型中获取
@@ -148,7 +155,7 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
             self.logger.error(f"豆瓣搜索失败，发生意外错误: {e}", exc_info=True)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="豆瓣搜索时发生内部错误。")
 
-    async def get_details(self, item_id: str, user: models.User, mediaType: Optional[str] = None) -> Optional[models.MetadataDetailsResponse]:
+    async def get_details(self, item_id: str, user: User, mediaType: Optional[str] = None) -> Optional[MetadataDetailsResponse]:
         self.logger.info(f"豆瓣: 正在获取详情 item_id={item_id}")
         try:
             provider_setting = await self._get_provider_setting()
@@ -190,7 +197,7 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
                     aliases_cn.insert(0, title)
                 aliases_cn = list(dict.fromkeys(aliases_cn))
 
-                return models.MetadataDetailsResponse(
+                return MetadataDetailsResponse(
                     id=item_id, doubanId=item_id, title=title,
                     imdbId=imdb_id, aliasesCn=aliases_cn, year=year,
                     supportsEpisodeUrls=False  # 豆瓣源不支持获取分集URL (Frodo API的vendors数组为空)
@@ -204,7 +211,7 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
             self.logger.error(f"解析豆瓣详情页时发生错误: {e}")
             raise HTTPException(status_code=500, detail="解析豆瓣详情页失败。")
 
-    async def search_aliases(self, keyword: str, user: models.User) -> Set[str]:
+    async def search_aliases(self, keyword: str, user: User) -> Set[str]:
         self.logger.info(f"豆瓣: 正在为 '{keyword}' 搜索别名")
         local_aliases: Set[str] = set()
         try:
@@ -247,7 +254,7 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
         try:
             # 豆瓣Cookie是可选的，没有Cookie也可以正常使用（匿名访问）
             # 只有被流控或封禁时才需要填Cookie
-            douban_cookie = await self.config_manager.get("doubanCookie", "")
+            douban_cookie = await self.config_service.get("doubanCookie", "")
             if not douban_cookie or douban_cookie.strip() == "":
                 return {"code": "ok", "message": "配置正常 (匿名访问，被流控时可配置Cookie)"}
 
@@ -259,24 +266,26 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
         except Exception as e:
             return {"code": "error", "message": f"配置检查失败: {e}"}
 
-    async def execute_action(self, action_name: str, payload: Dict, user: models.User) -> Any:
+    async def execute_action(self, action_name: str, payload: Dict, user: User) -> Any:
         """Douban source does not support custom actions."""
         raise NotImplementedError(f"源 '{self.provider_name}' 不支持任何自定义操作。")
 
     async def _get_provider_setting(self) -> Dict[str, Any]:
         """辅助函数,用于从数据库获取当前源的设置。"""
-        async with self._session_factory() as session:
-            settings = await crud.get_all_metadata_source_settings(session)
-            provider_setting = next((s for s in settings if s['providerName'] == self.provider_name), None)
-            return provider_setting or {}
+        db = get_database_service()
+        async with db.transaction():
+            settings = await db.metadata_source.get_all_metadata_source_settings()
+        provider_setting = next((s for s in settings if s['providerName'] == self.provider_name), None)
+        return provider_setting or {}
 
-    async def get_episode_urls(self, metadata_id: str, target_provider: Optional[str] = None) -> List[Tuple[int, str]]:
+    async def get_episode_urls(self, metadata_id: str, target_provider: Optional[str] = None, *, target_platform: Optional[str] = None) -> List[Tuple[int, str]]:
         """
         获取分集URL列表 (补充源功能)。
 
         Args:
             metadata_id: 豆瓣条目ID
             target_provider: 目标平台 (tencent/iqiyi/youku/bilibili/mgtv), 如果为None则返回所有平台
+            target_platform: 兼容统一调用契约；豆瓣暂无补充平台 key，仍仅按 target_provider 筛选
 
         Returns:
             List[Tuple[int, str]]: (集数, 播放URL) 的列表
@@ -295,11 +304,6 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
         Returns:
             Base64编码的HMAC-SHA1签名
         """
-        import hmac
-        import hashlib
-        import base64
-        from urllib.parse import quote
-
         secret_key = "bf7dddc7c9cfe6f7"
 
         # 构造签名原文: METHOD&URL_PATH&TIMESTAMP
@@ -330,8 +334,6 @@ class DoubanMetadataSource(BaseMetadataSource): # type: ignore
         Returns:
             List[Tuple[int, str]]: (集数, 播放URL) 的列表
         """
-        from datetime import datetime
-
         # 获取配置
         provider_setting = await self._get_provider_setting()
         log_raw = provider_setting.get('logRawResponses', False)

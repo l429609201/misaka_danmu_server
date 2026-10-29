@@ -5,6 +5,14 @@
 注意: 某些配置需要在运行时动态生成(如jwtSecretKey),这些配置在main.py中单独处理
 """
 
+from src.schemas.media_types import (
+    STORAGE_TEMPLATE_VARIABLES_DESC,
+    STORAGE_TYPES,
+    get_type_label,
+    storage_config_keys,
+)
+
+
 def get_default_configs(settings=None, ai_prompts=None):
     """
     获取默认配置字典
@@ -25,7 +33,7 @@ def get_default_configs(settings=None, ai_prompts=None):
 
         # API 和 Webhook
         # why: 前端通过 PUT /api/ui/config/custom_api_domain（下划线）保存；
-        # 后端所有读取统一使用 get_validated_public_domain(config_manager) 工具函数，
+        # 后端所有读取统一使用 get_validated_public_domain(config_service) 工具函数，
         # 不再直接读此 key，保持全链路一致。
         'custom_api_domain': ('', '用于拼接弹幕API地址的自定义域名（必须是 https:// 开头的公网地址）。'),
         'webhookApiKey': ('', '用于Webhook调用的安全密钥。'),
@@ -36,6 +44,7 @@ def get_default_configs(settings=None, ai_prompts=None):
         'webhookFilterMode': ('blacklist', 'Webhook 标题过滤模式 (blacklist/whitelist)。'),
         'webhookFilterRegex': ('', '用于过滤 Webhook 标题的正则表达式。'),
         'webhookLogRawRequest': ('false', '是否记录 Webhook 的原始请求体。'),
+        'webhookDeleteSyncEnabled': ('false', '是否启用 Webhook 删除同步。启用后，媒体库中删除媒体时同步删除本地对应的弹幕数据。'),
         'externalApiKey': ('', '用于外部API调用的安全密钥。'),
         'externalApiDuplicateTaskThresholdHours': (3, '（外部API）重复任务提交阈值（小时）。在此时长内，不允许为同一媒体提交重复的自动导入任务。0为禁用。'),
         'webhookCustomDomain': ('', '用于拼接Webhook URL的自定义域名。'),
@@ -66,6 +75,10 @@ def get_default_configs(settings=None, ai_prompts=None):
         'tvdbApiKey': ('', '用于访问 TheTVDB API 的密钥。'),
         'bangumiClientId': ('', '用于Bangumi OAuth的App ID。'),
         'bangumiClientSecret': ('', '用于Bangumi OAuth的App Secret。'),
+        # why: 以下两项此前仅在 metadata_sources/bangumi.py 的 config_keys 中声明，
+        # 未在此注册，导致缺少默认值与描述，现补齐。
+        'bangumiApiBaseUrl': ('https://api.bgm.tv', 'Bangumi API 的基础域名，可改为镜像地址。'),
+        'bangumiImageBaseUrl': ('https://lain.bgm.tv', 'Bangumi 图片服务的基础域名，可改为镜像地址。'),
         'bangumiDataSyncEnabled': ('false', '是否启用 bangumi-data 离线索引定时同步。'),
         'bangumiDataOfflineEnabled': ('true', '是否启用 bangumi-data 离线库辅助（开=离线库+API补充，关=仅用API）。'),
         'bangumiDataSyncCron': ('0 4 * * *', 'bangumi-data 离线索引同步的 cron 表达式（默认每天 4:00）。'),
@@ -101,20 +114,25 @@ def get_default_configs(settings=None, ai_prompts=None):
         'matchFallbackBlacklist': ('', '匹配后备黑名单，使用正则表达式过滤文件名，匹配的文件不会触发后备机制。'),
         'matchFallbackTimeout': ('60', '后备匹配接口(/match)等待结果的最大秒数。-1 表示无限等待直到匹配完成；超时后返回未匹配，匹配任务继续在后台运行。'),
         'searchFallbackEnabled': ('false', '是否为搜索接口启用后备搜索功能（全网搜索）。'),
+        'searchFallbackTimeout': ('60', '后备搜索接口等待结果的最大秒数，默认60秒。-1 表示无限等待；超时返回空结果，搜索任务继续在后台运行。'),
+        'parallelSearchEnabled': ('false', '是否启用并行搜索。启用后备搜索时并发请求各搜索源，速度更快但对源站压力更大。需启用匹配后备或后备搜索。'),
         'fallbackSearchPosterCollage': ('true', '后备搜索完成通知是否将各结果海报聚合为一张带序号的九宫格图一并推送（仅支持图片的渠道生效，失败自动降级纯文字，异步执行不阻塞搜索返回）。'),
 
         # 弹幕文件路径配置
         'customDanmakuPathEnabled': ('false', '是否启用自定义弹幕文件保存路径。'),
-        'movieDanmakuDirectoryPath': ('/app/config/danmaku/movies', '电影/剧场版弹幕文件存储的根目录。'),
-        'movieDanmakuFilenameTemplate': ('${title}/${episodeId}', '电影/剧场版弹幕文件命名模板。支持变量：${title}, ${titleBase}(标准化标题，去除季度信息), ${season}, ${episode}, ${year}, ${provider}, ${animeId}, ${episodeId}, ${sourceId}, ${tmdbId}(TMDB ID)。支持子目录。.xml后缀会自动添加。'),
-        'tvDanmakuDirectoryPath': ('/app/config/danmaku/tv', '电视节目弹幕文件存储的根目录。'),
-        'tvDanmakuFilenameTemplate': ('${animeId}/${episodeId}', '电视节目弹幕文件命名模板。支持变量：${title}, ${titleBase}(标准化标题，去除季度信息), ${season}, ${episode}, ${year}, ${provider}, ${animeId}, ${episodeId}, ${sourceId}, ${tmdbId}(TMDB ID)。支持子目录。.xml后缀会自动添加。'),
+        # 电影/电视节目/OVA/综艺/短剧 的目录与模板统一由 src.schemas.media_types.STORAGE_TYPES 派生（见文件末尾）
 
         'iqiyiUseProtobuf': ('false', '（爱奇艺）是否使用新的Protobuf弹幕接口（实验性）。'),
         'gamerUserAgent': ('', '用于访问巴哈姆特动画疯的User-Agent。'),
 
         # 搜索性能优化
         'searchMaxResultsPerSource': ('30', '每个搜索源最多返回的结果数量。设置较小的值可以提高搜索速度。'),
+
+        # 搜索结果信息增强（通用架构：补全缺失的年份、集数等字段）
+        'searchEnrichResults': ('false', '是否在搜索阶段自动补全缺失信息（年份、集数等）。开启后搜索速度变慢但信息更完整。'),
+        'searchEnrichLimit': ('10', '信息增强时最多处理前 N 条结果。设置较小的值可避免请求过多拖慢搜索。'),
+        'searchEnrichTimeout': ('5', '单个源信息增强的超时时间（秒）。超时后保持原值（可能为空）。'),
+        'searchEnrichFields': ('year,episodeCount', '需要补全的字段列表（逗号分隔）。当前支持：year, episodeCount。'),
 
         # 全局过滤（搜索结果标题）
         'search_result_global_blacklist_cn': (r'特典|预告|广告|菜单|花絮|特辑|速看|资讯|彩蛋|直拍|直播回顾|片头|片尾|幕后|映像|番外篇|纪录片|访谈|番外|短片|加更|走心|解忧|纯享|解读|揭秘|赏析', '用于过滤搜索结果标题的全局中文黑名单(正则表达式)。'),
@@ -145,7 +163,6 @@ def get_default_configs(settings=None, ai_prompts=None):
         'externalSearchEnableTmdbSeasonMapping': ('false', '是否启用外部控制-搜索媒体 TMDB季度映射。启用后，系统会通过TMDB等元数据源获取季度名称，提高多季度剧集的匹配准确率。'),
         'autoImportEnableTmdbSeasonMapping': ('false', '是否启用全自动导入 TMDB季度映射。启用后，系统会通过TMDB等元数据源获取季度名称，提高多季度剧集的匹配准确率。'),
         'seasonMappingMetadataSource': ('tmdb', 'TMDB季度映射使用的元数据源。可选值: tmdb, tvdb, imdb, douban, bangumi。'),
-        'seasonMappingPrompt': ('', 'AI季度映射提示词。用于指导AI从元数据源搜索结果中选择最佳匹配。留空使用默认提示词。'),
 
         # 媒体服务器配置
         'mediaServerAutoImport': ('false', '是否自动导入新扫描到的媒体项'),
@@ -161,6 +178,21 @@ def get_default_configs(settings=None, ai_prompts=None):
         'wallpaperAcgUrl': ('https://www.loliapi.com/acg/pc/', '二次元壁纸图源地址。「二次元壁纸」页面样式的背景图将从此地址获取。留空则仅显示渐变兜底。'),
     }
 
+    # 按类型的弹幕存储配置（STORAGE_TYPES 唯一数据源）：
+    # 基础类型（电影/电视节目）带默认值；带回退的类型默认留空 = 沿用回退类型，保证升级后已有路径不变
+    for media_type, spec in STORAGE_TYPES.items():
+        label = get_type_label(media_type)
+        dir_key, template_key = storage_config_keys(spec.prefix)
+        if spec.fallback:
+            fallback_label = get_type_label(spec.fallback)
+            dir_desc = f'{label}弹幕文件存储的根目录；留空则使用{fallback_label}目录。'
+            template_desc = f'{label}弹幕文件命名模板，变量同{fallback_label}模板；留空则使用{fallback_label}模板。'
+        else:
+            dir_desc = f'{label}弹幕文件存储的根目录。'
+            template_desc = f'{label}弹幕文件命名模板。{STORAGE_TEMPLATE_VARIABLES_DESC}'
+        configs[dir_key] = (spec.default_dir, dir_desc)
+        configs[template_key] = (spec.default_template, template_desc)
+
     # 添加需要settings的配置
     if settings:
         configs['jwtExpireMinutes'] = (settings.jwt.access_token_expire_minutes, 'JWT令牌的有效期（分钟），范围 1～43200（最长30天）。')
@@ -168,6 +200,22 @@ def get_default_configs(settings=None, ai_prompts=None):
     # 添加AI相关配置
     if ai_prompts:
         configs.update({
+            # 御坂助手（弹幕库助手 LLM 对话 + 任务气泡播报）
+            'assistantChannelChatEnabled': ('true', '是否允许通知渠道(Telegram/企业微信等)与御坂助手自然语言对话。'),
+            'assistantChannelUsername': ('admin', '渠道御坂助手复用的 Web 用户名（单用户部署）。'),
+            'assistantNotifyEnabled': ('true', '是否启用御坂助手任务气泡播报(网页端看板娘主动提示任务动态)。'),
+            'assistantNotifyOnComplete': ('true', '御坂播报：任务完成时提示。'),
+            'assistantNotifyOnFailed': ('true', '御坂播报：任务失败时提示。'),
+            'assistantNotifyOnStart': ('false', '御坂播报：新任务开始时提示(默认关，避免频繁打扰)。'),
+            'assistantNotifyInterval': ('15', '御坂任务播报的轮询间隔(秒)，范围 10-60。'),
+            # 御坂助手高级 LLM 参数（参考 MoviePilot AI Agent）
+            'assistantTemperature': ('0.7', 'LLM 温度 0-2，控制回答随机性。0=精确，0.7=平衡，2=创意。'),
+            'assistantMaxTokens': ('2000', 'LLM 最大输出 token 数，范围 100-8000。'),
+            'assistantTopP': ('0.9', 'Top-p 采样 0-1，控制词汇多样性。'),
+            'assistantPresencePenalty': ('0.0', '存在惩罚 -2到2，抑制重复话题。'),
+            'assistantFrequencyPenalty': ('0.0', '频率惩罚 -2到2，抑制重复用词。'),
+            'assistantTimeout': ('120', 'API 请求超时秒数（10-300）。慢速模型（o3/o4）建议 180-300。'),
+            'assistantProxyEnabled': ('false', '是否为御坂助手启用代理（复用全局 proxyUrl 配置）。'),
             'aiMatchEnabled': ('false', '是否启用AI智能匹配。启用后，在自动匹配场景(外部API、Webhook、匹配后备)中使用AI选择最佳搜索结果。'),
             'aiFallbackEnabled': ('true', '是否启用传统匹配兜底。当AI匹配失败时，自动降级到传统匹配算法。'),
             'aiProvider': ('deepseek', 'AI提供商: deepseek, siliconflow, openai, gemini'),

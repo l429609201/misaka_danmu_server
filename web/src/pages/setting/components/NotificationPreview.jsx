@@ -1,0 +1,186 @@
+import { useEffect, useState } from 'react'
+import { Card, Segmented, Select, Empty, Spin, Alert, Image, Typography, Space, Collapse, InputNumber } from 'antd'
+import { ReloadOutlined } from '@ant-design/icons'
+import { useTranslation } from 'react-i18next'
+
+const { Text, Paragraph } = Typography
+
+/**
+ * 通知预览组件 - 实时显示模板渲染结果
+ * 支持切换渠道和示例状态
+ */
+export const NotificationPreview = ({ previewData, loading, onChannelChange, onStatusChange, channelTypes = [], isTaskProgress = false, exampleProgress = 50, onProgressChange }) => {
+  const { t } = useTranslation()
+  const channelOptions = channelTypes.map((item) => ({
+    label: item.displayName || item.name || item.channelType,
+    value: item.channelType,
+  }))
+  const [selectedChannel, setSelectedChannel] = useState('')
+  const [selectedStatus, setSelectedStatus] = useState('success')
+
+  useEffect(() => {
+    if (channelTypes.length && !channelTypes.some(item => item.channelType === selectedChannel)) {
+      setSelectedChannel(channelTypes[0].channelType)
+      onChannelChange?.(channelTypes[0].channelType)
+    }
+  }, [channelTypes, selectedChannel, onChannelChange])
+
+  const statusOptions = [
+    { label: t('notificationTemplate.statusSuccess'), value: 'success' },
+    { label: t('notificationTemplate.statusFailed'), value: 'failed' },
+    { label: t('notificationTemplate.statusNoChange'), value: 'no_change' },
+  ]
+
+  const handleChannelChange = (value) => {
+    setSelectedChannel(value)
+    onChannelChange?.(value)
+  }
+
+  const handleStatusChange = (value) => {
+    setSelectedStatus(value)
+    onStatusChange?.(value, selectedChannel)
+  }
+
+  return (
+    <Card
+      title={t('notificationTemplate.previewTitle')}
+      extra={
+        <ReloadOutlined
+          spin={loading}
+          onClick={() => onChannelChange?.(selectedChannel)}
+          style={{ cursor: 'pointer' }}
+        />
+      }
+      style={{ height: '100%', position: 'sticky', top: 0 }}
+    >
+      {/* 工具栏 */}
+      <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }} size="middle">
+        <div>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+            {t('notificationTemplate.channelLabel')}
+          </Text>
+          <Select
+            options={channelOptions}
+            value={selectedChannel || undefined}
+            onChange={handleChannelChange}
+            placeholder={t('notificationTemplate.channelPlaceholder')}
+            style={{ width: '100%' }}
+          />
+        </div>
+
+        {isTaskProgress ? (
+          <div>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+              {t('notificationTemplate.statusRunning')}
+            </Text>
+            <InputNumber
+              aria-label={t('notificationTemplate.progressLabel')}
+              addonBefore={t('notificationTemplate.progressLabel')}
+              addonAfter="%"
+              min={0}
+              max={100}
+              precision={0}
+              value={exampleProgress}
+              onChange={onProgressChange}
+              style={{ width: '100%' }}
+            />
+          </div>
+        ) : (
+          <div>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+              {t('notificationTemplate.statusLabel')}
+            </Text>
+            <Segmented
+              options={statusOptions}
+              value={selectedStatus}
+              onChange={handleStatusChange}
+              block
+            />
+          </div>
+        )}
+      </Space>
+
+      {/* 预览内容 */}
+      <Spin spinning={loading}>
+        {!previewData ? (
+          <Empty description={t('notificationTemplate.noPreview')} />
+        ) : previewData.error ? (
+          <Alert message={previewData.error} type="error" showIcon />
+        ) : (
+          <div style={{ marginTop: 16 }}>
+            {/* 渠道警告 */}
+            {previewData.warning && (
+              <Alert
+                message={previewData.warning}
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+            )}
+
+            {/* 图片预览 */}
+            {!isTaskProgress && previewData.imageUrl && (
+              <div style={{ marginBottom: 16 }}>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>{t('notificationTemplate.exampleImage')}</Text>
+                <Image
+                  src={previewData.imageUrl}
+                  alt="Preview"
+                  style={{ maxWidth: '100%', borderRadius: 4 }}
+                  fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                />
+              </div>
+            )}
+
+            {/* 标题 */}
+            {previewData.title && (
+              <Card size="small" style={{ marginBottom: 8, backgroundColor: '#f0f0f0' }}>
+                <Text strong>{previewData.title}</Text>
+              </Card>
+            )}
+
+            {/* 正文 */}
+            {previewData.body && (
+              <Card size="small" style={{ backgroundColor: '#fafafa' }}>
+                <Paragraph
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    marginBottom: 0,
+                    fontFamily: selectedChannel === 'telegram' ? 'inherit' : 'monospace',
+                  }}
+                >
+                  {previewData.body}
+                </Paragraph>
+              </Card>
+            )}
+
+            {/* 示例数据折叠面板 */}
+            {previewData.exampleData && (
+              <Collapse
+                ghost
+                size="small"
+                style={{ marginTop: 16 }}
+                items={[
+                  {
+                    key: '1',
+                    label: t('notificationTemplate.viewVariables'),
+                    children: (
+                      <pre style={{
+                        fontSize: 12,
+                        backgroundColor: '#f5f5f5',
+                        padding: 8,
+                        borderRadius: 4,
+                        overflow: 'auto',
+                      }}>
+                        {JSON.stringify(previewData.exampleData, null, 2)}
+                      </pre>
+                    ),
+                  },
+                ]}
+              />
+            )}
+          </div>
+        )}
+      </Spin>
+    </Card>
+  )
+}

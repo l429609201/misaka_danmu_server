@@ -1,4 +1,4 @@
-﻿"""
+"""
 数据库迁移模块
 
 此模块用于执行一次性的数据库迁移任务。
@@ -9,7 +9,7 @@
 """
 
 import logging
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 logger = logging.getLogger(__name__)
@@ -758,6 +758,136 @@ async def _reset_server_instance_id_v2(conn: AsyncConnection):
     await conn.execute(text("DELETE FROM config WHERE config_key = 'serverInstanceId'"))
 
 
+async def _reset_notification_subscriptions_v1(conn: AsyncConnection):
+    """重置所有通知渠道的订阅配置为 V2 全关闭。
+
+    why：旧事件名与新发送范围并非一一对应，直接清空旧配置，
+         由用户在前端重新选择订阅。已经是 V2 的配置不会被覆盖。
+    """
+    from sqlalchemy import select, update
+    from sqlalchemy.ext.asyncio import AsyncSession
+    import json
+
+    # 使用 AsyncConnection 无法访问 ORM，需要原始 SQL
+    result = await conn.execute(text(
+        "SELECT id, events_config FROM notification_channels"
+    ))
+    rows = result.fetchall()
+
+    # 生成 V2 全关闭配置
+    disabled_scopes = {
+        "import_success": False,
+        "import_failed": False,
+        "refresh_success": False,
+        "refresh_failed": False,
+        "incremental_refresh_success": False,
+        "incremental_refresh_no_change": False,
+        "incremental_refresh_failed": False,
+        "fallback_success": False,
+        "fallback_failed": False,
+        "media_scan_success": False,
+        "media_scan_failed": False,
+        "system_startup": False,
+        "system_exception": False,
+    }
+    v2_config = {"version": 2, "scopes": disabled_scopes}
+    v2_config_str = json.dumps(v2_config, ensure_ascii=False)
+
+    reset_count = 0
+    for row in rows:
+        channel_id, events_config_str = row
+        try:
+            current_config = json.loads(events_config_str) if events_config_str else {}
+        except (json.JSONDecodeError, TypeError):
+            current_config = {}
+
+        # 跳过已经是 V2 的配置
+        if isinstance(current_config, dict) and current_config.get("version") == 2:
+            continue
+
+        await conn.execute(text(
+            "UPDATE notification_channels SET events_config = :config WHERE id = :id"
+        ), {"config": v2_config_str, "id": channel_id})
+        reset_count += 1
+
+    logger.info(f"通知订阅配置重置完成: {reset_count} 个渠道已更新为 V2 全关闭")
+
+
+async def _isolate_assistant_sessions_v1(conn: AsyncConnection):
+    """旧会话不回填归属；为老表补齐 schema sync 不创建的索引和外键。"""
+    await conn.execute(text(
+        "UPDATE assistant_sessions SET is_processing = false WHERE owner_id IS NULL AND is_processing = true"
+    ))
+    indexes = await conn.run_sync(
+        lambda connection: inspect(connection).get_indexes("assistant_sessions")
+    )
+    if not any(index["column_names"] == ["owner_id"] for index in indexes):
+        await conn.execute(text(
+            "CREATE INDEX ix_assistant_sessions_owner_id ON assistant_sessions (owner_id)"
+        ))
+    foreign_keys = await conn.run_sync(
+        lambda connection: inspect(connection).get_foreign_keys("assistant_sessions")
+    )
+    if not any(
+        key["constrained_columns"] == ["owner_id"]
+        and key["referred_table"] == "users" for key in foreign_keys
+    ):
+        await conn.execute(text(
+            "ALTER TABLE assistant_sessions ADD CONSTRAINT fk_assistant_sessions_owner_id "
+            "FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE"
+        ))
+
+
+# system_metrics 精简后保留的索引（与 ORM 模型保持一致）
+_SYSTEM_METRICS_KEEP_INDEXES = {"ix_system_metrics_collected_at", "idx_metric_cat_name_time"}
+
+
+async def _slim_system_metrics_indexes_v1(conn: AsyncConnection, db_type: str):
+    """删除 system_metrics 上冗余的非唯一二级索引。
+
+    why：该表原有十余个重复前缀索引，写入/清理时索引维护开销远大于数据本身，
+    曾导致一次历史清理打满 MySQL CPU/IO。create_all 不会删除旧索引，需迁移处理。
+    """
+    if db_type == 'mysql':
+        rows = await conn.execute(text("""
+            SELECT DISTINCT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'system_metrics'
+            AND INDEX_NAME <> 'PRIMARY' AND NON_UNIQUE = 1
+        """))
+        for (name,) in rows.fetchall():
+            if name not in _SYSTEM_METRICS_KEEP_INDEXES:
+                await conn.execute(text(f"ALTER TABLE `system_metrics` DROP INDEX `{name}`"))
+                logger.info("  已删除 system_metrics 冗余索引 %s", name)
+    else:
+        rows = await conn.execute(text("""
+            SELECT i.relname FROM pg_index x
+            JOIN pg_class i ON i.oid = x.indexrelid
+            JOIN pg_class t ON t.oid = x.indrelid
+            WHERE t.relname = 'system_metrics' AND NOT x.indisunique AND NOT x.indisprimary
+        """))
+        for (name,) in rows.fetchall():
+            if name not in _SYSTEM_METRICS_KEEP_INDEXES:
+                await conn.execute(text(f'DROP INDEX IF EXISTS "{name}"'))
+                logger.info("  已删除 system_metrics 冗余索引 %s", name)
+
+
+async def _extend_anime_type_enum_v1(conn: AsyncConnection, db_type: str):
+    """扩展 anime.type 枚举，追加综艺 variety、短剧 short_drama。
+
+    why：db_maintainer 只做字段新增与安全的长度扩展，不会改 ENUM 取值，
+    不迁移的话旧库写入新类型会被 MySQL 拒绝/截断。只追加取值，不改动任何已有数据。
+    取值写死为 v1 当时的快照：迁移只执行一次，不能跟随业务常量后续变化。
+    """
+    anime_types = ('tv_series', 'movie', 'ova', 'other', 'variety', 'short_drama')
+    if db_type == 'mysql':
+        values = ", ".join(f"'{v}'" for v in anime_types)
+        await conn.execute(text(f"ALTER TABLE `anime` MODIFY COLUMN `type` ENUM({values}) NOT NULL"))
+    else:  # postgresql：枚举类型名与 ORM 中 Enum(name="anime_type") 一致
+        for value in anime_types:
+            await conn.execute(text(f"ALTER TYPE anime_type ADD VALUE IF NOT EXISTS '{value}'"))
+    logger.info("  已扩展 anime.type 枚举：%s", ", ".join(anime_types))
+
+
 # 所有迁移任务的 ID 列表（新增迁移时需同步更新此列表）
 ALL_MIGRATION_IDS = [
     "migrate_clear_rate_limit_state_v1",
@@ -773,6 +903,10 @@ ALL_MIGRATION_IDS = [
     "reset_ai_match_prompt_v2",
     "reset_server_instance_id_v1",
     "reset_server_instance_id_v2",
+    "reset_notification_subscriptions_v1",
+    "isolate_assistant_sessions_v1",
+    "slim_system_metrics_indexes_v1",
+    "extend_anime_type_enum_v1",
 ]
 
 
@@ -814,6 +948,10 @@ async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
         ("reset_ai_match_prompt_v2", _reset_ai_match_prompt_v2, ()),  # 再次删除 aiMatchPrompt，回填含识别词校正的新默认值
         ("reset_server_instance_id_v1", _reset_server_instance_id_v1, ()),
         ("reset_server_instance_id_v2", _reset_server_instance_id_v2, ()),  # 重置为带归属标记的可反解格式
+        ("reset_notification_subscriptions_v1", _reset_notification_subscriptions_v1, ()),  # 清空旧订阅配置
+        ("isolate_assistant_sessions_v1", _isolate_assistant_sessions_v1, ()),  # 历史会话不自动归属
+        ("slim_system_metrics_indexes_v1", _slim_system_metrics_indexes_v1, (db_type,)),  # 删除 system_metrics 冗余索引
+        ("extend_anime_type_enum_v1", _extend_anime_type_enum_v1, (db_type,)),  # anime.type 追加 variety/short_drama
     ]
 
     for migration_id, migration_func, args in migrations:
