@@ -21,7 +21,11 @@ export default function TraktOAuthCallback() {
     exchangeStarted.current = true
     const storageKey = 'oauth:trakt:state'
     const url = new URL(window.location.href)
-    const state = url.searchParams.get('state') || sessionStorage.getItem(storageKey)
+    // Worker 回跳时用 "?token=..." 直接拼在已含 "?state=..." 的回调地址后，
+    // 浏览器会把 state 解析成 "<JWT>?token=<JWT>"，导致后端 JWT 校验失败；
+    // JWT 本身不含 "?"，这里截掉第一个 "?" 之后的内容还原真实 state。
+    const rawState = url.searchParams.get('state')
+    const state = (rawState ? rawState.split('?')[0] : '') || sessionStorage.getItem(storageKey)
     sessionStorage.removeItem(storageKey)
     // CF Worker 回调时会在 URL 参数中携带这些信息
     const accessToken = url.searchParams.get('access_token')
