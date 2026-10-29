@@ -982,8 +982,6 @@ const DesktopHeader = ({ activeKey, version, hasUpdate, onVersionClick, onRealti
           {/* 顶栏最左侧：全局搜索栏（功能跳转 + 弹幕搜索，可指定源） */}
           <GlobalSearchBar focusSignal={searchFocusSignal} />
           <div className="flex items-center justify-center gap-4 ml-auto flex-shrink-0">
-            {/* 流控/下载进度：按用户要求挪回顶栏右上角 */}
-            <RateLimitIndicator />
             <Tooltip title={t('header.realtimeLog')}>
               <div onClick={onRealtimeLog} className="cursor-pointer" style={{ color: '#1890ff', fontSize: 20 }}>
                 <RealtimeLogIcon />
@@ -994,6 +992,8 @@ const DesktopHeader = ({ activeKey, version, hasUpdate, onVersionClick, onRealti
                 <HistoryLogIcon />
               </div>
             </Tooltip>
+            {/* 顶栏右侧顺序（按用户要求）：实时日志 → 历史日志 → 深浅色切换 → 版本号 → 流控 → 头像+用户名 */}
+            <DarkModeToggle />
             <Badge dot={hasUpdate} offset={[-5, 5]}>
               <Tag
                 className="cursor-pointer"
@@ -1002,6 +1002,8 @@ const DesktopHeader = ({ activeKey, version, hasUpdate, onVersionClick, onRealti
                 {version}
               </Tag>
             </Badge>
+            {/* 流控/下载进度 */}
+            <RateLimitIndicator />
             <Dropdown
               menu={{
                 items: [
@@ -1109,7 +1111,6 @@ const DesktopHeader = ({ activeKey, version, hasUpdate, onVersionClick, onRealti
                 {userinfo?.username}
               </div>
             </Dropdown>
-            <DarkModeToggle />
           </div>
         </div>
       </div>
