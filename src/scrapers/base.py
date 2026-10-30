@@ -65,6 +65,7 @@ from src.utils.parsing.filename_parser import (
     get_season_from_title, is_movie_by_title, normalize_title, parse_search_keyword,
 )
 from src.utils.parsing.protobuf import build_protobuf_message_classes
+from src.utils.parsing.regex_alternatives import find_matching_alternative, split_regex_alternatives
 from src.utils.runtime.server_instance_id import generate_server_instance_id
 from src.utils.runtime.transport_manager import TransportManager
 
@@ -678,14 +679,15 @@ class BaseScraper(ABC):
 
         filtered_episodes = []
         filtered_out_episodes = []
+        # 预先拆出顶层分支，命中时报告具体是哪条规则，而不是用户正则里语义不定的捕获组
+        alternatives = split_regex_alternatives(blacklist_pattern)
 
         for episode in episodes:
             # 使用从 config 表获取的正则表达式进行过滤
             match = blacklist_pattern.search(episode.title)
             if match:
-                # 优先取第2个捕获组（通常是关键词如"幕后""预告"），否则取整个匹配
-                junk_type = match.group(2) if match.lastindex and match.lastindex >= 2 else match.group(0)
-                filtered_out_episodes.append((episode, junk_type))
+                rule = find_matching_alternative(episode.title, alternatives, blacklist_pattern.pattern)
+                filtered_out_episodes.append((episode, rule))
             else:
                 filtered_episodes.append(episode)
 

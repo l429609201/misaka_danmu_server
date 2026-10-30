@@ -33,7 +33,15 @@ from src.services.service_container import get_database_service
 from src.services.auth_service import create_access_token
 from src.api.auth import get_current_user, get_real_client_ip
 from src.utils.auth.passwords import verify_password
-from src.utils.misc.otp import generate_secret, get_totp_uri, verify_otp
+from src.utils.misc.otp import (
+    encrypt_otp_secret,
+    generate_secret,
+    is_encrypted_otp_secret,
+    get_totp_uri,
+    resolve_stored_otp_secret,
+    verify_otp,
+)
+from src.core.config import settings
 from src.api.dependencies import get_config_service
 from src.services.config_service import ConfigService
 from src.db import orm_models
@@ -233,10 +241,12 @@ async def verify_totp_setup(
         _store_challenge(f"totp_setup_{current_user.username}", secret_bytes)
         raise HTTPException(status_code=400, detail="验证码错误，请重试")
 
-    # 验证成功，保存到数据库
+    # 验证成功，加密后保存到数据库（Repository 约定只接收密文）
     db = get_database_service()
     async with db.transaction():
-        await db.user.enable_otp(current_user.username, secret)
+        await db.user.enable_otp(
+            current_user.username, encrypt_otp_secret(secret, settings.jwt.secret_key)
+        )
 
     return {"message": "TOTP 两步验证已启用"}
 
@@ -545,6 +555,28 @@ async def delete_passkey(
 
 # ======== 统一 MFA 验证（签发 JWT） ========
 
+async def upgrade_plain_otp_secret(username: str, stored_value: Optional[str], secret: str) -> None:
+    """
+    TOTP 校验通过后，把重构期间以明文写入的 otpSecret 加密回写。
+
+    首次成功使用即统一为密文存储；已是密文则不做任何写入。
+    回写失败只记录日志，不影响本次登录。
+
+    :param username: 用户名
+    :param stored_value: 数据库中原始存储值
+    :param secret: 已校验通过的 base32 明文
+    """
+    if not stored_value or is_encrypted_otp_secret(stored_value):
+        return
+    try:
+        db = get_database_service()
+        async with db.transaction():
+            await db.user.enable_otp(username, encrypt_otp_secret(secret, settings.jwt.secret_key))
+        logger.info(f"用户 {username} 的 OTP Secret 已由明文升级为密文存储")
+    except Exception as e:
+        logger.error(f"用户 {username} 的 OTP Secret 加密回写失败: {e}")
+
+
 async def _issue_jwt_for_user(
     request: Request,
     config_service: ConfigService,
@@ -600,8 +632,12 @@ async def mfa_verify(
 
     # 尝试 TOTP 验证
     if otp_code:
-        otp_secret = user.otpSecret if hasattr(user, 'otpSecret') else None
+        # 库中为密文（或重构期间写入的历史明文），校验前先还原
+        stored_secret = getattr(user, 'otpSecret', None)
+        otp_secret = resolve_stored_otp_secret(stored_secret, settings.jwt.secret_key)
         if otp_secret and verify_otp(otp_secret, otp_code):
+            # 首次成功使用时把历史明文统一为密文
+            await upgrade_plain_otp_secret(username, stored_secret, otp_secret)
             return await _issue_jwt_for_user(request, config_service, username, user_id)
         raise HTTPException(status_code=401, detail="验证码错误")
 

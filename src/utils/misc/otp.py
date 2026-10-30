@@ -21,6 +21,10 @@ APP_ISSUER = "Misaka弹幕库"
 # PBKDF2 固定盐值（改变会导致已加密数据无法解密）
 _OTP_KDF_SALT = b"misaka-otp-secret-encryption-v1"
 
+# Fernet 密文固定以版本字节 0x80 开头，base64url 后为 "gAAAAA"；
+# pyotp 生成的 base32 明文只含大写字母和 2-7，不会以小写 g 开头，可据此区分新旧数据
+_FERNET_TOKEN_PREFIX = "gAAAAA"
+
 # 模块级缓存，避免每次调用都派生密钥
 _fernet_cache: dict[str, Fernet] = {}
 
@@ -71,6 +75,30 @@ def decrypt_otp_secret(stored_value: str, master_key: str) -> str:
     except InvalidToken:
         logger.error("OTP Secret 解密失败（密钥可能已变更）")
         return ""
+
+
+def is_encrypted_otp_secret(stored_value: str) -> bool:
+    """判断库中的 otpSecret 是否已是 Fernet 密文（用于把历史明文升级为密文）。"""
+    return bool(stored_value) and stored_value.startswith(_FERNET_TOKEN_PREFIX)
+
+
+def resolve_stored_otp_secret(stored_value: str, master_key: str) -> str:
+    """
+    把数据库中的 otpSecret 还原为可用于校验的 base32 明文。
+
+    底层重构（f9d1c05b）期间加解密调用被丢失，库里同时存在两种数据：
+    重构前启用的是 Fernet 密文，重构后启用的是明文。这里兼容两者，
+    避免把密文直接交给 pyotp 导致 "Non-base32 digit found"。
+
+    :param stored_value: 数据库中存储的值（密文或历史明文）
+    :param master_key: 主密钥（config.yml 的 jwt.secret_key）
+    :return: base32 明文；为空或解密失败时返回空字符串
+    """
+    if not stored_value:
+        return ""
+    if is_encrypted_otp_secret(stored_value):
+        return decrypt_otp_secret(stored_value, master_key)
+    return stored_value
 
 
 def generate_secret() -> str:

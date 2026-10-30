@@ -15,8 +15,9 @@ from src.services.auth_service import create_access_token
 from src.utils.auth.passwords import get_password_hash, verify_password
 from src.services.service_container import get_database_service
 from src.services.config_service import ConfigService, get_config_service
-from src.utils.misc.otp import verify_otp
-from src.api.ui.auth_mfa import create_mfa_token
+from src.utils.misc.otp import resolve_stored_otp_secret, verify_otp
+from src.core.config import settings
+from src.api.ui.auth_mfa import create_mfa_token, upgrade_plain_otp_secret
 from src.schemas.auth import User
 
 logger = logging.getLogger(__name__)
@@ -143,13 +144,17 @@ async def login_for_access_token(
 
         # 如果提供了 otp_password 且有 TOTP，尝试直接验证（简化流程）
         if otp_password and has_totp:
-            otp_secret = user.otpSecret if hasattr(user, 'otpSecret') else None
+            # 库中为密文（或重构期间写入的历史明文），校验前先还原
+            stored_secret = getattr(user, 'otpSecret', None)
+            otp_secret = resolve_stored_otp_secret(stored_secret, settings.jwt.secret_key)
             if not (otp_secret and verify_otp(otp_secret, otp_password)):
                 _record_login_failure(client_ip)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid OTP code",
                 )
+            # 首次成功使用时把历史明文统一为密文
+            await upgrade_plain_otp_secret(user.username, stored_secret, otp_secret)
             # TOTP 验证通过，继续签发 token
         else:
             # 生成 mfaToken 并返回 403，让前端走 /mfa/verify 流程
