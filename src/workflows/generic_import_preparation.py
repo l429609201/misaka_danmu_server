@@ -29,10 +29,12 @@ async def prepare_generic_import(
             progress_callback=lambda p, msg: progress_callback(20 + p * 0.1, msg),
             pool=fallback_type if is_fallback else "global",
         )
-    # 仅空结果允许候选顺延，建库及网络异常不得转换成候选拒绝。
-    if not first_comments:
-        raise ImportCandidateRejected("数据源验证失败，未能获取到任何弹幕，未创建数据库条目。")
     source_id = parameters.get("only_missing_source_id")
+    # 补缺时来源早已验证建库，首个缺失集往往正是此前弹幕为空、未入库的那集；
+    # 若在此拒绝，会让后面所有新集一起补不上。空弹幕交由逐集保存记为单集失败即可。
+    if not first_comments and source_id is None:
+        # 仅空结果允许候选顺延，建库及网络异常不得转换成候选拒绝。
+        raise ImportCandidateRejected("数据源验证失败，未能获取到任何弹幕，未创建数据库条目。")
     if source_id is not None:
         # 补缺只写入原有来源，不重新建库、拉海报或调整来源归属。
         db = get_database_service()
