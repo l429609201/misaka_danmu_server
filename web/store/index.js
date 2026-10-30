@@ -12,6 +12,14 @@ export const sidebarCollapsedAtom = atomWithStorage(
   { getOnInit: true }
 )
 
+/**
+ * 御坂助手看板娘形象是否显示（默认关闭，可在头像菜单开启）。
+ * 状态由后端配置项 assistantPetVisible 保存（换浏览器/设备保持一致），
+ * AssistantWidget 挂载时从后端读取，头像菜单切换时写回后端。
+ */
+export const ASSISTANT_PET_CONFIG_KEY = 'assistantPetVisible'
+export const assistantPetVisibleAtom = atom(false)
+
 /** 用户信息 */
 export const userinfoAtom = atom(undefined)
 

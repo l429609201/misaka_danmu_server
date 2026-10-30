@@ -87,10 +87,17 @@ export default {
     search: '搜尋結果',
     library: '彈幕庫',
     task: '任務管理器',
-    bullet: '彈幕',
+    bullet: '彈幕介面設定',
     mediaFetch: '媒體服務聯動',
     source: '搜尋源',
     control: '外部控制',
+    ai: 'AI',
+    aiConnection: '連線設定',
+    aiMatch: '自動匹配',
+    aiRecognition: '識別增強',
+    aiAssistant: '御坂助手',
+    aiSkills: '御坂技能',
+    aiMetrics: '使用統計',
     setting: '設定',
     // 子選單
     taskRunning: '進行中的任務',
@@ -128,6 +135,9 @@ export default {
 
   // 頂部欄工具 + 使用者選單
   header: {
+    hideAssistantPet: '關閉助手形象',
+    showAssistantPet: '顯示助手形象',
+    openAssistant: '開啟御坂助手',
     appName: '御坂網路彈幕服務',
     realtimeLog: '即時記錄',
     openMenu: '開啟選單',

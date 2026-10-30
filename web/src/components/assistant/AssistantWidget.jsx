@@ -6,12 +6,14 @@
  * 打开面板时隐藏悬浮入口，关闭时恢复（与 demo 行为一致）。
  */
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useAtomValue } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
-import { isMobileAtom } from '../../../store/index.js'
+import { isMobileAtom, assistantPetVisibleAtom, ASSISTANT_PET_CONFIG_KEY } from '../../../store/index.js'
+import { getConfig } from '@/apis'
 import { usePetMachine } from './pet/usePetMachine'
 import { AssistantEntry } from './AssistantEntry'
 import { AssistantPanel } from './AssistantPanel'
+import { MyIcon } from '../MyIcon'
 import { useTaskNotifier } from './useTaskNotifier'
 import { noticeRemainingMs } from './taskNotifierState'
 import './assistant.css'
@@ -19,6 +21,14 @@ import './assistant.css'
 export function AssistantWidget() {
   const { t } = useTranslation()
   const isMobile = useAtomValue(isMobileAtom)
+  // 助手形象开关（默认关闭）：关闭时只显示简洁按钮，可在头像菜单开启
+  const [petVisible, setPetVisible] = useAtom(assistantPetVisibleAtom)
+  // 助手形象开关以后端配置为准：挂载时读取一次（读取失败保持默认关闭）
+  useEffect(() => {
+    getConfig(ASSISTANT_PET_CONFIG_KEY)
+      .then(res => setPetVisible(res?.data?.value === 'true'))
+      .catch(() => {})
+  }, [setPetVisible])
   const [open, setOpen] = useState(false)
   const [notice, setNotice] = useState(null) // 任务播报含标题、正文和状态
   const noticeTimer = useRef(null)
@@ -101,13 +111,25 @@ export function AssistantWidget() {
   return (
     <>
       {/* 面板打开时隐藏入口，避免形象重叠 */}
-      {!open && (
+      {!open && petVisible && (
         <AssistantEntry
           state={machine.state}
           isMobile={isMobile}
           onOpen={openPanel}
           notice={notice}
         />
+      )}
+      {/* 形象关闭时保留一个简洁圆形按钮，助手功能仍可使用 */}
+      {!open && !petVisible && (
+        <button
+          type="button"
+          className="assistant-plain-fab"
+          onClick={openPanel}
+          aria-label={t('header.openAssistant')}
+          title={t('header.openAssistant')}
+        >
+          <MyIcon icon="ai" size={22} />
+        </button>
       )}
       <AssistantPanel
         open={open}

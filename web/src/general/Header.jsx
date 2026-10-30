@@ -3,12 +3,12 @@ import { useTranslation } from 'react-i18next'
 import { RoutePaths } from './RoutePaths.jsx'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { isMobileAtom, userinfoAtom, sidebarCollapsedAtom } from '../../store/index.js'
+import { isMobileAtom, userinfoAtom, sidebarCollapsedAtom, assistantPetVisibleAtom, ASSISTANT_PET_CONFIG_KEY } from '../../store/index.js'
 import DarkModeToggle from '@/components/DarkModeToggle.jsx';
 import { MyIcon } from '@/components/MyIcon'
 import classNames from 'classnames'
 import { Tag, Dropdown, Modal, Form, Input, Button, Space, Badge, Popconfirm, Drawer, Menu } from 'antd';
-import { logout, changePassword, checkAppUpdate, getDockerStatus, restartService, getVersion } from '../apis/index.js'
+import { logout, changePassword, checkAppUpdate, getDockerStatus, restartService, getVersion, setConfig } from '../apis/index.js'
 import Cookies from 'js-cookie'
 import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MenuOutlined, SearchOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons'
 import { Tooltip } from 'antd'
@@ -121,12 +121,20 @@ const navItems = [
     { key: 'mcp', label: 'nav.controlMcp', icon: 'MCP' },
     { key: 'apidoc', label: 'nav.controlApidoc', icon: 'kuaijierukou_apiwendang' },
   ]},
+  // AI 独立为一级分组，位于「外部控制」下方
+  { key: RoutePaths.AI, label: 'nav.ai', icon: 'ai', iconfontIcon: 'icon-ai', children: [
+    { key: 'connection', label: 'nav.aiConnection', icon: 'canshupeizhi' },
+    { key: 'match', label: 'nav.aiMatch', icon: 'jingzhun' },
+    { key: 'recognition', label: 'nav.aiRecognition', icon: 'renlianshibie_o' },
+    { key: 'assistant', label: 'nav.aiAssistant', icon: 'ai' },
+    { key: 'skills', label: 'nav.aiSkills', icon: 'MCP' },
+    { key: 'metrics', label: 'nav.aiMetrics', icon: 'tongji-jinhangzhongderenwushuliang' },
+  ]},
   { key: RoutePaths.SETTING, label: 'nav.setting', icon: 'setting', iconfontIcon: 'icon-setting', children: [
     { key: 'parameters', label: 'nav.settingParameters', icon: 'canshupeizhi' },
     { key: 'proxy', label: 'nav.settingProxy', icon: 'dailipeizhi' },
     { key: 'notification', label: 'nav.settingNotification', icon: 'jiaohu' },
     { key: 'recognition', label: 'nav.settingRecognition', icon: 'renlianshibie_o' },
-    { key: 'automatch', label: 'nav.settingAutomatch', icon: 'ai' },
     { key: 'security', label: 'nav.settingSecurity', icon: 'anquan' },
   ]},
 ]
@@ -459,6 +467,8 @@ const MobileHeader = ({ activeKey, docsUrl, version, hasUpdate, onVersionClick, 
   const { t } = useTranslation()
   const userinfo = useAtomValue(userinfoAtom)
   const { isDark, toggleDarkMode } = useThemeMode()
+  // 看板娘显示开关（持久化），头像菜单切换
+  const [petVisible, setPetVisible] = useAtom(assistantPetVisibleAtom)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
@@ -593,6 +603,7 @@ const MobileHeader = ({ activeKey, docsUrl, version, hasUpdate, onVersionClick, 
     { key: 'realtime-log', icon: <span style={{ color: '#1890ff' }}><RealtimeLogIcon /></span>, label: t('header.realtimeLog') },
     { key: 'history-log', icon: <span style={{ color: '#8B7355' }}><HistoryLogIcon /></span>, label: t('header.historyLog') },
     { key: 'dark-mode', icon: isDark ? <SunOutlined style={{ fontSize: 16 }} /> : <MoonOutlined style={{ fontSize: 16 }} />, label: isDark ? t('common.lightMode') : t('common.darkMode') },
+    { key: 'assistant-pet', icon: <MyIcon icon="ai" size={16} />, label: t(petVisible ? 'header.hideAssistantPet' : 'header.showAssistantPet') },
     { type: 'divider' },
     { key: 'theme-color', icon: <MyIcon icon="MenuIcon-gexinghua-heise" size={16} />, label: t('header.themeColor') },
     { key: 'page-style', icon: <MyIcon icon="fengge" size={16} />, label: t('header.pageStyle') },
@@ -626,6 +637,15 @@ const MobileHeader = ({ activeKey, docsUrl, version, hasUpdate, onVersionClick, 
       'realtime-log': onRealtimeLog,
       'history-log': onHistoryLog,
       'dark-mode': toggleDarkMode,
+      'assistant-pet': () => {
+        // 切换后立即更新界面，并写回后端保存（失败则回滚并提示）
+        const next = !petVisible
+        setPetVisible(next)
+        setConfig(ASSISTANT_PET_CONFIG_KEY, String(next)).catch(() => {
+          setPetVisible(!next)
+          messageApi.error(t('common.saveFailed', '保存失败'))
+        })
+      },
       'theme-color': () => setIsThemeColorOpen(true),
       'page-style': () => setIsPageStyleOpen(true),
       'language': () => setIsLanguageOpen(true),

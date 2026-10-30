@@ -17,6 +17,7 @@ import { AnimeDetail } from '../pages/anime/[id].jsx'
 import { EpisodeDetail } from '../pages/episode/[id].jsx'
 import { CommentDetail } from '../pages/comment/[id].jsx'
 import { Control } from '../pages/control/index.jsx'
+import { AIPage } from '../pages/ai/index.jsx'
 import { Bullet } from '../pages/bullet/index.jsx'
 import MediaFetch from '../pages/media-fetch/index.jsx'
 import OAuthCallback from '../pages/oauth-callback/index.jsx'
@@ -77,6 +78,11 @@ export const router = createBrowserRouter([
       {
         path: RoutePaths.CONTROL,
         element: <Control />,
+      },
+      {
+        // AI 独立一级页面（原 设置 → AI）
+        path: RoutePaths.AI,
+        element: <AIPage />,
       },
       {
         path: 'anime/:id',

@@ -87,10 +87,17 @@ export default {
     search: 'Search Results',
     library: 'Danmaku Library',
     task: 'Task Manager',
-    bullet: 'Danmaku',
+    bullet: 'Danmaku API Config',
     mediaFetch: 'Media Server Integration',
     source: 'Sources',
     control: 'External Control',
+    ai: 'AI',
+    aiConnection: 'Connection',
+    aiMatch: 'Auto Match',
+    aiRecognition: 'Recognition',
+    aiAssistant: 'Misaka Assistant',
+    aiSkills: 'Misaka Skills',
+    aiMetrics: 'Usage Stats',
     setting: 'Settings',
     // Submenus
     taskRunning: 'Running Tasks',
@@ -128,6 +135,9 @@ export default {
 
   // Top bar tools + user menu
   header: {
+    hideAssistantPet: 'Hide Assistant Avatar',
+    showAssistantPet: 'Show Assistant Avatar',
+    openAssistant: 'Open Assistant',
     appName: 'Misaka Danmaku Server',
     realtimeLog: 'Realtime Log',
     openMenu: 'Open menu',

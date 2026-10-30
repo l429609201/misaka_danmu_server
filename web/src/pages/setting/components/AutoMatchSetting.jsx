@@ -12,6 +12,10 @@ import { useAtomValue } from 'jotai'
 import { isMobileAtom } from '../../../../store/index.js'
 import { useTranslation } from 'react-i18next'
 import { useHashTab } from '@/hooks/useHashTab'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+
+// AI 页面子 Tab key（与 Header.jsx 中 AI 分组的二级菜单一致）
+export const AI_TAB_KEYS = ['connection', 'match', 'recognition', 'assistant', 'skills', 'metrics']
 
 // 功能搜索锚点 -> 内层 Tab key。定义在模块级保证引用稳定。
 const AUTOMATCH_ANCHOR_TABS = {
@@ -27,8 +31,14 @@ const CustomSwitch = (props) => {
 
 const AutoMatchSetting = () => {
   const { t } = useTranslation()
-  // 功能搜索深链：锚点哈希映射到内层 Tab key
-  const [activeTab, setActiveTab] = useHashTab(AUTOMATCH_ANCHOR_TABS, 'connection')
+  // AI 已拆为独立一级页面：子 Tab 由 URL ?key= 驱动（与侧边栏二级菜单同步），
+  // 功能搜索的锚点哈希仍可映射到对应子 Tab
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const urlKey = searchParams.get('key')
+  const [hashTab] = useHashTab(AUTOMATCH_ANCHOR_TABS, null)
+  const activeTab = AI_TAB_KEYS.includes(urlKey) ? urlKey : (hashTab || 'connection')
+  const setActiveTab = (key) => navigate(`/ai?key=${key}`, { replace: true })
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -577,7 +587,7 @@ const AutoMatchSetting = () => {
 
   return (
     <Spin spinning={loading}>
-      <Card>
+      <>
         <Form
           form={form}
           layout="vertical"
@@ -596,9 +606,10 @@ const AutoMatchSetting = () => {
             }
           }}
         >
-          <Tabs activeKey={activeTab} onChange={setActiveTab}>
+          <Tabs className="page-tabs" activeKey={activeTab} onChange={setActiveTab}>
             {/* 标签页1: 连接配置 */}
             <TabPane tab={t('autoMatch.tabConnection')} key="connection">
+              <Card>
               <div id="feat-ai-connection" />
               <Form.Item
                 name="aiProvider"
@@ -896,10 +907,12 @@ const AutoMatchSetting = () => {
                   {t('autoMatch.btnSaveConnection')}
                 </Button>
               </div>
+              </Card>
             </TabPane>
 
             {/* 标签页2: 自动匹配 */}
             <TabPane tab={t('autoMatch.tabMatch')} key="match">
+              <Card>
               <div id="feat-ai-match" />
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={8}>
@@ -1166,10 +1179,12 @@ const AutoMatchSetting = () => {
                   {t('autoMatch.btnSaveMatch')}
                 </Button>
               </div>
+              </Card>
             </TabPane>
 
             {/* 标签页3: 识别增强 */}
             <TabPane tab={t('autoMatch.tabRecognition')} key="recognition">
+              <Card>
               <div id="feat-ai-recognition" />
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={6}>
@@ -1296,10 +1311,12 @@ const AutoMatchSetting = () => {
                   {t('autoMatch.btnSaveRecognition')}
                 </Button>
               </div>
+              </Card>
             </TabPane>
 
             {/* 标签页: 御坂助手（看板娘对话 + 任务播报） */}
             <TabPane tab={t('autoMatch.assistantTab')} key="assistant">
+              <Card>
               <Alert
                 type="info"
                 message={t('autoMatch.assistantAlertTitle')}
@@ -1419,22 +1436,27 @@ const AutoMatchSetting = () => {
                   {t('autoMatch.assistantSaveBtn')}
                 </Button>
               </div>
+              </Card>
             </TabPane>
 
             {/* 标签页: 御坂技能管理（用户可自制 skill 到 config/skills/） */}
             <TabPane tab={t('autoMatch.skillsTab')} key="skills">
+              <Card>
               <SkillManager />
+              </Card>
             </TabPane>
 
             {/* 标签页4: 使用统计 */}
             <TabPane tab={t('autoMatch.tabMetrics')} key="metrics">
+              <Card>
               <AIMetrics />
+              </Card>
             </TabPane>
           </Tabs>
         </Form>
 
         {/* 说明文字 */}
-        <div className="mt-6 p-4 rounded" style={{ backgroundColor: 'var(--color-card)' }}>
+        <Card className="mt-6">
           <h4 className="mt-0" style={{ color: 'var(--color-text)' }}>{t('autoMatch.descTitle')}</h4>
           <ul style={{ marginBottom: 0, paddingLeft: 20, color: 'var(--color-text)' }}>
             <li dangerouslySetInnerHTML={{ __html: t('autoMatch.descTraditional') }} />
@@ -1457,8 +1479,8 @@ const AutoMatchSetting = () => {
             </li>
             <li dangerouslySetInnerHTML={{ __html: t('autoMatch.descPrecision') }} />
           </ul>
-        </div>
-      </Card>
+        </Card>
+      </>
     </Spin>
   )
 }

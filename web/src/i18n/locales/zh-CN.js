@@ -87,10 +87,17 @@ export default {
     search: '搜索结果',
     library: '弹幕库',
     task: '任务管理器',
-    bullet: '弹幕',
+    bullet: '弹幕接口配置',
     mediaFetch: '媒体服务联动',
     source: '搜索源',
     control: '外部控制',
+    ai: 'AI',
+    aiConnection: '连接配置',
+    aiMatch: '自动匹配',
+    aiRecognition: '识别增强',
+    aiAssistant: '御坂助手',
+    aiSkills: '御坂技能',
+    aiMetrics: '使用统计',
     setting: '设置',
     // 子菜单
     taskRunning: '进行中的任务',
@@ -128,6 +135,9 @@ export default {
 
   // 顶部栏工具 + 用户菜单
   header: {
+    hideAssistantPet: '关闭助手形象',
+    showAssistantPet: '显示助手形象',
+    openAssistant: '打开御坂助手',
     appName: '御坂网络弹幕服务',
     realtimeLog: '实时日志',
     openMenu: '打开菜单',

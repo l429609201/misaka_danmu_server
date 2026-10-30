@@ -707,3 +707,30 @@
   outline: none;
 }
 .assistant-slash-item span { opacity: 0.7; font-size: 12px; }
+
+/* 助手形象关闭时的简洁入口按钮 */
+.assistant-plain-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1000;
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #fff;
+  background: var(--color-primary, #1677ff);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.assistant-plain-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+@media (max-width: 768px) {
+  .assistant-plain-fab { right: 16px; bottom: 80px; width: 44px; height: 44px; }
+}
