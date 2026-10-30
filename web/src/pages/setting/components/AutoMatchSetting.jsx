@@ -8,8 +8,11 @@ import api from '@/apis/fetch'
 import { QuestionCircleOutlined, SaveOutlined, ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined } from '@ant-design/icons'
 import AIMetrics from './AIMetrics'
 import { SkillManager } from './SkillManager'
-import { useAtomValue } from 'jotai'
-import { isMobileAtom } from '../../../../store/index.js'
+import { useAtomValue, useSetAtom } from 'jotai'
+import {
+  isMobileAtom, assistantEnabledAtom, assistantPetVisibleAtom,
+  ASSISTANT_ENABLED_CONFIG_KEY, ASSISTANT_PET_CONFIG_KEY,
+} from '../../../../store/index.js'
 import { useTranslation } from 'react-i18next'
 import { useHashTab } from '@/hooks/useHashTab'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -61,6 +64,9 @@ const AutoMatchSetting = () => {
   const [selectedPromptType, setSelectedPromptType] = useState('aiRecognitionPrompt') // 当前选中的提示词类型
   const [selectedMatchPromptType, setSelectedMatchPromptType] = useState('aiPrompt') // AI自动匹配的提示词类型
   const isMobile = useAtomValue(isMobileAtom)
+  // 保存助手开关后同步全局状态，让助手入口立即生效
+  const setAssistantEnabled = useSetAtom(assistantEnabledAtom)
+  const setPetVisible = useSetAtom(assistantPetVisibleAtom)
 
   // 加载配置
   const loadSettings = async (providers) => {
@@ -107,7 +113,9 @@ const AutoMatchSetting = () => {
         asstPresencePenaltyRes,
         asstFrequencyPenaltyRes,
         asstTimeoutRes,
-        asstProxyEnabledRes
+        asstProxyEnabledRes,
+        asstEnabledRes,
+        asstPetVisibleRes
       ] = await Promise.all([
         getConfig('aiMatchEnabled'),
         getConfig('aiFallbackEnabled'),
@@ -151,7 +159,10 @@ const AutoMatchSetting = () => {
         getConfig('assistantPresencePenalty').catch(() => ({ data: { value: '0.0' } })),
         getConfig('assistantFrequencyPenalty').catch(() => ({ data: { value: '0.0' } })),
         getConfig('assistantTimeout').catch(() => ({ data: { value: '120' } })),
-        getConfig('assistantProxyEnabled').catch(() => ({ data: { value: 'false' } }))
+        getConfig('assistantProxyEnabled').catch(() => ({ data: { value: 'false' } })),
+        // 助手总开关与形象展示开关（都默认关）
+        getConfig(ASSISTANT_ENABLED_CONFIG_KEY).catch(() => ({ data: { value: 'false' } })),
+        getConfig(ASSISTANT_PET_CONFIG_KEY).catch(() => ({ data: { value: 'false' } }))
       ])
 
       const enabled = enabledRes.data.value === 'true'
@@ -216,6 +227,8 @@ const AutoMatchSetting = () => {
         assistantFrequencyPenalty: parseFloat(asstFrequencyPenaltyRes.data.value || '0.0'),
         assistantTimeout: parseInt(asstTimeoutRes.data.value || '120', 10),
         assistantProxyEnabled: asstProxyEnabledRes.data.value === 'true',
+        assistantEnabled: asstEnabledRes.data.value === 'true',
+        assistantPetVisible: asstPetVisibleRes.data.value === 'true',
       })
 
       // 设置当前选中的提供商配置
@@ -439,7 +452,12 @@ const AutoMatchSetting = () => {
         setConfig('assistantFrequencyPenalty', String(frequencyPenalty)),
         setConfig('assistantTimeout', String(timeout)),
         setConfig('assistantProxyEnabled', values.assistantProxyEnabled ? 'true' : 'false'),
+        setConfig(ASSISTANT_ENABLED_CONFIG_KEY, values.assistantEnabled ? 'true' : 'false'),
+        setConfig(ASSISTANT_PET_CONFIG_KEY, values.assistantPetVisible ? 'true' : 'false'),
       ])
+      // 保存成功后同步全局状态，助手立即显示/隐藏，无需刷新页面
+      setAssistantEnabled(!!values.assistantEnabled)
+      setPetVisible(!!values.assistantPetVisible)
       window.dispatchEvent(new Event('assistant-notify-config-changed'))
       message.success(t('autoMatch.assistantSaveSuccess'))
     } catch (error) {
@@ -1324,6 +1342,20 @@ const AutoMatchSetting = () => {
                 style={{ marginBottom: 16 }}
               />
               <Row gutter={[16, 16]}>
+                {/* 助手总开关：关闭后网页端不显示助手入口与面板 */}
+                <Col xs={24} sm={12}>
+                  <Form.Item name="assistantEnabled" valuePropName="checked"
+                    label={t('autoMatch.assistantEnabledLabel')} tooltip={t('autoMatch.assistantEnabledTooltip')}>
+                    <CustomSwitch />
+                  </Form.Item>
+                </Col>
+                {/* 形象展示开关：关闭时只显示简洁圆形按钮 */}
+                <Col xs={24} sm={12}>
+                  <Form.Item name="assistantPetVisible" valuePropName="checked"
+                    label={t('autoMatch.assistantPetVisibleLabel')} tooltip={t('autoMatch.assistantPetVisibleTooltip')}>
+                    <CustomSwitch />
+                  </Form.Item>
+                </Col>
                 <Col xs={24} sm={12}>
                   <Form.Item name="assistantChannelChatEnabled" valuePropName="checked"
                     label={t('autoMatch.assistantChannelChatLabel')} tooltip={t('autoMatch.assistantChannelChatTooltip')}>

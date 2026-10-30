@@ -20,6 +20,13 @@ export const sidebarCollapsedAtom = atomWithStorage(
 export const ASSISTANT_PET_CONFIG_KEY = 'assistantPetVisible'
 export const assistantPetVisibleAtom = atom(false)
 
+/**
+ * 御坂助手总开关（默认关闭）：关闭后全站不显示助手入口、面板，也不再轮询任务播报。
+ * 状态由后端配置项 assistantEnabled 保存，在「AI → 御坂助手」设置页切换。
+ */
+export const ASSISTANT_ENABLED_CONFIG_KEY = 'assistantEnabled'
+export const assistantEnabledAtom = atom(false)
+
 /** 用户信息 */
 export const userinfoAtom = atom(undefined)
 

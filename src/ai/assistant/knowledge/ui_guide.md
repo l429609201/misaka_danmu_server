@@ -944,6 +944,8 @@ docker-compose down && docker-compose up -d
 
 | 界面标签 | 配置键名 | 默认值 | 说明 |
 |---|---|---|---|
+| 助手总开关 | `assistantEnabled` | `false` | 关闭后网页端不显示助手入口/面板，也不轮询任务播报 |
+| 形象展示 | `assistantPetVisible` | `false` | 显示看板娘形象；关闭时只显示简洁圆形按钮（头像菜单也可切换） |
 | 通知渠道对话 | `assistantChannelChatEnabled` | `true` | 允许 Telegram / 企业微信等渠道与助手自然语言对话 |
 | 任务气泡播报总开关 | `assistantNotifyEnabled` | `true` | **下面三个播报项的前置开关** |
 | 播报：任务完成 | `assistantNotifyOnComplete` | `true` | 任务完成时气泡提示 |

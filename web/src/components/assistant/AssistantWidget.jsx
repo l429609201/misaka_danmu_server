@@ -8,7 +8,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { useTranslation } from 'react-i18next'
-import { isMobileAtom, assistantPetVisibleAtom, ASSISTANT_PET_CONFIG_KEY } from '../../../store/index.js'
+import {
+  isMobileAtom, assistantPetVisibleAtom, ASSISTANT_PET_CONFIG_KEY,
+  assistantEnabledAtom, ASSISTANT_ENABLED_CONFIG_KEY,
+} from '../../../store/index.js'
 import { getConfig } from '@/apis'
 import { usePetMachine } from './pet/usePetMachine'
 import { AssistantEntry } from './AssistantEntry'
@@ -29,6 +32,13 @@ export function AssistantWidget() {
       .then(res => setPetVisible(res?.data?.value === 'true'))
       .catch(() => {})
   }, [setPetVisible])
+  // 助手总开关以后端配置为准（默认关闭，只有明确为 true 才显示）
+  const [assistantEnabled, setAssistantEnabled] = useAtom(assistantEnabledAtom)
+  useEffect(() => {
+    getConfig(ASSISTANT_ENABLED_CONFIG_KEY)
+      .then(res => setAssistantEnabled(res?.data?.value === 'true'))
+      .catch(() => {})
+  }, [setAssistantEnabled])
   const [open, setOpen] = useState(false)
   const [notice, setNotice] = useState(null) // 任务播报含标题、正文和状态
   const noticeTimer = useRef(null)
@@ -106,7 +116,11 @@ export function AssistantWidget() {
   }, [])
 
   // 面板打开时仍检测任务，气泡暂存至收起后展示，避免完成事件漏报。
-  useTaskNotifier({ enabled: !open, onNotify: handleNotify, onActivity: handleActivity, t })
+  // 总开关关闭时停止任务轮询
+  useTaskNotifier({ enabled: assistantEnabled && !open, onNotify: handleNotify, onActivity: handleActivity, t })
+
+  // 总开关关闭：整个助手（形象/按钮/面板）都不渲染
+  if (!assistantEnabled) return null
 
   return (
     <>

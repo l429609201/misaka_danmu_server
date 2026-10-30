@@ -201,6 +201,8 @@ def get_default_configs(settings=None, ai_prompts=None):
     if ai_prompts:
         configs.update({
             # 御坂助手（弹幕库助手 LLM 对话 + 任务气泡播报）
+            'assistantEnabled': ('false', '御坂助手总开关(默认关)：关闭后网页端不显示助手入口与面板，也不轮询任务播报。'),
+            'assistantPetVisible': ('false', '御坂助手形象(看板娘)是否展示；关闭时只显示简洁圆形按钮。'),
             'assistantChannelChatEnabled': ('true', '是否允许通知渠道(Telegram/企业微信等)与御坂助手自然语言对话。'),
             'assistantChannelUsername': ('admin', '渠道御坂助手复用的 Web 用户名（单用户部署）。'),
             'assistantNotifyEnabled': ('true', '是否启用御坂助手任务气泡播报(网页端看板娘主动提示任务动态)。'),
