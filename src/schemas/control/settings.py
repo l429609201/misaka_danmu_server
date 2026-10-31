@@ -23,6 +23,8 @@ class ProxySettingsResponse(BaseModel):
     proxyPassword: Optional[str] = None
     proxyEnabled: bool = False  # 保留兼容性
     accelerateProxyUrl: Optional[str] = None
+    # 前端"验证 SSL 证书"开关需要回显已保存的值（#461）
+    proxySslVerify: bool = True
 
 
 class ProxySettingsUpdate(BaseModel):
@@ -34,6 +36,8 @@ class ProxySettingsUpdate(BaseModel):
     proxyUsername: Optional[str] = None
     proxyPassword: Optional[str] = None
     accelerateProxyUrl: Optional[str] = None
+    # 保存接口会读取该字段；缺失时访问 payload.proxySslVerify 抛 AttributeError → 保存失败（#461）
+    proxySslVerify: bool = True
 
 
 class MetadataSourceStatusResponse(BaseModel):

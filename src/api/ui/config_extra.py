@@ -80,6 +80,7 @@ async def get_proxy_settings(
         proxy_url = await db.config.get_value("proxyUrl", "")
         proxy_enabled_str = await db.config.get_value("proxyEnabled", "false")
         accelerate_proxy_url = await db.config.get_value("accelerateProxyUrl", "")
+        proxy_ssl_verify_str = await db.config.get_value("proxySslVerify", "true")
 
     proxy_enabled = proxy_enabled_str.lower() == 'true'
 
@@ -108,7 +109,8 @@ async def get_proxy_settings(
         proxyUsername=username,
         proxyPassword=password,
         proxyEnabled=proxy_enabled,
-        accelerateProxyUrl=accelerate_proxy_url
+        accelerateProxyUrl=accelerate_proxy_url,
+        proxySslVerify=str(proxy_ssl_verify_str).lower() == 'true',
     )
 
 

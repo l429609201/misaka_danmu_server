@@ -140,8 +140,12 @@ async def search_anime_flow(
         episode_exists = False
         for anime_result in db_results:
             anime_id = anime_result['animeId']
-            episodes = await db.episode.search_episodes_in_library(
-                keyword=title_to_search,
+            # #460 同源问题：原调用按"分集标题包含作品名"匹配，几乎恒为空，
+            # 导致库内已有该集也会误触发后备搜索；改为按作品+集数+季度精确判断
+            episodes = await db.episode.search_episodes_by_anime_title(
+                anime_title=title_to_search,
+                episode_number=episode_to_search,
+                season_number=season_to_search,
                 anime_id=anime_id,
             )
             if episodes:

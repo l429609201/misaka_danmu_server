@@ -7,7 +7,7 @@ EpisodeQueryRepository - 分集复杂查询层
 
 import logging
 from typing import Optional, List, Dict, Any
-from sqlalchemy import select, func, and_, or_, distinct
+from sqlalchemy import select, func, and_, or_, distinct, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload, aliased
 
@@ -413,6 +413,90 @@ class EpisodeQueryRepository:
             for row in rows
         ]
 
+
+    async def search_episodes_by_anime_title(
+        self,
+        anime_title: str,
+        episode_number: Optional[int] = None,
+        season_number: Optional[int] = None,
+        anime_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        按作品标题（含别名）、可选集数/季度检索库内分集，供弹弹 /search/episodes 使用。
+
+        #460：v2.9.0 重构后弹弹分集搜索误调了只按分集标题匹配的 search_episodes_in_library，
+        参数不匹配直接 500；这里还原旧 crud 的跨表查询口径（作品/类型/海报/源/收藏/别名）。
+        """
+        clean_title = (anime_title or "").strip()
+        if not clean_title:
+            return []
+
+        stmt = (
+            select(
+                Anime.id.label("animeId"),
+                Anime.title.label("animeTitle"),
+                Anime.type.label("type"),
+                Anime.imageUrl.label("imageUrl"),
+                Anime.createdAt.label("startDate"),
+                Episode.id.label("episodeId"),
+                Episode.episodeIndex.label("episodeIndex"),
+                # 电影只有一集，用"<源> 源"区分多源，与旧版展示保持一致
+                case(
+                    (Anime.type == 'movie', func.concat(Scraper.providerName, ' 源')),
+                    else_=Episode.title,
+                ).label("episodeTitle"),
+                Scraper.providerName.label("providerName"),
+                AnimeAlias.nameEn.label("nameEn"),
+                AnimeAlias.nameJp.label("nameJp"),
+                AnimeAlias.nameRomaji.label("nameRomaji"),
+                AnimeAlias.aliasCn1.label("aliasCn1"),
+                AnimeAlias.aliasCn2.label("aliasCn2"),
+                AnimeAlias.aliasCn3.label("aliasCn3"),
+                Scraper.displayOrder.label("displayOrder"),
+                AnimeSource.isFavorited.label("isFavorited"),
+                AnimeMetadata.bangumiId.label("bangumiId"),
+            )
+            .join(AnimeSource, Anime.id == AnimeSource.animeId)
+            .join(Episode, AnimeSource.id == Episode.sourceId)
+            .join(Scraper, AnimeSource.providerName == Scraper.providerName)
+            .outerjoin(AnimeMetadata, Anime.id == AnimeMetadata.animeId)
+            .outerjoin(AnimeAlias, Anime.id == AnimeAlias.animeId)
+        )
+        if episode_number is not None:
+            stmt = stmt.where(Episode.episodeIndex == episode_number)
+        if season_number is not None:
+            stmt = stmt.where(Anime.season == season_number)
+        if anime_id is not None:
+            stmt = stmt.where(Anime.id == anime_id)
+
+        # 去掉空格并统一全角冒号后做包含匹配，兼容"进击的巨人：最终季"等写法
+        normalized_like_title = f"%{clean_title.replace('：', ':').replace(' ', '')}%"
+        stmt = stmt.where(or_(*[
+            func.replace(func.replace(col, '：', ':'), ' ', '').like(normalized_like_title)
+            for col in (
+                Anime.title, AnimeAlias.nameEn, AnimeAlias.nameJp, AnimeAlias.nameRomaji,
+                AnimeAlias.aliasCn1, AnimeAlias.aliasCn2, AnimeAlias.aliasCn3,
+            )
+        ]))
+        stmt = stmt.order_by(func.length(Anime.title), Scraper.displayOrder, Episode.episodeIndex)
+        result = await self._session.execute(stmt)
+        return [dict(row) for row in result.mappings().all()]
+
+    async def get_episode_indices_by_source_ids(
+        self, source_ids: List[int],
+    ) -> Dict[int, set]:
+        """批量获取多个源已入库的集号集合（并行搜索补充缺失分集用，避免逐源查询）。"""
+        if not source_ids:
+            return {}
+        stmt = (
+            select(Episode.sourceId, Episode.episodeIndex)
+            .where(Episode.sourceId.in_(source_ids))
+        )
+        result = await self._session.execute(stmt)
+        indices: Dict[int, set] = {}
+        for source_id, episode_index in result.all():
+            indices.setdefault(source_id, set()).add(episode_index)
+        return indices
 
     async def search_in_library(
         self,

@@ -13,6 +13,8 @@ from src.services.service_container import get_database_service
 from src.services.config_service import ConfigService
 from src.api.dependencies import get_config_service
 from src.schemas.auth import User
+# v2.9.0 删除 crud 层后端点仍调用 crud.* 导致 NameError（#462），改由工作流实现
+from src.workflows import danmaku_storage_ops
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -145,8 +147,8 @@ async def preview_migrate(
     db: DatabaseService = Depends(get_database_service)
 ):
     """预览迁移结果，不实际执行"""
-    result = await crud.preview_migrate_danmaku(
-        session,
+    result = await danmaku_storage_ops.preview_migrate_danmaku(
+        db,
         anime_ids=request.animeIds,
         target_path=request.targetPath,
         keep_structure=request.keepStructure
@@ -160,8 +162,8 @@ async def batch_migrate(
     db: DatabaseService = Depends(get_database_service)
 ):
     """将选中条目的弹幕文件迁移到新目录"""
-    result = await crud.batch_migrate_danmaku(
-        session,
+    result = await danmaku_storage_ops.batch_migrate_danmaku(
+        db,
         anime_ids=request.animeIds,
         target_path=request.targetPath,
         keep_structure=request.keepStructure,
@@ -177,8 +179,8 @@ async def preview_rename(
     db: DatabaseService = Depends(get_database_service)
 ):
     """预览重命名结果，不实际执行"""
-    result = await crud.preview_rename_danmaku(
-        session,
+    result = await danmaku_storage_ops.preview_rename_danmaku(
+        db,
         anime_ids=request.animeIds,
         mode=request.mode,
         prefix=request.prefix or "",
@@ -201,8 +203,8 @@ async def batch_rename(
     if request.directRenames:
         direct_renames = {item.episodeId: item.newName for item in request.directRenames}
 
-    result = await crud.batch_rename_danmaku(
-        session,
+    result = await danmaku_storage_ops.batch_rename_danmaku(
+        db,
         anime_ids=request.animeIds,
         mode=request.mode,
         prefix=request.prefix or "",
@@ -222,8 +224,8 @@ async def preview_template(
     config_service: ConfigService = Depends(get_config_service)
 ):
     """预览模板应用结果，不实际执行"""
-    result = await crud.preview_apply_template(
-        session,
+    result = await danmaku_storage_ops.preview_apply_template(
+        db,
         anime_ids=request.animeIds,
         template_type=request.templateType,
         custom_template=request.customTemplate,
@@ -240,8 +242,8 @@ async def apply_template(
     config_service: ConfigService = Depends(get_config_service)
 ):
     """按新的存储模板重新组织弹幕文件"""
-    result = await crud.apply_danmaku_template(
-        session,
+    result = await danmaku_storage_ops.apply_danmaku_template(
+        db,
         anime_ids=request.animeIds,
         template_type=request.templateType,
         custom_template=request.customTemplate,

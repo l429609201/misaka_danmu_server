@@ -246,6 +246,8 @@ class SourceQueryRepository:
                 "sourceId": row.AnimeSource.id,
                 "providerName": row.AnimeSource.providerName,
                 "mediaId": row.AnimeSource.mediaId,
+                # 并行搜索生成虚拟 episodeId 需要源序号（重构时漏掉，旧 crud 有此字段）
+                "sourceOrder": row.AnimeSource.sourceOrder,
                 "isFavorited": row.AnimeSource.isFavorited or False,
                 "incrementalRefreshEnabled": row.AnimeSource.incrementalRefreshEnabled or False,
                 "isFinished": row.AnimeSource.isFinished or False,
