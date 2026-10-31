@@ -122,7 +122,7 @@ const navItems = [
     { key: 'apidoc', label: 'nav.controlApidoc', icon: 'kuaijierukou_apiwendang' },
   ]},
   // AI 独立为一级分组，位于「外部控制」下方
-  { key: RoutePaths.AI, label: 'nav.ai', icon: 'ai', iconfontIcon: 'icon-ai', children: [
+  { key: RoutePaths.AI, label: 'nav.ai', icon: 'ai1', iconfontIcon: 'icon-ai1', children: [
     { key: 'connection', label: 'nav.aiConnection', icon: 'canshupeizhi' },
     { key: 'match', label: 'nav.aiMatch', icon: 'jingzhun' },
     { key: 'recognition', label: 'nav.aiRecognition', icon: 'renlianshibie_o' },
