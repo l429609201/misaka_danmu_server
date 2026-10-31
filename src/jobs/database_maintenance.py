@@ -26,6 +26,8 @@ IMAGE_DIR = CONFIG_DIR / "image"
 # 已发出的通知仍会引用它们，因此只清理超过保留期的缩略图，不按"未引用"立即删除。
 _THUMBNAIL_NAME_RE = re.compile(r"^w\d+_[0-9a-f]{16}\.(webp|jpg)$")
 _THUMBNAIL_RETENTION = timedelta(days=30)
+# 非关联孤立图片的默认保留天数（任务配置 orphanImageRetentionDays 未设置或非法时使用）
+DEFAULT_ORPHAN_IMAGE_RETENTION_DAYS = 7
 
 # 所有可能保存本地缓存图片（/data/images/...）的列；漏列任意一列都会把仍在使用的图片误删。
 _IMAGE_REFERENCE_COLUMNS = (
@@ -37,8 +39,14 @@ _IMAGE_REFERENCE_COLUMNS = (
 )
 
 
-async def _clean_orphaned_images(session: AsyncSession) -> str:
-    """清理数据库中不存在引用的图片文件（公开缩略图按保留期清理）"""
+async def _clean_orphaned_images(
+    session: AsyncSession, orphan_retention_days: int = DEFAULT_ORPHAN_IMAGE_RETENTION_DAYS,
+) -> str:
+    """清理数据库中不存在引用的图片文件。
+
+    非关联孤立图片超过 orphan_retention_days 天（按文件修改时间）才删除，0 表示立即删除；
+    公开缩略图固定按 30 天保留期清理。
+    """
     if not IMAGE_DIR.exists():
         return f"图片目录不存在（{IMAGE_DIR.resolve()}），跳过清理。"
 
@@ -68,7 +76,9 @@ async def _clean_orphaned_images(session: AsyncSession) -> str:
         return f"图片缓存清理已中止：{reference_count} 条引用均未能解析到图片目录，请检查路径映射。"
 
     # 统一使用应用时区时间工具；文件 mtime 同样换算到应用时区后再比较，避免混用两套时间口径。
-    cutoff = get_now() - _THUMBNAIL_RETENTION
+    now = get_now()
+    thumbnail_cutoff = now - _THUMBNAIL_RETENTION
+    orphan_cutoff = now - timedelta(days=orphan_retention_days)
     app_tz = get_app_timezone()
     orphaned_files = []
     for file_path in IMAGE_DIR.iterdir():
@@ -76,13 +86,14 @@ async def _clean_orphaned_images(session: AsyncSession) -> str:
             continue
         if file_path.name in db_image_paths:
             continue
-        if _THUMBNAIL_NAME_RE.match(file_path.name):
-            try:
-                modified_at = datetime.fromtimestamp(file_path.stat().st_mtime, app_tz).replace(tzinfo=None)
-                if modified_at > cutoff:
-                    continue
-            except OSError:
-                continue
+        # 缩略图与普通孤立图片分别按各自保留期判断，未到期的文件本轮保留。
+        cutoff = thumbnail_cutoff if _THUMBNAIL_NAME_RE.match(file_path.name) else orphan_cutoff
+        try:
+            modified_at = datetime.fromtimestamp(file_path.stat().st_mtime, app_tz).replace(tzinfo=None)
+        except OSError:
+            continue
+        if modified_at > cutoff:
+            continue
         orphaned_files.append(file_path)
 
     deleted_count = 0
@@ -152,8 +163,27 @@ class DatabaseMaintenanceJob(BaseJob):
     description_en = "Periodically clean expired logs, optimize database tables, and clean invalid image caches. Helps maintain performance and save storage."
     description_tw = "定期清理過期的應用日誌、最佳化資料庫表、清理無效的圖片快取檔案。幫助保持系統效能和節省儲存空間。"
 
+    config_schema = [
+        {
+            "key": "orphanImageRetentionDays",
+            "label": "孤立图片保留天数",
+            "label_en": "Orphan Image Retention Days",
+            "label_tw": "孤立圖片保留天數",
+            "type": "number",
+            "default": DEFAULT_ORPHAN_IMAGE_RETENTION_DAYS,
+            "min": 0,
+            "max": 3650,
+            "suffix": "天",
+            "suffix_en": "days",
+            "suffix_tw": "天",
+            "description": "未被任何作品或媒体项引用的缓存图片，修改时间超过该天数后才会删除；0 表示立即删除。默认 7 天。",
+            "description_en": "Cached images not referenced by any item are deleted only after this many days since modification; 0 deletes immediately. Default 7 days.",
+            "description_tw": "未被任何作品或媒體項引用的快取圖片，修改時間超過該天數後才會刪除；0 表示立即刪除。預設 7 天。",
+        }
+    ]
+
     @profile_flow(FLOW_DATABASE_MAINTENANCE)
-    async def run(self, session: AsyncSession, progress_callback: Callable):
+    async def run(self, session: AsyncSession, progress_callback: Callable, task_config: Optional[dict] = None):
         """
         执行缓存日志清理任务：清理旧日志、优化表和清理无效图片缓存。
         """
@@ -255,13 +285,21 @@ class DatabaseMaintenanceJob(BaseJob):
 
         # --- 4. 图片缓存清理（带重试，防止长时间任务导致连接断开）---
         await progress_callback(85, "正在清理无效图片缓存...")
+        # 读取任务配置中的孤立图片保留天数，非法值回退默认 7 天
+        try:
+            orphan_retention_days = int((task_config or {}).get(
+                "orphanImageRetentionDays", DEFAULT_ORPHAN_IMAGE_RETENTION_DAYS))
+        except (TypeError, ValueError):
+            orphan_retention_days = DEFAULT_ORPHAN_IMAGE_RETENTION_DAYS
+        if orphan_retention_days < 0:
+            orphan_retention_days = DEFAULT_ORPHAN_IMAGE_RETENTION_DAYS
 
         image_cleanup_message = ""
         max_retries = 2
         for attempt in range(max_retries + 1):
             try:
                 image_cleanup_message = await asyncio.wait_for(
-                    _clean_orphaned_images(session), timeout=180  # 3 分钟超时
+                    _clean_orphaned_images(session, orphan_retention_days), timeout=180  # 3 分钟超时
                 )
                 self.logger.info(f"图片缓存清理结果: {image_cleanup_message}")
                 break
