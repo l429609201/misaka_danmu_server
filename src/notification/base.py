@@ -397,7 +397,9 @@ class BaseNotificationChannel(ABC):
             image_ref = rendered.image
             image_bytes = rendered.image_bytes
 
-            if mode == IMAGE_MODE_PUBLIC_URL:
+            # why：无图消息（如数据库备份等定时任务完成通知）本就没有可外链的图片，
+            # 不应进入外链流程，否则会误报"外链模式不可用"
+            if mode == IMAGE_MODE_PUBLIC_URL and (image_ref or image_bytes):
                 original_image = image_ref
                 public_url = await self._build_public_image_url(rendered)
                 if public_url:
@@ -411,11 +413,16 @@ class BaseNotificationChannel(ABC):
                             NotificationMessage._escape_markdown(public_url),
                         )
                 else:
-                    self.logger.warning(
-                        "外链模式不可用，本次按海报模式发送。"
-                        "请在「弹幕 → Token 管理 → 自定义域名」填写公网可访问的 "
-                        "HTTPS 域名（必须以 https:// 开头，http 地址平台会拒绝加载）"
-                    )
+                    # why：区分"没配 https 域名"和"缩略图生成失败"，后者已在
+                    # build_public_image_url 里记录具体原因，不能再提示去改域名
+                    if not self.public_base_url():
+                        self.logger.warning(
+                            "外链模式不可用，本次按海报模式发送。"
+                            "请在「弹幕 → Token 管理 → 自定义域名」填写公网可访问的 "
+                            "HTTPS 域名（必须以 https:// 开头，http 地址平台会拒绝加载）"
+                        )
+                    else:
+                        self.logger.warning("外链缩略图生成失败，本次按海报模式发送。")
                     mode = IMAGE_MODE_POSTER
 
             if image_ref:

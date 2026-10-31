@@ -56,9 +56,13 @@ class IncrementalRefreshJob(BaseJob):
             provider = item.get("provider")
             external_id = item.get("externalId")
             anime_title = item.get("animeTitle") or "未知"
-            bgm_id = item.get("bangumiId")
-            tmdb_id = item.get("tmdbId")
-            season = item.get("season")
+            # why：订阅页创建的目标（Bangumi/Trakt/TMDB/TVDB）把 ID 写在 extraData，
+            # 旧数据列上为空；此前只读列，导致退化成按标题模糊搜索，容易导错作品。
+            extra = item.get("extraData") or {}
+            bgm_id = item.get("bangumiId") or extra.get("bangumiId")
+            tmdb_id = item.get("tmdbId") or extra.get("tmdbId")
+            tvdb_id = extra.get("tvdbId")
+            season = item.get("season") or extra.get("season")
             anime_type = item.get("animeType") or "tv_series"
             is_movie = is_movie_type(anime_type)
 
@@ -66,6 +70,9 @@ class IncrementalRefreshJob(BaseJob):
             if tmdb_id:
                 search_type = AutoImportSearchType.TMDB
                 search_term = str(tmdb_id)
+            elif tvdb_id:
+                search_type = AutoImportSearchType.TVDB
+                search_term = str(tvdb_id)
             elif bgm_id:
                 search_type = AutoImportSearchType.BANGUMI
                 search_term = str(bgm_id)

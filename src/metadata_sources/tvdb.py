@@ -16,6 +16,22 @@ class TvdbMetadataSource(BaseMetadataSource):
     config_keys = ["tvdbApiKey"]
     test_url = "https://api4.thetvdb.com"
 
+    # ============ 订阅助手能力 ============
+    # 订阅页搜 TVDB 剧集 → 写订阅目标 → IncrementalRefreshJob 按 TVDB ID 自动建库追更
+    supports_subscription = True
+    handled_domains = ["thetvdb.com"]
+    subscription_types = [
+        {
+            "type": "tvdb_series",
+            "label": "剧集（弹幕库追更）",
+            "description": "通过 TVDB 搜剧集，订阅后按 TVDB ID 自动在本地弹幕库建库并追更",
+            "payloadSchema": {"fields": [
+                {"name": "tvdbId", "type": "string", "required": True, "label": "TVDB ID", "placeholder": "例如 81189"},
+                {"name": "season", "type": "number", "required": False, "label": "季号", "placeholder": "默认 1"},
+            ]},
+        },
+    ]
+
     async def _get_tvdb_token(self, client: httpx.AsyncClient) -> str:
         """获取一个有效的TVDB令牌，如果需要则从数据库或API刷新。
 
@@ -199,3 +215,69 @@ class TvdbMetadataSource(BaseMetadataSource):
     async def execute_action(self, action_name: str, payload: Dict, user: User) -> Any:
         """TVDB source does not support custom actions."""
         raise NotImplementedError(f"源 '{self.provider_name}' 不支持任何自定义操作。")
+
+    # ============ 订阅助手实现 ============
+    # 订阅即【弹幕库内订阅】：命中后写 external_calendar_item(extraData.tvdbId)，
+    # 由 IncrementalRefreshJob 按 TVDB ID 走 auto_import 精确建库 + 追更。
+
+    async def check_subscription_capability(self, user=None) -> Dict[str, Any]:
+        """TVDB 订阅可用性：配置了 API Key 即可用。"""
+        api_key = await self.config_service.get("tvdbApiKey")
+        if not api_key:
+            return {
+                "available": False, "authRequired": False, "authStatus": "missing",
+                "reason": "请先配置 TVDB API Key", "subscriptionTypes": self.subscription_types,
+            }
+        return {
+            "available": True, "authRequired": False, "authStatus": "none",
+            "reason": None, "subscriptionTypes": self.subscription_types,
+        }
+
+    async def discover_subscription_targets(self, query: str, subscription_type: str = "", user=None) -> List[Dict[str, Any]]:
+        """搜 TVDB 剧集候选；复用现有 search()。"""
+        query = (query or "").strip()
+        if not query:
+            return []
+        search_user = user or User(id=0, username="subscription")
+        results = await self.search(query, user=search_user, mediaType="series")
+        out: List[Dict[str, Any]] = []
+        for r in results[:20]:
+            if not r.id:
+                continue
+            out.append({
+                "type": "tvdb_series",
+                "title": r.title or f"TVDB {r.id}",
+                "cover": r.imageUrl,
+                "description": f"TVDB 剧集 {r.id}" + (f" · {r.details}" if r.details else ""),
+                "payload": {
+                    "tvdbId": str(r.id),
+                    "title": r.title or "",
+                    "imageUrl": r.imageUrl,
+                },
+            })
+        return out
+
+    async def validate_subscription_payload(self, subscription_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """校验 TVDB 订阅 payload；可带季号（默认第 1 季）。"""
+        if subscription_type != "tvdb_series":
+            raise ValueError(f"TVDB 暂不支持订阅类型: {subscription_type}")
+        payload = payload or {}
+        tvdb_id = str(payload.get("tvdbId") or "").strip()
+        if not tvdb_id.isdigit():
+            raise ValueError("缺少有效的 tvdbId")
+        try:
+            season = int(payload.get("season") or 1)
+        except (TypeError, ValueError):
+            raise ValueError("季号必须是数字")
+        return {
+            "provider": self.provider_name,
+            "externalId": f"tvdb-{tvdb_id}-s{season}",
+            "title": payload.get("title") or "",
+            "animeType": "tv_series",
+            "subscriptionType": "tvdb_series",
+            "extraData": {
+                "tvdbId": tvdb_id,
+                "season": season,
+                "imageUrl": payload.get("imageUrl"),
+            },
+        }
