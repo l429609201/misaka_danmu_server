@@ -1,14 +1,15 @@
 import asyncio
 import logging
+import re
 from typing import Callable, Optional
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy import text, select
 
 from src.db import orm_models, _get_db_url
-from src.core import settings, get_now
+from src.core import settings, get_now, get_app_timezone
 from .base import BaseJob
 from src.utils.diagnostics.task_exceptions import TaskSuccess
 from src.services.file_storage_service import CONFIG_DIR, get_file_storage_service
@@ -21,47 +22,77 @@ logger = logging.getLogger(__name__)
 # 与图片存储共用配置根目录，兼容源码运行环境和 Docker，避免硬编码 /app。
 IMAGE_DIR = CONFIG_DIR / "image"
 
+# 通知/检索生成的公开缩略图（w{宽度}_{哈希}.webp/.jpg）不登记在数据库中，
+# 已发出的通知仍会引用它们，因此只清理超过保留期的缩略图，不按"未引用"立即删除。
+_THUMBNAIL_NAME_RE = re.compile(r"^w\d+_[0-9a-f]{16}\.(webp|jpg)$")
+_THUMBNAIL_RETENTION = timedelta(days=30)
+
+# 所有可能保存本地缓存图片（/data/images/...）的列；漏列任意一列都会把仍在使用的图片误删。
+_IMAGE_REFERENCE_COLUMNS = (
+    orm_models.Anime.localImagePath,
+    orm_models.Anime.imageUrl,
+    orm_models.MediaItem.posterUrl,
+    orm_models.LocalDanmakuItem.posterUrl,
+    orm_models.ExternalCalendarItem.imageUrl,
+)
+
+
 async def _clean_orphaned_images(session: AsyncSession) -> str:
-    """清理数据库中不存在的图片文件"""
+    """清理数据库中不存在引用的图片文件（公开缩略图按保留期清理）"""
     if not IMAGE_DIR.exists():
         return f"图片目录不存在（{IMAGE_DIR.resolve()}），跳过清理。"
 
-    # 获取数据库中所有的图片路径
-    stmt = select(orm_models.Anime.localImagePath).where(orm_models.Anime.localImagePath.isnot(None))
-    result = await session.execute(stmt)
-    db_image_paths = set()
-
-
-    # 统一解析历史路径格式，避免只识别 /data/images/ 导致引用集合误判。
+    image_dir = IMAGE_DIR.resolve()
     storage = get_file_storage_service()
-    for stored_path in result.scalars().all():
-        resolved_path = storage.resolve_fs_path(stored_path)
-        if resolved_path is None:
-            continue
-        try:
-            if resolved_path.resolve().parent == IMAGE_DIR.resolve():
-                db_image_paths.add(resolved_path.name)
-        except OSError:
-            logger.warning("图片引用路径解析失败，跳过: %s", stored_path)
+    db_image_paths = set()
+    reference_count = 0
+    for column in _IMAGE_REFERENCE_COLUMNS:
+        result = await session.execute(select(column).where(column.isnot(None)))
+        for stored_path in result.scalars().all():
+            # 远程 URL 不对应本地文件，直接忽略；其余统一走 resolve_fs_path 解析历史格式。
+            if not stored_path or stored_path.startswith(("http://", "https://")):
+                continue
+            reference_count += 1
+            resolved_path = storage.resolve_fs_path(stored_path)
+            if resolved_path is None:
+                continue
+            try:
+                if resolved_path.resolve().parent == image_dir:
+                    db_image_paths.add(resolved_path.name)
+            except OSError:
+                logger.warning("图片引用路径解析失败，跳过: %s", stored_path)
 
-    # 获取文件系统中的所有图片文件
-    fs_image_files = set()
+    # 安全阀：存在本地图片引用却一个都没解析进图片目录，说明路径映射有问题，宁可不删也不整批误删。
+    if reference_count and not db_image_paths:
+        logger.error("图片清理中止：数据库有 %d 条本地图片引用，但均未解析到 %s", reference_count, image_dir)
+        return f"图片缓存清理已中止：{reference_count} 条引用均未能解析到图片目录，请检查路径映射。"
+
+    # 统一使用应用时区时间工具；文件 mtime 同样换算到应用时区后再比较，避免混用两套时间口径。
+    cutoff = get_now() - _THUMBNAIL_RETENTION
+    app_tz = get_app_timezone()
+    orphaned_files = []
     for file_path in IMAGE_DIR.iterdir():
-        if file_path.is_file() and file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.webp']:
-            fs_image_files.add(file_path.name)
-
-    # 找出孤立的图片文件（文件系统中存在但数据库中不存在）
-    orphaned_files = fs_image_files - db_image_paths
+        if not file_path.is_file() or file_path.suffix.lower() not in ('.jpg', '.jpeg', '.png', '.webp'):
+            continue
+        if file_path.name in db_image_paths:
+            continue
+        if _THUMBNAIL_NAME_RE.match(file_path.name):
+            try:
+                modified_at = datetime.fromtimestamp(file_path.stat().st_mtime, app_tz).replace(tzinfo=None)
+                if modified_at > cutoff:
+                    continue
+            except OSError:
+                continue
+        orphaned_files.append(file_path)
 
     deleted_count = 0
-    for filename in orphaned_files:
+    for file_path in orphaned_files:
         try:
-            file_path = IMAGE_DIR / filename
             file_path.unlink()
             deleted_count += 1
             logger.debug(f"删除孤立图片文件: {file_path}")
         except Exception as e:
-            logger.error(f"删除图片文件失败 {filename}: {e}")
+            logger.error(f"删除图片文件失败 {file_path.name}: {e}")
 
     return f"图片缓存清理完成，删除了 {deleted_count} 个孤立文件。"
 

@@ -473,8 +473,9 @@ class FileStorageService:
     def resolve_fs_path(self, web_path: Optional[str]) -> Optional[Path]:
         """将数据库中存储的 Web 路径转换为文件系统路径。
 
-        兼容五种历史格式：
+        兼容以下历史格式：
         - Docker 标准路径：/app/config/... → 映射到 CONFIG_DIR 下
+        - 图片缓存路径：/data/images/... → 映射到 CONFIG_DIR/image 下
         - 其他 /app/ 前缀路径：剥离 /app/ 前缀
         - Windows 绝对路径：D:\\... （第二字符为冒号）
         - Linux/Mac 绝对路径：/...
@@ -510,6 +511,23 @@ class FileStorageService:
                 result_path.resolve().relative_to(CONFIG_DIR.resolve())
             except ValueError:
                 logger.warning(f"路径穿越检测：{web_path} 解析到 CONFIG_DIR 之外")
+                return None
+            return result_path
+
+        # 图片缓存 Web 路径: /data/images/... 由 src/frontend.py 挂载自 config/image，
+        # 必须映射回 CONFIG_DIR/image；否则会落入下方"绝对路径"分支被当成 /data/images 真实目录，
+        # 导致图片清理任务认为所有海报都未被引用而整批删除。
+        if web_path.startswith('/data/images/'):
+            relative_path = web_path[len('/data/images/'):]
+            if not relative_path or relative_path.startswith('/'):
+                logger.warning(f"非法的图片路径片段，已拒绝: {web_path}")
+                return None
+            image_dir = CONFIG_DIR / 'image'
+            result_path = image_dir / relative_path
+            try:
+                result_path.resolve().relative_to(image_dir.resolve())
+            except ValueError:
+                logger.warning(f"路径穿越检测：{web_path} 解析到图片目录之外")
                 return None
             return result_path
 
