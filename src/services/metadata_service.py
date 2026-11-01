@@ -292,7 +292,8 @@ class MetadataService:
                 "status": status_text,
                 "statusCode": status_code,
                 "useProxy": setting.get('useProxy', False),
-                "logRawResponses": setting.get('log_raw_responses', False),
+                # why：设置字典的键是 logRawResponses（见 metadata_source_query），旧键名恒读到 False
+                "logRawResponses": setting.get('logRawResponses', False),
                 "isSearchSupplementSource": is_supplement_source,
                 "isSearchSupplementEnabled": supplement_enabled,
             })
