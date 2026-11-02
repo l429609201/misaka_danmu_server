@@ -45,7 +45,7 @@ class MetadataSourceQueryRepository:
         existing_names = set((await self._session.execute(existing_stmt)).scalars().all())
 
         to_insert = [
-            {"providerName": name}
+            {"provider_name": name}
             for name in provider_names
             if name not in existing_names
         ]
