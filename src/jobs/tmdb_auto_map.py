@@ -9,7 +9,7 @@ import httpx
 
 from src.db.orm_models import Anime, AnimeMetadata, AnimeAlias
 from src.schemas import ProviderSearchInfo, User
-from src.utils import parse_search_keyword
+from src.utils import normalize_title, parse_search_keyword
 # 别名提取只依赖纯工具，不加载业务编排及其服务依赖。
 from src.utils.data_processing.alias_utils import extract_aliases_from_details
 from src.workflows.alias_workflow import validate_aliases_with_ai
@@ -71,6 +71,44 @@ class TmdbAutoMapJob(BaseJob):
         self.ai_service = ai_service
         self.logger = logging.getLogger(self.__class__.__name__)
 
+
+    @staticmethod
+    def _title_key(text: Optional[str]) -> str:
+        """标题比较键：去季度后缀、空白与常见标点，统一小写。"""
+        base = normalize_title(text or "")
+        return re.sub(r"[\s\-_:：·・,，.。!！?？'\"“”‘’()（）\[\]【】]+", "", base).lower()
+
+    async def _is_stored_tmdb_id_plausible(
+        self, tmdb_id: str, title: str, year: Optional[int], search_type: str, user: User,
+    ) -> bool:
+        """已存 TMDB ID 是否可信：标题（含别名）对上，或年份对上，即视为可信。
+
+        取不到详情（ID 不存在或类型不对）视为不可信；网络等异常时保守视为可信，避免误改。
+        """
+        media_type = "movie" if is_movie_type(search_type) else "tv"
+        try:
+            details = await self.metadata_manager.get_details("tmdb", tmdb_id, user, mediaType=media_type)
+        except Exception as e:
+            self.logger.warning(f"校验 TMDB ID {tmdb_id} 时获取详情失败，保留原 ID: {e}")
+            return True
+        if not details:
+            return False
+
+        local_key = self._title_key(title)
+        candidates = [details.title, details.nameEn, details.nameJp, details.nameRomaji,
+                      *(details.aliasesCn or []), *(details.aliasesJp or [])]
+        for name in candidates:
+            key = self._title_key(name)
+            if local_key and key and (local_key in key or key in local_key):
+                return True
+
+        if year and details.year:
+            try:
+                return abs(int(year) - int(details.year)) <= 1
+            except (TypeError, ValueError):
+                return True
+        # 没有年份可比时，仅凭标题不符判错
+        return False
 
     @profile_flow(FLOW_TMDB_AUTO_SCRAPE)
     async def run(self, session: AsyncSession, progress_callback: Callable, task_config: dict = None):
@@ -206,6 +244,15 @@ class TmdbAutoMapJob(BaseJob):
                 recognized_season = None
                 search_type = show.get('type') or 'tv_series'  # 提前初始化,供AI验证别名使用
 
+                # 步骤 0: 强制刮削时校验已有 TMDB ID。入库时存错的 ID 以前会被一直沿用，
+                # 这里标题（含别名）与年份都对不上才判定为错，清空后走下面的标题搜索重新匹配。
+                replace_wrong_id = False
+                if force_scrape and tmdb_id:
+                    if not await self._is_stored_tmdb_id_plausible(tmdb_id, title, year, search_type, user):
+                        self.logger.warning(f"'{title}' 现有 TMDB ID {tmdb_id} 与标题/年份不符，将重新搜索")
+                        tmdb_id = None
+                        replace_wrong_id = True
+
                 # 步骤 1: 如果没有TMDB ID，尝试通过标题搜索获取
                 if not tmdb_id:
                     self.logger.info(f"'{title}' 没有TMDB ID，尝试搜索...")
@@ -334,10 +381,14 @@ class TmdbAutoMapJob(BaseJob):
 
                             # 使用任务会话执行 Repository 写入，避免创建额外连接。
                             async with db.transaction(session=session):
-                                await db.anime.update_metadata_if_empty(
-                                    anime_id,
-                                    tmdb_id=tmdb_id
-                                )
+                                if replace_wrong_id:
+                                    await db.anime.replace_tmdb_id(anime_id, tmdb_id)
+                                    existing_group_id = None
+                                else:
+                                    await db.anime.update_metadata_if_empty(
+                                        anime_id,
+                                        tmdb_id=tmdb_id
+                                    )
                             scraped_count += 1
                         else:
                             # 回退策略: 如果检测到季度信息，尝试从数据库中同系列作品继承TMDB ID
@@ -362,10 +413,14 @@ class TmdbAutoMapJob(BaseJob):
                                     tmdb_id = inherited_tmdb_id
                                     self.logger.info(f"从同系列作品继承TMDB ID: '{title}' → TMDB ID: {tmdb_id}")
                                     async with db.transaction(session=session):
-                                        await db.anime.update_metadata_if_empty(
-                                            anime_id,
-                                            tmdb_id=tmdb_id
-                                        )
+                                        if replace_wrong_id:
+                                            await db.anime.replace_tmdb_id(anime_id, tmdb_id)
+                                            existing_group_id = None
+                                        else:
+                                            await db.anime.update_metadata_if_empty(
+                                                anime_id,
+                                                tmdb_id=tmdb_id
+                                            )
                                     scraped_count += 1
                                 else:
                                     self.logger.warning(f"未能为 '{title}' 找到TMDB搜索结果，也未找到同系列作品的TMDB ID。")

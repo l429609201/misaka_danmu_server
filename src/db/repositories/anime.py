@@ -291,6 +291,18 @@ class AnimeRepository(BaseRepository[Anime]):
         )
         await self._session.flush()
 
+    async def replace_tmdb_id(self, anime_id: int, tmdb_id: str) -> None:
+        """覆盖写入 TMDB ID，并清空旧 ID 对应的剧集组（剧集组随 ID 失效）。
+
+        why：update_metadata_if_empty 只填空字段，入库时存错的 TMDB ID 永远改不掉。
+        """
+        await self._session.execute(
+            update(AnimeMetadata)
+            .where(AnimeMetadata.animeId == anime_id)
+            .values(tmdbId=tmdb_id, tmdbEpisodeGroupId=None)
+        )
+        await self._session.flush()
+
     async def update_aliases_if_empty(
         self,
         anime_id: int,
