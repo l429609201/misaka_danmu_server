@@ -162,6 +162,7 @@ class SearchCoordinator:
         query_title: str,
         query_season: Optional[int] = None,
         query_year: Optional[int] = None,
+        media_type: Optional[str] = None,
         provider_order: Optional[Dict[str, int]] = None,
         existing_source_keys: Optional[Set[str]] = None,
         library_source_bonus: float = 0.0,
@@ -176,6 +177,7 @@ class SearchCoordinator:
             query_title: 查询主标题（用于相似度计算）。
             query_season: 期望季度（用于过滤和评分）。
             query_year: 期望年份（用于评分）。
+            media_type: 媒体类型（'movie' / 'tv_series'，传递给评分函数）。
             provider_order: 源优先级映射（{provider: displayOrder}）。
             existing_source_keys: 库内已有源集合。
             library_source_bonus: 库内源加分。
@@ -204,6 +206,7 @@ class SearchCoordinator:
                 query_title=query_title,
                 query_season=query_season,
                 query_year=query_year,
+                query_type=media_type,
                 provider_order=provider_order or {},
                 existing_source_keys=existing_source_keys or set(),
                 library_source_bonus=library_source_bonus,
