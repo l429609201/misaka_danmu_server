@@ -14,10 +14,18 @@
 - 只是包装提交逻辑，不改变业务流程
 """
 
+import hashlib
 from typing import Optional, List, Dict, Any
 
 # 只依赖任务管理接口，具体任务实现由组合根注册。
 from src.services.task_manager import TaskManager
+
+MAX_UNIQUE_KEY_LENGTH = 500
+
+
+def _digest_episodes(episodes: List[int]) -> str:
+    payload = ",".join(map(str, episodes))
+    return hashlib.md5(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def build_unique_key(
@@ -61,7 +69,17 @@ def build_unique_key(
     episodes_part = ""
     if selected_episodes:
         episodes_part = f":eps{','.join(map(str, selected_episodes))}"
-    return f"{provider}:{media_id}:s{season or 1}{episodes_part}"
+    unique_key = f"{provider}:{media_id}:s{season or 1}{episodes_part}"
+
+    if len(unique_key) > MAX_UNIQUE_KEY_LENGTH and selected_episodes:
+        unique_key = (
+            f"{provider}:{media_id}:s{season or 1}"
+            f":eps{len(selected_episodes)}:{_digest_episodes(selected_episodes)}"
+        )
+    if len(unique_key) > MAX_UNIQUE_KEY_LENGTH:
+        unique_key = "task:" + hashlib.md5(unique_key.encode("utf-8")).hexdigest()
+
+    return unique_key
 
 
 def build_download_parameters(
