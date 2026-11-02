@@ -58,6 +58,7 @@ async def search_auto_import_candidates(
     results = coordinator.rank_results(
         results=results, query_title=main_title, query_season=season,
         query_year=year, provider_order=await load_provider_order(),
+        media_type=media_type,
     )
     if not results:
         raise ValueError("没有找到合适的搜索结果")

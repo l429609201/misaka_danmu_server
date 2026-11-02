@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Set
 
 # why: engine 与 coordinator 同属 workflows.search 领域内，直接顶层导入具体模块
 #      （不经 src.workflows.search 包 __init__）即可，无循环依赖。
+from src.schemas.media_types import is_movie_type
 from src.workflows.search.filtering import correct_movie_type_by_title, filter_by_season
 from src.workflows.search.scoring import compute_score
 from src.workflows.search.engine import unified_search
@@ -165,6 +166,7 @@ class SearchCoordinator:
         provider_order: Optional[Dict[str, int]] = None,
         existing_source_keys: Optional[Set[str]] = None,
         library_source_bonus: float = 0.0,
+        media_type: Optional[str] = None,
     ) -> List[Any]:
         """对搜索结果进行过滤和评分排序（无状态纯函数）。
 
@@ -179,6 +181,7 @@ class SearchCoordinator:
             provider_order: 源优先级映射（{provider: displayOrder}）。
             existing_source_keys: 库内已有源集合。
             library_source_bonus: 库内源加分。
+            media_type: 媒体类型；为电影时季度不参与过滤与评分。
 
         Returns:
             评分排序后的结果列表（降序，就地修改原列表）。
@@ -189,9 +192,11 @@ class SearchCoordinator:
         # 1. 类型修正（委托 search/filtering.py）
         correct_movie_type_by_title(results, log_prefix="SearchCoordinator:")
 
+        season_for_rank = None if is_movie_type(media_type) else query_season
+
         # 2. 季度过滤（委托 search/filtering.py）
-        if query_season and query_season > 0:
-            results, _ = filter_by_season(results, query_season)
+        if season_for_rank and season_for_rank > 0:
+            results, _ = filter_by_season(results, season_for_rank)
 
         if not results:
             logger.warning("过滤后无结果")
@@ -202,7 +207,7 @@ class SearchCoordinator:
             item._coordinator_score = compute_score(
                 item=item,
                 query_title=query_title,
-                query_season=query_season,
+                query_season=season_for_rank,
                 query_year=query_year,
                 provider_order=provider_order or {},
                 existing_source_keys=existing_source_keys or set(),

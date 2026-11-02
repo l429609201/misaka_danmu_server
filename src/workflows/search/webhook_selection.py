@@ -49,6 +49,7 @@ async def select_webhook_result(
         provider_order=provider_order,
         existing_source_keys=existing_source_keys,
         library_source_bonus=3000,
+        media_type=media_type,
     )
     lines = [f"Webhook 任务: 排序后共 {len(results)} 个结果 (effective_year={year}, match_title='{title}'): "]
     for i, item in enumerate(results[:5]):
