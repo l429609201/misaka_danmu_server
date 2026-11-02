@@ -33,6 +33,7 @@ from src.workflows.search.result_cache import read_search_results, write_search_
 from src.services.config_service import get_config_service
 from src.services.cache_service import get_cache_service
 from src.utils import parse_search_keyword
+from src.utils.misc.converter import convert_title_t2s
 
 # 源优先级映射：与 compute_score 的 provider_order 契约同源，统一由 scoring 提供
 from src.workflows.search.scoring import load_provider_order
@@ -281,12 +282,13 @@ async def unified_search(
 
                 if use_alias_filtering:
                     # 验证缓存的别名相似度（使用核心标题进行比较）
+                    folded_core_title = convert_title_t2s(core_title)
                     for alias in cached_alias_list:
                         # 跨语言别名（如英文搜索词对应的中文别名）免验证直接保留
                         if _is_cross_language(core_title, alias):
                             filter_aliases.add(alias)
                             continue
-                        similarity = fuzz.token_set_ratio(core_title, alias)
+                        similarity = fuzz.token_set_ratio(folded_core_title, convert_title_t2s(alias))
                         if similarity >= alias_similarity_threshold:
                             filter_aliases.add(alias)
                 else:
@@ -460,12 +462,13 @@ async def unified_search(
         # 验证别名相似度（使用核心标题进行比较，与获取别名时保持一致）
         if use_alias_filtering:
             validated_aliases = set()
+            folded_core_title = convert_title_t2s(core_title)
             for alias in all_possible_aliases:
                 # 跨语言别名（如英文搜索词对应的中文别名）免验证直接保留
                 if _is_cross_language(core_title, alias):
                     validated_aliases.add(alias)
                     continue
-                similarity = fuzz.token_set_ratio(core_title, alias)
+                similarity = fuzz.token_set_ratio(folded_core_title, convert_title_t2s(alias))
                 if similarity >= alias_similarity_threshold:  # 相似度阈值
                     validated_aliases.add(alias)
                 else:
@@ -511,7 +514,7 @@ async def unified_search(
             #   "【我推的孩子】 第二季" → "我推的孩子 第二季"
             #   "【我推的孩子】"       → "我推的孩子"
             #   "[1080P][剧名]"       → "1080P剧名"（含质量标识也不影响匹配精度）
-            cleaned = re.sub(r'[【】\[\]（）()]', '', title).strip()
+            cleaned = convert_title_t2s(re.sub(r'[【】\[\]（）()]', '', title).strip())
             return cleaned.lower().replace(" ", "").replace("：", ":").strip()
 
         normalized_filter_aliases = {normalize_for_filtering(alias) for alias in filter_aliases if alias}
