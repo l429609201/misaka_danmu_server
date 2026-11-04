@@ -81,7 +81,7 @@ const DocsIcon = () => (
 
 const navItems = [
   { key: RoutePaths.HOME, label: 'nav.home', icon: 'home', iconfontIcon: 'icon-home' },
-  { key: RoutePaths.SEARCH, label: 'nav.search', icon: 'search', iconfontIcon: 'icon-search' },
+  { key: RoutePaths.SEARCH, label: 'nav.search', icon: 'sousuojieguo', iconfontIcon: 'icon-sousuojieguo' },
   { key: RoutePaths.API_TEST, label: 'nav.apiTest', icon: 'a-Webceshi', iconfontIcon: 'icon-a-Webceshi' },
   { key: RoutePaths.LIBRARY, label: 'nav.library', icon: 'tvlibrary', iconfontIcon: 'icon-tvlibrary', children: [
     { key: 'library', label: 'libraryPage.pageTitle', icon: 'kufangguanli' },
@@ -95,7 +95,7 @@ const navItems = [
     { key: 'ratelimit', label: 'nav.taskRatelimit', icon: 'liukong' },
     { key: 'profile', label: 'nav.taskProfile', icon: 'tongji-jinhangzhongderenwushuliang' },
   ]},
-  { key: RoutePaths.BULLET, label: 'nav.bullet', icon: 'danmu', iconfontIcon: 'icon-danmu', children: [
+  { key: RoutePaths.BULLET, label: 'nav.bullet', icon: 'danmu1', iconfontIcon: 'icon-danmu1', children: [
     { key: 'token', label: 'nav.bulletToken', icon: 'tokenguanli' },
     { key: 'output', label: 'nav.bulletOutput', icon: 'shuchupeizhi' },
     { key: 'storage', label: 'nav.bulletStorage', icon: 'cunchupeizhi' },
@@ -114,7 +114,7 @@ const navItems = [
     { key: 'metadata', label: 'nav.sourceMetadata', icon: 'accurate-search-full' },
     { key: 'global-filter', label: 'nav.sourceGlobalFilter', icon: 'guolvshezhi' },
   ]},
-  { key: RoutePaths.CONTROL, label: 'nav.control', icon: 'controlapi', iconfontIcon: 'icon-controlapi', children: [
+  { key: RoutePaths.CONTROL, label: 'nav.control', icon: 'api', iconfontIcon: 'icon-api', children: [
     { key: 'apikey', label: 'nav.controlApikey', icon: 'API' },
     { key: 'settings', label: 'nav.controlSettings', icon: 'canshupeizhi' },
     { key: 'apilogs', label: 'nav.controlApilogs', icon: 'APIrizhi' },
