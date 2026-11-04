@@ -1,14 +1,11 @@
 import asyncio
 import logging
 import re
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy import select, func, case, or_
-import httpx
 
-from src.db.orm_models import Anime, AnimeMetadata, AnimeAlias
-from src.schemas import ProviderSearchInfo, User
+from src.schemas import MetadataDetailsResponse, ProviderSearchInfo, User
 from src.utils import normalize_title, parse_search_keyword
 # 别名提取只依赖纯工具，不加载业务编排及其服务依赖。
 from src.utils.data_processing.alias_utils import extract_aliases_from_details
@@ -20,22 +17,33 @@ from src.services.ai_service import AIService
 from src.services.service_container import get_database_service
 from src.ai.ai_prompts import DEFAULT_AI_MATCH_PROMPT, DEFAULT_AI_RECOGNITION_PROMPT, DEFAULT_AI_ALIAS_VALIDATION_PROMPT
 from src.services.performance_service import profile_flow
-from src.schemas.media_types import SERIES_TYPES, is_movie_type, is_series_type
-from src.schemas.performance import FLOW_TMDB_AUTO_SCRAPE
+from src.schemas.media_types import (
+    MEDIA_TYPE_MOVIE, MEDIA_TYPE_SHORT_DRAMA, MEDIA_TYPE_VARIETY,
+    SERIES_TYPES, is_movie_type, is_series_type,
+)
+from src.schemas.performance import FLOW_AUTO_SCRAPE
 
 if TYPE_CHECKING:
     from src.services.metadata_service import MetadataService
     from src.services.task_manager import TaskManager
     from src.services.ai_service import AIService
 
-class TmdbAutoMapJob(BaseJob):
-    job_type = "tmdbAutoScrape"
-    job_name = "TMDB自动刮削与剧集组映射"
-    job_name_en = "TMDB Auto-Scrape & Episode Group Mapping"
-    job_name_tw = "TMDB自動刮削與劇集組對映"
-    description = "自动从TMDB刮削已导入作品的别名、剧集组信息，更新分集映射关系。帮助解决分集顺序不一致的问题。"
-    description_en = "Auto-scrape aliases and episode group info from TMDB for imported works, updating episode mappings. Helps resolve episode order inconsistencies."
-    description_tw = "自動從TMDB刮削已匯入作品的別名、劇集組資訊，更新分集對映關係。幫助解決分集順序不一致的問題。"
+# 参与自动刮削的作品类型：剧集形态（含综艺/短剧）+ 电影；OVA/其他 在 TMDB 上命中率低，仍不处理
+AUTO_SCRAPE_TYPES: List[str] = sorted(SERIES_TYPES | {MEDIA_TYPE_MOVIE})
+# TMDB 无结果时的动画类兜底源（按顺序尝试）；综艺/短剧不在这两个动画库中，不做兜底
+FALLBACK_PROVIDERS: Tuple[str, ...] = ("bangumi", "anilist")
+NO_FALLBACK_TYPES = frozenset({MEDIA_TYPE_VARIETY, MEDIA_TYPE_SHORT_DRAMA})
+
+
+class AutoScrapeJob(BaseJob):
+    # 新任务类型：刮削已不限于 TMDB（含 Bangumi/AniList 兜底），旧类型 tmdbAutoScrape 由迁移 remove_tmdb_auto_scrape_task_v1 清理
+    job_type = "autoScrape"
+    job_name = "自动刮削与剧集组映射"
+    job_name_en = "Auto-Scrape & Episode Group Mapping"
+    job_name_tw = "自動刮削與劇集組對映"
+    description = "自动为已导入作品刮削别名、海报、年份与剧集组信息（优先 TMDB，无结果时用 Bangumi / AniList 兜底），更新分集映射关系。"
+    description_en = "Auto-scrape aliases, poster, year and episode groups for imported works (TMDB first, Bangumi / AniList as fallback), updating episode mappings."
+    description_tw = "自動為已匯入作品刮削別名、海報、年份與劇集組資訊（優先 TMDB，無結果時以 Bangumi / AniList 兜底），更新分集對映關係。"
     config_schema = [
         {
             "key": "forceScrape",
@@ -110,7 +118,67 @@ class TmdbAutoMapJob(BaseJob):
         # 没有年份可比时，仅凭标题不符判错
         return False
 
-    @profile_flow(FLOW_TMDB_AUTO_SCRAPE)
+    def _pick_fallback_match(
+        self, results: List[MetadataDetailsResponse], title: str, year: Optional[int],
+    ) -> Optional[MetadataDetailsResponse]:
+        """从兜底源结果里挑一个标题对得上的条目；对不上就放弃，宁缺毋滥避免写错别名。"""
+        local_key = self._title_key(title)
+        if not local_key:
+            return None
+        matched: List[MetadataDetailsResponse] = []
+        for r in results:
+            names = [r.title, r.nameEn, r.nameJp, r.nameRomaji, *(r.aliasesCn or []), *(r.aliasesJp or [])]
+            if any(self._title_key(n) == local_key for n in names if n):
+                matched.append(r)
+        if not matched:
+            return None
+        if year:
+            for r in matched:
+                if r.year and abs(int(r.year) - int(year)) <= 1:
+                    return r
+        return matched[0]
+
+    async def _scrape_from_fallback(
+        self, db: Any, session: AsyncSession, anime_id: int, title: str, year: Optional[int],
+        search_title: str, search_type: str, user: User,
+    ) -> Optional[str]:
+        """TMDB 无结果时，依次用 Bangumi / AniList 补别名、海报、年份（不写 TMDB ID，不做剧集组）。
+
+        Returns:
+            命中的兜底源名称；都未命中返回 None
+        """
+        media_type = "movie" if is_movie_type(search_type) else "tv"
+        for provider in FALLBACK_PROVIDERS:
+            try:
+                results = await self.metadata_manager.search(provider, search_title, user, mediaType=media_type)
+            except Exception as e:
+                # 源未启用（404）或网络异常都只跳到下一个源
+                self.logger.info(f"兜底源 {provider} 搜索 '{search_title}' 不可用: {e}")
+                continue
+            match = self._pick_fallback_match(results or [], search_title, year) \
+                or self._pick_fallback_match(results or [], title, year)
+            if not match:
+                continue
+            details = await self.metadata_manager.get_details(provider, match.id, user, mediaType=media_type) or match
+            aliases = extract_aliases_from_details(details)
+            async with db.transaction(session=session):
+                updated: List[str] = []
+                if aliases and any(aliases.values()):
+                    updated += await db.anime.update_aliases_if_empty(anime_id, aliases, force_update=False)
+                updated += await db.anime.fill_basic_info_if_empty(
+                    anime_id, image_url=details.imageUrl, year=details.year
+                )
+                bangumi_id = details.bangumiId or (details.id if provider == "bangumi" else None)
+                if bangumi_id:
+                    await db.anime.update_metadata_if_empty(anime_id, bangumi_id=str(bangumi_id))
+            await session.commit()
+            self.logger.info(
+                f"TMDB 无结果，'{title}' 由 {provider} 兜底补全 (ID: {details.id}): {', '.join(updated) or '无新增字段'}"
+            )
+            return provider
+        return None
+
+    @profile_flow(FLOW_AUTO_SCRAPE)
     async def run(self, session: AsyncSession, progress_callback: Callable, task_config: dict = None):
         """
         定时任务的核心逻辑。
@@ -166,52 +234,24 @@ class TmdbAutoMapJob(BaseJob):
             # 配置提交后再预热，避免后台协程继承即将关闭的事务上下文。
             if ai_available and (ai_match_enabled or ai_recognition_enabled or ai_alias_correction_enabled):
                 ai_matcher_warmup_task = asyncio.create_task(self.ai_service.get_matcher())
-                self.logger.debug("TMDB自动映射 AI匹配器预热已启动（并行）")
+                self.logger.debug("自动刮削 AI匹配器预热已启动（并行）")
         except Exception as e:
             self.logger.warning(f"初始化AI matcher失败: {e}, 将使用传统搜索")
 
-        # 获取所有作品(TV系列和电影/剧场版)，同时带出别名信息用于增量跳过判断
-        # ORM 与 SQLAlchemy 表达式均在文件顶部导入，避免运行时局部导入。
-        # 子查询：检查是否存在任意非空别名
-        has_alias_subq = (
-            select(
-                AnimeAlias.animeId,
-                case(
-                    (or_(
-                        AnimeAlias.nameEn.isnot(None),
-                        AnimeAlias.nameJp.isnot(None),
-                        AnimeAlias.aliasCn1.isnot(None),
-                    ), True),
-                    else_=False
-                ).label("hasAlias")
-            )
-            .subquery()
-        )
-        stmt = (
-            select(
-                Anime.id.label("animeId"),
-                Anime.title,
-                Anime.year,
-                Anime.type,
-                AnimeMetadata.tmdbId,
-                AnimeMetadata.tmdbEpisodeGroupId,
-                func.coalesce(has_alias_subq.c.hasAlias, False).label("hasAlias")
-            )
-            .outerjoin(AnimeMetadata, Anime.id == AnimeMetadata.animeId)
-            .outerjoin(has_alias_subq, Anime.id == has_alias_subq.c.animeId)
-            .where(Anime.type.in_(['tv_series', 'movie']))
-        )
-        result = await session.execute(stmt)
-        shows_to_update = [dict(row) for row in result.mappings()]
+        # 获取候选作品（剧集形态含综艺/短剧 + 电影），同时带出别名/海报信息用于增量跳过判断。
+        # 查询经 DatabaseService → AnimeQueryRepository 执行，任务内不再直接拼 SQL（架构规范）。
+        async with db.transaction(session=session):
+            shows_to_update = await db.anime.list_auto_scrape_candidates(AUTO_SCRAPE_TYPES)
 
         total_shows = len(shows_to_update)
-        self.logger.info(f"找到 {total_shows} 个作品需要处理(TV系列和电影)。")
+        self.logger.info(f"找到 {total_shows} 个作品需要处理(剧集/综艺/短剧/电影)。")
         await progress_callback(5, f"找到 {total_shows} 个作品待处理")
 
         processed_count = 0
         scraped_count = 0
         mapped_count = 0
         skipped_count = 0
+        fallback_count = 0  # TMDB 无结果、由 Bangumi/AniList 兜底补全的作品数
 
         for i, show in enumerate(shows_to_update):
             current_progress = 5 + int((i / total_shows) * 95) if total_shows > 0 else 95
@@ -395,19 +435,11 @@ class TmdbAutoMapJob(BaseJob):
                             if recognized_season is not None:
                                 base_title = search_title  # 已被 parse_search_keyword 或 AI 清理过的基础标题
                                 self.logger.info(f"TMDB搜索无结果，尝试从同系列作品继承TMDB ID (基础标题: '{base_title}')")
-                                sibling_stmt = (
-                                    select(AnimeMetadata.tmdbId)
-                                    .join(Anime, Anime.id == AnimeMetadata.animeId)
-                                    .where(
-                                        Anime.title.like(f"{base_title}%"),
-                                        AnimeMetadata.tmdbId.isnot(None),
-                                        AnimeMetadata.tmdbId != "",
-                                        Anime.type.in_(SERIES_TYPES)  # 综艺/短剧同属剧集形态
+                                # 同系列查询迁入仓储；综艺/短剧同属剧集形态
+                                async with db.transaction(session=session):
+                                    inherited_tmdb_id = await db.anime.find_sibling_tmdb_id(
+                                        base_title, list(SERIES_TYPES), anime_id
                                     )
-                                    .limit(1)
-                                )
-                                sibling_result = await session.execute(sibling_stmt)
-                                inherited_tmdb_id = sibling_result.scalar_one_or_none()
 
                                 if inherited_tmdb_id:
                                     tmdb_id = inherited_tmdb_id
@@ -424,9 +456,16 @@ class TmdbAutoMapJob(BaseJob):
                                     scraped_count += 1
                                 else:
                                     self.logger.warning(f"未能为 '{title}' 找到TMDB搜索结果，也未找到同系列作品的TMDB ID。")
-                                    continue
                             else:
                                 self.logger.warning(f"未能为 '{title}' 找到TMDB搜索结果。")
+
+                            # TMDB 与同系列继承都没拿到 ID：动画类作品用 Bangumi / AniList 兜底补别名/海报/年份
+                            if not tmdb_id:
+                                if show.get('type') not in NO_FALLBACK_TYPES and await self._scrape_from_fallback(
+                                    db, session, anime_id, title, year, search_title, search_type, user
+                                ):
+                                    fallback_count += 1
+                                    processed_count += 1
                                 continue
                     except Exception as e:
                         self.logger.error(f"搜索 '{title}' 时发生错误: {e}")
@@ -448,6 +487,14 @@ class TmdbAutoMapJob(BaseJob):
                 if not details:
                     self.logger.warning(f"未能从 TMDB 获取 '{title}' (ID: {tmdb_id}) 的详情 (mediaType={media_type_for_details})。")
                     continue
+
+                # 步骤 2.5: 顺手补全空的海报和年份（只填空值，不覆盖入库/用户已有数据）；随本作品的提交一起落库
+                async with db.transaction(session=session):
+                    filled_basic = await db.anime.fill_basic_info_if_empty(
+                        anime_id, image_url=details.imageUrl, year=details.year
+                    )
+                if filled_basic:
+                    self.logger.info(f"为 '{title}' 补全了基础信息: {', '.join(filled_basic)}")
 
                 # 步骤 3: 准备别名（暂不更新到数据库，等待剧集组识别后可能需要追加季度后缀）
                 aliases_to_update = extract_aliases_from_details(details)
@@ -670,6 +717,9 @@ class TmdbAutoMapJob(BaseJob):
 
         self.logger.info(f"定时任务 [{self.job_name}] 执行完毕。")
         skip_info = f", 跳过 {skipped_count} 个已有数据" if skipped_count > 0 else ""
+        # 兜底源补全的作品单独计数，便于区分"TMDB 命中"与"Bangumi/AniList 兜底"
+        if fallback_count > 0:
+            skip_info += f", 兜底补全 {fallback_count} 个"
         self.logger.info(f"统计: 共处理 {processed_count}/{total_shows} 个作品, 刮削 {scraped_count} 个TMDB ID, 映射 {mapped_count} 个剧集组{skip_info}。")
         # 修正：抛出 TaskSuccess 异常，以便 TaskManager 可以用一个有意义的消息来结束任务
         raise TaskSuccess(f"任务执行完毕，共处理 {processed_count}/{total_shows} 个作品, 刮削 {scraped_count} 个TMDB ID, 映射 {mapped_count} 个剧集组{skip_info}。")

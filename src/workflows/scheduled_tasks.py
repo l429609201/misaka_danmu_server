@@ -26,7 +26,7 @@ class ScheduledTaskWorkflow:
     SINGLETON_NAMES = {
         "incrementalRefresh": "定时追更",
         "refreshLatestEpisode": "刷新最新集弹幕",
-        "tmdbAutoMap": "TMDB自动映射与更新",
+        "autoScrape": "自动刮削与剧集组映射",
         "webhookProcessor": "Webhook 延时任务处理器",
         "autoFinish": "追更自动完结",
     }

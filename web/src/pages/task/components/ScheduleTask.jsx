@@ -488,7 +488,7 @@ export const ScheduleTask = () => {
                       )}
                     </div>
 
-                    {task.jobType === 'tmdbAutoScrape' && (
+                    {task.jobType === 'autoScrape' && (
                       <div className="flex items-center gap-2">
                         <span className="text-gray-600">{t('scheduleTask.forceScrape')}</span>
                         {task.taskConfig?.forceScrape ? (

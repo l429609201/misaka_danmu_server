@@ -155,6 +155,29 @@ class AnimeRepository(BaseRepository[Anime]):
         await self._session.flush()
         return anime
 
+    async def fill_basic_info_if_empty(
+        self, anime_id: int, *, image_url: Optional[str] = None, year: Optional[int] = None
+    ) -> List[str]:
+        """
+        仅在字段为空时补全作品海报和年份（自动刮削使用，不覆盖用户/入库已有值）。
+
+        Returns:
+            实际补全的字段名列表
+        """
+        anime = await self.get_by_id(anime_id)
+        if not anime:
+            return []
+        filled: List[str] = []
+        if image_url and not anime.imageUrl:
+            anime.imageUrl = image_url
+            filled.append("imageUrl")
+        if year and not anime.year:
+            anime.year = year
+            filled.append("year")
+        if filled:
+            await self._session.flush()
+        return filled
+
     async def delete(self, anime_id: int) -> bool:
         """删除动漫"""
         anime = await self.get_by_id(anime_id)

@@ -707,6 +707,68 @@ class AnimeQueryRepository:
 
         return duplicate_groups
 
+    async def list_auto_scrape_candidates(self, media_types: List[str]) -> List[Dict[str, Any]]:
+        """
+        列出自动刮削任务的候选作品（原先在 AutoScrapeJob 中直接执行的 SQL，按架构规范迁入仓储）。
+
+        Args:
+            media_types: 参与刮削的作品类型列表
+
+        Returns:
+            每项包含 animeId/title/year/type/imageUrl/tmdbId/tmdbEpisodeGroupId/hasAlias
+        """
+        has_alias = exists().where(
+            AnimeAlias.animeId == Anime.id,
+            or_(
+                AnimeAlias.nameEn.isnot(None),
+                AnimeAlias.nameJp.isnot(None),
+                AnimeAlias.aliasCn1.isnot(None),
+            ),
+        )
+        stmt = (
+            select(
+                Anime.id.label("animeId"),
+                Anime.title,
+                Anime.year,
+                Anime.type,
+                Anime.imageUrl,
+                AnimeMetadata.tmdbId,
+                AnimeMetadata.tmdbEpisodeGroupId,
+                has_alias.label("hasAlias"),
+            )
+            .outerjoin(AnimeMetadata, Anime.id == AnimeMetadata.animeId)
+            .where(Anime.type.in_(media_types))
+        )
+        result = await self._session.execute(stmt)
+        return [dict(row) for row in result.mappings()]
+
+    async def find_sibling_tmdb_id(self, base_title: str, media_types: List[str], exclude_anime_id: int) -> Optional[str]:
+        """
+        查找同系列（标题以 base_title 开头）其他作品已有的 TMDB ID，用于续作继承。
+
+        Args:
+            base_title: 去掉季度后缀的基础标题
+            media_types: 允许继承的作品类型
+            exclude_anime_id: 当前作品 ID（排除自身）
+
+        Returns:
+            TMDB ID 或 None
+        """
+        stmt = (
+            select(AnimeMetadata.tmdbId)
+            .join(Anime, Anime.id == AnimeMetadata.animeId)
+            .where(
+                Anime.title.like(f"{base_title}%"),
+                Anime.id != exclude_anime_id,
+                AnimeMetadata.tmdbId.isnot(None),
+                AnimeMetadata.tmdbId != "",
+                Anime.type.in_(media_types),
+            )
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_anime_id_by_bangumi_id(self, bangumi_id: str) -> Optional[int]:
         """
         根据 Bangumi ID 查找对应的 anime_id
