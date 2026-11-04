@@ -2,10 +2,15 @@
 Docker 工具模块
 
 提供 Docker 容器管理功能，包括：
-- 检测 Docker socket 是否可用
+- 检测 Docker 代理是否可用
 - 重启容器（通过 Docker API 或进程退出）
 - 拉取镜像
 - 使用 watchtower 更新容器
+
+连接方式：
+- 默认通过 tcp://127.0.0.1:38379 连接（由 exec.sh 启动的 Python 代理提供）
+- 代理将 /var/run/docker.sock 映射到 TCP，避免权限问题
+- 可通过 DOCKER_HOST 环境变量自定义连接方式
 """
 
 import os
@@ -29,8 +34,11 @@ def _format_size(size_bytes: int) -> str:
         size_bytes /= 1024
     return f"{size_bytes:.1f}TB"
 
-# Docker socket 路径
-DOCKER_SOCKET_PATH = "/var/run/docker.sock"
+# Docker 连接配置
+# 默认使用 TCP 代理方式（由 exec.sh 启动的 docker_socket_proxy.py 提供）
+# 代理将 /var/run/docker.sock 映射到 tcp://127.0.0.1:38379，避免权限问题
+DOCKER_HOST = os.getenv("DOCKER_HOST", "tcp://127.0.0.1:38379")
+DOCKER_SOCKET_PATH = "/var/run/docker.sock"  # 仅用于检测 socket 是否存在
 
 # 尝试导入 docker 库
 try:
@@ -118,10 +126,12 @@ def is_running_in_docker() -> bool:
 
 def is_docker_socket_available() -> bool:
     """
-    检测 Docker socket 是否可用（带缓存）
-
+    检测 Docker 代理是否可用（带缓存）
+    
+    默认连接到 tcp://127.0.0.1:38379（由 exec.sh 启动的代理提供）
+    
     Returns:
-        bool: Docker socket 是否可用
+        bool: Docker 代理是否可用
     """
     global _docker_socket_available_cache, _docker_socket_available_cache_time
 
@@ -137,24 +147,17 @@ def is_docker_socket_available() -> bool:
         _docker_socket_available_cache_time = current_time
         return False
 
-    # 检查 socket 文件是否存在
-    if not Path(DOCKER_SOCKET_PATH).exists():
-        logger.debug(f"Docker socket 不存在: {DOCKER_SOCKET_PATH}")
-        _docker_socket_available_cache = False
-        _docker_socket_available_cache_time = current_time
-        return False
-
-    # 尝试连接 Docker daemon（带超时）
+    # 尝试连接 Docker daemon（通过代理）
     try:
         with _docker_lock:
-            client = docker.from_env(timeout=5)  # 添加 5 秒超时
+            client = docker.from_env(timeout=5)
             client.ping()
-        logger.debug("Docker socket 可用")
+        logger.debug(f"Docker 代理可用: {DOCKER_HOST}")
         _docker_socket_available_cache = True
         _docker_socket_available_cache_time = current_time
         return True
     except Exception as e:
-        logger.debug(f"无法连接 Docker daemon: {e}")
+        logger.debug(f"无法连接 Docker 代理 ({DOCKER_HOST}): {e}")
         _docker_socket_available_cache = False
         _docker_socket_available_cache_time = current_time
         return False
