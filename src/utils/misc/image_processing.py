@@ -18,6 +18,18 @@ def encode_webp(raw: bytes, quality: int = 85) -> bytes:
             return output.getvalue()
 
 
+def is_valid_image(raw: bytes) -> bool:
+    """判断字节是否为可完整解码的图片（用于破图检测；截断/非图片内容返回 False）。"""
+    if not raw:
+        return False
+    try:
+        with Image.open(io.BytesIO(raw)) as image:
+            image.load()
+        return True
+    except Exception:
+        return False
+
+
 def encode_notification_image(raw: bytes, width: int | None = None) -> tuple[bytes, str, str]:
     """将通知海报编码为兼容 JPEG/PNG，并返回字节、后缀及 MIME。"""
     if width is not None and width <= 0:

@@ -715,7 +715,7 @@ class AnimeQueryRepository:
             media_types: 参与刮削的作品类型列表
 
         Returns:
-            每项包含 animeId/title/year/type/imageUrl/tmdbId/tmdbEpisodeGroupId/hasAlias
+            每项包含 animeId/title/year/type/imageUrl/localImagePath/tmdbId/tmdbEpisodeGroupId/hasAlias
         """
         has_alias = exists().where(
             AnimeAlias.animeId == Anime.id,
@@ -732,6 +732,7 @@ class AnimeQueryRepository:
                 Anime.year,
                 Anime.type,
                 Anime.imageUrl,
+                Anime.localImagePath,
                 AnimeMetadata.tmdbId,
                 AnimeMetadata.tmdbEpisodeGroupId,
                 has_alias.label("hasAlias"),

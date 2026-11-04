@@ -164,14 +164,43 @@ class AnimeRepository(BaseRepository[Anime]):
         Returns:
             实际补全的字段名列表
         """
+        return await self.apply_basic_info(anime_id, image_url=image_url, year=year)
+
+    async def apply_basic_info(
+        self,
+        anime_id: int,
+        *,
+        image_url: Optional[str] = None,
+        year: Optional[int] = None,
+        image_mode: str = "fill",
+        year_mode: str = "fill",
+        image_broken: bool = False,
+        local_image_path: Optional[str] = None,
+    ) -> List[str]:
+        """
+        按策略写入作品海报与年份（自动刮削使用）。
+
+        Args:
+            image_mode / year_mode: "fill" 仅补缺、"overwrite" 覆盖、"skip" 跳过
+            image_broken: 现有海报已判定为破图时视同为空，仅补缺模式下也会替换
+            local_image_path: 新海报已本地化时的本地路径；未本地化则清空旧本地路径，避免继续显示旧图
+
+        Returns:
+            实际写入的字段名列表
+        """
         anime = await self.get_by_id(anime_id)
         if not anime:
             return []
         filled: List[str] = []
-        if image_url and not anime.imageUrl:
+        image_empty = not anime.imageUrl or image_broken
+        if image_url and (
+            (image_mode == "fill" and image_empty)
+            or (image_mode == "overwrite" and (image_url != anime.imageUrl or image_broken))
+        ):
             anime.imageUrl = image_url
+            anime.localImagePath = local_image_path
             filled.append("imageUrl")
-        if year and not anime.year:
+        if year and ((year_mode == "fill" and not anime.year) or (year_mode == "overwrite" and year != anime.year)):
             anime.year = year
             filled.append("year")
         if filled:
@@ -330,10 +359,13 @@ class AnimeRepository(BaseRepository[Anime]):
         self,
         anime_id: int,
         aliases: Dict[str, Any],
-        force_update: bool = False
+        force_update: bool = False,
+        respect_lock: bool = False,
     ) -> List[str]:
         """
         更新作品别名，如果字段为空则填充。
+
+        respect_lock: 覆盖模式下仍尊重用户的别名锁定（AI 修正沿用旧行为，默认不尊重）。
 
         Args:
             anime_id: 作品 ID
@@ -356,7 +388,7 @@ class AnimeRepository(BaseRepository[Anime]):
             logger.info(f"为作品 ID {anime_id} 创建新的别名记录")
 
         # 检查锁定状态
-        if alias_record.aliasLocked and not force_update:
+        if alias_record.aliasLocked and (not force_update or respect_lock):
             logger.info(f"作品 ID {anime_id} 的别名已锁定，跳过更新")
             return []
 

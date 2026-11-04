@@ -9,7 +9,7 @@ from src.services.config_service import get_config_service
 from src.services.file_storage_service import CONFIG_DIR, get_file_storage_service
 from src.services.image_http_service import fetch_image
 from src.services.service_container import get_database_service, get_scraper_manager
-from src.utils.misc.image_processing import encode_webp
+from src.utils.misc.image_processing import encode_webp, is_valid_image
 from src.workflows.media_poster import resolve_media_image_headers
 
 logger = logging.getLogger(__name__)
@@ -73,6 +73,23 @@ async def download_image(
     if not storage.exists(path) and not await storage.write_bytes(path, content):
         return None
     return f"/data/images/{filename}"
+
+
+async def is_local_poster_broken(local_path: Optional[str]) -> bool:
+    """本地海报破图检测：记录了本地路径但文件缺失、为空或无法解码即视为破图。
+
+    未本地化（无本地路径）的作品不在此判断，返回 False。
+    """
+    if not local_path or not local_path.startswith("/data/images/"):
+        return False
+    storage = get_file_storage_service()
+    path = CONFIG_DIR / "image" / local_path.rsplit("/", 1)[-1]
+    if not storage.exists(path):
+        return True
+    raw = await storage.read_bytes(path)
+    if not raw:
+        return True
+    return not await asyncio.to_thread(is_valid_image, raw)
 
 
 async def refresh_anime_poster(anime_id: int, image_url: str) -> str:

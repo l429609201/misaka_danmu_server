@@ -63,7 +63,11 @@ class SchedulerManager:
                 "description_en": getattr(job, 'description_en', ''),
                 "description_tw": getattr(job, 'description_tw', ''),
                 "isSystemTask": getattr(job, 'is_system_task', False),
-                "configSchema": getattr(job, 'config_schema', [])
+                # 作业可按运行时依赖生成动态配置项（如按已加载元数据源生成选项）
+                "configSchema": (
+                    job.build_config_schema(self.metadata_manager)
+                    if hasattr(job, 'build_config_schema') else getattr(job, 'config_schema', [])
+                )
             }
             for job in self._job_classes.values()
         ]
