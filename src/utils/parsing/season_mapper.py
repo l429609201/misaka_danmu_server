@@ -248,7 +248,7 @@ class SeasonMapper:
         details: MetadataDetailsResponse
     ) -> List[TMDBSeasonInfo]:
         """读取结构化季度信息，保留名称、别名并按季度编号排序。"""
-        seasons = getattr(details, 'tmdbSeasons', None) or getattr(details, 'seasons', None) or []
+        seasons = details.seasons or []
         if not seasons and getattr(details, 'season', None):
             seasons = [details.season]
 

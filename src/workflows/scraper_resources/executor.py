@@ -1564,18 +1564,40 @@ class ScraperDownloadExecutor:
                 manifest["min_server_version"] = min_server_version
 
             # 构造 sources
+            # why：哈希必须以统一平台键（如 linux-x86）登记。此前用 versions 的 platform
+            # 字段（如 linux）作键，verify_sources 查不到本平台哈希 → 重启时备份全部被判
+            # 不合格、拒绝恢复，新版永远装不上，自动更新又反复下载。
+            platform_key = ScraperVersionManager.get_platform_key()
+            # why：以备份目录现有（已校验）权威文件为底，只覆盖本次更新的源。
+            # 否则未更新的源若在 versions.json 里没留哈希，会被校验剔除，
+            # 重启恢复后运行目录只剩本次更新的几个源，其余源（如 bilibili）全部消失。
+            base_manifest = await asyncio.to_thread(ScraperVersionManager.load_manifest, BACKUP_DIR)
+            for scraper_name, entry in ((base_manifest or {}).get("sources") or {}).items():
+                if isinstance(entry, dict):
+                    manifest["sources"][scraper_name] = dict(entry)
             for scraper_name, version in existing_scrapers.items():
-                source_entry = {
-                    "version": version
-                }
+                source_entry = dict(manifest["sources"].get(scraper_name) or {})
+                source_entry["version"] = version
 
                 # 添加哈希值（如果存在）
                 if scraper_name in existing_hashes:
                     source_entry["hashes"] = {
-                        platform_info.get('platform', 'unknown'): existing_hashes[scraper_name]
+                        **(source_entry.get("hashes") or {}),
+                        platform_key: existing_hashes[scraper_name],
                     }
+                    source_entry.pop("hash", None)
 
                 manifest["sources"][scraper_name] = source_entry
+
+            # 与其他生成入口一致：列表内文件校验通过（至少一个）才写备份权威文件
+            manifest, rejected = await asyncio.to_thread(
+                ScraperVersionManager.finalize_verified_manifest, manifest, BACKUP_DIR
+            )
+            for name, reason in rejected.items():
+                self._log(f"✗ 备份中的弹幕源 {name} 校验未通过：{reason}", "error")
+            if manifest is None:
+                self._log("✗ 备份目录没有任何通过校验的弹幕源，未生成 scraper_manifest.json", "error")
+                return
 
             # 保存到 backup 目录
             await asyncio.to_thread(

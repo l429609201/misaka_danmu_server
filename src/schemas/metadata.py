@@ -41,7 +41,9 @@ class MetadataDetailsResponse(BaseModel):
     imageUrl: Optional[str] = None
     details: Optional[str] = None
     year: Optional[int] = None
-    tmdbSeasons: Optional[List[TMDBSeasonInfo]] = None
+    # 季度信息：TMDB 剧集详情写入 seasons，季度映射/自动刮削读取（原 ui/search.py 重复类的字段并入此处）
+    season: Optional[int] = None
+    seasons: Optional[List[TMDBSeasonInfo]] = None
     provider: Optional[str] = None
     supportsEpisodeUrls: bool = False
     # 保留源站扩展信息，供缓存还原、平台探测和分集补充使用。

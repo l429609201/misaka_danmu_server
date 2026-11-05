@@ -63,7 +63,11 @@ class SchedulerManager:
                 "description_en": getattr(job, 'description_en', ''),
                 "description_tw": getattr(job, 'description_tw', ''),
                 "isSystemTask": getattr(job, 'is_system_task', False),
-                "configSchema": getattr(job, 'config_schema', [])
+                # 作业可按运行时依赖生成动态配置项（如按已加载元数据源生成选项）
+                "configSchema": (
+                    job.build_config_schema(self.metadata_manager)
+                    if hasattr(job, 'build_config_schema') else getattr(job, 'config_schema', [])
+                )
             }
             for job in self._job_classes.values()
         ]
@@ -84,7 +88,7 @@ class SchedulerManager:
             logger.info(f"定时任务 '{scheduled_task_id}' (类型: {job_type}) 读取到 taskConfig: {task_config}")
 
             # 修正：智能地将依赖项传递给任务的构造函数
-            # 这使得像 TmdbAutoMapJob 这样的任务可以选择不接收 rate_limiter
+            # 这使得像 AutoScrapeJob 这样的任务可以选择不接收 rate_limiter
             init_params = inspect.signature(job_class.__init__).parameters
 
             dependencies = {

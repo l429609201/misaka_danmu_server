@@ -356,6 +356,13 @@ class ExternalCalendarRepository(BaseRepository[ExternalCalendarItem]):
             row.subscriptionStatus = status
             row.extraData = json.dumps(payload, ensure_ascii=False)
             row.updatedAt = get_now()
+        # why：跨源 ID / 季号同步回写到索引列，供定时自动导入与反查使用（不覆盖已有值）
+        for column, key in (("bangumiId", "bangumiId"), ("traktId", "traktId"), ("tmdbId", "tmdbId")):
+            value = payload.get(key)
+            if value and not getattr(row, column):
+                setattr(row, column, str(value))
+        if payload.get("season") and not row.season:
+            row.season = int(payload["season"])
         await self._session.flush()
         return {
             "id": row.id,

@@ -34,6 +34,7 @@ from src.webhook.jellyfin import JellyfinWebhook
 from src.webhook.plex import PlexWebhook
 from src.metadata_sources.so360 import So360MetadataSource
 from src.metadata_sources.anibt import AniBTMetadataSource
+from src.metadata_sources.anilist import AniListMetadataSource
 from src.metadata_sources.bangumi import BangumiMetadataSource
 from src.metadata_sources.douban import DoubanMetadataSource
 from src.metadata_sources.imdb import ImdbMetadataSource
@@ -95,7 +96,7 @@ from src.jobs.incremental_refresh import IncrementalRefreshJob
 from src.jobs.refresh_latest_episode import RefreshLatestEpisodeJob
 from src.jobs.schedule_sync import ScheduleSyncJob
 from src.jobs.subscription_scan import SubscriptionScanJob, scan_and_import_target_task
-from src.jobs.tmdb_auto_map import TmdbAutoMapJob
+from src.jobs.auto_scrape import AutoScrapeJob
 from src.jobs.watchlist_sync import WatchlistSyncJob
 from src.jobs.webhook_processor import WebhookProcessorJob
 
@@ -111,7 +112,7 @@ logger = logging.getLogger(__name__)
 
 # 具体 Job 类型只在组装层列出，Service 层不解析文件名或动态加载模块。
 METADATA_SOURCE_CLASSES = (
-    So360MetadataSource, AniBTMetadataSource, BangumiMetadataSource,
+    So360MetadataSource, AniBTMetadataSource, AniListMetadataSource, BangumiMetadataSource,
     DoubanMetadataSource, ImdbMetadataSource, TmdbMetadataSource,
     TraktMetadataSource, TvdbMetadataSource,
 )
@@ -120,7 +121,7 @@ SCHEDULED_JOB_CLASSES = (
     AutoFinishJob, BangumiDataSyncJob, DanmakuCleanupJob,
     DatabaseBackupJob, DatabaseMaintenanceJob, FillMissingEpisodesJob,
     IncrementalRefreshJob, RefreshLatestEpisodeJob, ScheduleSyncJob,
-    SubscriptionScanJob, TmdbAutoMapJob, WatchlistSyncJob,
+    SubscriptionScanJob, AutoScrapeJob, WatchlistSyncJob,
     WebhookProcessorJob,
 )
 

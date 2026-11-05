@@ -4,6 +4,11 @@ UI API - 搜索和导入相关模型
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
+# why：此前这里另有一份 MetadataDetailsResponse/TMDBSeasonInfo，缺 supportsEpisodeUrls/provider/extra，
+# 经 src.schemas 导出的元数据源（tmdb/tvdb/bangumi/douban/imdb/anibt）返回值会静默丢掉这些字段。
+# 统一复用 src/schemas/metadata.py 的唯一定义。
+from src.schemas.metadata import MetadataDetailsResponse, TMDBSeasonInfo
+
 
 class ProviderSearchInfo(BaseModel):
     """代表来自外部数据源的单个搜索结果。"""
@@ -58,42 +63,6 @@ class ImportRequest(BaseModel):
     # 新增: 补充源信息
     supplementProvider: Optional[str] = Field(None, description="补充源提供商 (如360), 用于获取分集列表")
     supplementMediaId: Optional[str] = Field(None, description="补充源中的媒体ID")
-
-
-class TMDBSeasonInfo(BaseModel):
-    """TMDB季度信息模型"""
-    air_date: Optional[str] = Field(None, alias="airDate")
-    episode_count: int = Field(..., alias="episodeCount")
-    id: int
-    name: str
-    season_number: int = Field(..., alias="seasonNumber")
-    poster_path: Optional[str] = Field(None, alias="posterPath")
-    aliases: Optional[List[str]] = Field(default=[], description="季度别名列表")
-
-    class Config:
-        populate_by_name = True
-
-
-class MetadataDetailsResponse(BaseModel):
-    """所有元数据源详情接口的统一响应模型。"""
-    id: str
-    title: str
-    type: Optional[str] = None
-    tmdbId: Optional[str] = None
-    imdbId: Optional[str] = None
-    tvdbId: Optional[str] = None
-    doubanId: Optional[str] = None
-    bangumiId: Optional[str] = None
-    nameEn: Optional[str] = None
-    nameJp: Optional[str] = None
-    nameRomaji: Optional[str] = None
-    aliasesCn: List[str] = []
-    aliasesJp: List[str] = []  # 新增：日文别名列表
-    imageUrl: Optional[str] = None
-    details: Optional[str] = None
-    year: Optional[int] = None
-    season: Optional[int] = None
-    seasons: Optional[List[TMDBSeasonInfo]] = None
 
 
 __all__ = [

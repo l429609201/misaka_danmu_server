@@ -33,6 +33,7 @@ from src.workflows.search.result_cache import read_search_results, write_search_
 from src.services.config_service import get_config_service
 from src.services.cache_service import get_cache_service
 from src.utils import parse_search_keyword
+from src.utils.misc.converter import convert_title_t2s
 
 # 源优先级映射：与 compute_score 的 provider_order 契约同源，统一由 scoring 提供
 from src.workflows.search.scoring import load_provider_order
@@ -511,7 +512,7 @@ async def unified_search(
             #   "【我推的孩子】 第二季" → "我推的孩子 第二季"
             #   "【我推的孩子】"       → "我推的孩子"
             #   "[1080P][剧名]"       → "1080P剧名"（含质量标识也不影响匹配精度）
-            cleaned = re.sub(r'[【】\[\]（）()]', '', title).strip()
+            cleaned = convert_title_t2s(re.sub(r'[【】\[\]（）()]', '', title).strip())
             return cleaned.lower().replace(" ", "").replace("：", ":").strip()
 
         normalized_filter_aliases = {normalize_for_filtering(alias) for alias in filter_aliases if alias}

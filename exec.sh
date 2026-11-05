@@ -25,26 +25,33 @@ echo "正在将 appuser 的 UID 设置为 ${PUID}，appgroup 的 GID 设置为 $
 groupmod -o -g "${PGID}" appgroup 2>/dev/null || true
 usermod -o -u "${PUID}" appuser 2>/dev/null || true
 
-# Docker socket 权限处理
-# why: exec.sh 以 root 身份运行，可在切换用户前用 usermod -aG 将运行用户加入 docker 组。
-# gosu 会调用 initgroups() 读取 /etc/group，切换用户时附加组被正确继承。
-# 不修改 socket 自身权限（不 chmod 666），安全可控。
+# Docker socket 代理（参考 MoviePilot 方案）
+# why: 
+#   1. 直接访问 /var/run/docker.sock 需要处理复杂的 GID 权限问题
+#   2. 当 socket GID=0（root 组）时，非 root 用户无法访问
+#   3. 使用 Python 代理将 Unix Socket 映射到 localhost TCP，避免权限问题
+#   4. 代理以 root 身份运行（在 gosu 切换前启动），安全地访问 socket
+#   5. 应用以非特权用户身份通过 TCP 连接代理，无需直接访问 socket
 if [ -S /var/run/docker.sock ]; then
-    SOCK_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || echo "")
-    if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
-        # 容器内以 socket 实际 GID 创建 dockerhost 组（若已存在则复用）
-        if ! getent group "$SOCK_GID" > /dev/null 2>&1; then
-            groupadd -g "$SOCK_GID" dockerhost 2>/dev/null || true
-        fi
-        DOCKER_GROUP=$(getent group "$SOCK_GID" | cut -d: -f1)
-        # 将 appuser 加入 dockerhost 组；gosu 切换时通过 initgroups() 继承附加组
-        if [ -n "$DOCKER_GROUP" ]; then
-            usermod -aG "$DOCKER_GROUP" appuser 2>/dev/null || true
-            echo "Docker socket 权限已配置（GID=$SOCK_GID，组=$DOCKER_GROUP）"
-        fi
+    echo "正在启动 Docker Socket 代理..."
+    python3 /app/src/startup/docker_socket_proxy.py > /var/log/docker_proxy.log 2>&1 &
+    PROXY_PID=$!
+    
+    # 等待代理启动并验证
+    sleep 2
+    if kill -0 $PROXY_PID 2>/dev/null; then
+        echo "✓ Docker Socket 代理已启动（PID=$PROXY_PID，监听 127.0.0.1:38379）"
+        # 设置环境变量，让应用通过 TCP 连接代理
+        export DOCKER_HOST="tcp://127.0.0.1:38379"
     else
-        echo "警告: Docker socket GID 为 0（root 组），跳过自动配置，一键重启/更新功能可能不可用"
+        echo "警告: Docker Socket 代理启动失败，一键重启/更新功能不可用"
+        echo "请检查日志: /var/log/docker_proxy.log"
     fi
+else
+    echo "警告: Docker socket 未映射（/var/run/docker.sock 不存在）"
+    echo "如需一键重启/更新功能，请在 docker-compose.yml 中添加："
+    echo "  volumes:"
+    echo "    - /var/run/docker.sock:/var/run/docker.sock"
 fi
 
 # 使用 gosu（通过 su-exec 软链）切换到 appuser（已映射为 PUID:PGID），并执行 /run.sh

@@ -5,7 +5,6 @@ import { Parameters } from './components/Parameters'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Recognition } from './components/Recognition'
 import { Notification } from './components/Notification'
-import AutoMatchSetting from './components/AutoMatchSetting'
 import Security from './components/Security'
 import { MobileTabs } from '@/components/MobileTabs'
 import { useAtomValue } from 'jotai'
@@ -23,13 +22,16 @@ export const Setting = () => {
   if (key === 'webhook') {
     return <Navigate to="/media-fetch?key=webhook" replace />
   }
+  // AI 已拆为独立一级页面，旧链接 /setting?key=automatch 自动跳转（保留锚点）
+  if (key === 'automatch') {
+    return <Navigate to={`/ai${window.location.hash || ''}`} replace />
+  }
 
   const tabItems = [
     { label: t('settingPage.parameters'), key: 'parameters', children: <Parameters /> },
     { label: t('settingPage.proxy'), key: 'proxy', children: <Proxy /> },
     { label: t('settingPage.notification'), key: 'notification', children: <Notification /> },
     { label: t('settingPage.recognition'), key: 'recognition', children: <Recognition /> },
-    { label: t('settingPage.automatch'), key: 'automatch', children: <AutoMatchSetting /> },
     { label: t('settingPage.security'), key: 'security', children: <Security /> },
   ]
 

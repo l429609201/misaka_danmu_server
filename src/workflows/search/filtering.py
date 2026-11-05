@@ -74,7 +74,7 @@ def filter_by_season(results: List[Any], season: int) -> Tuple[List[Any], List[A
         return results, []
 
     original_count = len(results)
-    filtered_by_type = [item for item in results if is_series_candidate(item.type)]
+    filtered_by_type = [item for item in results if is_series_candidate(item.type) or is_movie_type(item.type)]
 
     kept: List[Any] = []
     filtered_out: List[Any] = []

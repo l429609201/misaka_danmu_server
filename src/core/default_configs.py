@@ -201,6 +201,8 @@ def get_default_configs(settings=None, ai_prompts=None):
     if ai_prompts:
         configs.update({
             # 御坂助手（弹幕库助手 LLM 对话 + 任务气泡播报）
+            'assistantEnabled': ('false', '御坂助手总开关(默认关)：关闭后网页端不显示助手入口与面板，也不轮询任务播报。'),
+            'assistantPetVisible': ('false', '御坂助手形象(看板娘)是否展示；关闭时只显示简洁圆形按钮。'),
             'assistantChannelChatEnabled': ('true', '是否允许通知渠道(Telegram/企业微信等)与御坂助手自然语言对话。'),
             'assistantChannelUsername': ('admin', '渠道御坂助手复用的 Web 用户名（单用户部署）。'),
             'assistantNotifyEnabled': ('true', '是否启用御坂助手任务气泡播报(网页端看板娘主动提示任务动态)。'),
@@ -223,9 +225,9 @@ def get_default_configs(settings=None, ai_prompts=None):
             'aiBaseUrl': ('', 'AI服务的Base URL (可选,用于自定义接口)'),
             'aiModel': ('', 'AI模型名称，通过提供商接口刷新获取，如: deepseek-chat, gpt-4o, gemini-2.5-flash'),
             'aiPrompt': (ai_prompts.get('DEFAULT_AI_MATCH_PROMPT', ''), 'AI智能匹配提示词'),
-            'aiRecognitionEnabled': ('false', '是否启用AI辅助识别。启用后，在TMDB自动刮削任务中使用AI识别标题和季度信息。'),
+            'aiRecognitionEnabled': ('false', '是否启用AI辅助识别。启用后，在自动刮削任务中使用AI识别标题和季度信息。'),
             'aiRecognitionPrompt': (ai_prompts.get('DEFAULT_AI_RECOGNITION_PROMPT', ''), 'AI辅助识别提示词'),
-            'aiAliasCorrectionEnabled': ('false', '是否启用AI别名修正。启用后，在TMDB自动刮削任务中使用AI验证和修正别名。'),
+            'aiAliasCorrectionEnabled': ('false', '是否启用AI别名修正。启用后，在自动刮削任务中使用AI验证和修正别名。'),
             'aiAliasValidationPrompt': (ai_prompts.get('DEFAULT_AI_ALIAS_VALIDATION_PROMPT', ''), 'AI别名验证提示词'),
             'aiAliasExpansionEnabled': ('false', '是否启用AI别名扩展。启用后，当元数据源返回非中文标题时，使用AI生成可能的别名用于搜索。'),
             'aiAliasExpansionPrompt': (ai_prompts.get('DEFAULT_AI_ALIAS_EXPANSION_PROMPT', ''), 'AI别名扩展提示词'),

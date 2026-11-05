@@ -46,6 +46,7 @@ async def select_webhook_result(
         query_title=title,
         query_season=season,
         query_year=year,
+        media_type=media_type,
         provider_order=provider_order,
         existing_source_keys=existing_source_keys,
         library_source_bonus=3000,

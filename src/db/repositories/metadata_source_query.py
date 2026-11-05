@@ -45,7 +45,7 @@ class MetadataSourceQueryRepository:
         existing_names = set((await self._session.execute(existing_stmt)).scalars().all())
 
         to_insert = [
-            {"providerName": name}
+            {"provider_name": name}
             for name in provider_names
             if name not in existing_names
         ]
@@ -71,6 +71,8 @@ class MetadataSourceQueryRepository:
             {
                 "providerName": s.providerName,
                 "isEnabled": s.isEnabled,
+                # why：缺少此字段时列表接口恒返回 False，前端开关保存后切页又显示为关
+                "isAuxSearchEnabled": s.isAuxSearchEnabled,
                 "isFailoverEnabled": s.isFailoverEnabled,
                 "displayOrder": s.displayOrder,
                 "logRawResponses": s.logRawResponses,
@@ -100,6 +102,7 @@ class MetadataSourceQueryRepository:
         return {
             "providerName": source.providerName,
             "isEnabled": source.isEnabled,
+            "isAuxSearchEnabled": source.isAuxSearchEnabled,
             "isFailoverEnabled": source.isFailoverEnabled,
             "displayOrder": source.displayOrder,
             "logRawResponses": source.logRawResponses,

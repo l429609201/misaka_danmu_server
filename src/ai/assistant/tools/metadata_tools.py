@@ -231,12 +231,13 @@ async def _verify_metadata_source_key(arguments: Dict[str, Any], context: Dict[s
         logger.warning(f"验证 {provider} 密钥失败: {e}")
         return {"provider": provider, "valid": False, "message": f"检测异常：{e}"}
 
-    # check_connectivity 返回 {"message": ..., "code": "success|error|..."}
+    # check_connectivity 返回 {"message": ..., "code": "ok|warning|error|unconfigured"}；
+    # why：此前误判 code == "success"，而各元数据源成功时返回 "ok"，导致"配置正常"却 valid=False。
     if isinstance(result, dict):
         code = result.get("code", "error")
         return {
             "provider": provider,
-            "valid": code == "success",
+            "valid": code == "ok",
             "statusCode": code,
             "message": result.get("message", ""),
         }

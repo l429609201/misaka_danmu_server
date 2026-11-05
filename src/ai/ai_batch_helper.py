@@ -125,7 +125,7 @@ async def optimize_tmdb_scraping_with_batch(
 
 # 使用示例:
 """
-# 在 tmdb_auto_map.py 中:
+# 在 auto_scrape.py 中:
 
 # 1. 批量识别所有需要处理的作品
 from ..ai_batch_helper import optimize_tmdb_scraping_with_batch

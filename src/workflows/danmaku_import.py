@@ -14,6 +14,7 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 
 from src.schemas.import_schemas import DanmakuEpisodeCreate
+from src.services.config_service import get_config_service
 from src.services.file_storage_service import get_file_storage_service, wait_for_settlement
 from src.services.service_container import get_database_service
 from src.services.cache_service import get_cache_service
@@ -106,6 +107,14 @@ async def save_danmaku_for_episode(
     """
     if (episode_id is None) == (create_episode is None):
         raise ValueError("必须且只能提供分集 ID 或建集信息")
+    # 部分调用方（批量手动导入、本地弹幕导入）未传 config_service，导致 generate_danmaku_path
+    # 读不到 customDanmakuPathEnabled 而退回数字 ID 路径（#462），点赞/来源标签配置也被忽略；
+    # 统一回退到全局单例，保证所有入口按同一套存储配置落盘
+    if config_service is None:
+        try:
+            config_service = get_config_service()
+        except RuntimeError:
+            logger.warning("ConfigService 尚未初始化，弹幕将按默认路径保存")
     if import_if_increased and (
         create_episode is None or create_episode.skip_existing or force
     ):

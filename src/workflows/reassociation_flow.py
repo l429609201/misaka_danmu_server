@@ -5,18 +5,21 @@
 """
 
 import logging
-from typing import Optional
+from types import SimpleNamespace
+from typing import Any, Optional
 
 from src.db.orm_models import Episode
 from src.schemas import ReassociationResolveRequest
-from src.services.file_storage_service import DANMAKU_BASE_DIR
+from src.services.config_service import get_config_service
+from src.utils.storage.path_template import generate_danmaku_path
 from src.workflows.danmaku_edit_operations import DanmakuEditWriteContext
 
 logger = logging.getLogger(__name__)
 
 
 async def relocate_episode_danmaku(
-    ctx: DanmakuEditWriteContext, episode: Episode, target_anime_id: int,
+    ctx: DanmakuEditWriteContext, episode: Episode, target_anime: Any,
+    episode_index: Optional[int] = None,
 ) -> None:
     """复制弹幕并登记补偿，提交成功后才清理无引用的原文件。"""
     ctx.affected_episodes.add(episode.id)
@@ -25,7 +28,16 @@ async def relocate_episode_danmaku(
     old_path = ctx.fs.resolve_fs_path(episode.danmakuFilePath)
     if old_path is None or not ctx.fs.exists(old_path):
         raise ValueError(f"分集 {episode.id} 的原弹幕文件不存在或路径无效")
-    target_path = DANMAKU_BASE_DIR / str(target_anime_id) / f"{episode.id}.xml"
+    # 迁移前分集仍挂在原作品下，按"目标作品 + 新集数"构造视图生成路径，
+    # 让重关联同样遵循自定义存储模板（#462），而不是固定写到 danmaku/{动画ID}/{分集ID}.xml
+    view = SimpleNamespace(
+        id=episode.id,
+        episodeIndex=episode_index if episode_index is not None else episode.episodeIndex,
+        source=SimpleNamespace(
+            id=episode.source.id, providerName=episode.source.providerName, anime=target_anime,
+        ),
+    )
+    _, target_path = await generate_danmaku_path(view, get_config_service())
     if ctx.fs.same_file_path(old_path, target_path):
         return
     content = await ctx.fs.read_text(old_path)
@@ -79,7 +91,7 @@ async def _reassociate(
             target = targets.get(source.providerName)
             if target is None:
                 for episode in list(source.episodes):
-                    await relocate_episode_danmaku(ctx, episode, target_anime_id)
+                    await relocate_episode_danmaku(ctx, episode, target_anime)
                 await repo.move_source(source, target_anime)
                 # 同一源作品可以包含多个同提供商源，后续源也必须参与冲突检测。
                 targets[source.providerName] = source
@@ -106,7 +118,7 @@ async def _reassociate(
                     await remove_episode_danmaku(ctx, occupied)
                     # 先释放目标唯一键，再迁入源分集，避免 UPDATE 先于 DELETE。
                     await repo.remove_episode(occupied, target)
-                await relocate_episode_danmaku(ctx, episode, target_anime_id)
+                await relocate_episode_danmaku(ctx, episode, target_anime, new_index)
                 await repo.move_episode(episode, target, new_index)
                 target_episodes[new_index] = episode
             await repo.remove_empty_source(source, source_anime)

@@ -86,6 +86,30 @@ class TmdbMetadataSource(BaseMetadataSource):
     provider_name = "tmdb"
     config_keys = ["tmdbApiKey", "tmdbApiBaseUrl", "tmdbImageBaseUrl"]
 
+    # ============ 订阅助手能力 ============
+    # 订阅页搜 TMDB 剧集/电影 → 写订阅目标 → IncrementalRefreshJob 按 TMDB ID 自动建库追更
+    supports_subscription = True
+    handled_domains = ["themoviedb.org"]
+    subscription_types = [
+        {
+            "type": "tmdb_tv",
+            "label": "剧集（弹幕库追更）",
+            "description": "通过 TMDB 搜剧集，订阅后按 TMDB ID 自动在本地弹幕库建库并追更",
+            "payloadSchema": {"fields": [
+                {"name": "tmdbId", "type": "string", "required": True, "label": "TMDB ID", "placeholder": "例如 94997"},
+                {"name": "season", "type": "number", "required": False, "label": "季号", "placeholder": "默认 1"},
+            ]},
+        },
+        {
+            "type": "tmdb_movie",
+            "label": "电影（弹幕库导入）",
+            "description": "通过 TMDB 搜电影，订阅后按 TMDB ID 自动在本地弹幕库建库",
+            "payloadSchema": {"fields": [
+                {"name": "tmdbId", "type": "string", "required": True, "label": "TMDB ID", "placeholder": "例如 550"},
+            ]},
+        },
+    ]
+
     @property
     async def test_url(self) -> str:
         """
@@ -628,3 +652,89 @@ class TmdbMetadataSource(BaseMetadataSource):
                     group_details=group_details
                 )
         self.logger.info(f"TMDB插件: 映射更新完成。")
+    # ============ 订阅助手实现 ============
+    # 订阅即【弹幕库内订阅】：命中后写 external_calendar_item(extraData.tmdbId)，
+    # 由 IncrementalRefreshJob 按 TMDB ID 走 auto_import 精确建库 + 追更。
+
+    async def check_subscription_capability(self, user=None) -> Dict[str, Any]:
+        """TMDB 订阅可用性：配置了 API Key 即可用。"""
+        api_key = await self.config_service.get("tmdbApiKey")
+        if not api_key:
+            return {
+                "available": False, "authRequired": False, "authStatus": "missing",
+                "reason": "请先配置 TMDB API Key", "subscriptionTypes": self.subscription_types,
+            }
+        return {
+            "available": True, "authRequired": False, "authStatus": "none",
+            "reason": None, "subscriptionTypes": self.subscription_types,
+        }
+
+    async def discover_subscription_targets(self, query: str, subscription_type: str = "", user=None) -> List[Dict[str, Any]]:
+        """搜 TMDB 剧集/电影候选；复用现有 search()，按订阅类型决定搜索范围。"""
+        query = (query or "").strip()
+        if not query:
+            return []
+        search_user = user or User(id=0, username="subscription")
+        if subscription_type == "tmdb_tv":
+            media_types = ["tv"]
+        elif subscription_type == "tmdb_movie":
+            media_types = ["movie"]
+        else:
+            media_types = ["tv", "movie"]
+        out: List[Dict[str, Any]] = []
+        for media_type in media_types:
+            try:
+                results = await self.search(query, user=search_user, mediaType=media_type)
+            except Exception as e:
+                self.logger.warning(f"TMDB: 订阅 discover 搜索失败 ({media_type}): {type(e).__name__}: {e}")
+                continue
+            sub_type = "tmdb_tv" if media_type == "tv" else "tmdb_movie"
+            label = "剧集" if media_type == "tv" else "电影"
+            for r in results[:10]:
+                if not r.id:
+                    continue
+                year = f" · {r.year}" if r.year else ""
+                out.append({
+                    "type": sub_type,
+                    "title": r.title or f"TMDB {r.id}",
+                    "cover": r.imageUrl,
+                    "description": f"TMDB {label} {r.id}{year}",
+                    "payload": {
+                        "tmdbId": str(r.id),
+                        "title": r.title or "",
+                        "year": r.year,
+                        "imageUrl": r.imageUrl,
+                    },
+                })
+        return out
+
+    async def validate_subscription_payload(self, subscription_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """校验 TMDB 订阅 payload；电影按 movie 类型入库，剧集可带季号（默认第 1 季）。"""
+        if subscription_type not in ("tmdb_tv", "tmdb_movie"):
+            raise ValueError(f"TMDB 暂不支持订阅类型: {subscription_type}")
+        payload = payload or {}
+        tmdb_id = str(payload.get("tmdbId") or "").strip()
+        if not tmdb_id.isdigit():
+            raise ValueError("缺少有效的 tmdbId")
+        is_movie = subscription_type == "tmdb_movie"
+        season = None
+        if not is_movie:
+            try:
+                season = int(payload.get("season") or 1)
+            except (TypeError, ValueError):
+                raise ValueError("季号必须是数字")
+        # 剧集不同季是不同订阅：externalId 带季号，避免互相覆盖
+        external_id = f"tmdb-movie-{tmdb_id}" if is_movie else f"tmdb-tv-{tmdb_id}-s{season}"
+        return {
+            "provider": self.provider_name,
+            "externalId": external_id,
+            "title": payload.get("title") or "",
+            "animeType": "movie" if is_movie else "tv_series",
+            "subscriptionType": subscription_type,
+            "extraData": {
+                "tmdbId": tmdb_id,
+                "season": season,
+                "year": payload.get("year"),
+                "imageUrl": payload.get("imageUrl"),
+            },
+        }

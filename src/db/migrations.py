@@ -9,7 +9,7 @@
 """
 
 import logging
-from sqlalchemy import inspect, text
+from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 logger = logging.getLogger(__name__)
@@ -672,6 +672,39 @@ async def _remove_system_token_reset_task_v1(conn: AsyncConnection):
     logger.info("已删除 system_token_reset 定时任务（已迁移到内部轮询任务）")
 
 
+async def _remove_tmdb_auto_scrape_task_v1(conn: AsyncConnection):
+    """删除旧版「TMDB自动刮削」定时任务（job_type=tmdbAutoScrape / tmdbAutoMap）。
+
+    该任务已更名为通用的「自动刮削」（job_type=autoScrape，不再只针对 TMDB），
+    旧类型已无对应 Job 类，留在库里只会成为无法加载的僵尸任务；用户需在定时任务页重新创建。
+    """
+    legacy_types = {"types": ("tmdbAutoScrape", "tmdbAutoMap")}
+    id_rows = await conn.execute(
+        text("SELECT id FROM scheduled_tasks WHERE job_type IN :types").bindparams(
+            bindparam("types", expanding=True)
+        ),
+        legacy_types,
+    )
+    task_ids = [row[0] for row in id_rows]
+    if not task_ids:
+        logger.info("未发现旧版 TMDB 自动刮削定时任务，无需清理")
+        return
+
+    ids_param = {"ids": task_ids}
+    # 先解除任务历史引用：SQLite 默认不强制外键，不能只依赖 ON DELETE SET NULL
+    await conn.execute(
+        text("UPDATE task_history SET scheduled_task_id = NULL WHERE scheduled_task_id IN :ids").bindparams(
+            bindparam("ids", expanding=True)
+        ),
+        ids_param,
+    )
+    await conn.execute(
+        text("DELETE FROM scheduled_tasks WHERE id IN :ids").bindparams(bindparam("ids", expanding=True)),
+        ids_param,
+    )
+    logger.info(f"已删除 {len(task_ids)} 个旧版 TMDB 自动刮削定时任务: {task_ids}")
+
+
 async def _migrate_anime_group_fk_v1(conn: AsyncConnection, db_type: str):
     """为 anime.group_id 添加外键约束指向 anime_groups.id（仅已有数据库需要，新库由 create_all 处理）"""
     # anime_groups 表和 anime.group_id 列由 create_all + db_maintainer 自动创建
@@ -907,6 +940,7 @@ ALL_MIGRATION_IDS = [
     "isolate_assistant_sessions_v1",
     "slim_system_metrics_indexes_v1",
     "extend_anime_type_enum_v1",
+    "remove_tmdb_auto_scrape_task_v1",
 ]
 
 
@@ -952,6 +986,7 @@ async def run_migrations(conn: AsyncConnection, db_type: str, db_name: str):
         ("isolate_assistant_sessions_v1", _isolate_assistant_sessions_v1, ()),  # 历史会话不自动归属
         ("slim_system_metrics_indexes_v1", _slim_system_metrics_indexes_v1, (db_type,)),  # 删除 system_metrics 冗余索引
         ("extend_anime_type_enum_v1", _extend_anime_type_enum_v1, (db_type,)),  # anime.type 追加 variety/short_drama
+        ("remove_tmdb_auto_scrape_task_v1", _remove_tmdb_auto_scrape_task_v1, ()),  # 旧 TMDB 自动刮削定时任务改名为通用自动刮削，删除旧类型
     ]
 
     for migration_id, migration_func, args in migrations:

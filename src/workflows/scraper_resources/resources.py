@@ -447,9 +447,31 @@ async def backup_scrapers(
         get_file_storage_service().resource_mkdir(BACKUP_DIR, parents=True, exist_ok=True)
 
         # 读取版本信息（使用 ScraperVersionManager 统一管理）
-        manifest = ScraperVersionManager.load_manifest(_get_scrapers_dir())
+        manifest = ScraperVersionManager.load_manifest(scrapers_dir) or {"sources": {}}
+
+        # why：逐文件更新时新 .so 已下到运行目录，但运行目录权威文件尚未重新生成；
+        # 调用方传入的新版本/哈希必须先并入，否则备份权威文件仍是旧哈希，
+        # 重启时备份校验不通过、拒绝恢复，新版永远生效不了。
+        if new_versions_data:
+            platform_key = ScraperVersionManager.get_platform_key()
+            sources_map = manifest.setdefault("sources", {})
+            for scraper_name, version in new_versions_data.items():
+                entry = dict(sources_map.get(scraper_name) or {})
+                entry["version"] = version
+                new_hash = (new_hashes_data or {}).get(scraper_name)
+                if new_hash:
+                    entry["hashes"] = {**(entry.get("hashes") or {}), platform_key: new_hash}
+                    entry.pop("hash", None)
+                sources_map[scraper_name] = entry
+
+        # 备份同样是权威文件的生成入口：只保留通过校验的源，一个都没有就不动现有备份，
+        # 避免用空/不可信的版本文件覆盖一份可用备份。
+        manifest, rejected = ScraperVersionManager.finalize_verified_manifest(manifest, scrapers_dir)
+        for name, reason in rejected.items():
+            logger.warning(f"弹幕源 {name} 校验未通过，不纳入备份：{reason}")
         if manifest is None:
-            manifest = {"sources": {}}
+            logger.warning("运行目录没有通过校验的弹幕源，跳过备份（保留现有备份）")
+            return {"message": "运行目录没有通过校验的弹幕源，未执行备份（现有备份保持不变）", "count": 0}
 
         # 搬运权威文件与二进制到备份目录（clear_dst 先清空同类旧文件，保留 backup_metadata.json）
         # 使用统一搬运工具，只搬 scraper_manifest.json + *.so/*.pyd，不搬 legacy 文件

@@ -843,7 +843,7 @@ async def fallback_search_with_recognition(
 async def search_implementation(
     search_term: str,
     episode: Optional[str],
-    session: AsyncSession,
+    db,
     scraper_manager=None,
     config_service=None,
     rate_limiter=None,
@@ -857,7 +857,8 @@ async def search_implementation(
     Args:
         search_term: 搜索关键词
         episode: 分集标题（通常是数字）
-        session: 数据库会话
+        db: DatabaseService，须由调用方（API 层）已开启事务；
+            #460：旧实现把它当 AsyncSession 再套 transaction(session=...)，导致仓储拿到的不是会话
         scraper_manager: 弹幕源管理器（可选，并行搜索需要）
         config_service: 配置服务（可选，并行搜索需要）
         rate_limiter: 速率限制器（可选）
@@ -881,13 +882,12 @@ async def search_implementation(
     episode_number_from_param = int(episode) if episode and episode.isdigit() else None
     final_episode_to_search = episode_number_from_param if episode_number_from_param is not None else episode_from_title
 
-    db = get_database_service()
-    async with db.transaction(session=session):
-        flat_results = await db.episode.search_episodes_in_library(
-            anime_title=title_to_search,
-            episode_number=final_episode_to_search,
-            season_number=season_to_search
-        )
+    # #460：按作品标题/别名检索（旧调用的 search_episodes_in_library 只匹配分集标题且参数不同）
+    flat_results = await db.episode.search_episodes_by_anime_title(
+        anime_title=title_to_search,
+        episode_number=final_episode_to_search,
+        season_number=season_to_search,
+    )
 
     grouped_animes: Dict[int, DandanAnimeInfo] = {}
     # 收集每个 anime 涉及的 provider 集合，用于多源时在分集标题加前缀
@@ -938,9 +938,7 @@ async def search_implementation(
         parallel_search_enabled = (await config_service.get("parallelSearchEnabled", "false")).lower() == 'true'
 
     if parallel_search_enabled and grouped_animes:
-        await _merge_source_episodes(
-            session, grouped_animes, scraper_manager, config_service
-        )
+        await _merge_source_episodes(db, grouped_animes, scraper_manager)
 
         # 为并行搜索结果的 animeTitle 加集数区分标注
         for anime_info in grouped_animes.values():
@@ -979,3 +977,115 @@ async def search_implementation(
                 anime_info.animeTitle = anime_info.animeTitle + "（" + "）（".join(parts) + "）"
 
     return DandanSearchEpisodesResponse(animes=list(grouped_animes.values()))
+
+
+async def _merge_source_episodes(
+    db,
+    grouped_animes: Dict[int, DandanAnimeInfo],
+    scraper_manager: ScraperManager,
+) -> None:
+    """
+    并行搜索：从源站获取完整分集列表，补充库内缺失的分集。
+
+    #460：v2.9.0 重构时该函数定义丢失（只剩调用），开启并行搜索时分集搜索必 500；
+    此处按旧逻辑恢复，数据库访问改走 DatabaseService 仓储（调用方事务内）。
+
+    对每个库内作品的每个源：
+    1. 批量取库内已有集号；
+    2. 并发调用 scraper.get_episodes(mediaId) 取源站完整分集；
+    3. 缺失分集用与入库一致的虚拟 episodeId 补充；
+    4. 写整部剧级映射缓存，让 /comment/{虚拟id} 能找到对应源。
+    """
+    for anime_id, anime_info in list(grouped_animes.items()):
+        try:
+            sources = await db.source.get_anime_sources(anime_id)
+            if not sources:
+                continue
+            anime_obj = await db.anime.get_by_id(anime_id)
+            if not anime_obj:
+                continue
+
+            existing_episode_ids = {ep.episodeId for ep in anime_info.episodes}
+
+            valid_sources = []
+            for source in sources:
+                provider = source['providerName']
+                # 自定义源没有源站可拉取，不参与并行补充
+                if provider == 'custom':
+                    continue
+                scraper = scraper_manager.get_scraper(provider)
+                if not scraper:
+                    logger.warning(f"[并行搜索] 无法获取 {provider} 的 scraper")
+                    continue
+                valid_sources.append((
+                    source['sourceId'], provider, source['mediaId'],
+                    source.get('sourceOrder') or 1, scraper,
+                ))
+            if not valid_sources:
+                continue
+
+            existing_indices_map = await db.episode.get_episode_indices_by_source_ids(
+                [sid for sid, *_ in valid_sources]
+            )
+            # 各源分集列表并发拉取，单源失败不影响其他源
+            fetch_results = await asyncio.gather(
+                *(scraper.get_episodes(media_id) for _, _, media_id, _, scraper in valid_sources),
+                return_exceptions=True,
+            )
+
+            for (source_id, provider, media_id, source_order, _), fetch_result in zip(valid_sources, fetch_results):
+                if isinstance(fetch_result, Exception):
+                    logger.warning(f"[并行搜索] 从 {provider} 获取分集列表失败: {fetch_result}")
+                    continue
+                if not fetch_result:
+                    logger.debug(f"[并行搜索] {provider} 源站无分集: mediaId={media_id}")
+                    continue
+
+                existing_indices = existing_indices_map.get(source_id, set())
+                logger.info(
+                    f"[并行搜索] {provider} 源站返回 {len(fetch_result)} 个分集，库内已有 {len(existing_indices)} 个"
+                )
+
+                missing_episodes = []
+                for ep in fetch_result:
+                    if ep.episodeIndex in existing_indices:
+                        continue
+                    # 虚拟 episodeId 与入库编码完全一致，下载后无需改 ID
+                    virtual_ep_id = int(f"25{anime_id:06d}{source_order:02d}{ep.episodeIndex:04d}")
+                    if virtual_ep_id not in existing_episode_ids:
+                        missing_episodes.append((virtual_ep_id, ep))
+                if not missing_episodes:
+                    logger.debug(f"[并行搜索] {provider} 无缺失分集")
+                    continue
+
+                logger.info(f"[并行搜索] {provider} 补充 {len(missing_episodes)} 个缺失分集")
+                for virtual_ep_id, ep in missing_episodes:
+                    anime_info.episodes.append(DandanEpisodeInfo(
+                        episodeId=virtual_ep_id,
+                        episodeTitle=ep.title or f"第{ep.episodeIndex}集",
+                        isLibrary=False,  # 源站补充分集
+                        episodeIndex=ep.episodeIndex,
+                    ))
+                    existing_episode_ids.add(virtual_ep_id)
+
+                anime_info.isParallelResult = True
+                anime_info.parallelProvider = provider
+                anime_info.parallelYear = anime_obj.year
+
+                virtual_anime_base = int(f"25{anime_id:06d}{source_order:02d}0000")
+                cache_data = {
+                    "real_anime_id": anime_id,
+                    "provider": provider,
+                    "mediaId": media_id,
+                    "final_title": anime_obj.title,
+                    "final_season": anime_obj.season or 1,
+                    "media_type": anime_obj.type or "tv_series",
+                    "imageUrl": anime_obj.imageUrl,
+                    "year": anime_obj.year,
+                }
+                # 缓存写入走独立短事务，失败只告警不影响搜索结果
+                await set_db_cache(None, "", f"fallback_episode_{virtual_anime_base}", cache_data, 10800)
+
+            anime_info.episodes.sort(key=lambda ep: ep.episodeId)
+        except Exception as e:
+            logger.error(f"[并行搜索] 处理 anime_id={anime_id} 时出错: {e}", exc_info=True)

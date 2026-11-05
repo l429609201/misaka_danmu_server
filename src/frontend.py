@@ -5,6 +5,7 @@
 """
 
 import logging
+import mimetypes
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,10 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 logger = logging.getLogger(__name__)
+
+# why：Python 3.12 内置 mimetypes 没有 .webp，镜像里也没有 /etc/mime.types，
+# StaticFiles 会把 /data/images/*.webp 返回成 text/plain。启动时显式登记一次。
+mimetypes.add_type("image/webp", ".webp")
 
 # 构建产物属于源码包的只读资源，不随独立数据库/弹幕落盘的工作目录变化。
 _WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"

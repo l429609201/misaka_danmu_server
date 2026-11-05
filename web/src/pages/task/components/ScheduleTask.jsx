@@ -6,6 +6,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Segmented,
   Select,
   Space,
   Switch,
@@ -97,6 +98,7 @@ export const ScheduleTask = () => {
             valuePropName="checked"
             className="mb-4"
             tooltip={description}
+            initialValue={item.default}
           >
             <Switch checkedChildren={t('common.enable')} unCheckedChildren={t('common.disable')} />
           </Form.Item>
@@ -147,6 +149,49 @@ export const ScheduleTask = () => {
           </Form.Item>
         )
 
+      case 'segmented': {
+        // 左右拨动式单选：选项少时一眼可见，默认值由 schema.default 提供
+        const segOptions = localizeItems(
+          options?.map(opt => (typeof opt === 'string' ? { value: opt, label: opt } : opt)),
+          ['label']
+        )
+        return (
+          <Form.Item
+            key={key}
+            name={['taskConfig', key]}
+            label={label}
+            className="mb-4"
+            tooltip={description}
+            initialValue={item.default}
+          >
+            <Segmented block options={segOptions || []} />
+          </Form.Item>
+        )
+      }
+
+      case 'multiselect':
+        return (
+          <Form.Item
+            key={key}
+            name={['taskConfig', key]}
+            label={label}
+            className="mb-4"
+            tooltip={description}
+            initialValue={item.default}
+          >
+            <Select
+              mode="multiple"
+              placeholder={placeholder}
+              options={localizeItems(
+                options?.map(opt =>
+                  typeof opt === 'string' ? { value: opt, label: opt } : opt
+                ),
+                ['label']
+              )}
+            />
+          </Form.Item>
+        )
+
       case 'select':
         return (
           <Form.Item
@@ -155,6 +200,7 @@ export const ScheduleTask = () => {
             label={label}
             className="mb-4"
             tooltip={description}
+            initialValue={item.default}
           >
             <Select
               placeholder={placeholder}
@@ -488,7 +534,7 @@ export const ScheduleTask = () => {
                       )}
                     </div>
 
-                    {task.jobType === 'tmdbAutoScrape' && (
+                    {task.jobType === 'autoScrape' && (
                       <div className="flex items-center gap-2">
                         <span className="text-gray-600">{t('scheduleTask.forceScrape')}</span>
                         {task.taskConfig?.forceScrape ? (

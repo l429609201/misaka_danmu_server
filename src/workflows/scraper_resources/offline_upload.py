@@ -178,12 +178,14 @@ async def _deploy_package(extract_dir: Path, manager: Any, username: str) -> Dic
     need_restart = strategy['need_restart']
     fs.resource_mkdir(scrapers_dir, parents=True, exist_ok=True)
     fs.resource_mkdir(BACKUP_DIR, parents=True, exist_ok=True)
+    # why：备份目录与其他入口一致先清空同类旧文件（clear_dst=True），否则旧包残留的
+    # .so 会和新权威文件混在一起，备份内容与版本文件对不上。
     if need_restart:
-        ScraperVersionManager.copy_scraper_files(extract_dir, BACKUP_DIR)
+        ScraperVersionManager.copy_scraper_files(extract_dir, BACKUP_DIR, clear_dst=True)
         ScraperVersionManager.save_manifest(manifest, BACKUP_DIR)
     else:
         ScraperVersionManager.copy_scraper_files(extract_dir, scrapers_dir)
-        ScraperVersionManager.copy_scraper_files(extract_dir, BACKUP_DIR)
+        ScraperVersionManager.copy_scraper_files(extract_dir, BACKUP_DIR, clear_dst=True)
         ScraperVersionManager.save_manifest(manifest, scrapers_dir)
         ScraperVersionManager.save_manifest(manifest, BACKUP_DIR)
         logger.info(f"用户 '{username}' 上传了离线包,共 {file_count} 个文件")
