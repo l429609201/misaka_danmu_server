@@ -200,6 +200,7 @@ export const ScheduleTask = () => {
             label={label}
             className="mb-4"
             tooltip={description}
+            initialValue={item.default}
           >
             <Select
               placeholder={placeholder}

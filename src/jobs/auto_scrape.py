@@ -91,7 +91,7 @@ class AutoScrapeJob(BaseJob):
             "label": "主刮削源",
             "label_en": "Primary Source",
             "label_tw": "主刮削源",
-            "type": "segmented",
+            "type": "select",
             "optionsSource": "metadataSources",
             "options": [{"value": "tmdb", "label": "TMDB"}],
             "description": "优先使用的元数据源（选项为当前已加载的全部元数据源）；剧集组映射仅 TMDB 支持",
