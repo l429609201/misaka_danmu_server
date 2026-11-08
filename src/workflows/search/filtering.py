@@ -11,7 +11,7 @@
 
 import logging
 from typing import Any, List, Tuple
-from src.schemas.media_types import is_series_type
+from src.schemas.media_types import is_series_type, is_movie_type
 
 from src.utils.parsing.filename_parser import is_movie_by_title
 

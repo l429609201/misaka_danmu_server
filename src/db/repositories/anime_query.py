@@ -20,7 +20,7 @@ AnimeQueryRepository - 动漫复杂查询层
 import logging
 from collections import defaultdict
 from typing import Optional, List, Dict, Any
-from sqlalchemy import select, func, or_, exists
+from sqlalchemy import select, func, or_, exists, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
@@ -344,10 +344,22 @@ class AnimeQueryRepository:
         anime_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """聚合媒体库列表，保留 UI 类型过滤、排序及分页契约。"""
+        # 集数按该作品所有源下不重复的集号计数（电影固定 1），多源同集只算一次、缺集如实体现；
+        # Anime.episodeCount 是手动填写的总集数，多数作品为空，直接返回会显示 0。
+        distinct_episode_count = (
+            select(func.count(func.distinct(Episode.episodeIndex)))
+            .join(AnimeSource, Episode.sourceId == AnimeSource.id)
+            .where(AnimeSource.animeId == Anime.id)
+            .correlate(Anime).scalar_subquery()
+        )
+        episode_count_expr = case(
+            (Anime.type == MEDIA_TYPE_MOVIE, 1),
+            else_=func.coalesce(distinct_episode_count, 0),
+        ).label("episodeCount")
         stmt = (
             select(
                 Anime.id, Anime.title, Anime.type, Anime.season,
-                Anime.episodeCount, Anime.createdAt, Anime.imageUrl,
+                episode_count_expr, Anime.createdAt, Anime.imageUrl,
                 Anime.localImagePath, Anime.year, Anime.groupId,
                 AnimeGroup.name.label("groupName"),
                 func.count(func.distinct(AnimeSource.id)).label("sourceCount"),

@@ -112,10 +112,10 @@ class ScraperLoadPreparation:
             self._perform_backup_restore(backup_dir, scrapers_dir, restore_reason)
 
     def _perform_backup_restore(self, backup_dir: Path, scrapers_dir: Path, reason: str) -> None:
-        """执行备份恢复操作
-
-        使用 ScraperVersionManager.copy_scraper_files 统一搬运，**只搬 manifest + *.so/.pyd**。
-        不再搬 legacy 文件（package.json / versions.json），也不再反向修改备份目录的 manifest。
+        """执行备份恢复操作（统一校验流程）
+        
+        流程：备份目录 → 复制到临时目录 → 校验 → 复制到运行目录
+        只有通过校验的源才会写入运行目录。
         """
         # 预检：备份目录必须有二进制文件
         backup_binaries = [
@@ -126,27 +126,73 @@ class ScraperLoadPreparation:
             return
 
         logger = logging.getLogger(__name__)
+        
+        # 创建临时目录
+        import tempfile
+        temp_dir = Path(tempfile.mkdtemp(prefix="scraper_restore_"))
+        
+        try:
+            # 从 manifest 读取版本号用于日志对比
+            backup_manifest = ScraperVersionManager.load_manifest(backup_dir)
+            backup_version = ScraperVersionManager.get_version_from_manifest(backup_manifest)
+            scrapers_version = ScraperVersionManager.get_version_from_manifest(
+                ScraperVersionManager.load_manifest(scrapers_dir)
+            )
 
-        # 从 manifest 读取版本号用于日志对比
-        backup_version = ScraperVersionManager.get_version_from_manifest(
-            ScraperVersionManager.load_manifest(backup_dir)
-        )
-        scrapers_version = ScraperVersionManager.get_version_from_manifest(
-            ScraperVersionManager.load_manifest(scrapers_dir)
-        )
+            logger.info(f"检测到需要从备份恢复: {reason}")
+            logger.info(
+                f"备份恢复详情:\n"
+                f"  备份版本: {backup_version}\n"
+                f"  运行版本: {scrapers_version}\n"
+                f"  备份二进制数: {len(backup_binaries)}"
+            )
 
-        logger.info(f"检测到需要从备份恢复: {reason}")
-        logger.info(
-            f"备份恢复详情:\n"
-            f"  备份版本: {backup_version}\n"
-            f"  运行版本: {scrapers_version}\n"
-            f"  备份二进制数: {len(backup_binaries)}"
-        )
+            # 第一步：复制到临时目录
+            logger.info("正在将备份文件复制到临时目录...")
+            copied_to_temp = ScraperVersionManager.copy_scraper_files(backup_dir, temp_dir)
+            logger.info(f"已复制 {copied_to_temp} 个文件到临时目录")
 
-        # 使用统一搬运工具：只搬 manifest + 二进制，不搬 legacy 文件，不反向写源目录
-        copied = ScraperVersionManager.copy_scraper_files(backup_dir, scrapers_dir)
+            # 第二步：在临时目录校验
+            logger.info("正在校验备份文件...")
+            valid_sources, rejected_sources = ScraperVersionManager.verify_sources(
+                temp_dir,
+                backup_manifest
+            )
+            
+            if rejected_sources:
+                for name, reason_str in rejected_sources.items():
+                    logger.error(f"备份的弹幕源 {name} 校验未通过: {reason_str}")
+            
+            if not valid_sources:
+                logger.error("备份目录中没有任何弹幕源通过校验，中止恢复")
+                return
+            
+            logger.info(f"校验通过: {len(valid_sources)} 个源，拒绝 {len(rejected_sources)} 个源")
 
-        logger.info(f"备份恢复完成 - 已复制 {copied} 个文件，当前版本: {backup_version}")
+            # 第三步：将通过校验的文件复制到运行目录
+            logger.info("正在将已校验的文件复制到运行目录...")
+            copied_to_run = 0
+            for source_name in valid_sources.keys():
+                for file in self._fs.resource_iterdir(temp_dir):
+                    if ScraperVersionManager.is_scraper_binary(file) and file.stem == source_name:
+                        self._fs.resource_copy2(file, scrapers_dir / file.name)
+                        copied_to_run += 1
+                        break
+            
+            # 同时复制 manifest（只保留通过校验的源）
+            verified_manifest = dict(backup_manifest or {})
+            verified_manifest["sources"] = valid_sources
+            ScraperVersionManager.save_manifest(verified_manifest, scrapers_dir)
+            copied_to_run += 1
+
+            logger.info(f"备份恢复完成 - 已复制 {copied_to_run} 个已校验文件，当前版本: {backup_version}")
+            
+        finally:
+            # 清理临时目录
+            try:
+                self._fs.resource_rmtree(temp_dir, ignore_errors=True)
+            except Exception as e:
+                logger.warning(f"清理临时目录失败: {e}")
 
     def _ensure_manifest_exists(self, scrapers_dir: Path) -> None:
         """确保 manifest 文件存在且格式正确，如不存在或格式错误则从 legacy 文件提取生成"""

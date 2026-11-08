@@ -779,21 +779,43 @@ async def _perform_update(
 
             logger.info(f"临时目录下载完成: 下载 {download_count} 个, 跳过 {skip_count} 个")
 
-            # 从临时目录复制到运行目录
-            scrapers_dir = _get_scrapers_dir()
-            logger.info(f"将文件从临时目录复制到运行目录...")
-            copied_count = 0
-            for file in get_file_storage_service().resource_iterdir(temp_dir):
-                if file.suffix in ('.so', '.pyd'):
-                    await asyncio.to_thread(get_file_storage_service().resource_copy2, file, scrapers_dir / file.name)
-                    copied_count += 1
-            logger.info(f"已复制 {copied_count} 个文件到运行目录")
+            # 统一校验流程：先在临时目录校验，通过后再写入运行目录
+            logger.info("正在校验下载的文件...")
+            valid_sources, rejected_sources = await asyncio.to_thread(
+                ScraperVersionManager.verify_sources,
+                temp_dir,
+                manifest_data
+            )
+            
+            if rejected_sources:
+                for name, reason in rejected_sources.items():
+                    logger.error(f"弹幕源 {name} 校验未通过: {reason}")
+            
+            if not valid_sources:
+                logger.error("临时目录中没有任何弹幕源通过校验，中止更新")
+                return
+            
+            logger.info(f"校验通过: {len(valid_sources)} 个源，拒绝 {len(rejected_sources)} 个源")
 
-            # 保存 manifest 到运行目录
+            # 从临时目录复制到运行目录（只复制通过校验的）
+            scrapers_dir = _get_scrapers_dir()
+            logger.info(f"将已校验的文件复制到运行目录...")
+            copied_count = 0
+            for source_name in valid_sources.keys():
+                for file in get_file_storage_service().resource_iterdir(temp_dir):
+                    if file.suffix in ('.so', '.pyd') and file.stem == source_name:
+                        await asyncio.to_thread(get_file_storage_service().resource_copy2, file, scrapers_dir / file.name)
+                        copied_count += 1
+                        break
+            logger.info(f"已复制 {copied_count} 个已校验文件到运行目录")
+
+            # 保存 manifest 到运行目录（只保留通过校验的源）
+            verified_manifest = dict(manifest_data)
+            verified_manifest["sources"] = valid_sources
             await asyncio.to_thread(
                 ScraperVersionManager.save_manifest,
-                manifest_data,  # 第一个参数：manifest 数据
-                scrapers_dir    # 第二个参数：目标目录
+                verified_manifest,
+                scrapers_dir
             )
 
         finally:
