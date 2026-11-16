@@ -189,6 +189,33 @@ class AnimeQueryRepository:
         return list(result.scalars().all())
 
 
+    async def find_import_alias_ids(
+        self, titles: List[str], season: Optional[int], media_type: Optional[str],
+        year: Optional[int],
+    ) -> List[int]:
+        """在完整弱身份边界内按别名查重，恢复旧版导入兜底。"""
+        columns = (AnimeAlias.nameEn, AnimeAlias.nameJp, AnimeAlias.nameRomaji,
+                   AnimeAlias.aliasCn1, AnimeAlias.aliasCn2, AnimeAlias.aliasCn3)
+        stmt = select(Anime.id).join(AnimeAlias, AnimeAlias.animeId == Anime.id).where(
+            or_(*(column.in_(titles) for column in columns)), Anime.season == season,
+        )
+        if media_type:
+            stmt = stmt.where(Anime.type == media_type)
+        stmt = stmt.where(Anime.year.is_(None) if year is None else Anime.year == year)
+        result = await self._session.execute(stmt.order_by(Anime.id))
+        return list(result.scalars().all())
+
+    async def list_import_title_candidates(
+        self, season: Optional[int], media_type: Optional[str], year: Optional[int],
+    ) -> List[Dict[str, Any]]:
+        """仅返回同季同类型同年份状态的模糊查重候选，不跨身份扩大匹配。"""
+        stmt = select(Anime.id, Anime.title).where(Anime.season == season)
+        if media_type:
+            stmt = stmt.where(Anime.type == media_type)
+        stmt = stmt.where(Anime.year.is_(None) if year is None else Anime.year == year)
+        rows = (await self._session.execute(stmt.order_by(Anime.id))).mappings().all()
+        return [dict(row) for row in rows]
+
     async def search_anime(self, keyword: str) -> List[Dict[str, Any]]:
         """按关键词搜索库内作品（替代 crud.search_anime）。
 

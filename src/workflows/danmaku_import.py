@@ -13,6 +13,8 @@ import logging
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
+from thefuzz import fuzz
+
 from src.schemas.import_schemas import DanmakuEpisodeCreate
 from src.services.config_service import get_config_service
 from src.services.file_storage_service import get_file_storage_service, wait_for_settlement
@@ -31,8 +33,9 @@ async def check_anime_existence(
     year: Optional[int] = None, tmdb_id: Optional[str] = None,
     tvdb_id: Optional[str] = None, imdb_id: Optional[str] = None,
     title_recognition_manager: Any = None,
+    alias_titles: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """在调用方 DatabaseService 事务内执行三段式判重，不自行提交。"""
+    """在调用方事务内按强标识、标题、识别词、别名及模糊候选判重，不自行提交。"""
     db = get_database_service()
     identities = []
     if media_id and str(media_id).strip():
@@ -65,6 +68,7 @@ async def check_anime_existence(
                 "reason": f"强标识命中({identity}, season={season})"}
 
     if title and season is not None:
+        converted_title, converted_season = title, season
         ids = await db.anime.find_import_title_ids(title, season, media_type, year)
         if ids:
             if len(ids) > 1:
@@ -73,7 +77,7 @@ async def check_anime_existence(
                     "stage": "title", "reason": f"标题精确命中(title={title}, season={season}, year={year})"}
         if title_recognition_manager:
             converted_title, converted_season, was_converted, _, _ = (
-                await title_recognition_manager.apply_storage_postprocessing(title, season, None)
+                await title_recognition_manager.apply_storage_postprocessing(title, season, provider)
             )
             if was_converted:
                 ids = await db.anime.find_import_title_ids(
@@ -82,6 +86,27 @@ async def check_anime_existence(
                 if ids:
                     return {"found": True, "anime_id": min(ids), "source_id": None,
                             "stage": "title", "reason": f"识别词转换命中({converted_title}, season={converted_season})"}
+        # 恢复 v2.8.9 的别名、模糊兜底；所有候选仍严格限制季、类型和年份状态。
+        titles = list(dict.fromkeys(value for value in
+                                   [*(alias_titles or []), title, converted_title] if value))
+        ids = await db.anime.find_import_alias_ids(
+            titles, converted_season, media_type, year,
+        )
+        if ids:
+            return {"found": True, "anime_id": min(ids), "source_id": None,
+                    "stage": "alias", "reason": "完整身份内别名精确命中"}
+        candidates = await db.anime.list_import_title_candidates(
+            converted_season, media_type, year,
+        )
+        # 与旧版一致使用主标题 token_set_ratio 和 85 阈值，同分时稳定复用最小 ID。
+        best = max(candidates, key=lambda item: (
+            fuzz.token_set_ratio(converted_title, item["title"]), -item["id"],
+        ), default=None)
+        if best is not None:
+            score = fuzz.token_set_ratio(converted_title, best["title"])
+            if score >= 85:
+                return {"found": True, "anime_id": best["id"], "source_id": None,
+                        "stage": "fuzzy", "reason": f"完整身份内标题模糊命中(score={score})"}
     return {"found": False, "anime_id": None, "source_id": None,
             "stage": "none", "reason": "未命中任何存在性规则"}
 

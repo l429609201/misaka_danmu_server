@@ -358,6 +358,9 @@ class TitleRecognitionWorkflow:
                         continue
 
                     metadata_info = {k: v for k, v in rule.data.items() if k not in ['source', 'source_restriction']}
+                    # 入库身份必须落实显式标题，不能要求每个调用方再次解析元数据。
+                    if metadata_info.get('title'):
+                        processed_text = metadata_info['title']
                     has_changed = True
                     logger.debug(f"入库后处理 - 应用元数据替换规则: '{rule.data['source']}' => 元数据")
 

@@ -84,7 +84,10 @@ async def search_auto_import_candidates(
                       for item in results]
     final_title = best.title
     if recognition_manager:
-        title, _, _, applied, _ = await recognition_manager.apply_storage_postprocessing(best.title, season)
+        # 这里只生成展示名；实际入库保留源站原名，由身份编排统一转换一次。
+        title, _, applied, _, _ = await recognition_manager.apply_storage_postprocessing(
+            best.title, season, best.provider,
+        )
         if applied:
             final_title = title
     title = f"自动导入: {final_title}"
@@ -93,7 +96,7 @@ async def search_auto_import_candidates(
     if episode_text:
         title += f" E{episode_text}"
     parameters = {
-        "provider": best.provider, "mediaId": best.mediaId, "animeTitle": final_title,
+        "provider": best.provider, "mediaId": best.mediaId, "animeTitle": best.title,
         "mediaType": best.type, "season": season, "year": best.year,
         "currentEpisodeIndex": None, "selectedEpisodes": requested or None,
         "imageUrl": prepared["image_url"] or best.imageUrl,
