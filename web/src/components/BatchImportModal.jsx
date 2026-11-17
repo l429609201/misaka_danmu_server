@@ -181,6 +181,8 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
       const items = selectedItems.map(item => ({
         episodeIndex: item.episodeIndex,
         content: item.url,
+        // 自定义源仍需真实平台抓取，不能让视频 URL 落入 XML 导入分支。
+        urlProvider: item.provider,
         title: item.title || undefined,
       }))
 

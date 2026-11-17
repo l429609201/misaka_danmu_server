@@ -78,8 +78,11 @@ class EpisodeRepository(BaseRepository[Episode]):
         stmt = select(Episode).where(
             Episode.sourceId == source_id,
             Episode.providerEpisodeId == provider_episode_id,
-        ).limit(1)
-        episode = (await self._session.execute(stmt)).scalar_one_or_none()
+        )
+        # 旧版 XML 导入共用占位 ID，不代表真实源站身份，必须同时限制集号。
+        if provider_episode_id == "custom_xml":
+            stmt = stmt.where(Episode.episodeIndex == episode_index)
+        episode = (await self._session.execute(stmt.limit(1))).scalar_one_or_none()
         if episode is not None:
             return episode
         stmt = select(Episode).where(
