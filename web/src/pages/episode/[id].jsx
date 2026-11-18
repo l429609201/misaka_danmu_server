@@ -46,6 +46,8 @@ import {
   ExclamationCircleOutlined,
   LinkOutlined,
   ToolOutlined,
+  LoadingOutlined,
+  ClockCircleOutlined,
 } from '@ant-design/icons'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -132,7 +134,7 @@ export const EpisodeDetail = () => {
   // XML 修复工具状态
   const [xmlRepairOpen, setXmlRepairOpen] = useState(false)
   const [xmlRepairLoading, setXmlRepairLoading] = useState(false)
-  const [xmlRepairResults, setXmlRepairResults] = useState(null)
+  const [xmlRepairRows, setXmlRepairRows] = useState([])  // 每集的检测状态行
 
   // 当默认分页大小加载完成后，更新 pagination
   useEffect(() => {
@@ -964,20 +966,54 @@ export const EpisodeDetail = () => {
   }
 
   /**
-   * 打开 XML 修复工具：先检测所有分集，再显示检测结果
+   * 打开 XML 修复工具：弹窗立即显示，逐批检测分集并实时更新进度
    */
   const handleOpenXmlRepair = async () => {
     if (!episodeList.length) return
-    setXmlRepairOpen(true)
+    const episodes = selectedRows.length ? selectedRows : episodeList
+    // 初始化所有行为"待检测"
+    const initialRows = episodes.map(e => ({
+      id: e.id,
+      episodeIndex: e.episodeIndex,
+      episodeTitle: e.episodeName || e.episodeTitle || '',
+      status: 'pending',
+      repairInfo: null,
+    }))
+    setXmlRepairRows(initialRows)
     setXmlRepairLoading(true)
-    setXmlRepairResults(null)
+    setXmlRepairOpen(true)
+
+    // 分批检测（每批 5 集），逐批更新状态
+    const BATCH_SIZE = 5
     try {
-      const ids = (selectedRows.length ? selectedRows : episodeList).map(e => e.id)
-      const res = await detectXmlRepair(ids)
-      setXmlRepairResults(res.data)
-    } catch (err) {
-      messageApi.error(err.detail || err.message || t('episodePage.xmlRepairDetectFailed'))
-      setXmlRepairOpen(false)
+      for (let i = 0; i < episodes.length; i += BATCH_SIZE) {
+        const batch = episodes.slice(i, i + BATCH_SIZE)
+        const batchIds = batch.map(e => e.id)
+        // 先把本批设为"检测中"
+        setXmlRepairRows(prev => prev.map(row =>
+          batchIds.includes(row.id) ? { ...row, status: 'checking' } : row
+        ))
+        try {
+          const res = await detectXmlRepair(batchIds)
+          const resultMap = {}
+          for (const r of (res.data?.results ?? [])) {
+            resultMap[r.episodeId] = r
+          }
+          // 更新本批结果
+          setXmlRepairRows(prev => prev.map(row => {
+            if (!batchIds.includes(row.id)) return row
+            const r = resultMap[row.id]
+            return r
+              ? { ...row, status: r.status, repairInfo: r.repairInfo ?? null }
+              : { ...row, status: 'missing', repairInfo: null }
+          }))
+        } catch {
+          // 本批失败则标为 missing
+          setXmlRepairRows(prev => prev.map(row =>
+            batchIds.includes(row.id) ? { ...row, status: 'missing', repairInfo: null } : row
+          ))
+        }
+      }
     } finally {
       setXmlRepairLoading(false)
     }
@@ -987,10 +1023,9 @@ export const EpisodeDetail = () => {
    * 执行 XML 文件修复（后台任务）
    */
   const handleFixXml = async () => {
-    if (!xmlRepairResults) return
-    const repairableIds = xmlRepairResults.results
+    const repairableIds = xmlRepairRows
       .filter(r => r.status === 'repairable')
-      .map(r => r.episodeId)
+      .map(r => r.id)
     if (!repairableIds.length) {
       messageApi.info(t('episodePage.xmlRepairNoRepairable'))
       return
@@ -2328,9 +2363,13 @@ export const EpisodeDetail = () => {
       <Modal
         title={<span><ToolOutlined className="mr-2" />{t('episodePage.xmlRepairModalTitle')}</span>}
         open={xmlRepairOpen}
-        onCancel={() => setXmlRepairOpen(false)}
+        onCancel={() => !xmlRepairLoading && setXmlRepairOpen(false)}
         footer={[
-          <Button key="close" onClick={() => setXmlRepairOpen(false)}>
+          <Button
+            key="close"
+            onClick={() => setXmlRepairOpen(false)}
+            disabled={xmlRepairLoading}
+          >
             {t('common.cancel')}
           </Button>,
           <Button
@@ -2338,58 +2377,109 @@ export const EpisodeDetail = () => {
             type="primary"
             disabled={
               xmlRepairLoading ||
-              !xmlRepairResults?.results?.some(r => r.status === 'repairable')
+              !xmlRepairRows.some(r => r.status === 'repairable')
             }
             onClick={handleFixXml}
           >
             {t('episodePage.xmlRepairBtnFix', {
-              count: xmlRepairResults?.totalRepairable ?? 0,
+              count: xmlRepairRows.filter(r => r.status === 'repairable').length,
             })}
           </Button>,
         ]}
-        width={600}
+        width={640}
       >
-        {xmlRepairLoading ? (
-          <div className="text-center py-8 text-gray-500">
-            {t('episodePage.xmlRepairDetecting')}
-          </div>
-        ) : xmlRepairResults ? (
-          <div>
-            {/* 汇总 */}
-            <div className="flex gap-4 mb-4 text-sm">
-              <span className="text-green-600">{t('episodePage.xmlRepairOk')}: {xmlRepairResults.totalOk}</span>
-              <span className="text-orange-500">{t('episodePage.xmlRepairRepairable')}: {xmlRepairResults.totalRepairable}</span>
-              <span className="text-red-500">{t('episodePage.xmlRepairBroken')}: {xmlRepairResults.totalBroken}</span>
-              <span className="text-gray-500">{t('episodePage.xmlRepairMissing')}: {xmlRepairResults.totalMissing}</span>
-            </div>
-            {/* 列表（仅显示非正常条目） */}
-            {xmlRepairResults.results.filter(r => r.status !== 'ok').length === 0 ? (
-              <div className="text-center py-4 text-green-600">
-                {t('episodePage.xmlRepairAllOk')}
-              </div>
+        {/* 进度汇总条 */}
+        {xmlRepairRows.length > 0 && (
+          <div className="flex items-center gap-4 mb-3 text-sm text-gray-500">
+            {xmlRepairLoading ? (
+              <span className="flex items-center gap-1">
+                <LoadingOutlined className="text-blue-500" />
+                <span>{t('episodePage.xmlRepairDetecting')}</span>
+              </span>
             ) : (
-              <ul className="list-none space-y-1 text-sm max-h-64 overflow-y-auto">
-                {xmlRepairResults.results
-                  .filter(r => r.status !== 'ok')
-                  .map(r => (
-                    <li key={r.episodeId} className="flex items-start gap-2">
-                      <span className={
-                        r.status === 'repairable' ? 'text-orange-500' :
-                        r.status === 'broken' ? 'text-red-500' : 'text-gray-400'
-                      }>
-                        {r.status === 'repairable' ? '⚠' : r.status === 'broken' ? '✗' : '—'}
-                      </span>
-                      <span className="font-medium">E{r.episodeIndex}</span>
-                      <span className="text-gray-500 truncate" title={r.episodeTitle}>{r.episodeTitle}</span>
-                      {r.repairInfo && (
-                        <span className="text-gray-400 text-xs ml-auto">{r.repairInfo}</span>
-                      )}
-                    </li>
-                  ))}
-              </ul>
+              <>
+                <span className="text-green-600">
+                  {t('episodePage.xmlRepairOk')}: {xmlRepairRows.filter(r => r.status === 'ok').length}
+                </span>
+                <span className="text-orange-500">
+                  {t('episodePage.xmlRepairRepairable')}: {xmlRepairRows.filter(r => r.status === 'repairable').length}
+                </span>
+                <span className="text-red-500">
+                  {t('episodePage.xmlRepairBroken')}: {xmlRepairRows.filter(r => r.status === 'broken').length}
+                </span>
+                <span className="text-gray-400">
+                  {t('episodePage.xmlRepairMissing')}: {xmlRepairRows.filter(r => r.status === 'missing').length}
+                </span>
+              </>
             )}
           </div>
-        ) : null}
+        )}
+        {/* 每集状态列表 */}
+        <div className="max-h-[420px] overflow-y-auto space-y-1 pr-1">
+          {xmlRepairRows.map(row => {
+            const isPending = row.status === 'pending'
+            const isChecking = row.status === 'checking'
+            const isOk = row.status === 'ok'
+            const isRepairable = row.status === 'repairable'
+            const isBroken = row.status === 'broken'
+            const isMissing = row.status === 'missing'
+            return (
+              <div
+                key={row.id}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                  isOk ? 'bg-green-50' :
+                  isRepairable ? 'bg-orange-50' :
+                  isBroken ? 'bg-red-50' :
+                  isMissing ? 'bg-gray-50' :
+                  isChecking ? 'bg-blue-50' :
+                  'bg-gray-50'
+                }`}
+              >
+                {/* 状态图标 */}
+                <span className="flex-shrink-0 w-5 text-center">
+                  {isPending && <ClockCircleOutlined className="text-gray-300" />}
+                  {isChecking && <LoadingOutlined className="text-blue-400" />}
+                  {isOk && <CheckCircleOutlined className="text-green-500" />}
+                  {isRepairable && <ExclamationCircleOutlined className="text-orange-500" />}
+                  {isBroken && <ExclamationCircleOutlined className="text-red-500" />}
+                  {isMissing && <span className="text-gray-300">—</span>}
+                </span>
+                {/* 集号 */}
+                <span className="flex-shrink-0 font-mono text-xs text-gray-500 w-8">
+                  E{row.episodeIndex}
+                </span>
+                {/* 集名 */}
+                <span className={`flex-1 truncate ${isOk ? 'text-gray-600' : isChecking || isPending ? 'text-gray-400' : 'text-gray-800'}`}
+                  title={row.episodeTitle}>
+                  {row.episodeTitle}
+                </span>
+                {/* 状态文字 / 修复信息 */}
+                <span className={`flex-shrink-0 text-xs ${
+                  isPending ? 'text-gray-300' :
+                  isChecking ? 'text-blue-400' :
+                  isOk ? 'text-green-500' :
+                  isRepairable ? 'text-orange-500' :
+                  isBroken ? 'text-red-500' :
+                  'text-gray-400'
+                }`}>
+                  {isPending && t('episodePage.xmlRepairPending')}
+                  {isChecking && t('episodePage.xmlRepairChecking')}
+                  {isOk && t('episodePage.xmlRepairOk')}
+                  {isRepairable && (row.repairInfo || t('episodePage.xmlRepairRepairable'))}
+                  {isBroken && t('episodePage.xmlRepairBroken')}
+                  {isMissing && t('episodePage.xmlRepairMissing')}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+        {/* 全部正常提示 */}
+        {!xmlRepairLoading && xmlRepairRows.length > 0 &&
+          xmlRepairRows.every(r => r.status === 'ok') && (
+          <div className="text-center py-2 text-green-600 text-sm mt-2">
+            {t('episodePage.xmlRepairAllOk')}
+          </div>
+        )}
       </Modal>
     </div>
   )

@@ -2126,6 +2126,8 @@ export default {
     xmlRepairSubmitted: '修復任務已提交，請至任務管理查看進度',
     xmlRepairFailed: '提交修復任務失敗',
     xmlRepairDetecting: '正在偵測分集XML檔案...',
+    xmlRepairPending: '待偵測',
+    xmlRepairChecking: '偵測中...',
     xmlRepairOk: '正常',
     xmlRepairRepairable: '可修復',
     xmlRepairBroken: '損壞',

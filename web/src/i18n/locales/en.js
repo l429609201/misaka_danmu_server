@@ -2124,6 +2124,8 @@ export default {
     xmlRepairSubmitted: 'Repair task submitted, check task manager for progress',
     xmlRepairFailed: 'Failed to submit repair task',
     xmlRepairDetecting: 'Detecting episode XML files...',
+    xmlRepairPending: 'Pending',
+    xmlRepairChecking: 'Checking...',
     xmlRepairOk: 'OK',
     xmlRepairRepairable: 'Repairable',
     xmlRepairBroken: 'Broken',

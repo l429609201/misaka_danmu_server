@@ -2440,6 +2440,8 @@ export default {
     xmlRepairSubmitted: '修复任务已提交，请到任务管理查看进度',
     xmlRepairFailed: '提交修复任务失败',
     xmlRepairDetecting: '正在检测分集XML文件...',
+    xmlRepairPending: '待检测',
+    xmlRepairChecking: '检测中...',
     xmlRepairOk: '正常',
     xmlRepairRepairable: '可修复',
     xmlRepairBroken: '损坏',
