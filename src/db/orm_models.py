@@ -100,6 +100,9 @@ class AnimeSource(Base):
 
     anime: Mapped["Anime"] = relationship(back_populates="sources")
     episodes: Mapped[List["Episode"]] = relationship(back_populates="source", cascade="all, delete-orphan")
+    task_bindings: Mapped[List["ScheduledTaskSourceBinding"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint('anime_id', 'provider_name', 'media_id', name='idx_anime_provider_media_unique'),
@@ -374,6 +377,43 @@ class ScheduledTask(Base):
     taskConfig: Mapped[Optional[str]] = mapped_column("task_config", TEXT, default="{}")  # JSON 格式的任务实例级配置
     lastRunAt: Mapped[Optional[datetime]] = mapped_column("last_run_at", NaiveDateTime)
     nextRunAt: Mapped[Optional[datetime]] = mapped_column("next_run_at", NaiveDateTime)
+
+    # 关联：任务绑定的数据源
+    source_bindings: Mapped[List["ScheduledTaskSourceBinding"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan"
+    )
+
+
+class ScheduledTaskSourceBinding(Base):
+    """定时任务与数据源的绑定关系表
+    
+    用于支持按源绑定自动追更/刷新任务：一个任务可以绑定多个源，一个源可以绑定多个任务。
+    全局任务不绑定任何源（source_bindings 为空列表）。
+    """
+    __tablename__ = "scheduled_task_source_bindings"
+    
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    taskId: Mapped[str] = mapped_column(
+        "task_id", String(500), 
+        ForeignKey("scheduled_tasks.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    sourceId: Mapped[int] = mapped_column(
+        "source_id", BigInteger,
+        ForeignKey("anime_sources.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    createdAt: Mapped[datetime] = mapped_column("created_at", NaiveDateTime)
+    
+    # 关联关系
+    task: Mapped["ScheduledTask"] = relationship(back_populates="source_bindings")
+    source: Mapped["AnimeSource"] = relationship(back_populates="task_bindings")
+    
+    __table_args__ = (
+        UniqueConstraint('task_id', 'source_id', name='uk_task_source'),
+        Index('idx_task_bindings', 'task_id'),
+        Index('idx_source_bindings', 'source_id'),
+    )
 
 class WebhookTask(Base):
     __tablename__ = "webhook_tasks"

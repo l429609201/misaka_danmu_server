@@ -307,6 +307,22 @@ export const runTask = data =>
 export const getAvailableScheduledJobs = () =>
   api.get('/api/ui/scheduled-tasks/available-jobs')
 
+/** 获取定时任务绑定的数据源列表 */
+export const getTaskBindings = (taskId) =>
+  api.get(`/api/ui/scheduled-tasks/${taskId}/bindings`)
+
+/** 添加数据源绑定到定时任务（支持批量） */
+export const addTaskBindings = (taskId, sourceIds) =>
+  api.post(`/api/ui/scheduled-tasks/${taskId}/bindings`, { sourceIds })
+
+/** 移除定时任务的数据源绑定（支持批量或全部清除） */
+export const removeTaskBindings = (taskId, sourceIds = null) =>
+  api.delete(`/api/ui/scheduled-tasks/${taskId}/bindings`, { data: { sourceIds } })
+
+/** 获取数据源绑定的定时任务列表 */
+export const getSourceTaskBindings = (sourceId) =>
+  api.get(`/api/ui/sources/${sourceId}/task-bindings`)
+
 /** 获取流控状态 */
 export const getRateLimitStatus = () => api.get('/api/ui/rate-limit/status')
 

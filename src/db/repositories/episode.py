@@ -227,6 +227,29 @@ class EpisodeRepository(BaseRepository[Episode]):
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_recent_episodes(
+        self,
+        source_id: int,
+        limit: int = 1
+    ) -> List[Episode]:
+        """获取指定源的最近 N 集（按集数倒序）
+        
+        Args:
+            source_id: 数据源ID
+            limit: 返回集数（默认 1 = 只返回最新一集）
+            
+        Returns:
+            最近 N 集的列表，按集数倒序排列
+        """
+        stmt = (
+            select(Episode)
+            .where(Episode.sourceId == source_id)
+            .order_by(Episode.episodeIndex.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def check_episode_exists(
         self,
         source_id: int,

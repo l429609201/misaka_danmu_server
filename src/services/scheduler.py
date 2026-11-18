@@ -79,12 +79,20 @@ class SchedulerManager:
         job_class = self._job_classes[job_type]
 
         async def runner():
-            # 从数据库读取任务实例级配置（taskConfig JSON）
+            # 从数据库读取任务实例级配置（taskConfig JSON）和绑定的源列表
             task_config = {}
             async with self._db.transaction():
                 task_info = await self._db.scheduled_task.get_scheduled_task(scheduled_task_id)
                 if task_info:
                     task_config = task_info.get('taskConfig', {})
+                # 注入绑定的数据源ID列表（如果有），供追更/刷新任务按绑定源执行
+                bound_source_ids = await self._db.task_binding.get_sources_by_task(
+                    scheduled_task_id, enabled_only=False
+                )
+                if bound_source_ids:
+                    task_config = dict(task_config)  # 避免修改原始引用
+                    task_config['bound_source_ids'] = bound_source_ids
+                    logger.debug(f"定时任务 '{scheduled_task_id}' 注入 {len(bound_source_ids)} 个绑定源")
             logger.info(f"定时任务 '{scheduled_task_id}' (类型: {job_type}) 读取到 taskConfig: {task_config}")
 
             # 修正：智能地将依赖项传递给任务的构造函数

@@ -25,6 +25,9 @@ import {
   runTask,
   getAvailableScheduledJobs,
   getScheduledTaskList,
+  getTaskBindings,
+  addTaskBindings,
+  removeTaskBindings,
 } from '../../../apis'
 import { MyIcon } from '@/components/MyIcon.jsx'
 import dayjs from 'dayjs'
@@ -46,6 +49,10 @@ export const ScheduleTask = () => {
   const [tasks, setTasks] = useState([])
   const [availableJobTypes, setAvailableJobTypes] = useState([])
   const [advancedMode, setAdvancedMode] = useState(false)
+  // 绑定管理状态
+  const [bindingTaskId, setBindingTaskId] = useState(null)
+  const [taskBindings, setTaskBindings] = useState([])
+  const [bindingLoading, setBindingLoading] = useState(false)
 
   // Cron 组件本地化配置（随语言切换）
   const cronLocale = t('cronLocale', { returnObjects: true })
@@ -329,6 +336,29 @@ export const ScheduleTask = () => {
       },
     },
     {
+      title: t('scheduleTask.colBindings'),
+      key: 'bindings',
+      width: 100,
+      render: (_, record) => {
+        // 只有追更/刷新弹幕类型任务才支持绑定
+        const supportBinding = record.jobType === 'incrementalRefresh' || record.jobType === 'refreshLatestEpisode'
+        if (!supportBinding) return <span className="text-gray-400 text-xs">—</span>
+        const count = record.bindingCount ?? 0
+        return (
+          <span
+            className="cursor-pointer"
+            onClick={() => handleOpenBindings(record.taskId)}
+          >
+            {count > 0 ? (
+              <Tag color="blue">{t('scheduleTask.boundCount', { count })}</Tag>
+            ) : (
+              <Tag className="cursor-pointer">{t('scheduleTask.noBound')}</Tag>
+            )}
+          </span>
+        )
+      },
+    },
+    {
       title: t('scheduleTask.colAction'),
       width: 100,
       fixed: 'right',
@@ -375,8 +405,29 @@ export const ScheduleTask = () => {
     },
   ]
 
-  const handleRun = async record => {
+  // 打开绑定管理弹窗：加载该任务绑定的所有数据源
+  const handleOpenBindings = async (taskId) => {
+    setBindingTaskId(taskId)
+    setBindingLoading(true)
     try {
+      const res = await getTaskBindings(taskId)
+      setTaskBindings(res?.data?.bindings || [])
+    } catch {}
+    setBindingLoading(false)
+  }
+
+  // 解除某条绑定
+  const handleRemoveBinding = async (taskId, sourceId) => {
+    try {
+      await removeTaskBindings(taskId, [sourceId])
+      setTaskBindings(prev => prev.filter(b => b.sourceId !== sourceId))
+      messageApi.success(t('scheduleTask.bindingRemoved'))
+    } catch {
+      messageApi.error(t('scheduleTask.bindingRemoveFailed'))
+    }
+  }
+
+  const handleRun = async record => {    try {
       await runTask({ id: record.taskId })
       messageApi.success(t('scheduleTask.runTriggered'))
     } catch (error) {
@@ -736,6 +787,57 @@ export const ScheduleTask = () => {
             ]}
           />
         </Form>
+      </Modal>
+
+      {/* 绑定数据源管理弹窗 */}
+      <Modal
+        open={!!bindingTaskId}
+        onCancel={() => setBindingTaskId(null)}
+        onOk={() => setBindingTaskId(null)}
+        title={
+          <span className="text-sm font-semibold">
+            {t('scheduleTask.bindingModalTitle')}
+          </span>
+        }
+        footer={[
+          <button key="ok" onClick={() => setBindingTaskId(null)} className="px-4 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/6 hover:bg-gray-100 dark:hover:bg-white/6 transition">
+            {t('scheduleTask.close')}
+          </button>
+        ]}
+        width={520}
+      >
+        {bindingLoading ? (
+          <div className="flex justify-center py-8">
+            <span>{t('common.loading')}</span>
+          </div>
+        ) : taskBindings.length === 0 ? (
+          <Empty description={t('scheduleTask.noBindings')} />
+        ) : (
+          <div className="space-y-2 mt-2">
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              {t('scheduleTask.bindingHint')}
+            </div>
+            {taskBindings.map(binding => (
+              <div key={binding.sourceId} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-gray-200 dark:border-white/6">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">{binding.animeTitle}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">{binding.providerName}</span>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500">·</span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">ID: {binding.mediaId}</span>
+                  </div>
+                </div>
+                <Button
+                  size="small"
+                  danger
+                  onClick={() => handleRemoveBinding(bindingTaskId, binding.sourceId)}
+                >
+                  {t('scheduleTask.removeBinding')}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </Modal>
     </div>
   )

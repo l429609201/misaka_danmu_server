@@ -3300,6 +3300,16 @@ export default {
     isEnabled: '是否啟用',
     tabConfig: '設定',
     noConfig: '目前任務類型暫無可設定項',
+    colBindings: '綁定來源',
+    boundCount: '{{count}} 個來源',
+    noBound: '全域',
+    bindingModalTitle: '綁定的資料來源',
+    close: '關閉',
+    noBindings: '目前任務未綁定任何資料來源（全域模式，處理所有啟用的來源）',
+    bindingHint: '已綁定的資料來源將在專屬模式下由該任務處理（點擊「解除」可移除綁定）',
+    removeBinding: '解除',
+    bindingRemoved: '已解除綁定',
+    bindingRemoveFailed: '解除綁定失敗',
   },
 
   // Cron 元件本地化

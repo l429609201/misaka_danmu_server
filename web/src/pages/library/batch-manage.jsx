@@ -17,6 +17,10 @@ import {
   batchSetSourceFinished,
   batchUnsetSourceFinished,
   deleteAnimeSource,
+  getScheduledTaskList,
+  getTaskBindings,
+  addTaskBindings,
+  removeTaskBindings,
 } from '../../apis'
 import dayjs from 'dayjs'
 import { useDefaultPageSize } from '../../hooks/useDefaultPageSize'
@@ -54,6 +58,11 @@ export const BatchManagePage = () => {
   const [stats, setStats] = useState({ total: 0, totalSources: 0, refreshEnabled: 0, favorited: 0, maxFailures: 10 })
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [deleteFiles, setDeleteFiles] = useState(true)
+  // 调度绑定相关状态
+  const [scheduledTasks, setScheduledTasks] = useState([])      // 所有可用定时任务列表
+  const [sourceBindings, setSourceBindings] = useState({})      // {sourceId: [bindingInfo, ...]}
+  const [bindingModalSourceId, setBindingModalSourceId] = useState(null)  // 当前打开绑定弹窗的 sourceId
+  const [bindingModalLoading, setBindingModalLoading] = useState(false)
 
   useEffect(() => { if (defaultPageSize) setPageSize(defaultPageSize) }, [defaultPageSize])
 
@@ -93,6 +102,17 @@ export const BatchManagePage = () => {
   }, [page, pageSize, searchKeyword, favoriteFilter, refreshFilter, typeFilter, finishedFilter, sortBy, sortOrder])
 
   useEffect(() => { fetchData({ page: 1 }) }, [])
+
+  // 加载所有定时任务（用于绑定弹窗选项）
+  useEffect(() => {
+    getScheduledTaskList().then(res => {
+      const tasks = res?.data || []
+      // 只保留支持绑定的任务类型（追更 + 刷新）
+      setScheduledTasks(tasks.filter(t =>
+        t.jobType === 'incrementalRefresh' || t.jobType === 'refreshLatestEpisode'
+      ))
+    }).catch(() => {})
+  }, [])
 
 
   // ---- Handlers ----
@@ -153,6 +173,50 @@ export const BatchManagePage = () => {
     })))
     try { await toggleSourceFinished({ sourceId }) }
     catch (e) { message.error(t('incrementalRefresh.operationFailed') + ': ' + e.message); fetchData() }
+  }
+
+  // 打开绑定弹窗：懒加载该源的绑定状态
+  const handleOpenBindingModal = async (e, sourceId) => {
+    e.stopPropagation()
+    setBindingModalSourceId(sourceId)
+    if (!sourceBindings[sourceId]) {
+      setBindingModalLoading(true)
+      try {
+        // 并行查所有任务的绑定，找出包含此 sourceId 的任务
+        const boundTaskIds = new Set()
+        await Promise.all(scheduledTasks.map(async task => {
+          try {
+            const r = await getTaskBindings(task.id)
+            const bindings = r?.data?.bindings || []
+            if (bindings.some(b => b.sourceId === sourceId)) {
+              boundTaskIds.add(task.id)
+            }
+          } catch {}
+        }))
+        setSourceBindings(prev => ({ ...prev, [sourceId]: [...boundTaskIds] }))
+      } catch {}
+      setBindingModalLoading(false)
+    }
+  }
+
+  // 切换某个源对某个任务的绑定
+  const handleToggleBinding = async (taskId, sourceId, currentlyBound) => {
+    try {
+      if (currentlyBound) {
+        await removeTaskBindings(taskId, [sourceId])
+      } else {
+        await addTaskBindings(taskId, [sourceId])
+      }
+      // 更新本地缓存
+      setSourceBindings(prev => {
+        const cur = new Set(prev[sourceId] || [])
+        if (currentlyBound) cur.delete(taskId)
+        else cur.add(taskId)
+        return { ...prev, [sourceId]: [...cur] }
+      })
+    } catch (e) {
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + e.message)
+    }
   }
 
   // Batch operations
@@ -356,7 +420,7 @@ export const BatchManagePage = () => {
           {/* why：表头移出滚动容器，固定在列表上方不随内容滚动，不再需要 sticky */}
           {!isMobile && (
             <div className="flex items-center px-5 py-2.5 mx-2 mt-2 text-[11px] uppercase tracking-wider text-gray-700 dark:text-gray-200 rounded-full border border-gray-200 dark:border-white/6 batch-manage-header">
-              <div className="w-[38%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition flex items-center gap-1" onClick={() => handleSortChange('title')}>
+              <div className="w-[30%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition flex items-center gap-1" onClick={() => handleSortChange('title')}>
                 {t('batchManage.colTitle')} <span className={`text-[10px] ${sortBy === 'title' ? 'text-indigo-600 dark:text-indigo-300' : 'opacity-40'}`}>{sortBy === 'title' ? (sortOrder === 'asc' ? '↑' : '↓') : '⇅'}</span>
               </div>
               <div className="w-[10%] text-center">{t('batchManage.colProgress')}</div>
@@ -364,7 +428,8 @@ export const BatchManagePage = () => {
               <div className="w-[10%] text-center">{t('batchManage.colRefresh')}</div>
               <div className="w-[10%] text-center">{t('batchManage.colFavorite')}</div>
               <div className="w-[10%] text-center">{t('batchManage.colFinished')}</div>
-              <div className="w-[12%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition" onClick={() => handleSortChange('created')}>
+              <div className="w-[10%] text-center">{t('batchManage.colSchedule')}</div>
+              <div className="w-[10%] cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 transition" onClick={() => handleSortChange('created')}>
                 <div className="flex items-center gap-1">
                   <div className="flex flex-col leading-tight">
                     <span>{t('batchManage.colUpdatedLine1')}</span>
@@ -490,7 +555,7 @@ export const BatchManagePage = () => {
                           </div>
                         )}
                         {/* 作品 */}
-                        <div className="w-[38%] min-w-0 pr-3">
+                        <div className="w-[30%] min-w-0 pr-3">
                           <div className="flex items-center gap-3">
                             {getPoster(group)
                               ? <img src={getPoster(group)} alt={group.animeTitle} className="w-11 h-[60px] rounded-lg object-cover flex-shrink-0" />
@@ -533,8 +598,19 @@ export const BatchManagePage = () => {
                             ? <MultiToggle sources={group.sources} field="isFinished" iconName="wanjie1" color="#2563eb" onToggle={handleToggleFinished} />
                             : <ToggleBtn on={s.isFinished} onClick={() => handleToggleFinished(s.sourceId)} iconName="wanjie1" color="#2563eb" />}
                         </div>
+                        {/* 调度绑定 */}
+                        <div className="w-[10%] flex justify-center" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => handleOpenBindingModal(e, s.sourceId)}
+                            className="px-2 py-1 rounded-lg text-xs font-medium border transition flex items-center gap-1 hover:bg-gray-100 dark:hover:bg-white/6 border-gray-200 dark:border-white/6 text-gray-700 dark:text-gray-200"
+                          >
+                            {(sourceBindings[s.sourceId] || []).length > 0
+                              ? <><span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 font-bold">{sourceBindings[s.sourceId].length}</span><span className="text-[10px] opacity-60">个</span></>
+                              : <span className="text-[10px] text-gray-400 dark:text-gray-500">{t('batchManage.notBound')}</span>}
+                          </button>
+                        </div>
                         {/* 最近更新 */}
-                        <div className="w-[12%] text-sm text-gray-800 dark:text-gray-100 whitespace-nowrap">
+                        <div className="w-[10%] text-sm text-gray-800 dark:text-gray-100 whitespace-nowrap">
                           {latestTime}
                           {!isMulti && s.incrementalRefreshEnabled && s.incrementalRefreshFailures > 0 && (
                             <><br /><span className="text-[10px] px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-700 dark:text-red-300">{t('incrementalRefresh.failureCount', { failures: s.incrementalRefreshFailures, max: stats.maxFailures })}</span></>
@@ -598,6 +674,16 @@ export const BatchManagePage = () => {
           <p className="text-gray-500 text-sm mt-2">{deleteFiles ? t('incrementalRefresh.deleteWithFiles') : t('incrementalRefresh.deleteRecordOnly')}</p>
         </div>
       </Modal>
+
+      {/* 调度绑定弹窗 */}
+      <BindingModal
+        sourceId={bindingModalSourceId}
+        sourceBindings={sourceBindings}
+        scheduledTasks={scheduledTasks}
+        bindingModalLoading={bindingModalLoading}
+        onToggle={handleToggleBinding}
+        onClose={() => setBindingModalSourceId(null)}
+      />
     </div>
   )
 }
@@ -662,5 +748,66 @@ const MultiToggle = ({ sources, field, iconName, color, onToggle }) => {
 }
 
 
+// 调度绑定弹窗组件
+// 展示该数据源当前绑定了哪些定时任务，支持添加 / 解除绑定
+const BindingModal = ({ sourceId, sourceBindings, scheduledTasks: taskList, bindingModalLoading, onToggle, onClose }) => {
+  const { t } = useTranslation()
+  if (!sourceId) return null
+  const boundTaskIds = new Set(sourceBindings[sourceId] || [])
+  const compatibleTasks = (taskList || []).filter(task =>
+    task.jobType === 'incrementalRefresh' || task.jobType === 'refreshLatestEpisode'
+  )
+  const jobTypeLabel = (jobType) => {
+    if (jobType === 'incrementalRefresh') return t('batchManage.jobTypeRefresh')
+    if (jobType === 'refreshLatestEpisode') return t('batchManage.jobTypeDanmaku')
+    return jobType
+  }
+  return (
+    <Modal
+      open
+      onCancel={onClose}
+      onOk={onClose}
+      title={<span className="text-sm font-semibold">{t('batchManage.bindingModalTitle')}</span>}
+      footer={[
+        <button key="ok" onClick={onClose} className="px-4 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/6 hover:bg-gray-100 dark:hover:bg-white/6 transition">
+          {t('batchManage.close')}
+        </button>
+      ]}
+      width={440}
+    >
+      {bindingModalLoading ? (
+        <div className="flex justify-center py-8"><Spin /></div>
+      ) : compatibleTasks.length === 0 ? (
+        <Empty description={t('batchManage.noScheduledTasks')} />
+      ) : (
+        <div className="space-y-2 mt-2">
+          {compatibleTasks.map(task => {
+            const isBound = boundTaskIds.has(task.id)
+            return (
+              <div key={task.id} className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition ${isBound ? 'border-indigo-500/40 bg-indigo-500/5' : 'border-gray-200 dark:border-white/6'}`}>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">{task.taskName}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${task.jobType === 'incrementalRefresh' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-blue-500/15 text-blue-700 dark:text-blue-300'}`}>
+                      {jobTypeLabel(task.jobType)}
+                    </span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 font-mono">{task.cronExpression}</span>
+                    {!task.isEnabled && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-700 dark:text-red-300">{t('batchManage.disabled')}</span>}
+                  </div>
+                </div>
+                <ToggleBtn
+                  on={isBound}
+                  onClick={() => onToggle(task.id, sourceId, isBound)}
+                  iconName={isBound ? 'wanjie1' : 'add'}
+                  color="#6366f1"
+                />
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Modal>
+  )
+}
 
 
