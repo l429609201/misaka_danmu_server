@@ -858,6 +858,14 @@ export const sortEpisodes = data =>
 export const offsetEpisodes = data =>
   api.post('/api/ui/library/episodes/offset', data)
 
+/** 检测分集弹幕 XML 文件格式 */
+export const detectXmlRepair = episodeIds =>
+  api.post('/api/ui/library/episodes/xml-repair/detect', { episodeIds })
+
+/** 提交批量修复分集弹幕 XML 文件任务 */
+export const fixXmlRepair = episodeIds =>
+  api.post('/api/ui/library/episodes/xml-repair/fix', { episodeIds })
+
 /** 获取弹幕详情 */
 export const getDanmakuDetail = data =>
   api.get(`/api/ui/comment/${data.id}`, {

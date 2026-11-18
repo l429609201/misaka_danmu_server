@@ -14,6 +14,8 @@ import {
   sortEpisodes,
   validateImportUrl,
   importCollection,
+  detectXmlRepair,
+  fixXmlRepair,
 } from '../../apis'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -43,6 +45,7 @@ import {
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   LinkOutlined,
+  ToolOutlined,
 } from '@ant-design/icons'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -125,6 +128,11 @@ export const EpisodeDetail = () => {
 
   // 弹幕编辑弹窗状态
   const [isDanmakuEditModalOpen, setIsDanmakuEditModalOpen] = useState(false)
+
+  // XML 修复工具状态
+  const [xmlRepairOpen, setXmlRepairOpen] = useState(false)
+  const [xmlRepairLoading, setXmlRepairLoading] = useState(false)
+  const [xmlRepairResults, setXmlRepairResults] = useState(null)
 
   // 当默认分页大小加载完成后，更新 pagination
   useEffect(() => {
@@ -955,6 +963,47 @@ export const EpisodeDetail = () => {
     })
   }
 
+  /**
+   * 打开 XML 修复工具：先检测所有分集，再显示检测结果
+   */
+  const handleOpenXmlRepair = async () => {
+    if (!episodeList.length) return
+    setXmlRepairOpen(true)
+    setXmlRepairLoading(true)
+    setXmlRepairResults(null)
+    try {
+      const ids = (selectedRows.length ? selectedRows : episodeList).map(e => e.id)
+      const res = await detectXmlRepair(ids)
+      setXmlRepairResults(res.data)
+    } catch (err) {
+      messageApi.error(err.detail || err.message || t('episodePage.xmlRepairDetectFailed'))
+      setXmlRepairOpen(false)
+    } finally {
+      setXmlRepairLoading(false)
+    }
+  }
+
+  /**
+   * 执行 XML 文件修复（后台任务）
+   */
+  const handleFixXml = async () => {
+    if (!xmlRepairResults) return
+    const repairableIds = xmlRepairResults.results
+      .filter(r => r.status === 'repairable')
+      .map(r => r.episodeId)
+    if (!repairableIds.length) {
+      messageApi.info(t('episodePage.xmlRepairNoRepairable'))
+      return
+    }
+    try {
+      await fixXmlRepair(repairableIds)
+      messageApi.success(t('episodePage.xmlRepairSubmitted'))
+      setXmlRepairOpen(false)
+    } catch (err) {
+      messageApi.error(err.detail || err.message || t('episodePage.xmlRepairFailed'))
+    }
+  }
+
   // URL解析函数（手动导入分集时使用）
   const handleValidateUrl = async (url) => {
     if (!url?.trim()) {
@@ -1337,6 +1386,15 @@ export const EpisodeDetail = () => {
               <Tooltip title={t('episodePage.tipDanmakuEdit')}>
                 <EditOutlined />
                 <span className="ml-1">{t('episodePage.btnDanmakuEdit')}</span>
+              </Tooltip>
+            </Button>
+            <Button
+              onClick={handleOpenXmlRepair}
+              disabled={!episodeList.length}
+            >
+              <Tooltip title={t('episodePage.tipXmlRepair')}>
+                <ToolOutlined />
+                <span className="ml-1">{t('episodePage.btnXmlRepair')}</span>
               </Tooltip>
             </Button>
             {isXmlImport && (
@@ -2265,6 +2323,74 @@ export const EpisodeDetail = () => {
         episodes={episodeList}
         sourceInfo={sourceInfo}
       />
+
+      {/* XML 修复工具弹窗 */}
+      <Modal
+        title={<span><ToolOutlined className="mr-2" />{t('episodePage.xmlRepairModalTitle')}</span>}
+        open={xmlRepairOpen}
+        onCancel={() => setXmlRepairOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setXmlRepairOpen(false)}>
+            {t('common.cancel')}
+          </Button>,
+          <Button
+            key="fix"
+            type="primary"
+            disabled={
+              xmlRepairLoading ||
+              !xmlRepairResults?.results?.some(r => r.status === 'repairable')
+            }
+            onClick={handleFixXml}
+          >
+            {t('episodePage.xmlRepairBtnFix', {
+              count: xmlRepairResults?.totalRepairable ?? 0,
+            })}
+          </Button>,
+        ]}
+        width={600}
+      >
+        {xmlRepairLoading ? (
+          <div className="text-center py-8 text-gray-500">
+            {t('episodePage.xmlRepairDetecting')}
+          </div>
+        ) : xmlRepairResults ? (
+          <div>
+            {/* 汇总 */}
+            <div className="flex gap-4 mb-4 text-sm">
+              <span className="text-green-600">{t('episodePage.xmlRepairOk')}: {xmlRepairResults.totalOk}</span>
+              <span className="text-orange-500">{t('episodePage.xmlRepairRepairable')}: {xmlRepairResults.totalRepairable}</span>
+              <span className="text-red-500">{t('episodePage.xmlRepairBroken')}: {xmlRepairResults.totalBroken}</span>
+              <span className="text-gray-500">{t('episodePage.xmlRepairMissing')}: {xmlRepairResults.totalMissing}</span>
+            </div>
+            {/* 列表（仅显示非正常条目） */}
+            {xmlRepairResults.results.filter(r => r.status !== 'ok').length === 0 ? (
+              <div className="text-center py-4 text-green-600">
+                {t('episodePage.xmlRepairAllOk')}
+              </div>
+            ) : (
+              <ul className="list-none space-y-1 text-sm max-h-64 overflow-y-auto">
+                {xmlRepairResults.results
+                  .filter(r => r.status !== 'ok')
+                  .map(r => (
+                    <li key={r.episodeId} className="flex items-start gap-2">
+                      <span className={
+                        r.status === 'repairable' ? 'text-orange-500' :
+                        r.status === 'broken' ? 'text-red-500' : 'text-gray-400'
+                      }>
+                        {r.status === 'repairable' ? '⚠' : r.status === 'broken' ? '✗' : '—'}
+                      </span>
+                      <span className="font-medium">E{r.episodeIndex}</span>
+                      <span className="text-gray-500 truncate" title={r.episodeTitle}>{r.episodeTitle}</span>
+                      {r.repairInfo && (
+                        <span className="text-gray-400 text-xs ml-auto">{r.repairInfo}</span>
+                      )}
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

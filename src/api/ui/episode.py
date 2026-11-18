@@ -11,11 +11,16 @@ from src import tasks
 from src.schemas.auth import User
 from src.schemas.anime import EpisodeInfoUpdate
 from src.schemas.control.episode import EpisodeOffsetRequest
-from src.schemas.ui_models import UITaskResponse, BulkDeleteEpisodesRequest
+from src.schemas.ui_models import (
+    UITaskResponse, BulkDeleteEpisodesRequest,
+    XmlRepairDetectRequest, XmlRepairDetectResponse, XmlRepairDetectResult, XmlRepairFixRequest,
+)
 from src.services.service_container import (
     get_database_service, get_scraper_manager, get_task_manager, get_rate_limiter,
+    get_file_storage_service,
 )
 from src.services.config_service import get_config_service
+from src.utils.parsing.xml_repair import repair_danmaku_xml
 from src.workflows.episode_edit import update_episode_info
 
 logger = logging.getLogger(__name__)
@@ -219,6 +224,144 @@ async def offset_episodes(
 
     logger.info(f"用户 '{current_user.username}' 提交了集数偏移任务 (Task ID: {task_id})。")
     return {"message": f"集数偏移任务 '{task_title}' 已提交。", "taskId": task_id}
+
+
+@router.post("/library/episodes/xml-repair/detect", summary="批量检测分集弹幕 XML 文件是否损坏")
+async def detect_xml_repair(
+    request_data: XmlRepairDetectRequest,
+    current_user: User = Depends(get_current_user),
+) -> XmlRepairDetectResponse:
+    """同步检测一批分集的弹幕 XML 文件，返回每个分集的健康状态。
+
+    状态说明：
+    - ok: 文件存在且格式完好
+    - repairable: 存在非法控制字符或未转义 & 等格式问题，可自动修复
+    - broken: 结构性损坏（标签未闭合等），无法自动修复
+    - missing: 弹幕文件不存在或为空
+    """
+    from xml.etree import ElementTree
+
+    db = get_database_service()
+    fs = get_file_storage_service()
+    results: list[XmlRepairDetectResult] = []
+
+    for episode_id in request_data.episodeIds:
+        async with db.transaction():
+            episode = await db.episode.get_by_id(episode_id)
+
+        if episode is None:
+            results.append(XmlRepairDetectResult(
+                episodeId=episode_id,
+                episodeTitle=f"分集 {episode_id}",
+                episodeIndex=0,
+                status="missing",
+                repairInfo="分集记录不存在",
+            ))
+            continue
+
+        episode_title = episode.episodeTitle or f"分集 {episode.episodeIndex}"
+        episode_index = episode.episodeIndex or 0
+
+        path = fs.resolve_fs_path(episode.danmakuFilePath) if episode.danmakuFilePath else None
+        if not path or not fs.exists(path):
+            results.append(XmlRepairDetectResult(
+                episodeId=episode_id,
+                episodeTitle=episode_title,
+                episodeIndex=episode_index,
+                status="missing",
+                repairInfo="弹幕文件不存在",
+            ))
+            continue
+
+        content = await fs.read_text(path)
+        if not content:
+            results.append(XmlRepairDetectResult(
+                episodeId=episode_id,
+                episodeTitle=episode_title,
+                episodeIndex=episode_index,
+                status="missing",
+                repairInfo="弹幕文件为空",
+            ))
+            continue
+
+        # 尝试直接解析
+        try:
+            ElementTree.fromstring(content)
+            results.append(XmlRepairDetectResult(
+                episodeId=episode_id,
+                episodeTitle=episode_title,
+                episodeIndex=episode_index,
+                status="ok",
+            ))
+            continue
+        except ElementTree.ParseError:
+            pass
+
+        # 尝试修复
+        repaired = repair_danmaku_xml(content, episode_id, file_path=str(path))
+        if repaired is not None:
+            # 统计修复信息
+            ctrl_count = len(content) - len(
+                ''.join(c for c in content if ord(c) >= 0x20 or c in '\t\n\r')
+            )
+            amp_count = content.count('&') - repaired.count('&')
+            info_parts = []
+            if ctrl_count > 0:
+                info_parts.append(f"非法控制字符 {ctrl_count} 个")
+            if amp_count > 0:
+                info_parts.append(f"未转义 & {amp_count} 处")
+            results.append(XmlRepairDetectResult(
+                episodeId=episode_id,
+                episodeTitle=episode_title,
+                episodeIndex=episode_index,
+                status="repairable",
+                repairInfo="、".join(info_parts) if info_parts else "格式问题（可修复）",
+            ))
+        else:
+            results.append(XmlRepairDetectResult(
+                episodeId=episode_id,
+                episodeTitle=episode_title,
+                episodeIndex=episode_index,
+                status="broken",
+                repairInfo="结构性损坏，无法自动修复",
+            ))
+
+    total_ok = sum(1 for r in results if r.status == "ok")
+    total_repairable = sum(1 for r in results if r.status == "repairable")
+    total_broken = sum(1 for r in results if r.status == "broken")
+    total_missing = sum(1 for r in results if r.status == "missing")
+    return XmlRepairDetectResponse(
+        results=results,
+        totalOk=total_ok,
+        totalRepairable=total_repairable,
+        totalBroken=total_broken,
+        totalMissing=total_missing,
+    )
+
+
+@router.post("/library/episodes/xml-repair/fix", summary="提交批量修复分集弹幕 XML 文件任务")
+async def fix_xml_repair(
+    request: Request,
+    request_data: XmlRepairFixRequest,
+    current_user: User = Depends(get_current_user),
+) -> UITaskResponse:
+    """提交后台任务，批量修复分集弹幕 XML 文件中的格式问题（写回原文件）。"""
+    task_manager = get_task_manager()
+    count = len(request_data.episodeIds)
+    task_title = f"XML 格式修复（{count} 个分集）"
+    task_coro = lambda session, callback: tasks.repair_xml_files_task(
+        request_data.episodeIds, session, callback
+    )
+    unique_key = f"xml-repair-{'-'.join(str(eid) for eid in sorted(request_data.episodeIds)[:5])}"
+    try:
+        task_id, _ = await task_manager.submit_task(
+            task_coro, task_title, unique_key=unique_key, queue_type="management",
+        )
+    except HTTPException as e:
+        raise e
+
+    logger.info("用户 '%s' 提交了 XML 修复任务 (Task ID: %s)，分集数: %d", current_user.username, task_id, count)
+    return {"message": f"XML 修复任务 '{task_title}' 已提交。", "taskId": task_id}
 
 
 

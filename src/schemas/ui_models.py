@@ -657,3 +657,32 @@ class BatchMergeResponse(BaseModel):
     results: List[MergeResultItem]
     successCount: int
     failCount: int
+
+
+class XmlRepairDetectRequest(BaseModel):
+    """批量检测 XML 文件请求"""
+    episodeIds: List[int] = Field(..., description="要检测的分集 ID 列表")
+
+
+class XmlRepairDetectResult(BaseModel):
+    """单个分集 XML 检测结果"""
+    episodeId: int
+    episodeTitle: str
+    episodeIndex: int
+    # ok: 文件完好; repairable: 存在格式问题但可修复; broken: 结构损坏无法修复; missing: 文件不存在
+    status: str
+    repairInfo: Optional[str] = None
+
+
+class XmlRepairDetectResponse(BaseModel):
+    """批量 XML 检测响应"""
+    results: List[XmlRepairDetectResult]
+    totalOk: int
+    totalRepairable: int
+    totalBroken: int
+    totalMissing: int
+
+
+class XmlRepairFixRequest(BaseModel):
+    """批量修复 XML 文件请求"""
+    episodeIds: List[int] = Field(..., description="要修复的分集 ID 列表")

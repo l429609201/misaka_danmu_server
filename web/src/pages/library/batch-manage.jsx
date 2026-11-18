@@ -186,10 +186,10 @@ export const BatchManagePage = () => {
         const boundTaskIds = new Set()
         await Promise.all(scheduledTasks.map(async task => {
           try {
-            const r = await getTaskBindings(task.id)
+            const r = await getTaskBindings(task.taskId)
             const bindings = r?.data?.bindings || []
             if (bindings.some(b => b.sourceId === sourceId)) {
-              boundTaskIds.add(task.id)
+              boundTaskIds.add(task.taskId)
             }
           } catch {}
         }))
@@ -782,11 +782,11 @@ const BindingModal = ({ sourceId, sourceBindings, scheduledTasks: taskList, bind
       ) : (
         <div className="space-y-2 mt-2">
           {compatibleTasks.map(task => {
-            const isBound = boundTaskIds.has(task.id)
+            const isBound = boundTaskIds.has(task.taskId)
             return (
-              <div key={task.id} className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition ${isBound ? 'border-indigo-500/40 bg-indigo-500/5' : 'border-gray-200 dark:border-white/6'}`}>
+              <div key={task.taskId} className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition ${isBound ? 'border-indigo-500/40 bg-indigo-500/5' : 'border-gray-200 dark:border-white/6'}`}>
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">{task.taskName}</div>
+                  <div className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">{task.name}</div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${task.jobType === 'incrementalRefresh' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-blue-500/15 text-blue-700 dark:text-blue-300'}`}>
                       {jobTypeLabel(task.jobType)}
@@ -797,7 +797,7 @@ const BindingModal = ({ sourceId, sourceBindings, scheduledTasks: taskList, bind
                 </div>
                 <ToggleBtn
                   on={isBound}
-                  onClick={() => onToggle(task.id, sourceId, isBound)}
+                  onClick={() => onToggle(task.taskId, sourceId, isBound)}
                   iconName={isBound ? 'wanjie1' : 'add'}
                   color="#6366f1"
                 />
