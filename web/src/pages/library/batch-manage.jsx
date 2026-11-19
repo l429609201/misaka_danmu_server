@@ -21,6 +21,7 @@ import {
   getTaskBindings,
   addTaskBindings,
   removeTaskBindings,
+  addScheduledTask,
 } from '../../apis'
 import dayjs from 'dayjs'
 import { useDefaultPageSize } from '../../hooks/useDefaultPageSize'
@@ -214,6 +215,28 @@ export const BatchManagePage = () => {
         else cur.add(taskId)
         return { ...prev, [sourceId]: [...cur] }
       })
+    } catch (e) {
+      message.error(t('incrementalRefresh.operationFailed') + ': ' + e.message)
+    }
+  }
+
+  // 新建任务后刷新任务列表，并自动绑定当前源
+  const handleTaskCreated = async (newTaskId) => {
+    try {
+      const res = await getScheduledTaskList()
+      const tasks = (res?.data || []).filter(t =>
+        t.jobType === 'incrementalRefresh' || t.jobType === 'refreshLatestEpisode'
+      )
+      setScheduledTasks(tasks)
+      // 自动绑定新任务到当前弹窗的源
+      if (bindingModalSourceId && newTaskId) {
+        await addTaskBindings(newTaskId, [bindingModalSourceId])
+        setSourceBindings(prev => {
+          const cur = new Set(prev[bindingModalSourceId] || [])
+          cur.add(newTaskId)
+          return { ...prev, [bindingModalSourceId]: [...cur] }
+        })
+      }
     } catch (e) {
       message.error(t('incrementalRefresh.operationFailed') + ': ' + e.message)
     }
@@ -605,8 +628,8 @@ export const BatchManagePage = () => {
                             className="px-2 py-1 rounded-lg text-xs font-medium border transition flex items-center gap-1 hover:bg-gray-100 dark:hover:bg-white/6 border-gray-200 dark:border-white/6 text-gray-700 dark:text-gray-200"
                           >
                             {(sourceBindings[s.sourceId] || []).length > 0
-                              ? <><span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 font-bold">{sourceBindings[s.sourceId].length}</span><span className="text-[10px] opacity-60">个</span></>
-                              : <span className="text-[10px] text-gray-400 dark:text-gray-500">{t('batchManage.notBound')}</span>}
+                              ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 font-bold">{t('batchManage.dedicatedSchedule', { count: (sourceBindings[s.sourceId] || []).length })}</span>
+                              : <span className="text-[10px] text-gray-400 dark:text-gray-500">{t('batchManage.globalSchedule')}</span>}
                           </button>
                         </div>
                         {/* 最近更新 */}
@@ -682,6 +705,7 @@ export const BatchManagePage = () => {
         scheduledTasks={scheduledTasks}
         bindingModalLoading={bindingModalLoading}
         onToggle={handleToggleBinding}
+        onTaskCreated={handleTaskCreated}
         onClose={() => setBindingModalSourceId(null)}
       />
     </div>
@@ -749,9 +773,13 @@ const MultiToggle = ({ sources, field, iconName, color, onToggle }) => {
 
 
 // 调度绑定弹窗组件
-// 展示该数据源当前绑定了哪些定时任务，支持添加 / 解除绑定
-const BindingModal = ({ sourceId, sourceBindings, scheduledTasks: taskList, bindingModalLoading, onToggle, onClose }) => {
+// 展示该数据源当前绑定了哪些定时任务，支持添加/解除绑定、新建专属任务
+const BindingModal = ({ sourceId, sourceBindings, scheduledTasks: taskList, bindingModalLoading, onToggle, onTaskCreated, onClose }) => {
   const { t } = useTranslation()
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [createForm, setCreateForm] = useState({ name: '', jobType: 'incrementalRefresh', cronExpression: '0 4 * * *' })
+
   if (!sourceId) return null
   const boundTaskIds = new Set(sourceBindings[sourceId] || [])
   const compatibleTasks = (taskList || []).filter(task =>
@@ -762,6 +790,30 @@ const BindingModal = ({ sourceId, sourceBindings, scheduledTasks: taskList, bind
     if (jobType === 'refreshLatestEpisode') return t('batchManage.jobTypeDanmaku')
     return jobType
   }
+
+  // 新建专属任务并自动绑定当前源
+  const handleCreateTask = async () => {
+    if (!createForm.name.trim() || !createForm.cronExpression.trim()) return
+    setCreating(true)
+    try {
+      const res = await addScheduledTask({
+        name: createForm.name.trim(),
+        jobType: createForm.jobType,
+        cronExpression: createForm.cronExpression.trim(),
+        isEnabled: true,
+        taskConfig: {},
+      })
+      const newTaskId = res?.data?.taskId || res?.data?.id
+      if (onTaskCreated) await onTaskCreated(newTaskId)
+      setShowCreateForm(false)
+      setCreateForm({ name: '', jobType: 'incrementalRefresh', cronExpression: '0 4 * * *' })
+    } catch (e) {
+      // 错误由父组件处理
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
     <Modal
       open
@@ -773,37 +825,113 @@ const BindingModal = ({ sourceId, sourceBindings, scheduledTasks: taskList, bind
           {t('batchManage.close')}
         </button>
       ]}
-      width={440}
+      width={460}
     >
       {bindingModalLoading ? (
         <div className="flex justify-center py-8"><Spin /></div>
-      ) : compatibleTasks.length === 0 ? (
-        <Empty description={t('batchManage.noScheduledTasks')} />
       ) : (
         <div className="space-y-2 mt-2">
-          {compatibleTasks.map(task => {
-            const isBound = boundTaskIds.has(task.taskId)
-            return (
-              <div key={task.taskId} className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition ${isBound ? 'border-indigo-500/40 bg-indigo-500/5' : 'border-gray-200 dark:border-white/6'}`}>
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">{task.name}</div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${task.jobType === 'incrementalRefresh' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-blue-500/15 text-blue-700 dark:text-blue-300'}`}>
-                      {jobTypeLabel(task.jobType)}
-                    </span>
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400 font-mono">{task.cronExpression}</span>
-                    {!task.isEnabled && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-700 dark:text-red-300">{t('batchManage.disabled')}</span>}
+          {/* 任务列表 */}
+          {compatibleTasks.length === 0 && !showCreateForm ? (
+            <Empty description={t('batchManage.noScheduledTasks')} />
+          ) : (
+            compatibleTasks.map(task => {
+              const isBound = boundTaskIds.has(task.taskId)
+              // 解析 cron 表达式显示下次运行时间（简单描述）
+              const nextRunHint = task.nextRunTime
+                ? dayjs(task.nextRunTime).format('MM-DD HH:mm')
+                : null
+              return (
+                <div key={task.taskId} className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition ${isBound ? 'border-indigo-500/40 bg-indigo-500/5' : 'border-gray-200 dark:border-white/6'}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">{task.name}</div>
+                    <div className="flex items-center flex-wrap gap-1.5 mt-0.5">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${task.jobType === 'incrementalRefresh' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : 'bg-blue-500/15 text-blue-700 dark:text-blue-300'}`}>
+                        {jobTypeLabel(task.jobType)}
+                      </span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 font-mono">{task.cronExpression}</span>
+                      {nextRunHint && (
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500">{t('batchManage.nextRun')} {nextRunHint}</span>
+                      )}
+                      {!task.isEnabled && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-700 dark:text-red-300">{t('batchManage.disabled')}</span>}
+                    </div>
                   </div>
+                  <ToggleBtn
+                    on={isBound}
+                    onClick={() => onToggle(task.taskId, sourceId, isBound)}
+                    iconName={isBound ? 'wanjie1' : 'add'}
+                    color="#6366f1"
+                  />
                 </div>
-                <ToggleBtn
-                  on={isBound}
-                  onClick={() => onToggle(task.taskId, sourceId, isBound)}
-                  iconName={isBound ? 'wanjie1' : 'add'}
-                  color="#6366f1"
+              )
+            })
+          )}
+
+          {/* 新建专属任务表单 */}
+          {showCreateForm ? (
+            <div className="border border-dashed border-indigo-400/50 bg-indigo-500/3 dark:bg-indigo-500/5 rounded-xl px-3 py-3 space-y-2 mt-2">
+              <div className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-1">{t('batchManage.createTaskTitle')}</div>
+              {/* 任务名称 */}
+              <div>
+                <div className="text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">{t('batchManage.taskNameLabel')}</div>
+                <input
+                  value={createForm.name}
+                  onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))}
+                  placeholder={t('batchManage.taskNamePlaceholder')}
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-gray-800 dark:text-gray-100 outline-none focus:border-indigo-400"
                 />
               </div>
-            )
-          })}
+              {/* 任务类型 */}
+              <div>
+                <div className="text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">{t('batchManage.taskTypeLabel')}</div>
+                <div className="flex gap-2">
+                  {['incrementalRefresh', 'refreshLatestEpisode'].map(type => (
+                    <button
+                      key={type}
+                      onClick={() => setCreateForm(f => ({ ...f, jobType: type }))}
+                      className={`px-2.5 py-1 text-[10px] rounded-lg border transition ${createForm.jobType === type ? 'border-indigo-400 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300' : 'border-gray-200 dark:border-white/10 text-gray-500'}`}
+                    >
+                      {jobTypeLabel(type)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Cron 表达式 */}
+              <div>
+                <div className="text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">{t('batchManage.cronLabel')}</div>
+                <input
+                  value={createForm.cronExpression}
+                  onChange={e => setCreateForm(f => ({ ...f, cronExpression: e.target.value }))}
+                  placeholder="0 4 * * *"
+                  className="w-full px-2.5 py-1.5 text-xs font-mono rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-gray-800 dark:text-gray-100 outline-none focus:border-indigo-400"
+                />
+              </div>
+              {/* 操作按钮 */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={handleCreateTask}
+                  disabled={creating || !createForm.name.trim()}
+                  className="flex-1 py-1.5 text-xs font-medium rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white transition disabled:opacity-50"
+                >
+                  {creating ? t('batchManage.creating') : t('batchManage.createAndBind')}
+                </button>
+                <button
+                  onClick={() => setShowCreateForm(false)}
+                  className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-white/10 text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 transition"
+                >
+                  {t('batchManage.cancelCreate')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* 新建按钮 */
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="w-full mt-1 py-2 text-xs rounded-xl border border-dashed border-gray-300 dark:border-white/10 text-gray-400 dark:text-gray-500 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition flex items-center justify-center gap-1"
+            >
+              <span className="text-base leading-none">+</span> {t('batchManage.addDedicatedTask')}
+            </button>
+          )}
         </div>
       )}
     </Modal>
