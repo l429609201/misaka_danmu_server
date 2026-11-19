@@ -86,6 +86,7 @@ async def check_app_update(
     config_service: ConfigService = Depends(get_config_service),
     force_refresh: bool = Query(False, description="强制刷新缓存"),
     _current_user: User = Depends(get_current_user),
+):
     """检查是否有新版本可用 - 🚀 薄层路由，委托给 workflow"""
     result = await workflow_check_version(config_service, force_refresh)
     return VersionCheckResponse(**result)
