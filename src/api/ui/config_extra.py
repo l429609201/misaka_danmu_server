@@ -477,7 +477,8 @@ async def test_single_target(
 
 @router.get("/config/customDanmakuPath", response_model=CustomDanmakuPathResponse, summary="获取自定义弹幕路径配置")
 async def get_custom_danmaku_path(
-    db: DatabaseService = Depends(get_database_service)
+    db: DatabaseService = Depends(get_database_service),
+    _current_user: User = Depends(get_current_user),
 ):
     """获取自定义弹幕路径配置"""
     async with db.transaction():
@@ -1489,42 +1490,3 @@ async def generate_regex(
         raise HTTPException(status_code=500, detail="AI 正则生成失败，请检查 AI 配置是否正确")
 
     return {"regex": result}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -27,7 +27,7 @@ from src.services.task_manager import TaskManager
 from src.workflows.dashboard import workflow_get_dashboard_overview
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 # ==================== Models ====================

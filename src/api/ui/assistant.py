@@ -85,7 +85,9 @@ class ToolExecuteRequest(BaseModel):
 
 
 @router.get("/assistant/personas", summary="获取御坂助手人设列表", include_in_schema=False)
-async def get_personas():
+async def get_personas(
+    _current_user: ui_models.User = Depends(get_current_user),
+):
     return {"personas": list_personas(), "default": DEFAULT_PERSONA}
 
 

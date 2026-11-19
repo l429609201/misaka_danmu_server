@@ -7,10 +7,12 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from src.api.auth import get_current_user
 from src.api.dependencies import get_config_service
+from src.schemas.auth import User
 from src.services.config_service import ConfigService
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class ScanIndexStats(BaseModel):

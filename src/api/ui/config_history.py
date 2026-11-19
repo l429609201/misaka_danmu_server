@@ -5,16 +5,28 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from src.api.auth import get_current_user
 from src.core import get_now
+from src.schemas.auth import User
 from src.services.config_service import ConfigService, get_config_service
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 MAX_HISTORY_PER_KEY = 20
+
+_ROLLBACK_BLOCKED_KEYS = frozenset({
+    "ipWhitelist",
+    "trustedProxies",
+    "externalApiKey",
+    "jwtSecret",
+    "adminPassword",
+    "adminUsername",
+    "allowedCorsOrigins",
+})
 
 
 class ConfigChangeRecord(BaseModel):
@@ -57,6 +69,12 @@ async def rollback_config(
     target_value = body.get("value", "")
     if not key:
         return {"message": "key is required", "success": False}
+
+    if key in _ROLLBACK_BLOCKED_KEYS:
+        raise HTTPException(
+            status_code=403,
+            detail=f"配置项 '{key}' 属于安全敏感配置，不允许通过回滚接口修改",
+        )
 
     current = await config_service.get(key, "")
     await config_service.set(key, target_value)

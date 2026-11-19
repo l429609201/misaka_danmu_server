@@ -25,7 +25,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/scheduled-tasks/available-jobs", response_model=List[AvailableJobInfo])
-async def get_available_jobs(request: Request):
+async def get_available_jobs(
+    request: Request,
+    _current_user: User = Depends(get_current_user),  # 修复 CVE-2026-111644：枚举内部任务类型需登录鉴权
+):
     """获取所有已加载的可用任务类型及其名称。"""
     scheduler_manager = request.app.state.scheduler_manager
     jobs = scheduler_manager.get_available_jobs()

@@ -43,6 +43,7 @@ router = APIRouter()
 )
 async def search_anime_local(
     keyword: str = Query(..., min_length=1, description="搜索关键词"),
+    _current_user: User = Depends(get_current_user),
 ) -> AnimeSearchResponse:
     """通过数据库服务搜索本地作品，不持有请求级会话。"""
     db_results = await search_local_anime(keyword)

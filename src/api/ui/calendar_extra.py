@@ -5,12 +5,14 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, Query
 
+from src.api.auth import get_current_user
+from src.schemas.auth import User
 from src.api.dependencies import get_config_service
 from src.core import get_now
 from src.services.config_service import ConfigService
 from src.services.service_container import get_database_service
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.get("/calendar/upcoming", summary="即将播出的条目")

@@ -11,12 +11,14 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from src.api.auth import get_current_user
+from src.schemas.auth import User
 from src.services.service_container import get_database_service
 from src.core import get_now
 from src.services.config_service import ConfigService, get_config_service
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 # ==================== 任务画像 ====================

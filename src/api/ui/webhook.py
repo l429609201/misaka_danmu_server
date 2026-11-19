@@ -6,6 +6,8 @@ from typing import Optional, List, Dict
 
 from fastapi import APIRouter, Depends, Query
 
+from src.api.auth import get_current_user
+from src.schemas.auth import User
 from src.services.service_container import get_database_service
 from src.services.webhook_service import WebhookService
 from src.workflows.webhook_dispatch import WebhookDispatchContext, dispatch_pending_webhooks
@@ -23,7 +25,7 @@ from src.schemas.ui_models import PaginatedWebhookTasksResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 @router.get("/webhooks/available", response_model=List[str], summary="获取所有可用的Webhook类型")
 async def get_available_webhook_types(
@@ -97,4 +99,3 @@ async def run_webhook_tasks_now(
         return {"message": f"已成功提交 {submitted_count} 个任务到执行队列。"}
     else:
         return {"message": "未找到可执行的待处理任务"}
-
