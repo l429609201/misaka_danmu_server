@@ -64,6 +64,7 @@ from .danmaku_query import DanmakuQueryRepository  # 复杂查询类
 from .media_server import MediaServerRepository, MediaItemRepository
 from .external_calendar import ExternalCalendarRepository
 from .webhook_task import WebhookTaskRepository  # Webhook 任务 CRUD
+from .task_binding import TaskBindingRepository  # 定时任务与数据源绑定关系 CRUD
 
 __all__ = [
     "BaseRepository",
@@ -114,4 +115,5 @@ __all__ = [
     "DanmakuQueryRepository",  # Query 类
     "ExternalCalendarRepository",
     "WebhookTaskRepository",  # Webhook 任务 CRUD
+    "TaskBindingRepository",  # 定时任务与数据源绑定关系 CRUD
 ]

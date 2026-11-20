@@ -168,7 +168,7 @@ class SourceQueryRepository:
 
     async def get_anime_source_info(self, source_id: int) -> Optional[Dict[str, Any]]:
         """
-        获取数据源的详细信息（含作品和 Scraper 关联）
+        获取数据源的详细信息（含作品、元数据和 Scraper 关联）
 
         替代 crud.get_anime_source_info
 
@@ -179,8 +179,9 @@ class SourceQueryRepository:
             数据源详情字典或 None
         """
         stmt = (
-            select(AnimeSource, Anime, Scraper)
+            select(AnimeSource, Anime, AnimeMetadata, Scraper)
             .join(Anime, AnimeSource.animeId == Anime.id)
+            .outerjoin(AnimeMetadata, Anime.id == AnimeMetadata.animeId)
             # 按实际 ORM 属性关联弹幕源配置。
             .outerjoin(Scraper, AnimeSource.providerName == Scraper.providerName)
             .where(AnimeSource.id == source_id)
@@ -191,7 +192,7 @@ class SourceQueryRepository:
         if not row:
             return None
 
-        source, anime, scraper = row
+        source, anime, metadata, scraper = row
         return {
             "sourceId": source.id,
             "animeId": anime.id,
@@ -211,6 +212,9 @@ class SourceQueryRepository:
             "incrementalRefreshEnabled": source.incrementalRefreshEnabled or False,
             "isFinished": source.isFinished or False,
             "scraperEnabled": scraper.isEnabled if scraper else None,
+            # 播出日程信息（用于智能调度）
+            "airWeekday": metadata.airWeekday if metadata else None,  # 1=周一..7=周日
+            "airTime": metadata.airTime if metadata else None,  # HH:MM 格式
         }
 
     async def get_anime_sources(self, anime_id: int) -> List[Dict[str, Any]]:

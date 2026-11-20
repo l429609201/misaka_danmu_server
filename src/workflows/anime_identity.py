@@ -25,6 +25,13 @@ async def get_or_create_anime_with_deduplication(
     imdb_id: Optional[str] = None,
 ) -> int:
     """自持短事务提交作品身份，避免后续并发导入看不到新建记录。"""
+    # 保留源站原名用于别名兜底；显式识别词仍优先决定入库身份。
+    original_title = title
+    # 查重和新建必须使用同一入库身份，并保留源限定，避免原名绕过识别词。
+    if title_recognition_manager:
+        title, season, _, _, _ = await title_recognition_manager.apply_storage_postprocessing(
+            title, season, provider,
+        )
     db = get_database_service()
     async with _ANIME_CREATE_LOCK:
         async with db.transaction():
@@ -32,7 +39,9 @@ async def get_or_create_anime_with_deduplication(
                 provider=provider, media_id=mediaId, title=title,
                 media_type=mediaType, season=season, year=year,
                 tmdb_id=tmdb_id, tvdb_id=tvdb_id, imdb_id=imdb_id,
-                title_recognition_manager=title_recognition_manager,
+                # 已在查重前转换，禁止再次应用季度偏移等非幂等规则。
+                title_recognition_manager=None,
+                alias_titles=[original_title, title],
             )
             if result["found"]:
                 anime_id = result["anime_id"]

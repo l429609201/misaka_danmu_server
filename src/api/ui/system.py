@@ -73,14 +73,19 @@ router = APIRouter()
 
 @router.get("/version", response_model=Dict[str, str], summary="获取应用版本号和文档链接")
 async def get_app_version():
-    """获取当前后端应用的版本号和文档链接 - 🚀 薄层路由"""
+    """获取当前后端应用的版本号和文档链接。
+    此接口刻意保持公开：前端用裸 fetch 轮询它来探测服务是否重启恢复，
+    若加 JWT 鉴权则 401 ≠ 网络错误，重启探测逻辑会误判。
+    版本号本身属低敏感信息，不涉及 GitHub release 查询。
+    """
     return {"version": APP_VERSION, "docsUrl": DOCS_URL}
 
 
 @router.get("/version/check", response_model=VersionCheckResponse, summary="检查应用更新")
 async def check_app_update(
     config_service: ConfigService = Depends(get_config_service),
-    force_refresh: bool = Query(False, description="强制刷新缓存")
+    force_refresh: bool = Query(False, description="强制刷新缓存"),
+    _current_user: User = Depends(get_current_user),
 ):
     """检查是否有新版本可用 - 🚀 薄层路由，委托给 workflow"""
     result = await workflow_check_version(config_service, force_refresh)
@@ -90,7 +95,8 @@ async def check_app_update(
 @router.get("/version/releases", response_model=ReleasesResponse, summary="获取历史版本列表")
 async def get_release_history(
     config_service: ConfigService = Depends(get_config_service),
-    limit: int = Query(10, description="获取的版本数量", ge=1, le=50)
+    limit: int = Query(10, description="获取的版本数量", ge=1, le=50),
+    _current_user: User = Depends(get_current_user),
 ):
     """获取最近的版本信息 - 🚀 薄层路由，委托给 workflow"""
     releases = await workflow_get_release_history(config_service, limit)
@@ -133,7 +139,7 @@ async def get_log_file_content(
 ):
     """
     读取指定日志文件，支持后端关键词过滤和分页加载 - 🚀 薄层路由，委托给 workflow
-    
+
     返回 {"lines": [...], "hasMore": bool, "total": int}
     """
     return await workflow_read_log_file(filename, tail, keyword, offset)
@@ -257,7 +263,8 @@ async def get_comments(
     episodeId: int,
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(100, ge=1, description="每页数量"),
-    db: DatabaseService = Depends(get_database_service)
+    db: DatabaseService = Depends(get_database_service),
+    _current_user: User = Depends(get_current_user),
 ) -> PaginatedCommentResponse:
     """读取分集弹幕文件并分页，不应用播放器输出限制。"""
     # 编排层管理事务与文件锁，路由不再嵌套事务或按 ORM 对象访问弹幕。
@@ -334,6 +341,7 @@ async def get_rate_limit_status(
     scraper_manager: ScraperManager = Depends(get_scraper_manager),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
     db: DatabaseService = Depends(get_database_service),
+    _current_user: User = Depends(get_current_user),
 ):
     """
     获取所有流控规则的状态 - 🚀 薄层路由

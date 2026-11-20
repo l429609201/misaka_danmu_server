@@ -13,11 +13,15 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from src._version import APP_VERSION
 from src.core import get_now
+from src.api.auth import get_current_user
+from src.schemas.auth import User
+
+router = APIRouter(dependencies=[Depends(get_current_user)])
 from src.services.cache_service import get_cache_service
 from src.core.env import is_docker_environment
 from src.db.database import get_db_type

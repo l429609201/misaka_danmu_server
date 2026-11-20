@@ -27,6 +27,7 @@ class ScheduledTaskInfo(BaseModel):
     lastRunAt: Optional[datetime] = None
     nextRunAt: Optional[datetime] = None
     isSystemTask: bool = False
+    bindingCount: int = 0  # 该任务绑定的数据源数量（仅追更/刷新弹幕类型有效）
 
 
 # --- TMDB API Models ---

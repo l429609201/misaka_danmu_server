@@ -307,6 +307,22 @@ export const runTask = data =>
 export const getAvailableScheduledJobs = () =>
   api.get('/api/ui/scheduled-tasks/available-jobs')
 
+/** 获取定时任务绑定的数据源列表 */
+export const getTaskBindings = (taskId) =>
+  api.get(`/api/ui/scheduled-tasks/${taskId}/bindings`)
+
+/** 添加数据源绑定到定时任务（支持批量） */
+export const addTaskBindings = (taskId, sourceIds) =>
+  api.post(`/api/ui/scheduled-tasks/${taskId}/bindings`, { sourceIds })
+
+/** 移除定时任务的数据源绑定（支持批量或全部清除） */
+export const removeTaskBindings = (taskId, sourceIds = null) =>
+  api.delete(`/api/ui/scheduled-tasks/${taskId}/bindings`, { data: { sourceIds } })
+
+/** 获取数据源绑定的定时任务列表 */
+export const getSourceTaskBindings = (sourceId) =>
+  api.get(`/api/ui/sources/${sourceId}/task-bindings`)
+
 /** 获取流控状态 */
 export const getRateLimitStatus = () => api.get('/api/ui/rate-limit/status')
 
@@ -841,6 +857,14 @@ export const sortEpisodes = data =>
 /** 集数偏移 */
 export const offsetEpisodes = data =>
   api.post('/api/ui/library/episodes/offset', data)
+
+/** 检测分集弹幕 XML 文件格式 */
+export const detectXmlRepair = episodeIds =>
+  api.post('/api/ui/library/episodes/xml-repair/detect', { episodeIds })
+
+/** 提交批量修复分集弹幕 XML 文件任务 */
+export const fixXmlRepair = episodeIds =>
+  api.post('/api/ui/library/episodes/xml-repair/fix', { episodeIds })
 
 /** 获取弹幕详情 */
 export const getDanmakuDetail = data =>

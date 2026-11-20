@@ -78,8 +78,11 @@ class EpisodeRepository(BaseRepository[Episode]):
         stmt = select(Episode).where(
             Episode.sourceId == source_id,
             Episode.providerEpisodeId == provider_episode_id,
-        ).limit(1)
-        episode = (await self._session.execute(stmt)).scalar_one_or_none()
+        )
+        # 旧版 XML 导入共用占位 ID，不代表真实源站身份，必须同时限制集号。
+        if provider_episode_id == "custom_xml":
+            stmt = stmt.where(Episode.episodeIndex == episode_index)
+        episode = (await self._session.execute(stmt.limit(1))).scalar_one_or_none()
         if episode is not None:
             return episode
         stmt = select(Episode).where(
@@ -221,6 +224,29 @@ class EpisodeRepository(BaseRepository[Episode]):
             stmt = stmt.where(Episode.danmakuFilePath.is_(None))
 
         stmt = stmt.order_by(Episode.episodeIndex)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_recent_episodes(
+        self,
+        source_id: int,
+        limit: int = 1
+    ) -> List[Episode]:
+        """获取指定源的最近 N 集（按集数倒序）
+        
+        Args:
+            source_id: 数据源ID
+            limit: 返回集数（默认 1 = 只返回最新一集）
+            
+        Returns:
+            最近 N 集的列表，按集数倒序排列
+        """
+        stmt = (
+            select(Episode)
+            .where(Episode.sourceId == source_id)
+            .order_by(Episode.episodeIndex.desc())
+            .limit(limit)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 

@@ -159,52 +159,90 @@ class IncrementalRefreshJob(BaseJob):
         return reconciled
 
     @profile_flow(FLOW_INCREMENTAL_REFRESH)
-    async def run(self, session: AsyncSession, progress_callback: Callable):
-        """定时任务核心：阶段A 强标识订阅扫描+导入 → 阶段0 处理订阅 → 阶段1 抓下一集"""
-        # 阶段A：扫描强标识订阅目标（如 Bilibili 合集/UP主），生成候选项并导入弹幕
-        # 复用 SubscriptionScanJob 的逻辑，避免代码重复；两者共享同一套 BaseJob 依赖
-        await progress_callback(0, "阶段A：扫描强标识订阅目标（B站合集等）...")
-        scan_written, scan_imported = 0, 0
-        try:
-            scan_job = SubscriptionScanJob(
-                self._session_factory, self.task_manager, self.scraper_manager,
-                self.rate_limiter, self.metadata_manager, self.config_service,
-                title_recognition_manager=self.title_recognition_manager,
-                ai_service=self.ai_service,
-            )
-            # 将扫描阶段的 0-100 进度压缩到 0-5%，避免与后续阶段进度跳动
-            async def _scan_cb(p, desc):
-                await progress_callback(min(int(p) // 20, 4), desc)
-            scan_written = await scan_job._scan_due_targets(session, _scan_cb)
-            scan_imported = await scan_job._import_waiting_items(session, _scan_cb)
-        except Exception as e:
-            self.logger.error(f"阶段A 强标识订阅扫描/导入异常：{e}", exc_info=True)
+    async def run(self, session: AsyncSession, progress_callback: Callable, task_config: dict = None):
+        """定时任务核心：阶段A 强标识订阅扫描+导入 → 阶段0 处理订阅 → 阶段1 抓下一集
+        
+        Args:
+            session: 数据库会话（由调度器提供，本任务不使用）
+            progress_callback: 进度回调
+            task_config: 任务配置，可选包含：
+                - bound_source_ids: 绑定的数据源ID列表（由调度器注入）
+                - skip_subscription: 是否跳过订阅扫描和处理（绑定任务通常跳过）
+        """
+        task_config = task_config or {}
+        bound_source_ids = task_config.get("bound_source_ids")
+        skip_subscription = task_config.get("skip_subscription", False)
+        
+        scan_written, scan_imported, submitted_subs = 0, 0, 0
+        
+        # 如果是绑定任务，跳过订阅扫描和处理阶段
+        if not skip_subscription and bound_source_ids is None:
+            # 阶段A：扫描强标识订阅目标（如 Bilibili 合集/UP主），生成候选项并导入弹幕
+            # 复用 SubscriptionScanJob 的逻辑，避免代码重复；两者共享同一套 BaseJob 依赖
+            await progress_callback(0, "阶段A：扫描强标识订阅目标（B站合集等）...")
+            try:
+                scan_job = SubscriptionScanJob(
+                    self._session_factory, self.task_manager, self.scraper_manager,
+                    self.rate_limiter, self.metadata_manager, self.config_service,
+                    title_recognition_manager=self.title_recognition_manager,
+                    ai_service=self.ai_service,
+                )
+                # 将扫描阶段的 0-100 进度压缩到 0-5%，避免与后续阶段进度跳动
+                async def _scan_cb(p, desc):
+                    await progress_callback(min(int(p) // 20, 4), desc)
+                scan_written = await scan_job._scan_due_targets(session, _scan_cb)
+                scan_imported = await scan_job._import_waiting_items(session, _scan_cb)
+            except Exception as e:
+                self.logger.error(f"阶段A 强标识订阅扫描/导入异常：{e}", exc_info=True)
 
-        # 阶段0：处理订阅意向（pending → importing）
-        await progress_callback(5, "阶段0：处理待订阅条目...")
-        try:
-            submitted_subs = await self._process_pending_subscriptions(session)
-        except Exception as e:
-            self.logger.error(f"处理 pending 订阅时发生异常：{e}", exc_info=True)
-            submitted_subs = 0
-        # 阶段0.5：收敛 importing → imported（基于本地是否已建库）
-        try:
-            await self._reconcile_imported_subscriptions(session)
-        except Exception as e:
-            self.logger.warning(f"收敛 imported 订阅时发生异常（忽略）：{e}")
+            # 阶段0：处理订阅意向（pending → importing）
+            await progress_callback(5, "阶段0：处理待订阅条目...")
+            try:
+                submitted_subs = await self._process_pending_subscriptions(session)
+            except Exception as e:
+                self.logger.error(f"处理 pending 订阅时发生异常：{e}", exc_info=True)
+            # 阶段0.5：收敛 importing → imported（基于本地是否已建库）
+            try:
+                await self._reconcile_imported_subscriptions(session)
+            except Exception as e:
+                self.logger.warning(f"收敛 imported 订阅时发生异常（忽略）：{e}")
 
         # 阶段1：原有的增量追更（已建库的源 → 抓下一集）
         await progress_callback(5, "阶段1：扫描已启用追更的源...")
         db = get_database_service()
-        # 源列表查询完成即释放连接，不将调度过程包进长事务。
+        
+        # 获取候选源列表
         async with db.transaction():
-            source_ids = await db.source.get_sources_with_incremental_refresh_enabled()
+            if bound_source_ids is not None:
+                # 专属任务：只处理绑定的源
+                self.logger.info(f"专属任务模式：处理 {len(bound_source_ids)} 个绑定源")
+                # 过滤出启用追更的绑定源
+                all_enabled = await db.source.get_sources_with_incremental_refresh_enabled()
+                source_ids = [sid for sid in bound_source_ids if sid in all_enabled]
+                if len(source_ids) < len(bound_source_ids):
+                    skipped = len(bound_source_ids) - len(source_ids)
+                    self.logger.info(f"已过滤掉 {skipped} 个未启用追更的绑定源")
+            else:
+                # 全局任务：扫描所有启用的源，但排除已有专属任务的源
+                all_enabled = await db.source.get_sources_with_incremental_refresh_enabled()
+                bound_by_others = await db.task_binding.get_bound_source_ids_by_job_type(
+                    job_type=self.job_type,
+                    enabled_tasks_only=True
+                )
+                source_ids = [sid for sid in all_enabled if sid not in bound_by_others]
+                if bound_by_others:
+                    self.logger.info(f"全局任务模式：排除了 {len(bound_by_others)} 个已有专属任务的源")
+        
         total_sources = len(source_ids)
         if not total_sources:
-            raise TaskSuccess(
-                f"阶段A 扫描候选 {scan_written} 个、导入 {scan_imported} 个；"
-                f"阶段0 提交订阅任务 {submitted_subs} 个；阶段1 没有找到任何启用的追更源，任务结束。"
-            )
+            mode = "专属任务" if bound_source_ids is not None else "全局扫描"
+            if not skip_subscription:
+                raise TaskSuccess(
+                    f"阶段A 扫描候选 {scan_written} 个、导入 {scan_imported} 个；"
+                    f"阶段0 提交订阅任务 {submitted_subs} 个；{mode}阶段1 没有找到任何启用的追更源，任务结束。"
+                )
+            else:
+                raise TaskSuccess(f"{mode}：没有找到需要追更的源，任务结束。")
 
         # 获取当前星期几 (1=周一 ... 7=周日)
         today_weekday = datetime.now().isoweekday()
@@ -264,8 +302,16 @@ class IncrementalRefreshJob(BaseJob):
             progress = 10 + int(((i + 1) / total_sources) * 90)
             await progress_callback(progress, f"已处理 {i+1}/{total_sources} 个源")
 
+        mode = "专属任务" if bound_source_ids is not None else "全局扫描"
         schedule_info = f"（智能调度：{skipped_by_schedule} 个源因非播出日被跳过）" if skipped_by_schedule else ""
-        raise TaskSuccess(
-            f"阶段A 扫描候选 {scan_written} 个、导入 {scan_imported} 个；"
-            f"阶段0 提交订阅任务 {submitted_subs} 个；阶段1 为 {submitted_count} 个源创建了追更任务。{schedule_info}"
-        )
+        
+        if not skip_subscription:
+            raise TaskSuccess(
+                f"阶段A 扫描候选 {scan_written} 个、导入 {scan_imported} 个；"
+                f"阶段0 提交订阅任务 {submitted_subs} 个；"
+                f"{mode}阶段1 为 {submitted_count} 个源创建了追更任务。{schedule_info}"
+            )
+        else:
+            raise TaskSuccess(
+                f"{mode}完成：为 {submitted_count} 个源创建了追更任务。{schedule_info}"
+            )

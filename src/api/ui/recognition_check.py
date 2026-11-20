@@ -6,13 +6,15 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from src.api.auth import get_current_user
+from src.schemas.auth import User
 from src.services.service_container import get_title_recognition_service, get_title_recognition_manager
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class RuleConflictItem(BaseModel):

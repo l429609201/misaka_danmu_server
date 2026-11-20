@@ -12,6 +12,7 @@ from src.services.cache_service import get_cache_service
 from src.services.file_storage_service import get_file_storage_service, wait_for_settlement
 from src.utils.danmaku import generate_xml_from_comments
 from src.utils.parsing.danmaku_parser import parse_dandan_xml_to_comments
+from src.utils.parsing.xml_repair import repair_danmaku_xml
 from src.utils.storage.path_template import generate_danmaku_path
 from src.workflows.danmaku_paths import cleanup_unreferenced_paths, select_write_path
 
@@ -71,7 +72,17 @@ class DanmakuEditWriteContext:
         content = await self.fs.read_text(path)
         if not content:
             raise ValueError(f"分集 {episode.id} 的弹幕文件读取失败或为空")
-        root = ElementTree.fromstring(content)
+        # 先尝试直接解析；失败时用修复工具宽容处理，修复后写回 content
+        try:
+            root = ElementTree.fromstring(content)
+        except ElementTree.ParseError as exc:
+            repaired = repair_danmaku_xml(content, episode.id, file_path=str(path))
+            if repaired is None:
+                raise ValueError(
+                    f"分集 {episode.id} 的弹幕文件格式损坏，无法修复（{exc}）"
+                ) from exc
+            content = repaired
+            root = ElementTree.fromstring(content)
         # 播放允许容错，编辑不能把跳过的坏节点静默覆盖丢失。
         nodes = list(root.iter('d'))
         if root.tag != 'i' or len(nodes) != len(root.findall('d')):

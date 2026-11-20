@@ -85,6 +85,7 @@ from src.db.repositories import (
     MediaItemRepository,
     ExternalCalendarRepository,
     WebhookTaskRepository,  # Webhook 任务 CRUD
+    TaskBindingRepository,  # 定时任务与数据源绑定关系 CRUD
 )
 from src.db.repositories.health_query import HealthQueryRepository
 from src.db.repositories.config_query import ConfigQueryRepository  # 配置查询类
@@ -531,6 +532,7 @@ class DatabaseService:
         "danmaku_edit": DanmakuEditRepository,
         "danmaku_storage": DanmakuStorageRepository,
         "webhook_task": WebhookTaskRepository,  # Webhook 任务 CRUD
+        "task_binding": TaskBindingRepository,  # 定时任务与数据源绑定关系 CRUD
     }
 
     def _get_simple_repo(self, name: str):

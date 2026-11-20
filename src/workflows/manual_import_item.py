@@ -13,23 +13,31 @@ async def import_manual_item(
     title: str, manager: Any, rate_limiter: Any, scraper_provider: Optional[str],
 ) -> Tuple[int, bool, bool]:
     """返回新增数量、是否已存在及是否无弹幕，不吞掉下载或保存异常。"""
+    # 批量 URL 每条可能来自不同平台，优先使用条目平台，再兼容合集任务的统一平台。
+    scraper_provider = item.urlProvider or scraper_provider
+    content = item.content if item.content is not None else item.url
+    if not content:
+        raise ValueError("必须提供分集 URL 或弹幕内容")
     if provider == "custom" and not scraper_provider:
-        text = item.content.strip()
+        if content.strip().lower().startswith(("http://", "https://")):
+            raise ValueError("自定义源 URL 导入缺少真实平台 urlProvider，不能作为 XML 解析")
+        text = content.strip()
         if not text.startswith("<"):
             text = convert_text_danmaku_to_xml(text)
         comments = parse_xml_content(clean_xml_string(text))
         source_url = "from_xml_batch"
-        episode_id = "custom_xml"
+        # XML 没有源站 ID，按集号生成稳定标识，避免整批被判为同一分集。
+        episode_id = f"custom_xml_{item.episodeIndex}"
     else:
         effective_provider = scraper_provider if provider == "custom" and scraper_provider else provider
         scraper = manager.get_scraper(effective_provider)
-        provider_id = await scraper.get_id_from_url(item.content)
+        provider_id = await scraper.get_id_from_url(content)
         if not provider_id:
             raise ValueError("无法解析ID")
         episode_id = scraper.format_episode_id_for_comments(provider_id)
         await rate_limiter.check(effective_provider)
         comments = await scraper.get_comments(episode_id)
-        source_url = item.content
+        source_url = content
     if not comments:
         return 0, False, True
     # 查重与写入共用保存层的锁，避免预查询后的并发重复建集。

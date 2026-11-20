@@ -42,6 +42,53 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
+/**
+ * 验证 XML 字符串是否格式良好
+ * @param {string} content - XML 字符串
+ * @returns {{ valid: boolean, error: string | null }}
+ */
+function validateXmlContent(content) {
+  try {
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(content, 'text/xml')
+    const errorNode = doc.querySelector('parsererror')
+    return { valid: !errorNode, error: errorNode ? errorNode.textContent.slice(0, 200) : null }
+  } catch (e) {
+    return { valid: false, error: e.message }
+  }
+}
+
+/**
+ * 尝试修复 XML 格式问题（非法控制字符、未转义 & 等）
+ * @param {string} content - 原始 XML 字符串
+ * @returns {{ repaired: string | null, issues: string[] }}
+ */
+function repairXmlContent(content) {
+  let repaired = content
+  const issues = []
+
+  // 策略1：清除 XML 1.0 非法控制字符 (\x00-\x08, \x0B, \x0C, \x0E-\x1F)
+  const cleaned = content.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+  if (cleaned !== content) {
+    issues.push('非法控制字符')
+    repaired = cleaned
+  }
+
+  // 策略2：修复未转义的 & 符号
+  const ampFixed = repaired.replace(/&(?!(?:amp|lt|gt|apos|quot|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;')
+  if (ampFixed !== repaired) {
+    issues.push('未转义 & 符号')
+    repaired = ampFixed
+  }
+
+  // 验证修复后的内容
+  const validation = validateXmlContent(repaired)
+  if (validation.valid) {
+    return { repaired, issues }
+  }
+  return { repaired: null, issues }
+}
+
 export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
   const { t } = useTranslation()
   const messageApi = useMessage()
@@ -62,6 +109,9 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
 
   const [pageSize, setPageSize] = useState(10)
   const [activeItem, setActiveItem] = useState(null)
+
+  // XML 修复相关状态
+  const [xmlRepairModalOpen, setXmlRepairModalOpen] = useState(false)
 
   // 批量URL导入相关状态
   const [urlListInput, setUrlListInput] = useState('')  // 多行URL输入
@@ -181,6 +231,8 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
       const items = selectedItems.map(item => ({
         episodeIndex: item.episodeIndex,
         content: item.url,
+        // 自定义源仍需真实平台抓取，不能让视频 URL 落入 XML 导入分支。
+        urlProvider: item.provider,
         title: item.title || undefined,
       }))
 
@@ -218,21 +270,35 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
 
     // XML导入模式
     if (!sourceInfo?.sourceId) return
+    if (xmlDataList.length === 0) {
+      messageApi.warn(t('batchImport.noValidItems'))
+      return
+    }
+
+    // 检查是否有格式问题的文件，如有则先弹出修复确认框
+    const hasIssueItems = xmlDataList.filter(it => it.hasIssue)
+    if (hasIssueItems.length > 0) {
+      setXmlRepairModalOpen(true)
+      return
+    }
+
+    await doXmlImport(xmlDataList)
+  }
+
+  /**
+   * 执行 XML 批量导入（内部复用）
+   * @param {Array} list - 待导入的 xmlDataList（已修复或原始）
+   */
+  const doXmlImport = async (list) => {
     try {
-      if (xmlDataList.length === 0) {
-        messageApi.warn(t('batchImport.noValidItems'))
-        return
-      }
       setLoading(true)
       const res = await batchManualImport({
         sourceId: sourceInfo.sourceId,
-        items: xmlDataList.map(it => {
-          return {
-            episodeIndex: it.episodeIndex,
-            content: it.content,
-            title: it.title ?? undefined,
-          }
-        }),
+        items: list.map(it => ({
+          episodeIndex: it.episodeIndex,
+          content: it.content,
+          title: it.title ?? undefined,
+        })),
       })
       if (res.data) {
         onSuccess(res.data)
@@ -246,6 +312,23 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
     } finally {
       setLoading(false)
     }
+  }
+
+  /**
+   * 修复所有有格式问题的 XML 条目，然后提交导入
+   */
+  const handleRepairAndImport = async () => {
+    setXmlRepairModalOpen(false)
+    const repairedList = xmlDataList.map(it => {
+      if (!it.hasIssue || it.brokenXml) return it
+      const { repaired } = repairXmlContent(it.content)
+      if (repaired) {
+        return { ...it, content: repaired, hasIssue: false, issueInfo: null, brokenXml: false }
+      }
+      return it
+    })
+    setXmlDataList(repairedList)
+    await doXmlImport(repairedList)
   }
 
   const clearAll = () => {
@@ -353,6 +436,25 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
       reader.onload = async e => {
         try {
           const xmlContent = e.target.result
+
+          // 检测 XML 格式是否正常
+          let hasIssue = false
+          let issueInfo = null
+          let brokenXml = false
+
+          const validation = validateXmlContent(xmlContent)
+          if (!validation.valid) {
+            const { repaired, issues } = repairXmlContent(xmlContent)
+            if (repaired) {
+              hasIssue = true
+              issueInfo = issues.join('、')
+            } else {
+              hasIssue = true
+              brokenXml = true
+              issueInfo = '结构性损坏，无法自动修复'
+            }
+          }
+
           // 将解析结果添加到列表
           setXmlDataList(prev => {
             const newItems = [
@@ -364,6 +466,9 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
                 content: xmlContent,
                 size: file.size,
                 order: fileOrder,
+                hasIssue,
+                issueInfo,
+                brokenXml,
               },
             ]
 
@@ -606,6 +711,7 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
   const selectedValidCount = urlParseResults.filter(r => r.selected && r.status === 'success').length
 
   return (
+    <>
     <Modal
       title={t('batchImport.title', { name: sourceInfo?.animeName, provider: sourceInfo?.providerName })}
       open={open}
@@ -735,6 +841,54 @@ export const BatchImportModal = ({ open, sourceInfo, onCancel, onSuccess }) => {
         </>
       )}
     </Modal>
+
+    {/* XML 格式修复确认弹窗 */}
+    <Modal
+      title={<span><ExclamationCircleOutlined className="text-orange-500 mr-2" />{t('batchImport.xmlRepairTitle')}</span>}
+      open={xmlRepairModalOpen}
+      onCancel={() => setXmlRepairModalOpen(false)}
+      footer={[
+        <Button key="cancel" onClick={() => setXmlRepairModalOpen(false)}>
+          {t('common.cancel')}
+        </Button>,
+        <Button
+          key="import-as-is"
+          onClick={() => {
+            setXmlRepairModalOpen(false)
+            doXmlImport(xmlDataList)
+          }}
+        >
+          {t('batchImport.xmlRepairImportAsIs')}
+        </Button>,
+        <Button
+          key="repair-and-import"
+          type="primary"
+          onClick={handleRepairAndImport}
+        >
+          {t('batchImport.xmlRepairAndImport')}
+        </Button>,
+      ]}
+    >
+      <p className="mb-3">{t('batchImport.xmlRepairDesc')}</p>
+      <ul className="list-disc list-inside text-sm space-y-1">
+        {xmlDataList.filter(it => it.hasIssue).map(it => (
+          <li key={it.id} className={it.brokenXml ? 'text-red-500' : 'text-orange-500'}>
+            <span className="font-medium">{t('batchImport.episodeLabel', { index: it.episodeIndex })}</span>
+            {it.title ? ` · ${it.title}` : ''}
+            {' — '}
+            {it.brokenXml
+              ? t('batchImport.xmlBrokenCannotRepair')
+              : it.issueInfo}
+          </li>
+        ))}
+      </ul>
+      {xmlDataList.some(it => it.hasIssue && it.brokenXml) && (
+        <p className="mt-3 text-xs text-gray-500">
+          {t('batchImport.xmlBrokenWillSkip')}
+        </p>
+      )}
+    </Modal>
+    </>
   )
 }
 
@@ -817,6 +971,15 @@ const SortableItem = ({
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
           />
+          {/* XML 格式问题提示图标 */}
+          {item.hasIssue && (
+            <Tooltip title={item.issueInfo}>
+              <ExclamationCircleOutlined
+                className={item.brokenXml ? 'text-red-500' : 'text-orange-500'}
+                style={{ fontSize: 16, flexShrink: 0 }}
+              />
+            </Tooltip>
+          )}
           <div onClick={() => handleDelete(item)}>
             <CloseCircleOutlined />
           </div>

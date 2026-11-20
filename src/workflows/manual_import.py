@@ -20,6 +20,9 @@ async def execute_manual_import(
     await progress_callback(10, "正在准备导入...")
     custom_xml = provider == "custom" and not scraper_provider
     if custom_xml:
+        # 视频 URL 缺少真实平台时明确报错，避免当作文本弹幕导入而掩盖抓取失败。
+        if content.strip().lower().startswith(("http://", "https://")):
+            raise ValueError("自定义源 URL 导入缺少真实平台 urlProvider，不能作为 XML 解析")
         text = content.strip()
         if not text.startswith("<"):
             text = convert_text_danmaku_to_xml(text)

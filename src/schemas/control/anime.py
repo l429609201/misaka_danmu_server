@@ -4,9 +4,12 @@ Control API - 番剧管理相关模型
 from typing import Optional
 from pydantic import BaseModel, Field
 
+from src.schemas.anime import AnimeCreate as BaseAnimeCreate
 
-class AnimeCreate(BaseModel):
-    """Model for creating a new anime entry manually."""
+
+class AnimeCreate(BaseAnimeCreate):
+    """复用完整创建字段，保留 Control/UI 接口原有的基础字段默认值。"""
+    # 仓储会创建元数据和别名；继承统一模型，避免同名简化模型缺字段导致创建失败。
     title: str = Field(..., description="作品标题")
     type: str = Field("tv_series", description="作品类型 (tv_series, movie, ova, other)")
     season: int = Field(1, description="季度")

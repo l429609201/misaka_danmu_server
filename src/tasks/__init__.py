@@ -67,6 +67,11 @@ from .fallback_download import (
     match_fallback_download_task,
 )
 
+# XML 修复任务
+from .xml_repair_task import (
+    repair_xml_files_task,
+)
+
 __all__ = [
     # 删除任务
     'delete_anime_task',
@@ -100,5 +105,7 @@ __all__ = [
     'import_all_unimported_media_items',
     # 后备下载任务（B类·冷启动）
     'match_fallback_download_task',
+    # XML 修复任务
+    'repair_xml_files_task',
 ]
 
